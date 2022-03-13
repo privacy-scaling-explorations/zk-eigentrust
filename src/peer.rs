@@ -40,9 +40,9 @@ impl Peer {
             }
 
             // Compute `t_i(k+1) = (1 - a)*(c_1i*t_1(k) + c_ji*t_z(k) + ... + c_ni*t_n(k)) + a*p_i`
-            // We are going through each neighbor and calculating their local trust towards peer `i`,
-            // multiplied by that neighbor's trust score.
-            // This means that neighbors' opinion about peer i is weighted by their trust score.
+            // We are going through each neighbor and taking their local trust towards peer `i`,
+            // and multiplying it by that neighbor's global trust score.
+            // This means that neighbors' opinion about peer i is weighted by their global trust score.
             // If a neighbor has a low trust score (is not trusted by the network),
             // their opinion is not taken seriously, compared to neighbors with a high trust score.
             new_ti += neighbor_j.get_local_trust_value(self.index) * neighbor_j.get_ti();
