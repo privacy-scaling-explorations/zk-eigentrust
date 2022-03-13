@@ -1,5 +1,5 @@
-use rand::{RngCore, prelude::SliceRandom};
 use rand::Rng;
+use rand::{prelude::SliceRandom, RngCore};
 
 use crate::peer::{Peer, PeerIndex, PeerScore};
 
@@ -13,7 +13,9 @@ pub struct Network {
 
 impl Network {
     pub fn new(size: PeerIndex, initial_trust_scores: TVector) -> Self {
-        let peers = (0..size).map(|x| Peer::new(x, initial_trust_scores[x as usize])).collect();
+        let peers = (0..size)
+            .map(|x| Peer::new(x, initial_trust_scores[x as usize]))
+            .collect();
         Self {
             peers,
             is_converged: false,
@@ -28,7 +30,7 @@ impl Network {
                 }
 
                 let peer_j = self.peers[j].clone();
-                self.peers[i].add_neighbour(peer_j, *c_ij);
+                self.peers[i].add_neighbor(peer_j, *c_ij);
             }
         }
     }
@@ -68,7 +70,9 @@ impl Network {
 pub fn generate_trust_matrix<R: Rng>(num_peers: PeerIndex, rng: &mut R) -> TMatrix {
     let mut matrix = Vec::new();
     for i in 0..num_peers {
-        let vals: Vec<PeerScore> = (0..num_peers - 1).map(|_| rng.gen_range(0.0..32.)).collect();
+        let vals: Vec<PeerScore> = (0..num_peers - 1)
+            .map(|_| rng.gen_range(0.0..32.))
+            .collect();
         let sum: PeerScore = vals.iter().sum();
 
         let mut normalized: Vec<PeerScore> = vals.iter().map(|x| x / sum).collect();

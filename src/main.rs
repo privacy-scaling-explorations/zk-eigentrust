@@ -1,8 +1,8 @@
 mod network;
 mod peer;
 
-use peer::PeerIndex;
 use network::{generate_trust_matrix, Network};
+use peer::PeerIndex;
 use rand::thread_rng;
 
 fn main() {

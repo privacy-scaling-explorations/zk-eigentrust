@@ -79,7 +79,7 @@ def eigentrust_distributed(num_peers: int, local_trust_matrix: TMatrix, initial_
 
     class Peer:
         index: TPeerIndex
-        neighbours: Dict[TPeerIndex, 'Peer']
+        neighbors: Dict[TPeerIndex, 'Peer']
         local_trust_values: Dict[TPeerIndex, TPeerScore]
         # Global trust value for myself
         ti: TPeerScore
@@ -88,14 +88,14 @@ def eigentrust_distributed(num_peers: int, local_trust_matrix: TMatrix, initial_
 
         def __init__(self, index: TPeerIndex) -> None:
             self.index = index
-            self.neighbours = {}
+            self.neighbors = {}
             self.local_trust_values = {}
             self.last_cij_ti = {}
             self.ti = 0
             self.is_converged = False
 
-        def add_neighbour(self, peer: 'Peer', local_trust_value: TPeerScore, pretrust_score: TPeerScore) -> None:
-            self.neighbours[peer.index] = peer
+        def add_neighbor(self, peer: 'Peer', local_trust_value: TPeerScore, pretrust_score: TPeerScore) -> None:
+            self.neighbors[peer.index] = peer
             self.local_trust_values[peer.index] = local_trust_value
             self.last_cij_ti[peer.index] = pretrust_score
 
@@ -104,14 +104,14 @@ def eigentrust_distributed(num_peers: int, local_trust_matrix: TMatrix, initial_
                 return
 
             new_ti = TPeerScore(0.0)
-            for j, neighbour_j in self.neighbours.items():
+            for j, neighbor_j in self.neighbors.items():
                 # Compute `t_i(k+1) = (1 - a)*(c_1i*t_1(k) + c_ji*t_z(k) + ... + c_ni*t_n(k)) + a*p_i`
                 # We haven't considered `a` here.
-                if self.index not in neighbour_j.last_cij_ti:
+                if self.index not in neighbor_j.last_cij_ti:
                     continue
-                new_ti += TPeerScore(neighbour_j.last_cij_ti[self.index])
+                new_ti += TPeerScore(neighbor_j.last_cij_ti[self.index])
             # Send c_ij * t_i(k+1)to all peers j
-            for j in self.neighbours.keys():
+            for j in self.neighbors.keys():
                 self.last_cij_ti[j] = TPeerScore(self.local_trust_values[j] * new_ti)
             if abs(new_ti - self.ti) <= delta:
                 self.is_converged = True
@@ -137,7 +137,7 @@ def eigentrust_distributed(num_peers: int, local_trust_matrix: TMatrix, initial_
                 for j, c_ij in enumerate(c_i):
                     if i == j:
                         continue
-                    self.peers[i].add_neighbour(self.peers[j], c_ij, initial_trust_scores[j])
+                    self.peers[i].add_neighbor(self.peers[j], c_ij, initial_trust_scores[j])
 
         def tick(self):
             # Randomly choose an order to perform heartbeats
