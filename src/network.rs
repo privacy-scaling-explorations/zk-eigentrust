@@ -7,20 +7,16 @@ type TMatrix = Vec<Vec<PeerScore>>;
 type TVector = Vec<PeerScore>;
 
 pub struct Network {
-    initial_trust_scores: TVector,
-    size: PeerIndex,
     peers: Vec<Peer>,
     is_converged: bool,
 }
 
 impl Network {
     pub fn new(size: PeerIndex, initial_trust_scores: TVector) -> Self {
-        let peers = (0..size).map(|x| Peer::new(x)).collect();
+        let peers = (0..size).map(|x| Peer::new(x, initial_trust_scores[x as usize])).collect();
         Self {
-            size,
             peers,
             is_converged: false,
-            initial_trust_scores
         }
     }
 
@@ -32,7 +28,7 @@ impl Network {
                 }
 
                 let peer_j = self.peers[j].clone();
-                self.peers[i].add_neighbor(peer_j, *c_ij, self.initial_trust_scores[j]);
+                self.peers[i].add_neighbour(peer_j, *c_ij);
             }
         }
     }

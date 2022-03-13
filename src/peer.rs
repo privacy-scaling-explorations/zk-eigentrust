@@ -10,51 +10,41 @@ pub struct Peer {
     index: PeerIndex,
     local_trust_values: HashMap<PeerIndex, PeerScore>,
     ti: PeerScore,
-    last_cij_ti: HashMap<PeerIndex, PeerScore>,
     is_converged: bool,
 }
 
 impl Peer {
-    pub fn new(index: PeerIndex) -> Self {
+    pub fn new(index: PeerIndex, initial_ti: PeerScore) -> Self {
         Self {
             index,
             local_trust_values: HashMap::new(),
-            last_cij_ti: HashMap::new(),
-            ti: 0.,
+            ti: initial_ti,
             is_converged: false
         }
     }
 
-    pub fn add_neighbor(&mut self, peer: Peer, local_trust_value: PeerScore, pretrust_value: PeerScore){
+    pub fn add_neighbour(&mut self, peer: Peer, local_trust_value: PeerScore){
         self.local_trust_values.insert(peer.index, local_trust_value);
-        self.last_cij_ti.insert(peer.index, pretrust_value);
     }
 
-    pub fn heartbeat(&mut self, neighbors: &Vec<Peer>) {
+    pub fn heartbeat(&mut self, neighbours: &Vec<Peer>) {
         if self.is_converged {
             return;
         }
 
         let mut new_ti = 0.;
-        for (j, neighbor_j) in neighbors.iter().enumerate() {
+        for (j, neighbour_j) in neighbours.iter().enumerate() {
             if self.index == j as u32 {
-                continue;
-            }
-            if !neighbor_j.last_cij_ti.contains_key(&self.index) {
                 continue;
             }
 
             // Compute `t_i(k+1) = (1 - a)*(c_1i*t_1(k) + c_ji*t_z(k) + ... + c_ni*t_n(k)) + a*p_i`
-            new_ti += neighbor_j.last_cij_ti[&self.index];
-        }
-
-        // Send c_ij * t_i(k+1)to all peers j
-        for j in 0..neighbors.len() {
-            let ju32 = j as u32;
-            if self.index == ju32 {
-                continue;
-            }
-            self.last_cij_ti.insert(ju32, self.local_trust_values[&ju32] * new_ti);
+            // We are going through each neighbour and calculating their local trust towards peer i,
+            // multiplied by that neighbour's trust score.
+            // This means that neighbour's opinion about peer i is weighted by their trust score.
+            // If neighbour has a low trust score (is not trusted by the network), their opinion is
+            // not taken seriously, compared to neighbours with a high trust score. 
+            new_ti += neighbour_j.get_local_trust_value(self.index) * neighbour_j.get_ti();
         }
 
         let diff = (new_ti - self.ti).abs();
@@ -73,15 +63,7 @@ impl Peer {
         self.ti
     }
 
-    pub fn get_index(&self) -> PeerIndex {
-        self.index
-    }
-
-    pub fn get_local_trust_values(&self) -> &HashMap<PeerIndex, PeerScore> {
-        &self.local_trust_values
-    }
-
-    pub fn get_last_cij_ti(&self) -> &HashMap<PeerIndex, PeerScore> {
-        &self.last_cij_ti
+    pub fn get_local_trust_value(&self, i: PeerIndex) -> PeerScore {
+        self.local_trust_values[&i]
     }
 }
