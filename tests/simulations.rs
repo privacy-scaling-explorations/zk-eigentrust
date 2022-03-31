@@ -1,5 +1,5 @@
-use eigen_trust::utils::generate_trust_matrix;
 use eigen_trust::{
+    utils::generate_trust_matrix,
     network::{Network, NetworkConfig},
     peer::PeerConfig,
 };
