@@ -85,3 +85,28 @@ impl<C: PeerConfig> Peer<C> {
         self.local_trust_scores[i]
     }
 }
+
+#[cfg(test)]
+mod test {
+	use super::*;
+
+	#[derive(Clone, Debug, PartialEq)]
+	struct TestConfig {
+		index: usize,
+		score: f64,
+	}
+
+	impl PeerConfig for TestConfig {
+		type Index = usize;
+		type Score = f64;
+	}
+
+	#[test]
+	fn test_peer_new() {
+		let mut peer = Peer::<TestConfig>::new(0, 0.0, 0.0);
+		peer.add_neighbor(Peer::new(1, 0.0, 0.0), 0.5);
+		assert_eq!(peer.get_index(), &0);
+		assert_eq!(peer.get_global_trust_score(), 0.0);
+		assert_eq!(peer.get_local_trust_score(&1), 0.5);
+	}
+}
