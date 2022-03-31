@@ -77,6 +77,10 @@ impl<C: PeerConfig> Peer<C> {
         self.global_trust_score
     }
 
+    pub fn get_pre_trust_score(&self) -> C::Score {
+        self.pre_trust_score
+    }
+
     pub fn get_index(&self) -> C::Index {
         self.index.clone()
     }
@@ -103,9 +107,10 @@ mod test {
 
     #[test]
     fn test_peer_new() {
-        let mut peer = Peer::<TestConfig>::new(0, 0.0, 0.0);
+        let mut peer = Peer::<TestConfig>::new(0, 0.0, 0.4);
         peer.add_neighbor(1, 0.5);
         assert_eq!(peer.get_index(), 0);
+        assert_eq!(peer.get_pre_trust_score(), 0.4);
         assert_eq!(peer.get_global_trust_score(), 0.0);
         assert_eq!(peer.get_local_trust_score(&1), 0.5);
     }
