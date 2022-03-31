@@ -30,7 +30,8 @@ fn simulate_conversion_4_peers() {
     pre_trust_scores[0] = 0.5;
     pre_trust_scores[1] = 0.5;
 
-	let default_score = 1. / <<Network4Config as NetworkConfig>::Peer as PeerConfig>::Score::from(num_peers as f64);
+    let default_score =
+        1. / <<Network4Config as NetworkConfig>::Peer as PeerConfig>::Score::from(num_peers as f64);
     let initial_trust_scores = vec![default_score; num_peers];
     let mc: Vec<Vec<f64>> = generate_trust_matrix(num_peers, rng);
 

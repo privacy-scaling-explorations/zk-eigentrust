@@ -28,9 +28,9 @@ impl<C: PeerConfig> Peer<C> {
         }
     }
 
-    pub fn add_neighbor(&mut self, peer: Peer<C>, local_trust_value: C::Score) {
+    pub fn add_neighbor(&mut self, peer_index: C::Index, local_trust_value: C::Score) {
         self.local_trust_scores
-            .insert(peer.index, local_trust_value);
+            .insert(peer_index, local_trust_value);
     }
 
     pub fn heartbeat(&mut self, neighbors: &Vec<Peer<C>>, delta: f64, pre_trust_weight: f64) {
@@ -42,7 +42,7 @@ impl<C: PeerConfig> Peer<C> {
 
         let mut new_global_trust_score = C::Score::zero();
         for neighbor_j in neighbors.iter() {
-            if &self.index == neighbor_j.get_index() {
+            if self.index == neighbor_j.get_index() {
                 continue;
             }
 
@@ -77,8 +77,8 @@ impl<C: PeerConfig> Peer<C> {
         self.global_trust_score
     }
 
-    pub fn get_index(&self) -> &C::Index {
-        &self.index
+    pub fn get_index(&self) -> C::Index {
+        self.index.clone()
     }
 
     pub fn get_local_trust_score(&self, i: &C::Index) -> C::Score {
@@ -88,25 +88,25 @@ impl<C: PeerConfig> Peer<C> {
 
 #[cfg(test)]
 mod test {
-	use super::*;
+    use super::*;
 
-	#[derive(Clone, Debug, PartialEq)]
-	struct TestConfig {
-		index: usize,
-		score: f64,
-	}
+    #[derive(Clone, Debug, PartialEq)]
+    struct TestConfig {
+        index: usize,
+        score: f64,
+    }
 
-	impl PeerConfig for TestConfig {
-		type Index = usize;
-		type Score = f64;
-	}
+    impl PeerConfig for TestConfig {
+        type Index = usize;
+        type Score = f64;
+    }
 
-	#[test]
-	fn test_peer_new() {
-		let mut peer = Peer::<TestConfig>::new(0, 0.0, 0.0);
-		peer.add_neighbor(Peer::new(1, 0.0, 0.0), 0.5);
-		assert_eq!(peer.get_index(), &0);
-		assert_eq!(peer.get_global_trust_score(), 0.0);
-		assert_eq!(peer.get_local_trust_score(&1), 0.5);
-	}
+    #[test]
+    fn test_peer_new() {
+        let mut peer = Peer::<TestConfig>::new(0, 0.0, 0.0);
+        peer.add_neighbor(1, 0.5);
+        assert_eq!(peer.get_index(), 0);
+        assert_eq!(peer.get_global_trust_score(), 0.0);
+        assert_eq!(peer.get_local_trust_score(&1), 0.5);
+    }
 }

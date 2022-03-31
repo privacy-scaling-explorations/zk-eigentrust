@@ -44,8 +44,8 @@ impl<C: NetworkConfig> Network<C> {
                     continue;
                 }
 
-                let peer_j = peers[j].clone();
-                peers[i].add_neighbor(peer_j, *c_ij);
+                let index = peers[j].get_index();
+                peers[i].add_neighbor(index, *c_ij);
             }
         }
 
