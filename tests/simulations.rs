@@ -8,31 +8,29 @@ impl PeerConfig for Peer {
 	type Index = usize;
 	type Score = f64;
 }
+
 struct Network4Config;
 impl NetworkConfig for Network4Config {
 	type Peer = Peer;
 	const DELTA: f64 = 0.001;
 	const SIZE: usize = 4;
+	const MAX_ITERATIONS: usize = 1000;
 }
 
 #[test]
 fn simulate_conversion_4_peers() {
+	let rng = &mut thread_rng();
 	let num_peers: usize = Network4Config::SIZE;
+
     let initial_trust_scores = vec![1f64 / num_peers as f64; num_peers as usize];
-
-    let rng = &mut thread_rng();
-
     let mc: Vec<Vec<f64>> = generate_trust_matrix(num_peers, rng);
 
-    let mut network = Network::<Network4Config>::new(initial_trust_scores);
+    let mut network = Network::<Network4Config>::bootstrap(initial_trust_scores, mc);
 
-    network.connect_peers(mc);
-
-    while !network.is_converged() {
-        network.tick(rng);
-    }
+    network.converge(rng);
 
     let global_trust_scores = network.get_global_trust_scores();
 
+	println!("is_converged: {}", network.is_converged());
     println!("{:?}", global_trust_scores);
 }

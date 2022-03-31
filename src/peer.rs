@@ -1,10 +1,10 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::Debug};
 use std::hash::Hash;
-use num::{Float, Unsigned, Zero, NumCast};
+use num::{Float, Zero, NumCast};
 
 pub trait PeerConfig: Clone {
-	type Index: Unsigned + From<usize> + Eq + Hash + Clone;
-	type Score: Float;
+	type Index: From<usize> + Eq + Hash + Clone;
+	type Score: Float + Debug;
 }
 
 #[derive(Clone, Debug)]
