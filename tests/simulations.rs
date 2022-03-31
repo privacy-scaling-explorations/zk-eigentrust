@@ -1,7 +1,7 @@
-use eigen_trust::utils::generate_trust_matrix;
 use eigen_trust::{
     network::{Network, NetworkConfig},
     peer::PeerConfig,
+    utils::generate_trust_matrix,
 };
 use rand::thread_rng;
 
