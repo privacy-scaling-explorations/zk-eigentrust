@@ -1,26 +1,26 @@
-use crate::peer::{Peer};
-use std::hash::Hash;
-use num::{Float, Unsigned};
+use crate::peer::{Peer, PeerConfig};
 use rand::RngCore;
 use num::Zero;
 use rand::prelude::SliceRandom;
 
 pub trait NetworkConfig {
-	type PeerIndex: Unsigned + From<usize> + Eq + Hash + Clone;
-	type PeerScore: Float;
+	type Peer: PeerConfig;
 	const DELTA: f64;
+	const SIZE: usize;
 }
 
 pub struct Network<C: NetworkConfig> {
-    peers: Vec<Peer<C::PeerIndex, C::PeerScore>>,
+    peers: Vec<Peer<C::Peer>>,
     is_converged: bool,
 }
 
 impl<C: NetworkConfig> Network<C> {
-    pub fn new(size: usize, initial_trust_scores: Vec<C::PeerScore>) -> Self {
-		let mut peers = Vec::with_capacity(size);
-		for x in 0..size {
-			let index = C::PeerIndex::from(x);
+    pub fn new(initial_trust_scores: Vec<<C::Peer as PeerConfig>::Score>) -> Self {
+		assert!(initial_trust_scores.len() == C::SIZE);
+
+		let mut peers = Vec::with_capacity(C::SIZE);
+		for x in 0..C::SIZE {
+			let index = <C::Peer as PeerConfig>::Index::from(x);
 			peers.push(Peer::new(index, initial_trust_scores[x as usize]));
 		}
         Self {
@@ -29,8 +29,12 @@ impl<C: NetworkConfig> Network<C> {
         }
     }
 
-    pub fn connect_peers(&mut self, local_trust_matrix: Vec<Vec<C::PeerScore>>) {
+    pub fn connect_peers(&mut self, local_trust_matrix: Vec<Vec<<C::Peer as PeerConfig>::Score>>) {
+		assert!(local_trust_matrix.len() == C::SIZE);
+
         for (i, c_i) in local_trust_matrix.iter().enumerate() {
+			assert!(c_i.len() == C::SIZE);
+
             for (j, c_ij) in c_i.iter().enumerate() {
                 if i == j {
                     continue;
@@ -55,8 +59,8 @@ impl<C: NetworkConfig> Network<C> {
         self.is_converged = is_converged;
     }
 
-    pub fn get_global_trust_scores(&self) -> Vec<C::PeerScore> {
-        let mut sum = C::PeerScore::zero();
+    pub fn get_global_trust_scores(&self) -> Vec<<C::Peer as PeerConfig>::Score> {
+        let mut sum = <C::Peer as PeerConfig>::Score::zero();
         for peer in self.peers.iter() {
             sum = sum + peer.get_ti();
         }

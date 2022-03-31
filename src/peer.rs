@@ -1,17 +1,22 @@
 use std::collections::HashMap;
 use std::hash::Hash;
-use num::traits::Float;
+use num::{Float, Unsigned, Zero, NumCast};
+
+pub trait PeerConfig: Clone {
+	type Index: Unsigned + From<usize> + Eq + Hash + Clone;
+	type Score: Float;
+}
 
 #[derive(Clone, Debug)]
-pub struct Peer<I: Eq + Hash, S: Float> {
-    index: I,
-    local_trust_values: HashMap<I, S>,
-    ti: S,
+pub struct Peer<C: PeerConfig> {
+    index: C::Index,
+    local_trust_values: HashMap<C::Index, C::Score>,
+    ti: C::Score,
     is_converged: bool,
 }
 
-impl<I: Eq + Hash, S: Float> Peer<I, S> {
-    pub fn new(index: I, initial_ti: S) -> Self {
+impl<C: PeerConfig> Peer<C> {
+    pub fn new(index: C::Index, initial_ti: C::Score) -> Self {
         Self {
             index,
             local_trust_values: HashMap::new(),
@@ -20,17 +25,17 @@ impl<I: Eq + Hash, S: Float> Peer<I, S> {
         }
     }
 
-    pub fn add_neighbor(&mut self, peer: Peer<I, S>, local_trust_value: S) {
+    pub fn add_neighbor(&mut self, peer: Peer<C>, local_trust_value: C::Score) {
         self.local_trust_values
             .insert(peer.index, local_trust_value);
     }
 
-    pub fn heartbeat(&mut self, neighbors: &Vec<Peer<I, S>>, delta: f64) {
+    pub fn heartbeat(&mut self, neighbors: &Vec<Peer<C>>, delta: f64) {
         if self.is_converged {
             return;
         }
 
-        let mut new_ti = S::zero();
+        let mut new_ti = C::Score::zero();
         for neighbor_j in neighbors.iter() {
             if &self.index == neighbor_j.get_index() {
                 continue;
@@ -46,7 +51,7 @@ impl<I: Eq + Hash, S: Float> Peer<I, S> {
         }
 
         let diff = (new_ti - self.ti).abs();
-        if diff <= S::from(delta).unwrap() {
+        if diff <= <C::Score as NumCast>::from(delta).unwrap() {
             self.is_converged = true;
         }
 
@@ -57,15 +62,15 @@ impl<I: Eq + Hash, S: Float> Peer<I, S> {
         self.is_converged
     }
 
-    pub fn get_ti(&self) -> S {
+    pub fn get_ti(&self) -> C::Score {
         self.ti
     }
 
-	pub fn get_index(&self) -> &I {
+	pub fn get_index(&self) -> &C::Index {
         &self.index
     }
 
-    pub fn get_local_trust_value(&self, i: &I) -> S {
+    pub fn get_local_trust_value(&self, i: &C::Index) -> C::Score {
         self.local_trust_values[i]
     }
 }
