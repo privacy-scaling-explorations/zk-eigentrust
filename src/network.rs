@@ -1,62 +1,89 @@
-use rand::Rng;
-use rand::{prelude::SliceRandom, RngCore};
+use crate::peer::{Peer, PeerConfig};
+use num::Zero;
+use rand::prelude::SliceRandom;
+use rand::RngCore;
 
-use crate::peer::{Peer, PeerIndex, PeerScore};
+pub trait NetworkConfig {
+    type Peer: PeerConfig;
+    const DELTA: f64;
+    const SIZE: usize;
+    const MAX_ITERATIONS: usize;
+    const PRETRUST_WEIGHT: f64;
+}
 
-type TMatrix = Vec<Vec<PeerScore>>;
-type TVector = Vec<PeerScore>;
-
-pub struct Network {
-    peers: Vec<Peer>,
+pub struct Network<C: NetworkConfig> {
+    peers: Vec<Peer<C::Peer>>,
     is_converged: bool,
 }
 
-impl Network {
-    pub fn new(size: PeerIndex, initial_trust_scores: TVector) -> Self {
-        let peers = (0..size)
-            .map(|x| Peer::new(x, initial_trust_scores[x as usize]))
-            .collect();
+impl<C: NetworkConfig> Network<C> {
+    pub fn bootstrap(
+        pre_trust_scores: Vec<<C::Peer as PeerConfig>::Score>,
+        global_trust_scores: Vec<<C::Peer as PeerConfig>::Score>,
+        local_trust_scores: Vec<Vec<<C::Peer as PeerConfig>::Score>>,
+    ) -> Self {
+        assert!(pre_trust_scores.len() == C::SIZE);
+        assert!(global_trust_scores.len() == C::SIZE);
+        assert!(local_trust_scores.len() == C::SIZE);
+
+        let mut peers = Vec::with_capacity(C::SIZE);
+        for x in 0..C::SIZE {
+            let index = <C::Peer as PeerConfig>::Index::from(x);
+            peers.push(Peer::new(
+                index,
+                global_trust_scores[x as usize],
+                pre_trust_scores[x as usize],
+            ));
+        }
+
+        for (i, c_i) in local_trust_scores.iter().enumerate() {
+            assert!(c_i.len() == C::SIZE);
+
+            for (j, c_ij) in c_i.iter().enumerate() {
+                if i == j {
+                    continue;
+                }
+
+                let index = peers[j].get_index();
+                peers[i].add_neighbor(index, *c_ij);
+            }
+        }
+
         Self {
             peers,
             is_converged: false,
         }
     }
 
-    pub fn connect_peers(&mut self, local_trust_matrix: TMatrix) {
-        for (i, c_i) in local_trust_matrix.iter().enumerate() {
-            for (j, c_ij) in c_i.iter().enumerate() {
-                if i == j {
-                    continue;
-                }
+    pub fn converge<R: RngCore>(&mut self, rng: &mut R) {
+        let mut temp_peers = self.peers.clone();
+        temp_peers.shuffle(rng);
 
-                let peer_j = self.peers[j].clone();
-                self.peers[i].add_neighbor(peer_j, *c_ij);
+        for _ in 0..C::MAX_ITERATIONS {
+            let mut is_everyone_converged = true;
+            for peer in temp_peers.iter_mut() {
+                peer.heartbeat(&self.peers, C::DELTA, C::PRETRUST_WEIGHT);
+                is_everyone_converged = is_everyone_converged && peer.is_converged();
+            }
+
+            if is_everyone_converged {
+                self.is_converged = true;
+                break;
             }
         }
-    }
 
-    pub fn tick<R: RngCore>(&mut self, rng: &mut R) {
-        let mut temp_peers = self.peers.clone();
-        // temp_peers.shuffle(rng);
-
-        let mut is_converged = true;
-        for peer in temp_peers.iter_mut() {
-            peer.heartbeat(&self.peers);
-            is_converged = is_converged && peer.is_converged();
-        }
         self.peers = temp_peers;
-        self.is_converged = is_converged;
     }
 
-    pub fn get_global_trust_scores(&self) -> TVector {
-        let mut sum = 0.;
+    pub fn get_global_trust_scores(&self) -> Vec<<C::Peer as PeerConfig>::Score> {
+        let mut sum = <C::Peer as PeerConfig>::Score::zero();
         for peer in self.peers.iter() {
-            sum += peer.get_ti();
+            sum = sum + peer.get_global_trust_score();
         }
 
         let mut ti_vec = Vec::new();
         for peer in self.peers.iter() {
-            ti_vec.push(peer.get_ti() / sum);
+            ti_vec.push(peer.get_global_trust_score() / sum);
         }
 
         ti_vec
@@ -65,22 +92,4 @@ impl Network {
     pub fn is_converged(&self) -> bool {
         self.is_converged
     }
-}
-
-pub fn generate_trust_matrix<R: Rng>(num_peers: PeerIndex, rng: &mut R) -> TMatrix {
-    let mut matrix = Vec::new();
-    for i in 0..num_peers {
-        let vals: Vec<PeerScore> = (0..num_peers - 1)
-            .map(|_| rng.gen_range(0.0..32.))
-            .collect();
-        let sum: PeerScore = vals.iter().sum();
-
-        let mut normalized: Vec<PeerScore> = vals.iter().map(|x| x / sum).collect();
-
-        normalized.insert(i as usize, 0.);
-
-        matrix.push(normalized);
-    }
-
-    matrix
 }
