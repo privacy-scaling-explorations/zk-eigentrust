@@ -1,41 +1,46 @@
-use std::{collections::HashMap, fmt::Debug};
+use num::One;
+use num::{Float, NumCast, Zero};
 use std::hash::Hash;
-use num::{Float, Zero, NumCast};
+use std::{collections::HashMap, fmt::Debug};
 
 pub trait PeerConfig: Clone {
-	type Index: From<usize> + Eq + Hash + Clone;
-	type Score: Float + Debug;
+    type Index: From<usize> + Eq + Hash + Clone;
+    type Score: Float + Debug;
 }
 
 #[derive(Clone, Debug)]
 pub struct Peer<C: PeerConfig> {
     index: C::Index,
-    local_trust_values: HashMap<C::Index, C::Score>,
-    ti: C::Score,
+    local_trust_scores: HashMap<C::Index, C::Score>,
+    global_trust_score: C::Score,
+    pre_trust_score: C::Score,
     is_converged: bool,
 }
 
 impl<C: PeerConfig> Peer<C> {
-    pub fn new(index: C::Index, initial_ti: C::Score) -> Self {
+    pub fn new(index: C::Index, global_trust_score: C::Score, pre_trust_score: C::Score) -> Self {
         Self {
             index,
-            local_trust_values: HashMap::new(),
-            ti: initial_ti,
+            local_trust_scores: HashMap::new(),
+            global_trust_score,
+            pre_trust_score,
             is_converged: false,
         }
     }
 
     pub fn add_neighbor(&mut self, peer: Peer<C>, local_trust_value: C::Score) {
-        self.local_trust_values
+        self.local_trust_scores
             .insert(peer.index, local_trust_value);
     }
 
-    pub fn heartbeat(&mut self, neighbors: &Vec<Peer<C>>, delta: f64) {
+    pub fn heartbeat(&mut self, neighbors: &Vec<Peer<C>>, delta: f64, pre_trust_weight: f64) {
         if self.is_converged {
             return;
         }
 
-        let mut new_ti = C::Score::zero();
+        let pre_trust_weight_casted = <C::Score as NumCast>::from(pre_trust_weight).unwrap();
+
+        let mut new_global_trust_score = C::Score::zero();
         for neighbor_j in neighbors.iter() {
             if &self.index == neighbor_j.get_index() {
                 continue;
@@ -47,30 +52,36 @@ impl<C: PeerConfig> Peer<C> {
             // This means that neighbors' opinion about peer i is weighted by their global trust score.
             // If a neighbor has a low trust score (is not trusted by the network),
             // their opinion is not taken seriously, compared to neighbors with a high trust score.
-            new_ti = new_ti + neighbor_j.get_local_trust_value(&self.index) * neighbor_j.get_ti();
+            let neighbor_opinion =
+                neighbor_j.get_local_trust_score(&self.index) * neighbor_j.get_global_trust_score();
+            let new_score = new_global_trust_score + neighbor_opinion;
+            let new_weighted_score = (C::Score::one() - self.pre_trust_score) * new_score
+                + pre_trust_weight_casted * self.pre_trust_score;
+
+            new_global_trust_score = new_weighted_score;
         }
 
-        let diff = (new_ti - self.ti).abs();
+        let diff = (new_global_trust_score - self.global_trust_score).abs();
         if diff <= <C::Score as NumCast>::from(delta).unwrap() {
             self.is_converged = true;
         }
 
-        self.ti = new_ti;
+        self.global_trust_score = new_global_trust_score;
     }
 
     pub fn is_converged(&self) -> bool {
         self.is_converged
     }
 
-    pub fn get_ti(&self) -> C::Score {
-        self.ti
+    pub fn get_global_trust_score(&self) -> C::Score {
+        self.global_trust_score
     }
 
-	pub fn get_index(&self) -> &C::Index {
+    pub fn get_index(&self) -> &C::Index {
         &self.index
     }
 
-    pub fn get_local_trust_value(&self, i: &C::Index) -> C::Score {
-        self.local_trust_values[i]
+    pub fn get_local_trust_score(&self, i: &C::Index) -> C::Score {
+        self.local_trust_scores[i]
     }
 }
