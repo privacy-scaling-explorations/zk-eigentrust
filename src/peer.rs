@@ -1,5 +1,5 @@
 /// The module for peer management. It contains the functionality for creating a peer,
-/// adding local trust scores and calculating the global global trust score.
+/// adding local trust scores, and calculating the global trust score.
 use num::One;
 use num::{Float, NumCast, Zero};
 use std::hash::Hash;
@@ -21,9 +21,9 @@ pub struct Peer<C: PeerConfig> {
     local_trust_scores: HashMap<C::Index, C::Score>,
     /// Global trust score of the peer.
     global_trust_score: C::Score,
-    /// Pre trust score of the peer.
+    /// Pre-trust score of the peer.
     pre_trust_score: C::Score,
-    /// Did the peer converge.
+    /// Did the peer converge?
     is_converged: bool,
 }
 

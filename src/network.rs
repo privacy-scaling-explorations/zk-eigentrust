@@ -1,5 +1,5 @@
-//! The module for the higher level network functions. It contains the functionality for creating peers,
-//! bootstrapping the networks, and interactions between peers.
+//! The module for the higher-level network functions.
+//! It contains the functionality for creating peers, bootstrapping the networks, and interactions between peers.
 
 use crate::peer::{Peer, PeerConfig};
 use num::Zero;
@@ -12,7 +12,7 @@ pub trait NetworkConfig {
     type Peer: PeerConfig;
     /// The minimum change in global score from last iteration.
     const DELTA: f64;
-    /// Number of peers in the network.
+    /// A number of peers in the network.
     const SIZE: usize;
     /// Maximum iterations for the main loop to avoid infinite loop.
     const MAX_ITERATIONS: usize;
@@ -21,7 +21,7 @@ pub trait NetworkConfig {
     const PRETRUST_WEIGHT: f64;
 }
 
-/// The struct containing all the peers and other metadata.
+/// The struct contains all the peers and other metadata.
 pub struct Network<C: NetworkConfig> {
     /// The peers in the network.
     peers: Vec<Peer<C::Peer>>,
@@ -30,7 +30,7 @@ pub struct Network<C: NetworkConfig> {
 }
 
 impl<C: NetworkConfig> Network<C> {
-    /// Bootstraps the network. It creates the peers and initializes their local, global, and pre trust scores.
+    /// Bootstraps the network. It creates the peers and initializes their local, global, and pre-trust scores.
     pub fn bootstrap(
         // Pre-trust scores of the peers. It is used in combination with the pre-trust weight.
         pre_trust_scores: Vec<<C::Peer as PeerConfig>::Score>,
@@ -55,7 +55,7 @@ impl<C: NetworkConfig> Network<C> {
             ));
         }
 
-        // Initializing the local trust scores for peer i towards peer j.
+        // Initializing the local trust scores for peer `i` towards peer `j`.
         for (i, c_i) in local_trust_scores.iter().enumerate() {
             // TODO: Return proper error.
             assert!(c_i.len() == C::SIZE);
@@ -79,7 +79,7 @@ impl<C: NetworkConfig> Network<C> {
     /// The main loop of the network. It iterates until the network converges
     /// or the maximum number of iterations is reached.
     pub fn converge<R: RngCore>(&mut self, rng: &mut R) {
-        // We are shuffling the peers so that we can iterate over them in a random order.
+        // We are shuffling the peers so that we can iterate over them in random order.
         // TODO: Explain why this is necessary.
         let mut temp_peers = self.peers.clone();
         temp_peers.shuffle(rng);

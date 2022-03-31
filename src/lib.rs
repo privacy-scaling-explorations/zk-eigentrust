@@ -20,8 +20,8 @@
 //!     peer::PeerConfig,
 //! };
 //! use rand::thread_rng;
-//! 
-//! 
+//!
+//!
 //! // Configure the peer.
 //! #[derive(Clone, Copy, Debug)]
 //! struct Peer;
@@ -39,7 +39,7 @@
 //!     const MAX_ITERATIONS: usize = 1000;
 //!     const PRETRUST_WEIGHT: f64 = 0.5;
 //! }
-//! 
+//!
 //! let rng = &mut thread_rng();
 //! let num_peers: usize = Network4Config::SIZE;
 //!
@@ -61,17 +61,17 @@
 //! println!("{:?}", global_trust_scores);
 //! ```
 //! ## Implementation
-//! The library is implemented accourding to the original [Eigen Trust paper](http://ilpubs.stanford.edu:8090/562/1/2002-56.pdf).
+//! The library is implemented according to the original [Eigen Trust paper](http://ilpubs.stanford.edu:8090/562/1/2002-56.pdf).
 //! It is developed under the Ethereum Foundation grant.
 //!
 //! NOTE: This library is still in development. Use at your own risk.
 
-/// The module for the higher level network functions. It contains the functionality for creating peers,
-/// bootstrapping the networks, and interactions between peers.
+/// The module for the higher-level network functions.
+/// It contains the functionality for creating peers, bootstrapping the networks, and interactions between peers.
 pub mod network;
 
 /// The module for peer management. It contains the functionality for creating a peer,
-/// adding local trust scores and calculating the global global trust score.
+/// adding local trust scores, and calculating the global trust score.
 pub mod peer;
 
 /// The module for utility functions.

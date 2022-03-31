@@ -6,7 +6,7 @@ pub fn generate_trust_matrix<R: Rng, S: Float>(num_peers: usize, rng: &mut R) ->
     let mut matrix = Vec::new();
     for i in 0..num_peers {
         // Generate a random vector of trust values and add it to the matrix.
-        // Also calculate the sum.
+        // Also, calculate the sum.
         let mut sum = S::zero();
         let vals: Vec<S> = (0..num_peers - 1)
             .map(|_| {
