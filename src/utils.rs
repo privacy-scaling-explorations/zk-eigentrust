@@ -12,6 +12,8 @@ pub fn generate_trust_matrix<R: Rng, S: FloatCore>(num_peers: usize, rng: &mut R
 		let vals: Vec<S> = (0..num_peers - 1)
 			.map(|_| {
 				let rnd_score: f64 = rng.gen_range(0.0..32.);
+				// TODO: Remove this unwrap.
+				#[allow(clippy::unwrap_used)]
 				let score = S::from(rnd_score).unwrap();
 				sum = sum + score;
 				score

@@ -1,8 +1,8 @@
-use ark_std::{collections::BTreeMap, fmt::Debug, hash::Hash, vec::Vec};
-/// The module for peer management. It contains the functionality for creating a
-/// peer, adding local trust scores, and calculating the global trust score.
-use num::One;
-use num::{traits::float::FloatCore, NumCast, Zero};
+//! The module for peer management. It contains the functionality for creating a
+//! peer, adding local trust scores, and calculating the global trust score.
+
+use ark_std::{collections::BTreeMap, fmt::Debug, hash::Hash};
+use num::{traits::float::FloatCore, NumCast, One, Zero};
 
 /// Configuration trait for the peer.
 pub trait PeerConfig: Clone {
@@ -46,11 +46,13 @@ impl<C: PeerConfig> Peer<C> {
 	}
 
 	/// Calculate the global trust score.
-	pub fn heartbeat(&mut self, neighbors: &Vec<Peer<C>>, delta: f64, pre_trust_weight: f64) {
+	pub fn heartbeat(&mut self, neighbors: &[Peer<C>], delta: f64, pre_trust_weight: f64) {
 		if self.is_converged {
 			return;
 		}
 
+		// TODO: Remove this unwrap.
+		#[allow(clippy::unwrap_used)]
 		let pre_trust_weight_casted = <C::Score as NumCast>::from(pre_trust_weight).unwrap();
 
 		let mut new_global_trust_score = C::Score::zero();
@@ -80,6 +82,8 @@ impl<C: PeerConfig> Peer<C> {
 		// Converge if the difference between the new and old global trust score is less
 		// than delta.
 		let diff = (new_global_trust_score - self.global_trust_score).abs();
+		// TODO: Remove this unwrap.
+		#[allow(clippy::unwrap_used)]
 		if diff <= <C::Score as NumCast>::from(delta).unwrap() {
 			self.is_converged = true;
 		}

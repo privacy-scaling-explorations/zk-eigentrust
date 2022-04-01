@@ -72,6 +72,7 @@
 //! NOTE: This library is still in development. Use at your own risk.
 
 #![cfg_attr(not(feature = "std"), no_std)]
+#![allow(clippy::tabs_in_doc_comments)]
 #![deny(
 	unused,
 	warnings,
