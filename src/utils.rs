@@ -1,8 +1,9 @@
-use num::Float;
+use ark_std::vec::Vec;
+use num::traits::float::FloatCore;
 use rand::Rng;
 
 /// A function for generating random local trust values.
-pub fn generate_trust_matrix<R: Rng, S: Float>(num_peers: usize, rng: &mut R) -> Vec<Vec<S>> {
+pub fn generate_trust_matrix<R: Rng, S: FloatCore>(num_peers: usize, rng: &mut R) -> Vec<Vec<S>> {
 	let mut matrix = Vec::new();
 	for i in 0..num_peers {
 		// Generate a random vector of trust values and add it to the matrix.

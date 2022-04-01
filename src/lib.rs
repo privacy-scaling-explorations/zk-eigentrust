@@ -71,6 +71,7 @@
 //!
 //! NOTE: This library is still in development. Use at your own risk.
 
+#![cfg_attr(not(feature = "std"), no_std)]
 #![deny(
 	unused,
 	warnings,
@@ -84,6 +85,9 @@
 	clippy::unwrap_used
 )]
 #![forbid(unsafe_code)]
+
+#[macro_use]
+extern crate ark_std;
 
 /// The module for the higher-level network functions.
 /// It contains the functionality for creating peers, bootstrapping the

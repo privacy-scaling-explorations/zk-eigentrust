@@ -1,15 +1,15 @@
+use ark_std::{collections::BTreeMap, fmt::Debug, hash::Hash, vec::Vec};
 /// The module for peer management. It contains the functionality for creating a
 /// peer, adding local trust scores, and calculating the global trust score.
 use num::One;
-use num::{Float, NumCast, Zero};
-use std::{collections::HashMap, fmt::Debug, hash::Hash};
+use num::{traits::float::FloatCore, NumCast, Zero};
 
 /// Configuration trait for the peer.
 pub trait PeerConfig: Clone {
 	/// Unique identifier type for the peer.
-	type Index: From<usize> + Eq + Hash + Clone;
+	type Index: From<usize> + Eq + Hash + Clone + Ord;
 	/// Score type.
-	type Score: Float + Debug;
+	type Score: FloatCore + Debug;
 }
 
 /// Peer structure.
@@ -18,7 +18,7 @@ pub struct Peer<C: PeerConfig> {
 	/// The unique identifier of the peer.
 	index: C::Index,
 	/// Local trust scores of the peer towards other peers.
-	local_trust_scores: HashMap<C::Index, C::Score>,
+	local_trust_scores: BTreeMap<C::Index, C::Score>,
 	/// Global trust score of the peer.
 	global_trust_score: C::Score,
 	/// Pre-trust score of the peer.
@@ -32,7 +32,7 @@ impl<C: PeerConfig> Peer<C> {
 	pub fn new(index: C::Index, global_trust_score: C::Score, pre_trust_score: C::Score) -> Self {
 		Self {
 			index,
-			local_trust_scores: HashMap::new(),
+			local_trust_scores: BTreeMap::new(),
 			global_trust_score,
 			pre_trust_score,
 			is_converged: false,

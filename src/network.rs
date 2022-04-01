@@ -3,8 +3,9 @@
 //! networks, and interactions between peers.
 
 use crate::peer::{Peer, PeerConfig};
+use ark_std::vec::Vec;
 use num::Zero;
-use rand::{prelude::SliceRandom, RngCore};
+use rand::prelude::{RngCore, SliceRandom};
 
 /// The network configuration trait.
 pub trait NetworkConfig {
@@ -80,9 +81,9 @@ impl<C: NetworkConfig> Network<C> {
 	/// The main loop of the network. It iterates until the network converges
 	/// or the maximum number of iterations is reached.
 	pub fn converge<R: RngCore>(&mut self, rng: &mut R) {
+		let mut temp_peers = self.peers.clone();
 		// We are shuffling the peers so that we can iterate over them in random order.
 		// TODO: Explain why this is necessary.
-		let mut temp_peers = self.peers.clone();
 		temp_peers.shuffle(rng);
 
 		for _ in 0..C::MAX_ITERATIONS {
