@@ -13,6 +13,7 @@ pub trait PeerConfig: Clone {
     type Score: Float + Debug;
 }
 
+/// Peer structure.
 #[derive(Clone, Debug)]
 pub struct Peer<C: PeerConfig> {
     /// The unique identifier of the peer.

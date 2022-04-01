@@ -66,6 +66,20 @@
 //!
 //! NOTE: This library is still in development. Use at your own risk.
 
+#![deny(
+    unused,
+    warnings,
+    future_incompatible,
+    nonstandard_style,
+    missing_docs,
+    dead_code,
+    deprecated,
+    unreachable_code,
+    unreachable_patterns,
+    clippy::unwrap_used
+)]
+#![forbid(unsafe_code)]
+
 /// The module for the higher-level network functions.
 /// It contains the functionality for creating peers, bootstrapping the networks, and interactions between peers.
 pub mod network;
