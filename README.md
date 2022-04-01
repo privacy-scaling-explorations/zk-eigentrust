@@ -17,7 +17,7 @@ To build the project:
 ./scripts/build.sh
 ```
 
-To build the project for wasm target:
+To build the project for the wasm target:
 ```bash
 ./scripts/build-wasm.sh
 ```
