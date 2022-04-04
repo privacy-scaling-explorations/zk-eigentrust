@@ -88,8 +88,13 @@ impl<C: PeerConfig> Peer<C> {
 			// trust score. If a neighbor has a low trust score (is not trusted by the
 			// network), their opinion is not taken seriously, compared to neighbors with a
 			// high trust score.
-			let neighbor_opinion =
-				neighbor_j.get_local_trust_score(&self.index) * neighbor_j.get_global_trust_score();
+			let mut trust_score = neighbor_j.get_local_trust_score(&self.index);
+			// If the trust score is NaN (due to division by 0, see
+			// `get_local_trust_score`), we use the pre-trust score of that neighbor.
+			if trust_score.is_nan() {
+				trust_score = neighbor_j.get_pre_trust_score();
+			}
+			let neighbor_opinion = trust_score * neighbor_j.get_global_trust_score();
 			new_global_trust_score += neighbor_opinion;
 		}
 
@@ -132,20 +137,16 @@ impl<C: PeerConfig> Peer<C> {
 
 	/// Get the local trust score of the peer towards another peer.
 	pub fn get_local_trust_score(&self, i: &C::Index) -> f64 {
-		// Take the score
+		// Take the score or default to 0.
 		let score = self.transaction_scores.get(i).unwrap_or(&0);
 		// Take the sum
 		let sum = self.transaction_scores_sum;
 		// Calculate normalized score
-		let mut normalized_score = (*score as f64) / sum as f64;
-
+		// NOTE:
 		// If a peer didn't have any transactions towards other peers,
 		// the sum will be zero, which will cause a division by zero.
-		if normalized_score.is_nan() {
-			normalized_score = f64::zero();
-		}
-
-		normalized_score
+		// Resulting in NaN.
+		f64::from(*score) / f64::from(sum)
 	}
 }
 
