@@ -19,7 +19,7 @@
 //! ```rust
 //! use eigen_trust::{
 //! 	network::{Network, NetworkConfig},
-//! 	peer::PeerConfig,
+//! 	peer::{PeerConfig, TransactionRating},
 //! 	utils::generate_trust_matrix,
 //! };
 //! use rand::thread_rng;
@@ -51,10 +51,13 @@
 //!
 //! let default_score = 1. / num_peers as f64;
 //! let initial_trust_scores = vec![default_score; num_peers];
-//! let mc: Vec<Vec<f64>> = generate_trust_matrix(num_peers, rng);
 //!
 //! let mut network =
-//! 	Network::<Network4Config>::bootstrap(pre_trust_scores, initial_trust_scores, mc).unwrap();
+//! 	Network::<Network4Config>::bootstrap(pre_trust_scores, initial_trust_scores).unwrap();
+//! 
+//! network.mock_transaction(0, 1, TransactionRating::Positive).unwrap();
+//! network.mock_transaction(1, 0, TransactionRating::Positive).unwrap();
+//! network.mock_transaction(2, 3, TransactionRating::Positive).unwrap();
 //!
 //! network.converge(rng);
 //!
@@ -105,6 +108,6 @@ pub enum EigenError {
 	InvalidPreTrustScores,
 	/// Invalid global trust scores passed
 	InvalidGlobalTrustScores,
-	/// Invalid local trust scores passed
-	InvalidLocalTrustScores,
+	/// Peer not found in the network or peer cache
+	PeerNotFound,
 }

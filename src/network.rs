@@ -3,7 +3,7 @@
 //! networks, and interactions between peers.
 
 use crate::{
-	peer::{Peer, PeerConfig},
+	peer::{Peer, PeerConfig, TransactionRating},
 	EigenError,
 };
 use ark_std::{vec::Vec, Zero};
@@ -40,8 +40,6 @@ impl<C: NetworkConfig> Network<C> {
 		pre_trust_scores: Vec<f64>,
 		// Initial global trust scores for each peer in the network.
 		global_trust_scores: Vec<f64>,
-		// Initial local trust scores for each peer in the network towards other peers.
-		local_trust_scores: Vec<Vec<f64>>,
 	) -> Result<Self, EigenError> {
 		// TODO: Return proper errors.
 		if pre_trust_scores.len() != C::SIZE {
@@ -49,9 +47,6 @@ impl<C: NetworkConfig> Network<C> {
 		}
 		if global_trust_scores.len() != C::SIZE {
 			return Err(EigenError::InvalidGlobalTrustScores);
-		}
-		if local_trust_scores.len() != C::SIZE {
-			return Err(EigenError::InvalidLocalTrustScores);
 		}
 
 		let mut peers = Vec::with_capacity(C::SIZE);
@@ -65,26 +60,20 @@ impl<C: NetworkConfig> Network<C> {
 			));
 		}
 
-		// Initializing the local trust scores for peer `i` towards peer `j`.
-		for (i, c_i) in local_trust_scores.iter().enumerate() {
-			if c_i.len() != C::SIZE {
-				return Err(EigenError::InvalidLocalTrustScores);
-			}
-
-			for (j, c_ij) in c_i.iter().enumerate() {
-				if i == j {
-					continue;
-				}
-
-				let index = peers[j].get_index();
-				peers[i].add_neighbor(index, *c_ij);
-			}
-		}
-
 		Ok(Self {
 			peers,
 			is_converged: false,
 		})
+	}
+
+	/// Mock the transaction beetween peer `i` and `j`.
+	pub fn mock_transaction(&mut self, i: usize, j: usize, rating: TransactionRating) -> Result<(), EigenError> {
+		let peer = self.peers.get_mut(i).ok_or(EigenError::PeerNotFound)?;
+
+		let peer_index = <C::Peer as PeerConfig>::Index::from(j);
+		peer.mock_rate_transaction(peer_index, rating);
+
+		Ok(())
 	}
 
 	/// The main loop of the network. It iterates until the network converges

@@ -9,13 +9,23 @@ pub trait PeerConfig: Clone {
 	type Index: From<usize> + Eq + Hash + Clone + Ord;
 }
 
+/// Options for rating a transaction by a peer.
+pub enum TransactionRating {
+	/// Positive rating.
+    Positive,
+	/// Negative rating.
+    Negative,
+}
+
 /// Peer structure.
 #[derive(Clone, Debug)]
 pub struct Peer<C: PeerConfig> {
 	/// The unique identifier of the peer.
 	index: C::Index,
-	/// Local trust scores of the peer towards other peers.
-	local_trust_scores: BTreeMap<C::Index, f64>,
+	/// Transaction scores of the peer towards other peers.
+	transaction_scores: BTreeMap<C::Index, u32>,
+	/// Sum of all transaction scores.
+	transaction_scores_sum: u32,
 	/// Global trust score of the peer.
 	global_trust_score: f64,
 	/// Pre-trust score of the peer.
@@ -29,17 +39,33 @@ impl<C: PeerConfig> Peer<C> {
 	pub fn new(index: C::Index, global_trust_score: f64, pre_trust_score: f64) -> Self {
 		Self {
 			index,
-			local_trust_scores: BTreeMap::new(),
+			transaction_scores: BTreeMap::new(),
+			transaction_scores_sum: 0,
 			global_trust_score,
 			pre_trust_score,
 			is_converged: false,
 		}
 	}
 
-	/// Add a local trust score towards another peer.
-	pub fn add_neighbor(&mut self, peer_index: C::Index, local_trust_value: f64) {
-		self.local_trust_scores
-			.insert(peer_index, local_trust_value);
+	/// Function for mocking a transction rating.
+	pub fn mock_rate_transaction(&mut self, i: C::Index, rating: TransactionRating) {
+		// Insert a 0 if entry does not exist.
+		if !self.transaction_scores.contains_key(&i) {
+			self.transaction_scores.insert(i.clone(), 0);
+		}
+		// Get the old score
+		let score = self.transaction_scores[&i];
+		let sum = self.transaction_scores_sum;
+		// Calculate the new score, but dont go below zero
+		let (new_score, new_sum) = match rating {
+			TransactionRating::Positive => (score + 1, sum + 1),
+			TransactionRating::Negative if score > 0 => (score - 1, sum - 1),
+			_ => (score, sum),
+		};
+		// Set the new score
+		self.transaction_scores.insert(i, new_score);
+		// Update the sum
+		self.transaction_scores_sum = new_sum;
 	}
 
 	/// Calculate the global trust score.
@@ -106,7 +132,20 @@ impl<C: PeerConfig> Peer<C> {
 
 	/// Get the local trust score of the peer towards another peer.
 	pub fn get_local_trust_score(&self, i: &C::Index) -> f64 {
-		self.local_trust_scores[i]
+		// Take the score
+		let score = self.transaction_scores.get(i).unwrap_or(&0);
+		// Take the sum
+		let sum = self.transaction_scores_sum;
+		// Calculate normalized score
+		let mut normalized_score = (*score as f64) / sum as f64;
+
+		// If a peer didn't have any transactions towards other peers,
+		// the sum will be zero, which will cause a division by zero.
+		if normalized_score.is_nan() {
+			normalized_score = f64::zero();
+		}
+
+		normalized_score
 	}
 }
 
@@ -123,7 +162,8 @@ mod test {
 	#[test]
 	fn test_peer_new() {
 		let mut peer = Peer::<TestConfig>::new(0, 0.0, 0.4);
-		peer.add_neighbor(1, 0.5);
+		peer.mock_rate_transaction(1, TransactionRating::Positive);
+		peer.mock_rate_transaction(2, TransactionRating::Positive);
 		assert_eq!(peer.get_index(), 0);
 		assert_eq!(peer.get_pre_trust_score(), 0.4);
 		assert_eq!(peer.get_global_trust_score(), 0.0);

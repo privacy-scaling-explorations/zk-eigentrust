@@ -3,8 +3,7 @@
 
 use eigen_trust::{
 	network::{Network, NetworkConfig},
-	peer::PeerConfig,
-	utils::generate_trust_matrix,
+	peer::{PeerConfig, TransactionRating},
 };
 use rand::thread_rng;
 
@@ -35,10 +34,24 @@ fn simulate_conversion_4_peers() {
 
 	let default_score = 1. / num_peers as f64;
 	let initial_trust_scores = vec![default_score; num_peers];
-	let mc: Vec<Vec<f64>> = generate_trust_matrix(num_peers, rng);
 
 	let mut network =
-		Network::<Network4Config>::bootstrap(pre_trust_scores, initial_trust_scores, mc).unwrap();
+		Network::<Network4Config>::bootstrap(pre_trust_scores, initial_trust_scores).unwrap();
+
+	// Mock transactions from peer 0 to the rest of the peers.
+	network.mock_transaction(0, 1, TransactionRating::Positive).unwrap();
+	network.mock_transaction(0, 2, TransactionRating::Positive).unwrap();
+	network.mock_transaction(0, 3, TransactionRating::Positive).unwrap();
+
+	// Mock transactions from peer 1 to the rest of the peers.
+	network.mock_transaction(1, 0, TransactionRating::Positive).unwrap();
+	network.mock_transaction(1, 2, TransactionRating::Positive).unwrap();
+	network.mock_transaction(1, 3, TransactionRating::Positive).unwrap();
+
+	// Mock transactions from peer 2 to the rest of the peers.
+	network.mock_transaction(2, 0, TransactionRating::Positive).unwrap();
+	network.mock_transaction(2, 1, TransactionRating::Positive).unwrap();
+	network.mock_transaction(2, 3, TransactionRating::Positive).unwrap();
 
 	network.converge(rng);
 
