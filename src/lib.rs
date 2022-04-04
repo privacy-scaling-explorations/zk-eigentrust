@@ -29,7 +29,6 @@
 //! struct Peer;
 //! impl PeerConfig for Peer {
 //! 	type Index = usize;
-//! 	type Score = f64;
 //! }
 //!
 //! // Configure the network.
@@ -50,13 +49,12 @@
 //! pre_trust_scores[0] = 0.5;
 //! pre_trust_scores[1] = 0.5;
 //!
-//! let default_score =
-//! 	1. / <<Network4Config as NetworkConfig>::Peer as PeerConfig>::Score::from(num_peers as f64);
+//! let default_score = 1. / num_peers as f64;
 //! let initial_trust_scores = vec![default_score; num_peers];
 //! let mc: Vec<Vec<f64>> = generate_trust_matrix(num_peers, rng);
 //!
 //! let mut network =
-//! 	Network::<Network4Config>::bootstrap(pre_trust_scores, initial_trust_scores, mc);
+//! 	Network::<Network4Config>::bootstrap(pre_trust_scores, initial_trust_scores, mc).unwrap();
 //!
 //! network.converge(rng);
 //!
@@ -83,12 +81,10 @@
 	deprecated,
 	unreachable_code,
 	unreachable_patterns,
-	clippy::unwrap_used
+	clippy::unwrap_used,
+	clippy::panic
 )]
 #![forbid(unsafe_code)]
-
-#[macro_use]
-extern crate ark_std;
 
 /// The module for the higher-level network functions.
 /// It contains the functionality for creating peers, bootstrapping the
@@ -101,3 +97,14 @@ pub mod peer;
 
 /// The module for utility functions.
 pub mod utils;
+
+/// The module wide error variants.
+#[derive(Debug)]
+pub enum EigenError {
+	/// Invalid pre trust scores passed
+	InvalidPreTrustScores,
+	/// Invalid global trust scores passed
+	InvalidGlobalTrustScores,
+	/// Invalid local trust scores passed
+	InvalidLocalTrustScores,
+}

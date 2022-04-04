@@ -1,15 +1,12 @@
 //! The module for peer management. It contains the functionality for creating a
 //! peer, adding local trust scores, and calculating the global trust score.
 
-use ark_std::{collections::BTreeMap, fmt::Debug, hash::Hash};
-use num::{traits::float::FloatCore, NumCast, One, Zero};
+use ark_std::{collections::BTreeMap, fmt::Debug, hash::Hash, One, Zero};
 
-/// Configuration trait for the peer.
+/// Configuration trait for the Peer.
 pub trait PeerConfig: Clone {
-	/// Unique identifier type for the peer.
+	/// Type for the Peer index.
 	type Index: From<usize> + Eq + Hash + Clone + Ord;
-	/// Score type.
-	type Score: FloatCore + Debug;
 }
 
 /// Peer structure.
@@ -18,18 +15,18 @@ pub struct Peer<C: PeerConfig> {
 	/// The unique identifier of the peer.
 	index: C::Index,
 	/// Local trust scores of the peer towards other peers.
-	local_trust_scores: BTreeMap<C::Index, C::Score>,
+	local_trust_scores: BTreeMap<C::Index, f64>,
 	/// Global trust score of the peer.
-	global_trust_score: C::Score,
+	global_trust_score: f64,
 	/// Pre-trust score of the peer.
-	pre_trust_score: C::Score,
+	pre_trust_score: f64,
 	/// Did the peer converge?
 	is_converged: bool,
 }
 
 impl<C: PeerConfig> Peer<C> {
 	/// Create a new peer.
-	pub fn new(index: C::Index, global_trust_score: C::Score, pre_trust_score: C::Score) -> Self {
+	pub fn new(index: C::Index, global_trust_score: f64, pre_trust_score: f64) -> Self {
 		Self {
 			index,
 			local_trust_scores: BTreeMap::new(),
@@ -40,7 +37,7 @@ impl<C: PeerConfig> Peer<C> {
 	}
 
 	/// Add a local trust score towards another peer.
-	pub fn add_neighbor(&mut self, peer_index: C::Index, local_trust_value: C::Score) {
+	pub fn add_neighbor(&mut self, peer_index: C::Index, local_trust_value: f64) {
 		self.local_trust_scores
 			.insert(peer_index, local_trust_value);
 	}
@@ -51,19 +48,15 @@ impl<C: PeerConfig> Peer<C> {
 			return;
 		}
 
-		// TODO: Remove this unwrap.
-		#[allow(clippy::unwrap_used)]
-		let pre_trust_weight_casted = <C::Score as NumCast>::from(pre_trust_weight).unwrap();
-
-		let mut new_global_trust_score = C::Score::zero();
+		let mut new_global_trust_score = f64::zero();
 		for neighbor_j in neighbors.iter() {
 			// Skip if the neighbor is the same peer.
 			if self.index == neighbor_j.get_index() {
 				continue;
 			}
 
-			// Compute `t_i(k+1) = (1 - a)*(c_1i*t_1(k) + c_ji*t_z(k) + ... + c_ni*t_n(k)) +
-			// a*p_i` We are going through each neighbor and taking their local trust
+			// Compute ti = `c_1i*t_1(k) + c_ji*t_z(k) + ... + c_ni*t_n(k)`
+			// We are going through each neighbor and taking their local trust
 			// towards peer `i`, and multiplying it by that neighbor's global trust score.
 			// This means that neighbors' opinion about peer i is weighted by their global
 			// trust score. If a neighbor has a low trust score (is not trusted by the
@@ -71,20 +64,20 @@ impl<C: PeerConfig> Peer<C> {
 			// high trust score.
 			let neighbor_opinion =
 				neighbor_j.get_local_trust_score(&self.index) * neighbor_j.get_global_trust_score();
-			let new_score = new_global_trust_score + neighbor_opinion;
-			// TODO: Double check this and potentially fix it.
-			let new_weighted_score = (C::Score::one() - self.pre_trust_score) * new_score
-				+ pre_trust_weight_casted * self.pre_trust_score;
-
-			new_global_trust_score = new_weighted_score;
+			new_global_trust_score += neighbor_opinion;
 		}
+
+		// (1 - a)*ti + a*p_i
+		// The new global trust score (ti) is taken into account.
+		// It is weighted by the `pre_trust_weight`, which dictates how seriously the
+		// pre-trust score is taken.
+		new_global_trust_score = (f64::one() - pre_trust_weight) * new_global_trust_score
+			+ pre_trust_weight * self.pre_trust_score;
 
 		// Converge if the difference between the new and old global trust score is less
 		// than delta.
 		let diff = (new_global_trust_score - self.global_trust_score).abs();
-		// TODO: Remove this unwrap.
-		#[allow(clippy::unwrap_used)]
-		if diff <= <C::Score as NumCast>::from(delta).unwrap() {
+		if diff <= delta {
 			self.is_converged = true;
 		}
 
@@ -97,12 +90,12 @@ impl<C: PeerConfig> Peer<C> {
 	}
 
 	/// Get global trust score.
-	pub fn get_global_trust_score(&self) -> C::Score {
+	pub fn get_global_trust_score(&self) -> f64 {
 		self.global_trust_score
 	}
 
 	/// Get pre trust score.
-	pub fn get_pre_trust_score(&self) -> C::Score {
+	pub fn get_pre_trust_score(&self) -> f64 {
 		self.pre_trust_score
 	}
 
@@ -112,7 +105,7 @@ impl<C: PeerConfig> Peer<C> {
 	}
 
 	/// Get the local trust score of the peer towards another peer.
-	pub fn get_local_trust_score(&self, i: &C::Index) -> C::Score {
+	pub fn get_local_trust_score(&self, i: &C::Index) -> f64 {
 		self.local_trust_scores[i]
 	}
 }
@@ -122,14 +115,9 @@ mod test {
 	use super::*;
 
 	#[derive(Clone, Debug, PartialEq)]
-	struct TestConfig {
-		index: usize,
-		score: f64,
-	}
-
+	struct TestConfig;
 	impl PeerConfig for TestConfig {
 		type Index = usize;
-		type Score = f64;
 	}
 
 	#[test]
