@@ -2,9 +2,11 @@
 //! It contains the functionality for creating peers, bootstrapping the
 //! networks, and interactions between peers.
 
-use crate::peer::{Peer, PeerConfig};
+use crate::{
+	peer::{PeerConfig, Peer},
+	EigenError,
+};
 use ark_std::vec::Vec;
-use num::Zero;
 use rand::prelude::{RngCore, SliceRandom};
 
 /// The network configuration trait.
@@ -35,16 +37,22 @@ impl<C: NetworkConfig> Network<C> {
 	/// local, global, and pre-trust scores.
 	pub fn bootstrap(
 		// Pre-trust scores of the peers. It is used in combination with the pre-trust weight.
-		pre_trust_scores: Vec<<C::Peer as PeerConfig>::Score>,
+		pre_trust_scores: Vec<f64>,
 		// Initial global trust scores for each peer in the network.
-		global_trust_scores: Vec<<C::Peer as PeerConfig>::Score>,
+		global_trust_scores: Vec<f64>,
 		// Initial local trust scores for each peer in the network towards other peers.
-		local_trust_scores: Vec<Vec<<C::Peer as PeerConfig>::Score>>,
-	) -> Self {
+		local_trust_scores: Vec<Vec<f64>>,
+	) -> Result<Self, EigenError> {
 		// TODO: Return proper errors.
-		assert!(pre_trust_scores.len() == C::SIZE);
-		assert!(global_trust_scores.len() == C::SIZE);
-		assert!(local_trust_scores.len() == C::SIZE);
+		if pre_trust_scores.len() != C::SIZE {
+			return Err(EigenError::InvalidPreTrustScores);
+		}
+		if global_trust_scores.len() != C::SIZE {
+			return Err(EigenError::InvalidGlobalTrustScores);
+		}
+		if local_trust_scores.len() != C::SIZE {
+			return Err(EigenError::InvalidLocalTrustScores);
+		}
 
 		let mut peers = Vec::with_capacity(C::SIZE);
 		// Creating initial peers.
@@ -59,8 +67,9 @@ impl<C: NetworkConfig> Network<C> {
 
 		// Initializing the local trust scores for peer `i` towards peer `j`.
 		for (i, c_i) in local_trust_scores.iter().enumerate() {
-			// TODO: Return proper error.
-			assert!(c_i.len() == C::SIZE);
+			if c_i.len() != C::SIZE {
+				return Err(EigenError::InvalidLocalTrustScores);
+			}
 
 			for (j, c_ij) in c_i.iter().enumerate() {
 				if i == j {
@@ -72,10 +81,10 @@ impl<C: NetworkConfig> Network<C> {
 			}
 		}
 
-		Self {
+		Ok(Self {
 			peers,
 			is_converged: false,
-		}
+		})
 	}
 
 	/// The main loop of the network. It iterates until the network converges
@@ -108,11 +117,11 @@ impl<C: NetworkConfig> Network<C> {
 
 	/// Calculates the global trust score for each peer by normalizing the
 	/// global trust scores.
-	pub fn get_global_trust_scores(&self) -> Vec<<C::Peer as PeerConfig>::Score> {
+	pub fn get_global_trust_scores(&self) -> Vec<f64> {
 		// Calculate the sum.
-		let mut sum = <C::Peer as PeerConfig>::Score::zero();
+		let mut sum = 0.;
 		for peer in self.peers.iter() {
-			sum = sum + peer.get_global_trust_score();
+			sum += peer.get_global_trust_score();
 		}
 
 		// Normalize the global trust scores.
