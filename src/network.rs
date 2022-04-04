@@ -55,8 +55,8 @@ impl<C: NetworkConfig> Network<C> {
 			let index = <C::Peer as PeerConfig>::Index::from(x);
 			peers.push(Peer::new(
 				index,
-				global_trust_scores[x as usize],
-				pre_trust_scores[x as usize],
+				global_trust_scores[x],
+				pre_trust_scores[x],
 			));
 		}
 
