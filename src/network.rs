@@ -67,7 +67,12 @@ impl<C: NetworkConfig> Network<C> {
 	}
 
 	/// Mock the transaction beetween peer `i` and `j`.
-	pub fn mock_transaction(&mut self, i: usize, j: usize, rating: TransactionRating) -> Result<(), EigenError> {
+	pub fn mock_transaction(
+		&mut self,
+		i: usize,
+		j: usize,
+		rating: TransactionRating,
+	) -> Result<(), EigenError> {
 		let peer = self.peers.get_mut(i).ok_or(EigenError::PeerNotFound)?;
 
 		let peer_index = <C::Peer as PeerConfig>::Index::from(j);

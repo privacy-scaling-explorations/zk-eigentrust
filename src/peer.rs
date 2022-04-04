@@ -12,9 +12,9 @@ pub trait PeerConfig: Clone {
 /// Options for rating a transaction by a peer.
 pub enum TransactionRating {
 	/// Positive rating.
-    Positive,
+	Positive,
 	/// Negative rating.
-    Negative,
+	Negative,
 }
 
 /// Peer structure.

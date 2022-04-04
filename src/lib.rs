@@ -54,10 +54,16 @@
 //!
 //! let mut network =
 //! 	Network::<Network4Config>::bootstrap(pre_trust_scores, initial_trust_scores).unwrap();
-//! 
-//! network.mock_transaction(0, 1, TransactionRating::Positive).unwrap();
-//! network.mock_transaction(1, 0, TransactionRating::Positive).unwrap();
-//! network.mock_transaction(2, 3, TransactionRating::Positive).unwrap();
+//!
+//! network
+//! 	.mock_transaction(0, 1, TransactionRating::Positive)
+//! 	.unwrap();
+//! network
+//! 	.mock_transaction(1, 0, TransactionRating::Positive)
+//! 	.unwrap();
+//! network
+//! 	.mock_transaction(2, 3, TransactionRating::Positive)
+//! 	.unwrap();
 //!
 //! network.converge(rng);
 //!
