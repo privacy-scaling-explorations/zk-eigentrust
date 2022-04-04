@@ -3,10 +3,10 @@
 //! networks, and interactions between peers.
 
 use crate::{
-	peer::{PeerConfig, Peer},
+	peer::{Peer, PeerConfig},
 	EigenError,
 };
-use ark_std::vec::Vec;
+use ark_std::{vec::Vec, Zero};
 use rand::prelude::{RngCore, SliceRandom};
 
 /// The network configuration trait.
@@ -119,7 +119,7 @@ impl<C: NetworkConfig> Network<C> {
 	/// global trust scores.
 	pub fn get_global_trust_scores(&self) -> Vec<f64> {
 		// Calculate the sum.
-		let mut sum = 0.;
+		let mut sum = f64::zero();
 		for peer in self.peers.iter() {
 			sum += peer.get_global_trust_score();
 		}

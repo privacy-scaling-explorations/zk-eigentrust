@@ -1,7 +1,7 @@
 //! The module for peer management. It contains the functionality for creating a
 //! peer, adding local trust scores, and calculating the global trust score.
 
-use ark_std::{collections::BTreeMap, fmt::Debug, hash::Hash};
+use ark_std::{collections::BTreeMap, fmt::Debug, hash::Hash, One, Zero};
 
 /// Configuration trait for the Peer.
 pub trait PeerConfig: Clone {
@@ -48,7 +48,7 @@ impl<C: PeerConfig> Peer<C> {
 			return;
 		}
 
-		let mut new_global_trust_score = 0.;
+		let mut new_global_trust_score = f64::zero();
 		for neighbor_j in neighbors.iter() {
 			// Skip if the neighbor is the same peer.
 			if self.index == neighbor_j.get_index() {
@@ -67,7 +67,7 @@ impl<C: PeerConfig> Peer<C> {
 			new_global_trust_score += neighbor_opinion;
 		}
 
-		new_global_trust_score = (1. - self.pre_trust_score) * new_global_trust_score
+		new_global_trust_score = (f64::one() - self.pre_trust_score) * new_global_trust_score
 			+ pre_trust_weight * self.pre_trust_score;
 
 		// Converge if the difference between the new and old global trust score is less

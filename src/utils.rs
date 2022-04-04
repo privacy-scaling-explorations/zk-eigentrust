@@ -1,5 +1,4 @@
-use ark_std::vec::Vec;
-use ark_std::Zero;
+use ark_std::{vec::Vec, Zero};
 use rand::Rng;
 
 /// A function for generating random local trust values.
