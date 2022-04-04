@@ -55,8 +55,8 @@ impl<C: PeerConfig> Peer<C> {
 				continue;
 			}
 
-			// Compute `t_i(k+1) = (1 - a)*(c_1i*t_1(k) + c_ji*t_z(k) + ... + c_ni*t_n(k)) +
-			// a*p_i` We are going through each neighbor and taking their local trust
+			// Compute ti = `c_1i*t_1(k) + c_ji*t_z(k) + ... + c_ni*t_n(k)`
+			// We are going through each neighbor and taking their local trust
 			// towards peer `i`, and multiplying it by that neighbor's global trust score.
 			// This means that neighbors' opinion about peer i is weighted by their global
 			// trust score. If a neighbor has a low trust score (is not trusted by the
@@ -67,7 +67,11 @@ impl<C: PeerConfig> Peer<C> {
 			new_global_trust_score += neighbor_opinion;
 		}
 
-		new_global_trust_score = (f64::one() - self.pre_trust_score) * new_global_trust_score
+		// (1 - a)*ti + a*p_i
+		// The new global trust score (ti) is taken into account.
+		// It is weighted by the `pre_trust_weight`, which dictates how seriously the
+		// pre-trust score is taken.
+		new_global_trust_score = (f64::one() - pre_trust_weight) * new_global_trust_score
 			+ pre_trust_weight * self.pre_trust_score;
 
 		// Converge if the difference between the new and old global trust score is less
