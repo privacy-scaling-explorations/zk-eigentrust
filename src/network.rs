@@ -6,7 +6,7 @@ use crate::{
 	peer::{Peer, PeerConfig, TransactionRating},
 	EigenError,
 };
-use ark_std::{vec::Vec, Zero, collections::BTreeMap};
+use ark_std::{collections::BTreeMap, vec::Vec, Zero};
 use rand::prelude::RngCore;
 
 /// The network configuration trait.
