@@ -71,7 +71,6 @@ impl<C: PeerConfig> Peer<C> {
 	/// Calculate the global trust score.
 	pub fn heartbeat(&mut self, neighbors: &[Peer<C>], delta: f64, pre_trust_weight: f64) {
 		if self.is_converged {
-			println!("Converged");
 			return;
 		}
 
@@ -240,6 +239,9 @@ mod test {
 			peer1.heartbeat(&peers, delta, pre_trust_weight);
 			peer2.heartbeat(&peers, delta, pre_trust_weight);
 		}
+
+		let is_converged = peer0.is_converged();
+		assert!(is_converged);
 
 		let global_score_before = peer0.get_global_trust_score();
 		peer0.heartbeat(&peers, delta, pre_trust_weight);
