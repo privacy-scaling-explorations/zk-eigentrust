@@ -45,15 +45,11 @@
 //! let rng = &mut thread_rng();
 //! let num_peers: usize = Network4Config::SIZE;
 //!
-//! let mut pre_trust_scores = vec![0.0; num_peers];
-//! pre_trust_scores[0] = 0.5;
-//! pre_trust_scores[1] = 0.5;
-//!
 //! let default_score = 1. / num_peers as f64;
-//! let initial_trust_scores = vec![default_score; num_peers];
+//! let mut pre_trust_scores = vec![default_score; num_peers];
 //!
 //! let mut network =
-//! 	Network::<Network4Config>::bootstrap(pre_trust_scores, initial_trust_scores).unwrap();
+//! 	Network::<Network4Config>::bootstrap(pre_trust_scores).unwrap();
 //!
 //! network
 //! 	.mock_transaction(0, 1, TransactionRating::Positive)
