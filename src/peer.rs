@@ -226,10 +226,10 @@ mod test {
 
 		let sum_of_local_scores =
 			// local score of peer1 towards peer0, times their global score
-			// 			0.5					*				0.0
+			//             0.5                 *               0.0
 			peers[1].get_local_trust_score(&0) * peers[1].get_global_trust_score() +
 			// local score of peer2 towards peer0, times their global score
-			// 			0.5					*				0.0
+			//             0.5                 *               0.0
 			peers[2].get_local_trust_score(&0) * peers[2].get_global_trust_score()
 		;
 		assert_eq!(peer1.get_local_trust_score(&0), 0.5);
@@ -251,10 +251,10 @@ mod test {
 
 		let sum_of_local_scores =
 			// local score of peer1 towards peer0, times their global score
-			// 			0.5					*				0.16000000000000003
+			//              0.5                *           0.16000000000000003
 			peers[1].get_local_trust_score(&0) * peers[1].get_global_trust_score() +
 			// local score of peer2 towards peer0, times their global score
-			// 			0.5					*				0.16000000000000003
+			//              0.5                *            0.16000000000000003
 			peers[2].get_local_trust_score(&0) * peers[2].get_global_trust_score()
 		;
 		assert_eq!(sum_of_local_scores, 0.16000000000000003);
@@ -275,10 +275,10 @@ mod test {
 
 		let sum_of_local_scores =
 			// local score of peer1 towards peer0, times their global score
-			// 			0.5					*				0.25600000000000006
+			//          0.5                    *           0.25600000000000006
 			peers[1].get_local_trust_score(&0) * peers[1].get_global_trust_score() +
 			// local score of peer2 towards peer0, times their global score
-			// 			0.5					*				0.25600000000000006
+			//          0.5                    *           0.25600000000000006
 			peers[2].get_local_trust_score(&0) * peers[2].get_global_trust_score()
 		;
 		assert_eq!(sum_of_local_scores, 0.25600000000000006);
