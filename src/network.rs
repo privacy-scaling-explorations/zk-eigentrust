@@ -181,6 +181,38 @@ mod test {
 	}
 
 	#[test]
+	fn network_not_converging_without_pre_trusted_peers() {
+		let rng = &mut thread_rng();
+
+		let num_peers: usize = Network4Config::SIZE;
+
+		let pre_trust_scores = vec![0.0; num_peers];
+
+		let mut network = Network::<Network4Config>::bootstrap(pre_trust_scores).unwrap();
+
+		network
+			.mock_transaction(0, 1, TransactionRating::Positive)
+			.unwrap();
+		network
+			.mock_transaction(1, 0, TransactionRating::Positive)
+			.unwrap();
+		network
+			.mock_transaction(1, 2, TransactionRating::Positive)
+			.unwrap();
+
+		network.converge(rng);
+
+		let peer0_trust_score = network.peers[0].get_global_trust_score();
+		let peer1_trust_score = network.peers[1].get_global_trust_score();
+		assert_eq!(peer0_trust_score, 0.0);
+		assert_eq!(peer1_trust_score, 0.0);
+
+		let global_trust_scores = network.get_global_trust_scores();
+		assert!(global_trust_scores[0].is_nan());
+		assert!(global_trust_scores[1].is_nan());
+	}
+
+	#[test]
 	fn network_converging_with_pre_trusted_peers() {
 		let rng = &mut thread_rng();
 
