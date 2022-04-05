@@ -48,8 +48,7 @@
 //! let default_score = 1. / num_peers as f64;
 //! let mut pre_trust_scores = vec![default_score; num_peers];
 //!
-//! let mut network =
-//! 	Network::<Network4Config>::bootstrap(pre_trust_scores).unwrap();
+//! let mut network = Network::<Network4Config>::bootstrap(pre_trust_scores).unwrap();
 //!
 //! network
 //! 	.mock_transaction(0, 1, TransactionRating::Positive)
