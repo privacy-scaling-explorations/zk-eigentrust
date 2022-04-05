@@ -71,6 +71,7 @@ impl<C: PeerConfig> Peer<C> {
 	/// Calculate the global trust score.
 	pub fn heartbeat(&mut self, neighbors: &[Peer<C>], delta: f64, pre_trust_weight: f64) {
 		if self.is_converged {
+			println!("Converged");
 			return;
 		}
 
@@ -173,9 +174,13 @@ mod test {
 		let mut pre_trust_scores = BTreeMap::new();
 		pre_trust_scores.insert(0, 0.4);
 		let peer = Peer::<TestConfig>::new(0, pre_trust_scores);
-		assert_eq!(peer.get_index(), 0);
-		assert_eq!(peer.get_global_trust_score(), 0.0);
-		assert_eq!(peer.get_pre_trust_score(), 0.4);
+
+		let index = peer.get_index();
+		let global_trust_score = peer.get_global_trust_score();
+		let pre_trust_score = peer.get_pre_trust_score();
+		assert_eq!(index, 0);
+		assert_eq!(global_trust_score, 0.0);
+		assert_eq!(pre_trust_score, 0.4);
 	}
 
 	#[test]
