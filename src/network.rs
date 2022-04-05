@@ -2,13 +2,11 @@
 //! It contains the functionality for creating peers, bootstrapping the
 //! networks, and interactions between peers.
 
-use std::collections::BTreeMap;
-
 use crate::{
 	peer::{Peer, PeerConfig, TransactionRating},
 	EigenError,
 };
-use ark_std::{vec::Vec, Zero};
+use ark_std::{vec::Vec, Zero, collections::BTreeMap};
 use rand::prelude::RngCore;
 
 /// The network configuration trait.

@@ -100,8 +100,6 @@ impl<C: PeerConfig> Peer<C> {
 		new_global_trust_score = (f64::one() - pre_trust_weight) * new_global_trust_score
 			+ pre_trust_weight * self.get_pre_trust_score();
 
-		println!("{:?}: {}", self.index, new_global_trust_score);
-
 		// Converge if the difference between the new and old global trust score is less
 		// than delta.
 		let diff = (new_global_trust_score - self.global_trust_score).abs();
