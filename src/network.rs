@@ -2,6 +2,8 @@
 //! It contains the functionality for creating peers, bootstrapping the
 //! networks, and interactions between peers.
 
+use std::collections::BTreeMap;
+
 use crate::{
 	peer::{Peer, PeerConfig, TransactionRating},
 	EigenError,
@@ -49,6 +51,12 @@ impl<C: NetworkConfig> Network<C> {
 			return Err(EigenError::InvalidGlobalTrustScores);
 		}
 
+		let pre_trust_score_map: BTreeMap<<C::Peer as PeerConfig>::Index, f64> = pre_trust_scores
+			.into_iter()
+			.enumerate()
+			.map(|(i, score)| (i.into(), score))
+			.collect();
+
 		let mut peers = Vec::with_capacity(C::SIZE);
 		// Creating initial peers.
 		for x in 0..C::SIZE {
@@ -56,7 +64,7 @@ impl<C: NetworkConfig> Network<C> {
 			peers.push(Peer::new(
 				index,
 				global_trust_scores[x],
-				pre_trust_scores[x],
+				pre_trust_score_map.clone(),
 			));
 		}
 
@@ -130,5 +138,42 @@ impl<C: NetworkConfig> Network<C> {
 	/// Check whether the network converged.
 	pub fn is_converged(&self) -> bool {
 		self.is_converged
+	}
+}
+
+#[cfg(test)]
+mod test {
+	use super::*;
+
+	#[derive(Clone, Copy, Debug)]
+	struct Peer;
+	impl PeerConfig for Peer {
+		type Index = usize;
+	}
+
+	struct Network4Config;
+	impl NetworkConfig for Network4Config {
+		type Peer = Peer;
+
+		const DELTA: f64 = 0.001;
+		const MAX_ITERATIONS: usize = 1000;
+		const PRETRUST_WEIGHT: f64 = 0.5;
+		const SIZE: usize = 4;
+	}
+
+	#[test]
+	fn bootstrapping_the_network() {
+		let num_peers: usize = Network4Config::SIZE;
+		let mut pre_trust_scores = vec![0.0; num_peers];
+		pre_trust_scores[0] = 0.5;
+		pre_trust_scores[1] = 0.5;
+	
+		let default_score = 1. / num_peers as f64;
+		let initial_trust_scores = vec![default_score; num_peers];
+	
+		let network =
+			Network::<Network4Config>::bootstrap(pre_trust_scores, initial_trust_scores).unwrap();
+
+		assert_eq!(network.peers.len(), num_peers);
 	}
 }
