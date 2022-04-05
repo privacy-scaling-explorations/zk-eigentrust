@@ -228,7 +228,7 @@ mod test {
 
 		let delta = 0.00001;
 		let pre_trust_weight = 0.4;
-		let mut peers = [peer0.clone(), peer1.clone(), peer2.clone()];
+		let peers = [peer0.clone(), peer1.clone(), peer2.clone()];
 
 		while !peer0.is_converged() {
 			peer0.heartbeat(&peers, delta, pre_trust_weight);
