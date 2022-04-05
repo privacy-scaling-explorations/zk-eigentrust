@@ -118,8 +118,6 @@ pub mod utils;
 pub enum EigenError {
 	/// Invalid pre trust scores passed
 	InvalidPreTrustScores,
-	/// Invalid global trust scores passed
-	InvalidGlobalTrustScores,
 	/// Peer not found in the network or peer cache
 	PeerNotFound,
 }

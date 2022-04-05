@@ -6,7 +6,7 @@ use ark_std::{collections::BTreeMap, fmt::Debug, hash::Hash, One, Zero};
 /// Configuration trait for the Peer.
 pub trait PeerConfig: Clone {
 	/// Type for the Peer index.
-	type Index: From<usize> + Eq + Hash + Clone + Ord;
+	type Index: From<usize> + Eq + Hash + Clone + Ord + Debug;
 }
 
 /// Options for rating a transaction by a peer.
@@ -36,12 +36,12 @@ pub struct Peer<C: PeerConfig> {
 
 impl<C: PeerConfig> Peer<C> {
 	/// Create a new peer.
-	pub fn new(index: C::Index, global_trust_score: f64, pre_trust_scores: BTreeMap<C::Index, f64>) -> Self {
+	pub fn new(index: C::Index, pre_trust_scores: BTreeMap<C::Index, f64>) -> Self {
 		Self {
 			index,
 			transaction_scores: BTreeMap::new(),
 			transaction_scores_sum: 0,
-			global_trust_score,
+			global_trust_score: 0.,
 			pre_trust_scores,
 			is_converged: false,
 		}
@@ -100,6 +100,8 @@ impl<C: PeerConfig> Peer<C> {
 		new_global_trust_score = (f64::one() - pre_trust_weight) * new_global_trust_score
 			+ pre_trust_weight * self.get_pre_trust_score();
 
+		println!("{:?}: {}", self.index, new_global_trust_score);
+
 		// Converge if the difference between the new and old global trust score is less
 		// than delta.
 		let diff = (new_global_trust_score - self.global_trust_score).abs();
@@ -118,6 +120,12 @@ impl<C: PeerConfig> Peer<C> {
 	/// Get global trust score.
 	pub fn get_global_trust_score(&self) -> f64 {
 		self.global_trust_score
+	}
+
+	/// Get the transaction score for a peer.
+	#[cfg(test)]
+	pub fn get_transaction_scores(&self, index: &C::Index) -> u32 {
+		*self.transaction_scores.get(index).unwrap_or(&0)
 	}
 
 	/// Get pre trust score.
@@ -165,7 +173,7 @@ mod test {
 	fn test_peer_new() {
 		let mut pre_trust_scores = BTreeMap::new();
 		pre_trust_scores.insert(0, 0.4);
-		let peer = Peer::<TestConfig>::new(0, 0.0, pre_trust_scores);
+		let peer = Peer::<TestConfig>::new(0, pre_trust_scores);
 		assert_eq!(peer.get_index(), 0);
 		assert_eq!(peer.get_global_trust_score(), 0.0);
 		assert_eq!(peer.get_pre_trust_score(), 0.4);
@@ -175,7 +183,7 @@ mod test {
 	fn local_trust_score_when_sum_is_zero() {
 		let mut pre_trust_scores = BTreeMap::new();
 		pre_trust_scores.insert(1, 0.4);
-		let peer = Peer::<TestConfig>::new(0, 0.0, pre_trust_scores);
+		let peer = Peer::<TestConfig>::new(0, pre_trust_scores);
 
 		// Local trust towards peer `1` is the same as the pre-trust score.
 		assert_eq!(peer.get_local_trust_score(&1), 0.4);
@@ -185,7 +193,7 @@ mod test {
 	fn test_transactions() {
 		let mut pre_trust_scores = BTreeMap::new();
 		pre_trust_scores.insert(0, 0.4);
-		let mut peer = Peer::<TestConfig>::new(0, 0.0, pre_trust_scores);
+		let mut peer = Peer::<TestConfig>::new(0, pre_trust_scores);
 
 		// 3 positive ratings to different peers
 		peer.mock_rate_transaction(1, TransactionRating::Positive);
@@ -194,6 +202,8 @@ mod test {
 		// Everyone should have equal score
 		assert_eq!(peer.get_local_trust_score(&1), 0.5);
 		assert_eq!(peer.get_local_trust_score(&2), 0.5);
+
+		assert_eq!(peer.get_transaction_scores(&1), 1);
 	}
 
 	#[test]
@@ -202,9 +212,9 @@ mod test {
 		pre_trust_scores.insert(0, 0.4);
 		pre_trust_scores.insert(1, 0.4);
 		pre_trust_scores.insert(2, 0.4);
-		let mut peer0 = Peer::<TestConfig>::new(0, 0.0, pre_trust_scores.clone());
-		let mut peer1 = Peer::<TestConfig>::new(1, 0.0, pre_trust_scores.clone());
-		let mut peer2 = Peer::<TestConfig>::new(2, 0.0, pre_trust_scores.clone());
+		let mut peer0 = Peer::<TestConfig>::new(0, pre_trust_scores.clone());
+		let mut peer1 = Peer::<TestConfig>::new(1, pre_trust_scores.clone());
+		let mut peer2 = Peer::<TestConfig>::new(2, pre_trust_scores.clone());
 
 		peer0.mock_rate_transaction(1, TransactionRating::Positive);
 		peer0.mock_rate_transaction(2, TransactionRating::Positive);
