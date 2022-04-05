@@ -225,6 +225,7 @@ mod test {
 			* sum_of_local_scores_1
 			+ Network4Config::PRETRUST_WEIGHT * network.peers[1].get_pre_trust_score();
 
+		// Converge the network.
 		network.converge(rng);
 
 		let peer0_score = network.peers[0].get_global_trust_score();
