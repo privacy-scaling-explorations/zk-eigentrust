@@ -56,10 +56,7 @@ impl<C: NetworkConfig> Network<C> {
 		// Creating initial peers.
 		for x in 0..C::SIZE {
 			let index = <C::Peer as PeerConfig>::Index::from(x);
-			peers.push(Peer::new(
-				index,
-				pre_trust_score_map.clone(),
-			));
+			peers.push(Peer::new(index, pre_trust_score_map.clone()));
 		}
 
 		Ok(Self {
@@ -163,9 +160,8 @@ mod test {
 		let mut pre_trust_scores = vec![0.0; num_peers];
 		pre_trust_scores[0] = 0.5;
 		pre_trust_scores[1] = 0.5;
-	
-		let network =
-			Network::<Network4Config>::bootstrap(pre_trust_scores).unwrap();
+
+		let network = Network::<Network4Config>::bootstrap(pre_trust_scores).unwrap();
 
 		assert_eq!(network.peers.len(), num_peers);
 	}
@@ -176,9 +172,8 @@ mod test {
 		let mut pre_trust_scores = vec![0.0; num_peers];
 		pre_trust_scores[0] = 0.5;
 		pre_trust_scores[1] = 0.5;
-	
-		let mut network =
-			Network::<Network4Config>::bootstrap(pre_trust_scores).unwrap();
+
+		let mut network = Network::<Network4Config>::bootstrap(pre_trust_scores).unwrap();
 
 		network
 			.mock_transaction(0, 1, TransactionRating::Positive)
@@ -192,12 +187,11 @@ mod test {
 		let rng = &mut thread_rng();
 
 		let num_peers: usize = Network4Config::SIZE;
-	
+
 		let default_score = 1. / (num_peers as f64);
 		let pre_trust_scores = vec![default_score; num_peers];
-	
-		let mut network =
-			Network::<Network4Config>::bootstrap(pre_trust_scores).unwrap();
+
+		let mut network = Network::<Network4Config>::bootstrap(pre_trust_scores).unwrap();
 
 		network
 			.mock_transaction(0, 1, TransactionRating::Positive)
@@ -217,7 +211,8 @@ mod test {
 		assert_eq!(sum_of_local_scores_0, 0.0);
 
 		// (1.0 - 0.5) * 0.0 + 0.5 * 0.5 = 0.25
-		let new_global_trust_score_0 = (f64::one() - Network4Config::PRETRUST_WEIGHT) * sum_of_local_scores_0
+		let new_global_trust_score_0 = (f64::one() - Network4Config::PRETRUST_WEIGHT)
+			* sum_of_local_scores_0
 			+ Network4Config::PRETRUST_WEIGHT * network.peers[0].get_pre_trust_score();
 
 		// ------ Peer 1 ------
@@ -228,7 +223,8 @@ mod test {
 		assert_eq!(sum_of_local_scores_1, 0.0);
 
 		// (1.0 - 0.5) * 0.0 + 0.5 * 0.5 = 0.25
-		let new_global_trust_score_1 = (f64::one() - Network4Config::PRETRUST_WEIGHT) * sum_of_local_scores_1
+		let new_global_trust_score_1 = (f64::one() - Network4Config::PRETRUST_WEIGHT)
+			* sum_of_local_scores_1
 			+ Network4Config::PRETRUST_WEIGHT * network.peers[1].get_pre_trust_score();
 
 		network.converge(rng);

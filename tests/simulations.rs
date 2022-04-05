@@ -32,8 +32,7 @@ fn simulate_conversion_4_peers() {
 	pre_trust_scores[0] = 0.5;
 	pre_trust_scores[1] = 0.5;
 
-	let mut network =
-		Network::<Network4Config>::bootstrap(pre_trust_scores).unwrap();
+	let mut network = Network::<Network4Config>::bootstrap(pre_trust_scores).unwrap();
 
 	// Mock transactions from peer 0 to the rest of the peers.
 	network

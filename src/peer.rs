@@ -150,11 +150,12 @@ impl<C: PeerConfig> Peer<C> {
 		// the sum will be zero, which will cause a division by zero.
 		// Resulting in NaN.
 		let mut normalized_score = f64::from(*score) / f64::from(sum);
-		// If normalized_score is NaN, we should fall back to the trust score of the peer `i`.
+		// If normalized_score is NaN, we should fall back to the trust score of the
+		// peer `i`.
 		if normalized_score.is_nan() {
 			normalized_score = *self.pre_trust_scores.get(i).unwrap_or(&0.);
 		}
-		
+
 		normalized_score
 	}
 }
