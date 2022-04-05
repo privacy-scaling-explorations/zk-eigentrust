@@ -6,7 +6,7 @@ use ark_std::{collections::BTreeMap, fmt::Debug, hash::Hash, One, Zero};
 /// Configuration trait for the Peer.
 pub trait PeerConfig: Clone {
 	/// Type for the Peer index.
-	type Index: From<usize> + Eq + Hash + Clone + Ord;
+	type Index: From<usize> + Eq + Hash + Clone + Ord + Debug;
 }
 
 /// Options for rating a transaction by a peer.
@@ -29,20 +29,20 @@ pub struct Peer<C: PeerConfig> {
 	/// Global trust score of the peer.
 	global_trust_score: f64,
 	/// Pre-trust score of the peer.
-	pre_trust_score: f64,
+	pre_trust_scores: BTreeMap<C::Index, f64>,
 	/// Did the peer converge?
 	is_converged: bool,
 }
 
 impl<C: PeerConfig> Peer<C> {
 	/// Create a new peer.
-	pub fn new(index: C::Index, global_trust_score: f64, pre_trust_score: f64) -> Self {
+	pub fn new(index: C::Index, pre_trust_scores: BTreeMap<C::Index, f64>) -> Self {
 		Self {
 			index,
 			transaction_scores: BTreeMap::new(),
 			transaction_scores_sum: 0,
-			global_trust_score,
-			pre_trust_score,
+			global_trust_score: 0.,
+			pre_trust_scores,
 			is_converged: false,
 		}
 	}
@@ -88,12 +88,7 @@ impl<C: PeerConfig> Peer<C> {
 			// trust score. If a neighbor has a low trust score (is not trusted by the
 			// network), their opinion is not taken seriously, compared to neighbors with a
 			// high trust score.
-			let mut trust_score = neighbor_j.get_local_trust_score(&self.index);
-			// If the trust score is NaN (due to division by 0, see
-			// `get_local_trust_score`), we use the pre-trust score of that neighbor.
-			if trust_score.is_nan() {
-				trust_score = neighbor_j.get_pre_trust_score();
-			}
+			let trust_score = neighbor_j.get_local_trust_score(&self.index);
 			let neighbor_opinion = trust_score * neighbor_j.get_global_trust_score();
 			new_global_trust_score += neighbor_opinion;
 		}
@@ -103,7 +98,7 @@ impl<C: PeerConfig> Peer<C> {
 		// It is weighted by the `pre_trust_weight`, which dictates how seriously the
 		// pre-trust score is taken.
 		new_global_trust_score = (f64::one() - pre_trust_weight) * new_global_trust_score
-			+ pre_trust_weight * self.pre_trust_score;
+			+ pre_trust_weight * self.get_pre_trust_score();
 
 		// Converge if the difference between the new and old global trust score is less
 		// than delta.
@@ -125,9 +120,15 @@ impl<C: PeerConfig> Peer<C> {
 		self.global_trust_score
 	}
 
+	/// Get the transaction score for a peer.
+	#[cfg(test)]
+	pub fn get_transaction_scores(&self, index: &C::Index) -> u32 {
+		*self.transaction_scores.get(index).unwrap_or(&0)
+	}
+
 	/// Get pre trust score.
 	pub fn get_pre_trust_score(&self) -> f64 {
-		self.pre_trust_score
+		*self.pre_trust_scores.get(&self.index).unwrap_or(&0.)
 	}
 
 	/// Get the index of the peer.
@@ -146,7 +147,14 @@ impl<C: PeerConfig> Peer<C> {
 		// If a peer didn't have any transactions towards other peers,
 		// the sum will be zero, which will cause a division by zero.
 		// Resulting in NaN.
-		f64::from(*score) / f64::from(sum)
+		let mut normalized_score = f64::from(*score) / f64::from(sum);
+		// If normalized_score is NaN, we should fall back to the trust score of the
+		// peer `i`.
+		if normalized_score.is_nan() {
+			normalized_score = *self.pre_trust_scores.get(i).unwrap_or(&0.);
+		}
+
+		normalized_score
 	}
 }
 
@@ -162,12 +170,179 @@ mod test {
 
 	#[test]
 	fn test_peer_new() {
-		let mut peer = Peer::<TestConfig>::new(0, 0.0, 0.4);
+		let mut pre_trust_scores = BTreeMap::new();
+		pre_trust_scores.insert(0, 0.4);
+		let peer = Peer::<TestConfig>::new(0, pre_trust_scores);
+
+		let index = peer.get_index();
+		let global_trust_score = peer.get_global_trust_score();
+		let pre_trust_score = peer.get_pre_trust_score();
+		assert_eq!(index, 0);
+		assert_eq!(global_trust_score, 0.0);
+		assert_eq!(pre_trust_score, 0.4);
+	}
+
+	#[test]
+	fn local_trust_score_when_sum_is_zero() {
+		let mut pre_trust_scores = BTreeMap::new();
+		pre_trust_scores.insert(1, 0.4);
+		let peer = Peer::<TestConfig>::new(0, pre_trust_scores);
+
+		// Local trust towards peer `1` is the same as the pre-trust score.
+		assert_eq!(peer.get_local_trust_score(&1), 0.4);
+	}
+
+	#[test]
+	fn test_transactions() {
+		let mut pre_trust_scores = BTreeMap::new();
+		pre_trust_scores.insert(0, 0.4);
+		let mut peer = Peer::<TestConfig>::new(0, pre_trust_scores);
+
+		// 3 positive ratings to different peers
 		peer.mock_rate_transaction(1, TransactionRating::Positive);
+		peer.mock_rate_transaction(1, TransactionRating::Positive);
+		peer.mock_rate_transaction(1, TransactionRating::Negative);
 		peer.mock_rate_transaction(2, TransactionRating::Positive);
-		assert_eq!(peer.get_index(), 0);
-		assert_eq!(peer.get_pre_trust_score(), 0.4);
-		assert_eq!(peer.get_global_trust_score(), 0.0);
+
+		// Everyone should have equal score
 		assert_eq!(peer.get_local_trust_score(&1), 0.5);
+		assert_eq!(peer.get_local_trust_score(&2), 0.5);
+
+		assert_eq!(peer.get_transaction_scores(&1), 1);
+	}
+
+	#[test]
+	fn peer_should_converge() {
+		let mut pre_trust_scores = BTreeMap::new();
+		pre_trust_scores.insert(0, 0.4);
+		pre_trust_scores.insert(1, 0.4);
+		pre_trust_scores.insert(2, 0.4);
+		let mut peer0 = Peer::<TestConfig>::new(0, pre_trust_scores.clone());
+		let mut peer1 = Peer::<TestConfig>::new(1, pre_trust_scores.clone());
+		let mut peer2 = Peer::<TestConfig>::new(2, pre_trust_scores.clone());
+
+		peer0.mock_rate_transaction(1, TransactionRating::Positive);
+		peer0.mock_rate_transaction(2, TransactionRating::Positive);
+
+		peer1.mock_rate_transaction(0, TransactionRating::Positive);
+		peer1.mock_rate_transaction(2, TransactionRating::Positive);
+
+		peer2.mock_rate_transaction(0, TransactionRating::Positive);
+		peer2.mock_rate_transaction(1, TransactionRating::Positive);
+
+		let delta = 0.00001;
+		let pre_trust_weight = 0.4;
+		let peers = [peer0.clone(), peer1.clone(), peer2.clone()];
+
+		while !peer0.is_converged() {
+			peer0.heartbeat(&peers, delta, pre_trust_weight);
+			peer1.heartbeat(&peers, delta, pre_trust_weight);
+			peer2.heartbeat(&peers, delta, pre_trust_weight);
+		}
+
+		let is_converged = peer0.is_converged();
+		assert!(is_converged);
+
+		let global_score_before = peer0.get_global_trust_score();
+		peer0.heartbeat(&peers, delta, pre_trust_weight);
+		let global_score_after = peer0.get_global_trust_score();
+		// The global trust score should not change after converging.
+		assert_eq!(global_score_before, global_score_after);
+	}
+
+	#[test]
+	fn global_trust_score_deterministic_calculation() {
+		let mut pre_trust_scores = BTreeMap::new();
+		pre_trust_scores.insert(0, 0.4);
+		pre_trust_scores.insert(1, 0.4);
+		pre_trust_scores.insert(2, 0.4);
+		let mut peer0 = Peer::<TestConfig>::new(0, pre_trust_scores.clone());
+		let mut peer1 = Peer::<TestConfig>::new(1, pre_trust_scores.clone());
+		let mut peer2 = Peer::<TestConfig>::new(2, pre_trust_scores.clone());
+
+		peer0.mock_rate_transaction(1, TransactionRating::Positive);
+		peer0.mock_rate_transaction(2, TransactionRating::Positive);
+
+		peer1.mock_rate_transaction(0, TransactionRating::Positive);
+		peer1.mock_rate_transaction(2, TransactionRating::Positive);
+
+		peer2.mock_rate_transaction(0, TransactionRating::Positive);
+		peer2.mock_rate_transaction(1, TransactionRating::Positive);
+
+		// ----------------- First round -----------------
+		let delta = 0.00001;
+		let pre_trust_weight = 0.4;
+		let mut peers = [peer0.clone(), peer1.clone(), peer2.clone()];
+
+		peer0.heartbeat(&peers, delta, pre_trust_weight);
+		peer1.heartbeat(&peers, delta, pre_trust_weight);
+		peer2.heartbeat(&peers, delta, pre_trust_weight);
+
+		let sum_of_local_scores =
+			// local score of peer1 towards peer0, times their global score
+			//             0.5                 *               0.0
+			peers[1].get_local_trust_score(&0) * peers[1].get_global_trust_score() +
+			// local score of peer2 towards peer0, times their global score
+			//             0.5                 *               0.0
+			peers[2].get_local_trust_score(&0) * peers[2].get_global_trust_score()
+		;
+		assert_eq!(peer1.get_local_trust_score(&0), 0.5);
+		assert_eq!(sum_of_local_scores, 0.0);
+
+		// (1.0 - 0.4) * 0.0 + 0.4 * 0.4 = 0.16
+		let new_global_trust_score = (f64::one() - pre_trust_weight) * sum_of_local_scores
+			+ pre_trust_weight * peer0.get_pre_trust_score();
+		assert_eq!(peer0.get_global_trust_score(), new_global_trust_score);
+		// Weird rounding error unfourtunately.
+		assert_eq!(peer0.get_global_trust_score(), 0.16000000000000003);
+
+		// ----------------- Second round -----------------
+		peers = [peer0.clone(), peer1.clone(), peer2.clone()];
+
+		peer0.heartbeat(&peers, delta, pre_trust_weight);
+		peer1.heartbeat(&peers, delta, pre_trust_weight);
+		peer2.heartbeat(&peers, delta, pre_trust_weight);
+
+		let sum_of_local_scores =
+			// local score of peer1 towards peer0, times their global score
+			//              0.5                *           0.16000000000000003
+			peers[1].get_local_trust_score(&0) * peers[1].get_global_trust_score() +
+			// local score of peer2 towards peer0, times their global score
+			//              0.5                *            0.16000000000000003
+			peers[2].get_local_trust_score(&0) * peers[2].get_global_trust_score()
+		;
+		assert_eq!(sum_of_local_scores, 0.16000000000000003);
+
+		// (1.0 - 0.4) * 0.16 + 0.4 * 0.4 = 0.256
+		let new_global_trust_score = (f64::one() - pre_trust_weight) * sum_of_local_scores
+			+ pre_trust_weight * peer0.get_pre_trust_score();
+		assert_eq!(peer0.get_global_trust_score(), new_global_trust_score);
+		// Weird rounding error unfourtunately.
+		assert_eq!(peer0.get_global_trust_score(), 0.25600000000000006);
+
+		// ----------------- Third round -----------------
+		peers = [peer0.clone(), peer1.clone(), peer2.clone()];
+
+		peer0.heartbeat(&peers, delta, pre_trust_weight);
+		peer1.heartbeat(&peers, delta, pre_trust_weight);
+		peer2.heartbeat(&peers, delta, pre_trust_weight);
+
+		let sum_of_local_scores =
+			// local score of peer1 towards peer0, times their global score
+			//          0.5                    *           0.25600000000000006
+			peers[1].get_local_trust_score(&0) * peers[1].get_global_trust_score() +
+			// local score of peer2 towards peer0, times their global score
+			//          0.5                    *           0.25600000000000006
+			peers[2].get_local_trust_score(&0) * peers[2].get_global_trust_score()
+		;
+		assert_eq!(sum_of_local_scores, 0.25600000000000006);
+
+		// (1.0 - 0.4) * 0.256 + 0.4 * 0.4 = 0.3136
+		let new_global_trust_score = (f64::one() - pre_trust_weight) * sum_of_local_scores
+			+ pre_trust_weight * peer0.get_pre_trust_score();
+
+		assert_eq!(peer0.get_global_trust_score(), new_global_trust_score);
+		// Weird rounding error unfourtunately.
+		assert_eq!(peer0.get_global_trust_score(), 0.3136000000000001);
 	}
 }

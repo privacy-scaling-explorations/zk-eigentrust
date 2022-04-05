@@ -24,7 +24,7 @@ impl NetworkConfig for Network4Config {
 }
 
 #[test]
-fn simulate_conversion_4_peers() {
+fn simulate_converging_4_peers() {
 	let rng = &mut thread_rng();
 	let num_peers: usize = Network4Config::SIZE;
 
@@ -32,11 +32,7 @@ fn simulate_conversion_4_peers() {
 	pre_trust_scores[0] = 0.5;
 	pre_trust_scores[1] = 0.5;
 
-	let default_score = 1. / num_peers as f64;
-	let initial_trust_scores = vec![default_score; num_peers];
-
-	let mut network =
-		Network::<Network4Config>::bootstrap(pre_trust_scores, initial_trust_scores).unwrap();
+	let mut network = Network::<Network4Config>::bootstrap(pre_trust_scores).unwrap();
 
 	// Mock transactions from peer 0 to the rest of the peers.
 	network
