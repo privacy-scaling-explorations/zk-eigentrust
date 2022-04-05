@@ -181,7 +181,7 @@ mod test {
 	}
 
 	#[test]
-	fn network_conversion_with_pre_trusted_peers() {
+	fn network_converging_with_pre_trusted_peers() {
 		let rng = &mut thread_rng();
 
 		let num_peers: usize = Network4Config::SIZE;

@@ -24,7 +24,7 @@ impl NetworkConfig for Network4Config {
 }
 
 #[test]
-fn simulate_conversion_4_peers() {
+fn simulate_converging_4_peers() {
 	let rng = &mut thread_rng();
 	let num_peers: usize = Network4Config::SIZE;
 

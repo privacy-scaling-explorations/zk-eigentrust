@@ -196,6 +196,8 @@ mod test {
 
 		// 3 positive ratings to different peers
 		peer.mock_rate_transaction(1, TransactionRating::Positive);
+		peer.mock_rate_transaction(1, TransactionRating::Positive);
+		peer.mock_rate_transaction(1, TransactionRating::Negative);
 		peer.mock_rate_transaction(2, TransactionRating::Positive);
 
 		// Everyone should have equal score
@@ -203,6 +205,42 @@ mod test {
 		assert_eq!(peer.get_local_trust_score(&2), 0.5);
 
 		assert_eq!(peer.get_transaction_scores(&1), 1);
+	}
+
+	#[test]
+	fn peer_should_converge() {
+		let mut pre_trust_scores = BTreeMap::new();
+		pre_trust_scores.insert(0, 0.4);
+		pre_trust_scores.insert(1, 0.4);
+		pre_trust_scores.insert(2, 0.4);
+		let mut peer0 = Peer::<TestConfig>::new(0, pre_trust_scores.clone());
+		let mut peer1 = Peer::<TestConfig>::new(1, pre_trust_scores.clone());
+		let mut peer2 = Peer::<TestConfig>::new(2, pre_trust_scores.clone());
+
+		peer0.mock_rate_transaction(1, TransactionRating::Positive);
+		peer0.mock_rate_transaction(2, TransactionRating::Positive);
+
+		peer1.mock_rate_transaction(0, TransactionRating::Positive);
+		peer1.mock_rate_transaction(2, TransactionRating::Positive);
+
+		peer2.mock_rate_transaction(0, TransactionRating::Positive);
+		peer2.mock_rate_transaction(1, TransactionRating::Positive);
+
+		let delta = 0.00001;
+		let pre_trust_weight = 0.4;
+		let mut peers = [peer0.clone(), peer1.clone(), peer2.clone()];
+
+		while !peer0.is_converged() {
+			peer0.heartbeat(&peers, delta, pre_trust_weight);
+			peer1.heartbeat(&peers, delta, pre_trust_weight);
+			peer2.heartbeat(&peers, delta, pre_trust_weight);
+		}
+
+		let global_score_before = peer0.get_global_trust_score();
+		peer0.heartbeat(&peers, delta, pre_trust_weight);
+		let global_score_after = peer0.get_global_trust_score();
+		// The global trust score should not change after converging.
+		assert_eq!(global_score_before, global_score_after);
 	}
 
 	#[test]
