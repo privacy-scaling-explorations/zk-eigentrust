@@ -106,7 +106,8 @@ pub mod network;
 pub mod peer;
 
 /// The module for utility functions.
-pub mod utils;
+/// Not used for now
+// pub mod utils;
 
 /// The module wide error variants.
 #[derive(Debug)]
