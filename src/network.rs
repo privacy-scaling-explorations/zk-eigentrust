@@ -182,7 +182,7 @@ mod test {
 		let pre_trust_scores = vec![0.0; num_peers];
 		let mut network = Network::<Network4Config>::bootstrap(pre_trust_scores).unwrap();
 
-		let res = network.mock_transaction(0, 1, TransactionRating::Positive);
+		let res = network.mock_transaction(4, 1, TransactionRating::Positive);
 		match res {
 			Err(EigenError::PeerNotFound) => (),
 			_ => panic!("Expected EigenError::PeerNotFound"),
