@@ -177,6 +177,31 @@ mod test {
 	}
 
 	#[test]
+	fn should_not_mock_transaction_between_peers_with_invalid_index() {
+		let num_peers: usize = Network4Config::SIZE;
+		let pre_trust_scores = vec![0.0; num_peers];
+		let mut network = Network::<Network4Config>::bootstrap(pre_trust_scores).unwrap();
+
+		let res = network.mock_transaction(0, 1, TransactionRating::Positive);
+		match res {
+			Err(EigenError::PeerNotFound) => (),
+			_ => panic!("Expected EigenError::PeerNotFound"),
+		}
+	}
+
+	#[test]
+	fn should_not_pass_invalid_pretrust_scores() {
+		let num_peers: usize = Network4Config::SIZE - 1;
+		let pre_trust_scores = vec![0.0; num_peers];
+
+		let network = Network::<Network4Config>::bootstrap(pre_trust_scores);
+		match network {
+			Err(EigenError::InvalidPreTrustScores) => (),
+			_ => panic!("Expected EigenError::InvalidPreTrustScores"),
+		}
+	}
+
+	#[test]
 	fn mock_transaction() {
 		let num_peers: usize = Network4Config::SIZE;
 		let mut pre_trust_scores = vec![0.0; num_peers];
@@ -213,6 +238,8 @@ mod test {
 			.unwrap();
 
 		network.converge(rng);
+
+		assert!(network.is_converged());
 
 		let peer0_trust_score = network.peers[0].get_global_trust_score();
 		let peer1_trust_score = network.peers[1].get_global_trust_score();
