@@ -105,9 +105,6 @@ pub mod network;
 /// peer, adding local trust scores, and calculating the global trust score.
 pub mod peer;
 
-/// The module for utility functions.
-// pub mod utils;
-
 /// The module wide error variants.
 #[derive(Debug)]
 pub enum EigenError {
