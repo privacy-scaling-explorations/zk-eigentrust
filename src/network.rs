@@ -55,7 +55,8 @@ impl<C: NetworkConfig> Network<C> {
 		// Creating initial peers.
 		for x in 0..C::SIZE {
 			let index = <C::Peer as PeerConfig>::Index::from(x);
-			peers.push(Peer::new(index, pre_trust_score_map.clone()));
+			let new_peer = Peer::new(index, pre_trust_score_map.clone());
+			peers.push(new_peer);
 		}
 
 		Ok(Self {
