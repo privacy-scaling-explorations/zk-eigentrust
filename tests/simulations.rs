@@ -46,7 +46,10 @@ fn simulate_converging_12_peers() {
 	network.converge(rng);
 	let global_trust_scores = network.get_global_trust_scores();
 	println!("");
-	println!("Global trust scores after round 1: {:?}", global_trust_scores);
+	println!(
+		"Global trust scores after round 1: {:?}",
+		global_trust_scores
+	);
 
 	// Boost peer 6
 	for i in 0..num_peers {
@@ -58,7 +61,10 @@ fn simulate_converging_12_peers() {
 	network.converge(rng);
 	let global_trust_scores = network.get_global_trust_scores();
 	println!("");
-	println!("Global trust scores after round 1: {:?}", global_trust_scores);
+	println!(
+		"Global trust scores after round 1: {:?}",
+		global_trust_scores
+	);
 
 	// Boost peer 7
 	for i in 0..num_peers {
@@ -70,7 +76,10 @@ fn simulate_converging_12_peers() {
 	network.converge(rng);
 	let global_trust_scores = network.get_global_trust_scores();
 	println!("");
-	println!("Global trust scores after round 1: {:?}", global_trust_scores);
+	println!(
+		"Global trust scores after round 1: {:?}",
+		global_trust_scores
+	);
 }
 
 struct Network256Config;
@@ -105,7 +114,7 @@ fn simulate_converging_256_peers() {
 				.mock_transaction(i, rnd_index, TransactionRating::Positive)
 				.unwrap();
 		}
-		
+
 		println!("");
 		println!("Boosting {} in cycle: {}", rnd_index, cycle);
 		network.converge(rng);

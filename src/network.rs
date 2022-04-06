@@ -116,7 +116,7 @@ impl<C: NetworkConfig> Network<C> {
 	/// Reset the network.
 	pub fn reset(&mut self) {
 		self.is_converged = false;
-	} 
+	}
 
 	/// Calculates the global trust score for each peer by normalizing the
 	/// global trust scores.
