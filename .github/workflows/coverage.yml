@@ -31,6 +31,9 @@ jobs:
       - name: Install Rustup component
         run: rustup component add llvm-tools-preview
 
+      - name: Install grcov
+        run: cargo install grcov
+
       - name: Run Tests
         run: cargo test --verbose --lib
         env:
