@@ -26,3 +26,7 @@ std = [
 	"ark-std/std",
 	"rand/std",
 ]
+
+[[test]]
+name = "integration"
+path = "tests/simulations.rs"

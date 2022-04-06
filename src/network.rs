@@ -9,6 +9,8 @@ use crate::{
 use ark_std::{collections::BTreeMap, vec::Vec, Zero};
 use rand::prelude::RngCore;
 
+// use rand::prelude::SliceRandom;
+
 /// The network configuration trait.
 pub trait NetworkConfig {
 	/// Configuration trait for the peer.
@@ -39,7 +41,6 @@ impl<C: NetworkConfig> Network<C> {
 		// Pre-trust scores of the peers. It is used in combination with the pre-trust weight.
 		pre_trust_scores: Vec<f64>,
 	) -> Result<Self, EigenError> {
-		// TODO: Return proper errors.
 		if pre_trust_scores.len() != C::SIZE {
 			return Err(EigenError::InvalidPreTrustScores);
 		}
@@ -54,7 +55,8 @@ impl<C: NetworkConfig> Network<C> {
 		// Creating initial peers.
 		for x in 0..C::SIZE {
 			let index = <C::Peer as PeerConfig>::Index::from(x);
-			peers.push(Peer::new(index, pre_trust_score_map.clone()));
+			let new_peer = Peer::new(index, pre_trust_score_map.clone());
+			peers.push(new_peer);
 		}
 
 		Ok(Self {
@@ -83,8 +85,14 @@ impl<C: NetworkConfig> Network<C> {
 	pub fn converge<R: RngCore>(&mut self, _rng: &mut R) {
 		let mut temp_peers = self.peers.clone();
 		// We are shuffling the peers so that we can iterate over them in random order.
-		// TODO: Explain why this is necessary.
+		// TODO: Research why this is necessary.
 		// temp_peers.shuffle(rng);
+
+		// Reset the whole network, so we can converge again.
+		self.reset();
+		for peer in temp_peers.iter_mut() {
+			peer.reset();
+		}
 
 		for _ in 0..C::MAX_ITERATIONS {
 			// Loop over all the peers until all the peers converge.
@@ -104,6 +112,11 @@ impl<C: NetworkConfig> Network<C> {
 		}
 
 		self.peers = temp_peers;
+	}
+
+	/// Reset the network.
+	pub fn reset(&mut self) {
+		self.is_converged = false;
 	}
 
 	/// Calculates the global trust score for each peer by normalizing the
@@ -165,6 +178,31 @@ mod test {
 	}
 
 	#[test]
+	fn should_not_mock_transaction_between_peers_with_invalid_index() {
+		let num_peers: usize = Network4Config::SIZE;
+		let pre_trust_scores = vec![0.0; num_peers];
+		let mut network = Network::<Network4Config>::bootstrap(pre_trust_scores).unwrap();
+
+		let res = network.mock_transaction(4, 1, TransactionRating::Positive);
+		match res {
+			Err(EigenError::PeerNotFound) => (),
+			_ => panic!("Expected EigenError::PeerNotFound"),
+		}
+	}
+
+	#[test]
+	fn should_not_pass_invalid_pretrust_scores() {
+		let num_peers: usize = Network4Config::SIZE - 1;
+		let pre_trust_scores = vec![0.0; num_peers];
+
+		let network = Network::<Network4Config>::bootstrap(pre_trust_scores);
+		match network {
+			Err(EigenError::InvalidPreTrustScores) => (),
+			_ => panic!("Expected EigenError::InvalidPreTrustScores"),
+		}
+	}
+
+	#[test]
 	fn mock_transaction() {
 		let num_peers: usize = Network4Config::SIZE;
 		let mut pre_trust_scores = vec![0.0; num_peers];
@@ -202,6 +240,8 @@ mod test {
 
 		network.converge(rng);
 
+		assert!(network.is_converged());
+
 		let peer0_trust_score = network.peers[0].get_global_trust_score();
 		let peer1_trust_score = network.peers[1].get_global_trust_score();
 		assert_eq!(peer0_trust_score, 0.0);
@@ -218,6 +258,7 @@ mod test {
 
 		let num_peers: usize = Network4Config::SIZE;
 
+		// 0.5
 		let default_score = 1. / (num_peers as f64);
 		let pre_trust_scores = vec![default_score; num_peers];
 
@@ -236,11 +277,11 @@ mod test {
 		// ------ Peer 0 ------
 		let sum_of_local_scores_0 =
 			// local score of peer1 towards peer0, times their global score
-			//             0.5                         *               0.0
+			//             0.5                         *               0.5
 			network.peers[1].get_local_trust_score(&0) * network.peers[1].get_global_trust_score();
-		assert_eq!(sum_of_local_scores_0, 0.0);
+		assert_eq!(sum_of_local_scores_0, 0.25);
 
-		// (1.0 - 0.5) * 0.0 + 0.5 * 0.5 = 0.25
+		// (1.0 - 0.5) * 0.25 + 0.5 * 0.5 = 0.375
 		let new_global_trust_score_0 = (f64::one() - Network4Config::PRETRUST_WEIGHT)
 			* sum_of_local_scores_0
 			+ Network4Config::PRETRUST_WEIGHT * network.peers[0].get_pre_trust_score();
@@ -248,11 +289,11 @@ mod test {
 		// ------ Peer 1 ------
 		let sum_of_local_scores_1 =
 			// local score of peer0 towards peer1, times their global score
-			//             1.0                         *               0.0
+			//             1.0                         *               0.5
 			network.peers[0].get_local_trust_score(&1) * network.peers[0].get_global_trust_score();
-		assert_eq!(sum_of_local_scores_1, 0.0);
+		assert_eq!(sum_of_local_scores_1, 0.5);
 
-		// (1.0 - 0.5) * 0.0 + 0.5 * 0.5 = 0.25
+		// (1.0 - 0.5) * 0.5 + 0.5 * 0.5 = 0.5
 		let new_global_trust_score_1 = (f64::one() - Network4Config::PRETRUST_WEIGHT)
 			* sum_of_local_scores_1
 			+ Network4Config::PRETRUST_WEIGHT * network.peers[1].get_pre_trust_score();
@@ -262,14 +303,14 @@ mod test {
 
 		let peer0_score = network.peers[0].get_global_trust_score();
 		assert_eq!(peer0_score, new_global_trust_score_0);
-		assert_eq!(peer0_score, 0.25);
+		assert_eq!(peer0_score, 0.375);
 
 		let peer1_score = network.peers[1].get_global_trust_score();
 		assert_eq!(peer1_score, new_global_trust_score_1);
-		assert_eq!(peer1_score, 0.25);
+		assert_eq!(peer1_score, 0.5);
 
 		let global_trust_scores = network.get_global_trust_scores();
-		assert_eq!(global_trust_scores[0], 0.5);
-		assert_eq!(global_trust_scores[1], 0.5);
+		assert_eq!(global_trust_scores[0], 0.42857142857142855);
+		assert_eq!(global_trust_scores[1], 0.5714285714285714);
 	}
 }
