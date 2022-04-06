@@ -39,6 +39,9 @@ jobs:
         env:
           RUSTFLAGS: "-Zinstrument-coverage"
           LLVM_PROFILE_FILE: "coverage-%p-%m.profraw"
+      
+      - name: Mkdir Coverage
+        run: mkdir ./coverage
 
       - name: Generate Coverage data
         run: grcov . -s . --binary-path ./target/debug/ -t lcov --ignore-not-existing --ignore ./tests/ -o ./coverage/
