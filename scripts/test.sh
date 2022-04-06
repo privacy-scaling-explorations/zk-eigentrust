@@ -1,1 +1,1 @@
-cargo test --release
+cargo test --lib --release
