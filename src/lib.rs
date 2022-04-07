@@ -20,7 +20,6 @@
 //! use eigen_trust::{
 //! 	network::{Network, NetworkConfig},
 //! 	peer::{PeerConfig, TransactionRating},
-//! 	utils::generate_trust_matrix,
 //! };
 //! use rand::thread_rng;
 //!
