@@ -34,7 +34,7 @@ To build the documentation:
 ./scripts/build-docs.sh
 
 # Open the documentation in the browser
-cargo test --no-deps --open
+cargo doc --no-deps --open
 ```
 
 ## License
