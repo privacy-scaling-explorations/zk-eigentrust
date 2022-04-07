@@ -20,7 +20,6 @@
 //! use eigen_trust::{
 //! 	network::{Network, NetworkConfig},
 //! 	peer::{PeerConfig, TransactionRating},
-//! 	utils::generate_trust_matrix,
 //! };
 //! use rand::thread_rng;
 //!
@@ -104,9 +103,6 @@ pub mod network;
 /// The module for peer management. It contains the functionality for creating a
 /// peer, adding local trust scores, and calculating the global trust score.
 pub mod peer;
-
-/// The module for utility functions.
-pub mod utils;
 
 /// The module wide error variants.
 #[derive(Debug)]

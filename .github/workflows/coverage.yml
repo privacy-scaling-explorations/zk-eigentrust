@@ -18,10 +18,6 @@ jobs:
     name: coverage
     runs-on: ubuntu-latest
 
-    container:
-      image: xd009642/tarpaulin:develop-nightly
-      options: --security-opt seccomp=unconfined
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
@@ -29,11 +25,23 @@ jobs:
       - name: Rust Cache
         uses: Swatinem/rust-cache@v1.3.0
 
-      - name: Run Tarpaulin
-        run: cargo tarpaulin --release --lib --ignore-tests --locked --out Xml --jobs 16 --timeout 3600 -- --test-threads 16
+      - name: Install Rust
+        run: ./scripts/init.sh
+
+      - name: Install Rustup component
+        run: rustup component add llvm-tools-preview
+
+      - name: Install grcov
+        run: cargo install grcov
+
+      - name: Run Tests
+        run: cargo test --verbose --lib
+        env:
+          RUSTFLAGS: "-Zinstrument-coverage"
+          LLVM_PROFILE_FILE: "coverage-%p-%m.profraw"
+
+      - name: Generate Coverage data
+        run: grcov . -s . --binary-path ./target/debug/ --ignore-not-existing -t lcov -o lcov.info
 
       - name: Upload to codecov.io
-        uses: codecov/codecov-action@v2
-        with:
-          fail_ci_if_error: true
-          token: ${{ secrets.CODECOV_TOKEN }}
+        run: bash <(curl -s https://codecov.io/bash) -f lcov.info
