@@ -104,6 +104,9 @@ pub mod network;
 /// peer, adding local trust scores, and calculating the global trust score.
 pub mod peer;
 
+/// The module for kd tree structure. Used for 2d space partitioning.
+pub mod kd_tree;
+
 /// The module wide error variants.
 #[derive(Debug)]
 pub enum EigenError {
