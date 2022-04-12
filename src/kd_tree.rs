@@ -27,7 +27,7 @@ impl Key {
 }
 
 /// From implementation for Key
-/// For createing a Key from 2 parts
+/// For creating a Key from 2 parts
 impl From<(u128, u128)> for Key {
 	fn from(value: (u128, u128)) -> Self {
 		let mut key = [0u8; 32];
@@ -41,12 +41,12 @@ impl From<(u128, u128)> for Key {
 
 /// An implementation of K-D Tree with fixed size and number of leaf nodes
 ///
-/// It takes a vector of keys and maps them into a 2 dimentional plane
+/// It takes a vector of keys and maps them into a 2-dimensional plane.
 /// Each key gets the same amount of territory in the plane,
-/// which means the vector length has to be power of 2.
+/// which means the vector length has to be a power of 2.
 /// Their position is based on the index inside the vector, e.g.:
 /// If we had a vector of length 4, [manager1, manager2, manager3, manager4],
-/// The first manager would be at the top left corner of the plane
+/// The first manager would be at the top left corner of the plane, like so:
 //                x
 // 10 ┌───────────┬───────────┐
 //    │           │           │
@@ -63,8 +63,10 @@ impl From<(u128, u128)> for Key {
 ///
 /// The tree of 4 leaves is structured as follows:
 /// The root has an index of 0, and each children index is a continuation of the
-/// parent index The bottom most level (the leaf level), starts with the index
-/// of 0 level 2:                  0         
+/// parent index The bottom-most level (the leaf level), starts with the index
+/// of 0.
+/// 
+/// level 2:                  0         
 /// level 1:            1           2   
 /// level 0:         3     4     5     6
 /// leaf level:      0     1     2     3
