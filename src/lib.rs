@@ -75,15 +75,14 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![allow(clippy::tabs_in_doc_comments)]
 #![deny(
-	unused,
-	warnings,
 	future_incompatible,
 	nonstandard_style,
 	missing_docs,
-	dead_code,
 	deprecated,
 	unreachable_code,
 	unreachable_patterns,
+	absolute_paths_not_starting_with_crate,
+	unsafe_code,
 	clippy::unwrap_used,
 	clippy::panic,
 	clippy::unnecessary_cast,
@@ -93,6 +92,7 @@
 	clippy::cast_precision_loss,
 	clippy::cast_sign_loss
 )]
+#![warn(trivial_casts)]
 #![forbid(unsafe_code)]
 
 /// The module for the higher-level network functions.
