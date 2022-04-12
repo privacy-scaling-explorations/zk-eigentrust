@@ -65,7 +65,7 @@ impl From<(u128, u128)> for Key {
 /// The root has an index of 0, and each children index is a continuation of the
 /// parent index The bottom-most level (the leaf level), starts with the index
 /// of 0.
-/// 
+///
 /// level 2:                  0         
 /// level 1:            1           2   
 /// level 0:         3     4     5     6
