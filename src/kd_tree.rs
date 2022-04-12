@@ -2,7 +2,7 @@ use ark_std::{collections::BTreeMap, log2, vec::Vec};
 use rand::Rng;
 
 /// Tree specific error variants
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum TreeError {
 	KeyNotFound,
 	InvalidNumberOfLeaves,
@@ -68,6 +68,7 @@ impl From<(u128, u128)> for Key {
 /// level 1:            1           2   
 /// level 0:         3     4     5     6
 /// leaf level:      0     1     2     3
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct KdTree {
 	leaf_nodes: BTreeMap<u64, Key>,
 }
@@ -172,31 +173,18 @@ fn children(index: u64) -> (u64, u64) {
 	(left_child(index), right_child(index))
 }
 
-/// Returns the index of the parent, given an index.
-#[inline]
-fn parent(index: u64) -> u64 {
-	(index - 1) >> 1
-}
-
 #[cfg(test)]
 mod test {
 	use super::*;
 
 	#[test]
 	fn should_not_create_tree_with_invalid_number_of_leaves() {
-		let rng = &mut rand::thread_rng();
-		let leaf_nodes1 = vec![Key::rand(rng); 3];
-		let leaf_nodes2 = vec![Key::rand(rng); 2];
+		let leaf_nodes1 = vec![Key::new([0u8; 32]); 3];
+		let leaf_nodes2 = vec![Key::new([0u8; 32]); 2];
 		let res1 = KdTree::new(leaf_nodes1);
 		let res2 = KdTree::new(leaf_nodes2);
-		match res1 {
-			Err(TreeError::InvalidNumberOfLeaves) => (),
-			_ => panic!("Should not create a tree with invalid number of leaves"),
-		}
-		match res2 {
-			Ok(_) => (),
-			_ => panic!("Should be able create a tree with valid number of leaves"),
-		}
+		assert_eq!(res1.unwrap_err(), TreeError::InvalidNumberOfLeaves);
+		assert!(res2.is_ok());
 	}
 
 	#[test]
