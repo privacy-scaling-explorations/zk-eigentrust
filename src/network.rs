@@ -138,6 +138,9 @@ impl<C: NetworkConfig> Network<C> {
 			// Loop over all the peers until all the peers converge.
 			// In that case, the network is converged.
 			for (_, manager) in temp_managers.iter_mut() {
+				// Loop over all the peers until all the peers converge.
+				// In that case, the network is converged.
+				let mut is_everyone_converged = true;
 				manager.heartbeat(
 					&self.peers,
 					&self.managers,
@@ -146,6 +149,15 @@ impl<C: NetworkConfig> Network<C> {
 					C::PRETRUST_WEIGHT,
 					C::NUM_MANAGERS,
 				)?;
+
+				is_everyone_converged = is_everyone_converged && manager.is_converged();
+
+				// We will break out of the loop if the network converges before the maximum
+				// number of iterations
+				if is_everyone_converged {
+					self.is_converged = true;
+					break;
+				}
 			}
 		}
 

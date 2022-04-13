@@ -41,7 +41,7 @@ impl Manager {
 		self.children.push(child);
 	}
 
-	/// Update the global trust score of the children.
+	/// Loop trought all the children and calculate their global trust score.
 	pub fn heartbeat(
 		&mut self,
 		peers: &BTreeMap<Key, Peer>,
@@ -143,7 +143,7 @@ impl Manager {
 		num_managers: u64,
 	) -> Result<f64, EigenError> {
 		let mut scores: BTreeMap<[u8; 8], u64> = BTreeMap::new();
-		// Should it be 2/3 majority or 1/2 majority?
+		// TODO: Should it be 2/3 majority or 1/2 majority?
 		let majority = (num_managers / 3) * 2;
 
 		let mut hash = *index;
@@ -167,6 +167,21 @@ impl Manager {
 
 		// We reached the end of the vote without finding a majority.
 		Err(EigenError::GlobalTrustCalculationFailed)
+	}
+
+	/// Check if the global scores for children are converged.
+	pub fn is_converged(&self) -> bool {
+		for child in self.children.iter() {
+			if !self.children_states.get(child).unwrap_or(&false) {
+				return false;
+			}
+		}
+		true
+	}
+
+	/// Reset all the children's states to false.
+	pub fn reset(&mut self) {
+		self.children_states = BTreeMap::new()
 	}
 
 	/// Get cached global trust score of the child peer.
