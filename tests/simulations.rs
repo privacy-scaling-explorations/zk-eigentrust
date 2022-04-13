@@ -3,20 +3,12 @@
 
 use eigen_trust::{
 	network::{Network, NetworkConfig},
-	peer::{PeerConfig, TransactionRating},
+	peer::TransactionRating,
 };
 use rand::{thread_rng, Rng};
 
-#[derive(Clone, Copy, Debug)]
-struct Peer;
-impl PeerConfig for Peer {
-	type Index = usize;
-}
-
 struct Network12Config;
 impl NetworkConfig for Network12Config {
-	type Peer = Peer;
-
 	const DELTA: f64 = 0.0001;
 	const MAX_ITERATIONS: usize = 1000;
 	const PRETRUST_WEIGHT: f64 = 0.5;
@@ -84,8 +76,6 @@ fn simulate_converging_12_peers() {
 
 struct Network256Config;
 impl NetworkConfig for Network256Config {
-	type Peer = Peer;
-
 	const DELTA: f64 = 0.0001;
 	const MAX_ITERATIONS: usize = 5000;
 	const PRETRUST_WEIGHT: f64 = 0.3;

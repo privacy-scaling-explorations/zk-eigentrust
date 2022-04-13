@@ -3,18 +3,17 @@
 //! networks, and interactions between peers.
 
 use crate::{
-	peer::{Peer, PeerConfig, TransactionRating},
+	kd_tree::Key,
+	peer::{Peer, TransactionRating},
 	EigenError,
 };
-use ark_std::{collections::BTreeMap, vec::Vec, Zero};
+use ark_std::{collections::BTreeMap, marker::PhantomData, vec::Vec, Zero};
 use rand::prelude::RngCore;
 
 // use rand::prelude::SliceRandom;
 
 /// The network configuration trait.
 pub trait NetworkConfig {
-	/// Configuration trait for the peer.
-	type Peer: PeerConfig;
 	/// The minimum change in global score from last iteration.
 	const DELTA: f64;
 	/// A number of peers in the network.
@@ -29,9 +28,10 @@ pub trait NetworkConfig {
 /// The struct contains all the peers and other metadata.
 pub struct Network<C: NetworkConfig> {
 	/// The peers in the network.
-	peers: Vec<Peer<C::Peer>>,
+	peers: Vec<Peer>,
 	/// Indicated whether the network has converged.
 	is_converged: bool,
+	_config: PhantomData<C>,
 }
 
 impl<C: NetworkConfig> Network<C> {
@@ -45,16 +45,16 @@ impl<C: NetworkConfig> Network<C> {
 			return Err(EigenError::InvalidPreTrustScores);
 		}
 
-		let pre_trust_score_map: BTreeMap<<C::Peer as PeerConfig>::Index, f64> = pre_trust_scores
+		let pre_trust_score_map: BTreeMap<Key, f64> = pre_trust_scores
 			.into_iter()
 			.enumerate()
-			.map(|(i, score)| (i.into(), score))
+			.map(|(i, score)| (Key::from(i), score))
 			.collect();
 
 		let mut peers = Vec::with_capacity(C::SIZE);
 		// Creating initial peers.
 		for x in 0..C::SIZE {
-			let index = <C::Peer as PeerConfig>::Index::from(x);
+			let index = Key::from(x);
 			let new_peer = Peer::new(index, pre_trust_score_map.clone());
 			peers.push(new_peer);
 		}
@@ -62,6 +62,7 @@ impl<C: NetworkConfig> Network<C> {
 		Ok(Self {
 			peers,
 			is_converged: false,
+			_config: PhantomData,
 		})
 	}
 
@@ -74,7 +75,7 @@ impl<C: NetworkConfig> Network<C> {
 	) -> Result<(), EigenError> {
 		let peer = self.peers.get_mut(i).ok_or(EigenError::PeerNotFound)?;
 
-		let peer_index = <C::Peer as PeerConfig>::Index::from(j);
+		let peer_index = Key::from(j);
 		peer.mock_rate_transaction(peer_index, rating);
 
 		Ok(())
@@ -149,16 +150,8 @@ mod test {
 	use ark_std::One;
 	use rand::thread_rng;
 
-	#[derive(Clone, Copy, Debug)]
-	struct Peer;
-	impl PeerConfig for Peer {
-		type Index = usize;
-	}
-
 	struct Network4Config;
 	impl NetworkConfig for Network4Config {
-		type Peer = Peer;
-
 		const DELTA: f64 = 0.001;
 		const MAX_ITERATIONS: usize = 1000;
 		const PRETRUST_WEIGHT: f64 = 0.5;
@@ -215,7 +208,7 @@ mod test {
 			.mock_transaction(0, 1, TransactionRating::Positive)
 			.unwrap();
 
-		assert_eq!(network.peers[0].get_transaction_scores(&1), 1);
+		assert_eq!(network.peers[0].get_transaction_scores(&Key::from(1)), 1);
 	}
 
 	#[test]
@@ -278,7 +271,7 @@ mod test {
 		let sum_of_local_scores_0 =
 			// local score of peer1 towards peer0, times their global score
 			//             0.5                         *               0.5
-			network.peers[1].get_local_trust_score(&0) * network.peers[1].get_global_trust_score();
+			network.peers[1].get_local_trust_score(&Key::from(0)) * network.peers[1].get_global_trust_score();
 		assert_eq!(sum_of_local_scores_0, 0.25);
 
 		// (1.0 - 0.5) * 0.25 + 0.5 * 0.5 = 0.375
@@ -290,7 +283,7 @@ mod test {
 		let sum_of_local_scores_1 =
 			// local score of peer0 towards peer1, times their global score
 			//             1.0                         *               0.5
-			network.peers[0].get_local_trust_score(&1) * network.peers[0].get_global_trust_score();
+			network.peers[0].get_local_trust_score(&Key::from(1)) * network.peers[0].get_global_trust_score();
 		assert_eq!(sum_of_local_scores_1, 0.5);
 
 		// (1.0 - 0.5) * 0.5 + 0.5 * 0.5 = 0.5

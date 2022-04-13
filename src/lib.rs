@@ -19,22 +19,13 @@
 //! ```rust
 //! use eigen_trust::{
 //! 	network::{Network, NetworkConfig},
-//! 	peer::{PeerConfig, TransactionRating},
+//! 	peer::TransactionRating,
 //! };
 //! use rand::thread_rng;
-//!
-//! // Configure the peer.
-//! #[derive(Clone, Copy, Debug)]
-//! struct Peer;
-//! impl PeerConfig for Peer {
-//! 	type Index = usize;
-//! }
 //!
 //! // Configure the network.
 //! struct Network4Config;
 //! impl NetworkConfig for Network4Config {
-//! 	type Peer = Peer;
-//!
 //! 	const DELTA: f64 = 0.001;
 //! 	const MAX_ITERATIONS: usize = 1000;
 //! 	const PRETRUST_WEIGHT: f64 = 0.5;
@@ -114,4 +105,6 @@ pub enum EigenError {
 	InvalidPreTrustScores,
 	/// Peer not found in the network or peer cache
 	PeerNotFound,
+	/// Managers couldn't agree on the global trust score for a peer
+	GlobalTrustCalculationFailed
 }

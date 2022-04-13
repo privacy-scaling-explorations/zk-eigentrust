@@ -1,28 +1,45 @@
 use ark_std::{collections::BTreeMap, log2, vec::Vec};
 use rand::Rng;
+use tiny_keccak::{Hasher, Keccak};
 
 /// Tree specific error variants
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum TreeError {
+pub enum TreeError {
+	/// The Key is not found in the tree
 	KeyNotFound,
+	/// Number of leaves has to be power of 2
 	InvalidNumberOfLeaves,
 }
 
 /// Key used for identifying a leaf value outside the tree
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct Key([u8; 32]);
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Ord, PartialOrd, Default)]
+pub struct Key([u8; 32]);
 
 impl Key {
 	/// Create a new Key from a slice of bytes
-	fn new(key: [u8; 32]) -> Self {
+	pub fn new(key: [u8; 32]) -> Self {
 		Key(key)
 	}
 
 	/// Create a new random Key
-	fn rand<R: Rng>(rng: &mut R) -> Self {
+	pub fn rand<R: Rng>(rng: &mut R) -> Self {
 		let mut key = [0u8; 32];
 		rng.fill_bytes(&mut key);
 		Key(key)
+	}
+
+	/// Hash the key with keccak 256 hash function
+	pub fn hash(&self) -> Key {
+		let mut hasher = Keccak::v256();
+		hasher.update(&self.to_be_bytes());
+		let mut hash = [0u8; 32];
+		hasher.finalize(&mut hash);
+		Key(hash)
+	}
+
+	/// Get the inner value of the Key
+	pub fn to_be_bytes(&self) -> [u8; 32] {
+		self.0
 	}
 }
 
@@ -35,6 +52,19 @@ impl From<(u128, u128)> for Key {
 		let second_part = value.1.to_be_bytes();
 		key[0..16].copy_from_slice(&first_part[..]);
 		key[16..32].copy_from_slice(&second_part[..]);
+		Key(key)
+	}
+}
+
+impl From<usize> for Key {
+	fn from(value: usize) -> Self {
+		let mut key = [0u8; 32];
+		let u_bytes = value.to_be_bytes();
+		// On some targets, the usize is 4 bytes, and on some its 8 bytes
+		// So, we need to copy the bytes manually
+		for i in 0..u_bytes.len() {
+			key[i] = u_bytes[i];
+		}
 		Key(key)
 	}
 }
@@ -71,7 +101,7 @@ impl From<(u128, u128)> for Key {
 /// level 0:         3     4     5     6
 /// leaf level:      0     1     2     3
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct KdTree {
+pub struct KdTree {
 	leaf_nodes: BTreeMap<u64, Key>,
 }
 
