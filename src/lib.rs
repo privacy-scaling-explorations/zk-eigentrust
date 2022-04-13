@@ -93,6 +93,8 @@ pub mod network;
 
 /// The module for peer management. It contains the functionality for creating a
 /// peer, adding local trust scores, and calculating the global trust score.
+pub mod manager;
+
 pub mod peer;
 
 /// The module for kd tree structure. Used for 2d space partitioning.
@@ -106,5 +108,7 @@ pub enum EigenError {
 	/// Peer not found in the network or peer cache
 	PeerNotFound,
 	/// Managers couldn't agree on the global trust score for a peer
-	GlobalTrustCalculationFailed
+	GlobalTrustCalculationFailed,
+	/// Invalid keys for the manager generated
+	InvalidManagerKeys,
 }

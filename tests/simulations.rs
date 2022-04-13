@@ -11,6 +11,7 @@ struct Network12Config;
 impl NetworkConfig for Network12Config {
 	const DELTA: f64 = 0.0001;
 	const MAX_ITERATIONS: usize = 1000;
+	const NUM_MANAGERS: u64 = 2;
 	const PRETRUST_WEIGHT: f64 = 0.5;
 	const SIZE: usize = 12;
 }
@@ -35,7 +36,7 @@ fn simulate_converging_12_peers() {
 			.unwrap();
 	}
 
-	network.converge(rng);
+	network.converge(rng).unwrap();
 	let global_trust_scores = network.get_global_trust_scores();
 	println!("");
 	println!(
@@ -50,7 +51,7 @@ fn simulate_converging_12_peers() {
 			.unwrap();
 	}
 
-	network.converge(rng);
+	network.converge(rng).unwrap();
 	let global_trust_scores = network.get_global_trust_scores();
 	println!("");
 	println!(
@@ -65,7 +66,7 @@ fn simulate_converging_12_peers() {
 			.unwrap();
 	}
 
-	network.converge(rng);
+	network.converge(rng).unwrap();
 	let global_trust_scores = network.get_global_trust_scores();
 	println!("");
 	println!(
@@ -78,6 +79,7 @@ struct Network256Config;
 impl NetworkConfig for Network256Config {
 	const DELTA: f64 = 0.0001;
 	const MAX_ITERATIONS: usize = 5000;
+	const NUM_MANAGERS: u64 = 2;
 	const PRETRUST_WEIGHT: f64 = 0.3;
 	const SIZE: usize = 256;
 }
@@ -107,7 +109,7 @@ fn simulate_converging_256_peers() {
 
 		println!("");
 		println!("Boosting {} in cycle: {}", rnd_index, cycle);
-		network.converge(rng);
+		network.converge(rng).unwrap();
 		let global_trust_scores = network.get_global_trust_scores();
 		println!("{:?}", global_trust_scores);
 	}
