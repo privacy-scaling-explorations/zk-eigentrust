@@ -95,6 +95,8 @@ pub mod network;
 /// peer, adding local trust scores, and calculating the global trust score.
 pub mod manager;
 
+/// The module for basic peer functions. It contains the functionality for
+/// transacting with other peers, and calulating local trust scores.
 pub mod peer;
 
 /// The module for kd tree structure. Used for 2d space partitioning.

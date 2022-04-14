@@ -7,19 +7,19 @@ use eigen_trust::{
 };
 use rand::{thread_rng, Rng};
 
-struct Network12Config;
-impl NetworkConfig for Network12Config {
+struct Network16Config;
+impl NetworkConfig for Network16Config {
 	const DELTA: f64 = 0.0001;
 	const MAX_ITERATIONS: usize = 1000;
 	const NUM_MANAGERS: u64 = 2;
 	const PRETRUST_WEIGHT: f64 = 0.5;
-	const SIZE: usize = 12;
+	const SIZE: usize = 16;
 }
 
 #[test]
-fn simulate_converging_12_peers() {
+fn simulate_converging_16_peers() {
 	let rng = &mut thread_rng();
-	let num_peers: usize = Network12Config::SIZE;
+	let num_peers: usize = Network16Config::SIZE;
 
 	let mut pre_trust_scores = vec![0.0; num_peers];
 	pre_trust_scores[0] = 0.25;
@@ -27,7 +27,7 @@ fn simulate_converging_12_peers() {
 	pre_trust_scores[2] = 0.25;
 	pre_trust_scores[3] = 0.25;
 
-	let mut network = Network::<Network12Config>::bootstrap(pre_trust_scores).unwrap();
+	let mut network = Network::<Network16Config>::bootstrap(pre_trust_scores).unwrap();
 
 	// Boost peer 5
 	for i in 0..num_peers {
@@ -55,7 +55,7 @@ fn simulate_converging_12_peers() {
 	let global_trust_scores = network.get_global_trust_scores();
 	println!("");
 	println!(
-		"Global trust scores after round 1: {:?}",
+		"Global trust scores after round 2: {:?}",
 		global_trust_scores
 	);
 
@@ -70,7 +70,7 @@ fn simulate_converging_12_peers() {
 	let global_trust_scores = network.get_global_trust_scores();
 	println!("");
 	println!(
-		"Global trust scores after round 1: {:?}",
+		"Global trust scores after round 3: {:?}",
 		global_trust_scores
 	);
 }

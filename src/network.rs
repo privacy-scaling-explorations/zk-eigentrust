@@ -77,7 +77,8 @@ impl<C: NetworkConfig> Network<C> {
 		}
 
 		// Instantiate the manager tree.
-		let manager_tree = KdTree::new(peer_keys.clone()).map_err(|_| EigenError::InvalidManagerKeys)?;
+		let manager_tree =
+			KdTree::new(peer_keys.clone()).map_err(|_| EigenError::InvalidManagerKeys)?;
 
 		// We have to go through each peer and derive its managers from the key
 		// Then, we have to assign those peers to the managers
@@ -88,7 +89,9 @@ impl<C: NetworkConfig> Network<C> {
 				let manager_key = manager_tree
 					.search(hash)
 					.map_err(|_| EigenError::PeerNotFound)?;
-				let manager = managers.get_mut(&manager_key).ok_or(EigenError::PeerNotFound)?;
+				let manager = managers
+					.get_mut(&manager_key)
+					.ok_or(EigenError::PeerNotFound)?;
 
 				// Add the children to the manager
 				manager.add_child(key);
@@ -126,21 +129,20 @@ impl<C: NetworkConfig> Network<C> {
 	/// The main loop of the network. It iterates until the network converges
 	/// or the maximum number of iterations is reached.
 	pub fn converge<R: RngCore>(&mut self, _rng: &mut R) -> Result<(), EigenError> {
+		// Reset the whole network, so we can converge again.
+		self.reset();
+
 		let mut temp_managers = self.managers.clone();
 		// We are shuffling the peers so that we can iterate over them in random order.
 		// TODO: Research why this is necessary.
 		// temp_peers.shuffle(rng);
 
-		// Reset the whole network, so we can converge again.
-		self.reset();
-
 		for _ in 0..C::MAX_ITERATIONS {
 			// Loop over all the peers until all the peers converge.
 			// In that case, the network is converged.
+			let mut is_everyone_converged = true;
 			for (_, manager) in temp_managers.iter_mut() {
-				// Loop over all the peers until all the peers converge.
-				// In that case, the network is converged.
-				let mut is_everyone_converged = true;
+
 				manager.heartbeat(
 					&self.peers,
 					&self.managers,
@@ -151,13 +153,13 @@ impl<C: NetworkConfig> Network<C> {
 				)?;
 
 				is_everyone_converged = is_everyone_converged && manager.is_converged();
+			}
 
-				// We will break out of the loop if the network converges before the maximum
-				// number of iterations
-				if is_everyone_converged {
-					self.is_converged = true;
-					break;
-				}
+			// We will break out of the loop if the network converges before the maximum
+			// number of iterations
+			if is_everyone_converged {
+				self.is_converged = true;
+				break;
 			}
 		}
 
@@ -169,14 +171,20 @@ impl<C: NetworkConfig> Network<C> {
 	/// Reset the network.
 	pub fn reset(&mut self) {
 		self.is_converged = false;
+		// Reset all the managers
+		for (_, manager) in self.managers.iter_mut() {
+			manager.reset();
+		}
 	}
 
 	/// Calculates the global trust score for each peer by normalizing the
 	/// global trust scores.
 	pub fn get_global_trust_scores(&self) -> Result<Vec<f64>, EigenError> {
+		// Take any manager from the network.
 		let manager1 = self
 			.managers
-			.get(&Key::from(0))
+			.values()
+			.next()
 			.ok_or(EigenError::PeerNotFound)?;
 		let mut cached_global_scores: BTreeMap<Key, f64> = BTreeMap::new();
 
@@ -223,12 +231,14 @@ impl<C: NetworkConfig> Network<C> {
 #[cfg(test)]
 mod test {
 	use super::*;
+	use rand::thread_rng;
+	use ark_std::One;
 
 	struct Network4Config;
 	impl NetworkConfig for Network4Config {
 		const DELTA: f64 = 0.001;
 		const MAX_ITERATIONS: usize = 1000;
-		const NUM_MANAGERS: u64 = 2;
+		const NUM_MANAGERS: u64 = 1;
 		const PRETRUST_WEIGHT: f64 = 0.5;
 		const SIZE: usize = 2;
 	}
@@ -268,5 +278,107 @@ mod test {
 			Err(EigenError::InvalidPreTrustScores) => (),
 			_ => panic!("Expected EigenError::InvalidPreTrustScores"),
 		}
+	}
+
+	#[test]
+	fn network_not_converging_without_pre_trusted_peers() {
+		let rng = &mut thread_rng();
+
+		let num_peers: usize = Network4Config::SIZE;
+
+		let pre_trust_scores = vec![0.0; num_peers];
+
+		let mut network = Network::<Network4Config>::bootstrap(pre_trust_scores).unwrap();
+
+		network
+			.mock_transaction(0, 1, TransactionRating::Positive)
+			.unwrap();
+		network
+			.mock_transaction(1, 0, TransactionRating::Positive)
+			.unwrap();
+		network
+			.mock_transaction(1, 2, TransactionRating::Positive)
+			.unwrap();
+
+		network.converge(rng).unwrap();
+
+		assert!(network.is_converged());
+
+		let key0 = Key::from(0);
+		let key1 = Key::from(1);
+
+		let peer0_trust_score = network.managers[&key0].get_global_trust_score_for(&key0);
+		let peer1_trust_score = network.managers[&key0].get_global_trust_score_for(&key1);
+		assert_eq!(peer0_trust_score, 0.0);
+		assert_eq!(peer1_trust_score, 0.0);
+
+		let global_trust_scores = network.get_global_trust_scores().unwrap();
+		assert!(global_trust_scores[0].is_nan());
+		assert!(global_trust_scores[1].is_nan());
+	}
+
+	#[test]
+	fn network_converging_with_pre_trusted_peers() {
+		let rng = &mut thread_rng();
+
+		let num_peers: usize = Network4Config::SIZE;
+
+		// 0.5
+		let default_score = 1. / (num_peers as f64);
+		let pre_trust_scores = vec![default_score; num_peers];
+
+		let mut network = Network::<Network4Config>::bootstrap(pre_trust_scores).unwrap();
+
+		network
+			.mock_transaction(0, 1, TransactionRating::Positive)
+			.unwrap();
+		network
+			.mock_transaction(1, 0, TransactionRating::Positive)
+			.unwrap();
+		network
+			.mock_transaction(1, 2, TransactionRating::Positive)
+			.unwrap();
+
+		let key0 = Key::from(0);
+		let key1 = Key::from(1);
+
+		// ------ Peer 0 ------
+		let sum_of_local_scores_0 =
+			// local score of peer1 towards peer0, times their global score
+			//             0.5                         *               0.5
+			network.peers[&key1].get_local_trust_score(&key0) * network.managers[&key0].get_global_trust_score_for(&key1);
+		assert_eq!(sum_of_local_scores_0, 0.25);
+
+		// (1.0 - 0.5) * 0.25 + 0.5 * 0.5 = 0.375
+		let new_global_trust_score_0 = (f64::one() - Network4Config::PRETRUST_WEIGHT)
+			* sum_of_local_scores_0
+			+ Network4Config::PRETRUST_WEIGHT * network.peers[&key0].get_pre_trust_score();
+
+		// ------ Peer 1 ------
+		let sum_of_local_scores_1 =
+			// local score of peer0 towards peer1, times their global score
+			//             1.0                         *               0.5
+			network.peers[&key0].get_local_trust_score(&key1) * network.managers[&key0].get_global_trust_score_for(&key0);
+		assert_eq!(sum_of_local_scores_1, 0.5);
+
+		// (1.0 - 0.5) * 0.5 + 0.5 * 0.5 = 0.5
+		let new_global_trust_score_1 = (f64::one() - Network4Config::PRETRUST_WEIGHT)
+			* sum_of_local_scores_1
+			+ Network4Config::PRETRUST_WEIGHT * network.peers[&key1].get_pre_trust_score();
+
+		// Converge the network.
+		network.converge(rng).unwrap();
+
+		let peer0_score = network.managers[&key0].get_global_trust_score_for(&key0);
+		assert_eq!(peer0_score, new_global_trust_score_0);
+		assert_eq!(peer0_score, 0.375);
+
+		let peer1_score = network.managers[&key0].get_global_trust_score_for(&key1);
+		assert_eq!(peer1_score, new_global_trust_score_1);
+		assert_eq!(peer1_score, 0.5);
+
+		let global_trust_scores = network.get_global_trust_scores().unwrap();
+		assert_eq!(global_trust_scores[0], 0.42857142857142855);
+		assert_eq!(global_trust_scores[1], 0.5714285714285714);
 	}
 }

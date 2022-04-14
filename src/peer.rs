@@ -85,7 +85,7 @@ impl Peer {
 		// the sum will be zero, which will cause a division by zero.
 		// Resulting in NaN.
 		let mut normalized_score = f64::from(*score) / f64::from(sum);
-		// If normalized_score is NaN, we should fall back to the trust score of the
+		// If normalized_score is NaN, we should fall back to the pre-trust score of the
 		// peer `i`.
 		if normalized_score.is_nan() {
 			// We could use either a pre-trusted value or 0.
@@ -134,12 +134,16 @@ mod test {
 		peer.mock_rate_transaction(&one, TransactionRating::Positive);
 		peer.mock_rate_transaction(&one, TransactionRating::Positive);
 		peer.mock_rate_transaction(&one, TransactionRating::Negative);
+
+		peer.mock_rate_transaction(&two, TransactionRating::Positive);
+		peer.mock_rate_transaction(&two, TransactionRating::Positive);
 		peer.mock_rate_transaction(&two, TransactionRating::Positive);
 
 		// Everyone should have equal score
-		assert_eq!(peer.get_local_trust_score(&one), 0.5);
-		assert_eq!(peer.get_local_trust_score(&two), 0.5);
+		assert_eq!(peer.get_local_trust_score(&one), 0.25);
+		assert_eq!(peer.get_local_trust_score(&two), 0.75);
 
 		assert_eq!(peer.get_transaction_scores(&one), 1);
+		assert_eq!(peer.get_transaction_scores(&two), 3);
 	}
 }
