@@ -142,7 +142,6 @@ impl<C: NetworkConfig> Network<C> {
 			// In that case, the network is converged.
 			let mut is_everyone_converged = true;
 			for (_, manager) in temp_managers.iter_mut() {
-
 				manager.heartbeat(
 					&self.peers,
 					&self.managers,
@@ -231,8 +230,8 @@ impl<C: NetworkConfig> Network<C> {
 #[cfg(test)]
 mod test {
 	use super::*;
-	use rand::thread_rng;
 	use ark_std::One;
+	use rand::thread_rng;
 
 	struct Network4Config;
 	impl NetworkConfig for Network4Config {

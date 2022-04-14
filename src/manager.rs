@@ -411,9 +411,12 @@ mod test {
 		assert_eq!(sum_of_local_scores, 0.1875);
 
 		// (1.0 - 0.4) * 0.1875 + 0.4 * 0.25 = 0.2125
-		let new_global_trust_score = (f64::one() - pre_trust_weight) * sum_of_local_scores +
-			pre_trust_weight * peers[&key0].get_pre_trust_score();
-		assert_eq!(managers[&key1].get_global_trust_score_for(&key0), new_global_trust_score);
+		let new_global_trust_score = (f64::one() - pre_trust_weight) * sum_of_local_scores
+			+ pre_trust_weight * peers[&key0].get_pre_trust_score();
+		assert_eq!(
+			managers[&key1].get_global_trust_score_for(&key0),
+			new_global_trust_score
+		);
 		// Weird rounding error unfourtunately.
 		assert_eq!(managers[&key1].get_global_trust_score_for(&key0), 0.2125);
 	}
