@@ -6,7 +6,7 @@ use crate::{
 	peer::Peer,
 	EigenError,
 };
-use ark_std::{collections::BTreeMap, fmt::Debug, One, Zero};
+use ark_std::{collections::BTreeMap, fmt::Debug, vec::Vec, One, Zero};
 
 /// Peer structure.
 #[derive(Clone, Debug)]
