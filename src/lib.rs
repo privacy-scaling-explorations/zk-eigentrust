@@ -19,35 +19,28 @@
 //! ```rust
 //! use eigen_trust::{
 //! 	network::{Network, NetworkConfig},
-//! 	peer::{PeerConfig, TransactionRating},
+//! 	peer::TransactionRating,
 //! };
 //! use rand::thread_rng;
 //!
-//! // Configure the peer.
-//! #[derive(Clone, Copy, Debug)]
-//! struct Peer;
-//! impl PeerConfig for Peer {
-//! 	type Index = usize;
-//! }
-//!
 //! // Configure the network.
-//! struct Network4Config;
-//! impl NetworkConfig for Network4Config {
-//! 	type Peer = Peer;
-//!
-//! 	const DELTA: f64 = 0.001;
+//! #[derive(Debug)]
+//! struct ExampleNetworkConfig;
+//! impl NetworkConfig for ExampleNetworkConfig {
+//! 	const DELTA: f64 = 0.0001;
 //! 	const MAX_ITERATIONS: usize = 1000;
+//! 	const NUM_MANAGERS: u64 = 2;
 //! 	const PRETRUST_WEIGHT: f64 = 0.5;
-//! 	const SIZE: usize = 4;
+//! 	const SIZE: usize = 16;
 //! }
 //!
 //! let rng = &mut thread_rng();
-//! let num_peers: usize = Network4Config::SIZE;
+//! let num_peers: usize = ExampleNetworkConfig::SIZE;
 //!
 //! let default_score = 1. / num_peers as f64;
 //! let mut pre_trust_scores = vec![default_score; num_peers];
 //!
-//! let mut network = Network::<Network4Config>::bootstrap(pre_trust_scores).unwrap();
+//! let mut network = Network::<ExampleNetworkConfig>::bootstrap(pre_trust_scores).unwrap();
 //!
 //! network
 //! 	.mock_transaction(0, 1, TransactionRating::Positive)
@@ -101,17 +94,25 @@
 pub mod network;
 
 /// The module for peer management. It contains the functionality for creating a
-/// peer, adding local trust scores, and calculating the global trust score.
+/// manager, and calculating the global trust scores.
+pub mod manager;
+
+/// The module for basic peer functions. It contains the functionality for
+/// transacting with other peers, and calculating local trust scores.
 pub mod peer;
 
-/// The module for kd tree structure. Used for 2d space partitioning.
+/// The module for Kd tree structure. Used for 2d space partitioning.
 pub mod kd_tree;
 
 /// The module wide error variants.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum EigenError {
 	/// Invalid pre trust scores passed
 	InvalidPreTrustScores,
 	/// Peer not found in the network or peer cache
 	PeerNotFound,
+	/// Managers couldn't agree on the global trust score for a peer
+	GlobalTrustCalculationFailed,
+	/// Invalid keys for the manager generated
+	InvalidManagerKeys,
 }
