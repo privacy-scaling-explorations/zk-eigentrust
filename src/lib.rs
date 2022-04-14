@@ -24,21 +24,22 @@
 //! use rand::thread_rng;
 //!
 //! // Configure the network.
-//! struct Network4Config;
-//! impl NetworkConfig for Network4Config {
-//! 	const DELTA: f64 = 0.001;
+//! struct ExampleNetworkConfig;
+//! impl NetworkConfig for ExampleNetworkConfig {
+//! 	const DELTA: f64 = 0.0001;
 //! 	const MAX_ITERATIONS: usize = 1000;
+//! 	const NUM_MANAGERS: u64 = 2;
 //! 	const PRETRUST_WEIGHT: f64 = 0.5;
-//! 	const SIZE: usize = 4;
+//! 	const SIZE: usize = 16;
 //! }
 //!
 //! let rng = &mut thread_rng();
-//! let num_peers: usize = Network4Config::SIZE;
+//! let num_peers: usize = ExampleNetworkConfig::SIZE;
 //!
 //! let default_score = 1. / num_peers as f64;
 //! let mut pre_trust_scores = vec![default_score; num_peers];
 //!
-//! let mut network = Network::<Network4Config>::bootstrap(pre_trust_scores).unwrap();
+//! let mut network = Network::<ExampleNetworkConfig>::bootstrap(pre_trust_scores).unwrap();
 //!
 //! network
 //! 	.mock_transaction(0, 1, TransactionRating::Positive)

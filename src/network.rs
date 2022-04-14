@@ -233,8 +233,8 @@ mod test {
 	use ark_std::One;
 	use rand::thread_rng;
 
-	struct Network4Config;
-	impl NetworkConfig for Network4Config {
+	struct TestNetworkConfig;
+	impl NetworkConfig for TestNetworkConfig {
 		const DELTA: f64 = 0.001;
 		const MAX_ITERATIONS: usize = 1000;
 		const NUM_MANAGERS: u64 = 1;
@@ -244,21 +244,21 @@ mod test {
 
 	#[test]
 	fn bootstrapping_the_network() {
-		let num_peers: usize = Network4Config::SIZE;
+		let num_peers: usize = TestNetworkConfig::SIZE;
 		let mut pre_trust_scores = vec![0.0; num_peers];
 		pre_trust_scores[0] = 0.5;
 		pre_trust_scores[1] = 0.5;
 
-		let network = Network::<Network4Config>::bootstrap(pre_trust_scores).unwrap();
+		let network = Network::<TestNetworkConfig>::bootstrap(pre_trust_scores).unwrap();
 
 		assert_eq!(network.peers.len(), num_peers);
 	}
 
 	#[test]
 	fn should_not_mock_transaction_between_peers_with_invalid_index() {
-		let num_peers: usize = Network4Config::SIZE;
+		let num_peers: usize = TestNetworkConfig::SIZE;
 		let pre_trust_scores = vec![0.0; num_peers];
-		let mut network = Network::<Network4Config>::bootstrap(pre_trust_scores).unwrap();
+		let mut network = Network::<TestNetworkConfig>::bootstrap(pre_trust_scores).unwrap();
 
 		let res = network.mock_transaction(4, 1, TransactionRating::Positive);
 		match res {
@@ -269,10 +269,10 @@ mod test {
 
 	#[test]
 	fn should_not_pass_invalid_pretrust_scores() {
-		let num_peers: usize = Network4Config::SIZE - 1;
+		let num_peers: usize = TestNetworkConfig::SIZE - 1;
 		let pre_trust_scores = vec![0.0; num_peers];
 
-		let network = Network::<Network4Config>::bootstrap(pre_trust_scores);
+		let network = Network::<TestNetworkConfig>::bootstrap(pre_trust_scores);
 		match network {
 			Err(EigenError::InvalidPreTrustScores) => (),
 			_ => panic!("Expected EigenError::InvalidPreTrustScores"),
@@ -283,11 +283,11 @@ mod test {
 	fn network_not_converging_without_pre_trusted_peers() {
 		let rng = &mut thread_rng();
 
-		let num_peers: usize = Network4Config::SIZE;
+		let num_peers: usize = TestNetworkConfig::SIZE;
 
 		let pre_trust_scores = vec![0.0; num_peers];
 
-		let mut network = Network::<Network4Config>::bootstrap(pre_trust_scores).unwrap();
+		let mut network = Network::<TestNetworkConfig>::bootstrap(pre_trust_scores).unwrap();
 
 		network
 			.mock_transaction(0, 1, TransactionRating::Positive)
@@ -320,13 +320,13 @@ mod test {
 	fn network_converging_with_pre_trusted_peers() {
 		let rng = &mut thread_rng();
 
-		let num_peers: usize = Network4Config::SIZE;
+		let num_peers: usize = TestNetworkConfig::SIZE;
 
 		// 0.5
 		let default_score = 1. / (num_peers as f64);
 		let pre_trust_scores = vec![default_score; num_peers];
 
-		let mut network = Network::<Network4Config>::bootstrap(pre_trust_scores).unwrap();
+		let mut network = Network::<TestNetworkConfig>::bootstrap(pre_trust_scores).unwrap();
 
 		network
 			.mock_transaction(0, 1, TransactionRating::Positive)
@@ -349,9 +349,9 @@ mod test {
 		assert_eq!(sum_of_local_scores_0, 0.25);
 
 		// (1.0 - 0.5) * 0.25 + 0.5 * 0.5 = 0.375
-		let new_global_trust_score_0 = (f64::one() - Network4Config::PRETRUST_WEIGHT)
+		let new_global_trust_score_0 = (f64::one() - TestNetworkConfig::PRETRUST_WEIGHT)
 			* sum_of_local_scores_0
-			+ Network4Config::PRETRUST_WEIGHT * network.peers[&key0].get_pre_trust_score();
+			+ TestNetworkConfig::PRETRUST_WEIGHT * network.peers[&key0].get_pre_trust_score();
 
 		// ------ Peer 1 ------
 		let sum_of_local_scores_1 =
@@ -361,9 +361,9 @@ mod test {
 		assert_eq!(sum_of_local_scores_1, 0.5);
 
 		// (1.0 - 0.5) * 0.5 + 0.5 * 0.5 = 0.5
-		let new_global_trust_score_1 = (f64::one() - Network4Config::PRETRUST_WEIGHT)
+		let new_global_trust_score_1 = (f64::one() - TestNetworkConfig::PRETRUST_WEIGHT)
 			* sum_of_local_scores_1
-			+ Network4Config::PRETRUST_WEIGHT * network.peers[&key1].get_pre_trust_score();
+			+ TestNetworkConfig::PRETRUST_WEIGHT * network.peers[&key1].get_pre_trust_score();
 
 		// Converge the network.
 		network.converge(rng).unwrap();
