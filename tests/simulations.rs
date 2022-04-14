@@ -7,6 +7,7 @@ use eigen_trust::{
 };
 use rand::{thread_rng, Rng};
 
+#[derive(Debug)]
 struct Network16Config;
 impl NetworkConfig for Network16Config {
 	const DELTA: f64 = 0.0001;
@@ -75,6 +76,7 @@ fn simulate_converging_16_peers() {
 	);
 }
 
+#[derive(Debug)]
 struct Network256Config;
 impl NetworkConfig for Network256Config {
 	const DELTA: f64 = 0.0001;

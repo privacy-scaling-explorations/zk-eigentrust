@@ -139,10 +139,10 @@ impl Manager {
 		Ok(())
 	}
 
-	/// Calculate the global trust score for the peer with id `index`. This is where we go to
-	/// all the managers of that peer and collect their cached global trust scores
-	/// for this peer. We then do the majority vote, to settle on a particular
-	/// score.
+	/// Calculate the global trust score for the peer with id `index`. This is
+	/// where we go to all the managers of that peer and collect their cached
+	/// global trust scores for this peer. We then do the majority vote, to
+	/// settle on a particular score.
 	pub fn calculate_global_trust_score_for(
 		&self,
 		index: &Key,
@@ -251,7 +251,7 @@ mod test {
 		let manager_tree = KdTree::new(keys).unwrap();
 
 		let key_of_interest = key2;
-		
+
 		// Every manager will have the same pre-trust scores.
 		let mut pre_trusted_scores = BTreeMap::new();
 		pre_trusted_scores.insert(key_of_interest, 0.3);
@@ -266,7 +266,13 @@ mod test {
 		managers.insert(key2, manager2.clone());
 		managers.insert(key3, manager3.clone());
 
-		let res = manager0.calculate_global_trust_score_for(&key_of_interest, &managers, &manager_tree, num_managers)
+		let res = manager0
+			.calculate_global_trust_score_for(
+				&key_of_interest,
+				&managers,
+				&manager_tree,
+				num_managers,
+			)
 			.unwrap();
 		assert_eq!(res, 0.3);
 
@@ -279,8 +285,13 @@ mod test {
 		managers.insert(key2, manager2.clone());
 		managers.insert(key3, manager3.clone());
 
-		let res = manager0.calculate_global_trust_score_for(&key_of_interest, &managers, &manager_tree, num_managers);
-		assert_eq!(res.err().unwrap(), EigenError::GlobalTrustCalculationFailed);
+		let res = manager0.calculate_global_trust_score_for(
+			&key_of_interest,
+			&managers,
+			&manager_tree,
+			num_managers,
+		);
+		assert_eq!(res.unwrap_err(), EigenError::GlobalTrustCalculationFailed);
 	}
 
 	#[test]

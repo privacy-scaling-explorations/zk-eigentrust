@@ -8,13 +8,13 @@ use crate::{
 	peer::{Peer, TransactionRating},
 	EigenError,
 };
-use ark_std::{collections::BTreeMap, marker::PhantomData, vec::Vec, Zero};
+use ark_std::{collections::BTreeMap, fmt::Debug, marker::PhantomData, vec::Vec, Zero};
 use rand::prelude::RngCore;
 
 // use rand::prelude::SliceRandom;
 
 /// The network configuration trait.
-pub trait NetworkConfig {
+pub trait NetworkConfig: Debug {
 	/// The minimum change in global score from last iteration.
 	const DELTA: f64;
 	/// A number of peers in the network.
@@ -29,6 +29,7 @@ pub trait NetworkConfig {
 }
 
 /// The struct contains all the peers and other metadata.
+#[derive(Debug)]
 pub struct Network<C: NetworkConfig> {
 	/// The peers in the network.
 	peers: BTreeMap<Key, Peer>,
@@ -233,6 +234,7 @@ mod test {
 	use ark_std::One;
 	use rand::thread_rng;
 
+	#[derive(Debug)]
 	struct TestNetworkConfig;
 	impl NetworkConfig for TestNetworkConfig {
 		const DELTA: f64 = 0.001;
@@ -261,10 +263,7 @@ mod test {
 		let mut network = Network::<TestNetworkConfig>::bootstrap(pre_trust_scores).unwrap();
 
 		let res = network.mock_transaction(4, 1, TransactionRating::Positive);
-		match res {
-			Err(EigenError::PeerNotFound) => (),
-			_ => panic!("Expected EigenError::PeerNotFound"),
-		}
+		assert_eq!(res.unwrap_err(), EigenError::PeerNotFound);
 	}
 
 	#[test]
@@ -273,10 +272,7 @@ mod test {
 		let pre_trust_scores = vec![0.0; num_peers];
 
 		let network = Network::<TestNetworkConfig>::bootstrap(pre_trust_scores);
-		match network {
-			Err(EigenError::InvalidPreTrustScores) => (),
-			_ => panic!("Expected EigenError::InvalidPreTrustScores"),
-		}
+		assert_eq!(network.unwrap_err(), EigenError::InvalidPreTrustScores);
 	}
 
 	#[test]
