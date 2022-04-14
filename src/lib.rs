@@ -24,6 +24,7 @@
 //! use rand::thread_rng;
 //!
 //! // Configure the network.
+//! #[derive(Debug)]
 //! struct ExampleNetworkConfig;
 //! impl NetworkConfig for ExampleNetworkConfig {
 //! 	const DELTA: f64 = 0.0001;
@@ -93,14 +94,14 @@
 pub mod network;
 
 /// The module for peer management. It contains the functionality for creating a
-/// peer, adding local trust scores, and calculating the global trust score.
+/// manager, and calculating the global trust scores.
 pub mod manager;
 
 /// The module for basic peer functions. It contains the functionality for
-/// transacting with other peers, and calulating local trust scores.
+/// transacting with other peers, and calculating local trust scores.
 pub mod peer;
 
-/// The module for kd tree structure. Used for 2d space partitioning.
+/// The module for Kd tree structure. Used for 2d space partitioning.
 pub mod kd_tree;
 
 /// The module wide error variants.
