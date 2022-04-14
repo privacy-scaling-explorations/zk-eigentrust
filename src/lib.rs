@@ -104,7 +104,7 @@ pub mod peer;
 pub mod kd_tree;
 
 /// The module wide error variants.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum EigenError {
 	/// Invalid pre trust scores passed
 	InvalidPreTrustScores,

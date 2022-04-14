@@ -1,5 +1,5 @@
 //! The module for peer management. It contains the functionality for creating a
-//! peer, adding local trust scores, and calculating the global trust score.
+//! manager, and calculating the global trust scores for assigned children.
 
 use crate::{
 	kd_tree::{KdTree, Key},
@@ -8,14 +8,14 @@ use crate::{
 };
 use ark_std::{collections::BTreeMap, fmt::Debug, vec::Vec, One, Zero};
 
-/// Peer structure.
+/// Manager structure.
 #[derive(Clone, Debug)]
 pub struct Manager {
-	/// The unique identifier of the peer.
+	/// The unique identifier of the manager.
 	index: Key,
 	/// Global trust scores of the children.
 	global_trust_scores: BTreeMap<Key, f64>,
-	/// Pre-trust score of the peer.
+	/// Pre-trust scores of the whole network.
 	pre_trust_scores: BTreeMap<Key, f64>,
 	/// State of all children.
 	children_states: BTreeMap<Key, bool>,
@@ -24,7 +24,7 @@ pub struct Manager {
 }
 
 impl Manager {
-	/// Create a new peer.
+	/// Create a new manager.
 	pub fn new(index: Key, pre_trust_scores: BTreeMap<Key, f64>) -> Self {
 		Self {
 			index,
@@ -41,7 +41,7 @@ impl Manager {
 		self.children.push(child);
 	}
 
-	/// Loop trought all the children and calculate their global trust score.
+	/// Loop trought all the children and calculate their global trust scores.
 	pub fn heartbeat(
 		&mut self,
 		peers: &BTreeMap<Key, Peer>,
@@ -67,7 +67,7 @@ impl Manager {
 		Ok(())
 	}
 
-	/// Calculate the global trust score.
+	/// Calculate the global trust score for chlild with id `index`.
 	pub fn heartbeat_child(
 		&mut self,
 		index: &Key,
@@ -98,7 +98,7 @@ impl Manager {
 
 		let mut new_global_trust_score = f64::zero();
 		for (key_j, neighbor_j) in peers.iter() {
-			// Skip if the neighbor is the same peer as child with `index`.
+			// Skip if the neighbor is the same as child.
 			if index == key_j {
 				continue;
 			}
@@ -139,8 +139,8 @@ impl Manager {
 		Ok(())
 	}
 
-	/// Calculate the global trust score for `peer`. This is where we go to
-	/// all the managers of `peer` and collect their cached global trust scores
+	/// Calculate the global trust score for the peer with id `index`. This is where we go to
+	/// all the managers of that peer and collect their cached global trust scores
 	/// for this peer. We then do the majority vote, to settle on a particular
 	/// score.
 	pub fn calculate_global_trust_score_for(
@@ -236,6 +236,51 @@ mod test {
 
 		assert_eq!(manager.get_children(), vec![key1, key2]);
 		assert_eq!(manager.is_converged(), false);
+	}
+
+	#[test]
+	fn should_vote_correctly_on_global_trust_score() {
+		let key0 = Key::from(0);
+		let key1 = Key::from(1);
+		let key2 = Key::from(2);
+		let key3 = Key::from(3);
+
+		let num_managers = 4;
+
+		let keys = vec![key0, key1, key2, key3];
+		let manager_tree = KdTree::new(keys).unwrap();
+
+		let key_of_interest = key2;
+		
+		// Every manager will have the same pre-trust scores.
+		let mut pre_trusted_scores = BTreeMap::new();
+		pre_trusted_scores.insert(key_of_interest, 0.3);
+		let manager0 = Manager::new(key0, pre_trusted_scores.clone());
+		let manager1 = Manager::new(key1, pre_trusted_scores.clone());
+		let manager2 = Manager::new(key2, pre_trusted_scores.clone());
+		let manager3 = Manager::new(key3, pre_trusted_scores.clone());
+
+		let mut managers = BTreeMap::new();
+		managers.insert(key0, manager0.clone());
+		managers.insert(key1, manager1.clone());
+		managers.insert(key2, manager2.clone());
+		managers.insert(key3, manager3.clone());
+
+		let res = manager0.calculate_global_trust_score_for(&key_of_interest, &managers, &manager_tree, num_managers)
+			.unwrap();
+		assert_eq!(res, 0.3);
+
+		// 2 of the managers will have different pre-trust scores.
+		let mut wrong_pre_trusted_scores = BTreeMap::new();
+		wrong_pre_trusted_scores.insert(key_of_interest, 0.2);
+		let manager2 = Manager::new(key2, wrong_pre_trusted_scores.clone());
+		let manager3 = Manager::new(key3, wrong_pre_trusted_scores.clone());
+
+		managers.insert(key2, manager2.clone());
+		managers.insert(key3, manager3.clone());
+
+		let res = manager0.calculate_global_trust_score_for(&key_of_interest, &managers, &manager_tree, num_managers);
+		assert_eq!(res.err().unwrap(), EigenError::GlobalTrustCalculationFailed);
 	}
 
 	#[test]
