@@ -365,7 +365,9 @@ mod test {
 		let key1 = Key::from(1);
 
 		// ------ Peer 0 ------
-		let peer0_global_score = Manager::calculate_global_trust_score_for(&network.peers[&key0], &network.managers).unwrap();
+		let peer0_global_score =
+			Manager::calculate_global_trust_score_for(&network.peers[&key0], &network.managers)
+				.unwrap();
 		let sum_of_local_scores_0 =
 			// local score of peer1 towards peer0, times their global score
 			//             0.5                         *               0.5
@@ -379,7 +381,9 @@ mod test {
 			+ TestNetworkConfig::PRE_TRUST_WEIGHT * network.peers[&key0].get_pre_trust_score();
 
 		// ------ Peer 1 ------
-		let peer1_global_score = Manager::calculate_global_trust_score_for(&network.peers[&key0], &network.managers).unwrap();
+		let peer1_global_score =
+			Manager::calculate_global_trust_score_for(&network.peers[&key0], &network.managers)
+				.unwrap();
 		let sum_of_local_scores_1 =
 			// local score of peer0 towards peer1, times their global score
 			//             1.0                         *               0.5
@@ -394,11 +398,15 @@ mod test {
 		// Converge the network.
 		network.converge(rng).unwrap();
 
-		let peer0_score = Manager::calculate_global_trust_score_for(&network.peers[&key0], &network.managers).unwrap();
+		let peer0_score =
+			Manager::calculate_global_trust_score_for(&network.peers[&key0], &network.managers)
+				.unwrap();
 		assert_eq!(peer0_score, new_global_trust_score_0);
 		assert_eq!(peer0_score, 0.375);
 
-		let peer1_score = Manager::calculate_global_trust_score_for(&network.peers[&key1], &network.managers).unwrap();
+		let peer1_score =
+			Manager::calculate_global_trust_score_for(&network.peers[&key1], &network.managers)
+				.unwrap();
 		assert_eq!(peer1_score, new_global_trust_score_1);
 		assert_eq!(peer1_score, 0.5);
 
