@@ -180,6 +180,11 @@ impl KdTree {
 			.cloned()
 			.ok_or(TreeError::KeyNotFound)
 	}
+
+	/// Returns the number of leaf nodes in the tree
+	pub fn size(&self) -> usize {
+		self.leaf_nodes.len()
+	}
 }
 
 /// Get the starting index of the last level
@@ -210,7 +215,7 @@ mod test {
 	use super::*;
 
 	#[test]
-	fn should_not_create_tree_with_invalid_number_of_leaves() {
+	fn invalid_number_of_leaves() {
 		let leaf_nodes1 = vec![Key::new([0u8; 32]); 3];
 		let leaf_nodes2 = vec![Key::new([0u8; 32]); 2];
 		let res1 = KdTree::new(leaf_nodes1);
@@ -220,7 +225,7 @@ mod test {
 	}
 
 	#[test]
-	fn should_create_kd_tree() {
+	fn should_create() {
 		let peer1 = Key::from((0, 0));
 		let peer2 = Key::from((0, u128::MAX));
 		let peer3 = Key::from((u128::MAX, 0));
