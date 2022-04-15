@@ -57,7 +57,7 @@ impl<C: NetworkConfig> Network<C> {
 			return Err(EigenError::InvalidPreTrustScores);
 		}
 		if C::MANAGER_PER_PEER > (C::SIZE - 1) {
-			return Err(EigenError::InvalidNumManagers);
+			return Err(EigenError::InvalidManagerPerPeer);
 		}
 
 		let pre_trust_score_map: BTreeMap<Key, f64> = pre_trust_scores
@@ -281,6 +281,36 @@ mod test {
 		let network = Network::<TestNetworkConfig>::bootstrap(pre_trust_scores).unwrap();
 
 		assert_eq!(network.peers.len(), num_peers);
+	}
+
+	#[test]
+	fn fail_to_bootstrap_with_invalid_managers_per_peer() {
+		#[derive(Debug)]
+		struct InvalidNetworkConfig;
+		impl NetworkConfig for InvalidNetworkConfig {
+			const DELTA: f64 = 0.001;
+			// Number of managers is the same as the number of peers.
+			const MANAGER_PER_PEER: usize = 2;
+			const MAX_ITERATIONS: usize = 1000;
+			const PRE_TRUST_WEIGHT: f64 = 0.5;
+			const SIZE: usize = 2;
+		}
+
+		let num_peers: usize = InvalidNetworkConfig::SIZE;
+		let mut pre_trust_scores = vec![0.0; num_peers];
+		pre_trust_scores[0] = 0.5;
+		pre_trust_scores[1] = 0.5;
+
+		let network = Network::<InvalidNetworkConfig>::bootstrap(pre_trust_scores.clone());
+		assert_eq!(network.unwrap_err(), EigenError::InvalidManagerPerPeer);
+
+		let key0 = Key::from(0);
+		let key1 = Key::from(1);
+		let keys = vec![key0, key1];
+
+		let tree = KdTree::new(keys).unwrap();
+		let res = Network::<InvalidNetworkConfig>::find_managers_for_peer(&key0, &tree);
+		assert_eq!(res.unwrap_err(), EigenError::FailedToFindManagers);
 	}
 
 	#[test]

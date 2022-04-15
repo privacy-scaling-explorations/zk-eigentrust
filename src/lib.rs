@@ -115,8 +115,8 @@ pub enum EigenError {
 	GlobalTrustCalculationFailed,
 	/// Invalid keys for the manager generated
 	InvalidManagerKeys,
-	/// Invalid number of managers
-	InvalidNumManagers,
+	/// Invalid number of managers per peer
+	InvalidManagerPerPeer,
 	/// Failed to find managers for a peer
 	FailedToFindManagers,
 }
