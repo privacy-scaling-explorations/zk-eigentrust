@@ -28,8 +28,8 @@
 //! struct ExampleNetworkConfig;
 //! impl NetworkConfig for ExampleNetworkConfig {
 //! 	const DELTA: f64 = 0.0001;
-//! 	const MAX_ITERATIONS: usize = 1000;
 //! 	const MANAGER_PER_PEER: usize = 2;
+//! 	const MAX_ITERATIONS: usize = 1000;
 //! 	const PRE_TRUST_WEIGHT: f64 = 0.5;
 //! 	const SIZE: usize = 16;
 //! }
