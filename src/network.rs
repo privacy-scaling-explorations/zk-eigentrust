@@ -34,7 +34,7 @@ pub trait NetworkConfig: Debug {
 	const MANAGER_PER_PEER: usize;
 }
 
-/// The struct contains all the peers and other metadata.
+/// The struct contains all the peers, managers and other metadata.
 #[derive(Debug)]
 pub struct Network<C: NetworkConfig> {
 	/// The peers in the network.

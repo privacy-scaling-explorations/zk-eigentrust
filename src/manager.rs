@@ -1,5 +1,5 @@
 //! The module for peer management. It contains the functionality for creating a
-//! manager, and calculating the global trust scores for assigned children.
+//! manager and calculating the global trust scores for assigned children.
 
 use crate::{kd_tree::Key, peer::Peer, EigenError};
 use ark_std::{collections::BTreeMap, fmt::Debug, vec::Vec, One, Zero};
@@ -37,7 +37,7 @@ impl Manager {
 		self.children.push(child);
 	}
 
-	/// Loop trought all the children and calculate their global trust scores.
+	/// Loop through all the children and calculate their global trust scores.
 	pub fn heartbeat(
 		&mut self,
 		peers: &BTreeMap<Key, Peer>,
@@ -53,7 +53,7 @@ impl Manager {
 		Ok(())
 	}
 
-	/// Calculate the global trust score for chlild with id `index`.
+	/// Calculate the global trust score for chlid with id `index`.
 	pub fn heartbeat_child(
 		&mut self,
 		index: &Key,
@@ -69,7 +69,7 @@ impl Manager {
 
 		let mut cached_global_scores: BTreeMap<Key, f64> = BTreeMap::new();
 
-		// Calculate the global scores from previous iteration and cache them.
+		// Calculate the global scores from the previous iteration and cache them.
 		for (peer_index, peer) in peers.iter() {
 			let global_score = Self::calculate_global_trust_score_for(peer, managers)?;
 			cached_global_scores.insert(*peer_index, global_score);
@@ -360,7 +360,7 @@ mod test {
 			managers[&key1].get_global_trust_score_for(&key0),
 			new_global_trust_score
 		);
-		// Weird rounding error unfourtunately.
+		// Weird rounding error unfortunately.
 		assert_eq!(
 			managers[&key1].get_global_trust_score_for(&key0),
 			0.25600000000000006
