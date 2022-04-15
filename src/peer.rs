@@ -2,7 +2,7 @@
 //! peer, adding local trust scores, and calculating the global trust score.
 
 use crate::kd_tree::Key;
-use ark_std::{collections::BTreeMap, fmt::Debug};
+use ark_std::{collections::BTreeMap, fmt::Debug, vec::Vec};
 
 /// Options for rating a transaction by a peer.
 pub enum TransactionRating {
