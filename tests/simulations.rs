@@ -11,9 +11,9 @@ use rand::{thread_rng, Rng};
 struct Network16Config;
 impl NetworkConfig for Network16Config {
 	const DELTA: f64 = 0.0001;
+	const MANAGER_PER_PEER: usize = 2;
 	const MAX_ITERATIONS: usize = 1000;
-	const NUM_MANAGERS: u64 = 2;
-	const PRETRUST_WEIGHT: f64 = 0.5;
+	const PRE_TRUST_WEIGHT: f64 = 0.5;
 	const SIZE: usize = 16;
 }
 
@@ -80,9 +80,9 @@ fn simulate_converging_16_peers() {
 struct Network256Config;
 impl NetworkConfig for Network256Config {
 	const DELTA: f64 = 0.0001;
+	const MANAGER_PER_PEER: usize = 2;
 	const MAX_ITERATIONS: usize = 5000;
-	const NUM_MANAGERS: u64 = 2;
-	const PRETRUST_WEIGHT: f64 = 0.3;
+	const PRE_TRUST_WEIGHT: f64 = 0.3;
 	const SIZE: usize = 256;
 }
 

@@ -2,7 +2,7 @@
 //! peer, adding local trust scores, and calculating the global trust score.
 
 use crate::kd_tree::Key;
-use ark_std::{collections::BTreeMap, fmt::Debug};
+use ark_std::{collections::BTreeMap, fmt::Debug, vec::Vec};
 
 /// Options for rating a transaction by a peer.
 pub enum TransactionRating {
@@ -23,6 +23,8 @@ pub struct Peer {
 	transaction_scores_sum: u32,
 	/// Pre-trust score of the peer.
 	pre_trust_scores: BTreeMap<Key, f64>,
+	/// Managers of this peer.
+	managers: Vec<Key>,
 }
 
 impl Peer {
@@ -33,7 +35,13 @@ impl Peer {
 			transaction_scores: BTreeMap::new(),
 			transaction_scores_sum: 0,
 			pre_trust_scores,
+			managers: Vec::new(),
 		}
+	}
+
+	/// Set managers to the peer.
+	pub fn set_managers(&mut self, managers: Vec<Key>) {
+		self.managers = managers;
 	}
 
 	/// Function for mocking a transction rating.
@@ -94,6 +102,11 @@ impl Peer {
 
 		normalized_score
 	}
+
+	/// Get the managers of this peer.
+	pub fn get_managers(&self) -> &Vec<Key> {
+		&self.managers
+	}
 }
 
 #[cfg(test)]
@@ -101,7 +114,7 @@ mod test {
 	use super::*;
 
 	#[test]
-	fn test_peer_new() {
+	fn test_new() {
 		let mut pre_trust_scores = BTreeMap::new();
 		pre_trust_scores.insert(Key::from(0), 0.4);
 		let peer = Peer::new(Key::from(0), pre_trust_scores);

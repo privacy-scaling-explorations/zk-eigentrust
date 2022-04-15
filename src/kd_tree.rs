@@ -7,7 +7,7 @@ use tiny_keccak::{Hasher, Keccak};
 pub enum TreeError {
 	/// The Key is not found in the tree
 	KeyNotFound,
-	/// Number of leaves has to be power of 2
+	/// The number of leaves has to be a power of 2
 	InvalidNumberOfLeaves,
 }
 
@@ -28,7 +28,7 @@ impl Key {
 		Key(key)
 	}
 
-	/// Hash the key with keccak 256 hash function
+	/// Hash the key with the keccak256 hash function
 	pub fn hash(&self) -> Key {
 		let mut hasher = Keccak::v256();
 		hasher.update(&self.to_be_bytes());
@@ -43,7 +43,6 @@ impl Key {
 	}
 }
 
-/// From implementation for Key
 /// For creating a Key from 2 parts
 impl From<(u128, u128)> for Key {
 	fn from(value: (u128, u128)) -> Self {
@@ -60,7 +59,7 @@ impl From<usize> for Key {
 	fn from(value: usize) -> Self {
 		let mut key = [0u8; 32];
 		let u_bytes = value.to_be_bytes();
-		// On some targets, the usize is 4 bytes, and on some its 8 bytes
+		// On some targets, the usize is 4 bytes, and on some, it's 8 bytes
 		// So, we need to copy the bytes manually
 		for i in 0..u_bytes.len() {
 			key[i] = u_bytes[i];
@@ -92,7 +91,7 @@ impl From<usize> for Key {
 //    0           5          10
 ///
 /// The tree of 4 leaves is structured as follows:
-/// The root has an index of 0, and each children index is a continuation of the
+/// The root has an index of 0, and each child's index is a continuation of the
 /// parent index The bottom-most level (the leaf level), starts with the index
 /// of 0.
 ///
@@ -108,7 +107,7 @@ pub struct KdTree {
 impl KdTree {
 	/// Creates a new KdTree with the given number of leaf nodes
 	pub fn new(leaf_nodes: Vec<Key>) -> Result<Self, TreeError> {
-		// It has to be a power of 2, so that every manager covers the equal amount of
+		// It has to be a power of 2 so that every manager covers the equal amount of
 		// space
 		if !leaf_nodes.len().is_power_of_two() {
 			return Err(TreeError::InvalidNumberOfLeaves);
@@ -180,6 +179,11 @@ impl KdTree {
 			.cloned()
 			.ok_or(TreeError::KeyNotFound)
 	}
+
+	/// Returns the number of leaf nodes in the tree
+	pub fn size(&self) -> usize {
+		self.leaf_nodes.len()
+	}
 }
 
 /// Get the starting index of the last level
@@ -210,7 +214,7 @@ mod test {
 	use super::*;
 
 	#[test]
-	fn should_not_create_tree_with_invalid_number_of_leaves() {
+	fn invalid_number_of_leaves() {
 		let leaf_nodes1 = vec![Key::new([0u8; 32]); 3];
 		let leaf_nodes2 = vec![Key::new([0u8; 32]); 2];
 		let res1 = KdTree::new(leaf_nodes1);
@@ -220,7 +224,7 @@ mod test {
 	}
 
 	#[test]
-	fn should_create_kd_tree() {
+	fn should_create() {
 		let peer1 = Key::from((0, 0));
 		let peer2 = Key::from((0, u128::MAX));
 		let peer3 = Key::from((u128::MAX, 0));
