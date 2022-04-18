@@ -73,9 +73,11 @@ impl From<usize> for Key {
 /// It takes a vector of keys and maps them into a 2-dimensional plane.
 /// Each key gets the same amount of territory in the plane,
 /// which means the vector length has to be a power of 2.
-/// Their position is based on the index inside the vector, e.g.:
-/// If we had a vector of length 4, [manager1, manager2, manager3, manager4],
-/// The first manager would be at the top left corner of the plane, like so:
+/// Their position is based on the index inside the vector, from left to right
+/// e.g.: If we had a vector of length 4, [manager1, manager2, manager3,
+/// manager4], The first manager would be at the top left corner of the plane.
+/// The second manager would be at the top right corner, etc.
+//  Example:
 //                x
 // 10 ┌───────────┬───────────┐
 //    │           │           │
@@ -91,14 +93,15 @@ impl From<usize> for Key {
 //    0           5          10
 ///
 /// The tree of 4 leaves is structured as follows:
-/// The root has an index of 0, and each child's index is a continuation of the
-/// parent index The bottom-most level (the leaf level), starts with the index
-/// of 0.
-///
-/// level 2:                  0         
-/// level 1:            1           2   
-/// level 0:         3     4     5     6
-/// leaf level:      0     1     2     3
+/// The root has an index of 0, and each child node's index is a continuation of
+/// the parent node index. The bottom-most level (the leaf level), starts with
+/// the index of 0.
+//
+// Example:
+// level 2:                  0
+// level 1:            1           2
+// level 0:         3     4     5     6
+// leaf level:      0     1     2     3
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KdTree {
 	leaf_nodes: BTreeMap<u64, Key>,
