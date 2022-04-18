@@ -5,7 +5,8 @@ version = 3
 [[package]]
 name = "ark-std"
 version = "0.3.0"
-source = "git+https://github.com/arkworks-rs/std#4b907b6e8f31033cb5f49c524ded05406752c51f"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1df2c09229cbc5a028b1d70e00fdb2acee28b1055dfb5ca73eea49c5a25c4e7c"
 dependencies = [
  "num-traits",
  "rand",
