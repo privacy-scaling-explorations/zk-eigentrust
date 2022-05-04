@@ -9,24 +9,20 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-rand = { version = "0.8.5", default-features = false }
-tiny-keccak = { version = "2.0", features = ["keccak"] }
+futures = "0.3.21"
+async-std = { version = "1.11.0", features = ["attributes"] }
+async-trait = "0.1"
+bs58 = "0.4.0"
+clap = { version = "3.1.12", features = ["derive"] }
+log = "0.4"
+env_logger = "0.9.0"
 
-ark-std = { version = "0.3.0" }
-
-[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dev-dependencies]
-getrandom = { version = "0.2", features = ["js"] }
-
-[dev-dependencies]
-rand = "0.8.5"
-
-[features]
-default = ["std"]
-std = [
-	"ark-std/std",
-	"rand/std",
+[dependencies.libp2p]
+version = "0.44"
+default-features = false
+features = [
+	"request-response",
+	"tcp-async-io",
+	"noise",
+	"yamux",
 ]
-
-[[test]]
-name = "integration"
-path = "tests/simulations.rs"
