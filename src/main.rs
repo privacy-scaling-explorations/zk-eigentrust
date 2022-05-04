@@ -23,12 +23,14 @@ use clap::Parser;
 use env_logger::Builder;
 use libp2p::{identity::Keypair, Multiaddr, PeerId};
 use log::LevelFilter;
-use std::str::FromStr;
+use std::{str::FromStr};
 
 mod node;
 mod protocol;
+mod peer;
 
-use node::{setup_node, start_loop};
+use node::Node;
+use peer::Peer;
 
 const BOOTSTRAP_PEERS: [[&str; 2]; 2] = [
 	[
@@ -42,7 +44,7 @@ const BOOTSTRAP_PEERS: [[&str; 2]; 2] = [
 ];
 
 const DEFAULT_ADDRESS: &str = "/ip4/0.0.0.0/tcp/0";
-const NUM_NEIGHBOURS: u32 = 256;
+const NUM_NEIGHBOURS: usize = 256;
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -61,45 +63,7 @@ pub enum EigenError {
 	DialError,
 	MaxNeighboursReached,
 	NeighbourNotFound,
-}
-
-pub struct Peer {
-	neighbours: [Option<PeerId>; NUM_NEIGHBOURS as usize],
-}
-
-impl Default for Peer {
-	fn default() -> Self {
-		Self::new()
-	}
-}
-
-impl Peer {
-	pub fn new() -> Self {
-		Peer {
-			neighbours: [None; NUM_NEIGHBOURS as usize],
-		}
-	}
-
-	pub fn add_neighbour(&mut self, neighbour: PeerId) -> Result<(), EigenError> {
-		let first_available = self.neighbours.iter().position(|n| n.is_none());
-		if let Some(index) = first_available {
-			self.neighbours[index] = Some(neighbour);
-			return Ok(());
-		}
-		Err(EigenError::MaxNeighboursReached)
-	}
-
-	pub fn remove_neighbour(&mut self, neighbour: PeerId) -> Result<(), EigenError> {
-		let index = self
-			.neighbours
-			.iter()
-			.position(|n| n.map(|n| n == neighbour).unwrap_or(false));
-		if let Some(index) = index {
-			self.neighbours[index] = None;
-			return Ok(());
-		}
-		Err(EigenError::NeighbourNotFound)
-	}
+	InvalidNeighbourCount
 }
 
 pub fn init_logger() {
@@ -159,11 +123,16 @@ async fn main() -> Result<(), EigenError> {
 		bootstrap_nodes.push((peer_id, peer_addr));
 	}
 
-	let mut swarm = setup_node(local_key, local_address, bootstrap_nodes, NUM_NEIGHBOURS).await?;
+	
+	let peer = Peer::new();
+	let mut node = Node::<NUM_NEIGHBOURS>::new(
+		peer,
+		local_key,
+		local_address,
+		bootstrap_nodes,
+	)?;
 
-	let mut peer = Peer::new();
-
-	start_loop(&mut peer, &mut swarm).await;
+	node.main_loop().await;
 
 	Ok(())
 }
