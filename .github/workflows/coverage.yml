@@ -35,7 +35,7 @@ jobs:
         run: cargo install grcov
 
       - name: Run Tests
-        run: cargo test --verbose --lib
+        run: cargo test --verbose
         env:
           RUSTFLAGS: "-Zinstrument-coverage"
           LLVM_PROFILE_FILE: "coverage-%p-%m.profraw"
