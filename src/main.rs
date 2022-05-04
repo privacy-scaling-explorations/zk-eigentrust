@@ -67,6 +67,12 @@ pub struct Peer {
 	neighbours: [Option<PeerId>; NUM_NEIGHBOURS as usize],
 }
 
+impl Default for Peer {
+	fn default() -> Self {
+		Self::new()
+	}
+}
+
 impl Peer {
 	pub fn new() -> Self {
 		Peer {
@@ -132,7 +138,7 @@ async fn main() -> Result<(), EigenError> {
 			EigenError::InvalidAddress
 		})?
 	} else {
-		Multiaddr::from_str(&DEFAULT_ADDRESS).map_err(|e| {
+		Multiaddr::from_str(DEFAULT_ADDRESS).map_err(|e| {
 			log::debug!("Multiaddr::from_str {:?}", e);
 			EigenError::InvalidAddress
 		})?

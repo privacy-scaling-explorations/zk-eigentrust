@@ -75,7 +75,7 @@ pub async fn setup_node(
 }
 
 pub async fn start_loop(peer: &mut Peer, swarm: &mut Swarm<RequestResponse<EigenTrustCodec>>) {
-	println!("");
+	println!();
 	loop {
 		match swarm.select_next_some().await {
 			SwarmEvent::NewListenAddr { address, .. } => log::info!("Listening on {:?}", address),
