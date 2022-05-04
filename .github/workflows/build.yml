@@ -37,6 +37,3 @@ jobs:
 
       - name: Test
         run: ./scripts/test.sh
-
-      - name: Test Docs
-        run: ./scripts/test-docs.sh
