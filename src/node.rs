@@ -3,7 +3,7 @@ use libp2p::{
 	identity::Keypair,
 	noise::{Keypair as NoiseKeypair, NoiseConfig, X25519Spec},
 	request_response::{
-		ProtocolSupport, RequestResponse, RequestResponseConfig, RequestResponseEvent, RequestResponseMessage, RequestId
+		ProtocolSupport, RequestResponse, RequestResponseConfig, RequestResponseEvent, RequestResponseMessage
 	},
 	swarm::{ConnectionHandlerUpgrErr, ConnectionLimits, Swarm, SwarmBuilder, SwarmEvent},
 	tcp::TcpConfig,
@@ -11,7 +11,7 @@ use libp2p::{
 	Multiaddr, PeerId, Transport,
 };
 
-use std::{io::Error as IoError, iter::once, time::Duration, collections::HashMap};
+use std::{io::Error as IoError, iter::once, time::Duration};
 
 use futures::prelude::*;
 
@@ -25,9 +25,6 @@ pub struct Node<const N: usize> {
 	peer: Peer<N>,
 	local_key: Keypair,
 	bootstrap_nodes: Vec<(PeerId, Multiaddr)>,
-	cached_outgoing_responses: HashMap<(PeerId, u32), Response>,
-	cached_local_responses: HashMap<(PeerId, u32), Response>,
-	active_requests: HashMap<RequestId, Request>,
 }
 
 impl<const N: usize> Node<N> {
@@ -77,9 +74,6 @@ impl<const N: usize> Node<N> {
 			peer,
 			local_key,
 			bootstrap_nodes,
-			cached_local_responses: HashMap::new(),
-			cached_outgoing_responses: HashMap::new(),
-			active_requests: HashMap::new(),
 		})
 	}
 

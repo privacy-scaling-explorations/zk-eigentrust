@@ -63,7 +63,8 @@ pub enum EigenError {
 	DialError,
 	MaxNeighboursReached,
 	NeighbourNotFound,
-	InvalidNeighbourCount
+	InvalidNeighbourCount,
+	OpinionNotFound
 }
 
 pub fn init_logger() {

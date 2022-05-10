@@ -1,5 +1,36 @@
 use libp2p::PeerId;
+use std::collections::HashMap;
 use crate::EigenError;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Opinion {
+	k: u32,
+	local_trust_score: f64,
+	global_trust_score: f64,
+	product: f64,
+}
+
+impl Opinion {
+	pub fn new(k: u32, local_trust_score: f64, global_trust_score: f64, product: f64) -> Self {
+		Self { k, local_trust_score, global_trust_score, product }
+	}
+
+	pub fn get_k(&self) -> u32 {
+		self.k
+	}
+
+	pub fn get_local_trust_score(&self) -> f64 {
+		self.local_trust_score
+	}
+
+	pub fn get_global_trust_score(&self) -> f64 {
+		self.global_trust_score
+	}
+
+	pub fn get_product(&self) -> f64 {
+		self.product
+	}
+}
 
 #[derive(Clone, Copy, Debug)]
 pub struct Neighbour {
@@ -11,11 +42,27 @@ impl Neighbour {
 	pub fn new(peer_id: PeerId) -> Self {
 		Self { peer_id, score: 0 }
 	}
+
+	pub fn get_peer_id(&self) -> PeerId {
+		self.peer_id
+	}
+
+	pub fn get_score(&self) -> u32 {
+		self.score
+	}
+
+	pub fn get_normalized_score(&self, sum: u32) -> f64 {
+		let f_raw_score = f64::from(self.score);
+		let f_sum = f64::from(sum);
+		f_raw_score / f_sum
+	}
 }
 
 pub struct Peer<const N: usize> {
 	neighbours: [Option<Neighbour>; N],
 	score: u32,
+	cached_neighbour_opinion: HashMap<(PeerId, u32), Opinion>,
+	cached_local_opinion: HashMap<(PeerId, u32), Opinion>,
 }
 
 impl<const N: usize> Peer<N> {
@@ -23,6 +70,8 @@ impl<const N: usize> Peer<N> {
 		Peer {
 			neighbours: [None; N],
 			score: 0,
+			cached_neighbour_opinion: HashMap::new(),
+			cached_local_opinion: HashMap::new(),
 		}
 	}
 
@@ -45,5 +94,67 @@ impl<const N: usize> Peer<N> {
 			return Ok(());
 		}
 		Err(EigenError::NeighbourNotFound)
+	}
+
+	pub fn iter_neighbours(&self, mut f: impl FnMut(&Neighbour) -> Result<(), EigenError>) -> Result<(), EigenError> {
+		for neighbour in self.neighbours.iter() {
+			if let Some(neighbour) = neighbour {
+				f(neighbour)?;
+			}
+		}
+
+		Ok(())
+	}
+
+	pub fn calculate_local_opinions(&mut self, k: u32) -> Result<(), EigenError> {
+		let mut global_score = 0.;
+		let mut sum_of_scores = 0;
+		
+		self.iter_neighbours(|Neighbour { peer_id, score }| {
+			let opinion = self.get_neighbour_opinion(&(*peer_id, k))?;
+			global_score += opinion.get_product();
+			sum_of_scores += score;
+			Ok(())
+		})?;
+
+		let mut opinions = Vec::new();
+		self.iter_neighbours(|neighbour| {
+			let normalized_score = neighbour.get_normalized_score(sum_of_scores);
+			let product = global_score * normalized_score;
+			let opinion = Opinion::new(k, normalized_score, global_score, product);
+
+			opinions.push((neighbour.get_peer_id().clone(), opinion));
+			Ok(())
+		})?;
+
+		for (peer_id, opinion) in opinions {
+			self.cache_local_opinion((peer_id, k), opinion);
+		}
+
+		Ok(())
+	}
+
+	pub fn has_local_opinion(&self, key: &(PeerId, u32)) -> bool {
+		self.cached_local_opinion.contains_key(key)
+	}
+
+	pub fn get_local_opinion(&self, key: &(PeerId, u32)) -> Result<Opinion, EigenError> {
+		self.cached_local_opinion.get(key).cloned().ok_or(EigenError::OpinionNotFound)
+	}
+
+	pub fn cache_local_opinion(&mut self, key: (PeerId, u32), response: Opinion) {
+		self.cached_local_opinion.insert(key, response);
+	}
+
+	pub fn has_neighbour_opinion(&self, key: &(PeerId, u32)) -> bool {
+		self.cached_neighbour_opinion.contains_key(key)
+	}
+
+	pub fn get_neighbour_opinion(&self, key: &(PeerId, u32)) -> Result<Opinion, EigenError> {
+		self.cached_neighbour_opinion.get(key).cloned().ok_or(EigenError::OpinionNotFound)
+	}
+
+	pub fn cache_neighbour_opinion(&mut self, key: (PeerId, u32), response: Opinion) {
+		self.cached_neighbour_opinion.insert(key, response);
 	}
 }
