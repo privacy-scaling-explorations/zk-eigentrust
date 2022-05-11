@@ -3,36 +3,38 @@ use libp2p::{
 	identity::Keypair,
 	noise::{Keypair as NoiseKeypair, NoiseConfig, X25519Spec},
 	request_response::{
-		ProtocolSupport, RequestResponse, RequestResponseConfig, RequestResponseEvent, RequestResponseMessage
+		ProtocolSupport, RequestResponse, RequestResponseConfig, RequestResponseEvent, RequestResponseMessage, ResponseChannel,
 	},
 	swarm::{ConnectionHandlerUpgrErr, ConnectionLimits, Swarm, SwarmBuilder, SwarmEvent},
 	tcp::TcpConfig,
 	yamux::YamuxConfig,
 	Multiaddr, PeerId, Transport,
 };
-
-use std::{io::Error as IoError, iter::once, time::Duration};
-
+use std::{io::Error as IoError, iter::once};
 use futures::prelude::*;
-
+use tokio::{task, join, time::{Instant, Duration, self}};
 use crate::{
 	protocol::{EigenTrustCodec, EigenTrustProtocol, Request, Response},
-	EigenError, Peer,
+	EigenError, Peer, epoch::Epoch,
+	peer::Rating,
 };
 
-pub struct Node<const N: usize> {
+pub struct Node {
 	swarm: Swarm<RequestResponse<EigenTrustCodec>>,
-	peer: Peer<N>,
+	peer: Peer,
 	local_key: Keypair,
 	bootstrap_nodes: Vec<(PeerId, Multiaddr)>,
+	interval: u64,
 }
 
-impl<const N: usize> Node<N> {
+impl Node {
 	pub fn new(
-		peer: Peer<N>,
+		peer: Peer,
 		local_key: Keypair,
 		local_address: Multiaddr,
 		bootstrap_nodes: Vec<(PeerId, Multiaddr)>,
+		num_connections: u32,
+		interval: u64,
 	) -> Result<Self, EigenError> {
 		let noise_keys = NoiseKeypair::<X25519Spec>::new()
 			.into_authentic(&local_key)
@@ -56,7 +58,6 @@ impl<const N: usize> Node<N> {
 
 		// Setting up the transport and swarm.
 		let local_peer_id = PeerId::from(local_key.public());
-		let num_connections = u32::try_from(N).map_err(|_| EigenError::InvalidNeighbourCount)?;
 		let connection_limits =
 			ConnectionLimits::default().with_max_established_per_peer(Some(num_connections));
 
@@ -74,7 +75,36 @@ impl<const N: usize> Node<N> {
 			peer,
 			local_key,
 			bootstrap_nodes,
+			interval,
 		})
+	}
+
+	pub fn handle_response(&mut self, peer: PeerId, response: Response) {
+		match response {
+			Response::Success(opinion) => {
+				self.peer.cache_neighbour_opinion((peer, opinion.get_epoch()), opinion);
+				self.peer.rate_neighbour(peer, Rating::Positive).unwrap();
+			}
+			e => {
+				log::debug!("Received error response {:?}", e);
+			}
+		};
+	}
+
+	pub fn handle_request(&mut self, peer: PeerId, request: Request, channel: ResponseChannel<Response>) {
+		let beh = self.swarm.behaviour_mut();
+
+		let opinion_res = self.peer.get_local_opinion(&(peer, request.get_epoch()));
+		match opinion_res {
+			Ok(opinion) => {
+				let response = Response::Success(opinion);
+				beh.send_response(channel, response).unwrap();
+			}
+			Err(e) => {
+				beh.send_response(channel, Response::InternalError(e.code())).unwrap();
+			}
+		}
+		
 	}
 
 	pub fn handle_req_res_events(&mut self, event: RequestResponseEvent<Request, Response>) {
@@ -82,12 +112,8 @@ impl<const N: usize> Node<N> {
 		use RequestResponseEvent::*;
 		use RequestResponseMessage::{Request as Req, Response as Res};
 		match event {
-			Message { peer, message: Req { request, .. } } => {
-				log::debug!("Request from {:?}: {:?}", peer, request);
-			}
-			Message { peer, message: Res { response, .. } } => {
-				log::debug!("Response from {:?}: {:?}", peer, response);
-			}
+			Message { peer, message: Req { request, channel, .. } } => self.handle_request(peer, request, channel),
+			Message { peer, message: Res { response, .. } } => self.handle_response(peer, response),
 			OutboundFailure { peer, request_id, .. } => {
 				log::debug!("Outbound failure {:?} from {:?}", request_id, peer);
 			}
@@ -147,14 +173,53 @@ impl<const N: usize> Node<N> {
 		}
 	}
 
-	pub async fn main_loop(&mut self) {
+	fn request_opinions_at(&mut self, k: Epoch) -> Result<(), EigenError> {
+		self.peer.iter_neighbours(|neighbour| {
+			let peer_id = neighbour.get_peer_id();
+			let beh = self.swarm.behaviour_mut();
+
+			let request = Request::new(k);
+			beh.send_request(&peer_id, request);
+			Ok(())
+		})
+	}
+
+	pub async fn main_loop(mut self) {
 		println!();
 
 		self.dial_bootstrap_nodes();
 
-		loop {
-			let event = self.swarm.select_next_some().await;
-			self.handle_swarm_events(event);
-		}
+		let interval_task = task::spawn(async move {
+			let now = Instant::now();
+
+			let secs_until_next_epoch = Epoch::secs_until_next_epoch(self.interval);
+			let start = now + Duration::from_secs(secs_until_next_epoch);
+			let period = Duration::from_secs(self.interval);
+
+			let mut interval = time::interval_at(start, period);
+			loop {
+				interval.tick().await;
+				
+				let current_epoch = Epoch::current_epoch(self.interval);
+				let unit_timestamp = Epoch::current_timestamp();
+
+				self.peer.calculate_local_opinions(current_epoch.previous()).unwrap();
+
+				self.request_opinions_at(current_epoch).unwrap();
+
+				log::debug!("time = {}, epoch = {}", unit_timestamp, current_epoch);
+			}
+		});
+
+		let main_task = task::spawn(async move {
+			loop {
+				let event = self.swarm.select_next_some().await;
+				self.handle_swarm_events(event);
+			}
+		});
+
+		let res = join!(main_task, interval_task);
+
+		log::debug!("joined futures res = {:?}", res);
 	}
 }

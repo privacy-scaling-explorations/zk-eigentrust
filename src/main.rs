@@ -28,6 +28,7 @@ use std::{str::FromStr};
 mod node;
 mod protocol;
 mod peer;
+mod epoch;
 
 use node::Node;
 use peer::Peer;
@@ -45,6 +46,7 @@ const BOOTSTRAP_PEERS: [[&str; 2]; 2] = [
 
 const DEFAULT_ADDRESS: &str = "/ip4/0.0.0.0/tcp/0";
 const NUM_NEIGHBOURS: usize = 256;
+const INTERVAL_SECS: u64 = 5;
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -59,12 +61,28 @@ pub enum EigenError {
 	InvalidKeypair,
 	InvalidAddress,
 	InvalidPeerId,
+	InvalidEpoch,
 	ListenFailed,
 	DialError,
 	MaxNeighboursReached,
 	NeighbourNotFound,
-	InvalidNeighbourCount,
-	OpinionNotFound
+	OpinionNotFound,
+}
+
+impl EigenError {
+	pub fn code(&self) -> u8 {
+		match self {
+			EigenError::InvalidKeypair => 1,
+			EigenError::InvalidAddress => 2,
+			EigenError::InvalidPeerId => 3,
+			EigenError::InvalidEpoch => 4,
+			EigenError::ListenFailed => 5,
+			EigenError::DialError => 6,
+			EigenError::MaxNeighboursReached => 7,
+			EigenError::NeighbourNotFound => 8,
+			EigenError::OpinionNotFound => 9,
+		}
+	}
 }
 
 pub fn init_logger() {
@@ -76,7 +94,7 @@ pub fn init_logger() {
 		.init();
 }
 
-#[async_std::main]
+#[tokio::main]
 async fn main() -> Result<(), EigenError> {
 	init_logger();
 
@@ -124,13 +142,18 @@ async fn main() -> Result<(), EigenError> {
 		bootstrap_nodes.push((peer_id, peer_addr));
 	}
 
-	
-	let peer = Peer::new();
-	let mut node = Node::<NUM_NEIGHBOURS>::new(
+	let num_neighbours = NUM_NEIGHBOURS;
+	let num_connections = u32::try_from(NUM_NEIGHBOURS).unwrap();
+	let interval_in_secs = INTERVAL_SECS;
+
+	let peer = Peer::new(num_neighbours);
+	let node = Node::new(
 		peer,
 		local_key,
 		local_address,
 		bootstrap_nodes,
+		num_connections,
+		interval_in_secs
 	)?;
 
 	node.main_loop().await;
