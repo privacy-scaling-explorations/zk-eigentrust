@@ -1,9 +1,17 @@
+use crate::{
+	epoch::Epoch,
+	peer::Rating,
+	protocol::{EigenTrustCodec, EigenTrustProtocol, Request, Response},
+	EigenError, Peer,
+};
+use futures::prelude::*;
 use libp2p::{
 	core::upgrade::Version,
 	identity::Keypair,
 	noise::{Keypair as NoiseKeypair, NoiseConfig, X25519Spec},
 	request_response::{
-		ProtocolSupport, RequestResponse, RequestResponseConfig, RequestResponseEvent, RequestResponseMessage, ResponseChannel,
+		ProtocolSupport, RequestResponse, RequestResponseConfig, RequestResponseEvent,
+		RequestResponseMessage, ResponseChannel,
 	},
 	swarm::{ConnectionHandlerUpgrErr, ConnectionLimits, Swarm, SwarmBuilder, SwarmEvent},
 	tcp::TcpConfig,
@@ -11,12 +19,9 @@ use libp2p::{
 	Multiaddr, PeerId, Transport,
 };
 use std::{io::Error as IoError, iter::once};
-use futures::prelude::*;
-use tokio::{task, join, time::{Instant, Duration, self}};
-use crate::{
-	protocol::{EigenTrustCodec, EigenTrustProtocol, Request, Response},
-	EigenError, Peer, epoch::Epoch,
-	peer::Rating,
+use tokio::{
+	join, task,
+	time::{self, Duration, Instant},
 };
 
 pub struct Node {
@@ -82,16 +87,22 @@ impl Node {
 	pub fn handle_response(&mut self, peer: PeerId, response: Response) {
 		match response {
 			Response::Success(opinion) => {
-				self.peer.cache_neighbour_opinion((peer, opinion.get_epoch()), opinion);
+				self.peer
+					.cache_neighbour_opinion((peer, opinion.get_epoch()), opinion);
 				self.peer.rate_neighbour(peer, Rating::Positive).unwrap();
-			}
+			},
 			e => {
 				log::debug!("Received error response {:?}", e);
-			}
+			},
 		};
 	}
 
-	pub fn handle_request(&mut self, peer: PeerId, request: Request, channel: ResponseChannel<Response>) {
+	pub fn handle_request(
+		&mut self,
+		peer: PeerId,
+		request: Request,
+		channel: ResponseChannel<Response>,
+	) {
 		let beh = self.swarm.behaviour_mut();
 
 		let opinion_res = self.peer.get_local_opinion(&(peer, request.get_epoch()));
@@ -99,12 +110,12 @@ impl Node {
 			Ok(opinion) => {
 				let response = Response::Success(opinion);
 				beh.send_response(channel, response).unwrap();
-			}
+			},
 			Err(e) => {
-				beh.send_response(channel, Response::InternalError(e.code())).unwrap();
-			}
+				beh.send_response(channel, Response::InternalError(e.code()))
+					.unwrap();
+			},
 		}
-		
 	}
 
 	pub fn handle_req_res_events(&mut self, event: RequestResponseEvent<Request, Response>) {
@@ -112,17 +123,29 @@ impl Node {
 		use RequestResponseEvent::*;
 		use RequestResponseMessage::{Request as Req, Response as Res};
 		match event {
-			Message { peer, message: Req { request, channel, .. } } => self.handle_request(peer, request, channel),
-			Message { peer, message: Res { response, .. } } => self.handle_response(peer, response),
-			OutboundFailure { peer, request_id, .. } => {
+			Message {
+				peer,
+				message: Req {
+					request, channel, ..
+				},
+			} => self.handle_request(peer, request, channel),
+			Message {
+				peer,
+				message: Res { response, .. },
+			} => self.handle_response(peer, response),
+			OutboundFailure {
+				peer, request_id, ..
+			} => {
 				log::debug!("Outbound failure {:?} from {:?}", request_id, peer);
-			}
-			InboundFailure { peer, request_id, .. } => {
+			},
+			InboundFailure {
+				peer, request_id, ..
+			} => {
 				log::debug!("Inbound failure {:?} from {:?}", request_id, peer);
-			}
+			},
 			ResponseSent { peer, request_id } => {
 				log::debug!("Response sent {:?} to {:?}", request_id, peer);
-			}
+			},
 		}
 	}
 
@@ -199,11 +222,13 @@ impl Node {
 			let mut interval = time::interval_at(start, period);
 			loop {
 				interval.tick().await;
-				
+
 				let current_epoch = Epoch::current_epoch(self.interval);
 				let unit_timestamp = Epoch::current_timestamp();
 
-				self.peer.calculate_local_opinions(current_epoch.previous()).unwrap();
+				self.peer
+					.calculate_local_opinions(current_epoch.previous())
+					.unwrap();
 
 				self.request_opinions_at(current_epoch).unwrap();
 

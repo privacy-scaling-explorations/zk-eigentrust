@@ -23,12 +23,12 @@ use clap::Parser;
 use env_logger::Builder;
 use libp2p::{identity::Keypair, Multiaddr, PeerId};
 use log::LevelFilter;
-use std::{str::FromStr};
+use std::str::FromStr;
 
-mod node;
-mod protocol;
-mod peer;
 mod epoch;
+mod node;
+mod peer;
+mod protocol;
 
 use node::Node;
 use peer::Peer;
@@ -153,7 +153,7 @@ async fn main() -> Result<(), EigenError> {
 		local_address,
 		bootstrap_nodes,
 		num_connections,
-		interval_in_secs
+		interval_in_secs,
 	)?;
 
 	node.main_loop().await;

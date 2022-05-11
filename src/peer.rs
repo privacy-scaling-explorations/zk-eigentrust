@@ -1,6 +1,6 @@
+use crate::{epoch::Epoch, EigenError};
 use libp2p::PeerId;
 use std::collections::HashMap;
-use crate::{EigenError, epoch::Epoch};
 
 pub enum Rating {
 	Positive,
@@ -17,7 +17,12 @@ pub struct Opinion {
 
 impl Opinion {
 	pub fn new(k: Epoch, local_trust_score: f64, global_trust_score: f64, product: f64) -> Self {
-		Self { k, local_trust_score, global_trust_score, product }
+		Self {
+			k,
+			local_trust_score,
+			global_trust_score,
+			product,
+		}
 	}
 
 	pub fn get_epoch(&self) -> Epoch {
@@ -65,7 +70,11 @@ impl Neighbour {
 	pub fn rate(&mut self, rating: Rating) {
 		match rating {
 			Rating::Positive => self.score += 1,
-			Rating::Negative => if self.score > 0 { self.score -= 1 },
+			Rating::Negative => {
+				if self.score > 0 {
+					self.score -= 1
+				}
+			},
 		}
 	}
 }
@@ -117,13 +126,18 @@ impl Peer {
 			.iter()
 			.position(|n| n.as_ref().map(|n| n.peer_id == peer_id).unwrap_or(false));
 		if let Some(index) = index {
-			self.neighbours[index].as_mut().map(|neighbour| neighbour.rate(rating));
+			self.neighbours[index]
+				.as_mut()
+				.map(|neighbour| neighbour.rate(rating));
 			return Ok(());
 		}
 		Err(EigenError::NeighbourNotFound)
 	}
 
-	pub fn iter_neighbours(&self, mut f: impl FnMut(&Neighbour) -> Result<(), EigenError>) -> Result<(), EigenError> {
+	pub fn iter_neighbours(
+		&self,
+		mut f: impl FnMut(&Neighbour) -> Result<(), EigenError>,
+	) -> Result<(), EigenError> {
 		for neighbour in self.neighbours.iter() {
 			if let Some(neighbour) = neighbour {
 				f(neighbour)?;
@@ -136,7 +150,7 @@ impl Peer {
 	pub fn calculate_local_opinions(&mut self, k: Epoch) -> Result<(), EigenError> {
 		let mut global_score = 0.;
 		let mut sum_of_scores = 0;
-		
+
 		self.iter_neighbours(|Neighbour { peer_id, score }| {
 			let opinion = self.get_neighbour_opinion(&(*peer_id, k))?;
 			global_score += opinion.get_product();
@@ -166,7 +180,10 @@ impl Peer {
 	}
 
 	pub fn get_local_opinion(&self, key: &(PeerId, Epoch)) -> Result<Opinion, EigenError> {
-		self.cached_local_opinion.get(key).cloned().ok_or(EigenError::OpinionNotFound)
+		self.cached_local_opinion
+			.get(key)
+			.cloned()
+			.ok_or(EigenError::OpinionNotFound)
 	}
 
 	pub fn cache_local_opinion(&mut self, key: (PeerId, Epoch), response: Opinion) {
@@ -178,7 +195,10 @@ impl Peer {
 	}
 
 	pub fn get_neighbour_opinion(&self, key: &(PeerId, Epoch)) -> Result<Opinion, EigenError> {
-		self.cached_neighbour_opinion.get(key).cloned().ok_or(EigenError::OpinionNotFound)
+		self.cached_neighbour_opinion
+			.get(key)
+			.cloned()
+			.ok_or(EigenError::OpinionNotFound)
 	}
 
 	pub fn cache_neighbour_opinion(&mut self, key: (PeerId, Epoch), response: Opinion) {

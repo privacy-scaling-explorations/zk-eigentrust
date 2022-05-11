@@ -1,6 +1,7 @@
-use std::{time::{UNIX_EPOCH, SystemTime}, fmt::{Display, Formatter, Result as FmtResult}};
-
-use crate::EigenError;
+use std::{
+	fmt::{Display, Formatter, Result as FmtResult},
+	time::{SystemTime, UNIX_EPOCH},
+};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Epoch(pub u64);

@@ -1,3 +1,4 @@
+use crate::{epoch::Epoch, peer::Opinion};
 use async_trait::async_trait;
 use futures::{AsyncRead, AsyncReadExt, AsyncWrite};
 use libp2p::{
@@ -5,8 +6,6 @@ use libp2p::{
 	request_response::{ProtocolName, RequestResponseCodec},
 };
 use std::io::Result;
-use crate::peer::Opinion;
-use crate::epoch::Epoch;
 
 #[derive(Debug, Clone)]
 pub struct EigenTrustProtocol {
@@ -112,7 +111,8 @@ impl RequestResponseCodec for EigenTrustCodec {
 						let global_trust_score = f64::from_be_bytes(global_trust_score_bytes);
 						let product = f64::from_be_bytes(product_bytes);
 
-						let opinion = Opinion::new(Epoch(k), local_trust_score, global_trust_score, product);
+						let opinion =
+							Opinion::new(Epoch(k), local_trust_score, global_trust_score, product);
 
 						Response::Success(opinion)
 					},
