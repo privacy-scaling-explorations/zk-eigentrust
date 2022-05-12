@@ -3,6 +3,8 @@ use std::{
 	time::{SystemTime, UNIX_EPOCH},
 };
 
+use crate::EigenError;
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Epoch(pub u64);
 
@@ -13,31 +15,31 @@ impl Display for Epoch {
 }
 
 impl Epoch {
-	pub fn to_be_bytes(&self) -> [u8; 8] {
+	pub fn to_be_bytes(self) -> [u8; 8] {
 		self.0.to_be_bytes()
 	}
 
-	pub fn current_epoch(interval: u64) -> Self {
-		let unix_timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
+	pub fn current_epoch(interval: u64) -> Result<Self, EigenError> {
+		let unix_timestamp = SystemTime::now().duration_since(UNIX_EPOCH).map_err(|_| EigenError::EpochError)?;
 
 		let current_epoch = unix_timestamp.as_secs() / interval;
 
-		Epoch(current_epoch)
+		Ok(Epoch(current_epoch))
 	}
 
-	pub fn secs_until_next_epoch(interval: u64) -> u64 {
-		let unix_timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
+	pub fn secs_until_next_epoch(interval: u64) -> Result<u64, EigenError> {
+		let unix_timestamp = SystemTime::now().duration_since(UNIX_EPOCH).map_err(|_| EigenError::EpochError)?;
 
 		let current_epoch = unix_timestamp.as_secs() / interval;
 		let secs_until_next_epoch = (current_epoch + 1) * interval - unix_timestamp.as_secs();
 
-		secs_until_next_epoch
+		Ok(secs_until_next_epoch)
 	}
 
-	pub fn current_timestamp() -> u64 {
-		let unix_timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
+	pub fn current_timestamp() -> Result<u64, EigenError> {
+		let unix_timestamp = SystemTime::now().duration_since(UNIX_EPOCH).map_err(|_| EigenError::EpochError)?;
 
-		unix_timestamp.as_secs()
+		Ok(unix_timestamp.as_secs())
 	}
 
 	pub fn previous(&self) -> Self {

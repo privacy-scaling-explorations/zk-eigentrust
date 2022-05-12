@@ -56,10 +56,6 @@ impl Neighbour {
 		self.peer_id
 	}
 
-	pub fn get_score(&self) -> u32 {
-		self.score
-	}
-
 	pub fn get_normalized_score(&self, sum: u32) -> f64 {
 		let f_raw_score = f64::from(self.score);
 		let f_sum = f64::from(sum);
@@ -114,10 +110,8 @@ impl Peer {
 		&self,
 		mut f: impl FnMut(&Neighbour) -> Result<(), EigenError>,
 	) -> Result<(), EigenError> {
-		for neighbour in self.neighbours.iter() {
-			if let Some(neighbour) = neighbour {
-				f(neighbour)?;
-			}
+		for neighbour in self.neighbours.iter().flatten() {
+			f(neighbour)?;
 		}
 
 		Ok(())
@@ -140,7 +134,7 @@ impl Peer {
 			let product = global_score * normalized_score;
 			let opinion = Opinion::new(k.next(), normalized_score, global_score, product);
 
-			opinions.push((neighbour.get_peer_id().clone(), opinion));
+			opinions.push((neighbour.get_peer_id(), opinion));
 			Ok(())
 		})?;
 
@@ -156,30 +150,20 @@ impl Peer {
 		*self.global_scores.get(&k).unwrap_or(&0.)
 	}
 
-	pub fn has_local_opinion(&self, key: &(PeerId, Epoch)) -> bool {
-		self.cached_local_opinion.contains_key(key)
-	}
-
 	pub fn get_local_opinion(&self, key: &(PeerId, Epoch)) -> Opinion {
-		self.cached_local_opinion
+		*self.cached_local_opinion
 			.get(key)
 			.unwrap_or(&Opinion::empty(key.1))
-			.clone()
 	}
 
 	pub fn cache_local_opinion(&mut self, key: (PeerId, Epoch), response: Opinion) {
 		self.cached_local_opinion.insert(key, response);
 	}
 
-	pub fn has_neighbour_opinion(&self, key: &(PeerId, Epoch)) -> bool {
-		self.cached_neighbour_opinion.contains_key(key)
-	}
-
 	pub fn get_neighbour_opinion(&self, key: &(PeerId, Epoch)) -> Opinion {
-		self.cached_neighbour_opinion
+		*self.cached_neighbour_opinion
 			.get(key)
 			.unwrap_or(&Opinion::empty(key.1))
-			.clone()
 	}
 
 	pub fn cache_neighbour_opinion(&mut self, key: (PeerId, Epoch), response: Opinion) {

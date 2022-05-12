@@ -58,7 +58,7 @@ impl Node {
 		// Setting up the request/response protocol.
 		let protocols = once((EigenTrustProtocol::new(), ProtocolSupport::Full));
 		let cfg = RequestResponseConfig::default();
-		let req_proto = RequestResponse::new(EigenTrustCodec, protocols.clone(), cfg.clone());
+		let req_proto = RequestResponse::new(EigenTrustCodec, protocols, cfg);
 
 		// Setting up the transport and swarm.
 		let local_peer_id = PeerId::from(local_key.public());
@@ -69,7 +69,7 @@ impl Node {
 			.connection_limits(connection_limits)
 			.build();
 
-		swarm.listen_on(local_address.clone()).map_err(|e| {
+		swarm.listen_on(local_address).map_err(|e| {
 			log::debug!("swarm.listen_on {:?}", e);
 			EigenError::ListenFailed
 		})?;
@@ -83,7 +83,7 @@ impl Node {
 		})
 	}
 
-	pub fn handle_req_res_events(&mut self, event: RequestResponseEvent<Request, Response>) {
+	pub fn handle_req_res_events(&mut self, event: RequestResponseEvent<Request, Response>) -> Result<(), EigenError> {
 		log::debug!("ReqRes event {:?}", event);
 		use RequestResponseEvent::*;
 		use RequestResponseMessage::{Request as Req, Response as Res};
@@ -96,11 +96,10 @@ impl Node {
 			} => {
 				let beh = self.swarm.behaviour_mut();
 				self.peer
-					.calculate_local_opinions(request.get_epoch())
-					.unwrap();
+					.calculate_local_opinions(request.get_epoch())?;
 				let opinion = self.peer.get_local_opinion(&(peer, request.get_epoch()));
 				let response = Response::Success(opinion);
-				beh.send_response(channel, response).unwrap();
+				beh.send_response(channel, response).map_err(|_| EigenError::ResponseError)?;
 			},
 			Message {
 				peer,
@@ -126,7 +125,8 @@ impl Node {
 			ResponseSent { peer, request_id } => {
 				log::debug!("Response sent {:?} to {:?}", request_id, peer);
 			},
-		}
+		};
+		Ok(())
 	}
 
 	pub fn handle_swarm_events(
@@ -135,10 +135,10 @@ impl Node {
 			RequestResponseEvent<Request, Response>,
 			ConnectionHandlerUpgrErr<IoError>,
 		>,
-	) {
+	) -> Result<(), EigenError> {
 		match event {
 			SwarmEvent::NewListenAddr { address, .. } => log::info!("Listening on {:?}", address),
-			SwarmEvent::Behaviour(req_res_event) => self.handle_req_res_events(req_res_event),
+			SwarmEvent::Behaviour(req_res_event) => self.handle_req_res_events(req_res_event)?,
 			// When we connect to a peer, we automatically add him as a neighbour.
 			SwarmEvent::ConnectionEstablished { peer_id, .. } => {
 				let res = self.peer.add_neighbour(peer_id);
@@ -158,6 +158,8 @@ impl Node {
 			SwarmEvent::Dialing(peer_id) => log::info!("Dialing {:?}", peer_id),
 			e => log::debug!("{:?}", e),
 		}
+
+		Ok(())
 	}
 
 	pub fn dial_bootstrap_nodes(&mut self) {
@@ -176,9 +178,9 @@ impl Node {
 		}
 	}
 
-	pub fn send_epoch_requests(&mut self) {
-		let current_epoch = Epoch::current_epoch(self.interval);
-		let timestamp = Epoch::current_timestamp();
+	pub fn send_epoch_requests(&mut self) -> Result<(), EigenError> {
+		let current_epoch = Epoch::current_epoch(self.interval)?;
+		let timestamp = Epoch::current_timestamp()?;
 		let score = self.peer.get_global_score(current_epoch.previous());
 		log::info!(
 			"{}, Timestamp {}, Previous Epoch Score: {}",
@@ -195,17 +197,17 @@ impl Node {
 				let request = Request::new(current_epoch);
 				beh.send_request(&peer_id, request);
 				Ok(())
-			})
-			.unwrap();
+			})?;
+		Ok(())
 	}
 
-	pub async fn main_loop(mut self) {
+	pub async fn main_loop(mut self) -> Result<(), EigenError> {
 		println!();
 
 		self.dial_bootstrap_nodes();
 
 		let now = Instant::now();
-		let secs_until_next_epoch = Epoch::secs_until_next_epoch(self.interval);
+		let secs_until_next_epoch = Epoch::secs_until_next_epoch(self.interval)?;
 		let start = now + Duration::from_secs(secs_until_next_epoch);
 		let period = Duration::from_secs(self.interval);
 
@@ -214,8 +216,8 @@ impl Node {
 		loop {
 			select! {
 				biased;
-				_ = interval.tick() => self.send_epoch_requests(),
-				event = self.swarm.select_next_some() => self.handle_swarm_events(event),
+				_ = interval.tick() => self.send_epoch_requests()?,
+				event = self.swarm.select_next_some() => self.handle_swarm_events(event)?,
 			}
 		}
 	}

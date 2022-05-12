@@ -57,34 +57,21 @@ struct Args {
 }
 
 #[derive(Debug)]
+#[repr(u8)]
 pub enum EigenError {
 	InvalidKeypair,
 	InvalidAddress,
 	InvalidPeerId,
 	InvalidEpoch,
+	InvalidNumNeighbours,
 	ListenFailed,
 	DialError,
+	ResponseError,
 	MaxNeighboursReached,
 	NeighbourNotFound,
 	OpinionNotFound,
 	GlobalScoreNotFound,
-}
-
-impl EigenError {
-	pub fn code(&self) -> u8 {
-		match self {
-			EigenError::InvalidKeypair => 1,
-			EigenError::InvalidAddress => 2,
-			EigenError::InvalidPeerId => 3,
-			EigenError::InvalidEpoch => 4,
-			EigenError::ListenFailed => 5,
-			EigenError::DialError => 6,
-			EigenError::MaxNeighboursReached => 7,
-			EigenError::NeighbourNotFound => 8,
-			EigenError::OpinionNotFound => 9,
-			EigenError::GlobalScoreNotFound => 10,
-		}
-	}
+	EpochError,
 }
 
 pub fn init_logger() {
@@ -145,7 +132,7 @@ async fn main() -> Result<(), EigenError> {
 	}
 
 	let num_neighbours = NUM_NEIGHBOURS;
-	let num_connections = u32::try_from(NUM_NEIGHBOURS).unwrap();
+	let num_connections = u32::try_from(NUM_NEIGHBOURS).map_err(|_| EigenError::InvalidNumNeighbours)?;
 	let interval_in_secs = INTERVAL_SECS;
 
 	let peer = Peer::new(num_neighbours);
@@ -158,7 +145,7 @@ async fn main() -> Result<(), EigenError> {
 		interval_in_secs,
 	)?;
 
-	node.main_loop().await;
+	node.main_loop().await?;
 
 	Ok(())
 }
