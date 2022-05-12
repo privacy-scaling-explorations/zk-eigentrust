@@ -83,7 +83,10 @@ impl Node {
 		})
 	}
 
-	pub fn handle_req_res_events(&mut self, event: RequestResponseEvent<Request, Response>) -> Result<(), EigenError> {
+	pub fn handle_req_res_events(
+		&mut self,
+		event: RequestResponseEvent<Request, Response>,
+	) -> Result<(), EigenError> {
 		log::debug!("ReqRes event {:?}", event);
 		use RequestResponseEvent::*;
 		use RequestResponseMessage::{Request as Req, Response as Res};
@@ -95,11 +98,11 @@ impl Node {
 				},
 			} => {
 				let beh = self.swarm.behaviour_mut();
-				self.peer
-					.calculate_local_opinions(request.get_epoch())?;
+				self.peer.calculate_local_opinions(request.get_epoch())?;
 				let opinion = self.peer.get_local_opinion(&(peer, request.get_epoch()));
 				let response = Response::Success(opinion);
-				beh.send_response(channel, response).map_err(|_| EigenError::ResponseError)?;
+				beh.send_response(channel, response)
+					.map_err(|_| EigenError::ResponseError)?;
 			},
 			Message {
 				peer,
@@ -189,15 +192,14 @@ impl Node {
 			score
 		);
 
-		self.peer
-			.iter_neighbours(|neighbour| {
-				let peer_id = neighbour.get_peer_id();
-				let beh = self.swarm.behaviour_mut();
+		self.peer.iter_neighbours(|neighbour| {
+			let peer_id = neighbour.get_peer_id();
+			let beh = self.swarm.behaviour_mut();
 
-				let request = Request::new(current_epoch);
-				beh.send_request(&peer_id, request);
-				Ok(())
-			})?;
+			let request = Request::new(current_epoch);
+			beh.send_request(&peer_id, request);
+			Ok(())
+		})?;
 		Ok(())
 	}
 

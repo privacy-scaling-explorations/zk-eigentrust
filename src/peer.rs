@@ -151,7 +151,8 @@ impl Peer {
 	}
 
 	pub fn get_local_opinion(&self, key: &(PeerId, Epoch)) -> Opinion {
-		*self.cached_local_opinion
+		*self
+			.cached_local_opinion
 			.get(key)
 			.unwrap_or(&Opinion::empty(key.1))
 	}
@@ -161,7 +162,8 @@ impl Peer {
 	}
 
 	pub fn get_neighbour_opinion(&self, key: &(PeerId, Epoch)) -> Opinion {
-		*self.cached_neighbour_opinion
+		*self
+			.cached_neighbour_opinion
 			.get(key)
 			.unwrap_or(&Opinion::empty(key.1))
 	}

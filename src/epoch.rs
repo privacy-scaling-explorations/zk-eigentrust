@@ -20,7 +20,9 @@ impl Epoch {
 	}
 
 	pub fn current_epoch(interval: u64) -> Result<Self, EigenError> {
-		let unix_timestamp = SystemTime::now().duration_since(UNIX_EPOCH).map_err(|_| EigenError::EpochError)?;
+		let unix_timestamp = SystemTime::now()
+			.duration_since(UNIX_EPOCH)
+			.map_err(|_| EigenError::EpochError)?;
 
 		let current_epoch = unix_timestamp.as_secs() / interval;
 
@@ -28,7 +30,9 @@ impl Epoch {
 	}
 
 	pub fn secs_until_next_epoch(interval: u64) -> Result<u64, EigenError> {
-		let unix_timestamp = SystemTime::now().duration_since(UNIX_EPOCH).map_err(|_| EigenError::EpochError)?;
+		let unix_timestamp = SystemTime::now()
+			.duration_since(UNIX_EPOCH)
+			.map_err(|_| EigenError::EpochError)?;
 
 		let current_epoch = unix_timestamp.as_secs() / interval;
 		let secs_until_next_epoch = (current_epoch + 1) * interval - unix_timestamp.as_secs();
@@ -37,7 +41,9 @@ impl Epoch {
 	}
 
 	pub fn current_timestamp() -> Result<u64, EigenError> {
-		let unix_timestamp = SystemTime::now().duration_since(UNIX_EPOCH).map_err(|_| EigenError::EpochError)?;
+		let unix_timestamp = SystemTime::now()
+			.duration_since(UNIX_EPOCH)
+			.map_err(|_| EigenError::EpochError)?;
 
 		Ok(unix_timestamp.as_secs())
 	}

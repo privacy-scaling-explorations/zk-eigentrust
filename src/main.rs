@@ -132,7 +132,8 @@ async fn main() -> Result<(), EigenError> {
 	}
 
 	let num_neighbours = NUM_NEIGHBOURS;
-	let num_connections = u32::try_from(NUM_NEIGHBOURS).map_err(|_| EigenError::InvalidNumNeighbours)?;
+	let num_connections =
+		u32::try_from(NUM_NEIGHBOURS).map_err(|_| EigenError::InvalidNumNeighbours)?;
 	let interval_in_secs = INTERVAL_SECS;
 
 	let peer = Peer::new(num_neighbours);
