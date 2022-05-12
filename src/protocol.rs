@@ -1,7 +1,8 @@
+use crate::{epoch::Epoch, peer::Opinion};
 use async_trait::async_trait;
-use futures::{AsyncRead, AsyncWrite};
+use futures::{AsyncRead, AsyncReadExt, AsyncWrite};
 use libp2p::{
-	core::upgrade::{read_length_prefixed, write_length_prefixed},
+	core::upgrade::write_length_prefixed,
 	request_response::{ProtocolName, RequestResponseCodec},
 };
 use std::io::Result;
@@ -24,16 +25,29 @@ enum EigenTrustProtocolVersion {
 	V1,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct EigenTrustCodec;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Request;
+pub struct Request {
+	epoch: Epoch,
+}
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+impl Request {
+	pub fn new(epoch: Epoch) -> Self {
+		Self { epoch }
+	}
+
+	pub fn get_epoch(&self) -> Epoch {
+		self.epoch
+	}
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Response {
-	Success,
-	Other(u8),
+	Success(Opinion),
+	InvalidRequest,
+	InternalError(u8),
 }
 
 impl ProtocolName for EigenTrustProtocol {
@@ -53,13 +67,18 @@ impl RequestResponseCodec for EigenTrustCodec {
 	async fn read_request<T>(
 		&mut self,
 		protocol: &Self::Protocol,
-		_: &mut T,
+		io: &mut T,
 	) -> Result<Self::Request>
 	where
 		T: AsyncRead + Unpin + Send,
 	{
 		match protocol.version {
-			EigenTrustProtocolVersion::V1 => Ok(Request),
+			EigenTrustProtocolVersion::V1 => {
+				let mut buf = [0; 8];
+				io.read_exact(&mut buf).await?;
+				let k = u64::from_be_bytes(buf);
+				Ok(Request::new(Epoch(k)))
+			},
 		}
 	}
 
@@ -73,10 +92,32 @@ impl RequestResponseCodec for EigenTrustCodec {
 	{
 		match protocol.version {
 			EigenTrustProtocolVersion::V1 => {
-				let status_bytes = read_length_prefixed(io, 1).await?;
-				let response = match status_bytes[0] {
-					0 => Response::Success,
-					code => Response::Other(code),
+				let mut buf = [0; 1];
+				io.read_exact(&mut buf).await?;
+				let response = match buf[0] {
+					0 => {
+						let mut k_bytes = [0; 8];
+						let mut local_trust_score_bytes = [0; 8];
+						let mut global_trust_score_bytes = [0; 8];
+						let mut product_bytes = [0; 8];
+
+						io.read_exact(&mut k_bytes).await?;
+						io.read_exact(&mut local_trust_score_bytes).await?;
+						io.read_exact(&mut global_trust_score_bytes).await?;
+						io.read_exact(&mut product_bytes).await?;
+
+						let k = u64::from_be_bytes(k_bytes);
+						let local_trust_score = f64::from_be_bytes(local_trust_score_bytes);
+						let global_trust_score = f64::from_be_bytes(global_trust_score_bytes);
+						let product = f64::from_be_bytes(product_bytes);
+
+						let opinion =
+							Opinion::new(Epoch(k), local_trust_score, global_trust_score, product);
+
+						Response::Success(opinion)
+					},
+					1 => Response::InvalidRequest,
+					other => Response::InternalError(other),
 				};
 				Ok(response)
 			},
@@ -86,14 +127,18 @@ impl RequestResponseCodec for EigenTrustCodec {
 	async fn write_request<T>(
 		&mut self,
 		protocol: &Self::Protocol,
-		_: &mut T,
-		_: Self::Request,
+		io: &mut T,
+		req: Self::Request,
 	) -> Result<()>
 	where
 		T: AsyncWrite + Unpin + Send,
 	{
 		match protocol.version {
-			EigenTrustProtocolVersion::V1 => Ok(()),
+			EigenTrustProtocolVersion::V1 => {
+				let k = req.get_epoch();
+				write_length_prefixed(io, &k.to_be_bytes()).await?;
+				Ok(())
+			},
 		}
 	}
 
@@ -110,8 +155,15 @@ impl RequestResponseCodec for EigenTrustCodec {
 			EigenTrustProtocolVersion::V1 => {
 				let mut bytes = Vec::new();
 				match res {
-					Response::Success => bytes.push(0),
-					Response::Other(code) => bytes.push(code),
+					Response::Success(opinion) => {
+						bytes.push(0);
+						bytes.extend(opinion.get_epoch().to_be_bytes());
+						bytes.extend(opinion.get_local_trust_score().to_be_bytes());
+						bytes.extend(opinion.get_global_trust_score().to_be_bytes());
+						bytes.extend(opinion.get_product().to_be_bytes());
+					},
+					Response::InvalidRequest => bytes.push(1),
+					Response::InternalError(code) => bytes.push(code),
 				};
 				write_length_prefixed(io, &bytes).await?;
 				Ok(())
