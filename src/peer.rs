@@ -2,11 +2,6 @@ use crate::{epoch::Epoch, EigenError};
 use libp2p::PeerId;
 use std::collections::HashMap;
 
-pub enum Rating {
-	Positive,
-	Negative,
-}
-
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Opinion {
 	k: Epoch,
@@ -23,6 +18,10 @@ impl Opinion {
 			global_trust_score,
 			product,
 		}
+	}
+
+	pub fn empty(k: Epoch) -> Self {
+		Self::new(k, 0.0, 0.0, 0.0)
 	}
 
 	pub fn get_epoch(&self) -> Epoch {
@@ -66,23 +65,13 @@ impl Neighbour {
 		let f_sum = f64::from(sum);
 		f_raw_score / f_sum
 	}
-
-	pub fn rate(&mut self, rating: Rating) {
-		match rating {
-			Rating::Positive => self.score += 1,
-			Rating::Negative => {
-				if self.score > 0 {
-					self.score -= 1
-				}
-			},
-		}
-	}
 }
 
 pub struct Peer {
 	neighbours: Vec<Option<Neighbour>>,
 	cached_neighbour_opinion: HashMap<(PeerId, Epoch), Opinion>,
 	cached_local_opinion: HashMap<(PeerId, Epoch), Opinion>,
+	global_scores: HashMap<Epoch, f64>,
 }
 
 impl Peer {
@@ -96,6 +85,7 @@ impl Peer {
 			neighbours,
 			cached_neighbour_opinion: HashMap::new(),
 			cached_local_opinion: HashMap::new(),
+			global_scores: HashMap::new(),
 		}
 	}
 
@@ -120,20 +110,6 @@ impl Peer {
 		Err(EigenError::NeighbourNotFound)
 	}
 
-	pub fn rate_neighbour(&mut self, peer_id: PeerId, rating: Rating) -> Result<(), EigenError> {
-		let index = self
-			.neighbours
-			.iter()
-			.position(|n| n.as_ref().map(|n| n.peer_id == peer_id).unwrap_or(false));
-		if let Some(index) = index {
-			self.neighbours[index]
-				.as_mut()
-				.map(|neighbour| neighbour.rate(rating));
-			return Ok(());
-		}
-		Err(EigenError::NeighbourNotFound)
-	}
-
 	pub fn iter_neighbours(
 		&self,
 		mut f: impl FnMut(&Neighbour) -> Result<(), EigenError>,
@@ -152,7 +128,7 @@ impl Peer {
 		let mut sum_of_scores = 0;
 
 		self.iter_neighbours(|Neighbour { peer_id, score }| {
-			let opinion = self.get_neighbour_opinion(&(*peer_id, k))?;
+			let opinion = self.get_neighbour_opinion(&(*peer_id, k));
 			global_score += opinion.get_product();
 			sum_of_scores += score;
 			Ok(())
@@ -171,19 +147,24 @@ impl Peer {
 		for (peer_id, opinion) in opinions {
 			self.cache_local_opinion((peer_id, opinion.get_epoch()), opinion);
 		}
+		self.global_scores.insert(k.next(), global_score);
 
 		Ok(())
+	}
+
+	pub fn get_global_score(&self, k: Epoch) -> f64 {
+		*self.global_scores.get(&k).unwrap_or(&0.)
 	}
 
 	pub fn has_local_opinion(&self, key: &(PeerId, Epoch)) -> bool {
 		self.cached_local_opinion.contains_key(key)
 	}
 
-	pub fn get_local_opinion(&self, key: &(PeerId, Epoch)) -> Result<Opinion, EigenError> {
+	pub fn get_local_opinion(&self, key: &(PeerId, Epoch)) -> Opinion {
 		self.cached_local_opinion
 			.get(key)
-			.cloned()
-			.ok_or(EigenError::OpinionNotFound)
+			.unwrap_or(&Opinion::empty(key.1))
+			.clone()
 	}
 
 	pub fn cache_local_opinion(&mut self, key: (PeerId, Epoch), response: Opinion) {
@@ -194,11 +175,11 @@ impl Peer {
 		self.cached_neighbour_opinion.contains_key(key)
 	}
 
-	pub fn get_neighbour_opinion(&self, key: &(PeerId, Epoch)) -> Result<Opinion, EigenError> {
+	pub fn get_neighbour_opinion(&self, key: &(PeerId, Epoch)) -> Opinion {
 		self.cached_neighbour_opinion
 			.get(key)
-			.cloned()
-			.ok_or(EigenError::OpinionNotFound)
+			.unwrap_or(&Opinion::empty(key.1))
+			.clone()
 	}
 
 	pub fn cache_neighbour_opinion(&mut self, key: (PeerId, Epoch), response: Opinion) {

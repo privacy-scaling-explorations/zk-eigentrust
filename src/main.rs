@@ -67,6 +67,7 @@ pub enum EigenError {
 	MaxNeighboursReached,
 	NeighbourNotFound,
 	OpinionNotFound,
+	GlobalScoreNotFound,
 }
 
 impl EigenError {
@@ -81,6 +82,7 @@ impl EigenError {
 			EigenError::MaxNeighboursReached => 7,
 			EigenError::NeighbourNotFound => 8,
 			EigenError::OpinionNotFound => 9,
+			EigenError::GlobalScoreNotFound => 10,
 		}
 	}
 }

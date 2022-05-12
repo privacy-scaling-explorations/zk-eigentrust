@@ -1,17 +1,16 @@
 use crate::{
 	epoch::Epoch,
-	peer::Rating,
 	protocol::{EigenTrustCodec, EigenTrustProtocol, Request, Response},
 	EigenError, Peer,
 };
-use futures::prelude::*;
+use futures::StreamExt;
 use libp2p::{
 	core::upgrade::Version,
 	identity::Keypair,
 	noise::{Keypair as NoiseKeypair, NoiseConfig, X25519Spec},
 	request_response::{
 		ProtocolSupport, RequestResponse, RequestResponseConfig, RequestResponseEvent,
-		RequestResponseMessage, ResponseChannel,
+		RequestResponseMessage,
 	},
 	swarm::{ConnectionHandlerUpgrErr, ConnectionLimits, Swarm, SwarmBuilder, SwarmEvent},
 	tcp::TcpConfig,
@@ -20,7 +19,7 @@ use libp2p::{
 };
 use std::{io::Error as IoError, iter::once};
 use tokio::{
-	join, task,
+	select,
 	time::{self, Duration, Instant},
 };
 
@@ -84,40 +83,6 @@ impl Node {
 		})
 	}
 
-	pub fn handle_response(&mut self, peer: PeerId, response: Response) {
-		match response {
-			Response::Success(opinion) => {
-				self.peer
-					.cache_neighbour_opinion((peer, opinion.get_epoch()), opinion);
-				self.peer.rate_neighbour(peer, Rating::Positive).unwrap();
-			},
-			e => {
-				log::debug!("Received error response {:?}", e);
-			},
-		};
-	}
-
-	pub fn handle_request(
-		&mut self,
-		peer: PeerId,
-		request: Request,
-		channel: ResponseChannel<Response>,
-	) {
-		let beh = self.swarm.behaviour_mut();
-
-		let opinion_res = self.peer.get_local_opinion(&(peer, request.get_epoch()));
-		match opinion_res {
-			Ok(opinion) => {
-				let response = Response::Success(opinion);
-				beh.send_response(channel, response).unwrap();
-			},
-			Err(e) => {
-				beh.send_response(channel, Response::InternalError(e.code()))
-					.unwrap();
-			},
-		}
-	}
-
 	pub fn handle_req_res_events(&mut self, event: RequestResponseEvent<Request, Response>) {
 		log::debug!("ReqRes event {:?}", event);
 		use RequestResponseEvent::*;
@@ -128,11 +93,23 @@ impl Node {
 				message: Req {
 					request, channel, ..
 				},
-			} => self.handle_request(peer, request, channel),
+			} => {
+				let beh = self.swarm.behaviour_mut();
+				self.peer.calculate_local_opinions(request.get_epoch()).unwrap();
+				let opinion = self.peer.get_local_opinion(&(peer, request.get_epoch()));
+				let response = Response::Success(opinion);
+				beh.send_response(channel, response).unwrap();
+			},
 			Message {
 				peer,
 				message: Res { response, .. },
-			} => self.handle_response(peer, response),
+			} => {
+				if let Response::Success(opinion) = response {
+					self.peer.cache_neighbour_opinion((peer, opinion.get_epoch()), opinion);
+				} else {
+					log::debug!("Received error response {:?}", response);
+				}
+			},
 			OutboundFailure {
 				peer, request_id, ..
 			} => {
@@ -196,15 +173,20 @@ impl Node {
 		}
 	}
 
-	fn request_opinions_at(&mut self, k: Epoch) -> Result<(), EigenError> {
+	pub fn send_epoch_requests(&mut self) {
+		let current_epoch = Epoch::current_epoch(self.interval);
+		let timestamp = Epoch::current_timestamp();
+		let score = self.peer.get_global_score(current_epoch.previous());
+		log::info!("{}, Timestamp {}, Previous Epoch Score: {}", current_epoch, timestamp, score);
+
 		self.peer.iter_neighbours(|neighbour| {
 			let peer_id = neighbour.get_peer_id();
 			let beh = self.swarm.behaviour_mut();
 
-			let request = Request::new(k);
+			let request = Request::new(current_epoch);
 			beh.send_request(&peer_id, request);
 			Ok(())
-		})
+		}).unwrap();
 	}
 
 	pub async fn main_loop(mut self) {
@@ -212,39 +194,19 @@ impl Node {
 
 		self.dial_bootstrap_nodes();
 
-		let interval_task = task::spawn(async move {
-			let now = Instant::now();
+		let now = Instant::now();
+		let secs_until_next_epoch = Epoch::secs_until_next_epoch(self.interval);
+		let start = now + Duration::from_secs(secs_until_next_epoch);
+		let period = Duration::from_secs(self.interval);
 
-			let secs_until_next_epoch = Epoch::secs_until_next_epoch(self.interval);
-			let start = now + Duration::from_secs(secs_until_next_epoch);
-			let period = Duration::from_secs(self.interval);
+		let mut interval = time::interval_at(start, period);
 
-			let mut interval = time::interval_at(start, period);
-			loop {
-				interval.tick().await;
-
-				let current_epoch = Epoch::current_epoch(self.interval);
-				let unit_timestamp = Epoch::current_timestamp();
-
-				self.peer
-					.calculate_local_opinions(current_epoch.previous())
-					.unwrap();
-
-				self.request_opinions_at(current_epoch).unwrap();
-
-				log::debug!("time = {}, epoch = {}", unit_timestamp, current_epoch);
+		loop {
+			select! {
+				biased;
+				_ = interval.tick() => self.send_epoch_requests(),
+				event = self.swarm.select_next_some() => self.handle_swarm_events(event),
 			}
-		});
-
-		let main_task = task::spawn(async move {
-			loop {
-				let event = self.swarm.select_next_some().await;
-				self.handle_swarm_events(event);
-			}
-		});
-
-		let res = join!(main_task, interval_task);
-
-		log::debug!("joined futures res = {:?}", res);
+		}
 	}
 }

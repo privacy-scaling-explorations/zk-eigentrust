@@ -127,14 +127,18 @@ impl RequestResponseCodec for EigenTrustCodec {
 	async fn write_request<T>(
 		&mut self,
 		protocol: &Self::Protocol,
-		_: &mut T,
-		_: Self::Request,
+		io: &mut T,
+		req: Self::Request,
 	) -> Result<()>
 	where
 		T: AsyncWrite + Unpin + Send,
 	{
 		match protocol.version {
-			EigenTrustProtocolVersion::V1 => Ok(()),
+			EigenTrustProtocolVersion::V1 => {
+				let k = req.get_epoch();
+				write_length_prefixed(io, &k.to_be_bytes()).await?;
+				Ok(())
+			},
 		}
 	}
 
