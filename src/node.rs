@@ -95,7 +95,9 @@ impl Node {
 				},
 			} => {
 				let beh = self.swarm.behaviour_mut();
-				self.peer.calculate_local_opinions(request.get_epoch()).unwrap();
+				self.peer
+					.calculate_local_opinions(request.get_epoch())
+					.unwrap();
 				let opinion = self.peer.get_local_opinion(&(peer, request.get_epoch()));
 				let response = Response::Success(opinion);
 				beh.send_response(channel, response).unwrap();
@@ -105,7 +107,8 @@ impl Node {
 				message: Res { response, .. },
 			} => {
 				if let Response::Success(opinion) = response {
-					self.peer.cache_neighbour_opinion((peer, opinion.get_epoch()), opinion);
+					self.peer
+						.cache_neighbour_opinion((peer, opinion.get_epoch()), opinion);
 				} else {
 					log::debug!("Received error response {:?}", response);
 				}
@@ -177,16 +180,23 @@ impl Node {
 		let current_epoch = Epoch::current_epoch(self.interval);
 		let timestamp = Epoch::current_timestamp();
 		let score = self.peer.get_global_score(current_epoch.previous());
-		log::info!("{}, Timestamp {}, Previous Epoch Score: {}", current_epoch, timestamp, score);
+		log::info!(
+			"{}, Timestamp {}, Previous Epoch Score: {}",
+			current_epoch,
+			timestamp,
+			score
+		);
 
-		self.peer.iter_neighbours(|neighbour| {
-			let peer_id = neighbour.get_peer_id();
-			let beh = self.swarm.behaviour_mut();
+		self.peer
+			.iter_neighbours(|neighbour| {
+				let peer_id = neighbour.get_peer_id();
+				let beh = self.swarm.behaviour_mut();
 
-			let request = Request::new(current_epoch);
-			beh.send_request(&peer_id, request);
-			Ok(())
-		}).unwrap();
+				let request = Request::new(current_epoch);
+				beh.send_request(&peer_id, request);
+				Ok(())
+			})
+			.unwrap();
 	}
 
 	pub async fn main_loop(mut self) {
