@@ -1,7 +1,8 @@
 use crate::{
 	epoch::Epoch,
+	peer::Peer,
 	protocol::{EigenTrustCodec, EigenTrustProtocol, Request, Response},
-	EigenError, Peer,
+	EigenError,
 };
 use futures::StreamExt;
 use libp2p::{
@@ -33,11 +34,10 @@ pub struct Node {
 
 impl Node {
 	pub fn new(
-		peer: Peer,
 		local_key: Keypair,
 		local_address: Multiaddr,
 		bootstrap_nodes: Vec<(PeerId, Multiaddr)>,
-		num_connections: u32,
+		num_neighbours: usize,
 		interval: u64,
 	) -> Result<Self, EigenError> {
 		let noise_keys = NoiseKeypair::<X25519Spec>::new()
@@ -62,6 +62,8 @@ impl Node {
 
 		// Setting up the transport and swarm.
 		let local_peer_id = PeerId::from(local_key.public());
+		let num_connections =
+			u32::try_from(num_neighbours).map_err(|_| EigenError::InvalidNumNeighbours)?;
 		let connection_limits =
 			ConnectionLimits::default().with_max_established_per_peer(Some(num_connections));
 
@@ -73,6 +75,8 @@ impl Node {
 			log::debug!("swarm.listen_on {:?}", e);
 			EigenError::ListenFailed
 		})?;
+
+		let peer = Peer::new(num_neighbours);
 
 		Ok(Self {
 			swarm,

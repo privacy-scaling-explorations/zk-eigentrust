@@ -486,12 +486,20 @@ name = "eigen-trust"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "bs58",
- "clap",
- "env_logger",
  "futures",
  "libp2p",
  "log",
+ "tokio",
+]
+
+[[package]]
+name = "eigen-trust-cli"
+version = "0.1.0"
+dependencies = [
+ "bs58",
+ "clap",
+ "eigen-trust",
+ "env_logger",
  "tokio",
 ]
 
