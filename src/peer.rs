@@ -120,7 +120,11 @@ impl Peer {
 	}
 
 	pub fn get_normalized_score(&self, peer_id: &PeerId) -> Result<f64, EigenError> {
-		let score = self.neighbours.get(peer_id).map(|score| *score).ok_or(EigenError::InvalidPeerId)?;
+		let score = self
+			.neighbours
+			.get(peer_id)
+			.map(|score| *score)
+			.ok_or(EigenError::InvalidPeerId)?;
 		let sum = self.sum_of_scores;
 		let f_raw_score = f64::from(score);
 		let f_sum = f64::from(sum);
@@ -128,12 +132,17 @@ impl Peer {
 	}
 
 	pub fn rate(&mut self, peer_id: &PeerId, rating: Rating) -> Result<(), EigenError> {
-		let score = self.neighbours.get_mut(peer_id).ok_or(EigenError::InvalidPeerId)?;
+		let score = self
+			.neighbours
+			.get_mut(peer_id)
+			.ok_or(EigenError::InvalidPeerId)?;
 		match rating {
 			Rating::Positive => *score += 1,
-			Rating::Negative => if *score > 0 {
-				*score -= 1;
-				self.sum_of_scores -= 1;
+			Rating::Negative => {
+				if *score > 0 {
+					*score -= 1;
+					self.sum_of_scores -= 1;
+				}
 			},
 		};
 
