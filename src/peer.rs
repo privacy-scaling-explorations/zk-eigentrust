@@ -41,39 +41,22 @@ impl Opinion {
 	}
 }
 
-#[derive(Clone, Copy, Debug)]
-pub struct Neighbour {
-	peer_id: PeerId,
-	score: u32,
-}
-
-impl Neighbour {
-	pub fn new(peer_id: PeerId) -> Self {
-		Self { peer_id, score: 0 }
-	}
-
-	pub fn get_peer_id(&self) -> PeerId {
-		self.peer_id
-	}
-
-	pub fn get_normalized_score(&self, sum: u32) -> f64 {
-		let f_raw_score = f64::from(self.score);
-		let f_sum = f64::from(sum);
-		f_raw_score / f_sum
-	}
+pub enum Rating {
+	Positive,
+	Negative,
 }
 
 pub struct Peer {
-	neighbours: Vec<Option<Neighbour>>,
+	neighbours: HashMap<PeerId, u32>,
 	cached_neighbour_opinion: HashMap<(PeerId, Epoch), Opinion>,
 	cached_local_opinion: HashMap<(PeerId, Epoch), Opinion>,
 	global_scores: HashMap<Epoch, f64>,
+	sum_of_scores: u32,
 }
 
 impl Peer {
 	pub fn new(num_neighbours: usize) -> Self {
-		let mut neighbours = Vec::with_capacity(num_neighbours);
-		(0..num_neighbours).for_each(|_| neighbours.push(None));
+		let neighbours = HashMap::with_capacity(num_neighbours);
 		// Sanity check:
 		assert!(neighbours.len() == num_neighbours);
 		assert!(neighbours.capacity() == num_neighbours);
@@ -82,36 +65,28 @@ impl Peer {
 			cached_neighbour_opinion: HashMap::new(),
 			cached_local_opinion: HashMap::new(),
 			global_scores: HashMap::new(),
+			sum_of_scores: 0,
 		}
 	}
 
 	pub fn add_neighbour(&mut self, peer_id: PeerId) -> Result<(), EigenError> {
-		let first_available = self.neighbours.iter().position(|n| n.is_none());
-		if let Some(index) = first_available {
-			self.neighbours[index] = Some(Neighbour::new(peer_id));
-			return Ok(());
+		if self.neighbours.len() == self.neighbours.capacity() {
+			return Err(EigenError::MaxNeighboursReached);
 		}
-		Err(EigenError::MaxNeighboursReached)
+		self.neighbours.insert(peer_id, 0);
+		Ok(())
 	}
 
-	pub fn remove_neighbour(&mut self, peer_id: PeerId) -> Result<(), EigenError> {
-		let index = self
-			.neighbours
-			.iter()
-			.position(|n| n.as_ref().map(|n| n.peer_id == peer_id).unwrap_or(false));
-		if let Some(index) = index {
-			self.neighbours[index] = None;
-			return Ok(());
-		}
-		Err(EigenError::NeighbourNotFound)
+	pub fn remove_neighbour(&mut self, peer_id: PeerId) {
+		self.neighbours.remove(&peer_id);
 	}
 
 	pub fn iter_neighbours(
 		&self,
-		mut f: impl FnMut(&Neighbour) -> Result<(), EigenError>,
+		mut f: impl FnMut(PeerId) -> Result<(), EigenError>,
 	) -> Result<(), EigenError> {
-		for neighbour in self.neighbours.iter().flatten() {
-			f(neighbour)?;
+		for peer_id in self.neighbours.keys() {
+			f(*peer_id)?;
 		}
 
 		Ok(())
@@ -119,22 +94,20 @@ impl Peer {
 
 	pub fn calculate_local_opinions(&mut self, k: Epoch) -> Result<(), EigenError> {
 		let mut global_score = 0.;
-		let mut sum_of_scores = 0;
 
-		self.iter_neighbours(|Neighbour { peer_id, score }| {
-			let opinion = self.get_neighbour_opinion(&(*peer_id, k));
+		self.iter_neighbours(|peer_id| {
+			let opinion = self.get_neighbour_opinion(&(peer_id, k));
 			global_score += opinion.get_product();
-			sum_of_scores += score;
 			Ok(())
 		})?;
 
 		let mut opinions = Vec::new();
-		self.iter_neighbours(|neighbour| {
-			let normalized_score = neighbour.get_normalized_score(sum_of_scores);
+		self.iter_neighbours(|peer_id| {
+			let normalized_score = self.get_normalized_score(&peer_id)?;
 			let product = global_score * normalized_score;
 			let opinion = Opinion::new(k.next(), normalized_score, global_score, product);
 
-			opinions.push((neighbour.get_peer_id(), opinion));
+			opinions.push((peer_id, opinion));
 			Ok(())
 		})?;
 
@@ -142,6 +115,36 @@ impl Peer {
 			self.cache_local_opinion((peer_id, opinion.get_epoch()), opinion);
 		}
 		self.global_scores.insert(k.next(), global_score);
+
+		Ok(())
+	}
+
+	pub fn get_normalized_score(&self, peer_id: &PeerId) -> Result<f64, EigenError> {
+		let score = self
+			.neighbours
+			.get(peer_id)
+			.map(|score| *score)
+			.ok_or(EigenError::InvalidPeerId)?;
+		let sum = self.sum_of_scores;
+		let f_raw_score = f64::from(score);
+		let f_sum = f64::from(sum);
+		Ok(f_raw_score / f_sum)
+	}
+
+	pub fn rate(&mut self, peer_id: &PeerId, rating: Rating) -> Result<(), EigenError> {
+		let score = self
+			.neighbours
+			.get_mut(peer_id)
+			.ok_or(EigenError::InvalidPeerId)?;
+		match rating {
+			Rating::Positive => *score += 1,
+			Rating::Negative => {
+				if *score > 0 {
+					*score -= 1;
+					self.sum_of_scores -= 1;
+				}
+			},
+		};
 
 		Ok(())
 	}

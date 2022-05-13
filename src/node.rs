@@ -152,10 +152,7 @@ impl Node {
 			},
 			// When we disconnect from a peer, we automatically remove him from the neighbours list.
 			SwarmEvent::ConnectionClosed { peer_id, cause, .. } => {
-				let res = self.peer.remove_neighbour(peer_id);
-				if let Err(e) = res {
-					log::error!("Failed to remove neighbour {:?}", e);
-				}
+				self.peer.remove_neighbour(peer_id);
 				log::info!("Connection closed with {:?} ({:?})", peer_id, cause);
 			},
 			SwarmEvent::Dialing(peer_id) => log::info!("Dialing {:?}", peer_id),
@@ -192,8 +189,7 @@ impl Node {
 			score
 		);
 
-		self.peer.iter_neighbours(|neighbour| {
-			let peer_id = neighbour.get_peer_id();
+		self.peer.iter_neighbours(|peer_id| {
 			let beh = self.swarm.behaviour_mut();
 
 			let request = Request::new(current_epoch);
