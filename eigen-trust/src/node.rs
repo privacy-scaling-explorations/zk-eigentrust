@@ -180,10 +180,7 @@ impl Node {
 	}
 
 	pub fn dial_neighbour(&mut self, addr: Multiaddr) {
-		let res = self
-				.swarm
-				.dial(addr)
-				.map_err(|_| EigenError::DialError);
+		let res = self.swarm.dial(addr).map_err(|_| EigenError::DialError);
 		log::debug!("swarm.dial {:?}", res);
 	}
 
@@ -199,7 +196,7 @@ impl Node {
 				.swarm
 				.dial(peer_addr.clone())
 				.map_err(|_| EigenError::DialError);
-		log::debug!("swarm.dial {:?}", res);
+			log::debug!("swarm.dial {:?}", res);
 		}
 	}
 
