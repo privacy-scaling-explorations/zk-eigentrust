@@ -393,8 +393,8 @@ mod tests {
 
 	#[tokio::test]
 	async fn should_add_neighbours_on_dial() {
-		const ADDR_1: &str = "/ip4/127.0.0.1/tcp/56707";
-		const ADDR_2: &str = "/ip4/127.0.0.1/tcp/58602";
+		const ADDR_1: &str = "/ip4/127.0.0.1/tcp/56717";
+		const ADDR_2: &str = "/ip4/127.0.0.1/tcp/58622";
 
 		let local_key1 = Keypair::generate_ed25519();
 		let peer_id1 = local_key1.public().to_peer_id();
