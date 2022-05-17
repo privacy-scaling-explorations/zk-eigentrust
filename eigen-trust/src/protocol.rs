@@ -1,13 +1,10 @@
 use crate::{epoch::Epoch, peer::Opinion};
 use async_trait::async_trait;
-use futures::{AsyncRead, AsyncReadExt, AsyncWrite};
-use libp2p::{
-	core::upgrade::write_length_prefixed,
-	request_response::{ProtocolName, RequestResponseCodec},
-};
+use futures::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use libp2p::request_response::{ProtocolName, RequestResponseCodec};
 use std::io::Result;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct EigenTrustProtocol {
 	version: EigenTrustProtocolVersion,
 }
@@ -25,7 +22,13 @@ enum EigenTrustProtocolVersion {
 	V1,
 }
 
-#[derive(Clone, Debug)]
+impl Default for EigenTrustProtocolVersion {
+	fn default() -> Self {
+		Self::V1
+	}
+}
+
+#[derive(Clone, Debug, Default)]
 pub struct EigenTrustCodec;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -48,6 +51,15 @@ pub enum Response {
 	Success(Opinion),
 	InvalidRequest,
 	InternalError(u8),
+}
+
+impl Response {
+	pub fn success(self) -> Opinion {
+		match self {
+			Response::Success(opinion) => opinion,
+			_ => panic!("Response::success called on invalid response"),
+		}
+	}
 }
 
 impl ProtocolName for EigenTrustProtocol {
@@ -136,7 +148,7 @@ impl RequestResponseCodec for EigenTrustCodec {
 		match protocol.version {
 			EigenTrustProtocolVersion::V1 => {
 				let k = req.get_epoch();
-				write_length_prefixed(io, &k.to_be_bytes()).await?;
+				io.write_all(&k.to_be_bytes()).await?;
 				Ok(())
 			},
 		}
@@ -165,9 +177,113 @@ impl RequestResponseCodec for EigenTrustCodec {
 					Response::InvalidRequest => bytes.push(1),
 					Response::InternalError(code) => bytes.push(code),
 				};
-				write_length_prefixed(io, &bytes).await?;
+				io.write_all(&bytes).await?;
 				Ok(())
 			},
 		}
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[tokio::test]
+	async fn should_correctly_write_read_request() {
+		let mut codec = EigenTrustCodec::default();
+		let mut buf = vec![];
+		let epoch = Epoch(1);
+		let req = Request::new(epoch);
+		codec
+			.write_request(&EigenTrustProtocol::default(), &mut buf, req)
+			.await
+			.unwrap();
+
+		let bytes = epoch.to_be_bytes();
+		assert_eq!(buf, bytes);
+
+		let req = codec
+			.read_request(&EigenTrustProtocol::default(), &mut &bytes[..])
+			.await
+			.unwrap();
+		assert_eq!(req.get_epoch(), epoch);
+	}
+
+	#[tokio::test]
+	async fn should_correctly_write_read_success_response() {
+		let epoch = Epoch(1);
+		let opinion = Opinion::new(epoch, 0.0, 0.0, 0.0);
+		let good_res = Response::Success(opinion);
+
+		let mut buf = vec![];
+		let mut codec = EigenTrustCodec::default();
+		codec
+			.write_response(&EigenTrustProtocol::default(), &mut buf, good_res)
+			.await
+			.unwrap();
+
+		let mut bytes = vec![];
+		bytes.push(0);
+		bytes.extend(opinion.get_epoch().to_be_bytes());
+		bytes.extend(opinion.get_local_trust_score().to_be_bytes());
+		bytes.extend(opinion.get_global_trust_score().to_be_bytes());
+		bytes.extend(opinion.get_product().to_be_bytes());
+
+		// compare the written bytes with the expected bytes
+		assert_eq!(buf, bytes);
+
+		let read_res = codec
+			.read_response(&EigenTrustProtocol::default(), &mut &bytes[..])
+			.await
+			.unwrap();
+		assert_eq!(read_res.success(), opinion);
+	}
+
+	#[tokio::test]
+	async fn should_correctly_write_read_invalid_response() {
+		// Testing invalid request
+		let bad_res = Response::InvalidRequest;
+
+		let mut buf = vec![];
+		let mut codec = EigenTrustCodec::default();
+		codec
+			.write_response(&EigenTrustProtocol::default(), &mut buf, bad_res.clone())
+			.await
+			.unwrap();
+
+		let mut bytes = vec![];
+		bytes.push(1);
+		assert_eq!(buf, bytes);
+
+		let read_res = codec
+			.read_response(&EigenTrustProtocol::default(), &mut &bytes[..])
+			.await
+			.unwrap();
+
+		assert_eq!(read_res, bad_res);
+	}
+
+	#[tokio::test]
+	async fn should_correctly_write_read_internal_error_response() {
+		// Testing internal error
+		let bad_res = Response::InternalError(2);
+
+		let mut buf = vec![];
+		let mut codec = EigenTrustCodec::default();
+		codec
+			.write_response(&EigenTrustProtocol::default(), &mut buf, bad_res.clone())
+			.await
+			.unwrap();
+
+		let mut bytes = vec![];
+		bytes.push(2);
+		assert_eq!(buf, bytes);
+
+		let read_res = codec
+			.read_response(&EigenTrustProtocol::default(), &mut &bytes[..])
+			.await
+			.unwrap();
+
+		assert_eq!(read_res, bad_res);
 	}
 }
