@@ -179,10 +179,18 @@ impl Node {
 		}
 	}
 
+	pub fn dial_neighbour(&mut self, addr: Multiaddr) {
+		let res = self
+				.swarm
+				.dial(addr)
+				.map_err(|_| EigenError::DialError);
+		log::debug!("swarm.dial {:?}", res);
+	}
+
 	pub fn dial_bootstrap_nodes(&mut self) {
 		// We want to connect to all bootstrap nodes.
 		let local_peer_id = self.local_key.public().to_peer_id();
-		for (peer_id, peer_addr, _) in &self.bootstrap_nodes {
+		for (peer_id, peer_addr, _) in self.bootstrap_nodes.iter_mut() {
 			if peer_id == &local_peer_id {
 				continue;
 			}
@@ -191,7 +199,7 @@ impl Node {
 				.swarm
 				.dial(peer_addr.clone())
 				.map_err(|_| EigenError::DialError);
-			log::debug!("swarm.dial {:?}", res);
+		log::debug!("swarm.dial {:?}", res);
 		}
 	}
 
@@ -345,6 +353,83 @@ mod tests {
 		.unwrap();
 
 		node1.dial_bootstrap_nodes();
+
+		// For node 2
+		// 1. New listen addr
+		// 2. Incoming connection
+		// 3. Connection established
+		// For node 1
+		// 1. New listen addr
+		// 2. Connection established
+		for _ in 0..5 {
+			select! {
+				event2 = node2.get_swarm_mut().select_next_some() => node2.handle_swarm_events(event2),
+				event1 = node1.get_swarm_mut().select_next_some() => node1.handle_swarm_events(event1),
+
+			}
+		}
+
+		let neighbours1: Vec<&PeerId> = node1.get_peer().neighbours().collect();
+		let neighbours2: Vec<&PeerId> = node2.get_peer().neighbours().collect();
+		let expected_neighbour1 = vec![&peer_id2];
+		let expected_neighbour2 = vec![&peer_id1];
+		assert_eq!(neighbours1, expected_neighbour1);
+		assert_eq!(neighbours2, expected_neighbour2);
+
+		// Disconnect from peer
+		node2.get_swarm_mut().disconnect_peer_id(peer_id1).unwrap();
+
+		// Two disconnect events
+		for _ in 0..2 {
+			select! {
+				event2 = node2.get_swarm_mut().select_next_some() => node2.handle_swarm_events(event2),
+				event1 = node1.get_swarm_mut().select_next_some() => node1.handle_swarm_events(event1),
+
+			}
+		}
+
+		let neighbours2: Vec<&PeerId> = node2.get_peer().neighbours().collect();
+		let neighbours1: Vec<&PeerId> = node1.get_peer().neighbours().collect();
+		assert!(neighbours2.is_empty());
+		assert!(neighbours1.is_empty());
+	}
+
+	#[tokio::test]
+	async fn should_add_neighbours_on_dial() {
+		const ADDR_1: &str = "/ip4/127.0.0.1/tcp/56707";
+		const ADDR_2: &str = "/ip4/127.0.0.1/tcp/58602";
+
+		let local_key1 = Keypair::generate_ed25519();
+		let peer_id1 = local_key1.public().to_peer_id();
+
+		let local_key2 = Keypair::generate_ed25519();
+		let peer_id2 = local_key2.public().to_peer_id();
+
+		let local_address1 = Multiaddr::from_str(ADDR_1).unwrap();
+		let local_address2 = Multiaddr::from_str(ADDR_2).unwrap();
+
+		let num_neighbours = 1;
+
+		let mut node1 = Node::new(
+			local_key1,
+			local_address1,
+			Vec::new(),
+			num_neighbours,
+			NUM_CONNECTIONS,
+			PRE_TRUST_WEIGHT,
+		)
+		.unwrap();
+		let mut node2 = Node::new(
+			local_key2,
+			local_address2.clone(),
+			Vec::new(),
+			num_neighbours,
+			NUM_CONNECTIONS,
+			PRE_TRUST_WEIGHT,
+		)
+		.unwrap();
+
+		node1.dial_neighbour(local_address2);
 
 		// For node 2
 		// 1. New listen addr
