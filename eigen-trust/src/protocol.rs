@@ -53,15 +53,6 @@ pub enum Response {
 	InternalError(u8),
 }
 
-impl Response {
-	pub fn success(self) -> Opinion {
-		match self {
-			Response::Success(opinion) => opinion,
-			_ => panic!("Response::success called on invalid response"),
-		}
-	}
-}
-
 impl ProtocolName for EigenTrustProtocol {
 	fn protocol_name(&self) -> &[u8] {
 		match self.version {
@@ -187,6 +178,15 @@ impl RequestResponseCodec for EigenTrustCodec {
 #[cfg(test)]
 mod tests {
 	use super::*;
+
+	impl Response {
+		pub fn success(self) -> Opinion {
+			match self {
+				Response::Success(opinion) => opinion,
+				_ => panic!("Response::success called on invalid response"),
+			}
+		}
+	}
 
 	#[tokio::test]
 	async fn should_correctly_write_read_request() {

@@ -200,7 +200,7 @@ impl Node {
 			let beh = self.swarm.behaviour_mut();
 
 			let request = Request::new(epoch);
-			beh.send_request(&peer_id, request);
+			beh.send_request(peer_id, request);
 		}
 	}
 
