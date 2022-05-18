@@ -18,28 +18,31 @@ use libp2p::{
 	yamux::YamuxConfig,
 	Multiaddr, PeerId, Transport,
 };
-use std::{io::Error as IoError, iter::once};
+use std::{io::Error as IoError, iter::once, marker::PhantomData};
 use tokio::{
 	select,
 	time::{self, Duration, Instant},
 };
 
-pub struct Node {
+pub trait NodeConfig {
+	const NUM_CONNECTIONS: usize;
+	const INTERVAL: u64;
+	const PRE_TRUST_WEIGHT: f64;
+}
+
+pub struct Node<C: NodeConfig> {
 	swarm: Swarm<RequestResponse<EigenTrustCodec>>,
 	peer: Peer,
 	local_key: Keypair,
 	bootstrap_nodes: Vec<(PeerId, Multiaddr, f64)>,
-	interval: u64,
+	_config: PhantomData<C>,
 }
 
-impl Node {
+impl<C: NodeConfig> Node<C> {
 	pub fn new(
 		local_key: Keypair,
 		local_address: Multiaddr,
 		bootstrap_nodes: Vec<(PeerId, Multiaddr, f64)>,
-		num_neighbours: usize,
-		interval: u64,
-		pre_trust_weight: f64,
 	) -> Result<Self, EigenError> {
 		let noise_keys = NoiseKeypair::<X25519Spec>::new()
 			.into_authentic(&local_key)
@@ -53,7 +56,8 @@ impl Node {
 			.upgrade(Version::V1)
 			.authenticate(NoiseConfig::xx(noise_keys).into_authenticated())
 			.multiplex(YamuxConfig::default())
-			.timeout(Duration::from_secs(20))
+			// 30 years
+			.timeout(Duration::from_secs(86400 * 365 * 30))
 			.boxed();
 
 		// Setting up the request/response protocol.
@@ -64,7 +68,7 @@ impl Node {
 		// Setting up the transport and swarm.
 		let local_peer_id = PeerId::from(local_key.public());
 		let num_connections =
-			u32::try_from(num_neighbours).map_err(|_| EigenError::InvalidNumNeighbours)?;
+			u32::try_from(C::NUM_CONNECTIONS).map_err(|_| EigenError::InvalidNumNeighbours)?;
 		let connection_limits =
 			ConnectionLimits::default().with_max_established_per_peer(Some(num_connections));
 
@@ -82,14 +86,14 @@ impl Node {
 			.find(|x| x.0 == local_peer_id)
 			.map(|node| node.2)
 			.unwrap_or(0.0);
-		let peer = Peer::new(num_neighbours, pre_trust_score, pre_trust_weight);
+		let peer = Peer::new(C::NUM_CONNECTIONS, pre_trust_score, C::PRE_TRUST_WEIGHT);
 
 		Ok(Self {
 			swarm,
 			peer,
 			local_key,
 			bootstrap_nodes,
-			interval,
+			_config: PhantomData,
 		})
 	}
 
@@ -163,7 +167,7 @@ impl Node {
 			SwarmEvent::Behaviour(req_res_event) => self.handle_req_res_events(req_res_event),
 			// When we connect to a peer, we automatically add him as a neighbour.
 			SwarmEvent::ConnectionEstablished { peer_id, .. } => {
-				let res = self.peer.add_neighbour(peer_id, None);
+				let res = self.peer.add_neighbour(peer_id);
 				if let Err(e) = res {
 					log::error!("Failed to add neighbour {:?}", e);
 				}
@@ -205,19 +209,49 @@ impl Node {
 			let beh = self.swarm.behaviour_mut();
 
 			let request = Request::new(epoch);
-			beh.send_request(peer_id, request);
+			beh.send_request(&peer_id, request);
 		}
 	}
 
-	pub async fn main_loop(mut self) -> Result<(), EigenError> {
-		println!();
-
+	pub async fn develop_loop(mut self, num_intervals: u32) -> Result<(), EigenError> {
 		self.dial_bootstrap_nodes();
 
 		let now = Instant::now();
-		let secs_until_next_epoch = Epoch::secs_until_next_epoch(self.interval)?;
+		let secs_until_next_epoch = Epoch::secs_until_next_epoch(C::INTERVAL)?;
 		let start = now + Duration::from_secs(secs_until_next_epoch);
-		let period = Duration::from_secs(self.interval);
+		let period = Duration::from_secs(C::INTERVAL);
+
+		let mut interval = time::interval_at(start, period);
+
+		let mut count = 0;
+
+		loop {
+			select! {
+				biased;
+				_ = interval.tick() => {
+					let current_epoch = Epoch::current_epoch(C::INTERVAL)?;
+					let local_peer_id = self.local_key.public().to_peer_id();
+					log::info!("Epoch started {:?} for peer {:?}", current_epoch, local_peer_id);
+					self.send_epoch_requests(current_epoch);
+					count += 1;
+					if count >= num_intervals {
+						break;
+					}
+				},
+				event = self.swarm.select_next_some() => self.handle_swarm_events(event),
+			}
+		}
+
+		Ok(())
+	}
+
+	pub async fn main_loop(mut self) -> Result<(), EigenError> {
+		self.dial_bootstrap_nodes();
+
+		let now = Instant::now();
+		let secs_until_next_epoch = Epoch::secs_until_next_epoch(C::INTERVAL)?;
+		let start = now + Duration::from_secs(secs_until_next_epoch);
+		let period = Duration::from_secs(C::INTERVAL);
 
 		let mut interval = time::interval_at(start, period);
 
@@ -225,7 +259,7 @@ impl Node {
 			select! {
 				biased;
 				_ = interval.tick() => {
-					let current_epoch = Epoch::current_epoch(self.interval)?;
+					let current_epoch = Epoch::current_epoch(C::INTERVAL)?;
 					self.send_epoch_requests(current_epoch);
 				},
 				event = self.swarm.select_next_some() => self.handle_swarm_events(event),
@@ -239,9 +273,14 @@ mod tests {
 	use super::*;
 	use std::str::FromStr;
 
+	struct TestConfig;
+	impl NodeConfig for TestConfig {
+		const INTERVAL: u64 = 10;
+		const PRE_TRUST_WEIGHT: f64 = 0.5;
+		const NUM_CONNECTIONS: usize = 1;
+	}
+
 	const PRE_TRUST_SCORE: f64 = 0.5;
-	const PRE_TRUST_WEIGHT: f64 = 0.5;
-	const NUM_CONNECTIONS: u64 = 1;
 
 	#[tokio::test]
 	async fn should_emit_connection_event_on_bootstrap() {
@@ -262,24 +301,16 @@ mod tests {
 			(peer_id2, local_address2.clone(), PRE_TRUST_SCORE),
 		];
 
-		let num_neighbours = 1;
-
-		let mut node1 = Node::new(
+		let mut node1 = Node::<TestConfig>::new(
 			local_key1,
 			local_address1.clone(),
 			bootstrap_nodes.clone(),
-			num_neighbours,
-			NUM_CONNECTIONS,
-			PRE_TRUST_WEIGHT,
 		)
 		.unwrap();
-		let mut node2 = Node::new(
+		let mut node2 = Node::<TestConfig>::new(
 			local_key2,
 			local_address2,
 			bootstrap_nodes,
-			num_neighbours,
-			NUM_CONNECTIONS,
-			PRE_TRUST_WEIGHT,
 		)
 		.unwrap();
 
@@ -328,24 +359,16 @@ mod tests {
 			(peer_id2, local_address2.clone(), PRE_TRUST_SCORE),
 		];
 
-		let num_neighbours = 1;
-
-		let mut node1 = Node::new(
+		let mut node1 = Node::<TestConfig>::new(
 			local_key1,
 			local_address1,
 			bootstrap_nodes.clone(),
-			num_neighbours,
-			NUM_CONNECTIONS,
-			PRE_TRUST_WEIGHT,
 		)
 		.unwrap();
-		let mut node2 = Node::new(
+		let mut node2 = Node::<TestConfig>::new(
 			local_key2,
 			local_address2,
 			bootstrap_nodes,
-			num_neighbours,
-			NUM_CONNECTIONS,
-			PRE_TRUST_WEIGHT,
 		)
 		.unwrap();
 
@@ -366,10 +389,10 @@ mod tests {
 			}
 		}
 
-		let neighbours1: Vec<&PeerId> = node1.get_peer().neighbours().collect();
-		let neighbours2: Vec<&PeerId> = node2.get_peer().neighbours().collect();
-		let expected_neighbour1 = vec![&peer_id2];
-		let expected_neighbour2 = vec![&peer_id1];
+		let neighbours1: Vec<PeerId> = node1.get_peer().neighbours();
+		let neighbours2: Vec<PeerId> = node2.get_peer().neighbours();
+		let expected_neighbour1 = vec![peer_id2];
+		let expected_neighbour2 = vec![peer_id1];
 		assert_eq!(neighbours1, expected_neighbour1);
 		assert_eq!(neighbours2, expected_neighbour2);
 
@@ -385,8 +408,8 @@ mod tests {
 			}
 		}
 
-		let neighbours2: Vec<&PeerId> = node2.get_peer().neighbours().collect();
-		let neighbours1: Vec<&PeerId> = node1.get_peer().neighbours().collect();
+		let neighbours2: Vec<PeerId> = node2.get_peer().neighbours();
+		let neighbours1: Vec<PeerId> = node1.get_peer().neighbours();
 		assert!(neighbours2.is_empty());
 		assert!(neighbours1.is_empty());
 	}
@@ -405,24 +428,16 @@ mod tests {
 		let local_address1 = Multiaddr::from_str(ADDR_1).unwrap();
 		let local_address2 = Multiaddr::from_str(ADDR_2).unwrap();
 
-		let num_neighbours = 1;
-
-		let mut node1 = Node::new(
+		let mut node1 = Node::<TestConfig>::new(
 			local_key1,
 			local_address1,
 			Vec::new(),
-			num_neighbours,
-			NUM_CONNECTIONS,
-			PRE_TRUST_WEIGHT,
 		)
 		.unwrap();
-		let mut node2 = Node::new(
+		let mut node2 = Node::<TestConfig>::new(
 			local_key2,
 			local_address2.clone(),
 			Vec::new(),
-			num_neighbours,
-			NUM_CONNECTIONS,
-			PRE_TRUST_WEIGHT,
 		)
 		.unwrap();
 
@@ -443,10 +458,10 @@ mod tests {
 			}
 		}
 
-		let neighbours1: Vec<&PeerId> = node1.get_peer().neighbours().collect();
-		let neighbours2: Vec<&PeerId> = node2.get_peer().neighbours().collect();
-		let expected_neighbour1 = vec![&peer_id2];
-		let expected_neighbour2 = vec![&peer_id1];
+		let neighbours1: Vec<PeerId> = node1.get_peer().neighbours();
+		let neighbours2: Vec<PeerId> = node2.get_peer().neighbours();
+		let expected_neighbour1 = vec![peer_id2];
+		let expected_neighbour2 = vec![peer_id1];
 		assert_eq!(neighbours1, expected_neighbour1);
 		assert_eq!(neighbours2, expected_neighbour2);
 
@@ -462,8 +477,8 @@ mod tests {
 			}
 		}
 
-		let neighbours2: Vec<&PeerId> = node2.get_peer().neighbours().collect();
-		let neighbours1: Vec<&PeerId> = node1.get_peer().neighbours().collect();
+		let neighbours2: Vec<PeerId> = node2.get_peer().neighbours();
+		let neighbours1: Vec<PeerId> = node1.get_peer().neighbours();
 		assert!(neighbours2.is_empty());
 		assert!(neighbours1.is_empty());
 	}
@@ -487,24 +502,16 @@ mod tests {
 			(peer_id2, local_address2.clone(), PRE_TRUST_SCORE),
 		];
 
-		let num_neighbours = 1;
-
-		let mut node1 = Node::new(
+		let mut node1 = Node::<TestConfig>::new(
 			local_key1,
 			local_address1,
 			bootstrap_nodes.clone(),
-			num_neighbours,
-			NUM_CONNECTIONS,
-			PRE_TRUST_WEIGHT,
 		)
 		.unwrap();
-		let mut node2 = Node::new(
+		let mut node2 = Node::<TestConfig>::new(
 			local_key2,
 			local_address2,
 			bootstrap_nodes,
-			num_neighbours,
-			NUM_CONNECTIONS,
-			PRE_TRUST_WEIGHT,
 		)
 		.unwrap();
 
@@ -576,7 +583,7 @@ mod tests {
 		let peer1_global_score = peer1.calculate_global_trust_score(next_epoch);
 		let peer2_global_score = peer1.calculate_global_trust_score(next_epoch);
 
-		let peer_gs = (1. - PRE_TRUST_WEIGHT) * 0.25 + PRE_TRUST_WEIGHT * PRE_TRUST_SCORE;
+		let peer_gs = (1. - TestConfig::PRE_TRUST_WEIGHT) * 0.25 + TestConfig::PRE_TRUST_WEIGHT * PRE_TRUST_SCORE;
 		assert_eq!(peer1_global_score, peer_gs);
 		assert_eq!(peer2_global_score, peer_gs);
 	}
