@@ -5,20 +5,23 @@ use std::str::FromStr;
 
 use eigen_trust::{EigenError, Keypair, LevelFilter, Multiaddr, Node, PeerId};
 
-const BOOTSTRAP_PEERS: [[&str; 2]; 2] = [
-	[
+const BOOTSTRAP_PEERS: [(&str, &str, f64); 2] = [
+	(
 		"/ip4/127.0.0.1/tcp/58584",
 		"12D3KooWLyTCx9j2FMcsHe81RMoDfhXbdyyFgNGQMdcrnhShTvQh",
-	],
-	[
+		0.5,
+	),
+	(
 		"/ip4/127.0.0.1/tcp/58601",
 		"12D3KooWKBKXsLwbmVBySEmbKayJzfWp3tPCKrnDCsmNy9prwjvy",
-	],
+		0.5,
+	),
 ];
 
 const DEFAULT_ADDRESS: &str = "/ip4/0.0.0.0/tcp/0";
 const NUM_NEIGHBOURS: usize = 256;
 const INTERVAL_SECS: u64 = 5;
+const PRE_TRUST_WEIGHT: f64 = 0.5;
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -63,10 +66,10 @@ async fn main() -> Result<(), EigenError> {
 	let mut bootstrap_nodes = Vec::new();
 	for info in BOOTSTRAP_PEERS.iter() {
 		// We can also contact the address.
-		let peer_addr = Multiaddr::from_str(info[0]).map_err(|_| EigenError::InvalidAddress)?;
-		let peer_id = PeerId::from_str(info[1]).map_err(|_| EigenError::InvalidPeerId)?;
+		let peer_addr = Multiaddr::from_str(info.0).map_err(|_| EigenError::InvalidAddress)?;
+		let peer_id = PeerId::from_str(info.1).map_err(|_| EigenError::InvalidPeerId)?;
 
-		bootstrap_nodes.push((peer_id, peer_addr));
+		bootstrap_nodes.push((peer_id, peer_addr, info.2));
 	}
 
 	let node = Node::new(
@@ -75,6 +78,7 @@ async fn main() -> Result<(), EigenError> {
 		bootstrap_nodes,
 		NUM_NEIGHBOURS,
 		INTERVAL_SECS,
+		PRE_TRUST_WEIGHT,
 	)?;
 
 	node.main_loop().await?;

@@ -45,4 +45,6 @@ pub enum EigenError {
 	OpinionNotFound,
 	GlobalScoreNotFound,
 	EpochError,
+	InvalidEpochBytes,
+	InvalidOpinionBytes,
 }
