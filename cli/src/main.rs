@@ -21,7 +21,7 @@ const DEFAULT_ADDRESS: &str = "/ip4/0.0.0.0/tcp/0";
 
 struct Config;
 impl NodeConfig for Config {
-	const INTERVAL: u64 = 5;
+	const INTERVAL: u64 = 10;
 	const NUM_CONNECTIONS: usize = 256;
 	const PRE_TRUST_WEIGHT: f64 = 0.5;
 }

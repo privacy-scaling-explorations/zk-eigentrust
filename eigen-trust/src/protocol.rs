@@ -1,15 +1,19 @@
+//! The module for defining the request-response protocol.
+
 use crate::{epoch::Epoch, peer::Opinion};
 use async_trait::async_trait;
 use futures::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use libp2p::request_response::{ProtocolName, RequestResponseCodec};
 use std::io::Result;
 
+/// EigenTrust protocol struct.
 #[derive(Debug, Clone, Default)]
 pub struct EigenTrustProtocol {
 	version: EigenTrustProtocolVersion,
 }
 
 impl EigenTrustProtocol {
+	/// Create a new EigenTrust protocol.
 	pub fn new() -> Self {
 		Self {
 			version: EigenTrustProtocolVersion::V1,
@@ -17,6 +21,7 @@ impl EigenTrustProtocol {
 	}
 }
 
+/// The version of the EigenTrust protocol.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum EigenTrustProtocolVersion {
 	V1,
@@ -28,32 +33,41 @@ impl Default for EigenTrustProtocolVersion {
 	}
 }
 
+/// The EigenTrust protocol codec.
 #[derive(Clone, Debug, Default)]
 pub struct EigenTrustCodec;
 
+/// The EigenTrust protocol request struct.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Request {
 	epoch: Epoch,
 }
 
 impl Request {
+	/// Create a new request.
 	pub fn new(epoch: Epoch) -> Self {
 		Self { epoch }
 	}
 
+	/// Get the epoch of the request.
 	pub fn get_epoch(&self) -> Epoch {
 		self.epoch
 	}
 }
 
+/// The EigenTrust protocol response struct.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Response {
+	/// Successful response with an opinion.
 	Success(Opinion),
+	/// Failed response, because of invalid request.
 	InvalidRequest,
+	/// Failed response, because of the internal error.
 	InternalError(u8),
 }
 
 impl ProtocolName for EigenTrustProtocol {
+	/// The name of the protocol.
 	fn protocol_name(&self) -> &[u8] {
 		match self.version {
 			EigenTrustProtocolVersion::V1 => b"/eigen_trust/1",
@@ -67,6 +81,7 @@ impl RequestResponseCodec for EigenTrustCodec {
 	type Request = Request;
 	type Response = Response;
 
+	/// Read the request from the given stream.
 	async fn read_request<T>(
 		&mut self,
 		protocol: &Self::Protocol,
@@ -85,6 +100,7 @@ impl RequestResponseCodec for EigenTrustCodec {
 		}
 	}
 
+	/// Read the response from the given stream.
 	async fn read_response<T>(
 		&mut self,
 		protocol: &Self::Protocol,
@@ -127,6 +143,7 @@ impl RequestResponseCodec for EigenTrustCodec {
 		}
 	}
 
+	/// Write the request to the given stream.
 	async fn write_request<T>(
 		&mut self,
 		protocol: &Self::Protocol,
@@ -145,6 +162,7 @@ impl RequestResponseCodec for EigenTrustCodec {
 		}
 	}
 
+	/// Write the response to the given stream.
 	async fn write_response<T>(
 		&mut self,
 		protocol: &Self::Protocol,
