@@ -70,7 +70,11 @@ impl Peer {
 		if self.neighbours.contains(&Some(peer_id)) {
 			return Ok(());
 		}
-		let index = self.neighbours.iter().position(|&x| x.is_none()).ok_or(EigenError::MaxNeighboursReached)?;
+		let index = self
+			.neighbours
+			.iter()
+			.position(|&x| x.is_none())
+			.ok_or(EigenError::MaxNeighboursReached)?;
 		self.neighbours[index] = Some(peer_id);
 		Ok(())
 	}

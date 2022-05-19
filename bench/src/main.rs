@@ -1,13 +1,13 @@
-use std::str::FromStr;
-use futures::future::join_all;
 use env_logger::Builder;
+use futures::future::join_all;
+use std::str::FromStr;
 
-use eigen_trust::{Keypair, Multiaddr, LevelFilter, Node, NodeConfig};
+use eigen_trust::{Keypair, LevelFilter, Multiaddr, Node, NodeConfig};
 
 struct BenchConfig;
 impl NodeConfig for BenchConfig {
-	const NUM_CONNECTIONS: usize = 12;
 	const INTERVAL: u64 = 2;
+	const NUM_CONNECTIONS: usize = 12;
 	const PRE_TRUST_WEIGHT: f64 = 0.2;
 }
 
@@ -47,14 +47,12 @@ async fn main() {
 		let bootstrap_nodes = bootstrap_nodes.clone();
 
 		let join_handle = tokio::spawn(async move {
-			let mut node = Node::<BenchConfig>::new(
-				local_key,
-				local_address,
-				bootstrap_nodes.clone(),
-			).unwrap();
+			let mut node =
+				Node::<BenchConfig>::new(local_key, local_address, bootstrap_nodes.clone())
+					.unwrap();
 
 			let peer = node.get_peer_mut();
-			for (peer_id, _, _) in bootstrap_nodes {
+			for (peer_id, ..) in bootstrap_nodes {
 				peer.set_score(peer_id, 5);
 			}
 
@@ -63,6 +61,10 @@ async fn main() {
 		tasks.push(join_handle);
 	}
 
-	let _ = join_all(tasks).await.iter().map(|r| r.as_ref().unwrap()).collect::<Vec<_>>();
+	let _ = join_all(tasks)
+		.await
+		.iter()
+		.map(|r| r.as_ref().unwrap())
+		.collect::<Vec<_>>();
 	println!("Done");
 }

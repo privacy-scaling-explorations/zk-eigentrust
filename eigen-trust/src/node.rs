@@ -262,8 +262,8 @@ mod tests {
 	struct TestConfig;
 	impl NodeConfig for TestConfig {
 		const INTERVAL: u64 = 10;
-		const PRE_TRUST_WEIGHT: f64 = 0.5;
 		const NUM_CONNECTIONS: usize = 1;
+		const PRE_TRUST_WEIGHT: f64 = 0.5;
 	}
 
 	const PRE_TRUST_SCORE: f64 = 0.5;
@@ -287,18 +287,11 @@ mod tests {
 			(peer_id2, local_address2.clone(), PRE_TRUST_SCORE),
 		];
 
-		let mut node1 = Node::<TestConfig>::new(
-			local_key1,
-			local_address1.clone(),
-			bootstrap_nodes.clone(),
-		)
-		.unwrap();
-		let mut node2 = Node::<TestConfig>::new(
-			local_key2,
-			local_address2,
-			bootstrap_nodes,
-		)
-		.unwrap();
+		let mut node1 =
+			Node::<TestConfig>::new(local_key1, local_address1.clone(), bootstrap_nodes.clone())
+				.unwrap();
+		let mut node2 =
+			Node::<TestConfig>::new(local_key2, local_address2, bootstrap_nodes).unwrap();
 
 		node1.dial_bootstrap_nodes();
 
@@ -345,18 +338,10 @@ mod tests {
 			(peer_id2, local_address2.clone(), PRE_TRUST_SCORE),
 		];
 
-		let mut node1 = Node::<TestConfig>::new(
-			local_key1,
-			local_address1,
-			bootstrap_nodes.clone(),
-		)
-		.unwrap();
-		let mut node2 = Node::<TestConfig>::new(
-			local_key2,
-			local_address2,
-			bootstrap_nodes,
-		)
-		.unwrap();
+		let mut node1 =
+			Node::<TestConfig>::new(local_key1, local_address1, bootstrap_nodes.clone()).unwrap();
+		let mut node2 =
+			Node::<TestConfig>::new(local_key2, local_address2, bootstrap_nodes).unwrap();
 
 		node1.dial_bootstrap_nodes();
 
@@ -414,18 +399,9 @@ mod tests {
 		let local_address1 = Multiaddr::from_str(ADDR_1).unwrap();
 		let local_address2 = Multiaddr::from_str(ADDR_2).unwrap();
 
-		let mut node1 = Node::<TestConfig>::new(
-			local_key1,
-			local_address1,
-			Vec::new(),
-		)
-		.unwrap();
-		let mut node2 = Node::<TestConfig>::new(
-			local_key2,
-			local_address2.clone(),
-			Vec::new(),
-		)
-		.unwrap();
+		let mut node1 = Node::<TestConfig>::new(local_key1, local_address1, Vec::new()).unwrap();
+		let mut node2 =
+			Node::<TestConfig>::new(local_key2, local_address2.clone(), Vec::new()).unwrap();
 
 		node1.dial_neighbour(local_address2);
 
@@ -488,18 +464,10 @@ mod tests {
 			(peer_id2, local_address2.clone(), PRE_TRUST_SCORE),
 		];
 
-		let mut node1 = Node::<TestConfig>::new(
-			local_key1,
-			local_address1,
-			bootstrap_nodes.clone(),
-		)
-		.unwrap();
-		let mut node2 = Node::<TestConfig>::new(
-			local_key2,
-			local_address2,
-			bootstrap_nodes,
-		)
-		.unwrap();
+		let mut node1 =
+			Node::<TestConfig>::new(local_key1, local_address1, bootstrap_nodes.clone()).unwrap();
+		let mut node2 =
+			Node::<TestConfig>::new(local_key2, local_address2, bootstrap_nodes).unwrap();
 
 		node1.dial_bootstrap_nodes();
 
@@ -569,7 +537,8 @@ mod tests {
 		let peer1_global_score = peer1.calculate_global_trust_score(next_epoch);
 		let peer2_global_score = peer1.calculate_global_trust_score(next_epoch);
 
-		let peer_gs = (1. - TestConfig::PRE_TRUST_WEIGHT) * 0.25 + TestConfig::PRE_TRUST_WEIGHT * PRE_TRUST_SCORE;
+		let peer_gs = (1. - TestConfig::PRE_TRUST_WEIGHT) * 0.25
+			+ TestConfig::PRE_TRUST_WEIGHT * PRE_TRUST_SCORE;
 		assert_eq!(peer1_global_score, peer_gs);
 		assert_eq!(peer2_global_score, peer_gs);
 	}
