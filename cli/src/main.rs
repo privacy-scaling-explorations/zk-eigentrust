@@ -81,7 +81,7 @@ async fn main() -> Result<(), EigenError> {
 		bootstrap_nodes,
 	)?;
 
-	node.main_loop().await?;
+	node.main_loop(None).await?;
 
 	Ok(())
 }

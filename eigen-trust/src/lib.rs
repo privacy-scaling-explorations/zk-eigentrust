@@ -26,6 +26,7 @@ mod protocol;
 
 pub use libp2p::{identity::Keypair, Multiaddr, PeerId};
 pub use log::LevelFilter;
+pub use epoch::Epoch;
 pub use node::{Node, NodeConfig};
 pub use peer::Peer;
 

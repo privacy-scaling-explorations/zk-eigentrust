@@ -51,18 +51,21 @@ impl<C: NodeConfig> Node<C> {
 				EigenError::InvalidKeypair
 			})?;
 
+		let connection_duration = Duration::from_secs(86400 * 365 * 30);
 		let transport = TcpConfig::new()
 			.nodelay(true)
 			.upgrade(Version::V1)
 			.authenticate(NoiseConfig::xx(noise_keys).into_authenticated())
 			.multiplex(YamuxConfig::default())
 			// 30 years
-			.timeout(Duration::from_secs(86400 * 365 * 30))
+			.timeout(connection_duration)
 			.boxed();
 
 		// Setting up the request/response protocol.
 		let protocols = once((EigenTrustProtocol::new(), ProtocolSupport::Full));
-		let cfg = RequestResponseConfig::default();
+		let mut cfg = RequestResponseConfig::default();
+		cfg.set_connection_keep_alive(connection_duration);
+		cfg.set_request_timeout(Duration::from_secs(C::INTERVAL));
 		let req_proto = RequestResponse::new(EigenTrustCodec, protocols, cfg);
 
 		// Setting up the transport and swarm.
@@ -213,7 +216,7 @@ impl<C: NodeConfig> Node<C> {
 		}
 	}
 
-	pub async fn develop_loop(mut self, num_intervals: u32) -> Result<(), EigenError> {
+	pub async fn main_loop(mut self, interval_limit: Option<u32>) -> Result<(), EigenError> {
 		self.dial_bootstrap_nodes();
 
 		let now = Instant::now();
@@ -230,12 +233,17 @@ impl<C: NodeConfig> Node<C> {
 				biased;
 				_ = interval.tick() => {
 					let current_epoch = Epoch::current_epoch(C::INTERVAL)?;
-					let local_peer_id = self.local_key.public().to_peer_id();
-					log::info!("Epoch started {:?} for peer {:?}", current_epoch, local_peer_id);
+
+					let score = self.peer.calculate_global_trust_score(current_epoch.previous());
+					log::info!("{:?} finished, score: {}", current_epoch.previous(), score);
+
 					self.send_epoch_requests(current_epoch);
-					count += 1;
-					if count >= num_intervals {
-						break;
+
+					if let Some(num) = interval_limit {
+						count += 1;
+						if count >= num {
+							break;
+						}
 					}
 				},
 				event = self.swarm.select_next_some() => self.handle_swarm_events(event),
@@ -243,28 +251,6 @@ impl<C: NodeConfig> Node<C> {
 		}
 
 		Ok(())
-	}
-
-	pub async fn main_loop(mut self) -> Result<(), EigenError> {
-		self.dial_bootstrap_nodes();
-
-		let now = Instant::now();
-		let secs_until_next_epoch = Epoch::secs_until_next_epoch(C::INTERVAL)?;
-		let start = now + Duration::from_secs(secs_until_next_epoch);
-		let period = Duration::from_secs(C::INTERVAL);
-
-		let mut interval = time::interval_at(start, period);
-
-		loop {
-			select! {
-				biased;
-				_ = interval.tick() => {
-					let current_epoch = Epoch::current_epoch(C::INTERVAL)?;
-					self.send_epoch_requests(current_epoch);
-				},
-				event = self.swarm.select_next_some() => self.handle_swarm_events(event),
-			}
-		}
 	}
 }
 
