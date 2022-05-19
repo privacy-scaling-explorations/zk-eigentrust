@@ -1,1 +1,1 @@
-cargo test --release --test integration -- --nocapture --test-threads=1
+cargo test --release --test simulation -- --nocapture --test-threads=1
