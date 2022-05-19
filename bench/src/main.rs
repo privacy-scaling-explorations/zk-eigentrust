@@ -58,7 +58,7 @@ async fn main() {
 				peer.set_score(peer_id, 5);
 			}
 
-			node.develop_loop(10).await.unwrap();
+			node.main_loop(Some(20)).await.unwrap();
 		});
 		tasks.push(join_handle);
 	}
