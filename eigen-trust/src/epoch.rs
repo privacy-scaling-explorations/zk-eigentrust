@@ -1,3 +1,9 @@
+//! The module for epoch related calculatioins, like:
+//! - Creating an epoch struct
+//! - Seconds until next epoch
+//! - Current epoch
+//! - Current timestamp
+
 use std::{
 	fmt::{Display, Formatter, Result as FmtResult},
 	time::{SystemTime, UNIX_EPOCH},
@@ -5,6 +11,8 @@ use std::{
 
 use crate::EigenError;
 
+/// Epoch struct, which is a wrapper around epoch number and timestamp.
+// TODO: add epoch_number and timestamp as private fields
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Epoch(pub u64);
 
@@ -15,14 +23,12 @@ impl Display for Epoch {
 }
 
 impl Epoch {
+	/// Returns epoch number as bytes.
 	pub fn to_be_bytes(self) -> [u8; 8] {
 		self.0.to_be_bytes()
 	}
 
-	pub fn from_be_bytes(bytes: [u8; 8]) -> Result<Self, EigenError> {
-		Ok(Epoch(u64::from_le_bytes(bytes)))
-	}
-
+	/// Calculates the current epoch number based on the interval duration.
 	pub fn current_epoch(interval: u64) -> Result<Self, EigenError> {
 		let unix_timestamp = SystemTime::now()
 			.duration_since(UNIX_EPOCH)
@@ -33,6 +39,8 @@ impl Epoch {
 		Ok(Epoch(current_epoch))
 	}
 
+	/// Calculates the seconds until the next epoch based on the interval
+	/// duration.
 	pub fn secs_until_next_epoch(interval: u64) -> Result<u64, EigenError> {
 		let unix_timestamp = SystemTime::now()
 			.duration_since(UNIX_EPOCH)
@@ -44,6 +52,8 @@ impl Epoch {
 		Ok(secs_until_next_epoch)
 	}
 
+	/// Calculates the current timestamp. The difference between UNIX timestamp
+	/// start and now.
 	pub fn current_timestamp() -> Result<u64, EigenError> {
 		let unix_timestamp = SystemTime::now()
 			.duration_since(UNIX_EPOCH)
@@ -52,10 +62,12 @@ impl Epoch {
 		Ok(unix_timestamp.as_secs())
 	}
 
+	/// Returns previous epoch.
 	pub fn previous(&self) -> Self {
 		Epoch(self.0 - 1)
 	}
 
+	/// Returns next epoch.
 	pub fn next(&self) -> Self {
 		Epoch(self.0 + 1)
 	}

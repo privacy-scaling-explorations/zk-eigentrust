@@ -1,1 +1,1 @@
-cargo test --release --test simulation -- --nocapture --test-threads=1
+cargo run -p bench --release

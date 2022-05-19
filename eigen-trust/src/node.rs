@@ -1,3 +1,6 @@
+//! The module for the node setup, running the main loop, and handling network
+//! events.
+
 use crate::{
 	epoch::Epoch,
 	peer::Peer,
@@ -24,21 +27,34 @@ use tokio::{
 	time::{self, Duration, Instant},
 };
 
+/// Node configuration crate.
 pub trait NodeConfig {
+	/// The number of neighbors the peer can have.
+	/// This is also the maximum number of peers that can be connected to the
+	/// node.
 	const NUM_CONNECTIONS: usize;
+	/// Duration of the Epoch.
 	const INTERVAL: u64;
+	/// Weight of the pre-trusted score.
 	const PRE_TRUST_WEIGHT: f64;
 }
 
+/// The Node struct.
 pub struct Node<C: NodeConfig> {
+	/// Swarm object.
 	swarm: Swarm<RequestResponse<EigenTrustCodec>>,
+	/// Peer managed by the node.
 	peer: Peer,
+	/// Local keypair.
 	local_key: Keypair,
+	/// Bootstrap nodes.
 	bootstrap_nodes: Vec<(PeerId, Multiaddr, f64)>,
 	_config: PhantomData<C>,
 }
 
 impl<C: NodeConfig> Node<C> {
+	/// Create a new node, given the local keypair, local address, and bootstrap
+	/// nodes.
 	pub fn new(
 		local_key: Keypair,
 		local_address: Multiaddr,
@@ -51,25 +67,30 @@ impl<C: NodeConfig> Node<C> {
 				EigenError::InvalidKeypair
 			})?;
 
+		// 30 years in seconds
+		// Basically, we want connections to be open for a long time.
 		let connection_duration = Duration::from_secs(86400 * 365 * 30);
 		let transport = TcpConfig::new()
 			.nodelay(true)
 			.upgrade(Version::V1)
 			.authenticate(NoiseConfig::xx(noise_keys).into_authenticated())
 			.multiplex(YamuxConfig::default())
-			// 30 years
 			.timeout(connection_duration)
 			.boxed();
 
 		// Setting up the request/response protocol.
 		let protocols = once((EigenTrustProtocol::new(), ProtocolSupport::Full));
 		let mut cfg = RequestResponseConfig::default();
+		// Keep the connection alive in request/response protocol
 		cfg.set_connection_keep_alive(connection_duration);
+		// If we failed to get response during the interval duration, cancel it.
 		cfg.set_request_timeout(Duration::from_secs(C::INTERVAL));
 		let req_proto = RequestResponse::new(EigenTrustCodec, protocols, cfg);
 
 		// Setting up the transport and swarm.
 		let local_peer_id = PeerId::from(local_key.public());
+		// Limit the number of connections to be same as the number of neighbors in the
+		// config.
 		let num_connections =
 			u32::try_from(C::NUM_CONNECTIONS).map_err(|_| EigenError::InvalidNumNeighbours)?;
 		let connection_limits =
@@ -84,6 +105,8 @@ impl<C: NodeConfig> Node<C> {
 			EigenError::ListenFailed
 		})?;
 
+		// Init the peer struct and give it a pre trust score, if we are a bootstrap
+		// node.
 		let pre_trust_score = bootstrap_nodes
 			.iter()
 			.find(|x| x.0 == local_peer_id)
@@ -100,18 +123,22 @@ impl<C: NodeConfig> Node<C> {
 		})
 	}
 
+	/// Get the peer struct.
 	pub fn get_peer(&self) -> &Peer {
 		&self.peer
 	}
 
+	/// Get the mutable peer struct.
 	pub fn get_peer_mut(&mut self) -> &mut Peer {
 		&mut self.peer
 	}
 
+	/// Get the mutable swarm.
 	pub fn get_swarm_mut(&mut self) -> &mut Swarm<RequestResponse<EigenTrustCodec>> {
 		&mut self.swarm
 	}
 
+	/// Method for handling the request/response events.
 	pub fn handle_req_res_events(&mut self, event: RequestResponseEvent<Request, Response>) {
 		use RequestResponseEvent::*;
 		use RequestResponseMessage::{Request as Req, Response as Res};
@@ -123,7 +150,9 @@ impl<C: NodeConfig> Node<C> {
 				},
 			} => {
 				let beh = self.swarm.behaviour_mut();
+				// First we calculate the local opinions for the requested epoch.
 				self.peer.calculate_local_opinions(request.get_epoch());
+				// Then we send the local opinion to the peer.
 				let opinion = self.peer.get_local_opinion(&(peer, request.get_epoch()));
 				let response = Response::Success(opinion);
 				let res = beh.send_response(channel, response);
@@ -135,9 +164,11 @@ impl<C: NodeConfig> Node<C> {
 				peer,
 				message: Res { response, .. },
 			} => {
+				// If we receive a response, we update the neighbors's opinion about us.
+				// TODO: Check the validity of the opinion, by verifying a zero-knowledge proof.
 				if let Response::Success(opinion) = response {
 					self.peer
-						.cache_neighbour_opinion((peer, opinion.get_epoch()), opinion);
+						.cache_neighbor_opinion((peer, opinion.get_epoch()), opinion);
 				} else {
 					log::error!("Received error response {:?}", response);
 				}
@@ -158,6 +189,7 @@ impl<C: NodeConfig> Node<C> {
 		};
 	}
 
+	/// A method for handling the swarm events.
 	pub fn handle_swarm_events(
 		&mut self,
 		event: SwarmEvent<
@@ -167,18 +199,19 @@ impl<C: NodeConfig> Node<C> {
 	) {
 		match event {
 			SwarmEvent::NewListenAddr { address, .. } => log::info!("Listening on {:?}", address),
+			// Handle request/response events.
 			SwarmEvent::Behaviour(req_res_event) => self.handle_req_res_events(req_res_event),
-			// When we connect to a peer, we automatically add him as a neighbour.
+			// When we connect to a peer, we automatically add him as a neighbor.
 			SwarmEvent::ConnectionEstablished { peer_id, .. } => {
-				let res = self.peer.add_neighbour(peer_id);
+				let res = self.peer.add_neighbor(peer_id);
 				if let Err(e) = res {
-					log::error!("Failed to add neighbour {:?}", e);
+					log::error!("Failed to add neighbor {:?}", e);
 				}
 				log::info!("Connection established with {:?}", peer_id);
 			},
-			// When we disconnect from a peer, we automatically remove him from the neighbours list.
+			// When we disconnect from a peer, we automatically remove him from the neighbors list.
 			SwarmEvent::ConnectionClosed { peer_id, cause, .. } => {
-				self.peer.remove_neighbour(peer_id);
+				self.peer.remove_neighbor(peer_id);
 				log::info!("Connection closed with {:?} ({:?})", peer_id, cause);
 			},
 			SwarmEvent::Dialing(peer_id) => log::info!("Dialing {:?}", peer_id),
@@ -186,11 +219,13 @@ impl<C: NodeConfig> Node<C> {
 		}
 	}
 
-	pub fn dial_neighbour(&mut self, addr: Multiaddr) {
+	/// Dial the neighbor directly.
+	pub fn dial_neighbor(&mut self, addr: Multiaddr) {
 		let res = self.swarm.dial(addr).map_err(|_| EigenError::DialError);
 		log::debug!("swarm.dial {:?}", res);
 	}
 
+	/// Dial pre-configured bootstrap nodes.
 	pub fn dial_bootstrap_nodes(&mut self) {
 		// We want to connect to all bootstrap nodes.
 		let local_peer_id = self.local_key.public().to_peer_id();
@@ -207,8 +242,9 @@ impl<C: NodeConfig> Node<C> {
 		}
 	}
 
+	/// Send the request for an opinion to all neighbors, in the passed epoch.
 	pub fn send_epoch_requests(&mut self, epoch: Epoch) {
-		for peer_id in self.peer.neighbours() {
+		for peer_id in self.peer.neighbors() {
 			let beh = self.swarm.behaviour_mut();
 
 			let request = Request::new(epoch);
@@ -216,29 +252,41 @@ impl<C: NodeConfig> Node<C> {
 		}
 	}
 
+	/// Start the main loop of the program. This function has two main tasks:
+	/// - To start an interval timer for sending the request for opinions.
+	/// - To handle the swarm + request/response events.
+	/// The amount of intervals/epochs is determined by the `interval_limit`
+	/// parameter.
 	pub async fn main_loop(mut self, interval_limit: Option<u32>) -> Result<(), EigenError> {
 		self.dial_bootstrap_nodes();
 
 		let now = Instant::now();
 		let secs_until_next_epoch = Epoch::secs_until_next_epoch(C::INTERVAL)?;
+		// Figure out when the next epoch will start.
 		let start = now + Duration::from_secs(secs_until_next_epoch);
 		let period = Duration::from_secs(C::INTERVAL);
 
+		// Setup the interval timer.
 		let mut interval = time::interval_at(start, period);
 
+		// Count the number of epochs passed
 		let mut count = 0;
 
 		loop {
 			select! {
 				biased;
+				// The interval timer tick. This is where we request opinions from the neighbors.
 				_ = interval.tick() => {
 					let current_epoch = Epoch::current_epoch(C::INTERVAL)?;
 
+					// Log out the global trust score for the previous epoch.
 					let score = self.peer.calculate_global_trust_score(current_epoch.previous());
 					log::info!("{:?} finished, score: {}", current_epoch.previous(), score);
 
+					// Send the request for opinions to all neighbors.
 					self.send_epoch_requests(current_epoch);
 
+					// Increment the epoch counter, break out of the loop if we reached the limit
 					if let Some(num) = interval_limit {
 						count += 1;
 						if count >= num {
@@ -246,6 +294,7 @@ impl<C: NodeConfig> Node<C> {
 						}
 					}
 				},
+				// The swarm event.
 				event = self.swarm.select_next_some() => self.handle_swarm_events(event),
 			}
 		}
@@ -320,7 +369,7 @@ mod tests {
 	}
 
 	#[tokio::test]
-	async fn should_add_neighbours_on_bootstrap() {
+	async fn should_add_neighbors_on_bootstrap() {
 		const ADDR_1: &str = "/ip4/127.0.0.1/tcp/56707";
 		const ADDR_2: &str = "/ip4/127.0.0.1/tcp/58602";
 
@@ -360,12 +409,12 @@ mod tests {
 			}
 		}
 
-		let neighbours1: Vec<PeerId> = node1.get_peer().neighbours();
-		let neighbours2: Vec<PeerId> = node2.get_peer().neighbours();
-		let expected_neighbour1 = vec![peer_id2];
-		let expected_neighbour2 = vec![peer_id1];
-		assert_eq!(neighbours1, expected_neighbour1);
-		assert_eq!(neighbours2, expected_neighbour2);
+		let neighbors1: Vec<PeerId> = node1.get_peer().neighbors();
+		let neighbors2: Vec<PeerId> = node2.get_peer().neighbors();
+		let expected_neighbor1 = vec![peer_id2];
+		let expected_neighbor2 = vec![peer_id1];
+		assert_eq!(neighbors1, expected_neighbor1);
+		assert_eq!(neighbors2, expected_neighbor2);
 
 		// Disconnect from peer
 		node2.get_swarm_mut().disconnect_peer_id(peer_id1).unwrap();
@@ -379,14 +428,14 @@ mod tests {
 			}
 		}
 
-		let neighbours2: Vec<PeerId> = node2.get_peer().neighbours();
-		let neighbours1: Vec<PeerId> = node1.get_peer().neighbours();
-		assert!(neighbours2.is_empty());
-		assert!(neighbours1.is_empty());
+		let neighbors2: Vec<PeerId> = node2.get_peer().neighbors();
+		let neighbors1: Vec<PeerId> = node1.get_peer().neighbors();
+		assert!(neighbors2.is_empty());
+		assert!(neighbors1.is_empty());
 	}
 
 	#[tokio::test]
-	async fn should_add_neighbours_on_dial() {
+	async fn should_add_neighbors_on_dial() {
 		const ADDR_1: &str = "/ip4/127.0.0.1/tcp/56717";
 		const ADDR_2: &str = "/ip4/127.0.0.1/tcp/58622";
 
@@ -403,7 +452,7 @@ mod tests {
 		let mut node2 =
 			Node::<TestConfig>::new(local_key2, local_address2.clone(), Vec::new()).unwrap();
 
-		node1.dial_neighbour(local_address2);
+		node1.dial_neighbor(local_address2);
 
 		// For node 2
 		// 1. New listen addr
@@ -420,12 +469,12 @@ mod tests {
 			}
 		}
 
-		let neighbours1: Vec<PeerId> = node1.get_peer().neighbours();
-		let neighbours2: Vec<PeerId> = node2.get_peer().neighbours();
-		let expected_neighbour1 = vec![peer_id2];
-		let expected_neighbour2 = vec![peer_id1];
-		assert_eq!(neighbours1, expected_neighbour1);
-		assert_eq!(neighbours2, expected_neighbour2);
+		let neighbors1: Vec<PeerId> = node1.get_peer().neighbors();
+		let neighbors2: Vec<PeerId> = node2.get_peer().neighbors();
+		let expected_neighbor1 = vec![peer_id2];
+		let expected_neighbor2 = vec![peer_id1];
+		assert_eq!(neighbors1, expected_neighbor1);
+		assert_eq!(neighbors2, expected_neighbor2);
 
 		// Disconnect from peer
 		node2.get_swarm_mut().disconnect_peer_id(peer_id1).unwrap();
@@ -439,10 +488,10 @@ mod tests {
 			}
 		}
 
-		let neighbours2: Vec<PeerId> = node2.get_peer().neighbours();
-		let neighbours1: Vec<PeerId> = node1.get_peer().neighbours();
-		assert!(neighbours2.is_empty());
-		assert!(neighbours1.is_empty());
+		let neighbors2: Vec<PeerId> = node2.get_peer().neighbors();
+		let neighbors1: Vec<PeerId> = node1.get_peer().neighbors();
+		assert!(neighbors2.is_empty());
+		assert!(neighbors1.is_empty());
 	}
 
 	#[tokio::test]
@@ -521,8 +570,8 @@ mod tests {
 
 		let peer1 = node1.get_peer();
 		let peer2 = node2.get_peer();
-		let peer1_neighbor_opinion = peer1.get_neighbour_opinion(&(peer_id2, next_epoch));
-		let peer2_neighbor_opinion = peer2.get_neighbour_opinion(&(peer_id1, next_epoch));
+		let peer1_neighbor_opinion = peer1.get_neighbor_opinion(&(peer_id2, next_epoch));
+		let peer2_neighbor_opinion = peer2.get_neighbor_opinion(&(peer_id1, next_epoch));
 
 		assert_eq!(peer1_neighbor_opinion.get_epoch(), next_epoch);
 		assert_eq!(peer1_neighbor_opinion.get_local_trust_score(), 1.0);

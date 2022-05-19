@@ -1,1 +1,1 @@
-cargo run --release
+cargo run -p eigen-trust --release
