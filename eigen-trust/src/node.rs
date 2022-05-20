@@ -556,14 +556,10 @@ mod tests {
 		for _ in 0..6 {
 			select! {
 				event1 = node1.get_swarm_mut().select_next_some() => {
-					if let SwarmEvent::Behaviour(req_res) = event1 {
-						node1.handle_req_res_events(req_res);
-					}
+					node1.handle_swarm_events(event1);
 				},
 				event2 = node2.get_swarm_mut().select_next_some() => {
-					if let SwarmEvent::Behaviour(req_res) = event2 {
-						node2.handle_req_res_events(req_res);
-					}
+					node2.handle_swarm_events(event2);
 				},
 			}
 		}
@@ -590,5 +586,44 @@ mod tests {
 			+ TestConfig::PRE_TRUST_WEIGHT * PRE_TRUST_SCORE;
 		assert_eq!(peer1_global_score, peer_gs);
 		assert_eq!(peer2_global_score, peer_gs);
+	}
+
+	#[tokio::test]
+	async fn should_run_main_loop() {
+		const ADDR_1: &str = "/ip4/127.0.0.1/tcp/56728";
+		const ADDR_2: &str = "/ip4/127.0.0.1/tcp/58623";
+
+		let local_key1 = Keypair::generate_ed25519();
+		let peer_id1 = local_key1.public().to_peer_id();
+
+		let local_key2 = Keypair::generate_ed25519();
+		let peer_id2 = local_key2.public().to_peer_id();
+
+		let local_address1 = Multiaddr::from_str(ADDR_1).unwrap();
+		let local_address2 = Multiaddr::from_str(ADDR_2).unwrap();
+
+		let bootstrap_nodes = vec![
+			(peer_id1, local_address1.clone(), PRE_TRUST_SCORE),
+			(peer_id2, local_address2.clone(), PRE_TRUST_SCORE),
+		];
+
+		let mut node1 =
+			Node::<TestConfig>::new(local_key1, local_address1, bootstrap_nodes.clone()).unwrap();
+		let node2 =
+			Node::<TestConfig>::new(local_key2, local_address2, bootstrap_nodes).unwrap();
+
+		node1.dial_bootstrap_nodes();
+
+		let join1 = tokio::spawn(async move {
+			node1.main_loop(Some(1)).await
+		});
+
+		let join2 = tokio::spawn(async move {
+			node2.main_loop(Some(1)).await
+		});
+
+		let (res1, res2) = tokio::join!(join1, join2);
+		res1.unwrap().unwrap();
+		res2.unwrap().unwrap();
 	}
 }
