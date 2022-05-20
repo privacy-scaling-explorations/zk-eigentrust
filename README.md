@@ -19,14 +19,14 @@ To build the project:
 ./scripts/build.sh
 ```
 
-To build the project for the wasm target:
-```bash
-./scripts/build-wasm.sh
-```
-
-To run the tests (including the integration tests):
+To run the tests:
 ```bash
 ./scripts/test.sh
+```
+
+To run the simulation:
+```bash
+./scripts/run-simulations.sh
 ```
 
 To build the documentation:
