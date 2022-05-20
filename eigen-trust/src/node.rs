@@ -609,18 +609,13 @@ mod tests {
 
 		let mut node1 =
 			Node::<TestConfig>::new(local_key1, local_address1, bootstrap_nodes.clone()).unwrap();
-		let node2 =
-			Node::<TestConfig>::new(local_key2, local_address2, bootstrap_nodes).unwrap();
+		let node2 = Node::<TestConfig>::new(local_key2, local_address2, bootstrap_nodes).unwrap();
 
 		node1.dial_bootstrap_nodes();
 
-		let join1 = tokio::spawn(async move {
-			node1.main_loop(Some(1)).await
-		});
+		let join1 = tokio::spawn(async move { node1.main_loop(Some(1)).await });
 
-		let join2 = tokio::spawn(async move {
-			node2.main_loop(Some(1)).await
-		});
+		let join2 = tokio::spawn(async move { node2.main_loop(Some(1)).await });
 
 		let (res1, res2) = tokio::join!(join1, join2);
 		res1.unwrap().unwrap();
