@@ -78,6 +78,19 @@ mod tests {
 	use super::*;
 
 	#[test]
+	fn test_display() {
+		let epoch = format!("{}", Epoch(123));
+		assert_eq!(epoch, "Epoch(123)");
+	}
+
+	#[test]
+	fn test_current_epoch() {
+		let epoch = Epoch(1);
+		assert_eq!(epoch.next(), Epoch(2));
+		assert_eq!(epoch.previous(), Epoch(0));
+	}
+
+	#[test]
 	fn test_epoch_to_be_bytes() {
 		let epoch = Epoch(0);
 		let expected = [0, 0, 0, 0, 0, 0, 0, 0];
@@ -108,5 +121,14 @@ mod tests {
 		let expected = (current_epoch + 1) * interval - unix_timestamp.as_secs();
 
 		assert_eq!(expected, secs_until_next_epoch);
+	}
+
+	#[test]
+	fn test_epoch_current_timestamp() {
+		let timestamp = Epoch::current_timestamp().unwrap();
+
+		let unix_timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
+
+		assert_eq!(unix_timestamp.as_secs(), timestamp);
 	}
 }

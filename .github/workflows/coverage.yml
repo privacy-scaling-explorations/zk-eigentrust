@@ -41,7 +41,7 @@ jobs:
           LLVM_PROFILE_FILE: "coverage-%p-%m.profraw"
 
       - name: Generate Coverage data
-        run: grcov . -s . --binary-path ./target/debug/ --ignore-not-existing -t lcov -o lcov.info
+        run: grcov . -s . --binary-path ./target/debug/ --ignore-not-existing --ignore **/lib.rs -t lcov -o lcov.info
 
       - name: Upload to codecov.io
         run: bash <(curl -s https://codecov.io/bash) -f lcov.info
