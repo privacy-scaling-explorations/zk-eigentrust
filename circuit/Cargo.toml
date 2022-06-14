@@ -1,0 +1,18 @@
+[package]
+name = "eigen-trust-circuit"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+plotters = { version = "0.3.0" }
+ff = "0.11"
+rand = "0.8"
+group = "0.11"
+hex = { version = "0.4", default-features = false, features = ["alloc"] }
+ecdsa = { git = "https://github.com/privacy-scaling-explorations/halo2wrong.git" }
+ecc = { git = "https://github.com/privacy-scaling-explorations/halo2wrong.git" }
+integer = { git = "https://github.com/privacy-scaling-explorations/halo2wrong.git" }
+maingate = { git = "https://github.com/privacy-scaling-explorations/halo2wrong.git" }
+halo2wrong = { git = "https://github.com/privacy-scaling-explorations/halo2wrong.git"}
