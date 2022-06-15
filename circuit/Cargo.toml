@@ -16,5 +16,3 @@ ecc = { git = "https://github.com/privacy-scaling-explorations/halo2wrong.git" }
 integer = { git = "https://github.com/privacy-scaling-explorations/halo2wrong.git" }
 maingate = { git = "https://github.com/privacy-scaling-explorations/halo2wrong.git" }
 halo2wrong = { git = "https://github.com/privacy-scaling-explorations/halo2wrong.git"}
-
-halo2 = { package = "halo2_proofs", git = "https://github.com/privacy-scaling-explorations/halo2", rev = "a898d65ae3ad3d41987666f6a03cfc15edae01c4" }
