@@ -141,14 +141,16 @@ impl<E: CurveAffine, N: FieldExt> Circuit<N> for EcdsaVerifier<E, N> {
 
 #[cfg(test)]
 mod test {
-	use super::{native::generate_signature, *};
+	use crate::ecdsa::native::Keypair;
+
+use super::{native::generate_signature, *};
 	use halo2wrong::{
 		curves::{
 			bn256::Fr,
 			group::{Curve, Group},
 			secp256k1::Secp256k1Affine as Secp256,
 		},
-		halo2::arithmetic::{CurveAffine, Field},
+		halo2::arithmetic::CurveAffine,
 	};
 	use maingate::halo2::dev::MockProver;
 	use rand::thread_rng;
@@ -158,9 +160,10 @@ mod test {
 		let k = 20;
 		let mut rng = thread_rng();
 
-		let sk = <Secp256 as CurveAffine>::ScalarExt::random(&mut rng);
+		let pair = Keypair::<Secp256>::new(&mut rng);
+		let pk = pair.public_key().clone();
 		let m_hash = <Secp256 as CurveAffine>::ScalarExt::from(4);
-		let (sig_data, pk) = generate_signature::<Secp256>(sk, m_hash).unwrap();
+		let sig_data = generate_signature::<Secp256, _>(pair, m_hash, &mut rng).unwrap();
 
 		let aux_generator = <Secp256 as CurveAffine>::CurveExt::random(&mut rng).to_affine();
 		let sig_verifyer = EcdsaVerifier {

@@ -44,13 +44,13 @@ impl EigenTrustConfig {
 #[derive(Clone)]
 pub struct EigenTrustCircuit<E: CurveAffine, N: FieldExt, const SIZE: usize, P: RoundParams<N, 5>> {
 	op_v: Option<N>,
-	pubkey_i: Option<E>,
 	pubkey_v: Option<E>,
+	c_v: [Option<N>; SIZE],
+	pubkey_i: Option<E>,
 	sig_i: Option<SigData<E::ScalarExt>>,
 	m_hash: Option<E::ScalarExt>,
 	epoch: Option<N>,
 	opinions: [Option<N>; SIZE],
-	c_v: [Option<N>; SIZE],
 	pubkeys: [Option<E>; SIZE],
 	sigs: [Option<SigData<E::ScalarExt>>; SIZE],
 	aux_generator: Option<E>,
@@ -64,26 +64,26 @@ impl<E: CurveAffine, N: FieldExt, const SIZE: usize, P: RoundParams<N, 5>>
 {
 	pub fn new(
 		op_v: Option<N>,
-		pubkey_i: Option<E>,
 		pubkey_v: Option<E>,
+		c_v: [Option<N>; SIZE],
+		pubkey_i: Option<E>,
 		sig_i: Option<SigData<E::ScalarExt>>,
 		m_hash: Option<E::ScalarExt>,
 		epoch: Option<N>,
 		opinions: [Option<N>; SIZE],
-		c_v: [Option<N>; SIZE],
 		pubkeys: [Option<E>; SIZE],
 		sigs: [Option<SigData<E::ScalarExt>>; SIZE],
 		aux_generator: Option<E>,
 	) -> Self {
 		Self {
 			op_v,
-			pubkey_i,
 			pubkey_v,
+			c_v,
+			pubkey_i,
 			sig_i,
 			m_hash,
 			epoch,
 			opinions,
-			c_v,
 			pubkeys,
 			sigs,
 			aux_generator,
@@ -103,13 +103,13 @@ impl<E: CurveAffine, N: FieldExt, const SIZE: usize, P: RoundParams<N, 5>> Circu
 	fn without_witnesses(&self) -> Self {
 		Self {
 			op_v: None,
-			pubkey_i: None,
 			pubkey_v: None,
+			c_v: [None; SIZE],
+			pubkey_i: None,
 			sig_i: None,
 			m_hash: None,
 			epoch: None,
 			opinions: [None; SIZE],
-			c_v: [None; SIZE],
 			pubkeys: [None; SIZE],
 			sigs: [None; SIZE],
 			aux_generator: None,
@@ -314,6 +314,85 @@ impl<E: CurveAffine, N: FieldExt, const SIZE: usize, P: RoundParams<N, 5>> Circu
 
 #[cfg(test)]
 mod test {
+	use super::*;
+	use crate::ecdsa::native::generate_signature;
+	use halo2wrong::{
+		curves::{
+			bn256::Fr,
+			group::{Curve, Group},
+			secp256k1::{Secp256k1Affine as Secp256, Fq},
+		},
+		halo2::arithmetic::CurveAffine,
+	};
+	use maingate::halo2::dev::MockProver;
+	use crate::ecdsa::native::Keypair;
+	use crate::poseidon::params::Params5x5Bn254;
+	use crate::poseidon::native::Poseidon;
+	use rand::thread_rng;
+
+	const SIZE: usize = 3;
+
 	#[test]
-	fn test_eigen_trust_verify() {}
+	fn test_eigen_trust_verify() {
+		let k = 20;
+		let mut rng = thread_rng();
+
+		let pairs = [(); SIZE].map(|_| Keypair::<Secp256>::new(&mut rng));
+
+		// Data for Verifier
+		let op_v = Some(Fr::from_u128(3));
+		let pair_v = pairs[0];
+		let pubkey_v = Some(pair_v.public_key().clone());
+
+		// Epoch
+		let epoch = Some(Fr::from_u128(3801));
+
+		// Data for prover
+		let pair_i = Keypair::<Secp256>::new(&mut rng);
+		let pubkey_i = Some(pair_i.public_key().clone());
+		let inputs = [Fr::zero(), epoch.unwrap(), op_v.unwrap(), Fr::zero(), Fr::zero()];
+		let poseidon = Poseidon::<Fr, 5, Params5x5Bn254>::new(inputs);
+		let out = poseidon.permute()[0];
+		let m_hash = Some(Fq::from_bytes(&out.to_bytes()).unwrap());
+		let sig_i = Some(generate_signature(pair_i, m_hash.unwrap(), &mut rng).unwrap());
+
+		// Data from neighbors of i
+		let opinions = [
+			Some(Fr::from_u128(1)),
+			Some(Fr::from_u128(1)),
+			Some(Fr::from_u128(1)),
+		];
+		let pubkeys = pairs.map(|p| Some(p.public_key().clone()));
+		let sigs = pairs.map(|p| Some(generate_signature(p, m_hash.unwrap(), &mut rng).unwrap()));
+		let c_v = [
+			Some(Fr::from_u128(1)),
+			Some(Fr::from_u128(1)),
+			Some(Fr::from_u128(1)),
+		];
+
+		// Aux generator
+		let aux_generator = Some(<Secp256 as CurveAffine>::CurveExt::random(&mut rng).to_affine());
+
+		let eigen_trust = EigenTrustCircuit::<_, _, 3, Params5x5Bn254>::new(
+			op_v,
+			pubkey_v,
+			c_v,
+			pubkey_i,
+			sig_i,
+			m_hash,
+			epoch,
+			opinions,
+			pubkeys,
+			sigs,
+			aux_generator,
+		);
+
+		let public_inputs = vec![vec![]];
+		let prover = match MockProver::<Fr>::run(k, &eigen_trust, public_inputs) {
+			Ok(prover) => prover,
+			Err(e) => panic!("{}", e),
+		};
+		assert_eq!(prover.verify(), Ok(()));
+
+	}
 }

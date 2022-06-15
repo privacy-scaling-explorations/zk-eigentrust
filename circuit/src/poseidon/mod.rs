@@ -1,4 +1,4 @@
-mod native;
+pub mod native;
 pub mod params;
 pub mod wrong;
 

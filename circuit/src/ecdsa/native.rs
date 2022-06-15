@@ -3,7 +3,7 @@ use halo2wrong::{
 	curves::group::Curve,
 	halo2::arithmetic::{CurveAffine, Field, FieldExt},
 };
-use rand::thread_rng;
+use rand::Rng;
 use std::io::Error;
 
 #[derive(Default, Clone, Copy)]
@@ -26,29 +26,48 @@ fn mod_n<C: CurveAffine>(x: C::Base) -> C::Scalar {
 	big_to_fe(x_big)
 }
 
-pub fn generate_signature<E: CurveAffine>(
+#[derive(Default, Clone, Copy)]
+pub struct Keypair<E: CurveAffine> {
 	sk: E::ScalarExt,
+	pk: E
+}
+
+impl<E: CurveAffine> Keypair<E> {
+	pub fn new<R: Rng>(r: &mut R) -> Self {
+		let sk = E::ScalarExt::random(r);
+		let g = E::generator();
+		// Generate a key pair
+		let pk = (g * sk).to_affine();
+		Self { sk, pk }
+	}
+
+	pub fn public_key(&self) -> &E {
+		&self.pk
+	}
+
+	pub fn sk(&self) -> &E::ScalarExt {
+		&self.sk
+	}
+}
+
+pub fn generate_signature<E: CurveAffine, R: Rng>(
+	pair: Keypair<E>,
 	m_hash: E::ScalarExt,
-) -> Result<(SigData<E::ScalarExt>, E), Error> {
-	let mut rng = thread_rng();
-
-	let g = E::generator();
-
-	// Generate a key pair
-	let pk = (g * sk).to_affine();
-
-	// Draw arandomness
-	let k = E::ScalarExt::random(&mut rng);
+	r: &mut R,
+) -> Result<SigData<E::ScalarExt>, Error> {
+	// Draw randomness
+	let k = E::ScalarExt::random(r);
 	let k_inv = k.invert().unwrap();
-
+	
+	let g = E::generator();
 	// Calculate `r`
 	let r_point = (g * k).to_affine().coordinates().unwrap();
 	let x = r_point.x();
 	let r = mod_n::<E>(*x);
 
 	// Calculate `s`
-	let s = k_inv * (m_hash + (r * sk));
+	let s = k_inv * (m_hash + (r * pair.sk));
 
 	let sig_data = SigData { r, s };
-	Ok((sig_data, pk))
+	Ok(sig_data)
 }

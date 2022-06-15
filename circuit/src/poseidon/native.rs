@@ -14,7 +14,7 @@ impl<F: FieldExt, const WIDTH: usize, P> Poseidon<F, WIDTH, P>
 where
 	P: RoundParams<F, WIDTH>,
 {
-	fn new(inputs: [F; WIDTH]) -> Self {
+	pub fn new(inputs: [F; WIDTH]) -> Self {
 		Poseidon {
 			inputs,
 			_params: PhantomData,
@@ -45,7 +45,7 @@ where
 		new_state
 	}
 
-	fn permute(&self) -> [F; WIDTH] {
+	pub fn permute(&self) -> [F; WIDTH] {
 		let full_rounds = P::full_rounds();
 		let half_full_rounds = full_rounds / 2;
 		let partial_rounds = P::partial_rounds();
