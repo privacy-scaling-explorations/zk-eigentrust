@@ -2,6 +2,7 @@
 
 mod ecdsa;
 mod poseidon;
+mod utils;
 
 use crate::ecdsa::SigData;
 use ::ecdsa::ecdsa::{AssignedEcdsaSig, AssignedPublicKey, EcdsaChip};
@@ -234,7 +235,7 @@ impl<E: CurveAffine, N: FieldExt, const SIZE: usize, P: RoundParams<N, 5>> Circu
 				let assigned_m_hash =
 					scalar_chip.assign_integer(ctx, unassigned_m_hash, Range::Remainder)?;
 
-				let zero = main_gate.assign_constant(ctx, N::zero())?;
+				let zero = main_gate.assign_constant(ctx, N::one())?;
 
 				let input = [zero, assigned_epoch, opv, zero, zero];
 				let poseidon = PoseidonChip5x5::<N, P>::new(config.main_gate_config.clone());
@@ -318,7 +319,7 @@ mod test {
 	use crate::ecdsa::native::generate_signature;
 	use halo2wrong::{
 		curves::{
-			bn256::Fr,
+			bn256::{Fr, Bn256},
 			group::{Curve, Group},
 			secp256k1::{Secp256k1Affine as Secp256, Fq},
 		},
@@ -328,6 +329,7 @@ mod test {
 	use crate::ecdsa::native::Keypair;
 	use crate::poseidon::params::Params5x5Bn254;
 	use crate::poseidon::native::Poseidon;
+	use utils::prove_and_verify;
 	use rand::thread_rng;
 
 	const SIZE: usize = 3;
@@ -393,6 +395,64 @@ mod test {
 			Err(e) => panic!("{}", e),
 		};
 		assert_eq!(prover.verify(), Ok(()));
+	}
 
+	#[test]
+	fn test_eigen_trust_production_prove_verify() {
+		let k = 20;
+		let mut rng = thread_rng();
+
+		let pairs = [(); SIZE].map(|_| Keypair::<Secp256>::new(&mut rng));
+
+		// Data for Verifier
+		let op_v = Some(Fr::from_u128(3));
+		let pair_v = pairs[0];
+		let pubkey_v = Some(pair_v.public_key().clone());
+
+		// Epoch
+		let epoch = Some(Fr::from_u128(3801));
+
+		// Data for prover
+		let pair_i = Keypair::<Secp256>::new(&mut rng);
+		let pubkey_i = Some(pair_i.public_key().clone());
+		let zero = Fr::zero();
+		let inputs = [zero, epoch.unwrap(), op_v.unwrap(), zero, zero];
+		let poseidon = Poseidon::<Fr, 5, Params5x5Bn254>::new(inputs);
+		let out = poseidon.permute()[0];
+		let m_hash = Some(Fq::from_bytes(&out.to_bytes()).unwrap());
+		let sig_i = Some(generate_signature(pair_i, m_hash.unwrap(), &mut rng).unwrap());
+
+		// Data from neighbors of i
+		let opinions = [
+			Some(Fr::from_u128(1)),
+			Some(Fr::from_u128(1)),
+			Some(Fr::from_u128(1)),
+		];
+		let pubkeys = pairs.map(|p| Some(p.public_key().clone()));
+		let sigs = pairs.map(|p| Some(generate_signature(p, m_hash.unwrap(), &mut rng).unwrap()));
+		let c_v = [
+			Some(Fr::from_u128(1)),
+			Some(Fr::from_u128(1)),
+			Some(Fr::from_u128(1)),
+		];
+
+		// Aux generator
+		let aux_generator = Some(<Secp256 as CurveAffine>::CurveExt::random(&mut rng).to_affine());
+
+		let eigen_trust = EigenTrustCircuit::<_, _, 3, Params5x5Bn254>::new(
+			op_v,
+			pubkey_v,
+			c_v,
+			pubkey_i,
+			sig_i,
+			m_hash,
+			epoch,
+			opinions,
+			pubkeys,
+			sigs,
+			aux_generator,
+		);
+
+		prove_and_verify::<Bn256, _, _>(k, eigen_trust, &mut rng).unwrap();
 	}
 }
