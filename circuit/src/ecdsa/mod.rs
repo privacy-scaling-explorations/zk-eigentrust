@@ -143,7 +143,7 @@ impl<E: CurveAffine, N: FieldExt> Circuit<N> for EcdsaVerifier<E, N> {
 mod test {
 	use crate::ecdsa::native::Keypair;
 
-use super::{native::generate_signature, *};
+	use super::{native::generate_signature, *};
 	use halo2wrong::{
 		curves::{
 			bn256::Fr,

@@ -29,7 +29,7 @@ fn mod_n<C: CurveAffine>(x: C::Base) -> C::Scalar {
 #[derive(Default, Clone, Copy)]
 pub struct Keypair<E: CurveAffine> {
 	sk: E::ScalarExt,
-	pk: E
+	pk: E,
 }
 
 impl<E: CurveAffine> Keypair<E> {
@@ -58,7 +58,7 @@ pub fn generate_signature<E: CurveAffine, R: Rng>(
 	// Draw randomness
 	let k = E::ScalarExt::random(r);
 	let k_inv = k.invert().unwrap();
-	
+
 	let g = E::generator();
 	// Calculate `r`
 	let r_point = (g * k).to_affine().coordinates().unwrap();

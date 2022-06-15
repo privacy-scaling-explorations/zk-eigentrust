@@ -316,21 +316,21 @@ impl<E: CurveAffine, N: FieldExt, const SIZE: usize, P: RoundParams<N, 5>> Circu
 #[cfg(test)]
 mod test {
 	use super::*;
-	use crate::ecdsa::native::generate_signature;
+	use crate::{
+		ecdsa::native::{generate_signature, Keypair},
+		poseidon::{native::Poseidon, params::Params5x5Bn254},
+	};
 	use halo2wrong::{
 		curves::{
-			bn256::{Fr, Bn256},
+			bn256::{Bn256, Fr},
 			group::{Curve, Group},
-			secp256k1::{Secp256k1Affine as Secp256, Fq},
+			secp256k1::{Fq, Secp256k1Affine as Secp256},
 		},
 		halo2::arithmetic::CurveAffine,
 	};
 	use maingate::halo2::dev::MockProver;
-	use crate::ecdsa::native::Keypair;
-	use crate::poseidon::params::Params5x5Bn254;
-	use crate::poseidon::native::Poseidon;
-	use utils::prove_and_verify;
 	use rand::thread_rng;
+	use utils::prove_and_verify;
 
 	const SIZE: usize = 3;
 
@@ -352,7 +352,13 @@ mod test {
 		// Data for prover
 		let pair_i = Keypair::<Secp256>::new(&mut rng);
 		let pubkey_i = Some(pair_i.public_key().clone());
-		let inputs = [Fr::zero(), epoch.unwrap(), op_v.unwrap(), Fr::zero(), Fr::zero()];
+		let inputs = [
+			Fr::zero(),
+			epoch.unwrap(),
+			op_v.unwrap(),
+			Fr::zero(),
+			Fr::zero(),
+		];
 		let poseidon = Poseidon::<Fr, 5, Params5x5Bn254>::new(inputs);
 		let out = poseidon.permute()[0];
 		let m_hash = Some(Fq::from_bytes(&out.to_bytes()).unwrap());
