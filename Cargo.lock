@@ -758,7 +758,6 @@ dependencies = [
  "ecdsa",
  "ff 0.11.1",
  "group 0.11.0",
- "halo2_proofs 0.1.0 (git+https://github.com/privacy-scaling-explorations/halo2?rev=a898d65ae3ad3d41987666f6a03cfc15edae01c4)",
  "halo2wrong",
  "hex",
  "integer",
@@ -1146,19 +1145,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "halo2_proofs"
-version = "0.1.0"
-source = "git+https://github.com/privacy-scaling-explorations/halo2?rev=a898d65ae3ad3d41987666f6a03cfc15edae01c4#a898d65ae3ad3d41987666f6a03cfc15edae01c4"
-dependencies = [
- "blake2b_simd",
- "ff 0.12.0",
- "group 0.12.0",
- "pasta_curves",
- "rand_core 0.6.3",
- "rayon",
-]
-
-[[package]]
 name = "halo2curves"
 version = "0.2.0"
 source = "git+https://github.com/privacy-scaling-explorations/halo2curves?tag=v0.2.0#bbd4cee10dbf9c51e0456ea67ec2b894b49f688c"
@@ -1181,7 +1167,7 @@ version = "0.1.0"
 source = "git+https://github.com/privacy-scaling-explorations/halo2wrong.git#8fe5c726f5d83a794fc2ba5943d99e91bf09d174"
 dependencies = [
  "group 0.12.0",
- "halo2_proofs 0.1.0 (git+https://github.com/privacy-scaling-explorations/halo2?branch=abstraction)",
+ "halo2_proofs",
  "num-bigint",
  "num-integer",
  "num-traits",

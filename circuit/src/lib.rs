@@ -227,7 +227,8 @@ impl<E: CurveAffine, N: FieldExt, const SIZE: usize, P: RoundParams<N, 5>> Circu
 
 				let r_assigned = scalar_chip.assign_integer(ctx, integer_r, Range::Remainder)?;
 				let s_assigned = scalar_chip.assign_integer(ctx, integer_s, Range::Remainder)?;
-				let m_hash = scalar_chip.assign_integer(ctx, unassigned_m_hash, Range::Remainder)?;
+				let m_hash =
+					scalar_chip.assign_integer(ctx, unassigned_m_hash, Range::Remainder)?;
 				let pk_in_circuit = ecc_chip.assign_point(ctx, self.pubkey_i.map(|p| p.into()))?;
 
 				let sig = AssignedEcdsaSig {
