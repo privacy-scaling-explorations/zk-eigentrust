@@ -5,7 +5,7 @@
 //! - Keeping track of neighbors scores towards us
 
 use crate::{epoch::Epoch, EigenError};
-use libp2p::PeerId;
+use libp2p::{PeerId, core::PublicKey};
 use std::collections::HashMap;
 
 /// The struct for opinions between peers at the specific epoch.
@@ -55,32 +55,34 @@ impl Opinion {
 	}
 }
 
+/// The number of neighbors the peer can have.
+/// This is also the maximum number of peers that can be connected to the
+/// node.
+const MAX_NEIGHBORS: usize = 256;
+
+/// Min score for each peer.
+const MIN_SCORE: f64 = 0.1;
+
 /// The peer struct.
 pub struct Peer {
+	neighbors: [Option<PeerId>; MAX_NEIGHBORS],
+	pubkeys: [Option<PublicKey>; MAX_NEIGHBORS],
 	neighbor_scores: HashMap<PeerId, u32>,
-	neighbors: Vec<Option<PeerId>>,
 	cached_neighbor_opinion: HashMap<(PeerId, Epoch), Opinion>,
 	cached_local_opinion: HashMap<(PeerId, Epoch), Opinion>,
-	pre_trust_score: f64,
-	pre_trust_weight: f64,
+	min_score: f64,
 }
 
 impl Peer {
 	/// Creates a new peer.
-	pub fn new(num_neighbors: usize, pre_trust_score: f64, pre_trust_weight: f64) -> Self {
-		// Our neighbors array is fixed size.
-		// TODO: Consider using ArrayVec instead.
-		let mut neighbors = Vec::with_capacity(num_neighbors);
-		for _ in 0..num_neighbors {
-			neighbors.push(None);
-		}
+	pub fn new() -> Self {
 		Peer {
-			neighbors,
+			neighbors: [None; MAX_NEIGHBORS],
+			pubkeys: [(); MAX_NEIGHBORS].map(|_| None),
 			neighbor_scores: HashMap::new(),
 			cached_neighbor_opinion: HashMap::new(),
 			cached_local_opinion: HashMap::new(),
-			pre_trust_score,
-			pre_trust_weight,
+			min_score: MIN_SCORE,
 		}
 	}
 
@@ -98,11 +100,24 @@ impl Peer {
 		Ok(())
 	}
 
+	/// Identifies a neighbor, by saving its public key.
+	pub fn identify_neighbor(&mut self, peer_id: PeerId, pubkey: PublicKey) -> Result<(), EigenError> {
+		let index_res = self.neighbors.iter().position(|&x| x == Some(peer_id));
+		match index_res {
+			Some(index) => {
+				self.pubkeys[index] = Some(pubkey);
+				Ok(())
+			}
+			None => Err(EigenError::InvalidPeerId),
+		}
+	}
+
 	/// Removes a neighbor, if found.
 	pub fn remove_neighbor(&mut self, peer_id: PeerId) {
 		let index_res = self.neighbors.iter().position(|&x| x == Some(peer_id));
 		if let Some(index) = index_res {
 			self.neighbors[index] = None;
+			self.pubkeys[index] = None;
 		}
 	}
 
@@ -127,9 +142,8 @@ impl Peer {
 			let opinion = self.get_neighbor_opinion(&(peer_id, epoch));
 			global_score += opinion.get_product();
 		}
-		// We are adding the weighted pre trust score to the weighted score.
-		global_score = (1. - self.pre_trust_weight) * global_score
-			+ self.pre_trust_weight * self.pre_trust_score;
+		// We are adding the min score to the global score.
+		global_score = self.min_score + global_score;
 
 		global_score
 	}
@@ -203,8 +217,6 @@ impl Peer {
 mod tests {
 	use super::*;
 
-	const NUM_CONNECTIONS: usize = 256;
-
 	#[test]
 	fn should_create_opinion() {
 		let opinion = Opinion::new(Epoch(0), 0.5, 0.5, 0.5);
@@ -216,17 +228,14 @@ mod tests {
 
 	#[test]
 	fn should_create_peer() {
-		let peer = Peer::new(NUM_CONNECTIONS, 0.5, 0.5);
-		assert_eq!(peer.pre_trust_score, 0.5);
-		assert_eq!(peer.pre_trust_weight, 0.5);
+		let peer = Peer::new();
+		assert_eq!(peer.min_score, 0.1);
 		assert_eq!(peer.get_sum_of_scores(), 0);
 	}
 
 	#[test]
 	fn should_cache_local_and_global_opinion() {
-		let pre_trust_score = 0.5;
-		let pre_trust_weight = 0.5;
-		let mut peer = Peer::new(NUM_CONNECTIONS, pre_trust_score, pre_trust_weight);
+		let mut peer = Peer::new();
 
 		let epoch = Epoch(0);
 		let neighbor_id = PeerId::random();
@@ -240,7 +249,7 @@ mod tests {
 
 	#[test]
 	fn should_add_and_remove_neghbours() {
-		let mut peer = Peer::new(NUM_CONNECTIONS, 0.5, 0.5);
+		let mut peer = Peer::new();
 		let neighbor_id = PeerId::random();
 
 		peer.add_neighbor(neighbor_id).unwrap();
@@ -254,9 +263,8 @@ mod tests {
 
 	#[test]
 	fn should_add_neighbors_and_calculate_global_score() {
-		let pre_trust_score = 0.5;
-		let pre_trust_weight = 0.5;
-		let mut peer = Peer::new(NUM_CONNECTIONS, pre_trust_score, pre_trust_weight);
+		let min_score = 0.1;
+		let mut peer = Peer::new();
 
 		let epoch = Epoch(0);
 		for _ in 0..256 {
@@ -273,17 +281,14 @@ mod tests {
 		for _ in 0..256 {
 			true_global_score += 0.01;
 		}
-		let boostrap_score =
-			(1. - pre_trust_weight) * true_global_score + pre_trust_weight * pre_trust_score;
+		let boostrap_score = min_score + true_global_score;
 
 		assert_eq!(boostrap_score, global_score);
 	}
 
 	#[test]
 	fn should_add_neighbors_and_calculate_local_scores() {
-		let pre_trust_score = 0.5;
-		let pre_trust_weight = 0.5;
-		let mut peer = Peer::new(NUM_CONNECTIONS, pre_trust_score, pre_trust_weight);
+		let mut peer = Peer::new();
 
 		let epoch = Epoch(0);
 		for _ in 0..256 {

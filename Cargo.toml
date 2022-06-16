@@ -1,7 +1,6 @@
 [workspace]
 members = [
 	"eigen-trust",
-	"cli",
 	"bench",
 	"circuit",
 ]

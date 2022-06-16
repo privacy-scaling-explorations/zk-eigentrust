@@ -4,61 +4,44 @@
 use crate::{
 	epoch::Epoch,
 	peer::Peer,
-	protocol::{EigenTrustCodec, EigenTrustProtocol, Request, Response},
+	protocol::EigenTrustBehaviour,
 	EigenError,
 };
 use futures::StreamExt;
 use libp2p::{
-	core::upgrade::Version,
+	core::{upgrade::Version, either::EitherError},
 	identity::Keypair,
 	noise::{Keypair as NoiseKeypair, NoiseConfig, X25519Spec},
-	request_response::{
-		ProtocolSupport, RequestResponse, RequestResponseConfig, RequestResponseEvent,
-		RequestResponseMessage,
-	},
-	swarm::{ConnectionHandlerUpgrErr, ConnectionLimits, Swarm, SwarmBuilder, SwarmEvent},
+	swarm::{ConnectionHandlerUpgrErr, Swarm, SwarmBuilder, SwarmEvent},
 	tcp::TcpConfig,
 	yamux::YamuxConfig,
 	Multiaddr, PeerId, Transport,
 };
-use std::{io::Error as IoError, iter::once, marker::PhantomData};
+use std::io::Error as IoError;
 use tokio::{
 	select,
 	time::{self, Duration, Instant},
 };
 
-/// Node configuration crate.
-pub trait NodeConfig {
-	/// The number of neighbors the peer can have.
-	/// This is also the maximum number of peers that can be connected to the
-	/// node.
-	const NUM_CONNECTIONS: usize;
-	/// Duration of the Epoch.
-	const INTERVAL: u64;
-	/// Weight of the pre-trusted score.
-	const PRE_TRUST_WEIGHT: f64;
-}
-
 /// The Node struct.
-pub struct Node<C: NodeConfig> {
+pub struct Node {
 	/// Swarm object.
-	swarm: Swarm<RequestResponse<EigenTrustCodec>>,
-	/// Peer managed by the node.
-	peer: Peer,
-	/// Local keypair.
-	local_key: Keypair,
+	swarm: Swarm<EigenTrustBehaviour>,
+	/// Local address.
+	local_address: Multiaddr,
 	/// Bootstrap nodes.
-	bootstrap_nodes: Vec<(PeerId, Multiaddr, f64)>,
-	_config: PhantomData<C>,
+	bootstrap_nodes: Vec<(PeerId, Multiaddr)>,
+	interval: Duration,
 }
 
-impl<C: NodeConfig> Node<C> {
+impl Node {
 	/// Create a new node, given the local keypair, local address, and bootstrap
 	/// nodes.
 	pub fn new(
 		local_key: Keypair,
 		local_address: Multiaddr,
-		bootstrap_nodes: Vec<(PeerId, Multiaddr, f64)>,
+		bootstrap_nodes: Vec<(PeerId, Multiaddr)>,
+		interval_secs: u64,
 	) -> Result<Self, EigenError> {
 		let noise_keys = NoiseKeypair::<X25519Spec>::new()
 			.into_authentic(&local_key)
@@ -70,6 +53,7 @@ impl<C: NodeConfig> Node<C> {
 		// 30 years in seconds
 		// Basically, we want connections to be open for a long time.
 		let connection_duration = Duration::from_secs(86400 * 365 * 30);
+		let interval_duration = Duration::from_secs(interval_secs);
 		let transport = TcpConfig::new()
 			.nodelay(true)
 			.upgrade(Version::V1)
@@ -78,132 +62,47 @@ impl<C: NodeConfig> Node<C> {
 			.timeout(connection_duration)
 			.boxed();
 
-		// Setting up the request/response protocol.
-		let protocols = once((EigenTrustProtocol::new(), ProtocolSupport::Full));
-		let mut cfg = RequestResponseConfig::default();
-		// Keep the connection alive in request/response protocol
-		cfg.set_connection_keep_alive(connection_duration);
-		// If we failed to get response during the interval duration, cancel it.
-		cfg.set_request_timeout(Duration::from_secs(C::INTERVAL));
-		let req_proto = RequestResponse::new(EigenTrustCodec, protocols, cfg);
+		let peer = Peer::new();
+		let beh = EigenTrustBehaviour::new(connection_duration, interval_duration, local_key.public(), peer);
 
 		// Setting up the transport and swarm.
 		let local_peer_id = PeerId::from(local_key.public());
-		// Limit the number of connections to be same as the number of neighbors in the
-		// config.
-		let num_connections =
-			u32::try_from(C::NUM_CONNECTIONS).map_err(|_| EigenError::InvalidNumNeighbours)?;
-		let connection_limits =
-			ConnectionLimits::default().with_max_established_per_peer(Some(num_connections));
-
-		let mut swarm = SwarmBuilder::new(transport, req_proto, local_peer_id)
-			.connection_limits(connection_limits)
+		let mut swarm = SwarmBuilder::new(transport, beh, local_peer_id)
 			.build();
 
-		swarm.listen_on(local_address).map_err(|e| {
+		swarm.listen_on(local_address.clone()).map_err(|e| {
 			log::debug!("swarm.listen_on {:?}", e);
 			EigenError::ListenFailed
 		})?;
 
-		// Init the peer struct and give it a pre trust score, if we are a bootstrap
-		// node.
-		let pre_trust_score = bootstrap_nodes
-			.iter()
-			.find(|x| x.0 == local_peer_id)
-			.map(|node| node.2)
-			.unwrap_or(0.0);
-		let peer = Peer::new(C::NUM_CONNECTIONS, pre_trust_score, C::PRE_TRUST_WEIGHT);
-
 		Ok(Self {
 			swarm,
-			peer,
-			local_key,
+			local_address,
 			bootstrap_nodes,
-			_config: PhantomData,
+			interval: interval_duration,
 		})
 	}
 
-	/// Get the peer struct.
-	pub fn get_peer(&self) -> &Peer {
-		&self.peer
-	}
-
-	/// Get the mutable peer struct.
-	pub fn get_peer_mut(&mut self) -> &mut Peer {
-		&mut self.peer
-	}
-
 	/// Get the mutable swarm.
-	pub fn get_swarm_mut(&mut self) -> &mut Swarm<RequestResponse<EigenTrustCodec>> {
+	pub fn get_swarm_mut(&mut self) -> &mut Swarm<EigenTrustBehaviour> {
 		&mut self.swarm
 	}
 
-	/// Method for handling the request/response events.
-	pub fn handle_req_res_events(&mut self, event: RequestResponseEvent<Request, Response>) {
-		use RequestResponseEvent::*;
-		use RequestResponseMessage::{Request as Req, Response as Res};
-		match event {
-			Message {
-				peer,
-				message: Req {
-					request, channel, ..
-				},
-			} => {
-				let beh = self.swarm.behaviour_mut();
-				// First we calculate the local opinions for the requested epoch.
-				self.peer.calculate_local_opinions(request.get_epoch());
-				// Then we send the local opinion to the peer.
-				let opinion = self.peer.get_local_opinion(&(peer, request.get_epoch()));
-				let response = Response::Success(opinion);
-				let res = beh.send_response(channel, response);
-				if let Err(e) = res {
-					log::error!("Failed to send the response {:?}", e);
-				}
-			},
-			Message {
-				peer,
-				message: Res { response, .. },
-			} => {
-				// If we receive a response, we update the neighbors's opinion about us.
-				// TODO: Check the validity of the opinion, by verifying a zero-knowledge proof.
-				if let Response::Success(opinion) = response {
-					self.peer
-						.cache_neighbor_opinion((peer, opinion.get_epoch()), opinion);
-				} else {
-					log::error!("Received error response {:?}", response);
-				}
-			},
-			OutboundFailure {
-				peer, request_id, ..
-			} => {
-				log::error!("Outbound failure {:?} from {:?}", request_id, peer);
-			},
-			InboundFailure {
-				peer, request_id, ..
-			} => {
-				log::error!("Inbound failure {:?} from {:?}", request_id, peer);
-			},
-			ResponseSent { peer, request_id } => {
-				log::debug!("Response sent {:?} to {:?}", request_id, peer);
-			},
-		};
+	/// Get the swarm.
+	pub fn get_swarm(&self) -> &Swarm<EigenTrustBehaviour> {
+		&self.swarm
 	}
 
 	/// A method for handling the swarm events.
 	pub fn handle_swarm_events(
 		&mut self,
-		event: SwarmEvent<
-			RequestResponseEvent<Request, Response>,
-			ConnectionHandlerUpgrErr<IoError>,
-		>,
+		event: SwarmEvent<(), EitherError<ConnectionHandlerUpgrErr<IoError>, std::io::Error>>,
 	) {
 		match event {
 			SwarmEvent::NewListenAddr { address, .. } => log::info!("Listening on {:?}", address),
-			// Handle request/response events.
-			SwarmEvent::Behaviour(req_res_event) => self.handle_req_res_events(req_res_event),
 			// When we connect to a peer, we automatically add him as a neighbor.
 			SwarmEvent::ConnectionEstablished { peer_id, .. } => {
-				let res = self.peer.add_neighbor(peer_id);
+				let res = self.swarm.behaviour_mut().get_peer_mut().add_neighbor(peer_id);
 				if let Err(e) = res {
 					log::error!("Failed to add neighbor {:?}", e);
 				}
@@ -211,7 +110,7 @@ impl<C: NodeConfig> Node<C> {
 			},
 			// When we disconnect from a peer, we automatically remove him from the neighbors list.
 			SwarmEvent::ConnectionClosed { peer_id, cause, .. } => {
-				self.peer.remove_neighbor(peer_id);
+				self.swarm.behaviour_mut().get_peer_mut().remove_neighbor(peer_id);
 				log::info!("Connection closed with {:?} ({:?})", peer_id, cause);
 			},
 			SwarmEvent::Dialing(peer_id) => log::info!("Dialing {:?}", peer_id),
@@ -228,27 +127,15 @@ impl<C: NodeConfig> Node<C> {
 	/// Dial pre-configured bootstrap nodes.
 	pub fn dial_bootstrap_nodes(&mut self) {
 		// We want to connect to all bootstrap nodes.
-		let local_peer_id = self.local_key.public().to_peer_id();
-		for (peer_id, peer_addr, _) in self.bootstrap_nodes.iter_mut() {
-			if peer_id == &local_peer_id {
+		for (_, peer_addr) in self.bootstrap_nodes.iter_mut() {
+			if self.local_address == *peer_addr {
 				continue;
 			}
-
 			let res = self
 				.swarm
 				.dial(peer_addr.clone())
 				.map_err(|_| EigenError::DialError);
 			log::debug!("swarm.dial {:?}", res);
-		}
-	}
-
-	/// Send the request for an opinion to all neighbors, in the passed epoch.
-	pub fn send_epoch_requests(&mut self, epoch: Epoch) {
-		for peer_id in self.peer.neighbors() {
-			let beh = self.swarm.behaviour_mut();
-
-			let request = Request::new(epoch);
-			beh.send_request(&peer_id, request);
 		}
 	}
 
@@ -261,13 +148,12 @@ impl<C: NodeConfig> Node<C> {
 		self.dial_bootstrap_nodes();
 
 		let now = Instant::now();
-		let secs_until_next_epoch = Epoch::secs_until_next_epoch(C::INTERVAL)?;
+		let secs_until_next_epoch = Epoch::secs_until_next_epoch(self.interval.as_secs())?;
 		// Figure out when the next epoch will start.
 		let start = now + Duration::from_secs(secs_until_next_epoch);
-		let period = Duration::from_secs(C::INTERVAL);
 
 		// Setup the interval timer.
-		let mut interval = time::interval_at(start, period);
+		let mut interval = time::interval_at(start, self.interval);
 
 		// Count the number of epochs passed
 		let mut count = 0;
@@ -277,14 +163,15 @@ impl<C: NodeConfig> Node<C> {
 				biased;
 				// The interval timer tick. This is where we request opinions from the neighbors.
 				_ = interval.tick() => {
-					let current_epoch = Epoch::current_epoch(C::INTERVAL)?;
+					let current_epoch = Epoch::current_epoch(self.interval.as_secs())?;
 
+					let beh = self.swarm.behaviour_mut();
 					// Log out the global trust score for the previous epoch.
-					let score = self.peer.calculate_global_trust_score(current_epoch.previous());
+					let score = beh.global_trust_score_at(current_epoch.previous());
 					log::info!("{:?} finished, score: {}", current_epoch.previous(), score);
 
 					// Send the request for opinions to all neighbors.
-					self.send_epoch_requests(current_epoch);
+					beh.send_epoch_requests(current_epoch);
 
 					// Increment the epoch counter, break out of the loop if we reached the limit
 					if let Some(num) = interval_limit {
@@ -308,14 +195,8 @@ mod tests {
 	use super::*;
 	use std::str::FromStr;
 
-	struct TestConfig;
-	impl NodeConfig for TestConfig {
-		const INTERVAL: u64 = 10;
-		const NUM_CONNECTIONS: usize = 1;
-		const PRE_TRUST_WEIGHT: f64 = 0.5;
-	}
-
-	const PRE_TRUST_SCORE: f64 = 0.5;
+	const INTERVAL: u64 = 10;
+	const MIN_SCORE: f64 = 0.1;
 
 	#[tokio::test]
 	async fn should_emit_connection_event_on_bootstrap() {
@@ -332,15 +213,14 @@ mod tests {
 		let local_address2 = Multiaddr::from_str(ADDR_2).unwrap();
 
 		let bootstrap_nodes = vec![
-			(peer_id1, local_address1.clone(), PRE_TRUST_SCORE),
-			(peer_id2, local_address2.clone(), PRE_TRUST_SCORE),
+			(peer_id1, local_address1.clone()),
+			(peer_id2, local_address2.clone()),
 		];
 
 		let mut node1 =
-			Node::<TestConfig>::new(local_key1, local_address1.clone(), bootstrap_nodes.clone())
-				.unwrap();
+			Node::new(local_key1, local_address1.clone(), bootstrap_nodes.clone(), INTERVAL).unwrap();
 		let mut node2 =
-			Node::<TestConfig>::new(local_key2, local_address2, bootstrap_nodes).unwrap();
+			Node::new(local_key2, local_address2, bootstrap_nodes, INTERVAL).unwrap();
 
 		node1.dial_bootstrap_nodes();
 
@@ -383,14 +263,14 @@ mod tests {
 		let local_address2 = Multiaddr::from_str(ADDR_2).unwrap();
 
 		let bootstrap_nodes = vec![
-			(peer_id1, local_address1.clone(), PRE_TRUST_SCORE),
-			(peer_id2, local_address2.clone(), PRE_TRUST_SCORE),
+			(peer_id1, local_address1.clone()),
+			(peer_id2, local_address2.clone()),
 		];
 
 		let mut node1 =
-			Node::<TestConfig>::new(local_key1, local_address1, bootstrap_nodes.clone()).unwrap();
+			Node::new(local_key1, local_address1, bootstrap_nodes.clone(),INTERVAL ).unwrap();
 		let mut node2 =
-			Node::<TestConfig>::new(local_key2, local_address2, bootstrap_nodes).unwrap();
+			Node::new(local_key2, local_address2, bootstrap_nodes, INTERVAL).unwrap();
 
 		node1.dial_bootstrap_nodes();
 
@@ -409,8 +289,8 @@ mod tests {
 			}
 		}
 
-		let neighbors1: Vec<PeerId> = node1.get_peer().neighbors();
-		let neighbors2: Vec<PeerId> = node2.get_peer().neighbors();
+		let neighbors1: Vec<PeerId> = node1.get_swarm().behaviour().get_peer().neighbors();
+		let neighbors2: Vec<PeerId> = node2.get_swarm().behaviour().get_peer().neighbors();
 		let expected_neighbor1 = vec![peer_id2];
 		let expected_neighbor2 = vec![peer_id1];
 		assert_eq!(neighbors1, expected_neighbor1);
@@ -428,8 +308,8 @@ mod tests {
 			}
 		}
 
-		let neighbors2: Vec<PeerId> = node2.get_peer().neighbors();
-		let neighbors1: Vec<PeerId> = node1.get_peer().neighbors();
+		let neighbors2: Vec<PeerId> = node2.get_swarm().behaviour().get_peer().neighbors();
+		let neighbors1: Vec<PeerId> = node1.get_swarm().behaviour().get_peer().neighbors();
 		assert!(neighbors2.is_empty());
 		assert!(neighbors1.is_empty());
 	}
@@ -448,9 +328,9 @@ mod tests {
 		let local_address1 = Multiaddr::from_str(ADDR_1).unwrap();
 		let local_address2 = Multiaddr::from_str(ADDR_2).unwrap();
 
-		let mut node1 = Node::<TestConfig>::new(local_key1, local_address1, Vec::new()).unwrap();
+		let mut node1 = Node::new(local_key1, local_address1, Vec::new(), INTERVAL).unwrap();
 		let mut node2 =
-			Node::<TestConfig>::new(local_key2, local_address2.clone(), Vec::new()).unwrap();
+			Node::new(local_key2, local_address2.clone(), Vec::new(), INTERVAL).unwrap();
 
 		node1.dial_neighbor(local_address2);
 
@@ -469,8 +349,8 @@ mod tests {
 			}
 		}
 
-		let neighbors1: Vec<PeerId> = node1.get_peer().neighbors();
-		let neighbors2: Vec<PeerId> = node2.get_peer().neighbors();
+		let neighbors1: Vec<PeerId> = node1.get_swarm().behaviour().get_peer().neighbors();
+		let neighbors2: Vec<PeerId> = node2.get_swarm().behaviour().get_peer().neighbors();
 		let expected_neighbor1 = vec![peer_id2];
 		let expected_neighbor2 = vec![peer_id1];
 		assert_eq!(neighbors1, expected_neighbor1);
@@ -488,8 +368,8 @@ mod tests {
 			}
 		}
 
-		let neighbors2: Vec<PeerId> = node2.get_peer().neighbors();
-		let neighbors1: Vec<PeerId> = node1.get_peer().neighbors();
+		let neighbors2: Vec<PeerId> = node2.get_swarm().behaviour().get_peer().neighbors();
+		let neighbors1: Vec<PeerId> = node1.get_swarm().behaviour().get_peer().neighbors();
 		assert!(neighbors2.is_empty());
 		assert!(neighbors1.is_empty());
 	}
@@ -509,14 +389,14 @@ mod tests {
 		let local_address2 = Multiaddr::from_str(ADDR_2).unwrap();
 
 		let bootstrap_nodes = vec![
-			(peer_id1, local_address1.clone(), PRE_TRUST_SCORE),
-			(peer_id2, local_address2.clone(), PRE_TRUST_SCORE),
+			(peer_id1, local_address1.clone()),
+			(peer_id2, local_address2.clone()),
 		];
 
 		let mut node1 =
-			Node::<TestConfig>::new(local_key1, local_address1, bootstrap_nodes.clone()).unwrap();
+			Node::new(local_key1, local_address1, bootstrap_nodes.clone(), INTERVAL).unwrap();
 		let mut node2 =
-			Node::<TestConfig>::new(local_key2, local_address2, bootstrap_nodes).unwrap();
+			Node::new(local_key2, local_address2, bootstrap_nodes, INTERVAL).unwrap();
 
 		node1.dial_bootstrap_nodes();
 
@@ -534,8 +414,8 @@ mod tests {
 			}
 		}
 
-		let peer1 = node1.get_peer_mut();
-		let peer2 = node2.get_peer_mut();
+		let peer1 = node1.get_swarm_mut().behaviour_mut().get_peer_mut();
+		let peer2 = node2.get_swarm_mut().behaviour_mut().get_peer_mut();
 
 		let current_epoch = Epoch(0);
 		let next_epoch = current_epoch.next();
@@ -546,8 +426,8 @@ mod tests {
 		peer1.calculate_local_opinions(current_epoch);
 		peer2.calculate_local_opinions(current_epoch);
 
-		node1.send_epoch_requests(next_epoch);
-		node2.send_epoch_requests(next_epoch);
+		node1.get_swarm_mut().behaviour_mut().send_epoch_requests(next_epoch);
+		node2.get_swarm_mut().behaviour_mut().send_epoch_requests(next_epoch);
 
 		// Expecting 2 request messages
 		// Expecting 2 response sent messages
@@ -564,8 +444,8 @@ mod tests {
 			}
 		}
 
-		let peer1 = node1.get_peer();
-		let peer2 = node2.get_peer();
+		let peer1 = node1.get_swarm().behaviour().get_peer();
+		let peer2 = node2.get_swarm().behaviour().get_peer();
 		let peer1_neighbor_opinion = peer1.get_neighbor_opinion(&(peer_id2, next_epoch));
 		let peer2_neighbor_opinion = peer2.get_neighbor_opinion(&(peer_id1, next_epoch));
 
@@ -582,8 +462,7 @@ mod tests {
 		let peer1_global_score = peer1.calculate_global_trust_score(next_epoch);
 		let peer2_global_score = peer1.calculate_global_trust_score(next_epoch);
 
-		let peer_gs = (1. - TestConfig::PRE_TRUST_WEIGHT) * 0.25
-			+ TestConfig::PRE_TRUST_WEIGHT * PRE_TRUST_SCORE;
+		let peer_gs = MIN_SCORE + 0.25;
 		assert_eq!(peer1_global_score, peer_gs);
 		assert_eq!(peer2_global_score, peer_gs);
 	}
@@ -603,13 +482,13 @@ mod tests {
 		let local_address2 = Multiaddr::from_str(ADDR_2).unwrap();
 
 		let bootstrap_nodes = vec![
-			(peer_id1, local_address1.clone(), PRE_TRUST_SCORE),
-			(peer_id2, local_address2.clone(), PRE_TRUST_SCORE),
+			(peer_id1, local_address1.clone()),
+			(peer_id2, local_address2.clone()),
 		];
 
 		let mut node1 =
-			Node::<TestConfig>::new(local_key1, local_address1, bootstrap_nodes.clone()).unwrap();
-		let node2 = Node::<TestConfig>::new(local_key2, local_address2, bootstrap_nodes).unwrap();
+			Node::new(local_key1, local_address1, bootstrap_nodes.clone(), INTERVAL).unwrap();
+		let node2 = Node::new(local_key2, local_address2, bootstrap_nodes, INTERVAL).unwrap();
 
 		node1.dial_bootstrap_nodes();
 

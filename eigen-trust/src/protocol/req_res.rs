@@ -70,7 +70,7 @@ impl ProtocolName for EigenTrustProtocol {
 	/// The name of the protocol.
 	fn protocol_name(&self) -> &[u8] {
 		match self.version {
-			EigenTrustProtocolVersion::V1 => b"/eigen_trust/1",
+			EigenTrustProtocolVersion::V1 => b"/eigen_trust/1.0.0",
 		}
 	}
 }

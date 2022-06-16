@@ -23,6 +23,7 @@ log = "0.4"
 version = "0.44"
 default-features = false
 features = [
+	"identify",
 	"request-response",
 	"tcp-async-io",
 	"noise",
