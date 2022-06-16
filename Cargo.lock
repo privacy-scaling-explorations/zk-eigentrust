@@ -744,6 +744,9 @@ name = "eigen-trust"
 version = "0.2.0"
 dependencies = [
  "async-trait",
+ "bs58",
+ "clap",
+ "env_logger",
  "futures",
  "libp2p",
  "log",
