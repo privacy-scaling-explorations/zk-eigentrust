@@ -17,7 +17,6 @@ use maingate::{
 	MainGate, MainGateConfig, MainGateInstructions, RangeChip, RangeConfig, RangeInstructions,
 	UnassignedValue,
 };
-use poseidon::{params::RoundParams, wrong::PoseidonChip};
 use std::marker::PhantomData;
 
 const BIT_LEN_LIMB: usize = 68;
@@ -41,7 +40,7 @@ impl EigenTrustConfig {
 }
 
 #[derive(Clone)]
-pub struct EigenTrustCircuit<E: CurveAffine, N: FieldExt, const SIZE: usize, P: RoundParams<N, 5>> {
+pub struct EigenTrustCircuit<E: CurveAffine, N: FieldExt, const SIZE: usize> {
 	op_v: Option<N>,
 	pubkey_v: Option<E>,
 	c_v: [Option<N>; SIZE],
@@ -53,12 +52,9 @@ pub struct EigenTrustCircuit<E: CurveAffine, N: FieldExt, const SIZE: usize, P: 
 	aux_generator: Option<E>,
 	window_size: usize,
 	_marker: PhantomData<N>,
-	_params: PhantomData<P>,
 }
 
-impl<E: CurveAffine, N: FieldExt, const SIZE: usize, P: RoundParams<N, 5>>
-	EigenTrustCircuit<E, N, SIZE, P>
-{
+impl<E: CurveAffine, N: FieldExt, const SIZE: usize> EigenTrustCircuit<E, N, SIZE> {
 	pub fn new(
 		op_v: Option<N>,
 		pubkey_v: Option<E>,
@@ -82,14 +78,11 @@ impl<E: CurveAffine, N: FieldExt, const SIZE: usize, P: RoundParams<N, 5>>
 			aux_generator,
 			window_size: 2,
 			_marker: PhantomData,
-			_params: PhantomData,
 		}
 	}
 }
 
-impl<E: CurveAffine, N: FieldExt, const SIZE: usize, P: RoundParams<N, 5>> Circuit<N>
-	for EigenTrustCircuit<E, N, SIZE, P>
-{
+impl<E: CurveAffine, N: FieldExt, const SIZE: usize> Circuit<N> for EigenTrustCircuit<E, N, SIZE> {
 	type Config = EigenTrustConfig;
 	type FloorPlanner = SimpleFloorPlanner;
 
@@ -106,7 +99,6 @@ impl<E: CurveAffine, N: FieldExt, const SIZE: usize, P: RoundParams<N, 5>> Circu
 			aux_generator: None,
 			window_size: self.window_size,
 			_marker: PhantomData,
-			_params: PhantomData,
 		}
 	}
 
@@ -268,7 +260,7 @@ mod test {
 	};
 	use maingate::halo2::dev::MockProver;
 	use rand::thread_rng;
-	use utils::prove_and_verify;
+	use utils::{generate_params, prove_and_verify};
 
 	const SIZE: usize = 3;
 
@@ -313,7 +305,7 @@ mod test {
 		// Aux generator
 		let aux_generator = Some(<Secp256 as CurveAffine>::CurveExt::random(&mut rng).to_affine());
 
-		let eigen_trust = EigenTrustCircuit::<_, _, 3, Params5x5Bn254>::new(
+		let eigen_trust = EigenTrustCircuit::<_, _, 3>::new(
 			op_v,
 			pubkey_v,
 			c_v,
@@ -374,7 +366,7 @@ mod test {
 		// Aux generator
 		let aux_generator = Some(<Secp256 as CurveAffine>::CurveExt::random(&mut rng).to_affine());
 
-		let eigen_trust = EigenTrustCircuit::<_, _, 3, Params5x5Bn254>::new(
+		let eigen_trust = EigenTrustCircuit::<_, _, 3>::new(
 			op_v,
 			pubkey_v,
 			c_v,
@@ -386,6 +378,7 @@ mod test {
 			aux_generator,
 		);
 
-		prove_and_verify::<Bn256, _, _>(k, eigen_trust, &mut rng).unwrap();
+		let params = generate_params(k);
+		prove_and_verify::<Bn256, _, _>(params, eigen_trust, &mut rng).unwrap();
 	}
 }
