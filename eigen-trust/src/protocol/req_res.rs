@@ -1,6 +1,6 @@
 //! The module for defining the request-response protocol.
 
-use crate::{epoch::Epoch, peer::Opinion};
+use crate::{epoch::Epoch, peer::opinion::Opinion};
 use async_trait::async_trait;
 use futures::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use libp2p::request_response::{ProtocolName, RequestResponseCodec};
@@ -118,20 +118,17 @@ impl RequestResponseCodec for EigenTrustCodec {
 						let mut k_bytes = [0; 8];
 						let mut local_trust_score_bytes = [0; 8];
 						let mut global_trust_score_bytes = [0; 8];
-						let mut product_bytes = [0; 8];
 
 						io.read_exact(&mut k_bytes).await?;
 						io.read_exact(&mut local_trust_score_bytes).await?;
 						io.read_exact(&mut global_trust_score_bytes).await?;
-						io.read_exact(&mut product_bytes).await?;
 
 						let k = u64::from_be_bytes(k_bytes);
 						let local_trust_score = f64::from_be_bytes(local_trust_score_bytes);
 						let global_trust_score = f64::from_be_bytes(global_trust_score_bytes);
-						let product = f64::from_be_bytes(product_bytes);
 
 						let opinion =
-							Opinion::new(Epoch(k), local_trust_score, global_trust_score, product);
+							Opinion::new(Epoch(k), local_trust_score, global_trust_score);
 
 						Response::Success(opinion)
 					},
@@ -230,7 +227,7 @@ mod tests {
 	#[tokio::test]
 	async fn should_correctly_write_read_success_response() {
 		let epoch = Epoch(1);
-		let opinion = Opinion::new(epoch, 0.0, 0.0, 0.0);
+		let opinion = Opinion::new(epoch, 0.0, 0.0);
 		let good_res = Response::Success(opinion);
 
 		let mut buf = vec![];

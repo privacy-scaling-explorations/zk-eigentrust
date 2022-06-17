@@ -4,41 +4,19 @@
 //! - Calculating local scores toward neighbors for a given epoch
 //! - Keeping track of neighbors scores towards us
 
+pub mod opinion;
+
 use crate::{epoch::Epoch, EigenError};
-use libp2p::{PeerId, core::PublicKey};
+use libp2p::{PeerId, core::PublicKey, identity::Keypair as IdentityKeypair};
 use std::collections::HashMap;
-
-/// The struct for opinions between peers at the specific epoch.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Opinion {
-	pub(crate) k: Epoch,
-	pub(crate) local_trust_score: f64,
-	pub(crate) global_trust_score: f64,
-	pub(crate) product: f64,
-}
-
-impl Opinion {
-	/// Creates a new opinion.
-	pub fn new(k: Epoch, local_trust_score: f64, global_trust_score: f64, product: f64) -> Self {
-		Self {
-			k,
-			local_trust_score,
-			global_trust_score,
-			product,
-		}
-	}
-
-	/// Creates an empty opinion, in a case when we don't have any opinion about
-	/// a peer, or the neighbor doesn't have any opinion about us.
-	pub fn empty(k: Epoch) -> Self {
-		Self::new(k, 0.0, 0.0, 0.0)
-	}
-}
+use eigen_trust_circuit::ecdsa::native::Keypair;
+use eigen_trust_circuit::halo2wrong::curves::secp256k1::{Fq, Secp256k1Affine};
+use opinion::Opinion;
 
 /// The number of neighbors the peer can have.
 /// This is also the maximum number of peers that can be connected to the
 /// node.
-const MAX_NEIGHBORS: usize = 256;
+pub const MAX_NEIGHBORS: usize = 256;
 
 /// Min score for each peer.
 const MIN_SCORE: f64 = 0.1;
@@ -137,8 +115,7 @@ impl Peer {
 		for peer_id in self.neighbors() {
 			let score = self.neighbor_scores.get(&peer_id).unwrap_or(&0);
 			let normalized_score = self.get_normalized_score(*score);
-			let product = global_score * normalized_score;
-			let opinion = Opinion::new(k.next(), normalized_score, global_score, product);
+			let opinion = Opinion::new(k.next(), normalized_score, global_score);
 
 			opinions.push((peer_id, opinion));
 		}
@@ -199,11 +176,11 @@ mod tests {
 
 	#[test]
 	fn should_create_opinion() {
-		let opinion = Opinion::new(Epoch(0), 0.5, 0.5, 0.5);
+		let opinion = Opinion::new(Epoch(0), 0.5, 0.5);
 		assert_eq!(opinion.k, Epoch(0));
 		assert_eq!(opinion.global_trust_score, 0.5);
 		assert_eq!(opinion.local_trust_score, 0.5);
-		assert_eq!(opinion.product, 0.5);
+		assert_eq!(opinion.product, 0.25);
 	}
 
 	#[test]
@@ -219,7 +196,7 @@ mod tests {
 
 		let epoch = Epoch(0);
 		let neighbor_id = PeerId::random();
-		let opinion = Opinion::new(epoch, 0.5, 0.5, 0.25);
+		let opinion = Opinion::new(epoch, 0.5, 0.5);
 		peer.cache_local_opinion((neighbor_id, epoch), opinion);
 		peer.cache_neighbor_opinion((neighbor_id, epoch), opinion);
 
@@ -251,7 +228,7 @@ mod tests {
 			let peer_id = PeerId::random();
 			peer.add_neighbor(peer_id).unwrap();
 			peer.set_score(peer_id, 5);
-			let opinion = Opinion::new(epoch, 0.1, 0.1, 0.01);
+			let opinion = Opinion::new(epoch, 0.1, 0.1);
 			peer.cache_neighbor_opinion((peer_id, epoch), opinion);
 		}
 
@@ -275,7 +252,7 @@ mod tests {
 			let peer_id = PeerId::random();
 			peer.add_neighbor(peer_id).unwrap();
 			peer.set_score(peer_id, 5);
-			let opinion = Opinion::new(epoch, 0.1, 0.1, 0.01);
+			let opinion = Opinion::new(epoch, 0.1, 0.1);
 			peer.cache_neighbor_opinion((peer_id, epoch), opinion);
 		}
 

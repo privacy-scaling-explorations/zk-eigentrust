@@ -4,7 +4,7 @@ use halo2wrong::{
 	halo2::{
 		plonk::{create_proof, keygen_pk, keygen_vk, verify_proof, Circuit, Error},
 		poly::{
-			commitment::{Params, ParamsProver},
+			commitment::{Params, ParamsProver, CommitmentScheme},
 			kzg::{
 				commitment::{KZGCommitmentScheme, ParamsKZG},
 				multiopen::{ProverSHPLONK, VerifierSHPLONK},
@@ -66,6 +66,7 @@ pub fn finalize_verify<
 pub fn prove_and_verify<E: MultiMillerLoop + Debug, C: Circuit<E::Scalar>, R: Rng + Clone>(
 	params: ParamsKZG<E>,
 	circuit: C,
+	pub_inps: &[&[<KZGCommitmentScheme<E> as CommitmentScheme>::Scalar]],
 	rng: &mut R,
 ) -> Result<bool, Error> {
 	let pk = keygen(&params, &circuit)?;
@@ -75,7 +76,7 @@ pub fn prove_and_verify<E: MultiMillerLoop + Debug, C: Circuit<E::Scalar>, R: Rn
 		&params,
 		&pk,
 		&[circuit],
-		&[],
+		&[pub_inps],
 		rng.clone(),
 		&mut transcript,
 	)?;
@@ -88,7 +89,7 @@ pub fn prove_and_verify<E: MultiMillerLoop + Debug, C: Circuit<E::Scalar>, R: Rn
 		&params,
 		pk.get_vk(),
 		strategy,
-		&[],
+		&[pub_inps],
 		&mut transcript,
 	)?;
 

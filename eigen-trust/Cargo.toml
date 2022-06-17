@@ -19,10 +19,13 @@ tokio = { version = "1.18", features = ["time", "macros", "rt-multi-thread"] }
 async-trait = "0.1"
 log = "0.4"
 
+eigen-trust-circuit = { path = "../circuit" }
+
 [dependencies.libp2p]
 version = "0.44"
 default-features = false
 features = [
+	"secp256k1",
 	"identify",
 	"request-response",
 	"tcp-async-io",
