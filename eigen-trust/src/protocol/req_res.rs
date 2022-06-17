@@ -178,10 +178,10 @@ impl RequestResponseCodec for EigenTrustCodec {
 				match res {
 					Response::Success(opinion) => {
 						bytes.push(0);
-						bytes.extend(opinion.get_epoch().to_be_bytes());
-						bytes.extend(opinion.get_local_trust_score().to_be_bytes());
-						bytes.extend(opinion.get_global_trust_score().to_be_bytes());
-						bytes.extend(opinion.get_product().to_be_bytes());
+						bytes.extend(opinion.k.to_be_bytes());
+						bytes.extend(opinion.local_trust_score.to_be_bytes());
+						bytes.extend(opinion.global_trust_score.to_be_bytes());
+						bytes.extend(opinion.product.to_be_bytes());
 					},
 					Response::InvalidRequest => bytes.push(1),
 					Response::InternalError(code) => bytes.push(code),
@@ -242,10 +242,10 @@ mod tests {
 
 		let mut bytes = vec![];
 		bytes.push(0);
-		bytes.extend(opinion.get_epoch().to_be_bytes());
-		bytes.extend(opinion.get_local_trust_score().to_be_bytes());
-		bytes.extend(opinion.get_global_trust_score().to_be_bytes());
-		bytes.extend(opinion.get_product().to_be_bytes());
+		bytes.extend(opinion.k.to_be_bytes());
+		bytes.extend(opinion.local_trust_score.to_be_bytes());
+		bytes.extend(opinion.global_trust_score.to_be_bytes());
+		bytes.extend(opinion.product.to_be_bytes());
 
 		// compare the written bytes with the expected bytes
 		assert_eq!(buf, bytes);

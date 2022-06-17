@@ -109,7 +109,7 @@ impl NetworkBehaviourEventProcess<RequestResponseEvent<Request, Response>> for E
 				// TODO: Check the validity of the opinion, by verifying a zero-knowledge proof.
 				if let Response::Success(opinion) = response {
 					self.peer
-						.cache_neighbor_opinion((peer, opinion.get_epoch()), opinion);
+						.cache_neighbor_opinion((peer, opinion.k), opinion);
 				} else {
 					log::error!("Received error response {:?}", response);
 				}

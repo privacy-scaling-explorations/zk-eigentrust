@@ -11,10 +11,10 @@ use std::collections::HashMap;
 /// The struct for opinions between peers at the specific epoch.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Opinion {
-	k: Epoch,
-	local_trust_score: f64,
-	global_trust_score: f64,
-	product: f64,
+	pub(crate) k: Epoch,
+	pub(crate) local_trust_score: f64,
+	pub(crate) global_trust_score: f64,
+	pub(crate) product: f64,
 }
 
 impl Opinion {
@@ -32,26 +32,6 @@ impl Opinion {
 	/// a peer, or the neighbor doesn't have any opinion about us.
 	pub fn empty(k: Epoch) -> Self {
 		Self::new(k, 0.0, 0.0, 0.0)
-	}
-
-	/// Returns the epoch of the opinion.
-	pub fn get_epoch(&self) -> Epoch {
-		self.k
-	}
-
-	/// Returns the local trust score of the opinion.
-	pub fn get_local_trust_score(&self) -> f64 {
-		self.local_trust_score
-	}
-
-	/// Returns the global trust score of the opinion.
-	pub fn get_global_trust_score(&self) -> f64 {
-		self.global_trust_score
-	}
-
-	/// Returns the product of global and local trust score of the opinion.
-	pub fn get_product(&self) -> f64 {
-		self.product
 	}
 }
 
@@ -140,7 +120,7 @@ impl Peer {
 
 		for peer_id in self.neighbors() {
 			let opinion = self.get_neighbor_opinion(&(peer_id, epoch));
-			global_score += opinion.get_product();
+			global_score += opinion.product;
 		}
 		// We are adding the min score to the global score.
 		global_score = self.min_score + global_score;
@@ -164,7 +144,7 @@ impl Peer {
 		}
 
 		for (peer_id, opinion) in opinions {
-			self.cache_local_opinion((peer_id, opinion.get_epoch()), opinion);
+			self.cache_local_opinion((peer_id, opinion.k), opinion);
 		}
 	}
 
@@ -220,10 +200,10 @@ mod tests {
 	#[test]
 	fn should_create_opinion() {
 		let opinion = Opinion::new(Epoch(0), 0.5, 0.5, 0.5);
-		assert_eq!(opinion.get_epoch(), Epoch(0));
-		assert_eq!(opinion.get_global_trust_score(), 0.5);
-		assert_eq!(opinion.get_local_trust_score(), 0.5);
-		assert_eq!(opinion.get_product(), 0.5);
+		assert_eq!(opinion.k, Epoch(0));
+		assert_eq!(opinion.global_trust_score, 0.5);
+		assert_eq!(opinion.local_trust_score, 0.5);
+		assert_eq!(opinion.product, 0.5);
 	}
 
 	#[test]
@@ -308,7 +288,7 @@ mod tests {
 			let score = peer.neighbor_scores.get(&peer_id).unwrap_or(&0);
 			let normalized_score = peer.get_normalized_score(*score);
 			let local_score = normalized_score * global_score;
-			assert_eq!(opinion.get_product(), local_score);
+			assert_eq!(opinion.product, local_score);
 		}
 	}
 }

@@ -449,15 +449,15 @@ mod tests {
 		let peer1_neighbor_opinion = peer1.get_neighbor_opinion(&(peer_id2, next_epoch));
 		let peer2_neighbor_opinion = peer2.get_neighbor_opinion(&(peer_id1, next_epoch));
 
-		assert_eq!(peer1_neighbor_opinion.get_epoch(), next_epoch);
-		assert_eq!(peer1_neighbor_opinion.get_local_trust_score(), 1.0);
-		assert_eq!(peer1_neighbor_opinion.get_global_trust_score(), 0.25);
-		assert_eq!(peer1_neighbor_opinion.get_product(), 0.25);
+		assert_eq!(peer1_neighbor_opinion.k, next_epoch);
+		assert_eq!(peer1_neighbor_opinion.local_trust_score, 1.0);
+		assert_eq!(peer1_neighbor_opinion.global_trust_score, 0.25);
+		assert_eq!(peer1_neighbor_opinion.product, 0.25);
 
-		assert_eq!(peer2_neighbor_opinion.get_epoch(), next_epoch);
-		assert_eq!(peer2_neighbor_opinion.get_local_trust_score(), 1.0);
-		assert_eq!(peer2_neighbor_opinion.get_global_trust_score(), 0.25);
-		assert_eq!(peer2_neighbor_opinion.get_product(), 0.25);
+		assert_eq!(peer2_neighbor_opinion.k, next_epoch);
+		assert_eq!(peer2_neighbor_opinion.local_trust_score, 1.0);
+		assert_eq!(peer2_neighbor_opinion.global_trust_score, 0.25);
+		assert_eq!(peer2_neighbor_opinion.product, 0.25);
 
 		let peer1_global_score = peer1.calculate_global_trust_score(next_epoch);
 		let peer2_global_score = peer1.calculate_global_trust_score(next_epoch);
