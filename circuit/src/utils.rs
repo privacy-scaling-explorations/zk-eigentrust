@@ -30,7 +30,7 @@ pub fn generate_params<E: MultiMillerLoop + Debug>(k: u32) -> ParamsKZG<E> {
 
 pub fn write_params<E: MultiMillerLoop + Debug>(params: &ParamsKZG<E>, path: &str) {
 	let mut buffer: Vec<u8> = Vec::new();
-	params.write(&mut buffer);
+	params.write(&mut buffer).unwrap();
 	write(path, buffer).unwrap();
 }
 

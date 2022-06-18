@@ -44,7 +44,6 @@ impl EigenTrustConfig {
 pub struct EigenTrustCircuit<E: CurveAffine, N: FieldExt, const SIZE: usize> {
 	pubkey_i: Option<E>,
 	sig_i: Option<SigData<E::ScalarExt>>,
-	t_i: Option<N>,
 	c_ji: [Option<N>; SIZE],
 	t_j: [Option<N>; SIZE],
 	neighbor_pubkeys: [Option<E>; SIZE],
@@ -59,7 +58,6 @@ impl<E: CurveAffine, N: FieldExt, const SIZE: usize> EigenTrustCircuit<E, N, SIZ
 	pub fn new(
 		pubkey_i: Option<E>,
 		sig_i: Option<SigData<E::ScalarExt>>,
-		t_i: Option<N>,
 		c_ji: [Option<N>; SIZE],
 		t_j: [Option<N>; SIZE],
 		neighbor_pubkeys: [Option<E>; SIZE],
@@ -69,7 +67,6 @@ impl<E: CurveAffine, N: FieldExt, const SIZE: usize> EigenTrustCircuit<E, N, SIZ
 		Self {
 			pubkey_i,
 			sig_i,
-			t_i,
 			c_ji,
 			t_j,
 			neighbor_pubkeys,
@@ -90,7 +87,6 @@ impl<E: CurveAffine, N: FieldExt, const SIZE: usize> Circuit<N> for EigenTrustCi
 		Self {
 			pubkey_i: None,
 			sig_i: None,
-			t_i: None,
 			c_ji: [None; SIZE],
 			t_j: [None; SIZE],
 			neighbor_pubkeys: [None; SIZE],
@@ -231,20 +227,21 @@ impl<E: CurveAffine, N: FieldExt, const SIZE: usize> Circuit<N> for EigenTrustCi
 
 		config.config_range(&mut layouter)?;
 
-		main_gate.expose_public(layouter.namespace(|| "pk_x"), pk.get_x().native(), 0);
-		main_gate.expose_public(layouter.namespace(|| "pk_y"), pk.get_y().native(), 1);
-		main_gate.expose_public(layouter.namespace(|| "r"), r.native(), 2);
-		main_gate.expose_public(layouter.namespace(|| "s"), s.native(), 3);
-		main_gate.expose_public(layouter.namespace(|| "m_hash"), m_hash.native(), 4);
+		main_gate.expose_public(layouter.namespace(|| "t_i"), t_i, 0)?;
+		main_gate.expose_public(layouter.namespace(|| "pk_x"), pk.get_x().native(), 1)?;
+		main_gate.expose_public(layouter.namespace(|| "pk_y"), pk.get_y().native(), 2)?;
+		main_gate.expose_public(layouter.namespace(|| "r"), r.native(), 3)?;
+		main_gate.expose_public(layouter.namespace(|| "s"), s.native(), 4)?;
+		main_gate.expose_public(layouter.namespace(|| "m_hash"), m_hash.native(), 5)?;
 
-		let mut offset = 5;
+		let mut offset = 6;
 		for i in 0..SIZE {
-			main_gate.expose_public(layouter.namespace(|| "c_ji"), c_jis[i], offset);
+			main_gate.expose_public(layouter.namespace(|| "c_ji"), c_jis[i], offset)?;
 			offset += 1;
 		}
 
 		for i in 0..SIZE {
-			main_gate.expose_public(layouter.namespace(|| "t_j"), t_js[i], offset);
+			main_gate.expose_public(layouter.namespace(|| "t_j"), t_js[i], offset)?;
 			offset += 1;
 		}
 
@@ -290,7 +287,6 @@ mod test {
 		let pair_i = Keypair::<Secp256>::new(&mut rng);
 		let pubkey_i = Some(pair_i.public().clone());
 		let sig_i = Some(generate_signature(pair_i, m_hash.unwrap(), &mut rng).unwrap());
-		let t_i = Some(Fr::from_u128(3));
 
 		// Data from neighbors of i
 		let c_ji = [
@@ -313,7 +309,6 @@ mod test {
 		let eigen_trust = EigenTrustCircuit::<_, _, 3>::new(
 			pubkey_i,
 			sig_i,
-			t_i,
 			c_ji,
 			t_j,
 			pubkeys,
@@ -321,6 +316,7 @@ mod test {
 			aux_generator,
 		);
 
+		let t_i = Fr::from_u128(3);
 		let pk_ix = Fr::from_bytes_wide(&to_wide(pubkey_i.unwrap().x.to_bytes()));
 		let pk_iy = Fr::from_bytes_wide(&to_wide(pubkey_i.unwrap().y.to_bytes()));
 		let r = Fr::from_bytes_wide(&to_wide(sig_i.unwrap().r.to_bytes()));
@@ -328,6 +324,7 @@ mod test {
 		let m_hash = Fr::from_bytes_wide(&to_wide(sig_i.unwrap().m_hash.to_bytes()));
 
 		let mut pub_ins = Vec::new();
+		pub_ins.push(t_i);
 		pub_ins.push(pk_ix);
 		pub_ins.push(pk_iy);
 		pub_ins.push(r);
@@ -361,7 +358,6 @@ mod test {
 		let pair_i = Keypair::<Secp256>::new(&mut rng);
 		let pubkey_i = Some(pair_i.public().clone());
 		let sig_i = Some(generate_signature(pair_i, m_hash.unwrap(), &mut rng).unwrap());
-		let t_i = Some(Fr::from_u128(3));
 
 		// Data from neighbors of i
 		let c_ji = [
@@ -384,7 +380,6 @@ mod test {
 		let eigen_trust = EigenTrustCircuit::<_, _, 3>::new(
 			pubkey_i,
 			sig_i,
-			t_i,
 			c_ji,
 			t_j,
 			pubkeys,
@@ -392,6 +387,7 @@ mod test {
 			aux_generator,
 		);
 
+		let t_i = Fr::from_u128(3);
 		let pk_ix = Fr::from_bytes_wide(&to_wide(pubkey_i.unwrap().x.to_bytes()));
 		let pk_iy = Fr::from_bytes_wide(&to_wide(pubkey_i.unwrap().y.to_bytes()));
 		let r = Fr::from_bytes_wide(&to_wide(sig_i.unwrap().r.to_bytes()));
@@ -399,6 +395,7 @@ mod test {
 		let m_hash = Fr::from_bytes_wide(&to_wide(sig_i.unwrap().m_hash.to_bytes()));
 
 		let mut pub_ins = Vec::new();
+		pub_ins.push(t_i);
 		pub_ins.push(pk_ix);
 		pub_ins.push(pk_iy);
 		pub_ins.push(r);

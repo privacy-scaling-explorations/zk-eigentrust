@@ -1,4 +1,3 @@
-use super::MAX_NEIGHBORS;
 use crate::Epoch;
 
 /// The struct for opinions between peers at the specific epoch.

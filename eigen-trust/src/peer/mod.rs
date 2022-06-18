@@ -7,11 +7,7 @@
 pub mod opinion;
 
 use crate::{epoch::Epoch, EigenError};
-use eigen_trust_circuit::{
-	ecdsa::native::Keypair,
-	halo2wrong::curves::secp256k1::{Fq, Secp256k1Affine},
-};
-use libp2p::{core::PublicKey, identity::Keypair as IdentityKeypair, PeerId};
+use libp2p::{core::PublicKey, PeerId};
 use opinion::Opinion;
 use std::collections::HashMap;
 
