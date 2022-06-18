@@ -1,22 +1,18 @@
 pub mod req_res;
 
-use std::{iter::once, time::Duration};
-use req_res::{EigenTrustCodec, Request, Response, EigenTrustProtocol};
-use crate::{peer::Peer, Epoch, EigenError};
+use crate::{peer::Peer, EigenError, Epoch};
 use libp2p::{
-	PeerId,
+	core::PublicKey,
 	identify::{Identify, IdentifyConfig, IdentifyEvent},
-	swarm::NetworkBehaviourEventProcess,
 	request_response::{
-		RequestResponse,
-		RequestResponseEvent,
-		RequestResponseMessage,
-		RequestResponseConfig,
-		ProtocolSupport,
-		ResponseChannel, RequestId,
+		ProtocolSupport, RequestId, RequestResponse, RequestResponseConfig, RequestResponseEvent,
+		RequestResponseMessage, ResponseChannel,
 	},
-	NetworkBehaviour, core::PublicKey,
+	swarm::NetworkBehaviourEventProcess,
+	NetworkBehaviour, PeerId,
 };
+use req_res::{EigenTrustCodec, EigenTrustProtocol, Request, Response};
+use std::{iter::once, time::Duration};
 
 #[derive(NetworkBehaviour)]
 #[behaviour(event_process = true)]
@@ -46,10 +42,18 @@ impl EigenTrustBehaviour {
 		// Setting up the identify protocol
 		let config = IdentifyConfig::new("eigen_trust/1.0.0".to_string(), local_public_key);
 		let identify = Identify::new(config);
-		Self { req_res: req_proto, identify, peer }
+		Self {
+			req_res: req_proto,
+			identify,
+			peer,
+		}
 	}
 
-	pub fn send_response(&mut self, channel: ResponseChannel<Response>, response: Response) -> Result<(), Response> {
+	pub fn send_response(
+		&mut self,
+		channel: ResponseChannel<Response>,
+		response: Response,
+	) -> Result<(), Response> {
 		self.req_res.send_response(channel, response)
 	}
 
@@ -108,8 +112,7 @@ impl NetworkBehaviourEventProcess<RequestResponseEvent<Request, Response>> for E
 				// If we receive a response, we update the neighbors's opinion about us.
 				// TODO: Check the validity of the opinion, by verifying a zero-knowledge proof.
 				if let Response::Success(opinion) = response {
-					self.peer
-						.cache_neighbor_opinion((peer, opinion.k), opinion);
+					self.peer.cache_neighbor_opinion((peer, opinion.k), opinion);
 				} else {
 					log::error!("Received error response {:?}", response);
 				}

@@ -4,10 +4,10 @@ pub mod ecdsa;
 mod poseidon;
 pub mod utils;
 
-pub use halo2wrong;
 use crate::ecdsa::SigData;
 use ::ecdsa::ecdsa::{AssignedEcdsaSig, AssignedPublicKey, EcdsaChip};
 use ecc::{maingate::RegionCtx, EccConfig, GeneralEccChip};
+pub use halo2wrong;
 use halo2wrong::halo2::{
 	arithmetic::{CurveAffine, FieldExt},
 	circuit::{Layouter, SimpleFloorPlanner},
@@ -145,8 +145,10 @@ impl<E: CurveAffine, N: FieldExt, const SIZE: usize> Circuit<N> for EigenTrustCi
 				let ctx = &mut RegionCtx::new(&mut region, position);
 				let unassigned_c_jis = self.c_ji.clone().map(|val| UnassignedValue::from(val));
 				let unassigned_t_js = self.c_ji.clone().map(|val| UnassignedValue::from(val));
-				let assigned_c_jis = unassigned_c_jis.map(|val| main_gate.assign_value(ctx, &val).unwrap());
-				let assigned_t_js = unassigned_t_js.map(|val| main_gate.assign_value(ctx, &val).unwrap());
+				let assigned_c_jis =
+					unassigned_c_jis.map(|val| main_gate.assign_value(ctx, &val).unwrap());
+				let assigned_t_js =
+					unassigned_t_js.map(|val| main_gate.assign_value(ctx, &val).unwrap());
 
 				let mut sum = main_gate.assign_constant(ctx, N::zero())?;
 				for i in 0..SIZE {
@@ -168,7 +170,8 @@ impl<E: CurveAffine, N: FieldExt, const SIZE: usize> Circuit<N> for EigenTrustCi
 
 				let unassigned_r = ecc_chip.new_unassigned_scalar(self.sig_i.map(|s| s.r));
 				let unassigned_s = ecc_chip.new_unassigned_scalar(self.sig_i.map(|s| s.s));
-				let unassigned_m_hash = ecc_chip.new_unassigned_scalar(self.sig_i.map(|s| s.m_hash));
+				let unassigned_m_hash =
+					ecc_chip.new_unassigned_scalar(self.sig_i.map(|s| s.m_hash));
 
 				let assigned_r = scalar_chip.assign_integer(ctx, unassigned_r, Range::Remainder)?;
 				let assigned_s = scalar_chip.assign_integer(ctx, unassigned_s, Range::Remainder)?;
@@ -197,15 +200,19 @@ impl<E: CurveAffine, N: FieldExt, const SIZE: usize> Circuit<N> for EigenTrustCi
 		// 		let ctx = &mut RegionCtx::new(&mut region, offset);
 
 		// 		for i in 0..SIZE {
-		// 			let unassigned_r = ecc_chip.new_unassigned_scalar(self.neighbor_sigs[i].map(|s| s.r));
-		// 			let unassigned_s = ecc_chip.new_unassigned_scalar(self.neighbor_sigs[i].map(|s| s.s));
-		// 			let unassigned_m_hash = ecc_chip.new_unassigned_scalar(self.neighbor_sigs[i].map(|s| s.m_hash));
+		// 			let unassigned_r =
+		// ecc_chip.new_unassigned_scalar(self.neighbor_sigs[i].map(|s| s.r));
+		// 			let unassigned_s =
+		// ecc_chip.new_unassigned_scalar(self.neighbor_sigs[i].map(|s| s.s));
+		// 			let unassigned_m_hash =
+		// ecc_chip.new_unassigned_scalar(self.neighbor_sigs[i].map(|s| s.m_hash));
 
-		// 			let assigned_r = scalar_chip.assign_integer(ctx, unassigned_r, Range::Remainder)?;
-		// 			let assigned_s = scalar_chip.assign_integer(ctx, unassigned_s, Range::Remainder)?;
-		// 			let assigned_m_hash =
+		// 			let assigned_r = scalar_chip.assign_integer(ctx, unassigned_r,
+		// Range::Remainder)?; 			let assigned_s = scalar_chip.assign_integer(ctx,
+		// unassigned_s, Range::Remainder)?; 			let assigned_m_hash =
 		// 				scalar_chip.assign_integer(ctx, unassigned_m_hash, Range::Remainder)?;
-		// 			let pk_in_circuit = ecc_chip.assign_point(ctx, self.neighbor_pubkeys[i].map(|p| p.into()))?;
+		// 			let pk_in_circuit = ecc_chip.assign_point(ctx,
+		// self.neighbor_pubkeys[i].map(|p| p.into()))?;
 
 		// 			let sig = AssignedEcdsaSig {
 		// 				r: assigned_r,
@@ -255,7 +262,7 @@ mod test {
 	use halo2wrong::{
 		curves::{
 			bn256::{Bn256, Fr},
-			group::{Curve, Group, ff::PrimeField},
+			group::{ff::PrimeField, Curve, Group},
 			secp256k1::{Fq, Secp256k1Affine as Secp256},
 		},
 		halo2::arithmetic::CurveAffine,
@@ -384,7 +391,6 @@ mod test {
 			sigs,
 			aux_generator,
 		);
-
 
 		let pk_ix = Fr::from_bytes_wide(&to_wide(pubkey_i.unwrap().x.to_bytes()));
 		let pk_iy = Fr::from_bytes_wide(&to_wide(pubkey_i.unwrap().y.to_bytes()));

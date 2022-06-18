@@ -1,5 +1,5 @@
-use crate::Epoch;
 use super::MAX_NEIGHBORS;
+use crate::Epoch;
 
 /// The struct for opinions between peers at the specific epoch.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -12,11 +12,7 @@ pub struct Opinion {
 
 impl Opinion {
 	/// Creates a new opinion.
-	pub fn new(
-		k: Epoch,
-		local_trust_score: f64,
-		global_trust_score: f64
-	) -> Self {
+	pub fn new(k: Epoch, local_trust_score: f64, global_trust_score: f64) -> Self {
 		let product = local_trust_score * global_trust_score;
 		Self {
 			k,

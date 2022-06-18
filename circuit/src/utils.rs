@@ -4,7 +4,7 @@ use halo2wrong::{
 	halo2::{
 		plonk::{create_proof, keygen_pk, keygen_vk, verify_proof, Circuit, Error},
 		poly::{
-			commitment::{Params, ParamsProver, CommitmentScheme},
+			commitment::{CommitmentScheme, Params, ParamsProver},
 			kzg::{
 				commitment::{KZGCommitmentScheme, ParamsKZG},
 				multiopen::{ProverSHPLONK, VerifierSHPLONK},

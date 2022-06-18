@@ -1,15 +1,10 @@
 //! The module for the node setup, running the main loop, and handling network
 //! events.
 
-use crate::{
-	epoch::Epoch,
-	peer::Peer,
-	protocol::EigenTrustBehaviour,
-	EigenError,
-};
+use crate::{epoch::Epoch, peer::Peer, protocol::EigenTrustBehaviour, EigenError};
 use futures::StreamExt;
 use libp2p::{
-	core::{upgrade::Version, either::EitherError},
+	core::{either::EitherError, upgrade::Version},
 	identity::Keypair,
 	noise::{Keypair as NoiseKeypair, NoiseConfig, X25519Spec},
 	swarm::{ConnectionHandlerUpgrErr, Swarm, SwarmBuilder, SwarmEvent},
@@ -63,12 +58,16 @@ impl Node {
 			.boxed();
 
 		let peer = Peer::new();
-		let beh = EigenTrustBehaviour::new(connection_duration, interval_duration, local_key.public(), peer);
+		let beh = EigenTrustBehaviour::new(
+			connection_duration,
+			interval_duration,
+			local_key.public(),
+			peer,
+		);
 
 		// Setting up the transport and swarm.
 		let local_peer_id = PeerId::from(local_key.public());
-		let mut swarm = SwarmBuilder::new(transport, beh, local_peer_id)
-			.build();
+		let mut swarm = SwarmBuilder::new(transport, beh, local_peer_id).build();
 
 		swarm.listen_on(local_address.clone()).map_err(|e| {
 			log::debug!("swarm.listen_on {:?}", e);
@@ -102,7 +101,11 @@ impl Node {
 			SwarmEvent::NewListenAddr { address, .. } => log::info!("Listening on {:?}", address),
 			// When we connect to a peer, we automatically add him as a neighbor.
 			SwarmEvent::ConnectionEstablished { peer_id, .. } => {
-				let res = self.swarm.behaviour_mut().get_peer_mut().add_neighbor(peer_id);
+				let res = self
+					.swarm
+					.behaviour_mut()
+					.get_peer_mut()
+					.add_neighbor(peer_id);
 				if let Err(e) = res {
 					log::error!("Failed to add neighbor {:?}", e);
 				}
@@ -110,7 +113,10 @@ impl Node {
 			},
 			// When we disconnect from a peer, we automatically remove him from the neighbors list.
 			SwarmEvent::ConnectionClosed { peer_id, cause, .. } => {
-				self.swarm.behaviour_mut().get_peer_mut().remove_neighbor(peer_id);
+				self.swarm
+					.behaviour_mut()
+					.get_peer_mut()
+					.remove_neighbor(peer_id);
 				log::info!("Connection closed with {:?} ({:?})", peer_id, cause);
 			},
 			SwarmEvent::Dialing(peer_id) => log::info!("Dialing {:?}", peer_id),
@@ -217,10 +223,14 @@ mod tests {
 			(peer_id2, local_address2.clone()),
 		];
 
-		let mut node1 =
-			Node::new(local_key1, local_address1.clone(), bootstrap_nodes.clone(), INTERVAL).unwrap();
-		let mut node2 =
-			Node::new(local_key2, local_address2, bootstrap_nodes, INTERVAL).unwrap();
+		let mut node1 = Node::new(
+			local_key1,
+			local_address1.clone(),
+			bootstrap_nodes.clone(),
+			INTERVAL,
+		)
+		.unwrap();
+		let mut node2 = Node::new(local_key2, local_address2, bootstrap_nodes, INTERVAL).unwrap();
 
 		node1.dial_bootstrap_nodes();
 
@@ -267,10 +277,14 @@ mod tests {
 			(peer_id2, local_address2.clone()),
 		];
 
-		let mut node1 =
-			Node::new(local_key1, local_address1, bootstrap_nodes.clone(),INTERVAL ).unwrap();
-		let mut node2 =
-			Node::new(local_key2, local_address2, bootstrap_nodes, INTERVAL).unwrap();
+		let mut node1 = Node::new(
+			local_key1,
+			local_address1,
+			bootstrap_nodes.clone(),
+			INTERVAL,
+		)
+		.unwrap();
+		let mut node2 = Node::new(local_key2, local_address2, bootstrap_nodes, INTERVAL).unwrap();
 
 		node1.dial_bootstrap_nodes();
 
@@ -393,10 +407,14 @@ mod tests {
 			(peer_id2, local_address2.clone()),
 		];
 
-		let mut node1 =
-			Node::new(local_key1, local_address1, bootstrap_nodes.clone(), INTERVAL).unwrap();
-		let mut node2 =
-			Node::new(local_key2, local_address2, bootstrap_nodes, INTERVAL).unwrap();
+		let mut node1 = Node::new(
+			local_key1,
+			local_address1,
+			bootstrap_nodes.clone(),
+			INTERVAL,
+		)
+		.unwrap();
+		let mut node2 = Node::new(local_key2, local_address2, bootstrap_nodes, INTERVAL).unwrap();
 
 		node1.dial_bootstrap_nodes();
 
@@ -426,8 +444,14 @@ mod tests {
 		peer1.calculate_local_opinions(current_epoch);
 		peer2.calculate_local_opinions(current_epoch);
 
-		node1.get_swarm_mut().behaviour_mut().send_epoch_requests(next_epoch);
-		node2.get_swarm_mut().behaviour_mut().send_epoch_requests(next_epoch);
+		node1
+			.get_swarm_mut()
+			.behaviour_mut()
+			.send_epoch_requests(next_epoch);
+		node2
+			.get_swarm_mut()
+			.behaviour_mut()
+			.send_epoch_requests(next_epoch);
 
 		// Expecting 2 request messages
 		// Expecting 2 response sent messages
@@ -486,8 +510,13 @@ mod tests {
 			(peer_id2, local_address2.clone()),
 		];
 
-		let mut node1 =
-			Node::new(local_key1, local_address1, bootstrap_nodes.clone(), INTERVAL).unwrap();
+		let mut node1 = Node::new(
+			local_key1,
+			local_address1,
+			bootstrap_nodes.clone(),
+			INTERVAL,
+		)
+		.unwrap();
 		let node2 = Node::new(local_key2, local_address2, bootstrap_nodes, INTERVAL).unwrap();
 
 		node1.dial_bootstrap_nodes();

@@ -127,8 +127,7 @@ impl RequestResponseCodec for EigenTrustCodec {
 						let local_trust_score = f64::from_be_bytes(local_trust_score_bytes);
 						let global_trust_score = f64::from_be_bytes(global_trust_score_bytes);
 
-						let opinion =
-							Opinion::new(Epoch(k), local_trust_score, global_trust_score);
+						let opinion = Opinion::new(Epoch(k), local_trust_score, global_trust_score);
 
 						Response::Success(opinion)
 					},

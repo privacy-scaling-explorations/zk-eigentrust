@@ -7,11 +7,13 @@
 pub mod opinion;
 
 use crate::{epoch::Epoch, EigenError};
-use libp2p::{PeerId, core::PublicKey, identity::Keypair as IdentityKeypair};
-use std::collections::HashMap;
-use eigen_trust_circuit::ecdsa::native::Keypair;
-use eigen_trust_circuit::halo2wrong::curves::secp256k1::{Fq, Secp256k1Affine};
+use eigen_trust_circuit::{
+	ecdsa::native::Keypair,
+	halo2wrong::curves::secp256k1::{Fq, Secp256k1Affine},
+};
+use libp2p::{core::PublicKey, identity::Keypair as IdentityKeypair, PeerId};
 use opinion::Opinion;
+use std::collections::HashMap;
 
 /// The number of neighbors the peer can have.
 /// This is also the maximum number of peers that can be connected to the
@@ -59,13 +61,17 @@ impl Peer {
 	}
 
 	/// Identifies a neighbor, by saving its public key.
-	pub fn identify_neighbor(&mut self, peer_id: PeerId, pubkey: PublicKey) -> Result<(), EigenError> {
+	pub fn identify_neighbor(
+		&mut self,
+		peer_id: PeerId,
+		pubkey: PublicKey,
+	) -> Result<(), EigenError> {
 		let index_res = self.neighbors.iter().position(|&x| x == Some(peer_id));
 		match index_res {
 			Some(index) => {
 				self.pubkeys[index] = Some(pubkey);
 				Ok(())
-			}
+			},
 			None => Err(EigenError::InvalidPeerId),
 		}
 	}
