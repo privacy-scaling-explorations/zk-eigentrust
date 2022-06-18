@@ -161,7 +161,7 @@ mod test {
 		let mut rng = thread_rng();
 
 		let pair = Keypair::<Secp256>::new(&mut rng);
-		let pk = pair.public_key().clone();
+		let pk = pair.public().clone();
 		let m_hash = <Secp256 as CurveAffine>::ScalarExt::from(4);
 		let sig_data = generate_signature::<Secp256, _>(pair, m_hash, &mut rng).unwrap();
 

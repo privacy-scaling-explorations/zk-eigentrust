@@ -10,15 +10,7 @@ use std::io::Error;
 pub struct SigData<F: FieldExt> {
 	pub r: F,
 	pub s: F,
-}
-
-impl<F: FieldExt> SigData<F> {
-	pub fn from_repr(r: F::Repr, s: F::Repr) -> Self {
-		let r = F::from_repr(r).unwrap();
-		let s = F::from_repr(s).unwrap();
-
-		Self { r, s }
-	}
+	pub m_hash: F,
 }
 
 fn mod_n<C: CurveAffine>(x: C::Base) -> C::Scalar {
@@ -41,11 +33,17 @@ impl<E: CurveAffine> Keypair<E> {
 		Self { sk, pk }
 	}
 
-	pub fn public_key(&self) -> &E {
+	// pub fn from_bytes(sk: &[u8; 32], pk_x: &[u8; 32]) -> Self {
+	// 	let sk = E::ScalarExt::from_bytes(sk)?;
+	// 	let pk = E::from_bytes(pk_x).expect("Failed to parse pk");
+	// 	Ok(Self { sk, pk })
+	// }
+
+	pub fn public(&self) -> &E {
 		&self.pk
 	}
 
-	pub fn sk(&self) -> &E::ScalarExt {
+	pub fn secret(&self) -> &E::ScalarExt {
 		&self.sk
 	}
 }
@@ -68,6 +66,6 @@ pub fn generate_signature<E: CurveAffine, R: Rng>(
 	// Calculate `s`
 	let s = k_inv * (m_hash + (r * pair.sk));
 
-	let sig_data = SigData { r, s };
+	let sig_data = SigData { r, s, m_hash };
 	Ok(sig_data)
 }
