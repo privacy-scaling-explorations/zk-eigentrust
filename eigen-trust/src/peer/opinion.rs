@@ -24,6 +24,6 @@ impl Opinion {
 	/// Creates an empty opinion, in a case when we don't have any opinion about
 	/// a peer, or the neighbor doesn't have any opinion about us.
 	pub fn empty(k: Epoch) -> Self {
-		Self::new(k, 0.0, 0.0)
+		Self::new(k, 0., 0.)
 	}
 }

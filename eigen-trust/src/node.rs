@@ -2,6 +2,10 @@
 //! events.
 
 use crate::{epoch::Epoch, peer::Peer, protocol::EigenTrustBehaviour, EigenError};
+use eigen_trust_circuit::halo2wrong::{
+	curves::bn256::Bn256,
+	halo2::poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
+};
 use futures::StreamExt;
 use libp2p::{
 	core::{either::EitherError, upgrade::Version},
@@ -57,7 +61,8 @@ impl Node {
 			.timeout(connection_duration)
 			.boxed();
 
-		let peer = Peer::new();
+		let params = ParamsKZG::<Bn256>::new(1);
+		let peer = Peer::new(local_key.clone(), params);
 		let beh = EigenTrustBehaviour::new(
 			connection_duration,
 			interval_duration,

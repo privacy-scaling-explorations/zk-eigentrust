@@ -1,8 +1,10 @@
-use ecc::halo2::plonk::{ProvingKey, VerifyingKey};
 use halo2wrong::{
 	curves::pairing::{Engine, MultiMillerLoop},
 	halo2::{
-		plonk::{create_proof, keygen_pk, keygen_vk, verify_proof, Circuit, Error},
+		plonk::{
+			create_proof, keygen_pk, keygen_vk, verify_proof, Circuit, Error, ProvingKey,
+			VerifyingKey,
+		},
 		poly::{
 			commitment::{CommitmentScheme, Params, ParamsProver},
 			kzg::{
@@ -18,11 +20,7 @@ use halo2wrong::{
 	},
 };
 use rand::Rng;
-use std::{
-	fmt::Debug,
-	fs::{write, File},
-	io::Read,
-};
+use std::{fmt::Debug, fs::write, io::Read};
 
 pub fn generate_params<E: MultiMillerLoop + Debug>(k: u32) -> ParamsKZG<E> {
 	ParamsKZG::<E>::new(k)
@@ -63,18 +61,17 @@ pub fn finalize_verify<
 	v.finalize()
 }
 
-pub fn prove_and_verify<E: MultiMillerLoop + Debug, C: Circuit<E::Scalar>, R: Rng + Clone>(
-	params: ParamsKZG<E>,
+pub fn prove<E: MultiMillerLoop + Debug, C: Circuit<E::Scalar>, R: Rng + Clone>(
+	params: &ParamsKZG<E>,
 	circuit: C,
 	pub_inps: &[&[<KZGCommitmentScheme<E> as CommitmentScheme>::Scalar]],
+	pk: &ProvingKey<E::G1Affine>,
 	rng: &mut R,
-) -> Result<bool, Error> {
-	let pk = keygen(&params, &circuit)?;
-
+) -> Result<Vec<u8>, Error> {
 	let mut transcript = Blake2bWrite::<_, E::G1Affine, Challenge255<_>>::init(vec![]);
 	create_proof::<KZGCommitmentScheme<E>, ProverSHPLONK<_>, _, _, _, _>(
-		&params,
-		&pk,
+		params,
+		pk,
 		&[circuit],
 		&[pub_inps],
 		rng.clone(),
@@ -82,16 +79,38 @@ pub fn prove_and_verify<E: MultiMillerLoop + Debug, C: Circuit<E::Scalar>, R: Rn
 	)?;
 
 	let proof = transcript.finalize();
+	Ok(proof)
+}
 
+pub fn verify<E: MultiMillerLoop + Debug, R: Rng + Clone>(
+	params: &ParamsKZG<E>,
+	pub_inps: &[&[<KZGCommitmentScheme<E> as CommitmentScheme>::Scalar]],
+	proof: Vec<u8>,
+	vk: &VerifyingKey<E::G1Affine>,
+	rng: &mut R,
+) -> Result<bool, Error> {
 	let strategy = BatchVerifier::<E, R>::new(&params, rng.clone());
 	let mut transcript = Blake2bRead::<_, E::G1Affine, Challenge255<_>>::init(&proof[..]);
 	let output = verify_proof::<KZGCommitmentScheme<E>, _, _, VerifierSHPLONK<E>, _, _>(
 		&params,
-		pk.get_vk(),
+		vk,
 		strategy,
 		&[pub_inps],
 		&mut transcript,
 	)?;
 
 	Ok(finalize_verify(output))
+}
+
+pub fn prove_and_verify<E: MultiMillerLoop + Debug, C: Circuit<E::Scalar>, R: Rng + Clone>(
+	params: ParamsKZG<E>,
+	circuit: C,
+	pub_inps: &[&[<KZGCommitmentScheme<E> as CommitmentScheme>::Scalar]],
+	rng: &mut R,
+) -> Result<bool, Error> {
+	let pk = keygen(&params, &circuit)?;
+	let proof = prove(&params, circuit, pub_inps, &pk, rng)?;
+	let res = verify(&params, pub_inps, proof, pk.get_vk(), rng)?;
+
+	Ok(res)
 }

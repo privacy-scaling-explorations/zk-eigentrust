@@ -67,6 +67,7 @@
 //! The library is implemented according to the original [Eigen Trust paper](http://ilpubs.stanford.edu:8090/562/1/2002-56.pdf).
 //! It is developed under the Ethereum Foundation grant.
 
+#![feature(array_zip)]
 #![allow(clippy::tabs_in_doc_comments)]
 #![deny(
 	future_incompatible,
@@ -131,4 +132,10 @@ pub enum EigenError {
 	MaxNeighboursReached,
 	/// Failed to calculate current epoch.
 	EpochError,
+	/// Signature generation failed.
+	SignatureError,
+	/// Hash error
+	HashError,
+	/// Proving error
+	ProvingError,
 }

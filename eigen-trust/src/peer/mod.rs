@@ -5,10 +5,23 @@
 //! - Keeping track of neighbors scores towards us
 
 pub mod opinion;
+pub mod proof;
 
 use crate::{epoch::Epoch, EigenError};
-use libp2p::{core::PublicKey, PeerId};
+use eigen_trust_circuit::{
+	ecdsa::Keypair,
+	halo2wrong::{
+		curves::{
+			bn256::Bn256,
+			group::ff::PrimeField,
+			secp256k1::{Fp as Secp256k1Base, Fq as Secp256k1Scalar, Secp256k1Affine},
+		},
+		halo2::poly::kzg::commitment::ParamsKZG,
+	},
+};
+use libp2p::{core::PublicKey, identity::Keypair as IdentityKeypair, PeerId};
 use opinion::Opinion;
+use proof::Proof;
 use std::collections::HashMap;
 
 /// The number of neighbors the peer can have.
@@ -26,19 +39,39 @@ pub struct Peer {
 	neighbor_scores: HashMap<PeerId, u32>,
 	cached_neighbor_opinion: HashMap<(PeerId, Epoch), Opinion>,
 	cached_local_opinion: HashMap<(PeerId, Epoch), Opinion>,
-	min_score: f64,
+	proofs: HashMap<Epoch, Proof>,
+	keypair: Keypair<Secp256k1Affine>,
+	params: ParamsKZG<Bn256>,
 }
 
 impl Peer {
 	/// Creates a new peer.
-	pub fn new() -> Self {
+	pub fn new(keypair: IdentityKeypair, params: ParamsKZG<Bn256>) -> Self {
+		let kp = match keypair {
+			IdentityKeypair::Secp256k1(secp_kp) => {
+				let sk_bytes = secp_kp.secret().to_bytes();
+				let pk_bytes = secp_kp.public().encode_uncompressed();
+
+				let sk = Secp256k1Scalar::from_bytes(&sk_bytes).unwrap();
+				// let pk = Secp256k1Compressed(pk_bytes);
+				let pk = Secp256k1Affine {
+					x: Secp256k1Base::from_repr(pk_bytes[1..33].try_into().unwrap()).unwrap(),
+					y: Secp256k1Base::from_repr(pk_bytes[33..65].try_into().unwrap()).unwrap(),
+				};
+
+				Keypair::from_pair(sk, pk)
+			},
+			_ => panic!("unsupported keypair"),
+		};
 		Peer {
 			neighbors: [None; MAX_NEIGHBORS],
 			pubkeys: [(); MAX_NEIGHBORS].map(|_| None),
 			neighbor_scores: HashMap::new(),
 			cached_neighbor_opinion: HashMap::new(),
 			cached_local_opinion: HashMap::new(),
-			min_score: MIN_SCORE,
+			proofs: HashMap::new(),
+			keypair: kp,
+			params,
 		}
 	}
 
@@ -103,7 +136,7 @@ impl Peer {
 			global_score += opinion.product;
 		}
 		// We are adding the min score to the global score.
-		global_score = self.min_score + global_score;
+		global_score = MIN_SCORE + global_score;
 
 		global_score
 	}
@@ -175,6 +208,8 @@ impl Peer {
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use eigen_trust_circuit::halo2wrong::halo2::poly::commitment::ParamsProver;
+	use libp2p::core::identity::Keypair;
 
 	#[test]
 	fn should_create_opinion() {
@@ -187,14 +222,17 @@ mod tests {
 
 	#[test]
 	fn should_create_peer() {
-		let peer = Peer::new();
-		assert_eq!(peer.min_score, 0.1);
+		let kp = Keypair::generate_secp256k1();
+		let params = ParamsKZG::<Bn256>::new(1);
+		let peer = Peer::new(kp, params);
 		assert_eq!(peer.get_sum_of_scores(), 0);
 	}
 
 	#[test]
 	fn should_cache_local_and_global_opinion() {
-		let mut peer = Peer::new();
+		let kp = Keypair::generate_secp256k1();
+		let params = ParamsKZG::<Bn256>::new(1);
+		let mut peer = Peer::new(kp, params);
 
 		let epoch = Epoch(0);
 		let neighbor_id = PeerId::random();
@@ -208,7 +246,9 @@ mod tests {
 
 	#[test]
 	fn should_add_and_remove_neghbours() {
-		let mut peer = Peer::new();
+		let kp = Keypair::generate_secp256k1();
+		let params = ParamsKZG::<Bn256>::new(1);
+		let mut peer = Peer::new(kp, params);
 		let neighbor_id = PeerId::random();
 
 		peer.add_neighbor(neighbor_id).unwrap();
@@ -223,7 +263,9 @@ mod tests {
 	#[test]
 	fn should_add_neighbors_and_calculate_global_score() {
 		let min_score = 0.1;
-		let mut peer = Peer::new();
+		let kp = Keypair::generate_secp256k1();
+		let params = ParamsKZG::<Bn256>::new(1);
+		let mut peer = Peer::new(kp, params);
 
 		let epoch = Epoch(0);
 		for _ in 0..256 {
@@ -247,7 +289,9 @@ mod tests {
 
 	#[test]
 	fn should_add_neighbors_and_calculate_local_scores() {
-		let mut peer = Peer::new();
+		let kp = Keypair::generate_secp256k1();
+		let params = ParamsKZG::<Bn256>::new(1);
+		let mut peer = Peer::new(kp, params);
 
 		let epoch = Epoch(0);
 		for _ in 0..256 {

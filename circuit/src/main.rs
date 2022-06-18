@@ -1,6 +1,5 @@
 mod utils;
 
-use ecc::halo2::poly::commitment::Params;
 use halo2wrong::curves::bn256::Bn256;
 use std::env::current_dir;
 use utils::{generate_params, write_params};

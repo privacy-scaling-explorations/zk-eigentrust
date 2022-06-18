@@ -13,6 +13,16 @@ pub struct SigData<F: FieldExt> {
 	pub m_hash: F,
 }
 
+impl<F: FieldExt> SigData<F> {
+	pub fn empty() -> Self {
+		Self {
+			r: F::zero(),
+			s: F::zero(),
+			m_hash: F::zero(),
+		}
+	}
+}
+
 fn mod_n<C: CurveAffine>(x: C::Base) -> C::Scalar {
 	let x_big = fe_to_big(x);
 	big_to_fe(x_big)
@@ -25,6 +35,15 @@ pub struct Keypair<E: CurveAffine> {
 }
 
 impl<E: CurveAffine> Keypair<E> {
+	pub fn empty() -> Self {
+		Self {
+			sk: E::ScalarExt::zero(),
+			pk: E::default(),
+		}
+	}
+}
+
+impl<E: CurveAffine> Keypair<E> {
 	pub fn new<R: Rng>(r: &mut R) -> Self {
 		let sk = E::ScalarExt::random(r);
 		let g = E::generator();
@@ -33,11 +52,9 @@ impl<E: CurveAffine> Keypair<E> {
 		Self { sk, pk }
 	}
 
-	// pub fn from_bytes(sk: &[u8; 32], pk_x: &[u8; 32]) -> Self {
-	// 	let sk = E::ScalarExt::from_bytes(sk)?;
-	// 	let pk = E::from_bytes(pk_x).expect("Failed to parse pk");
-	// 	Ok(Self { sk, pk })
-	// }
+	pub fn from_pair(sk: E::ScalarExt, pk: E) -> Self {
+		Self { sk, pk }
+	}
 
 	pub fn public(&self) -> &E {
 		&self.pk
