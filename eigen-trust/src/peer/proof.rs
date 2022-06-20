@@ -4,7 +4,7 @@ use super::{
 };
 use crate::{EigenError, Epoch};
 use eigen_trust_circuit::{
-	ecdsa::{generate_signature, SigData},
+	ecdsa::native::{generate_signature, SigData},
 	halo2wrong::{
 		curves::{
 			bn256::{Bn256, Fr as Bn256Scalar, G1Affine},
@@ -38,8 +38,14 @@ impl Proof {
 		t_j: [Bn256Scalar; MAX_NEIGHBORS],
 		proof_bytes: Vec<u8>,
 	) -> Self {
-		Self { sig_i, c_ji, t_j, proof_bytes }
+		Self {
+			sig_i,
+			c_ji,
+			t_j,
+			proof_bytes,
+		}
 	}
+
 	/// Creates a new opinion.
 	pub fn generate(
 		kp: &IdentityKeypair,
@@ -152,7 +158,11 @@ impl Proof {
 		let mut rng = thread_rng();
 		let pubkey_i = convert_pubkey(pubkey);
 
-		let t_i = self.c_ji.zip(self.t_j).iter().fold(Bn256Scalar::zero(), |acc, (a, b)| acc + (a * b));
+		let t_i = self
+			.c_ji
+			.zip(self.t_j)
+			.iter()
+			.fold(Bn256Scalar::zero(), |acc, (a, b)| acc + (a * b));
 
 		let pk_ix = Bn256Scalar::from_bytes_wide(&to_wide(pubkey_i.x.to_bytes()));
 		let pk_iy = Bn256Scalar::from_bytes_wide(&to_wide(pubkey_i.y.to_bytes()));

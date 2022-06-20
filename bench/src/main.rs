@@ -47,8 +47,14 @@ async fn main() {
 		let params = params.clone();
 
 		let join_handle = tokio::spawn(async move {
-			let mut node =
-				Node::new(local_key, local_address, bootstrap_nodes.clone(), INTERVAL, params).unwrap();
+			let mut node = Node::new(
+				local_key,
+				local_address,
+				bootstrap_nodes.clone(),
+				INTERVAL,
+				params,
+			)
+			.unwrap();
 
 			let peer = node.get_swarm_mut().behaviour_mut().get_peer_mut();
 			for (peer_id, ..) in bootstrap_nodes {

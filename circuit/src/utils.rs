@@ -1,5 +1,13 @@
+use crate::{
+	ecdsa::native::{generate_signature, Keypair},
+	EigenTrustCircuit,
+};
 use halo2wrong::{
-	curves::{pairing::{Engine, MultiMillerLoop}, CurveAffine, group::{Group, Curve}},
+	curves::{
+		group::{Curve, Group},
+		pairing::{Engine, MultiMillerLoop},
+		CurveAffine,
+	},
 	halo2::{
 		arithmetic::Field,
 		plonk::{
@@ -20,8 +28,6 @@ use halo2wrong::{
 		},
 	},
 };
-use crate::EigenTrustCircuit;
-use crate::ecdsa::{Keypair, generate_signature};
 use rand::Rng;
 use std::{fmt::Debug, fs::write, io::Read};
 
@@ -46,7 +52,7 @@ pub fn random_circuit<
 	E: MultiMillerLoop + Debug,
 	N: CurveAffine,
 	R: Rng + Clone,
-	const SIZE: usize
+	const SIZE: usize,
 >(
 	rng: &mut R,
 ) -> EigenTrustCircuit<N, <E as Engine>::Scalar, SIZE> {
@@ -63,6 +69,7 @@ pub fn random_circuit<
 	let pairs = [(); SIZE].map(|_| Keypair::<N>::new(rng));
 	let pubkeys = pairs.map(|p| p.public().to_owned());
 	let sigs = pairs.map(|p| generate_signature(p, m_hash, rng).unwrap());
+	let selectors = [true; SIZE];
 
 	// Aux generator
 	let aux_generator = N::CurveExt::random(rng).to_affine();
@@ -74,6 +81,7 @@ pub fn random_circuit<
 		t_j,
 		pubkeys,
 		sigs,
+		selectors,
 		aux_generator,
 	);
 

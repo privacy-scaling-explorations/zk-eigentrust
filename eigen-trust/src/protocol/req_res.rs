@@ -6,7 +6,7 @@ use crate::{
 };
 use async_trait::async_trait;
 use eigen_trust_circuit::{
-	ecdsa::SigData,
+	ecdsa::native::SigData,
 	halo2wrong::curves::{bn256::Fr as Bn256Scalar, secp256k1::Fq as Secp256k1Scalar},
 };
 use futures::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
@@ -186,12 +186,7 @@ impl RequestResponseCodec for EigenTrustCodec {
 							m_hash: m_hash_f,
 						};
 
-						let proof = Proof::new(
-							sig_data,
-							c_jis_f,
-							t_is_f,
-							proof_bytes
-						);
+						let proof = Proof::new(sig_data, c_jis_f, t_is_f, proof_bytes);
 
 						Response::Success(opinion, proof)
 					},

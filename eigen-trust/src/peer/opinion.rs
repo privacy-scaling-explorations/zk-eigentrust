@@ -1,6 +1,6 @@
 use crate::Epoch;
 use eigen_trust_circuit::{
-	ecdsa::{generate_signature, verify_signature, Keypair, SigData},
+	ecdsa::native::{generate_signature, verify_signature, Keypair, SigData},
 	halo2wrong::curves::{
 		bn256::Fr as Bn256Scalar,
 		group::Curve,
@@ -125,7 +125,7 @@ pub fn to_wide(p: [u8; 32]) -> [u8; 64] {
 mod test {
 	use super::*;
 	use eigen_trust_circuit::{
-		ecdsa::SigData,
+		ecdsa::native::SigData,
 		halo2wrong::{curves::secp256k1::Fq as Secp256k1Scalar, halo2::arithmetic::Field},
 	};
 	use rand::thread_rng;

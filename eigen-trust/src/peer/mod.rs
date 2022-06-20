@@ -240,12 +240,17 @@ impl Peer {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use eigen_trust_circuit::{ecdsa::SigData, halo2wrong::halo2::poly::commitment::ParamsProver};
+	use eigen_trust_circuit::{
+		ecdsa::native::SigData,
+		halo2wrong::{
+			curves::secp256k1::Fq as Secp256k1Scalar, halo2::poly::commitment::ParamsProver,
+		},
+	};
 	use libp2p::core::identity::Keypair;
 
 	#[test]
 	fn should_create_opinion() {
-		let sig = SigData::empty();
+		let sig = SigData::<Secp256k1Scalar>::empty();
 		let opinion = Opinion::new(sig, Epoch(0), 0.5, 0.5);
 		assert_eq!(opinion.k, Epoch(0));
 		assert_eq!(opinion.t_i, 0.5);
@@ -268,7 +273,7 @@ mod tests {
 
 		let epoch = Epoch(0);
 		let neighbor_id = PeerId::random();
-		let sig = SigData::empty();
+		let sig = SigData::<Secp256k1Scalar>::empty();
 
 		let pubkey = Keypair::generate_secp256k1().public();
 		peer.identify_neighbor(neighbor_id, pubkey);
@@ -308,7 +313,7 @@ mod tests {
 			let peer_id = PeerId::random();
 			peer.add_neighbor(peer_id).unwrap();
 			peer.set_score(peer_id, 5);
-			let sig = SigData::empty();
+			let sig = SigData::<Secp256k1Scalar>::empty();
 			let opinion = Opinion::new(sig, epoch, 0.1, 0.1);
 			peer.cache_neighbor_opinion((peer_id, epoch), opinion);
 		}
