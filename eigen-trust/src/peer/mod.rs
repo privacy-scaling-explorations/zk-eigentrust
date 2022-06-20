@@ -133,6 +133,7 @@ impl Peer {
 				kp.public().clone()
 			}
 		});
+		let selectors = self.neighbors.map(|n| n.is_some());
 		let c_jis = ops.map(|op| op.c_j);
 		let t_js = ops.map(|op| op.t_i);
 		let sigs = ops.map(|op| op.sig);
@@ -144,6 +145,7 @@ impl Peer {
 			k.next(),
 			sigs,
 			pubkeys,
+			selectors,
 			&self.params,
 			&self.proving_key,
 		)

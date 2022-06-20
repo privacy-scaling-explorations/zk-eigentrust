@@ -28,6 +28,7 @@ pub struct Proof {
 	pub(crate) sig_i: SigData<Secp256k1Scalar>,
 	pub(crate) c_ji: [Bn256Scalar; MAX_NEIGHBORS],
 	pub(crate) t_j: [Bn256Scalar; MAX_NEIGHBORS],
+	pub(crate) neighbor_sigs: [SigData<Secp256k1Scalar>; MAX_NEIGHBORS],
 	pub(crate) proof_bytes: Vec<u8>,
 }
 
@@ -36,12 +37,14 @@ impl Proof {
 		sig_i: SigData<Secp256k1Scalar>,
 		c_ji: [Bn256Scalar; MAX_NEIGHBORS],
 		t_j: [Bn256Scalar; MAX_NEIGHBORS],
+		neighbor_sigs: [SigData<Secp256k1Scalar>; MAX_NEIGHBORS],
 		proof_bytes: Vec<u8>,
 	) -> Self {
 		Self {
 			sig_i,
 			c_ji,
 			t_j,
+			neighbor_sigs,
 			proof_bytes,
 		}
 	}
@@ -54,6 +57,7 @@ impl Proof {
 		k: Epoch,
 		neighbor_sigs: [SigData<Secp256k1Scalar>; MAX_NEIGHBORS],
 		neighbor_pubkeys: [IdentityPublicKey; MAX_NEIGHBORS],
+		selectors: [bool; MAX_NEIGHBORS],
 		params: &ParamsKZG<Bn256>,
 		pk: &ProvingKey<G1Affine>,
 	) -> Result<Self, EigenError> {
@@ -95,6 +99,7 @@ impl Proof {
 			t_j_scaled,
 			converted_neighbor_pubkeys,
 			neighbor_sigs,
+			selectors,
 			aux_generator,
 		);
 
@@ -114,10 +119,21 @@ impl Proof {
 
 		for i in 0..MAX_NEIGHBORS {
 			pub_ins.push(c_ji_scaled[i]);
+			pub_ins.push(t_j_scaled[i]);
 		}
 
 		for i in 0..MAX_NEIGHBORS {
-			pub_ins.push(t_j_scaled[i]);
+			let r = Bn256Scalar::from_bytes_wide(&to_wide(neighbor_sigs[i].r.to_bytes()));
+			let s = Bn256Scalar::from_bytes_wide(&to_wide(neighbor_sigs[i].s.to_bytes()));
+			let m_hash = Bn256Scalar::from_bytes_wide(&to_wide(neighbor_sigs[i].m_hash.to_bytes()));
+			let pk_x = Bn256Scalar::from_bytes_wide(&to_wide(converted_neighbor_pubkeys[i].x.to_bytes()));
+			let pk_y = Bn256Scalar::from_bytes_wide(&to_wide(converted_neighbor_pubkeys[i].y.to_bytes()));
+
+			pub_ins.push(r);
+			pub_ins.push(s);
+			pub_ins.push(m_hash);
+			pub_ins.push(pk_x);
+			pub_ins.push(pk_y);
 		}
 
 		let proof_bytes = prove(params, circuit, &[&pub_ins], &pk, &mut rng)
@@ -127,6 +143,7 @@ impl Proof {
 			sig_i,
 			c_ji: c_ji_scaled,
 			t_j: t_j_scaled,
+			neighbor_sigs,
 			proof_bytes,
 		})
 	}
@@ -137,6 +154,7 @@ impl Proof {
 		let sig_i = SigData::empty();
 		let c_ji = [Bn256Scalar::random(&mut rng); MAX_NEIGHBORS];
 		let t_j = [Bn256Scalar::random(&mut rng); MAX_NEIGHBORS];
+		let neighbor_sigs = [SigData::empty(); MAX_NEIGHBORS];
 
 		let proof_bytes = vec![0u8; 0];
 
@@ -144,6 +162,7 @@ impl Proof {
 			sig_i,
 			c_ji,
 			t_j,
+			neighbor_sigs,
 			proof_bytes,
 		}
 	}
@@ -152,11 +171,14 @@ impl Proof {
 	pub fn verify(
 		&self,
 		pubkey: &IdentityPublicKey,
+		neighbor_pubkeys: [IdentityPublicKey; MAX_NEIGHBORS],
 		params: &ParamsKZG<Bn256>,
 		vk: &VerifyingKey<G1Affine>,
 	) -> Result<bool, EigenError> {
 		let mut rng = thread_rng();
 		let pubkey_i = convert_pubkey(pubkey);
+
+		let converted_neighbor_pubkeys = neighbor_pubkeys.map(|pk| convert_pubkey(&pk));
 
 		let t_i = self
 			.c_ji
@@ -181,10 +203,21 @@ impl Proof {
 
 		for i in 0..MAX_NEIGHBORS {
 			pub_ins.push(self.c_ji[i]);
+			pub_ins.push(self.t_j[i]);
 		}
 
 		for i in 0..MAX_NEIGHBORS {
-			pub_ins.push(self.t_j[i]);
+			let r = Bn256Scalar::from_bytes_wide(&to_wide(self.neighbor_sigs[i].r.to_bytes()));
+			let s = Bn256Scalar::from_bytes_wide(&to_wide(self.neighbor_sigs[i].s.to_bytes()));
+			let m_hash = Bn256Scalar::from_bytes_wide(&to_wide(self.neighbor_sigs[i].m_hash.to_bytes()));
+			let pk_x = Bn256Scalar::from_bytes_wide(&to_wide(converted_neighbor_pubkeys[i].x.to_bytes()));
+			let pk_y = Bn256Scalar::from_bytes_wide(&to_wide(converted_neighbor_pubkeys[i].y.to_bytes()));
+
+			pub_ins.push(r);
+			pub_ins.push(s);
+			pub_ins.push(m_hash);
+			pub_ins.push(pk_x);
+			pub_ins.push(pk_y);
 		}
 
 		let res = verify(params, &[&pub_ins], &self.proof_bytes, vk, &mut rng)

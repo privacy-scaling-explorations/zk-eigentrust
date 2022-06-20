@@ -160,6 +160,9 @@ impl RequestResponseCodec for EigenTrustCodec {
 						let mut m_hash = [0; 32];
 						let mut c_jis = [[0; 32]; MAX_NEIGHBORS];
 						let mut t_is = [[0; 32]; MAX_NEIGHBORS];
+						let mut neighbor_sigs_r = [[0; 32]; MAX_NEIGHBORS];
+						let mut neighbor_sigs_s = [[0; 32]; MAX_NEIGHBORS];
+						let mut neighbor_sigs_m_hash = [[0; 32]; MAX_NEIGHBORS];
 						let mut proof_bytes: Vec<u8> = Vec::new();
 
 						io.read_exact(&mut r).await?;
@@ -167,9 +170,12 @@ impl RequestResponseCodec for EigenTrustCodec {
 						io.read_exact(&mut m_hash).await?;
 						for i in 0..MAX_NEIGHBORS {
 							io.read_exact(&mut c_jis[i]).await?;
+							io.read_exact(&mut t_is[i]).await?;
 						}
 						for i in 0..MAX_NEIGHBORS {
-							io.read_exact(&mut t_is[i]).await?;
+							io.read_exact(&mut neighbor_sigs_r[i]).await?;
+							io.read_exact(&mut neighbor_sigs_s[i]).await?;
+							io.read_exact(&mut neighbor_sigs_m_hash[i]).await?;
 						}
 						io.read_to_end(&mut proof_bytes).await?;
 
@@ -180,13 +186,28 @@ impl RequestResponseCodec for EigenTrustCodec {
 						let c_jis_f = c_jis.map(|c_j| Bn256Scalar::from_bytes(&c_j).unwrap());
 						let t_is_f = t_is.map(|t_i| Bn256Scalar::from_bytes(&t_i).unwrap());
 
+						let neighbor_sigs = neighbor_sigs_r
+							.zip(neighbor_sigs_s)
+							.zip(neighbor_sigs_m_hash)
+							.map(|((r, s), m_hash)| {
+								let r_f = Secp256k1Scalar::from_bytes(&r).unwrap();
+								let s_f = Secp256k1Scalar::from_bytes(&s).unwrap();
+								let m_hash_f = Secp256k1Scalar::from_bytes(&m_hash).unwrap();
+
+								SigData {
+									r: r_f,
+									s: s_f,
+									m_hash: m_hash_f,
+								}
+							});
+
 						let sig_data = SigData {
 							r: r_f,
 							s: s_f,
 							m_hash: m_hash_f,
 						};
 
-						let proof = Proof::new(sig_data, c_jis_f, t_is_f, proof_bytes);
+						let proof = Proof::new(sig_data, c_jis_f, t_is_f, neighbor_sigs, proof_bytes);
 
 						Response::Success(opinion, proof)
 					},
