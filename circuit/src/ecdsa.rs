@@ -6,7 +6,7 @@ use halo2wrong::{
 use rand::Rng;
 use std::io::Error;
 
-#[derive(Default, Clone, Copy)]
+#[derive(Default, Clone, Copy, Debug, PartialEq)]
 pub struct SigData<F: FieldExt> {
 	pub r: F,
 	pub s: F,
@@ -85,4 +85,18 @@ pub fn generate_signature<E: CurveAffine, R: Rng>(
 
 	let sig_data = SigData { r, s, m_hash };
 	Ok(sig_data)
+}
+
+pub fn verify_signature<E: CurveAffine>(sig_data: &SigData<E::ScalarExt>, pk: &E) -> bool {
+	let s_inv = sig_data.s.invert().unwrap();
+	let u1 = s_inv * sig_data.m_hash;
+	let u2 = s_inv * sig_data.r;
+	let e_gen = E::generator();
+	let g1 = e_gen * u1;
+	let g2 = *pk * u2;
+	let q_coordinates = (g1 + g2).to_affine().coordinates().unwrap();
+	let q_x = q_coordinates.x();
+	let q_x_reduced_in_r = mod_n::<E>(*q_x);
+
+	sig_data.r == q_x_reduced_in_r
 }

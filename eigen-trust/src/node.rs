@@ -2,10 +2,6 @@
 //! events.
 
 use crate::{epoch::Epoch, peer::Peer, protocol::EigenTrustBehaviour, EigenError};
-use eigen_trust_circuit::halo2wrong::{
-	curves::bn256::Bn256,
-	halo2::poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
-};
 use futures::StreamExt;
 use libp2p::{
 	core::{either::EitherError, upgrade::Version},
@@ -61,8 +57,7 @@ impl Node {
 			.timeout(connection_duration)
 			.boxed();
 
-		let params = ParamsKZG::<Bn256>::new(1);
-		let peer = Peer::new(local_key.clone(), params);
+		let peer = Peer::new(local_key.clone());
 		let beh = EigenTrustBehaviour::new(
 			connection_duration,
 			interval_duration,
@@ -207,7 +202,6 @@ mod tests {
 	use std::str::FromStr;
 
 	const INTERVAL: u64 = 10;
-	const MIN_SCORE: f64 = 0.1;
 
 	#[tokio::test]
 	async fn should_emit_connection_event_on_bootstrap() {
@@ -391,109 +385,6 @@ mod tests {
 		let neighbors1: Vec<PeerId> = node1.get_swarm().behaviour().get_peer().neighbors();
 		assert!(neighbors2.is_empty());
 		assert!(neighbors1.is_empty());
-	}
-
-	#[tokio::test]
-	async fn should_handle_request_for_opinion() {
-		const ADDR_1: &str = "/ip4/127.0.0.1/tcp/56708";
-		const ADDR_2: &str = "/ip4/127.0.0.1/tcp/58603";
-
-		let local_key1 = Keypair::generate_ed25519();
-		let peer_id1 = local_key1.public().to_peer_id();
-
-		let local_key2 = Keypair::generate_ed25519();
-		let peer_id2 = local_key2.public().to_peer_id();
-
-		let local_address1 = Multiaddr::from_str(ADDR_1).unwrap();
-		let local_address2 = Multiaddr::from_str(ADDR_2).unwrap();
-
-		let bootstrap_nodes = vec![
-			(peer_id1, local_address1.clone()),
-			(peer_id2, local_address2.clone()),
-		];
-
-		let mut node1 = Node::new(
-			local_key1,
-			local_address1,
-			bootstrap_nodes.clone(),
-			INTERVAL,
-		)
-		.unwrap();
-		let mut node2 = Node::new(local_key2, local_address2, bootstrap_nodes, INTERVAL).unwrap();
-
-		node1.dial_bootstrap_nodes();
-
-		// For node 2
-		// 1. New listen addr
-		// 2. Incoming connection
-		// 3. Connection established
-		// For node 1
-		// 1. New listen addr
-		// 2. Connection established
-		for _ in 0..5 {
-			select! {
-				event2 = node2.get_swarm_mut().select_next_some() => node2.handle_swarm_events(event2),
-				event1 = node1.get_swarm_mut().select_next_some() => node1.handle_swarm_events(event1),
-			}
-		}
-
-		let peer1 = node1.get_swarm_mut().behaviour_mut().get_peer_mut();
-		let peer2 = node2.get_swarm_mut().behaviour_mut().get_peer_mut();
-
-		let current_epoch = Epoch(0);
-		let next_epoch = current_epoch.next();
-
-		peer1.set_score(peer_id2, 5);
-		peer2.set_score(peer_id1, 5);
-
-		peer1.calculate_local_opinions(current_epoch);
-		peer2.calculate_local_opinions(current_epoch);
-
-		node1
-			.get_swarm_mut()
-			.behaviour_mut()
-			.send_epoch_requests(next_epoch);
-		node2
-			.get_swarm_mut()
-			.behaviour_mut()
-			.send_epoch_requests(next_epoch);
-
-		// Expecting 2 request messages
-		// Expecting 2 response sent messages
-		// Expecting 2 response received messages
-		// Total of 6 messages
-		for _ in 0..6 {
-			select! {
-				event1 = node1.get_swarm_mut().select_next_some() => {
-					node1.handle_swarm_events(event1);
-				},
-				event2 = node2.get_swarm_mut().select_next_some() => {
-					node2.handle_swarm_events(event2);
-				},
-			}
-		}
-
-		let peer1 = node1.get_swarm().behaviour().get_peer();
-		let peer2 = node2.get_swarm().behaviour().get_peer();
-		let peer1_neighbor_opinion = peer1.get_neighbor_opinion(&(peer_id2, next_epoch));
-		let peer2_neighbor_opinion = peer2.get_neighbor_opinion(&(peer_id1, next_epoch));
-
-		assert_eq!(peer1_neighbor_opinion.k, next_epoch);
-		assert_eq!(peer1_neighbor_opinion.local_trust_score, 1.0);
-		assert_eq!(peer1_neighbor_opinion.global_trust_score, 0.25);
-		assert_eq!(peer1_neighbor_opinion.product, 0.25);
-
-		assert_eq!(peer2_neighbor_opinion.k, next_epoch);
-		assert_eq!(peer2_neighbor_opinion.local_trust_score, 1.0);
-		assert_eq!(peer2_neighbor_opinion.global_trust_score, 0.25);
-		assert_eq!(peer2_neighbor_opinion.product, 0.25);
-
-		let peer1_global_score = peer1.calculate_global_trust_score(next_epoch);
-		let peer2_global_score = peer1.calculate_global_trust_score(next_epoch);
-
-		let peer_gs = MIN_SCORE + 0.25;
-		assert_eq!(peer1_global_score, peer_gs);
-		assert_eq!(peer2_global_score, peer_gs);
 	}
 
 	#[tokio::test]

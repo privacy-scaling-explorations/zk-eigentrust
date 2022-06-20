@@ -1,6 +1,7 @@
 use halo2wrong::{
-	curves::pairing::{Engine, MultiMillerLoop},
+	curves::{pairing::{Engine, MultiMillerLoop}, CurveAffine, group::{Group, Curve}},
 	halo2::{
+		arithmetic::Field,
 		plonk::{
 			create_proof, keygen_pk, keygen_vk, verify_proof, Circuit, Error, ProvingKey,
 			VerifyingKey,
@@ -19,6 +20,8 @@ use halo2wrong::{
 		},
 	},
 };
+use crate::EigenTrustCircuit;
+use crate::ecdsa::{Keypair, generate_signature};
 use rand::Rng;
 use std::{fmt::Debug, fs::write, io::Read};
 
@@ -37,6 +40,44 @@ pub fn read_params<E: MultiMillerLoop + Debug>(path: &str) -> ParamsKZG<E> {
 	let mut file = std::fs::File::open(path).unwrap();
 	file.read_to_end(&mut buffer).unwrap();
 	ParamsKZG::<E>::read(&mut &buffer[..]).unwrap()
+}
+
+pub fn random_circuit<
+	E: MultiMillerLoop + Debug,
+	N: CurveAffine,
+	R: Rng + Clone,
+	const SIZE: usize
+>(
+	rng: &mut R,
+) -> EigenTrustCircuit<N, <E as Engine>::Scalar, SIZE> {
+	let m_hash = N::ScalarExt::random(rng.clone());
+
+	// Data for prover
+	let pair_i = Keypair::<N>::new(rng);
+	let pubkey_i = pair_i.public().to_owned();
+	let sig_i = generate_signature(pair_i, m_hash, rng).unwrap();
+
+	// Data from neighbors of i
+	let c_ji = [(); SIZE].map(|_| E::Scalar::random(rng.clone()));
+	let t_j = [(); SIZE].map(|_| E::Scalar::random(rng.clone()));
+	let pairs = [(); SIZE].map(|_| Keypair::<N>::new(rng));
+	let pubkeys = pairs.map(|p| p.public().to_owned());
+	let sigs = pairs.map(|p| generate_signature(p, m_hash, rng).unwrap());
+
+	// Aux generator
+	let aux_generator = N::CurveExt::random(rng).to_affine();
+
+	let eigen_trust = EigenTrustCircuit::<_, _, SIZE>::new(
+		pubkey_i,
+		sig_i,
+		c_ji,
+		t_j,
+		pubkeys,
+		sigs,
+		aux_generator,
+	);
+
+	eigen_trust
 }
 
 pub fn keygen<E: MultiMillerLoop + Debug, C: Circuit<E::Scalar>>(
@@ -85,12 +126,12 @@ pub fn prove<E: MultiMillerLoop + Debug, C: Circuit<E::Scalar>, R: Rng + Clone>(
 pub fn verify<E: MultiMillerLoop + Debug, R: Rng + Clone>(
 	params: &ParamsKZG<E>,
 	pub_inps: &[&[<KZGCommitmentScheme<E> as CommitmentScheme>::Scalar]],
-	proof: Vec<u8>,
+	proof: &[u8],
 	vk: &VerifyingKey<E::G1Affine>,
 	rng: &mut R,
 ) -> Result<bool, Error> {
 	let strategy = BatchVerifier::<E, R>::new(&params, rng.clone());
-	let mut transcript = Blake2bRead::<_, E::G1Affine, Challenge255<_>>::init(&proof[..]);
+	let mut transcript = Blake2bRead::<_, E::G1Affine, Challenge255<_>>::init(proof);
 	let output = verify_proof::<KZGCommitmentScheme<E>, _, _, VerifierSHPLONK<E>, _, _>(
 		&params,
 		vk,
@@ -110,7 +151,7 @@ pub fn prove_and_verify<E: MultiMillerLoop + Debug, C: Circuit<E::Scalar>, R: Rn
 ) -> Result<bool, Error> {
 	let pk = keygen(&params, &circuit)?;
 	let proof = prove(&params, circuit, pub_inps, &pk, rng)?;
-	let res = verify(&params, pub_inps, proof, pk.get_vk(), rng)?;
+	let res = verify(&params, pub_inps, &proof[..], pk.get_vk(), rng)?;
 
 	Ok(res)
 }

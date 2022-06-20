@@ -1,6 +1,6 @@
 pub mod req_res;
 
-use crate::{peer::Peer, EigenError, Epoch};
+use crate::{peer::Peer, Epoch};
 use libp2p::{
 	core::PublicKey,
 	identify::{Identify, IdentifyConfig, IdentifyEvent},
@@ -13,6 +13,8 @@ use libp2p::{
 };
 use req_res::{EigenTrustCodec, EigenTrustProtocol, Request, Response};
 use std::{iter::once, time::Duration};
+
+const PROTOCOL_VERSION: &str = "eigen_trust/1.0.0";
 
 #[derive(NetworkBehaviour)]
 #[behaviour(event_process = true)]
@@ -40,7 +42,7 @@ impl EigenTrustBehaviour {
 		let req_proto = RequestResponse::new(EigenTrustCodec, protocols, cfg);
 
 		// Setting up the identify protocol
-		let config = IdentifyConfig::new("eigen_trust/1.0.0".to_string(), local_public_key);
+		let config = IdentifyConfig::new(PROTOCOL_VERSION.to_string(), local_public_key);
 		let identify = Identify::new(config);
 		Self {
 			req_res: req_proto,
@@ -110,9 +112,12 @@ impl NetworkBehaviourEventProcess<RequestResponseEvent<Request, Response>> for E
 				message: Res { response, .. },
 			} => {
 				// If we receive a response, we update the neighbors's opinion about us.
-				// TODO: Check the validity of the opinion, by verifying a zero-knowledge proof.
 				if let Response::Success(opinion) = response {
-					self.peer.cache_neighbor_opinion((peer, opinion.k), opinion);
+					let pubkey = self.peer.get_pub_key(peer);
+					let ver_res = opinion.verify(&pubkey);
+					if ver_res {
+						self.peer.cache_neighbor_opinion((peer, opinion.k), opinion);
+					}
 				} else {
 					log::error!("Received error response {:?}", response);
 				}
@@ -138,10 +143,8 @@ impl NetworkBehaviourEventProcess<IdentifyEvent> for EigenTrustBehaviour {
 	fn inject_event(&mut self, event: IdentifyEvent) {
 		match event {
 			IdentifyEvent::Received { peer_id, info } => {
-				let res = self.peer.identify_neighbor(peer_id, info.public_key);
-				if let Err(EigenError::InvalidPeerId) = res {
-					log::error!("Received invalid peer id {:?}", peer_id);
-				}
+				self.peer.identify_neighbor(peer_id, info.public_key);
+				log::info!("Neighbor identified {:?}", peer_id);
 			},
 			IdentifyEvent::Sent { peer_id } => {
 				log::debug!("Identify request sent to {:?}", peer_id);
@@ -153,5 +156,52 @@ impl NetworkBehaviourEventProcess<IdentifyEvent> for EigenTrustBehaviour {
 				log::error!("Identify error {:?} from {:?}", error, peer_id);
 			},
 		}
+	}
+}
+
+#[cfg(test)]
+mod test {
+	use super::*;
+	use crate::Peer;
+	use libp2p::core::identity::{Keypair};
+	use libp2p::identify::IdentifyInfo;
+	use tokio::time::Duration;
+
+	#[test]
+	fn should_handle_identify_events() {
+		let connection_duration = Duration::from_secs(86400 * 365 * 30);
+		let interval_duration = Duration::from_secs(10);
+		let local_key = Keypair::generate_secp256k1();
+
+		let peer = Peer::new(local_key.clone());
+		let mut beh = EigenTrustBehaviour::new(
+			connection_duration,
+			interval_duration,
+			local_key.public(),
+			peer,
+		);
+
+		let sender_key = Keypair::generate_secp256k1();
+		let sender_pubkey = sender_key.public();
+		let sender_peer_id = sender_pubkey.to_peer_id();
+
+		let identity_info = IdentifyInfo {
+			public_key: sender_pubkey.clone(),
+			protocol_version: "proto_version".to_owned(),
+			agent_version: "agent_version".to_owned(),
+			listen_addrs: vec![
+				"/ip4/80.81.82.83/tcp/500".parse().unwrap(),
+				"/ip6/::1/udp/1000".parse().unwrap(),
+			],
+			protocols: vec!["proto1".to_string(), "proto2".to_string()],
+			observed_addr: "/ip4/100.101.102.103/tcp/5000".parse().unwrap(),
+		};
+
+		beh.inject_event(IdentifyEvent::Received {
+			peer_id: sender_peer_id,
+			info: identity_info,
+		});
+
+		assert_eq!(beh.peer.get_pub_key(sender_peer_id), sender_pubkey);
 	}
 }

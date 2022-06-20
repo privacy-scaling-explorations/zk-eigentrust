@@ -2,6 +2,7 @@
 
 use crate::{epoch::Epoch, peer::opinion::Opinion};
 use async_trait::async_trait;
+use eigen_trust_circuit::{ecdsa::SigData, halo2wrong::curves::secp256k1::Fq as Secp256k1Scalar};
 use futures::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use libp2p::request_response::{ProtocolName, RequestResponseCodec};
 use std::io::Result;
@@ -56,7 +57,7 @@ impl Request {
 }
 
 /// The EigenTrust protocol response struct.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Response {
 	/// Successful response with an opinion.
 	Success(Opinion),
@@ -118,16 +119,31 @@ impl RequestResponseCodec for EigenTrustCodec {
 						let mut k_bytes = [0; 8];
 						let mut local_trust_score_bytes = [0; 8];
 						let mut global_trust_score_bytes = [0; 8];
+						let mut r = [0; 32];
+						let mut s = [0; 32];
+						let mut m_hash = [0; 32];
 
 						io.read_exact(&mut k_bytes).await?;
 						io.read_exact(&mut local_trust_score_bytes).await?;
 						io.read_exact(&mut global_trust_score_bytes).await?;
+						io.read_exact(&mut r).await?;
+						io.read_exact(&mut s).await?;
+						io.read_exact(&mut m_hash).await?;
 
 						let k = u64::from_be_bytes(k_bytes);
 						let local_trust_score = f64::from_be_bytes(local_trust_score_bytes);
 						let global_trust_score = f64::from_be_bytes(global_trust_score_bytes);
+						let r_f = Secp256k1Scalar::from_bytes(&r).unwrap();
+						let s_f = Secp256k1Scalar::from_bytes(&s).unwrap();
+						let m_hash_f = Secp256k1Scalar::from_bytes(&m_hash).unwrap();
+						let sig_data = SigData {
+							r: r_f,
+							s: s_f,
+							m_hash: m_hash_f,
+						};
 
-						let opinion = Opinion::new(Epoch(k), local_trust_score, global_trust_score);
+						let opinion =
+							Opinion::new(sig_data, Epoch(k), local_trust_score, global_trust_score);
 
 						Response::Success(opinion)
 					},
@@ -177,7 +193,9 @@ impl RequestResponseCodec for EigenTrustCodec {
 						bytes.extend(opinion.k.to_be_bytes());
 						bytes.extend(opinion.local_trust_score.to_be_bytes());
 						bytes.extend(opinion.global_trust_score.to_be_bytes());
-						bytes.extend(opinion.product.to_be_bytes());
+						bytes.extend(opinion.sig.r.to_bytes());
+						bytes.extend(opinion.sig.s.to_bytes());
+						bytes.extend(opinion.sig.m_hash.to_bytes());
 					},
 					Response::InvalidRequest => bytes.push(1),
 					Response::InternalError(code) => bytes.push(code),
@@ -226,7 +244,8 @@ mod tests {
 	#[tokio::test]
 	async fn should_correctly_write_read_success_response() {
 		let epoch = Epoch(1);
-		let opinion = Opinion::new(epoch, 0.0, 0.0);
+		let empty_sig = SigData::empty();
+		let opinion = Opinion::new(empty_sig, epoch, 0.0, 0.0);
 		let good_res = Response::Success(opinion);
 
 		let mut buf = vec![];
@@ -241,7 +260,9 @@ mod tests {
 		bytes.extend(opinion.k.to_be_bytes());
 		bytes.extend(opinion.local_trust_score.to_be_bytes());
 		bytes.extend(opinion.global_trust_score.to_be_bytes());
-		bytes.extend(opinion.product.to_be_bytes());
+		bytes.extend(opinion.sig.r.to_bytes());
+		bytes.extend(opinion.sig.s.to_bytes());
+		bytes.extend(opinion.sig.m_hash.to_bytes());
 
 		// compare the written bytes with the expected bytes
 		assert_eq!(buf, bytes);

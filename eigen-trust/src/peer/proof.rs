@@ -1,7 +1,11 @@
 use super::MAX_NEIGHBORS;
-use crate::EigenError;
+use super::opinion::{convert_keypair, convert_pubkey, Posedion5x5, SCALE, to_wide};
+use crate::{EigenError, Epoch};
+use eigen_trust_circuit::halo2wrong::curves::bn256::G1Affine;
+use eigen_trust_circuit::halo2wrong::halo2::plonk::{ProvingKey, VerifyingKey};
+use libp2p::core::{identity::Keypair as IdentityKeypair, PublicKey as IdentityPublicKey};
 use eigen_trust_circuit::{
-	ecdsa::{generate_signature, Keypair, SigData},
+	ecdsa::{generate_signature, SigData},
 	halo2wrong::{
 		curves::{
 			bn256::{Bn256, Fr as Bn256Scalar},
@@ -10,16 +14,10 @@ use eigen_trust_circuit::{
 		},
 		halo2::poly::kzg::commitment::ParamsKZG,
 	},
-	poseidon::{params::Params5x5Bn254, Poseidon},
-	utils::{keygen, prove},
+	utils::{prove, verify},
 	EigenTrustCircuit,
 };
 use rand::thread_rng;
-
-use crate::Epoch;
-
-type Posedion5x5 = Poseidon<Bn256Scalar, 5, Params5x5Bn254>;
-const SCALE: f64 = 100000000.;
 
 #[derive(Clone)]
 pub struct Proof {
@@ -33,17 +31,18 @@ pub struct Proof {
 impl Proof {
 	/// Creates a new opinion.
 	pub fn new(
-		keypair: Keypair<Secp256k1Affine>,
+		kp: &IdentityKeypair,
 		c_ji: [f64; MAX_NEIGHBORS],
 		t_j: [f64; MAX_NEIGHBORS],
 		k: Epoch,
-		local_trust_score: f64,
-		global_trust_score: f64,
 		neighbor_sigs: [SigData<Secp256k1Scalar>; MAX_NEIGHBORS],
 		neighbor_pubkeys: [Secp256k1Affine; MAX_NEIGHBORS],
 		params: &ParamsKZG<Bn256>,
+		proving_key: &ProvingKey<G1Affine>,
 	) -> Result<Self, EigenError> {
 		let mut rng = thread_rng();
+
+		let keypair = convert_keypair(kp);
 
 		let pubkey_i = keypair.public().to_owned();
 
@@ -53,8 +52,8 @@ impl Proof {
 
 		let m_hash_input = [
 			Bn256Scalar::zero(),
+			Bn256Scalar::zero(),
 			Bn256Scalar::from_bytes_wide(&to_wide(pubkey_i.x.to_bytes())),
-			Bn256Scalar::from_bytes_wide(&to_wide(pubkey_i.y.to_bytes())),
 			epoch_f,
 			t_i_f,
 		];
@@ -102,8 +101,7 @@ impl Proof {
 			pub_ins.push(t_j_scaled[i]);
 		}
 
-		let pk = keygen(params, &circuit).map_err(|_| EigenError::ProvingError)?;
-		let proof_bytes = prove(params, circuit, &[&pub_ins], &pk, &mut rng)
+		let proof_bytes = prove(params, circuit, &[&pub_ins], &proving_key, &mut rng)
 			.map_err(|_| EigenError::ProvingError)?;
 
 		Ok(Self {
@@ -114,10 +112,42 @@ impl Proof {
 			proof_bytes,
 		})
 	}
-}
 
-fn to_wide(p: [u8; 32]) -> [u8; 64] {
-	let mut res = [0u8; 64];
-	res[..32].copy_from_slice(&p[..]);
-	res
+	/// Verifies the proof.
+	pub fn verify(
+		&self,
+		pubkey: &IdentityPublicKey,
+		params: &ParamsKZG<Bn256>,
+		vk: &VerifyingKey<G1Affine>,
+	) -> Result<bool, EigenError> {
+		let mut rng = thread_rng();
+		let pubkey_i = convert_pubkey(pubkey);
+
+		let pk_ix = Bn256Scalar::from_bytes_wide(&to_wide(pubkey_i.x.to_bytes()));
+		let pk_iy = Bn256Scalar::from_bytes_wide(&to_wide(pubkey_i.y.to_bytes()));
+
+		let r = Bn256Scalar::from_bytes_wide(&to_wide(self.sig_i.r.to_bytes()));
+		let s = Bn256Scalar::from_bytes_wide(&to_wide(self.sig_i.s.to_bytes()));
+		let m_hash = Bn256Scalar::from_bytes_wide(&to_wide(self.sig_i.m_hash.to_bytes()));
+
+		let mut pub_ins = Vec::new();
+		pub_ins.push(self.t_i);
+		pub_ins.push(pk_ix);
+		pub_ins.push(pk_iy);
+		pub_ins.push(r);
+		pub_ins.push(s);
+		pub_ins.push(m_hash);
+
+		for i in 0..MAX_NEIGHBORS {
+			pub_ins.push(self.c_ji[i]);
+		}
+
+		for i in 0..MAX_NEIGHBORS {
+			pub_ins.push(self.t_j[i]);
+		}
+
+		let res = verify(params, &[&pub_ins], &self.proof_bytes, vk, &mut rng)
+			.map_err(|_| EigenError::VerificationError);
+		res
+	}
 }

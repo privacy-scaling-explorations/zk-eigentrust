@@ -1,8 +1,6 @@
-mod utils;
-
 use halo2wrong::curves::bn256::Bn256;
 use std::env::current_dir;
-use utils::{generate_params, write_params};
+use eigen_trust_circuit::utils::{generate_params, write_params};
 
 fn main() {
 	let k = 18;
