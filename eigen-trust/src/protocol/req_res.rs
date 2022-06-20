@@ -1,8 +1,14 @@
 //! The module for defining the request-response protocol.
 
-use crate::{epoch::Epoch, peer::opinion::Opinion};
+use crate::{
+	epoch::Epoch,
+	peer::{opinion::Opinion, proof::Proof, MAX_NEIGHBORS},
+};
 use async_trait::async_trait;
-use eigen_trust_circuit::{ecdsa::SigData, halo2wrong::curves::secp256k1::Fq as Secp256k1Scalar};
+use eigen_trust_circuit::{
+	ecdsa::SigData,
+	halo2wrong::curves::{bn256::Fr as Bn256Scalar, secp256k1::Fq as Secp256k1Scalar},
+};
 use futures::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use libp2p::request_response::{ProtocolName, RequestResponseCodec};
 use std::io::Result;
@@ -60,7 +66,7 @@ impl Request {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Response {
 	/// Successful response with an opinion.
-	Success(Opinion),
+	Success(Opinion, Proof),
 	/// Failed response, because of invalid request.
 	InvalidRequest,
 	/// Failed response, because of the internal error.
@@ -116,6 +122,7 @@ impl RequestResponseCodec for EigenTrustCodec {
 				io.read_exact(&mut buf).await?;
 				let response = match buf[0] {
 					0 => {
+						// Opinion
 						let mut k_bytes = [0; 8];
 						let mut local_trust_score_bytes = [0; 8];
 						let mut global_trust_score_bytes = [0; 8];
@@ -133,9 +140,11 @@ impl RequestResponseCodec for EigenTrustCodec {
 						let k = u64::from_be_bytes(k_bytes);
 						let local_trust_score = f64::from_be_bytes(local_trust_score_bytes);
 						let global_trust_score = f64::from_be_bytes(global_trust_score_bytes);
+
 						let r_f = Secp256k1Scalar::from_bytes(&r).unwrap();
 						let s_f = Secp256k1Scalar::from_bytes(&s).unwrap();
 						let m_hash_f = Secp256k1Scalar::from_bytes(&m_hash).unwrap();
+
 						let sig_data = SigData {
 							r: r_f,
 							s: s_f,
@@ -145,7 +154,46 @@ impl RequestResponseCodec for EigenTrustCodec {
 						let opinion =
 							Opinion::new(sig_data, Epoch(k), local_trust_score, global_trust_score);
 
-						Response::Success(opinion)
+						// Proof
+						let mut r = [0; 32];
+						let mut s = [0; 32];
+						let mut m_hash = [0; 32];
+						let mut c_jis = [[0; 32]; MAX_NEIGHBORS];
+						let mut t_is = [[0; 32]; MAX_NEIGHBORS];
+						let mut proof_bytes: Vec<u8> = Vec::new();
+
+						io.read_exact(&mut r).await?;
+						io.read_exact(&mut s).await?;
+						io.read_exact(&mut m_hash).await?;
+						for i in 0..MAX_NEIGHBORS {
+							io.read_exact(&mut c_jis[i]).await?;
+						}
+						for i in 0..MAX_NEIGHBORS {
+							io.read_exact(&mut t_is[i]).await?;
+						}
+						io.read_to_end(&mut proof_bytes).await?;
+
+						let r_f = Secp256k1Scalar::from_bytes(&r).unwrap();
+						let s_f = Secp256k1Scalar::from_bytes(&s).unwrap();
+						let m_hash_f = Secp256k1Scalar::from_bytes(&m_hash).unwrap();
+
+						let c_jis_f = c_jis.map(|c_j| Bn256Scalar::from_bytes(&c_j).unwrap());
+						let t_is_f = t_is.map(|t_i| Bn256Scalar::from_bytes(&t_i).unwrap());
+
+						let sig_data = SigData {
+							r: r_f,
+							s: s_f,
+							m_hash: m_hash_f,
+						};
+
+						let proof = Proof::new(
+							sig_data,
+							c_jis_f,
+							t_is_f,
+							proof_bytes
+						);
+
+						Response::Success(opinion, proof)
 					},
 					1 => Response::InvalidRequest,
 					other => Response::InternalError(other),
@@ -188,14 +236,28 @@ impl RequestResponseCodec for EigenTrustCodec {
 			EigenTrustProtocolVersion::V1 => {
 				let mut bytes = Vec::new();
 				match res {
-					Response::Success(opinion) => {
+					Response::Success(opinion, proof) => {
 						bytes.push(0);
+
+						// Opinion
 						bytes.extend(opinion.k.to_be_bytes());
-						bytes.extend(opinion.local_trust_score.to_be_bytes());
-						bytes.extend(opinion.global_trust_score.to_be_bytes());
+						bytes.extend(opinion.c_j.to_be_bytes());
+						bytes.extend(opinion.t_i.to_be_bytes());
 						bytes.extend(opinion.sig.r.to_bytes());
 						bytes.extend(opinion.sig.s.to_bytes());
 						bytes.extend(opinion.sig.m_hash.to_bytes());
+
+						// Proof
+						bytes.extend(proof.sig_i.r.to_bytes());
+						bytes.extend(proof.sig_i.s.to_bytes());
+						bytes.extend(proof.sig_i.m_hash.to_bytes());
+						for i in 0..MAX_NEIGHBORS {
+							bytes.extend(proof.c_ji[i].to_bytes());
+						}
+						for i in 0..MAX_NEIGHBORS {
+							bytes.extend(proof.t_j[i].to_bytes());
+						}
+						bytes.extend(proof.proof_bytes);
 					},
 					Response::InvalidRequest => bytes.push(1),
 					Response::InternalError(code) => bytes.push(code),
@@ -214,7 +276,7 @@ mod tests {
 	impl Response {
 		pub fn success(self) -> Opinion {
 			match self {
-				Response::Success(opinion) => opinion,
+				Response::Success(opinion, _) => opinion,
 				_ => panic!("Response::success called on invalid response"),
 			}
 		}
@@ -243,10 +305,9 @@ mod tests {
 
 	#[tokio::test]
 	async fn should_correctly_write_read_success_response() {
-		let epoch = Epoch(1);
-		let empty_sig = SigData::empty();
-		let opinion = Opinion::new(empty_sig, epoch, 0.0, 0.0);
-		let good_res = Response::Success(opinion);
+		let opinion = Opinion::empty();
+		let proof = Proof::empty();
+		let good_res = Response::Success(opinion, proof);
 
 		let mut buf = vec![];
 		let mut codec = EigenTrustCodec::default();
@@ -258,8 +319,8 @@ mod tests {
 		let mut bytes = vec![];
 		bytes.push(0);
 		bytes.extend(opinion.k.to_be_bytes());
-		bytes.extend(opinion.local_trust_score.to_be_bytes());
-		bytes.extend(opinion.global_trust_score.to_be_bytes());
+		bytes.extend(opinion.c_j.to_be_bytes());
+		bytes.extend(opinion.t_i.to_be_bytes());
 		bytes.extend(opinion.sig.r.to_bytes());
 		bytes.extend(opinion.sig.s.to_bytes());
 		bytes.extend(opinion.sig.m_hash.to_bytes());

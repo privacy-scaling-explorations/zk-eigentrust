@@ -131,5 +131,5 @@ pub enum EigenError {
 	/// Proving error
 	ProvingError,
 	/// Verification error
-	VerificationError
+	VerificationError,
 }

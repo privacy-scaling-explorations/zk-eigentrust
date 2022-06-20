@@ -42,7 +42,8 @@ impl EigenTrustBehaviour {
 		let req_proto = RequestResponse::new(EigenTrustCodec, protocols, cfg);
 
 		// Setting up the identify protocol
-		let config = IdentifyConfig::new(PROTOCOL_VERSION.to_string(), local_public_key);
+		let config = IdentifyConfig::new(PROTOCOL_VERSION.to_string(), local_public_key)
+			.with_initial_delay(Duration::from_millis(0));
 		let identify = Identify::new(config);
 		Self {
 			req_res: req_proto,
@@ -99,9 +100,11 @@ impl NetworkBehaviourEventProcess<RequestResponseEvent<Request, Response>> for E
 			} => {
 				// First we calculate the local opinions for the requested epoch.
 				self.peer.calculate_local_opinions(request.get_epoch());
+				self.peer.calculate_local_proof(request.get_epoch());
 				// Then we send the local opinion to the peer.
 				let opinion = self.peer.get_local_opinion(&(peer, request.get_epoch()));
-				let response = Response::Success(opinion);
+				let proof = self.peer.get_local_proof(request.get_epoch());
+				let response = Response::Success(opinion, proof);
 				let res = self.req_res.send_response(channel, response);
 				if let Err(e) = res {
 					log::error!("Failed to send the response {:?}", e);
@@ -112,12 +115,9 @@ impl NetworkBehaviourEventProcess<RequestResponseEvent<Request, Response>> for E
 				message: Res { response, .. },
 			} => {
 				// If we receive a response, we update the neighbors's opinion about us.
-				if let Response::Success(opinion) = response {
-					let pubkey = self.peer.get_pub_key(peer);
-					let ver_res = opinion.verify(&pubkey);
-					if ver_res {
-						self.peer.cache_neighbor_opinion((peer, opinion.k), opinion);
-					}
+				if let Response::Success(opinion, proof) = response {
+					self.peer.cache_neighbor_opinion((peer, opinion.k), opinion);
+					self.peer.cache_neighbor_proof((peer, opinion.k), proof);
 				} else {
 					log::error!("Received error response {:?}", response);
 				}
@@ -163,8 +163,10 @@ impl NetworkBehaviourEventProcess<IdentifyEvent> for EigenTrustBehaviour {
 mod test {
 	use super::*;
 	use crate::Peer;
-	use libp2p::core::identity::{Keypair};
-	use libp2p::identify::IdentifyInfo;
+	use eigen_trust_circuit::halo2wrong::halo2::poly::{
+		commitment::ParamsProver, kzg::commitment::ParamsKZG,
+	};
+	use libp2p::{core::identity::Keypair, identify::IdentifyInfo};
 	use tokio::time::Duration;
 
 	#[test]
@@ -173,7 +175,8 @@ mod test {
 		let interval_duration = Duration::from_secs(10);
 		let local_key = Keypair::generate_secp256k1();
 
-		let peer = Peer::new(local_key.clone());
+		let params = ParamsKZG::new(1);
+		let peer = Peer::new(local_key.clone(), params);
 		let mut beh = EigenTrustBehaviour::new(
 			connection_duration,
 			interval_duration,

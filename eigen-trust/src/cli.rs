@@ -3,6 +3,7 @@ use env_logger::Builder;
 use std::str::FromStr;
 
 use eigen_trust::{EigenError, Keypair, LevelFilter, Multiaddr, Node, PeerId};
+use eigen_trust_circuit::utils::read_params;
 
 const BOOTSTRAP_PEERS: [(&str, &str); 2] = [
 	(
@@ -67,7 +68,8 @@ async fn main() -> Result<(), EigenError> {
 		bootstrap_nodes.push((peer_id, peer_addr));
 	}
 
-	let node = Node::new(local_key, local_address, bootstrap_nodes, INTERVAL)?;
+	let params = read_params("../data/params-18.bin");
+	let node = Node::new(local_key, local_address, bootstrap_nodes, INTERVAL, params)?;
 
 	node.main_loop(None).await?;
 

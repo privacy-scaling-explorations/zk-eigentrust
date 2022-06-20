@@ -215,6 +215,7 @@ name = "bench"
 version = "0.1.0"
 dependencies = [
  "eigen-trust",
+ "eigen-trust-circuit",
  "env_logger",
  "futures",
  "tokio",

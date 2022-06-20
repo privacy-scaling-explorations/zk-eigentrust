@@ -2,6 +2,9 @@
 //! events.
 
 use crate::{epoch::Epoch, peer::Peer, protocol::EigenTrustBehaviour, EigenError};
+use eigen_trust_circuit::halo2wrong::{
+	curves::bn256::Bn256, halo2::poly::kzg::commitment::ParamsKZG,
+};
 use futures::StreamExt;
 use libp2p::{
 	core::{either::EitherError, upgrade::Version},
@@ -37,6 +40,7 @@ impl Node {
 		local_address: Multiaddr,
 		bootstrap_nodes: Vec<(PeerId, Multiaddr)>,
 		interval_secs: u64,
+		params: ParamsKZG<Bn256>,
 	) -> Result<Self, EigenError> {
 		let noise_keys = NoiseKeypair::<X25519Spec>::new()
 			.into_authentic(&local_key)
@@ -57,7 +61,7 @@ impl Node {
 			.timeout(connection_duration)
 			.boxed();
 
-		let peer = Peer::new(local_key.clone());
+		let peer = Peer::new(local_key.clone(), params);
 		let beh = EigenTrustBehaviour::new(
 			connection_duration,
 			interval_duration,
@@ -199,6 +203,7 @@ impl Node {
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use eigen_trust_circuit::halo2wrong::halo2::poly::commitment::ParamsProver;
 	use std::str::FromStr;
 
 	const INTERVAL: u64 = 10;
@@ -222,14 +227,25 @@ mod tests {
 			(peer_id2, local_address2.clone()),
 		];
 
+		let params = ParamsKZG::new(1);
+
 		let mut node1 = Node::new(
 			local_key1,
 			local_address1.clone(),
 			bootstrap_nodes.clone(),
 			INTERVAL,
+			params.clone(),
 		)
 		.unwrap();
-		let mut node2 = Node::new(local_key2, local_address2, bootstrap_nodes, INTERVAL).unwrap();
+
+		let mut node2 = Node::new(
+			local_key2,
+			local_address2,
+			bootstrap_nodes,
+			INTERVAL,
+			params,
+		)
+		.unwrap();
 
 		node1.dial_bootstrap_nodes();
 
@@ -276,14 +292,25 @@ mod tests {
 			(peer_id2, local_address2.clone()),
 		];
 
+		let params = ParamsKZG::new(1);
+
 		let mut node1 = Node::new(
 			local_key1,
 			local_address1,
 			bootstrap_nodes.clone(),
 			INTERVAL,
+			params.clone(),
 		)
 		.unwrap();
-		let mut node2 = Node::new(local_key2, local_address2, bootstrap_nodes, INTERVAL).unwrap();
+
+		let mut node2 = Node::new(
+			local_key2,
+			local_address2,
+			bootstrap_nodes,
+			INTERVAL,
+			params,
+		)
+		.unwrap();
 
 		node1.dial_bootstrap_nodes();
 
@@ -341,9 +368,24 @@ mod tests {
 		let local_address1 = Multiaddr::from_str(ADDR_1).unwrap();
 		let local_address2 = Multiaddr::from_str(ADDR_2).unwrap();
 
-		let mut node1 = Node::new(local_key1, local_address1, Vec::new(), INTERVAL).unwrap();
-		let mut node2 =
-			Node::new(local_key2, local_address2.clone(), Vec::new(), INTERVAL).unwrap();
+		let params = ParamsKZG::new(1);
+
+		let mut node1 = Node::new(
+			local_key1,
+			local_address1,
+			Vec::new(),
+			INTERVAL,
+			params.clone(),
+		)
+		.unwrap();
+		let mut node2 = Node::new(
+			local_key2,
+			local_address2.clone(),
+			Vec::new(),
+			INTERVAL,
+			params,
+		)
+		.unwrap();
 
 		node1.dial_neighbor(local_address2);
 
@@ -406,14 +448,24 @@ mod tests {
 			(peer_id2, local_address2.clone()),
 		];
 
+		let params = ParamsKZG::new(1);
+
 		let mut node1 = Node::new(
 			local_key1,
 			local_address1,
 			bootstrap_nodes.clone(),
 			INTERVAL,
+			params.clone(),
 		)
 		.unwrap();
-		let node2 = Node::new(local_key2, local_address2, bootstrap_nodes, INTERVAL).unwrap();
+		let node2 = Node::new(
+			local_key2,
+			local_address2,
+			bootstrap_nodes,
+			INTERVAL,
+			params,
+		)
+		.unwrap();
 
 		node1.dial_bootstrap_nodes();
 

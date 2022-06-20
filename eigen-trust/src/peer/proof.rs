@@ -1,50 +1,63 @@
-use super::MAX_NEIGHBORS;
-use super::opinion::{convert_keypair, convert_pubkey, Posedion5x5, SCALE, to_wide};
+use super::{
+	opinion::{convert_keypair, convert_pubkey, to_wide, Posedion5x5, SCALE},
+	MAX_NEIGHBORS,
+};
 use crate::{EigenError, Epoch};
-use eigen_trust_circuit::halo2wrong::curves::bn256::G1Affine;
-use eigen_trust_circuit::halo2wrong::halo2::plonk::{ProvingKey, VerifyingKey};
-use libp2p::core::{identity::Keypair as IdentityKeypair, PublicKey as IdentityPublicKey};
 use eigen_trust_circuit::{
 	ecdsa::{generate_signature, SigData},
 	halo2wrong::{
 		curves::{
-			bn256::{Bn256, Fr as Bn256Scalar},
+			bn256::{Bn256, Fr as Bn256Scalar, G1Affine},
 			secp256k1::{Fq as Secp256k1Scalar, Secp256k1Affine},
 			FieldExt,
 		},
-		halo2::poly::kzg::commitment::ParamsKZG,
+		halo2::{
+			arithmetic::Field,
+			plonk::{ProvingKey, VerifyingKey},
+			poly::kzg::commitment::ParamsKZG,
+		},
 	},
 	utils::{prove, verify},
 	EigenTrustCircuit,
 };
+use libp2p::core::{identity::Keypair as IdentityKeypair, PublicKey as IdentityPublicKey};
 use rand::thread_rng;
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Proof {
-	t_i: Bn256Scalar,
-	sig_i: SigData<Secp256k1Scalar>,
-	c_ji: [Bn256Scalar; MAX_NEIGHBORS],
-	t_j: [Bn256Scalar; MAX_NEIGHBORS],
-	proof_bytes: Vec<u8>,
+	pub(crate) sig_i: SigData<Secp256k1Scalar>,
+	pub(crate) c_ji: [Bn256Scalar; MAX_NEIGHBORS],
+	pub(crate) t_j: [Bn256Scalar; MAX_NEIGHBORS],
+	pub(crate) proof_bytes: Vec<u8>,
 }
 
 impl Proof {
-	/// Creates a new opinion.
 	pub fn new(
+		sig_i: SigData<Secp256k1Scalar>,
+		c_ji: [Bn256Scalar; MAX_NEIGHBORS],
+		t_j: [Bn256Scalar; MAX_NEIGHBORS],
+		proof_bytes: Vec<u8>,
+	) -> Self {
+		Self { sig_i, c_ji, t_j, proof_bytes }
+	}
+	/// Creates a new opinion.
+	pub fn generate(
 		kp: &IdentityKeypair,
 		c_ji: [f64; MAX_NEIGHBORS],
 		t_j: [f64; MAX_NEIGHBORS],
 		k: Epoch,
 		neighbor_sigs: [SigData<Secp256k1Scalar>; MAX_NEIGHBORS],
-		neighbor_pubkeys: [Secp256k1Affine; MAX_NEIGHBORS],
+		neighbor_pubkeys: [IdentityPublicKey; MAX_NEIGHBORS],
 		params: &ParamsKZG<Bn256>,
-		proving_key: &ProvingKey<G1Affine>,
+		pk: &ProvingKey<G1Affine>,
 	) -> Result<Self, EigenError> {
 		let mut rng = thread_rng();
 
 		let keypair = convert_keypair(kp);
 
 		let pubkey_i = keypair.public().to_owned();
+
+		let converted_neighbor_pubkeys = neighbor_pubkeys.map(|pk| convert_pubkey(&pk));
 
 		let epoch_f = Bn256Scalar::from_u128(u128::from(k.0));
 		let t_i = c_ji.zip(t_j).iter().fold(0., |acc, (a, b)| acc + (a * b));
@@ -74,7 +87,7 @@ impl Proof {
 			sig_i,
 			c_ji_scaled,
 			t_j_scaled,
-			neighbor_pubkeys,
+			converted_neighbor_pubkeys,
 			neighbor_sigs,
 			aux_generator,
 		);
@@ -101,16 +114,32 @@ impl Proof {
 			pub_ins.push(t_j_scaled[i]);
 		}
 
-		let proof_bytes = prove(params, circuit, &[&pub_ins], &proving_key, &mut rng)
+		let proof_bytes = prove(params, circuit, &[&pub_ins], &pk, &mut rng)
 			.map_err(|_| EigenError::ProvingError)?;
 
 		Ok(Self {
-			t_i: t_i_f,
 			sig_i,
 			c_ji: c_ji_scaled,
 			t_j: t_j_scaled,
 			proof_bytes,
 		})
+	}
+
+	pub fn empty() -> Self {
+		let mut rng = thread_rng();
+
+		let sig_i = SigData::empty();
+		let c_ji = [Bn256Scalar::random(&mut rng); MAX_NEIGHBORS];
+		let t_j = [Bn256Scalar::random(&mut rng); MAX_NEIGHBORS];
+
+		let proof_bytes = vec![0u8; 0];
+
+		Self {
+			sig_i,
+			c_ji,
+			t_j,
+			proof_bytes,
+		}
 	}
 
 	/// Verifies the proof.
@@ -123,6 +152,8 @@ impl Proof {
 		let mut rng = thread_rng();
 		let pubkey_i = convert_pubkey(pubkey);
 
+		let t_i = self.c_ji.zip(self.t_j).iter().fold(Bn256Scalar::zero(), |acc, (a, b)| acc + (a * b));
+
 		let pk_ix = Bn256Scalar::from_bytes_wide(&to_wide(pubkey_i.x.to_bytes()));
 		let pk_iy = Bn256Scalar::from_bytes_wide(&to_wide(pubkey_i.y.to_bytes()));
 
@@ -131,7 +162,7 @@ impl Proof {
 		let m_hash = Bn256Scalar::from_bytes_wide(&to_wide(self.sig_i.m_hash.to_bytes()));
 
 		let mut pub_ins = Vec::new();
-		pub_ins.push(self.t_i);
+		pub_ins.push(t_i);
 		pub_ins.push(pk_ix);
 		pub_ins.push(pk_iy);
 		pub_ins.push(r);

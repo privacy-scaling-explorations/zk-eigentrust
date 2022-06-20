@@ -3,6 +3,7 @@ use futures::future::join_all;
 use std::str::FromStr;
 
 use eigen_trust::{Keypair, LevelFilter, Multiaddr, Node};
+use eigen_trust_circuit::utils::read_params;
 
 const INTERVAL: u64 = 2;
 const NUM_CONNECTIONS: usize = 12;
@@ -36,15 +37,18 @@ async fn main() {
 		bootstrap_nodes.push((peer_id, local_address));
 	}
 
+	let params = read_params("../data/params-18.bin");
+
 	let mut tasks = Vec::new();
 	for i in 0..(NUM_CONNECTIONS + 1) {
 		let local_key = local_keys[i].clone();
 		let local_address = local_addresses[i].clone();
 		let bootstrap_nodes = bootstrap_nodes.clone();
+		let params = params.clone();
 
 		let join_handle = tokio::spawn(async move {
 			let mut node =
-				Node::new(local_key, local_address, bootstrap_nodes.clone(), INTERVAL).unwrap();
+				Node::new(local_key, local_address, bootstrap_nodes.clone(), INTERVAL, params).unwrap();
 
 			let peer = node.get_swarm_mut().behaviour_mut().get_peer_mut();
 			for (peer_id, ..) in bootstrap_nodes {
