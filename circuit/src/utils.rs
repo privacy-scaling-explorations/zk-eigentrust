@@ -1,5 +1,5 @@
 use crate::{
-	ecdsa::native::{generate_signature, Keypair},
+	ecdsa::{generate_signature, Keypair},
 	EigenTrustCircuit,
 };
 use halo2wrong::{
@@ -29,7 +29,7 @@ use halo2wrong::{
 	},
 };
 use rand::Rng;
-use std::{fmt::Debug, fs::write, io::Read};
+use std::{fmt::Debug, fs::write, io::Read, time::Instant};
 
 pub fn generate_params<E: MultiMillerLoop + Debug>(k: u32) -> ParamsKZG<E> {
 	ParamsKZG::<E>::new(k)
@@ -64,12 +64,8 @@ pub fn random_circuit<
 	let sig_i = generate_signature(pair_i, m_hash, rng).unwrap();
 
 	// Data from neighbors of i
-	let c_ji = [(); SIZE].map(|_| E::Scalar::random(rng.clone()));
-	let t_j = [(); SIZE].map(|_| E::Scalar::random(rng.clone()));
-	let pairs = [(); SIZE].map(|_| Keypair::<N>::new(rng));
-	let pubkeys = pairs.map(|p| p.public().to_owned());
-	let sigs = pairs.map(|p| generate_signature(p, m_hash, rng).unwrap());
-	let selectors = [true; SIZE];
+	let op_ji = [(); SIZE].map(|_| E::Scalar::random(rng.clone()));
+	let op_v = E::Scalar::random(rng.clone());
 
 	// Aux generator
 	let aux_generator = N::CurveExt::random(rng).to_affine();
@@ -77,11 +73,8 @@ pub fn random_circuit<
 	let eigen_trust = EigenTrustCircuit::<_, _, SIZE>::new(
 		pubkey_i,
 		sig_i,
-		c_ji,
-		t_j,
-		pubkeys,
-		sigs,
-		selectors,
+		op_ji,
+		op_v,
 		aux_generator,
 	);
 
@@ -158,7 +151,10 @@ pub fn prove_and_verify<E: MultiMillerLoop + Debug, C: Circuit<E::Scalar>, R: Rn
 	rng: &mut R,
 ) -> Result<bool, Error> {
 	let pk = keygen(&params, &circuit)?;
+	let start = Instant::now();
 	let proof = prove(&params, circuit, pub_inps, &pk, rng)?;
+	let end = start.elapsed();
+	print!("Proving time: {:?}", end.as_secs());
 	let res = verify(&params, pub_inps, &proof[..], pk.get_vk(), rng)?;
 
 	Ok(res)
