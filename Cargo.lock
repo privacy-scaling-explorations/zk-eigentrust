@@ -743,6 +743,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "ecdsa"
+version = "0.1.0"
+source = "git+https://github.com/TraceBundy/halo2wrong.git?branch=master#0c159a7d5c3dc855b1bdb5caf28c36294635cd3f"
+dependencies = [
+ "ecc",
+ "group 0.12.0",
+ "num-bigint",
+ "num-integer",
+ "num-traits",
+ "rand 0.8.5",
+ "subtle",
+]
+
+[[package]]
 name = "ed25519"
 version = "1.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -786,6 +800,7 @@ name = "eigen-trust-circuit"
 version = "0.1.0"
 dependencies = [
  "ecc",
+ "ecdsa",
  "ff 0.11.1",
  "group 0.11.0",
  "halo2wrong",

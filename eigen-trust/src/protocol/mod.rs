@@ -83,7 +83,16 @@ impl EigenTrustBehaviour {
 	}
 
 	pub fn global_trust_score_at(&self, at: Epoch) -> f64 {
-		self.peer.calculate_global_trust_score(at)
+		let op_ji = self.peer.neighbors.map(|p| {
+			if let Some(peer_id) = p {
+				self.peer.get_neighbor_opinion(&(peer_id, at)).op	
+			} else {
+				0.
+			}
+		});
+		let t_i = op_ji.iter().fold(0., |acc, t| acc + t);
+		
+		t_i
 	}
 }
 
@@ -100,11 +109,9 @@ impl NetworkBehaviourEventProcess<RequestResponseEvent<Request, Response>> for E
 			} => {
 				// First we calculate the local opinions for the requested epoch.
 				self.peer.calculate_local_opinions(request.get_epoch());
-				self.peer.calculate_local_proof(request.get_epoch());
 				// Then we send the local opinion to the peer.
 				let opinion = self.peer.get_local_opinion(&(peer, request.get_epoch()));
-				let proof = self.peer.get_local_proof(request.get_epoch());
-				let response = Response::Success(opinion, proof);
+				let response = Response::Success(opinion.clone());
 				let res = self.req_res.send_response(channel, response);
 				if let Err(e) = res {
 					log::error!("Failed to send the response {:?}", e);
@@ -115,9 +122,8 @@ impl NetworkBehaviourEventProcess<RequestResponseEvent<Request, Response>> for E
 				message: Res { response, .. },
 			} => {
 				// If we receive a response, we update the neighbors's opinion about us.
-				if let Response::Success(opinion, proof) = response {
+				if let Response::Success(opinion) = response {
 					self.peer.cache_neighbor_opinion((peer, opinion.k), opinion);
-					self.peer.cache_neighbor_proof((peer, opinion.k), proof);
 				} else {
 					log::error!("Received error response {:?}", response);
 				}
