@@ -41,7 +41,7 @@ where
 			for j in 0..WIDTH {
 				let mds_ij = &mds[i][j];
 				let m_product = state[j] * mds_ij;
-				new_state[i] = new_state[i] + m_product;
+				new_state[i] += m_product;
 			}
 		}
 		new_state

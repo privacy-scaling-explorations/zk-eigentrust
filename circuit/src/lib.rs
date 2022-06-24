@@ -1,4 +1,5 @@
 #![feature(array_try_map)]
+#![allow(clippy::needless_range_loop)]
 
 pub mod ecdsa;
 pub mod poseidon;
@@ -135,7 +136,7 @@ impl<E: CurveAffine, N: FieldExt, const SIZE: usize> Circuit<N> for EigenTrustCi
 			|mut region| {
 				let position = &mut 0;
 				let ctx = &mut RegionCtx::new(&mut region, position);
-				let unassigned_op_jis = self.op_ji.clone().map(|val| UnassignedValue::from(val));
+				let unassigned_op_jis = self.op_ji.map(UnassignedValue::from);
 				let unassigned_c_v = UnassignedValue::from(self.c_v);
 
 				let assigned_op_jis =
@@ -173,7 +174,7 @@ impl<E: CurveAffine, N: FieldExt, const SIZE: usize> Circuit<N> for EigenTrustCi
 				let assigned_m_hash =
 					scalar_chip.assign_integer(ctx, unassigned_m_hash, Range::Remainder)?;
 
-				let pk_in_circuit = ecc_chip.assign_point(ctx, self.pubkey_i.map(|p| p.into()))?;
+				let pk_in_circuit = ecc_chip.assign_point(ctx, self.pubkey_i)?;
 
 				let sig = AssignedEcdsaSig {
 					r: assigned_r.clone(),

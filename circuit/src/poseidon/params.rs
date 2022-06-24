@@ -37,8 +37,7 @@ pub trait RoundParams<F: FieldExt, const WIDTH: usize>: Sbox {
 
 	fn mds() -> [[F; WIDTH]; WIDTH] {
 		let mds_raw = Self::mds_raw();
-		let mds = mds_raw.map(|row| row.map(|item| hex_to_field(item)));
-		mds
+		mds_raw.map(|row| row.map(|item| hex_to_field(item)))
 	}
 
 	fn round_constants_raw() -> Vec<&'static str>;
@@ -60,9 +59,7 @@ pub fn hex_to_field<F: FieldExt>(s: &str) -> F {
 	let mut bytes = hex::decode(s).expect("Invalid params");
 	bytes.reverse();
 	let mut bytes_wide: [u8; 64] = [0; 64];
-	for i in 0..bytes.len() {
-		bytes_wide[i] = bytes[i];
-	}
+	bytes_wide[..bytes.len()].copy_from_slice(&bytes[..]);
 	F::from_bytes_wide(&bytes_wide)
 }
 
@@ -72,8 +69,7 @@ impl Sbox for Params5x5Bn254 {
 	fn sbox_expr<F: FieldExt>(exp: Expression<F>) -> Expression<F> {
 		let exp2 = exp.clone() * exp.clone();
 		let exp4 = exp2.clone() * exp2;
-		let exp5 = exp4 * exp;
-		exp5
+		exp4 * exp
 	}
 
 	fn sbox_asgn<F: FieldExt>(
@@ -83,15 +79,14 @@ impl Sbox for Params5x5Bn254 {
 	) -> Result<AssignedValue<F>, Error> {
 		let exp2 = main_gate.mul(ctx, exp, exp)?;
 		let exp4 = main_gate.mul(ctx, &exp2, &exp2)?;
-		let exp5 = main_gate.mul(ctx, &exp4, &exp)?;
+		let exp5 = main_gate.mul(ctx, &exp4, exp)?;
 		Ok(exp5)
 	}
 
 	fn sbox_f<F: FieldExt>(f: F) -> F {
-		let f2 = f.clone() * f.clone();
-		let f4 = f2.clone() * f2;
-		let f5 = f4 * f;
-		f5
+		let f2 = f * f;
+		let f4 = f2 * f2;
+		f4 * f
 	}
 }
 

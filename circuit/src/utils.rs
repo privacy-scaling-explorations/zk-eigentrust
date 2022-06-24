@@ -70,16 +70,15 @@ pub fn random_circuit<
 
 	// Aux generator
 	let aux_generator = N::CurveExt::random(rng.clone()).to_affine();
-	let eigen_trust = EigenTrustCircuit::<_, _, SIZE>::new(
+
+	EigenTrustCircuit::<_, _, SIZE>::new(
 		pubkey_i,
 		sig_i,
 		op_ji,
 		op_v,
 		min_score,
 		aux_generator,
-	);
-
-	eigen_trust
+	)
 }
 
 pub fn keygen<E: MultiMillerLoop + Debug, C: Circuit<E::Scalar>>(
@@ -132,10 +131,10 @@ pub fn verify<E: MultiMillerLoop + Debug, R: Rng + Clone>(
 	vk: &VerifyingKey<E::G1Affine>,
 	rng: &mut R,
 ) -> Result<bool, Error> {
-	let strategy = BatchVerifier::<E, R>::new(&params, rng.clone());
+	let strategy = BatchVerifier::<E, R>::new(params, rng.clone());
 	let mut transcript = Blake2bRead::<_, E::G1Affine, Challenge255<_>>::init(proof);
 	let output = verify_proof::<KZGCommitmentScheme<E>, _, _, VerifierSHPLONK<E>, _, _>(
-		&params,
+		params,
 		vk,
 		strategy,
 		&[pub_inps],
