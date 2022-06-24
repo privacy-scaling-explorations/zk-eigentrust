@@ -10,15 +10,16 @@ use crate::{epoch::Epoch, EigenError};
 use eigen_trust_circuit::{
 	halo2wrong::{
 		curves::{
-			bn256::{Bn256, G1Affine},
+			bn256::{Bn256, Fr as Bn256Scalar, G1Affine},
 			secp256k1::Secp256k1Affine,
+			FieldExt,
 		},
 		halo2::{plonk::ProvingKey, poly::kzg::commitment::ParamsKZG},
 	},
 	utils::{keygen, random_circuit},
 };
 use libp2p::{core::PublicKey, identity::Keypair, PeerId};
-use opinion::Opinion;
+use opinion::{Opinion, SCALE};
 use rand::thread_rng;
 use std::collections::HashMap;
 
@@ -26,6 +27,7 @@ use std::collections::HashMap;
 /// This is also the maximum number of peers that can be connected to the
 /// node.
 pub const MAX_NEIGHBORS: usize = 256;
+pub const MIN_SCORE: f64 = 0.1;
 
 /// The peer struct.
 pub struct Peer {
@@ -43,7 +45,9 @@ impl Peer {
 	/// Creates a new peer.
 	pub fn new(keypair: Keypair, params: ParamsKZG<Bn256>) -> Self {
 		let mut rng = thread_rng();
-		let random_circuit = random_circuit::<Bn256, Secp256k1Affine, _, MAX_NEIGHBORS>(&mut rng);
+		let min_score = Bn256Scalar::from_u128((MIN_SCORE * SCALE).round() as u128);
+		let random_circuit =
+			random_circuit::<Bn256, Secp256k1Affine, _, MAX_NEIGHBORS>(min_score, &mut rng);
 		let pk = keygen(&params, &random_circuit).unwrap();
 		Peer {
 			neighbors: [None; MAX_NEIGHBORS],
@@ -146,7 +150,7 @@ impl Peer {
 	/// Calculate the global trust score at the specified epoch.
 	pub fn global_trust_score_at(&self, at: Epoch) -> f64 {
 		let op_ji = self.get_neighbor_opinions_at(at);
-		let t_i = op_ji.iter().fold(0., |acc, t| acc + t);
+		let t_i = op_ji.iter().fold(MIN_SCORE, |acc, t| acc + t);
 
 		t_i
 	}
@@ -268,8 +272,9 @@ mod tests {
 		let local_pubkey = local_keypair.public();
 
 		let params = ParamsKZG::<Bn256>::new(18);
+		let min_score = Bn256Scalar::from_u128((MIN_SCORE * SCALE).round() as u128);
 		let random_circuit =
-			random_circuit::<Bn256, Secp256k1Affine, _, MAX_NEIGHBORS>(&mut rng.clone());
+			random_circuit::<Bn256, Secp256k1Affine, _, MAX_NEIGHBORS>(min_score, &mut rng.clone());
 		let pk = keygen(&params, &random_circuit).unwrap();
 
 		let mut peer = Peer::new(local_keypair, params.clone());
@@ -302,15 +307,8 @@ mod tests {
 
 		peer.calculate_local_opinions(epoch);
 
-		let op_ji = peer.neighbors.map(|p| {
-			if let Some(peer_id) = p {
-				peer.get_neighbor_opinion(&(peer_id, epoch)).op
-			} else {
-				0.
-			}
-		});
-		let t_i = op_ji.iter().fold(0., |acc, t| acc + t);
-		let true_global_score = 0.4;
+		let t_i = peer.global_trust_score_at(epoch);
+		let true_global_score = 0.8999999999999999;
 
 		assert_eq!(true_global_score, t_i);
 

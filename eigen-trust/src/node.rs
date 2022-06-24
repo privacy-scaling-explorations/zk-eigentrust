@@ -452,6 +452,77 @@ mod tests {
 	}
 
 	#[tokio::test]
+	async fn should_identify_neighbors() {
+		const ADDR_1: &str = "/ip4/127.0.0.1/tcp/56718";
+		const ADDR_2: &str = "/ip4/127.0.0.1/tcp/58612";
+
+		let local_key1 = Keypair::generate_secp256k1();
+		let local_pubkey1 = local_key1.public();
+		let peer_id1 = local_pubkey1.to_peer_id();
+
+		let local_key2 = Keypair::generate_secp256k1();
+		let local_pubkey2 = local_key2.public();
+		let peer_id2 = local_pubkey2.to_peer_id();
+
+		let local_address1 = Multiaddr::from_str(ADDR_1).unwrap();
+		let local_address2 = Multiaddr::from_str(ADDR_2).unwrap();
+
+		let bootstrap_nodes = vec![
+			(peer_id1, local_address1.clone()),
+			(peer_id2, local_address2.clone()),
+		];
+
+		let params = ParamsKZG::new(18);
+
+		let mut node1 = Node::new(
+			local_key1,
+			local_address1,
+			bootstrap_nodes.clone(),
+			INTERVAL,
+			params.clone(),
+		)
+		.unwrap();
+
+		let mut node2 = Node::new(
+			local_key2,
+			local_address2,
+			bootstrap_nodes,
+			INTERVAL,
+			params,
+		)
+		.unwrap();
+
+		node1.dial_bootstrap_nodes();
+
+		// For node 2
+		// 1. New listen addr
+		// 2. Incoming connection
+		// 3. Connection established
+		// For node 1
+		// 1. New listen addr
+		// 2. Connection established
+		for _ in 0..9 {
+			select! {
+				event2 = node2.get_swarm_mut().select_next_some() => node2.handle_swarm_events(event2),
+				event1 = node1.get_swarm_mut().select_next_some() => node1.handle_swarm_events(event1),
+
+			}
+		}
+
+		let neighbors1: Vec<PeerId> = node1.get_peer().neighbors();
+		let neighbors2: Vec<PeerId> = node2.get_peer().neighbors();
+		let expected_neighbor1 = vec![peer_id2];
+		let expected_neighbor2 = vec![peer_id1];
+		assert_eq!(neighbors1, expected_neighbor1);
+		assert_eq!(neighbors2, expected_neighbor2);
+
+		let pubkey1 = node2.get_peer().get_pub_key(peer_id1);
+		let pubkey2 = node1.get_peer().get_pub_key(peer_id2);
+		assert_eq!(pubkey1, local_pubkey1);
+		assert_eq!(pubkey2, local_pubkey2);
+	}
+
+	#[tokio::test]
 	async fn should_add_neighbors_on_dial() {
 		const ADDR_1: &str = "/ip4/127.0.0.1/tcp/56717";
 		const ADDR_2: &str = "/ip4/127.0.0.1/tcp/58622";
@@ -617,10 +688,10 @@ mod tests {
 		let peer2_neighbor_opinion = peer2.get_neighbor_opinion(&(peer_id1, next_epoch));
 
 		assert_eq!(peer1_neighbor_opinion.k, next_epoch);
-		assert_eq!(peer1_neighbor_opinion.op, 0.0);
+		assert_eq!(peer1_neighbor_opinion.op, 0.1);
 
 		assert_eq!(peer2_neighbor_opinion.k, next_epoch);
-		assert_eq!(peer2_neighbor_opinion.op, 0.0);
+		assert_eq!(peer2_neighbor_opinion.op, 0.1);
 	}
 
 	#[tokio::test]

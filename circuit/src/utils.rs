@@ -54,6 +54,7 @@ pub fn random_circuit<
 	R: Rng + Clone,
 	const SIZE: usize,
 >(
+	min_score: E::Scalar,
 	rng: &mut R,
 ) -> EigenTrustCircuit<N, <E as Engine>::Scalar, SIZE> {
 	let m_hash = N::ScalarExt::random(rng.clone());
@@ -68,10 +69,15 @@ pub fn random_circuit<
 	let op_v = E::Scalar::random(rng.clone());
 
 	// Aux generator
-	let aux_generator = N::CurveExt::random(rng).to_affine();
-
-	let eigen_trust =
-		EigenTrustCircuit::<_, _, SIZE>::new(pubkey_i, sig_i, op_ji, op_v, aux_generator);
+	let aux_generator = N::CurveExt::random(rng.clone()).to_affine();
+	let eigen_trust = EigenTrustCircuit::<_, _, SIZE>::new(
+		pubkey_i,
+		sig_i,
+		op_ji,
+		op_v,
+		min_score,
+		aux_generator,
+	);
 
 	eigen_trust
 }

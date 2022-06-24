@@ -1,3 +1,4 @@
+use super::MIN_SCORE;
 use crate::{EigenError, Epoch};
 use eigen_trust_circuit::{
 	ecdsa::{generate_signature, Keypair, SigData},
@@ -60,9 +61,10 @@ impl<const N: usize> Opinion<N> {
 		let pk_v_x = Bn256Scalar::from_bytes_wide(&to_wide(pubkey_v.x.to_bytes()));
 		let pk_v_y = Bn256Scalar::from_bytes_wide(&to_wide(pubkey_v.y.to_bytes()));
 		let epoch_f = Bn256Scalar::from_u128(u128::from(k.0));
-		let t_i = op_ji.iter().fold(0., |acc, t| acc + t);
+		let t_i = op_ji.iter().fold(MIN_SCORE, |acc, t| acc + t);
 		let op_v = t_i * c_v;
 
+		let min_score = Bn256Scalar::from_u128((MIN_SCORE * SCALE).round() as u128);
 		let op_ji_f = op_ji.map(|op| Bn256Scalar::from_u128((op * SCALE).round() as u128));
 		let c_v_f = Bn256Scalar::from_u128((c_v * SCALE).round() as u128);
 		let op_v_f = Bn256Scalar::from_u128((op_v * SCALE * SCALE).round() as u128);
@@ -76,7 +78,8 @@ impl<const N: usize> Opinion<N> {
 
 		let aux_generator =
 			<Secp256k1Affine as CurveAffine>::CurveExt::random(&mut rng).to_affine();
-		let circuit = EigenTrustCircuit::new(pubkey_i, sig_i, op_ji_f, c_v_f, aux_generator);
+		let circuit =
+			EigenTrustCircuit::new(pubkey_i, sig_i, op_ji_f, c_v_f, min_score, aux_generator);
 
 		let r = Bn256Scalar::from_bytes_wide(&to_wide(sig_i.r.to_bytes()));
 		let s = Bn256Scalar::from_bytes_wide(&to_wide(sig_i.s.to_bytes()));
@@ -94,6 +97,12 @@ impl<const N: usize> Opinion<N> {
 
 		let proof_bytes = prove(params, circuit, &[&pub_ins], &pk, &mut rng)
 			.map_err(|_| EigenError::ProvingError)?;
+
+		let proof_res = verify(params, &[&pub_ins], &proof_bytes, &pk.get_vk(), &mut rng)
+			.map_err(|_| EigenError::VerificationError)?;
+
+		// Sanity check
+		assert!(proof_res);
 
 		Ok(Self {
 			k,
@@ -228,7 +237,9 @@ mod test {
 		let keypair_v = IdentityKeypair::generate_secp256k1();
 		let pubkey_v = keypair_v.public();
 		let params = ParamsKZG::<Bn256>::new(18);
-		let random_circuit = random_circuit::<Bn256, Secp256k1Affine, _, N>(&mut rng.clone());
+		let min_score = Bn256Scalar::from_u128((MIN_SCORE * SCALE).round() as u128);
+		let random_circuit =
+			random_circuit::<Bn256, Secp256k1Affine, _, N>(min_score, &mut rng.clone());
 		let pk = keygen(&params, &random_circuit).unwrap();
 		let res = op
 			.verify(&local_pubkey, &pubkey_v, &params, &pk.get_vk())
@@ -247,13 +258,15 @@ mod test {
 
 		let epoch = Epoch(1);
 		let op_ji = [0.1; N];
-		let op_v = 0.1;
+		let c_v = 0.1;
+		let min_score = Bn256Scalar::from_u128((MIN_SCORE * SCALE).round() as u128);
 
 		let params = ParamsKZG::<Bn256>::new(18);
-		let random_circuit = random_circuit::<Bn256, Secp256k1Affine, _, N>(&mut rng.clone());
+		let random_circuit =
+			random_circuit::<Bn256, Secp256k1Affine, _, N>(min_score, &mut rng.clone());
 		let pk = keygen(&params, &random_circuit).unwrap();
 		let proof =
-			Opinion::<N>::generate(&local_keypair, &pubkey_v, epoch, op_ji, op_v, &params, &pk)
+			Opinion::<N>::generate(&local_keypair, &pubkey_v, epoch, op_ji, c_v, &params, &pk)
 				.unwrap();
 
 		assert!(proof

@@ -47,6 +47,7 @@ pub struct EigenTrustCircuit<E: CurveAffine, N: FieldExt, const SIZE: usize> {
 	op_ji: [Option<N>; SIZE],
 	c_v: Option<N>,
 
+	min_score: N,
 	aux_generator: Option<E>,
 	window_size: usize,
 	_marker: PhantomData<N>,
@@ -58,6 +59,7 @@ impl<E: CurveAffine, N: FieldExt, const SIZE: usize> EigenTrustCircuit<E, N, SIZ
 		sig_i: SigData<E::ScalarExt>,
 		op_ji: [N; SIZE],
 		c_v: N,
+		min_score: N,
 		aux_generator: E,
 	) -> Self {
 		Self {
@@ -66,6 +68,7 @@ impl<E: CurveAffine, N: FieldExt, const SIZE: usize> EigenTrustCircuit<E, N, SIZ
 			op_ji: op_ji.map(|c| Some(c)),
 			c_v: Some(c_v),
 
+			min_score,
 			aux_generator: Some(aux_generator),
 			window_size: 2,
 			_marker: PhantomData,
@@ -84,6 +87,7 @@ impl<E: CurveAffine, N: FieldExt, const SIZE: usize> Circuit<N> for EigenTrustCi
 			op_ji: [None; SIZE],
 			c_v: None,
 
+			min_score: self.min_score,
 			aux_generator: None,
 			window_size: self.window_size,
 			_marker: PhantomData,
@@ -139,11 +143,13 @@ impl<E: CurveAffine, N: FieldExt, const SIZE: usize> Circuit<N> for EigenTrustCi
 
 				let assigned_c_v = main_gate.assign_value(ctx, &unassigned_c_v)?;
 
+				let min_score = main_gate.assign_constant(ctx, self.min_score)?;
 				let mut sum = main_gate.assign_constant(ctx, N::zero())?;
 				for i in 0..SIZE {
 					sum = main_gate.add(ctx, &sum, &assigned_op_jis[i])?;
 				}
-				let op = main_gate.mul(ctx, &sum, &assigned_c_v)?;
+				let t_i = main_gate.add(ctx, &sum, &min_score)?;
+				let op = main_gate.mul(ctx, &t_i, &assigned_c_v)?;
 
 				Ok(op)
 			},
@@ -238,11 +244,17 @@ mod test {
 
 		// Aux generator
 		let aux_generator = <Secp256 as CurveAffine>::CurveExt::random(&mut rng).to_affine();
+		let min_score = Fr::from_u128(1);
+		let eigen_trust = EigenTrustCircuit::<_, _, SIZE>::new(
+			pubkey_i,
+			sig_i,
+			op_ji,
+			c_v,
+			min_score,
+			aux_generator,
+		);
 
-		let eigen_trust =
-			EigenTrustCircuit::<_, _, SIZE>::new(pubkey_i, sig_i, op_ji, c_v, aux_generator);
-
-		let op = Fr::from_u128(SIZE as u128);
+		let op = Fr::from_u128(SIZE as u128) + min_score;
 		let r = Fr::from_bytes_wide(&to_wide(sig_i.r.to_bytes()));
 		let s = Fr::from_bytes_wide(&to_wide(sig_i.s.to_bytes()));
 		let m_hash = Fr::from_bytes_wide(&to_wide(sig_i.m_hash.to_bytes()));
@@ -283,11 +295,17 @@ mod test {
 
 		// Aux generator
 		let aux_generator = <Secp256 as CurveAffine>::CurveExt::random(&mut rng).to_affine();
+		let min_score = Fr::from_u128(1);
+		let eigen_trust = EigenTrustCircuit::<_, _, SIZE>::new(
+			pubkey_i,
+			sig_i,
+			op_ji,
+			c_v,
+			min_score,
+			aux_generator,
+		);
 
-		let eigen_trust =
-			EigenTrustCircuit::<_, _, SIZE>::new(pubkey_i, sig_i, op_ji, c_v, aux_generator);
-
-		let op = Fr::from_u128(SIZE as u128);
+		let op = Fr::from_u128(SIZE as u128) + min_score;
 		let r = Fr::from_bytes_wide(&to_wide(sig_i.r.to_bytes()));
 		let s = Fr::from_bytes_wide(&to_wide(sig_i.s.to_bytes()));
 		let m_hash = Fr::from_bytes_wide(&to_wide(sig_i.m_hash.to_bytes()));
