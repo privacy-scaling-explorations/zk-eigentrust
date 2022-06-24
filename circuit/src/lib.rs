@@ -135,9 +135,9 @@ impl<E: CurveAffine, N: FieldExt, const SIZE: usize> Circuit<N> for EigenTrustCi
 				let unassigned_c_v = UnassignedValue::from(self.c_v);
 
 				let assigned_op_jis =
-					unassigned_op_jis.map(|val| main_gate.assign_value(ctx, &val).unwrap());
+					unassigned_op_jis.try_map(|val| main_gate.assign_value(ctx, &val))?;
 
-				let assigned_c_v = main_gate.assign_value(ctx, &unassigned_c_v).unwrap();
+				let assigned_c_v = main_gate.assign_value(ctx, &unassigned_c_v)?;
 
 				let mut sum = main_gate.assign_constant(ctx, N::zero())?;
 				for i in 0..SIZE {

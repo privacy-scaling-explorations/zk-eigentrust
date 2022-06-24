@@ -17,7 +17,15 @@
 //!
 //! ## Usage:
 //! ```rust
-//! use eigen_trust::{EigenError, Keypair, LevelFilter, Multiaddr, Node, PeerId};
+//! use eigen_trust::{
+//! 	EigenError,
+//! 	Keypair,
+//! 	LevelFilter,
+//! 	Multiaddr,
+//! 	Node,
+//! 	PeerId,
+//! 	ParamsKZG,
+//! };
 //! use std::str::FromStr;
 //!
 //! const BOOTSTRAP_PEERS: [(&str, &str); 2] = [
@@ -48,7 +56,8 @@
 //! 		bootstrap_nodes.push((peer_id, peer_addr));
 //! 	}
 //!
-//! 	let node = Node::new(local_key, local_address, bootstrap_nodes, INTERVAL)?;
+//! 	let params = ParamsKZG::new(18);
+//! 	let node = Node::new(local_key, local_address, bootstrap_nodes, INTERVAL, params)?;
 //! 	node.main_loop(Some(1)).await?;
 //!
 //! 	Ok(())
@@ -102,6 +111,9 @@ pub use libp2p::{identity::Keypair, Multiaddr, PeerId};
 pub use log::LevelFilter;
 pub use node::Node;
 pub use peer::Peer;
+pub use eigen_trust_circuit::halo2wrong::halo2::poly::kzg::commitment::ParamsKZG;
+pub use eigen_trust_circuit::poseidon::{Poseidon, params::Params5x5Bn254};
+pub use eigen_trust_circuit::EigenTrustCircuit;
 
 /// The crate-wide error variants.
 #[derive(Debug)]

@@ -97,13 +97,7 @@ impl Peer {
 	/// Calculate the local trust score toward all neighbors in the specified
 	/// epoch.
 	pub fn calculate_local_opinions(&mut self, k: Epoch) {
-		let op_ji = self.neighbors.map(|peer| {
-			if let Some(peer_id) = peer {
-				self.get_neighbor_opinion(&(peer_id, k)).op	
-			} else {
-				0.
-			}
-		});
+		let op_ji = self.get_neighbor_opinions_at(k);
 
 		for peer_id in self.neighbors() {
 			let score = self.neighbor_scores.get(&peer_id).unwrap_or(&0);
@@ -121,6 +115,35 @@ impl Peer {
 
 			self.cache_local_opinion((peer_id, opinion.k), opinion);
 		}
+	}
+
+	/// Returns all of the opinions of the neighbors in the specified epoch.
+	pub fn get_neighbor_opinions_at(&self, k: Epoch) -> [f64; MAX_NEIGHBORS] {
+		let op_ji = self.neighbors.map(|peer| {
+			if peer.is_none() {
+				return 0.
+			}
+			let peer_id = peer.unwrap();
+			let opinion = self.get_neighbor_opinion(&(peer_id, k));
+			let pubkey_p = self.get_pub_key(peer_id);
+			let pubkey_v = self.keypair.public();
+			let vk = self.proving_key.get_vk();
+
+			let res = opinion.verify(&pubkey_p, &pubkey_v, &self.params, &vk).unwrap();
+			
+			if res { return opinion.op };
+			0.
+		});
+
+		op_ji
+	}
+
+	/// Calculate the global trust score at the specified epoch.
+	pub fn global_trust_score_at(&self, at: Epoch) -> f64 {
+		let op_ji = self.get_neighbor_opinions_at(at);
+		let t_i = op_ji.iter().fold(0., |acc, t| acc + t);
+		
+		t_i
 	}
 
 	/// Returns sum of local scores.
@@ -181,7 +204,7 @@ mod tests {
 	use eigen_trust_circuit::{
 		ecdsa::SigData,
 		halo2wrong::{
-			curves::secp256k1::Fq as Secp256k1Scalar, halo2::poly::commitment::ParamsProver,
+			curves::{secp256k1::Fq as Secp256k1Scalar}, halo2::poly::commitment::ParamsProver,
 		},
 	};
 	use libp2p::core::identity::Keypair;
@@ -189,7 +212,7 @@ mod tests {
 	#[test]
 	fn should_create_peer() {
 		let kp = Keypair::generate_secp256k1();
-		let params = ParamsKZG::new(1);
+		let params = ParamsKZG::new(18);
 		let peer = Peer::new(kp, params);
 		assert_eq!(peer.get_sum_of_scores(), 0);
 	}
@@ -197,7 +220,7 @@ mod tests {
 	#[test]
 	fn should_cache_local_and_global_opinion() {
 		let kp = Keypair::generate_secp256k1();
-		let params = ParamsKZG::new(1);
+		let params = ParamsKZG::new(18);
 		let mut peer = Peer::new(kp, params);
 
 		let epoch = Epoch(0);
@@ -218,7 +241,7 @@ mod tests {
 	#[test]
 	fn should_add_and_remove_neghbours() {
 		let kp = Keypair::generate_secp256k1();
-		let params = ParamsKZG::new(1);
+		let params = ParamsKZG::new(18);
 		let mut peer = Peer::new(kp, params);
 		let neighbor_id = PeerId::random();
 
@@ -233,19 +256,40 @@ mod tests {
 
 	#[test]
 	fn should_add_neighbors_and_calculate_global_score() {
-		let kp = Keypair::generate_secp256k1();
-		let params = ParamsKZG::new(1);
-		let mut peer = Peer::new(kp, params);
+		let rng = &mut thread_rng();
+		let local_keypair = Keypair::generate_secp256k1();
+		let local_pubkey = local_keypair.public();
+
+		let params = ParamsKZG::<Bn256>::new(18);
+		let random_circuit = random_circuit::<Bn256, Secp256k1Affine, _, MAX_NEIGHBORS>(&mut rng.clone());
+		let pk = keygen(&params, &random_circuit).unwrap();
+
+		let mut peer = Peer::new(local_keypair, params.clone());
 
 		let epoch = Epoch(0);
-		for _ in 0..256 {
-			let peer_id = PeerId::random();
+		for _ in 0..4 {
+			let kp = Keypair::generate_secp256k1();
+			let pubkey = kp.public();
+			let peer_id = pubkey.to_peer_id();
+
 			peer.add_neighbor(peer_id).unwrap();
+			peer.identify_neighbor(peer_id, pubkey.clone());
 			peer.set_score(peer_id, 5);
-			let sig = SigData::<Secp256k1Scalar>::empty();
-			let opinion = Opinion::new(epoch, sig, 0.1, Vec::new());
+
+			// Create neighbor opinion.
+			let mut op_ji = [0.; MAX_NEIGHBORS];
+			op_ji[0] = 0.1;
+			let c_v = 1.;
+			let opinion = Opinion::generate(&kp, &local_pubkey, epoch, op_ji, c_v, &params, &pk).unwrap();
+
+			// Sanity check
+			assert!(opinion.verify(&pubkey, &local_pubkey, &params, &pk.get_vk()).unwrap());
+
+			// Cache neighbor opinion.
 			peer.cache_neighbor_opinion((peer_id, epoch), opinion);
 		}
+
+		peer.calculate_local_opinions(epoch);
 
 		let op_ji = peer.neighbors.map(|p| {
 			if let Some(peer_id) = p {
@@ -255,12 +299,15 @@ mod tests {
 			}
 		});
 		let t_i = op_ji.iter().fold(0., |acc, t| acc + t);
-
-		let mut true_global_score = 0.0;
-		for _ in 0..256 {
-			true_global_score += 0.01;
-		}
+		let true_global_score = 0.4;
 
 		assert_eq!(true_global_score, t_i);
+
+		let c_v = true_global_score * 0.25;
+
+		for peer_id in peer.neighbors() {
+			let opinion = peer.get_local_opinion(&(peer_id, epoch.next()));
+			assert_eq!(opinion.op, c_v);
+		}
 	}
 }

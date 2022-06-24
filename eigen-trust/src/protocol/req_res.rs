@@ -205,6 +205,7 @@ impl RequestResponseCodec for EigenTrustCodec {
 						bytes.extend(opinion.sig_i.r.to_bytes());
 						bytes.extend(opinion.sig_i.s.to_bytes());
 						bytes.extend(opinion.sig_i.m_hash.to_bytes());
+						bytes.extend(opinion.proof_bytes);
 					},
 					Response::InvalidRequest => bytes.push(1),
 					Response::InternalError(code) => bytes.push(code),

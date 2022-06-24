@@ -71,7 +71,7 @@ impl<const N: usize> Opinion<N> {
 		
 		let op_ji_f = op_ji.map(|op| Bn256Scalar::from_u128((op * SCALE).round() as u128));
 		let c_v_f = Bn256Scalar::from_u128((c_v * SCALE).round() as u128);
-		let op_v_f = Bn256Scalar::from_u128((op_v * SCALE).round() as u128);
+		let op_v_f = Bn256Scalar::from_u128((op_v * SCALE * SCALE).round() as u128);
 
 		let m_hash_input = [Bn256Scalar::zero(), epoch_f, pk_v_x, pk_v_y, op_v_f];
 		let pos = Posedion5x5::new(m_hash_input);
@@ -132,20 +132,24 @@ impl<const N: usize> Opinion<N> {
 	/// Verifies the proof.
 	pub fn verify(
 		&self,
-		pubkey_i: &IdentityPublicKey,
+		pubkey_p: &IdentityPublicKey,
 		pubkey_v: &IdentityPublicKey,
 		params: &ParamsKZG<Bn256>,
 		vk: &VerifyingKey<G1Affine>,
 	) -> Result<bool, EigenError> {
+		if self.k == Epoch(0) {
+			return Ok(true);
+		}
+
 		let mut rng = thread_rng();
 
-		let pk_i = convert_pubkey(pubkey_i);
+		let pk_p = convert_pubkey(pubkey_p);
 		let pk_v = convert_pubkey(pubkey_v);
 
 		let epoch_f = Bn256Scalar::from_u128(self.k.0 as u128);
 		let pk_v_x = Bn256Scalar::from_bytes_wide(&to_wide(pk_v.x.to_bytes()));
 		let pk_v_y = Bn256Scalar::from_bytes_wide(&to_wide(pk_v.y.to_bytes()));
-		let op_v_f = Bn256Scalar::from_u128((self.op * SCALE).round() as u128);
+		let op_v_f = Bn256Scalar::from_u128((self.op * SCALE * SCALE).round() as u128);
 
 		let m_hash_input = [Bn256Scalar::zero(), epoch_f, pk_v_x, pk_v_y, op_v_f];
 		let pos = Posedion5x5::new(m_hash_input);
@@ -158,8 +162,8 @@ impl<const N: usize> Opinion<N> {
 		let r = Bn256Scalar::from_bytes_wide(&to_wide(self.sig_i.r.to_bytes()));
 		let s = Bn256Scalar::from_bytes_wide(&to_wide(self.sig_i.s.to_bytes()));
 		let m_hash = Bn256Scalar::from_bytes_wide(&to_wide(self.sig_i.m_hash.to_bytes()));
-		let pk_ix = Bn256Scalar::from_bytes_wide(&to_wide(pk_i.x.to_bytes()));
-		let pk_iy = Bn256Scalar::from_bytes_wide(&to_wide(pk_i.y.to_bytes()));
+		let pk_ix = Bn256Scalar::from_bytes_wide(&to_wide(pk_p.x.to_bytes()));
+		let pk_iy = Bn256Scalar::from_bytes_wide(&to_wide(pk_p.y.to_bytes()));
 
 		let mut pub_ins = Vec::new();
 		pub_ins.push(op_v_f);
@@ -171,7 +175,7 @@ impl<const N: usize> Opinion<N> {
 
 		let proof_res = verify(params, &[&pub_ins], &self.proof_bytes, vk, &mut rng)
 			.map_err(|_| EigenError::VerificationError)?;
-		
+
 		Ok(sig_res && proof_res)
 	}
 }
@@ -224,6 +228,22 @@ mod test {
 	const N: usize = 3;
 
 	#[test]
+	fn should_verify_empty_opinion() {
+		let rng = &mut thread_rng();
+		let op = Opinion::<N>::empty();
+		let local_keypair = IdentityKeypair::generate_secp256k1();
+		let local_pubkey = local_keypair.public();
+
+		let keypair_v = IdentityKeypair::generate_secp256k1();
+		let pubkey_v = keypair_v.public();
+		let params = ParamsKZG::<Bn256>::new(18);
+		let random_circuit = random_circuit::<Bn256, Secp256k1Affine, _, N>(&mut rng.clone());
+		let pk = keygen(&params, &random_circuit).unwrap();
+		let res = op.verify(&local_pubkey, &pubkey_v, &params, &pk.get_vk()).unwrap();
+		assert!(res);
+	}
+
+	#[test]
 	fn test_new_proof_generate() {
 		let rng = &mut thread_rng();
 		let local_keypair = IdentityKeypair::generate_secp256k1();
@@ -249,6 +269,6 @@ mod test {
 			&pk
 		).unwrap();
 
-		proof.verify(&local_pubkey, &pubkey_v, &params, pk.get_vk()).unwrap();
+		assert!(proof.verify(&local_pubkey, &pubkey_v, &params, pk.get_vk()).unwrap());
 	}
 }

@@ -56,7 +56,7 @@ async fn main() {
 			)
 			.unwrap();
 
-			let peer = node.get_swarm_mut().behaviour_mut().get_peer_mut();
+			let peer = node.get_peer_mut();
 			for (peer_id, ..) in bootstrap_nodes {
 				peer.set_score(peer_id, 5);
 			}
