@@ -1,22 +1,21 @@
 use crate::{EigenError, Epoch};
 use eigen_trust_circuit::{
-	ecdsa::{generate_signature, SigData, Keypair},
+	ecdsa::{generate_signature, Keypair, SigData},
 	halo2wrong::{
 		curves::{
-			group::{Group, Curve},
-			CurveAffine,
 			bn256::{Bn256, Fr as Bn256Scalar, G1Affine},
-			secp256k1::{Fq as Secp256k1Scalar, Secp256k1Affine, Fp as Secp256k1Base},
-			FieldExt,
+			group::{Curve, Group},
+			secp256k1::{Fp as Secp256k1Base, Fq as Secp256k1Scalar, Secp256k1Affine},
+			CurveAffine, FieldExt,
 		},
 		halo2::{
 			plonk::{ProvingKey, VerifyingKey},
 			poly::kzg::commitment::ParamsKZG,
 		},
 	},
+	poseidon::{params::Params5x5Bn254, Poseidon},
 	utils::{prove, verify},
 	EigenTrustCircuit,
-	poseidon::{params::Params5x5Bn254, Poseidon},
 };
 use libp2p::core::{identity::Keypair as IdentityKeypair, PublicKey as IdentityPublicKey};
 use rand::thread_rng;
@@ -33,12 +32,7 @@ pub struct Opinion<const N: usize> {
 }
 
 impl<const N: usize> Opinion<N> {
-	pub fn new(
-		k: Epoch,
-		sig_i: SigData<Secp256k1Scalar>,
-		op: f64,
-		proof_bytes: Vec<u8>,
-	) -> Self {
+	pub fn new(k: Epoch, sig_i: SigData<Secp256k1Scalar>, op: f64, proof_bytes: Vec<u8>) -> Self {
 		Self {
 			k,
 			sig_i,
@@ -68,7 +62,7 @@ impl<const N: usize> Opinion<N> {
 		let epoch_f = Bn256Scalar::from_u128(u128::from(k.0));
 		let t_i = op_ji.iter().fold(0., |acc, t| acc + t);
 		let op_v = t_i * c_v;
-		
+
 		let op_ji_f = op_ji.map(|op| Bn256Scalar::from_u128((op * SCALE).round() as u128));
 		let c_v_f = Bn256Scalar::from_u128((c_v * SCALE).round() as u128);
 		let op_v_f = Bn256Scalar::from_u128((op_v * SCALE * SCALE).round() as u128);
@@ -80,14 +74,9 @@ impl<const N: usize> Opinion<N> {
 		let sig_i = generate_signature(keypair, m_hash, &mut rng)
 			.map_err(|_| EigenError::SignatureError)?;
 
-		let aux_generator = <Secp256k1Affine as CurveAffine>::CurveExt::random(&mut rng).to_affine();
-		let circuit = EigenTrustCircuit::new(
-			pubkey_i,
-			sig_i,
-			op_ji_f,
-			c_v_f,
-			aux_generator,
-		);
+		let aux_generator =
+			<Secp256k1Affine as CurveAffine>::CurveExt::random(&mut rng).to_affine();
+		let circuit = EigenTrustCircuit::new(pubkey_i, sig_i, op_ji_f, c_v_f, aux_generator);
 
 		let r = Bn256Scalar::from_bytes_wide(&to_wide(sig_i.r.to_bytes()));
 		let s = Bn256Scalar::from_bytes_wide(&to_wide(sig_i.s.to_bytes()));
@@ -222,8 +211,10 @@ pub fn to_wide(p: [u8; 32]) -> [u8; 64] {
 #[cfg(test)]
 mod test {
 	use super::*;
-	use eigen_trust_circuit::{halo2wrong::halo2::poly::commitment::ParamsProver, utils::keygen};
-	use eigen_trust_circuit::utils::random_circuit;
+	use eigen_trust_circuit::{
+		halo2wrong::halo2::poly::commitment::ParamsProver,
+		utils::{keygen, random_circuit},
+	};
 
 	const N: usize = 3;
 
@@ -239,7 +230,9 @@ mod test {
 		let params = ParamsKZG::<Bn256>::new(18);
 		let random_circuit = random_circuit::<Bn256, Secp256k1Affine, _, N>(&mut rng.clone());
 		let pk = keygen(&params, &random_circuit).unwrap();
-		let res = op.verify(&local_pubkey, &pubkey_v, &params, &pk.get_vk()).unwrap();
+		let res = op
+			.verify(&local_pubkey, &pubkey_v, &params, &pk.get_vk())
+			.unwrap();
 		assert!(res);
 	}
 
@@ -259,16 +252,12 @@ mod test {
 		let params = ParamsKZG::<Bn256>::new(18);
 		let random_circuit = random_circuit::<Bn256, Secp256k1Affine, _, N>(&mut rng.clone());
 		let pk = keygen(&params, &random_circuit).unwrap();
-		let proof = Opinion::<N>::generate(
-			&local_keypair,
-			&pubkey_v,
-			epoch,
-			op_ji,
-			op_v,
-			&params,
-			&pk
-		).unwrap();
+		let proof =
+			Opinion::<N>::generate(&local_keypair, &pubkey_v, epoch, op_ji, op_v, &params, &pk)
+				.unwrap();
 
-		assert!(proof.verify(&local_pubkey, &pubkey_v, &params, pk.get_vk()).unwrap());
+		assert!(proof
+			.verify(&local_pubkey, &pubkey_v, &params, pk.get_vk())
+			.unwrap());
 	}
 }

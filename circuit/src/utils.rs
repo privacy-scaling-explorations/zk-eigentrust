@@ -70,13 +70,8 @@ pub fn random_circuit<
 	// Aux generator
 	let aux_generator = N::CurveExt::random(rng).to_affine();
 
-	let eigen_trust = EigenTrustCircuit::<_, _, SIZE>::new(
-		pubkey_i,
-		sig_i,
-		op_ji,
-		op_v,
-		aux_generator,
-	);
+	let eigen_trust =
+		EigenTrustCircuit::<_, _, SIZE>::new(pubkey_i, sig_i, op_ji, op_v, aux_generator);
 
 	eigen_trust
 }

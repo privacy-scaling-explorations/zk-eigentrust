@@ -5,10 +5,7 @@ use crate::{
 	peer::{opinion::Opinion, MAX_NEIGHBORS},
 };
 use async_trait::async_trait;
-use eigen_trust_circuit::{
-	ecdsa::SigData,
-	halo2wrong::curves::secp256k1::Fq as Secp256k1Scalar,
-};
+use eigen_trust_circuit::{ecdsa::SigData, halo2wrong::curves::secp256k1::Fq as Secp256k1Scalar};
 use futures::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use libp2p::request_response::{ProtocolName, RequestResponseCodec};
 use std::io::Result;
@@ -150,8 +147,7 @@ impl RequestResponseCodec for EigenTrustCodec {
 							m_hash: m_hash_f,
 						};
 
-						let opinion =
-							Opinion::new(Epoch(k), sig_data, op, proof_bytes);
+						let opinion = Opinion::new(Epoch(k), sig_data, op, proof_bytes);
 
 						Response::Success(opinion)
 					},

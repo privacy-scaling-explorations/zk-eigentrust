@@ -24,7 +24,7 @@ pub struct EigenTrustBehaviour {
 #[derive(Debug)]
 pub enum EigenEvent {
 	RequestResponse(RequestResponseEvent<Request, Response>),
-	Identify(IdentifyEvent)
+	Identify(IdentifyEvent),
 }
 
 impl From<RequestResponseEvent<Request, Response>> for EigenEvent {

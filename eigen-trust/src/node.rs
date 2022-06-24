@@ -4,10 +4,11 @@
 use crate::{
 	epoch::Epoch,
 	peer::Peer,
-	protocol::EigenTrustBehaviour,
+	protocol::{
+		req_res::{Request, Response},
+		EigenEvent, EigenTrustBehaviour,
+	},
 	EigenError,
-	protocol::req_res::{Request, Response},
-	protocol::EigenEvent,
 };
 use eigen_trust_circuit::halo2wrong::{
 	curves::bn256::Bn256, halo2::poly::kzg::commitment::ParamsKZG,
@@ -15,14 +16,11 @@ use eigen_trust_circuit::halo2wrong::{
 use futures::StreamExt;
 use libp2p::{
 	core::{either::EitherError, upgrade::Version},
-	identity::Keypair,
 	identify::IdentifyEvent,
+	identity::Keypair,
 	noise::{Keypair as NoiseKeypair, NoiseConfig, X25519Spec},
+	request_response::{RequestResponseEvent, RequestResponseMessage},
 	swarm::{ConnectionHandlerUpgrErr, Swarm, SwarmBuilder, SwarmEvent},
-	request_response::{
-		RequestResponseEvent,
-		RequestResponseMessage
-	},
 	tcp::TcpConfig,
 	yamux::YamuxConfig,
 	Multiaddr, PeerId, Transport,
@@ -75,11 +73,8 @@ impl Node {
 			.boxed();
 
 		let peer = Peer::new(local_key.clone(), params);
-		let beh = EigenTrustBehaviour::new(
-			connection_duration,
-			interval_duration,
-			local_key.public(),
-		);
+		let beh =
+			EigenTrustBehaviour::new(connection_duration, interval_duration, local_key.public());
 
 		// Setting up the transport and swarm.
 		let local_peer_id = PeerId::from(local_key.public());
@@ -123,7 +118,9 @@ impl Node {
 	pub fn send_epoch_requests(&mut self, epoch: Epoch) {
 		for peer_id in self.peer.neighbors() {
 			let request = Request::new(epoch);
-			self.get_swarm_mut().behaviour_mut().send_request(&peer_id, request);
+			self.get_swarm_mut()
+				.behaviour_mut()
+				.send_request(&peer_id, request);
 		}
 	}
 
@@ -142,7 +139,10 @@ impl Node {
 				// Then we send the local opinion to the peer.
 				let opinion = self.peer.get_local_opinion(&(peer, request.get_epoch()));
 				let response = Response::Success(opinion.clone());
-				let res = self.get_swarm_mut().behaviour_mut().send_response(channel, response);
+				let res = self
+					.get_swarm_mut()
+					.behaviour_mut()
+					.send_response(channel, response);
 				if let Err(e) = res {
 					log::error!("Failed to send the response {:?}", e);
 				}
@@ -195,7 +195,10 @@ impl Node {
 	/// A method for handling the swarm events.
 	pub fn handle_swarm_events(
 		&mut self,
-		event: SwarmEvent<EigenEvent, EitherError<ConnectionHandlerUpgrErr<IoError>, std::io::Error>>,
+		event: SwarmEvent<
+			EigenEvent,
+			EitherError<ConnectionHandlerUpgrErr<IoError>, std::io::Error>,
+		>,
 	) {
 		match event {
 			SwarmEvent::Behaviour(EigenEvent::RequestResponse(event)) => {
@@ -207,9 +210,7 @@ impl Node {
 			SwarmEvent::NewListenAddr { address, .. } => log::info!("Listening on {:?}", address),
 			// When we connect to a peer, we automatically add him as a neighbor.
 			SwarmEvent::ConnectionEstablished { peer_id, .. } => {
-				let res = self
-					.get_peer_mut()
-					.add_neighbor(peer_id);
+				let res = self.get_peer_mut().add_neighbor(peer_id);
 				if let Err(e) = res {
 					log::error!("Failed to add neighbor {:?}", e);
 				}
@@ -217,8 +218,7 @@ impl Node {
 			},
 			// When we disconnect from a peer, we automatically remove him from the neighbors list.
 			SwarmEvent::ConnectionClosed { peer_id, cause, .. } => {
-				self.get_peer_mut()
-					.remove_neighbor(peer_id);
+				self.get_peer_mut().remove_neighbor(peer_id);
 				log::info!("Connection closed with {:?} ({:?})", peer_id, cause);
 			},
 			SwarmEvent::Dialing(peer_id) => log::info!("Dialing {:?}", peer_id),
@@ -300,7 +300,7 @@ impl Node {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use eigen_trust_circuit::{halo2wrong::halo2::poly::commitment::ParamsProver};
+	use eigen_trust_circuit::halo2wrong::halo2::poly::commitment::ParamsProver;
 	use std::str::FromStr;
 
 	const INTERVAL: u64 = 120;
@@ -562,7 +562,8 @@ mod tests {
 			bootstrap_nodes,
 			INTERVAL,
 			params.clone(),
-		).unwrap();
+		)
+		.unwrap();
 
 		node1.dial_bootstrap_nodes();
 

@@ -18,13 +18,8 @@
 //! ## Usage:
 //! ```rust
 //! use eigen_trust::{
-//! 	EigenError,
-//! 	Keypair,
-//! 	LevelFilter,
-//! 	Multiaddr,
-//! 	Node,
+//! 	eigen_trust_circuit::utils::read_params, EigenError, Keypair, LevelFilter, Multiaddr, Node,
 //! 	PeerId,
-//! 	eigen_trust_circuit::utils::read_params,
 //! };
 //! use std::str::FromStr;
 //!
@@ -106,12 +101,12 @@ mod peer;
 /// The module for defining the request-response protocol.
 mod protocol;
 
+pub use eigen_trust_circuit;
 pub use epoch::Epoch;
 pub use libp2p::{identity::Keypair, Multiaddr, PeerId};
 pub use log::LevelFilter;
 pub use node::Node;
 pub use peer::Peer;
-pub use eigen_trust_circuit;
 
 /// The crate-wide error variants.
 #[derive(Debug)]

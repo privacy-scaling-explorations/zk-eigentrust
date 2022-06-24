@@ -239,13 +239,8 @@ mod test {
 		// Aux generator
 		let aux_generator = <Secp256 as CurveAffine>::CurveExt::random(&mut rng).to_affine();
 
-		let eigen_trust = EigenTrustCircuit::<_, _, SIZE>::new(
-			pubkey_i,
-			sig_i,
-			op_ji,
-			c_v,
-			aux_generator,
-		);
+		let eigen_trust =
+			EigenTrustCircuit::<_, _, SIZE>::new(pubkey_i, sig_i, op_ji, c_v, aux_generator);
 
 		let op = Fr::from_u128(SIZE as u128);
 		let r = Fr::from_bytes_wide(&to_wide(sig_i.r.to_bytes()));
@@ -289,13 +284,8 @@ mod test {
 		// Aux generator
 		let aux_generator = <Secp256 as CurveAffine>::CurveExt::random(&mut rng).to_affine();
 
-		let eigen_trust = EigenTrustCircuit::<_, _, SIZE>::new(
-			pubkey_i,
-			sig_i,
-			op_ji,
-			c_v,
-			aux_generator,
-		);
+		let eigen_trust =
+			EigenTrustCircuit::<_, _, SIZE>::new(pubkey_i, sig_i, op_ji, c_v, aux_generator);
 
 		let op = Fr::from_u128(SIZE as u128);
 		let r = Fr::from_bytes_wide(&to_wide(sig_i.r.to_bytes()));
