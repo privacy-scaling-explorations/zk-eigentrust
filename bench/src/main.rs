@@ -5,14 +5,14 @@ use std::str::FromStr;
 use eigen_trust::{Keypair, LevelFilter, Multiaddr, Node};
 use eigen_trust_circuit::utils::read_params;
 
-const INTERVAL: u64 = 2;
-const NUM_CONNECTIONS: usize = 12;
+const INTERVAL: u64 = 1000;
+const NUM_CONNECTIONS: usize = 4;
 
 pub fn init_logger() {
 	let mut builder = Builder::from_default_env();
 
 	builder
-		.filter(None, LevelFilter::Info)
+		.filter(None, LevelFilter::Debug)
 		.format_timestamp(None)
 		.init();
 }
@@ -37,7 +37,7 @@ async fn main() {
 		bootstrap_nodes.push((peer_id, local_address));
 	}
 
-	let params = read_params("../data/params-18.bin");
+	let params = read_params("./data/params-18.bin");
 
 	let mut tasks = Vec::new();
 	for i in 0..(NUM_CONNECTIONS + 1) {

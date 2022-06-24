@@ -104,7 +104,15 @@ impl Peer {
 		let op_ji = self.get_neighbor_opinions_at(k);
 
 		for peer_id in self.neighbors() {
+			if self.cached_local_opinion.contains_key(&(peer_id, k)) {
+				continue;
+			}
+
 			let score = self.neighbor_scores.get(&peer_id).unwrap_or(&0);
+			if *score == 0 {
+				continue;
+			}
+
 			let normalized_score = self.get_normalized_score(*score);
 			let pubkey_op = self.get_pub_key(peer_id);
 			let opinion = match pubkey_op {
