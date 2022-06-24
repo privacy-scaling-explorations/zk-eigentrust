@@ -24,7 +24,7 @@
 //! 	Multiaddr,
 //! 	Node,
 //! 	PeerId,
-//! 	ParamsKZG,
+//! 	eigen_trust_circuit::utils::read_params,
 //! };
 //! use std::str::FromStr;
 //!
@@ -56,7 +56,7 @@
 //! 		bootstrap_nodes.push((peer_id, peer_addr));
 //! 	}
 //!
-//! 	let params = ParamsKZG::new(18);
+//! 	let params = read_params("../data/params-18.bin");
 //! 	let node = Node::new(local_key, local_address, bootstrap_nodes, INTERVAL, params)?;
 //! 	node.main_loop(Some(1)).await?;
 //!
@@ -111,9 +111,7 @@ pub use libp2p::{identity::Keypair, Multiaddr, PeerId};
 pub use log::LevelFilter;
 pub use node::Node;
 pub use peer::Peer;
-pub use eigen_trust_circuit::halo2wrong::halo2::poly::kzg::commitment::ParamsKZG;
-pub use eigen_trust_circuit::poseidon::{Poseidon, params::Params5x5Bn254};
-pub use eigen_trust_circuit::EigenTrustCircuit;
+pub use eigen_trust_circuit;
 
 /// The crate-wide error variants.
 #[derive(Debug)]
