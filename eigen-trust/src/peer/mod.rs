@@ -43,13 +43,13 @@ pub struct Peer {
 
 impl Peer {
 	/// Creates a new peer.
-	pub fn new(keypair: Keypair, params: ParamsKZG<Bn256>) -> Self {
+	pub fn new(keypair: Keypair, params: ParamsKZG<Bn256>) -> Result<Self, EigenError> {
 		let mut rng = thread_rng();
 		let min_score = Bn256Scalar::from_u128((MIN_SCORE * SCALE).round() as u128);
 		let random_circuit =
 			random_circuit::<Bn256, Secp256k1Affine, _, MAX_NEIGHBORS>(min_score, &mut rng);
-		let pk = keygen(&params, &random_circuit).unwrap();
-		Peer {
+		let pk = keygen(&params, &random_circuit).map_err(EigenError::Halo2Error)?;
+		Ok(Peer {
 			neighbors: [None; MAX_NEIGHBORS],
 			pubkeys: HashMap::new(),
 			neighbor_scores: HashMap::new(),
@@ -58,7 +58,7 @@ impl Peer {
 			keypair,
 			params,
 			proving_key: pk,
-		}
+		})
 	}
 
 	/// Adds a neighbor in the first available spot.
@@ -106,17 +106,23 @@ impl Peer {
 		for peer_id in self.neighbors() {
 			let score = self.neighbor_scores.get(&peer_id).unwrap_or(&0);
 			let normalized_score = self.get_normalized_score(*score);
-			let pubkey = self.pubkeys.get(&peer_id).unwrap();
-			let opinion = Opinion::generate(
-				&self.keypair,
-				pubkey,
-				k.next(),
-				op_ji,
-				normalized_score,
-				&self.params,
-				&self.proving_key,
-			)
-			.unwrap();
+			let pubkey_op = self.get_pub_key(peer_id);
+			let opinion = match pubkey_op {
+				Some(pubkey) => Opinion::generate(
+					&self.keypair,
+					&pubkey,
+					k.next(),
+					op_ji,
+					normalized_score,
+					&self.params,
+					&self.proving_key,
+				)
+				.unwrap_or_else(|e| {
+					log::debug!("Error while generating opinion for {:?}: {:?}", peer_id, e);
+					Opinion::empty()
+				}),
+				None => Opinion::empty(),
+			};
 
 			self.cache_local_opinion((peer_id, opinion.k), opinion);
 		}
@@ -124,35 +130,36 @@ impl Peer {
 
 	/// Returns all of the opinions of the neighbors in the specified epoch.
 	pub fn get_neighbor_opinions_at(&self, k: Epoch) -> [f64; MAX_NEIGHBORS] {
-		let op_ji = self.neighbors.map(|peer| {
-			if peer.is_none() {
-				return 0.;
-			}
-			let peer_id = peer.unwrap();
-			let opinion = self.get_neighbor_opinion(&(peer_id, k));
-			let pubkey_p = self.get_pub_key(peer_id);
-			let pubkey_v = self.keypair.public();
-			let vk = self.proving_key.get_vk();
+		self.neighbors.map(|peer| {
+			let peer_pk_pair =
+				peer.and_then(|peer_id| self.get_pub_key(peer_id).map(|pk| (peer_id, pk)));
+			peer_pk_pair
+				.map(|(peer_id, pubkey_p)| {
+					let opinion = self.get_neighbor_opinion(&(peer_id, k));
+					let pubkey_v = self.keypair.public();
+					let vk = self.proving_key.get_vk();
 
-			let res = opinion
-				.verify(&pubkey_p, &pubkey_v, &self.params, &vk)
-				.unwrap();
-
-			if res {
-				return opinion.op;
-			};
-			0.
-		});
-
-		op_ji
+					match opinion.verify(&pubkey_p, &pubkey_v, &self.params, vk) {
+						Ok(true) => opinion.op,
+						Err(e) => {
+							log::debug!(
+								"Error while verifying opinion from {:?}: {:?}",
+								peer_id,
+								e
+							);
+							0.0
+						},
+						_ => 0.0,
+					}
+				})
+				.unwrap_or(0.0)
+		})
 	}
 
 	/// Calculate the global trust score at the specified epoch.
 	pub fn global_trust_score_at(&self, at: Epoch) -> f64 {
 		let op_ji = self.get_neighbor_opinions_at(at);
-		let t_i = op_ji.iter().fold(MIN_SCORE, |acc, t| acc + t);
-
-		t_i
+		op_ji.iter().fold(MIN_SCORE, |acc, t| acc + t)
 	}
 
 	/// Returns sum of local scores.
@@ -204,8 +211,8 @@ impl Peer {
 	}
 
 	/// Get the public key of a neighbor.
-	pub fn get_pub_key(&self, peer_id: PeerId) -> PublicKey {
-		self.pubkeys.get(&peer_id).cloned().unwrap()
+	pub fn get_pub_key(&self, peer_id: PeerId) -> Option<PublicKey> {
+		self.pubkeys.get(&peer_id).cloned()
 	}
 }
 
@@ -224,7 +231,7 @@ mod tests {
 	fn should_create_peer() {
 		let kp = Keypair::generate_secp256k1();
 		let params = ParamsKZG::new(18);
-		let peer = Peer::new(kp, params);
+		let peer = Peer::new(kp, params).unwrap();
 		assert_eq!(peer.get_sum_of_scores(), 0);
 	}
 
@@ -232,7 +239,7 @@ mod tests {
 	fn should_cache_local_and_global_opinion() {
 		let kp = Keypair::generate_secp256k1();
 		let params = ParamsKZG::new(18);
-		let mut peer = Peer::new(kp, params);
+		let mut peer = Peer::new(kp, params).unwrap();
 
 		let epoch = Epoch(0);
 		let neighbor_id = PeerId::random();
@@ -253,7 +260,7 @@ mod tests {
 	fn should_add_and_remove_neghbours() {
 		let kp = Keypair::generate_secp256k1();
 		let params = ParamsKZG::new(18);
-		let mut peer = Peer::new(kp, params);
+		let mut peer = Peer::new(kp, params).unwrap();
 		let neighbor_id = PeerId::random();
 
 		peer.add_neighbor(neighbor_id).unwrap();
@@ -277,7 +284,7 @@ mod tests {
 			random_circuit::<Bn256, Secp256k1Affine, _, MAX_NEIGHBORS>(min_score, &mut rng.clone());
 		let pk = keygen(&params, &random_circuit).unwrap();
 
-		let mut peer = Peer::new(local_keypair, params.clone());
+		let mut peer = Peer::new(local_keypair, params.clone()).unwrap();
 
 		let epoch = Epoch(0);
 		for _ in 0..4 {

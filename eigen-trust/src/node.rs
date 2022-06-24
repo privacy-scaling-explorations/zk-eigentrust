@@ -72,7 +72,7 @@ impl Node {
 			.timeout(connection_duration)
 			.boxed();
 
-		let peer = Peer::new(local_key.clone(), params);
+		let peer = Peer::new(local_key.clone(), params)?;
 		let beh =
 			EigenTrustBehaviour::new(connection_duration, interval_duration, local_key.public());
 
@@ -138,7 +138,7 @@ impl Node {
 				self.peer.calculate_local_opinions(request.get_epoch());
 				// Then we send the local opinion to the peer.
 				let opinion = self.peer.get_local_opinion(&(peer, request.get_epoch()));
-				let response = Response::Success(opinion.clone());
+				let response = Response::Success(opinion);
 				let res = self
 					.get_swarm_mut()
 					.behaviour_mut()
@@ -516,8 +516,8 @@ mod tests {
 		assert_eq!(neighbors1, expected_neighbor1);
 		assert_eq!(neighbors2, expected_neighbor2);
 
-		let pubkey1 = node2.get_peer().get_pub_key(peer_id1);
-		let pubkey2 = node1.get_peer().get_pub_key(peer_id2);
+		let pubkey1 = node2.get_peer().get_pub_key(peer_id1).unwrap();
+		let pubkey2 = node1.get_peer().get_pub_key(peer_id2).unwrap();
 		assert_eq!(pubkey1, local_pubkey1);
 		assert_eq!(pubkey2, local_pubkey2);
 	}

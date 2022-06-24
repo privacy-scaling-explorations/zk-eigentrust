@@ -54,9 +54,9 @@ impl<const N: usize> Opinion<N> {
 	) -> Result<Self, EigenError> {
 		let mut rng = thread_rng();
 
-		let keypair = convert_keypair(kp);
+		let keypair = convert_keypair(kp)?;
 		let pubkey_i = keypair.public().to_owned();
-		let pubkey_v = convert_pubkey(pubkey_v);
+		let pubkey_v = convert_pubkey(pubkey_v)?;
 
 		let pk_v_x = Bn256Scalar::from_bytes_wide(&to_wide(pubkey_v.x.to_bytes()));
 		let pk_v_y = Bn256Scalar::from_bytes_wide(&to_wide(pubkey_v.y.to_bytes()));
@@ -87,18 +87,12 @@ impl<const N: usize> Opinion<N> {
 		let pk_ix = Bn256Scalar::from_bytes_wide(&to_wide(pubkey_i.x.to_bytes()));
 		let pk_iy = Bn256Scalar::from_bytes_wide(&to_wide(pubkey_i.y.to_bytes()));
 
-		let mut pub_ins = Vec::new();
-		pub_ins.push(op_v_f);
-		pub_ins.push(r);
-		pub_ins.push(s);
-		pub_ins.push(m_hash);
-		pub_ins.push(pk_ix);
-		pub_ins.push(pk_iy);
+		let pub_ins = vec![op_v_f, r, s, m_hash, pk_ix, pk_iy];
 
-		let proof_bytes = prove(params, circuit, &[&pub_ins], &pk, &mut rng)
+		let proof_bytes = prove(params, circuit, &[&pub_ins], pk, &mut rng)
 			.map_err(|_| EigenError::ProvingError)?;
 
-		let proof_res = verify(params, &[&pub_ins], &proof_bytes, &pk.get_vk(), &mut rng)
+		let proof_res = verify(params, &[&pub_ins], &proof_bytes, pk.get_vk(), &mut rng)
 			.map_err(|_| EigenError::VerificationError)?;
 
 		// Sanity check
@@ -141,10 +135,10 @@ impl<const N: usize> Opinion<N> {
 
 		let mut rng = thread_rng();
 
-		let pk_p = convert_pubkey(pubkey_p);
-		let pk_v = convert_pubkey(pubkey_v);
+		let pk_p = convert_pubkey(pubkey_p)?;
+		let pk_v = convert_pubkey(pubkey_v)?;
 
-		let epoch_f = Bn256Scalar::from_u128(self.k.0 as u128);
+		let epoch_f = Bn256Scalar::from_u128(u128::from(self.k.0));
 		let pk_v_x = Bn256Scalar::from_bytes_wide(&to_wide(pk_v.x.to_bytes()));
 		let pk_v_y = Bn256Scalar::from_bytes_wide(&to_wide(pk_v.y.to_bytes()));
 		let op_v_f = Bn256Scalar::from_u128((self.op * SCALE * SCALE).round() as u128);
@@ -163,13 +157,7 @@ impl<const N: usize> Opinion<N> {
 		let pk_ix = Bn256Scalar::from_bytes_wide(&to_wide(pk_p.x.to_bytes()));
 		let pk_iy = Bn256Scalar::from_bytes_wide(&to_wide(pk_p.y.to_bytes()));
 
-		let mut pub_ins = Vec::new();
-		pub_ins.push(op_v_f);
-		pub_ins.push(r);
-		pub_ins.push(s);
-		pub_ins.push(m_hash);
-		pub_ins.push(pk_ix);
-		pub_ins.push(pk_iy);
+		let pub_ins = vec![op_v_f, r, s, m_hash, pk_ix, pk_iy];
 
 		let proof_res = verify(params, &[&pub_ins], &self.proof_bytes, vk, &mut rng)
 			.map_err(|_| EigenError::VerificationError)?;
@@ -178,36 +166,46 @@ impl<const N: usize> Opinion<N> {
 	}
 }
 
-pub fn convert_keypair(kp: &IdentityKeypair) -> Keypair<Secp256k1Affine> {
+pub fn convert_keypair(kp: &IdentityKeypair) -> Result<Keypair<Secp256k1Affine>, EigenError> {
 	match kp {
 		IdentityKeypair::Secp256k1(secp_kp) => {
 			let mut sk_bytes = secp_kp.secret().to_bytes();
 			sk_bytes.reverse();
 
-			let sk = Secp256k1Scalar::from_bytes(&sk_bytes).unwrap();
+			let sk_op: Option<Secp256k1Scalar> = Secp256k1Scalar::from_bytes(&sk_bytes).into();
+			let sk = sk_op.ok_or(EigenError::InvalidKeypair)?;
 			let g = Secp256k1Affine::generator();
 			let pk = (g * sk).to_affine();
 
-			Keypair::from_pair(sk, pk)
+			Ok(Keypair::from_pair(sk, pk))
 		},
-		_ => panic!("Unsupported Keypair"),
+		_ => Err(EigenError::InvalidKeypair),
 	}
 }
 
-pub fn convert_pubkey(pk: &IdentityPublicKey) -> Secp256k1Affine {
+pub fn convert_pubkey(pk: &IdentityPublicKey) -> Result<Secp256k1Affine, EigenError> {
 	match pk {
 		IdentityPublicKey::Secp256k1(secp_pk) => {
 			let pk_bytes = secp_pk.encode_uncompressed();
-			let mut x_bytes: [u8; 32] = pk_bytes[1..33].try_into().unwrap();
-			let mut y_bytes: [u8; 32] = pk_bytes[33..65].try_into().unwrap();
+			let mut x_bytes: [u8; 32] = pk_bytes[1..33]
+				.try_into()
+				.map_err(|_| EigenError::InvalidPubkey)?;
+			let mut y_bytes: [u8; 32] = pk_bytes[33..65]
+				.try_into()
+				.map_err(|_| EigenError::InvalidPubkey)?;
 			x_bytes.reverse();
 			y_bytes.reverse();
 
-			let x = Secp256k1Base::from_bytes(&x_bytes).unwrap();
-			let y = Secp256k1Base::from_bytes(&y_bytes).unwrap();
-			Secp256k1Affine::from_xy(x, y).unwrap()
+			let x_op: Option<Secp256k1Base> = Secp256k1Base::from_bytes(&x_bytes).into();
+			let y_op: Option<Secp256k1Base> = Secp256k1Base::from_bytes(&y_bytes).into();
+			let x = x_op.ok_or(EigenError::InvalidPubkey)?;
+			let y = y_op.ok_or(EigenError::InvalidPubkey)?;
+
+			let pubkey_op: Option<Secp256k1Affine> = Secp256k1Affine::from_xy(x, y).into();
+			let pubkey = pubkey_op.ok_or(EigenError::InvalidPubkey)?;
+			Ok(pubkey)
 		},
-		_ => panic!("Unsupported PublicKey"),
+		_ => Err(EigenError::InvalidPubkey),
 	}
 }
 

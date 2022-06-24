@@ -63,7 +63,7 @@
 //! The library is implemented according to the original [Eigen Trust paper](http://ilpubs.stanford.edu:8090/562/1/2002-56.pdf).
 //! It is developed under the Ethereum Foundation grant.
 
-#![feature(array_zip)]
+#![feature(array_zip, array_try_map)]
 #![allow(clippy::tabs_in_doc_comments)]
 #![deny(
 	future_incompatible,
@@ -78,10 +78,8 @@
 	clippy::panic,
 	clippy::unnecessary_cast,
 	clippy::cast_lossless,
-	clippy::cast_possible_truncation,
 	clippy::cast_possible_wrap,
-	clippy::cast_precision_loss,
-	clippy::cast_sign_loss
+	clippy::cast_precision_loss
 )]
 #![warn(trivial_casts)]
 #![forbid(unsafe_code)]
@@ -108,6 +106,8 @@ pub use log::LevelFilter;
 pub use node::Node;
 pub use peer::Peer;
 
+use eigen_trust_circuit::halo2wrong::halo2::plonk::Error as H2Error;
+
 /// The crate-wide error variants.
 #[derive(Debug)]
 #[repr(u8)]
@@ -116,10 +116,14 @@ pub enum EigenError {
 	InvalidKeypair,
 	/// Invalid multiaddress passed into node config.
 	InvalidAddress,
+	/// Invalid Pubkey
+	InvalidPubkey,
 	/// Invalid peer id passed.
 	InvalidPeerId,
 	/// Invalid trust score passed into node config.
 	InvalidNumNeighbours,
+	/// Peer not Identified
+	PeerNotIdentified,
 	/// Node failed to start listening on specified address. Usually because the
 	/// address is already in use.
 	ListenFailed,
@@ -137,4 +141,6 @@ pub enum EigenError {
 	ProvingError,
 	/// Verification error
 	VerificationError,
+	/// Halo2 error
+	Halo2Error(H2Error),
 }
