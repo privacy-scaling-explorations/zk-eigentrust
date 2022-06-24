@@ -71,14 +71,7 @@ pub fn random_circuit<
 	// Aux generator
 	let aux_generator = N::CurveExt::random(rng.clone()).to_affine();
 
-	EigenTrustCircuit::<_, _, SIZE>::new(
-		pubkey_i,
-		sig_i,
-		op_ji,
-		op_v,
-		min_score,
-		aux_generator,
-	)
+	EigenTrustCircuit::<_, _, SIZE>::new(pubkey_i, sig_i, op_ji, op_v, min_score, aux_generator)
 }
 
 pub fn keygen<E: MultiMillerLoop + Debug, C: Circuit<E::Scalar>>(
