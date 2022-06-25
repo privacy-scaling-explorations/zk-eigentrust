@@ -10,7 +10,6 @@ use eigen_trust_circuit::{
 			CurveAffine, FieldExt,
 		},
 		halo2::{
-			dev::MockProver,
 			plonk::{ProvingKey, VerifyingKey},
 			poly::kzg::commitment::ParamsKZG,
 		},
@@ -103,13 +102,6 @@ impl<const N: usize> Opinion<N> {
 
 		let proof_res = verify(params, &[&pub_ins], &proof_bytes, pk.get_vk(), &mut rng)
 			.map_err(|_| EigenError::VerificationError)?;
-
-		let prover = match MockProver::<Bn256Scalar>::run(18, &circuit, vec![pub_ins]) {
-			Ok(prover) => prover,
-			Err(e) => panic!("{}", e),
-		};
-
-		assert_eq!(prover.verify(), Ok(()));
 
 		// Sanity check
 		assert!(proof_res);
