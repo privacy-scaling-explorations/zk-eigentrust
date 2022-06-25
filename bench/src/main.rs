@@ -4,15 +4,16 @@ use std::str::FromStr;
 
 use eigen_trust::{Keypair, LevelFilter, Multiaddr, Node};
 use eigen_trust_circuit::utils::read_params;
+use rand::Rng;
 
-const INTERVAL: u64 = 1000;
+const INTERVAL: u64 = 60 * 6;
 const NUM_CONNECTIONS: usize = 4;
 
 pub fn init_logger() {
 	let mut builder = Builder::from_default_env();
 
 	builder
-		.filter(None, LevelFilter::Debug)
+		.filter(Some("eigen_trust"), LevelFilter::Debug)
 		.format_timestamp(None)
 		.init();
 }
@@ -27,7 +28,7 @@ async fn main() {
 	let starting_port = 58400;
 
 	for i in 0..(NUM_CONNECTIONS + 1) {
-		let local_key = Keypair::generate_ed25519();
+		let local_key = Keypair::generate_secp256k1();
 		let peer_id = local_key.public().to_peer_id();
 		let addr = format!("/ip4/127.0.0.1/tcp/{}", starting_port + i);
 		let local_address = Multiaddr::from_str(&addr).unwrap();
@@ -58,7 +59,8 @@ async fn main() {
 
 			let peer = node.get_peer_mut();
 			for (peer_id, ..) in bootstrap_nodes {
-				peer.set_score(peer_id, 5);
+				let random_score: u32 = rand::thread_rng().gen_range(0..100);
+				peer.set_score(peer_id, random_score);
 			}
 
 			node.main_loop(Some(10)).await.unwrap();

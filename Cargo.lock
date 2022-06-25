@@ -218,6 +218,7 @@ dependencies = [
  "eigen-trust-circuit",
  "env_logger",
  "futures",
+ "rand 0.8.5",
  "tokio",
 ]
 

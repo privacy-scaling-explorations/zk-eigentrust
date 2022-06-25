@@ -100,40 +100,43 @@ impl Peer {
 
 	/// Calculate the local trust score toward all neighbors in the specified
 	/// epoch.
-	pub fn calculate_local_opinions(&mut self, k: Epoch) {
-		let op_ji = self.get_neighbor_opinions_at(k);
-
-		for peer_id in self.neighbors() {
-			if self.cached_local_opinion.contains_key(&(peer_id, k)) {
-				continue;
-			}
-
-			let score = self.neighbor_scores.get(&peer_id).unwrap_or(&0);
-			if *score == 0 {
-				continue;
-			}
-
-			let normalized_score = self.get_normalized_score(*score);
-			let pubkey_op = self.get_pub_key(peer_id);
-			let opinion = match pubkey_op {
-				Some(pubkey) => Opinion::generate(
-					&self.keypair,
-					&pubkey,
-					k.next(),
-					op_ji,
-					normalized_score,
-					&self.params,
-					&self.proving_key,
-				)
-				.unwrap_or_else(|e| {
-					log::debug!("Error while generating opinion for {:?}: {:?}", peer_id, e);
-					Opinion::empty()
-				}),
-				None => Opinion::empty(),
-			};
-
-			self.cache_local_opinion((peer_id, opinion.k), opinion);
+	pub fn calculate_local_opinion(&mut self, peer_id: PeerId, k: Epoch) {
+		if self.cached_local_opinion.contains_key(&(peer_id, k)) {
+			return;
 		}
+
+		let score = self.neighbor_scores.get(&peer_id).unwrap_or(&0);
+		if *score == 0 {
+			return;
+		}
+
+		let op_ji = self.get_neighbor_opinions_at(k.previous());
+		let normalized_score = self.get_normalized_score(*score);
+		let pubkey_op = self.get_pub_key(peer_id);
+		let opinion = match pubkey_op {
+			Some(pubkey) => Opinion::generate(
+				&self.keypair,
+				&pubkey,
+				k,
+				op_ji,
+				normalized_score,
+				&self.params,
+				&self.proving_key,
+			)
+			.unwrap_or_else(|e| {
+				log::debug!("Error while generating opinion for {:?}: {:?}", peer_id, e);
+				Opinion::empty()
+			}),
+			None => {
+				log::debug!(
+					"Pubkey not found for {:?}, generating empty opinion.",
+					peer_id
+				);
+				Opinion::empty()
+			},
+		};
+
+		self.cache_local_opinion((peer_id, opinion.k), opinion);
 	}
 
 	/// Returns all of the opinions of the neighbors in the specified epoch.
@@ -166,7 +169,7 @@ impl Peer {
 
 	/// Calculate the global trust score at the specified epoch.
 	pub fn global_trust_score_at(&self, at: Epoch) -> f64 {
-		let op_ji = self.get_neighbor_opinions_at(at);
+		let op_ji = self.get_neighbor_opinions_at(at.previous());
 		op_ji.iter().fold(MIN_SCORE, |acc, t| acc + t)
 	}
 
@@ -294,7 +297,8 @@ mod tests {
 
 		let mut peer = Peer::new(local_keypair, params.clone()).unwrap();
 
-		let epoch = Epoch(0);
+		let epoch = Epoch(2);
+		let next_epoch = epoch.next();
 		for _ in 0..4 {
 			let kp = Keypair::generate_secp256k1();
 			let pubkey = kp.public();
@@ -320,12 +324,15 @@ mod tests {
 			peer.cache_neighbor_opinion((peer_id, epoch), opinion);
 		}
 
-		peer.calculate_local_opinions(epoch);
+		for peer_id in peer.neighbors() {
+			peer.calculate_local_opinion(peer_id, next_epoch);
+		}
 
-		let t_i = peer.global_trust_score_at(epoch);
-		let true_global_score = 0.8999999999999999;
+		let t_i = peer.global_trust_score_at(next_epoch);
+		let true_global_score = 0.9;
 
-		assert_eq!(true_global_score, t_i);
+		// Rounding error
+		assert_eq!(t_i, 0.8999999999999999);
 
 		let c_v = true_global_score * 0.25;
 

@@ -10,6 +10,7 @@ use eigen_trust_circuit::{
 			CurveAffine, FieldExt,
 		},
 		halo2::{
+			dev::MockProver,
 			plonk::{ProvingKey, VerifyingKey},
 			poly::kzg::commitment::ParamsKZG,
 		},
@@ -61,13 +62,21 @@ impl<const N: usize> Opinion<N> {
 		let pk_v_x = Bn256Scalar::from_bytes_wide(&to_wide(pubkey_v.x.to_bytes()));
 		let pk_v_y = Bn256Scalar::from_bytes_wide(&to_wide(pubkey_v.y.to_bytes()));
 		let epoch_f = Bn256Scalar::from_u128(u128::from(k.0));
-		let t_i = op_ji.iter().fold(MIN_SCORE, |acc, t| acc + t);
-		let op_v = t_i * c_v;
 
-		let min_score = Bn256Scalar::from_u128((MIN_SCORE * SCALE).round() as u128);
-		let op_ji_f = op_ji.map(|op| Bn256Scalar::from_u128((op * SCALE).round() as u128));
-		let c_v_f = Bn256Scalar::from_u128((c_v * SCALE).round() as u128);
-		let op_v_f = Bn256Scalar::from_u128((op_v * SCALE * SCALE).round() as u128);
+		let op_ji_scaled = op_ji.map(|op| (op * SCALE).round());
+		let c_v_scaled = (c_v * SCALE).round();
+		let min_score_scaled = (MIN_SCORE * SCALE).round();
+
+		let t_i_scaled = op_ji_scaled
+			.iter()
+			.fold(min_score_scaled, |acc, op| acc + op);
+		let op_v_scaled = t_i_scaled * c_v_scaled;
+		let op_v_unscaled = op_v_scaled / (SCALE * SCALE);
+
+		let min_score = Bn256Scalar::from_u128(min_score_scaled as u128);
+		let op_ji_f = op_ji_scaled.map(|op| Bn256Scalar::from_u128(op as u128));
+		let c_v_f = Bn256Scalar::from_u128(c_v_scaled as u128);
+		let op_v_f = Bn256Scalar::from_u128(op_v_scaled as u128);
 
 		let m_hash_input = [Bn256Scalar::zero(), epoch_f, pk_v_x, pk_v_y, op_v_f];
 		let pos = Posedion5x5::new(m_hash_input);
@@ -89,11 +98,18 @@ impl<const N: usize> Opinion<N> {
 
 		let pub_ins = vec![op_v_f, r, s, m_hash, pk_ix, pk_iy];
 
-		let proof_bytes = prove(params, circuit, &[&pub_ins], pk, &mut rng)
+		let proof_bytes = prove(params, circuit.clone(), &[&pub_ins], pk, &mut rng)
 			.map_err(|_| EigenError::ProvingError)?;
 
 		let proof_res = verify(params, &[&pub_ins], &proof_bytes, pk.get_vk(), &mut rng)
 			.map_err(|_| EigenError::VerificationError)?;
+
+		let prover = match MockProver::<Bn256Scalar>::run(18, &circuit, vec![pub_ins]) {
+			Ok(prover) => prover,
+			Err(e) => panic!("{}", e),
+		};
+
+		assert_eq!(prover.verify(), Ok(()));
 
 		// Sanity check
 		assert!(proof_res);
@@ -101,7 +117,7 @@ impl<const N: usize> Opinion<N> {
 		Ok(Self {
 			k,
 			sig_i,
-			op: op_v,
+			op: op_v_unscaled,
 			proof_bytes,
 		})
 	}

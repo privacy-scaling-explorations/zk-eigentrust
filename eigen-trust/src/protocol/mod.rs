@@ -56,7 +56,8 @@ impl EigenTrustBehaviour {
 
 		// Setting up the identify protocol
 		let config = IdentifyConfig::new(PROTOCOL_VERSION.to_string(), local_public_key)
-			.with_initial_delay(Duration::from_millis(100));
+			.with_initial_delay(Duration::from_millis(100))
+			.with_interval(Duration::from_secs(60 * 60));
 		let identify = Identify::new(config);
 		Self {
 			req_res: req_proto,

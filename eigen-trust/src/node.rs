@@ -135,7 +135,7 @@ impl Node {
 				},
 			} => {
 				// First we calculate the local opinions for the requested epoch.
-				self.peer.calculate_local_opinions(request.get_epoch());
+				self.peer.calculate_local_opinion(peer, request.get_epoch());
 				// Then we send the local opinion to the peer.
 				let opinion = self.peer.get_local_opinion(&(peer, request.get_epoch()));
 				let response = Response::Success(opinion);
@@ -159,14 +159,28 @@ impl Node {
 				}
 			},
 			OutboundFailure {
-				peer, request_id, ..
+				peer,
+				request_id,
+				error,
 			} => {
-				log::error!("Outbound failure {:?} from {:?}", request_id, peer);
+				log::error!(
+					"Outbound failure {:?} from {:?}: {:?}",
+					request_id,
+					peer,
+					error
+				);
 			},
 			InboundFailure {
-				peer, request_id, ..
+				peer,
+				request_id,
+				error,
 			} => {
-				log::error!("Inbound failure {:?} from {:?}", request_id, peer);
+				log::error!(
+					"Inbound failure {:?} from {:?}: {:?}",
+					request_id,
+					peer,
+					error
+				);
 			},
 			ResponseSent { peer, request_id } => {
 				log::debug!("Response sent {:?} to {:?}", request_id, peer);
@@ -257,6 +271,7 @@ impl Node {
 
 		let now = Instant::now();
 		let secs_until_next_epoch = Epoch::secs_until_next_epoch(self.interval.as_secs())?;
+		log::info!("Epoch starts in: {} seconds", secs_until_next_epoch);
 		// Figure out when the next epoch will start.
 		let start = now + Duration::from_secs(secs_until_next_epoch);
 
@@ -274,8 +289,10 @@ impl Node {
 					let current_epoch = Epoch::current_epoch(self.interval.as_secs())?;
 
 					// Log out the global trust score for the previous epoch.
-					let score = self.peer.global_trust_score_at(current_epoch.previous());
-					log::info!("{:?} finished, score: {}", current_epoch.previous(), score);
+					let ops = self.peer.get_neighbor_opinions_at(current_epoch.previous());
+					let ops_non_zero: Vec<&f64> = ops.iter().filter(|&&item| item > 0.0).collect();
+					let score = self.peer.global_trust_score_at(current_epoch);
+					log::info!("{:?} started, score: {}, ops: {:?}", current_epoch, score, ops_non_zero);
 
 					// Send the request for opinions to all neighbors.
 					self.send_epoch_requests(current_epoch);
@@ -661,8 +678,8 @@ mod tests {
 		peer1.set_score(peer_id2, 5);
 		peer2.set_score(peer_id1, 5);
 
-		peer1.calculate_local_opinions(current_epoch);
-		peer2.calculate_local_opinions(current_epoch);
+		peer1.calculate_local_opinion(peer_id2, current_epoch);
+		peer2.calculate_local_opinion(peer_id1, current_epoch);
 
 		node1.send_epoch_requests(next_epoch);
 		node2.send_epoch_requests(next_epoch);
