@@ -1,4 +1,5 @@
-//! Helper functions for generating params, pk/vk pairs, creating and verifying proofs, etc.
+//! Helper functions for generating params, pk/vk pairs, creating and verifying
+//! proofs, etc.
 
 use crate::{
 	ecdsa::{generate_signature, Keypair},

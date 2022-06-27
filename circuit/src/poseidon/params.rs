@@ -9,7 +9,8 @@ use halo2wrong::{
 };
 use maingate::{AssignedValue, MainGate, MainGateInstructions, RegionCtx};
 
-/// A trait for implementing Poseidon parameters for specific curves, widths and sboxes.
+/// A trait for implementing Poseidon parameters for specific curves, widths and
+/// sboxes.
 pub trait RoundParams<F: FieldExt, const WIDTH: usize>: Sbox {
 	/// Get the number of full rounds.
 	fn full_rounds() -> usize;
