@@ -1,7 +1,10 @@
+//! The module for the main EigenTrust circuit.
+
 #![feature(array_try_map)]
+#![allow(clippy::needless_range_loop)]
 
 pub mod ecdsa;
-mod poseidon;
+pub mod poseidon;
 pub mod utils;
 
 use crate::ecdsa::SigData;
@@ -20,9 +23,11 @@ use maingate::{
 };
 use std::marker::PhantomData;
 
+// Constants for halo2wrong
 const BIT_LEN_LIMB: usize = 68;
 const NUMBER_OF_LIMBS: usize = 4;
 
+/// The halo2 columns config for the main circuit.
 #[derive(Clone, Debug)]
 pub struct EigenTrustConfig {
 	main_gate_config: MainGateConfig,
@@ -40,39 +45,43 @@ impl EigenTrustConfig {
 	}
 }
 
+/// The EigenTrust main circuit.
 #[derive(Clone)]
 pub struct EigenTrustCircuit<E: CurveAffine, N: FieldExt, const SIZE: usize> {
+	/// Public key of the prover.
 	pubkey_i: Option<E>,
+	/// Signature by the prover over the message: sig_i.m_hash.
 	sig_i: Option<SigData<E::ScalarExt>>,
-	c_ji: [Option<N>; SIZE],
-	t_j: [Option<N>; SIZE],
-	neighbor_pubkeys: [Option<E>; SIZE],
-	neighbor_sigs: [Option<SigData<E::ScalarExt>>; SIZE],
-
+	/// Opinions of peers j to the peer i (the prover).
+	op_ji: [Option<N>; SIZE],
+	/// Opinon from peer i (the prover) to the peer v (the verifyer).
+	c_v: Option<N>,
+	/// Min score of the peers.
+	min_score: N,
+	// Range chip values
 	aux_generator: Option<E>,
 	window_size: usize,
 	_marker: PhantomData<N>,
 }
 
 impl<E: CurveAffine, N: FieldExt, const SIZE: usize> EigenTrustCircuit<E, N, SIZE> {
+	/// Create a new EigenTrustCircuit.
 	pub fn new(
-		pubkey_i: Option<E>,
-		sig_i: Option<SigData<E::ScalarExt>>,
-		c_ji: [Option<N>; SIZE],
-		t_j: [Option<N>; SIZE],
-		neighbor_pubkeys: [Option<E>; SIZE],
-		neighbor_sigs: [Option<SigData<E::ScalarExt>>; SIZE],
-		aux_generator: Option<E>,
+		pubkey_i: E,
+		sig_i: SigData<E::ScalarExt>,
+		op_ji: [N; SIZE],
+		c_v: N,
+		min_score: N,
+		aux_generator: E,
 	) -> Self {
 		Self {
-			pubkey_i,
-			sig_i,
-			c_ji,
-			t_j,
-			neighbor_pubkeys,
-			neighbor_sigs,
+			pubkey_i: Some(pubkey_i),
+			sig_i: Some(sig_i),
+			op_ji: op_ji.map(|c| Some(c)),
+			c_v: Some(c_v),
 
-			aux_generator,
+			min_score,
+			aux_generator: Some(aux_generator),
 			window_size: 2,
 			_marker: PhantomData,
 		}
@@ -87,17 +96,17 @@ impl<E: CurveAffine, N: FieldExt, const SIZE: usize> Circuit<N> for EigenTrustCi
 		Self {
 			pubkey_i: None,
 			sig_i: None,
-			c_ji: [None; SIZE],
-			t_j: [None; SIZE],
-			neighbor_pubkeys: [None; SIZE],
-			neighbor_sigs: [None; SIZE],
+			op_ji: [None; SIZE],
+			c_v: None,
 
+			min_score: self.min_score,
 			aux_generator: None,
 			window_size: self.window_size,
 			_marker: PhantomData,
 		}
 	}
 
+	/// Make the circuit config.
 	fn configure(meta: &mut ConstraintSystem<N>) -> Self::Config {
 		let (rns_base, rns_scalar) = GeneralEccChip::<E, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::rns();
 		let main_gate_config = MainGate::<N>::configure(meta);
@@ -111,6 +120,7 @@ impl<E: CurveAffine, N: FieldExt, const SIZE: usize> Circuit<N> for EigenTrustCi
 		}
 	}
 
+	/// Synthesize the circuit.
 	fn synthesize(
 		&self,
 		config: Self::Config,
@@ -122,6 +132,7 @@ impl<E: CurveAffine, N: FieldExt, const SIZE: usize> Circuit<N> for EigenTrustCi
 		let scalar_chip = ecc_chip.scalar_field_chip();
 		let main_gate = MainGate::<N>::new(config.main_gate_config.clone());
 
+		// Set up the Ecc chip
 		layouter.assign_region(
 			|| "assign_aux",
 			|mut region| {
@@ -134,30 +145,40 @@ impl<E: CurveAffine, N: FieldExt, const SIZE: usize> Circuit<N> for EigenTrustCi
 			},
 		)?;
 
-		let (t_i, c_jis, t_js) = layouter.assign_region(
+		// Calculate the opinion towards peer v.
+		let op_v = layouter.assign_region(
 			|| "t_i",
 			|mut region| {
 				let position = &mut 0;
 				let ctx = &mut RegionCtx::new(&mut region, position);
-				let unassigned_c_jis = self.c_ji.clone().map(|val| UnassignedValue::from(val));
-				let unassigned_t_js = self.c_ji.clone().map(|val| UnassignedValue::from(val));
-				let assigned_c_jis =
-					unassigned_c_jis.map(|val| main_gate.assign_value(ctx, &val).unwrap());
-				let assigned_t_js =
-					unassigned_t_js.map(|val| main_gate.assign_value(ctx, &val).unwrap());
+				let unassigned_op_jis = self.op_ji.map(UnassignedValue::from);
+				let unassigned_c_v = UnassignedValue::from(self.c_v);
 
+				let assigned_op_jis =
+					unassigned_op_jis.try_map(|val| main_gate.assign_value(ctx, &val))?;
+
+				let assigned_c_v = main_gate.assign_value(ctx, &unassigned_c_v)?;
+
+				let min_score = main_gate.assign_constant(ctx, self.min_score)?;
 				let mut sum = main_gate.assign_constant(ctx, N::zero())?;
+				// Calculate the sum of all opinions.
+				// t_i = op_1i + ... + op_nij
 				for i in 0..SIZE {
-					let product = main_gate.mul(ctx, &assigned_c_jis[i], &assigned_t_js[i])?;
-					sum = main_gate.add(ctx, &sum, &product)?;
+					sum = main_gate.add(ctx, &sum, &assigned_op_jis[i])?;
 				}
+				// t_i = min_score + t_i
+				let t_i = main_gate.add(ctx, &sum, &min_score)?;
+				// Calculate the opinion
+				// op_v = t_i * c_v
+				let op = main_gate.mul(ctx, &t_i, &assigned_c_v)?;
 
-				Ok((sum, assigned_c_jis, assigned_t_js))
+				Ok(op)
 			},
 		)?;
 
 		let ecdsa_chip = EcdsaChip::new(ecc_chip.clone());
 
+		// Verify the ecdsa signature.
 		let (r, s, m_hash, pk) = layouter.assign_region(
 			|| "sig_i_verify",
 			|mut region| {
@@ -173,7 +194,8 @@ impl<E: CurveAffine, N: FieldExt, const SIZE: usize> Circuit<N> for EigenTrustCi
 				let assigned_s = scalar_chip.assign_integer(ctx, unassigned_s, Range::Remainder)?;
 				let assigned_m_hash =
 					scalar_chip.assign_integer(ctx, unassigned_m_hash, Range::Remainder)?;
-				let pk_in_circuit = ecc_chip.assign_point(ctx, self.pubkey_i.map(|p| p.into()))?;
+
+				let pk_in_circuit = ecc_chip.assign_point(ctx, self.pubkey_i)?;
 
 				let sig = AssignedEcdsaSig {
 					r: assigned_r.clone(),
@@ -189,61 +211,15 @@ impl<E: CurveAffine, N: FieldExt, const SIZE: usize> Circuit<N> for EigenTrustCi
 			},
 		)?;
 
-		// layouter.assign_region(
-		// 	|| "sigs_j_verify",
-		// 	|mut region| {
-		// 		let offset = &mut 0;
-		// 		let ctx = &mut RegionCtx::new(&mut region, offset);
-
-		// 		for i in 0..SIZE {
-		// 			let unassigned_r =
-		// ecc_chip.new_unassigned_scalar(self.neighbor_sigs[i].map(|s| s.r));
-		// 			let unassigned_s =
-		// ecc_chip.new_unassigned_scalar(self.neighbor_sigs[i].map(|s| s.s));
-		// 			let unassigned_m_hash =
-		// ecc_chip.new_unassigned_scalar(self.neighbor_sigs[i].map(|s| s.m_hash));
-
-		// 			let assigned_r = scalar_chip.assign_integer(ctx, unassigned_r,
-		// Range::Remainder)?; 			let assigned_s = scalar_chip.assign_integer(ctx,
-		// unassigned_s, Range::Remainder)?; 			let assigned_m_hash =
-		// 				scalar_chip.assign_integer(ctx, unassigned_m_hash, Range::Remainder)?;
-		// 			let pk_in_circuit = ecc_chip.assign_point(ctx,
-		// self.neighbor_pubkeys[i].map(|p| p.into()))?;
-
-		// 			let sig = AssignedEcdsaSig {
-		// 				r: assigned_r,
-		// 				s: assigned_s,
-		// 			};
-		// 			let assigned_pk = AssignedPublicKey {
-		// 				point: pk_in_circuit,
-		// 			};
-
-		// 			ecdsa_chip.verify(ctx, &sig, &assigned_pk, &assigned_m_hash)?;
-		// 		}
-
-		// 		Ok(())
-		// 	},
-		// )?;
-
 		config.config_range(&mut layouter)?;
 
-		main_gate.expose_public(layouter.namespace(|| "t_i"), t_i, 0)?;
-		main_gate.expose_public(layouter.namespace(|| "pk_x"), pk.get_x().native(), 1)?;
-		main_gate.expose_public(layouter.namespace(|| "pk_y"), pk.get_y().native(), 2)?;
-		main_gate.expose_public(layouter.namespace(|| "r"), r.native(), 3)?;
-		main_gate.expose_public(layouter.namespace(|| "s"), s.native(), 4)?;
-		main_gate.expose_public(layouter.namespace(|| "m_hash"), m_hash.native(), 5)?;
-
-		let mut offset = 6;
-		for i in 0..SIZE {
-			main_gate.expose_public(layouter.namespace(|| "c_ji"), c_jis[i], offset)?;
-			offset += 1;
-		}
-
-		for i in 0..SIZE {
-			main_gate.expose_public(layouter.namespace(|| "t_j"), t_js[i], offset)?;
-			offset += 1;
-		}
+		// Constrain the values to public inputs.
+		main_gate.expose_public(layouter.namespace(|| "op_v"), op_v, 0)?;
+		main_gate.expose_public(layouter.namespace(|| "r"), r.native(), 1)?;
+		main_gate.expose_public(layouter.namespace(|| "s"), s.native(), 2)?;
+		main_gate.expose_public(layouter.namespace(|| "m_hash"), m_hash.native(), 3)?;
+		main_gate.expose_public(layouter.namespace(|| "pk_x"), pk.get_x().native(), 4)?;
+		main_gate.expose_public(layouter.namespace(|| "pk_y"), pk.get_y().native(), 5)?;
 
 		Ok(())
 	}
@@ -252,14 +228,11 @@ impl<E: CurveAffine, N: FieldExt, const SIZE: usize> Circuit<N> for EigenTrustCi
 #[cfg(test)]
 mod test {
 	use super::*;
-	use crate::{
-		ecdsa::native::{generate_signature, Keypair},
-		poseidon::{native::Poseidon, params::Params5x5Bn254},
-	};
+	use crate::ecdsa::{generate_signature, Keypair};
 	use halo2wrong::{
 		curves::{
 			bn256::{Bn256, Fr},
-			group::{ff::PrimeField, Curve, Group},
+			group::{Curve, Group},
 			secp256k1::{Fq, Secp256k1Affine as Secp256},
 		},
 		halo2::arithmetic::CurveAffine,
@@ -268,7 +241,7 @@ mod test {
 	use rand::thread_rng;
 	use utils::{generate_params, prove_and_verify};
 
-	const SIZE: usize = 3;
+	const SIZE: usize = 12;
 
 	fn to_wide(p: [u8; 32]) -> [u8; 64] {
 		let mut res = [0u8; 64];
@@ -281,63 +254,43 @@ mod test {
 		let k = 18;
 		let mut rng = thread_rng();
 
-		let m_hash = Some(Fq::from_u128(12342));
+		let m_hash = Fq::from_u128(12342);
 
 		// Data for prover
 		let pair_i = Keypair::<Secp256>::new(&mut rng);
-		let pubkey_i = Some(pair_i.public().clone());
-		let sig_i = Some(generate_signature(pair_i, m_hash.unwrap(), &mut rng).unwrap());
+		let pubkey_i = pair_i.public().to_owned();
+		let sig_i = generate_signature(pair_i, m_hash, &mut rng).unwrap();
 
 		// Data from neighbors of i
-		let c_ji = [
-			Some(Fr::from_u128(1)),
-			Some(Fr::from_u128(1)),
-			Some(Fr::from_u128(1)),
-		];
-		let t_j = [
-			Some(Fr::from_u128(1)),
-			Some(Fr::from_u128(1)),
-			Some(Fr::from_u128(1)),
-		];
-		let pairs = [(); SIZE].map(|_| Keypair::<Secp256>::new(&mut rng));
-		let pubkeys = pairs.map(|p| Some(p.public().clone()));
-		let sigs = pairs.map(|p| Some(generate_signature(p, m_hash.unwrap(), &mut rng).unwrap()));
+		let op_ji = [(); SIZE].map(|_| Fr::from_u128(1));
+		let c_v = Fr::from_u128(1);
 
 		// Aux generator
-		let aux_generator = Some(<Secp256 as CurveAffine>::CurveExt::random(&mut rng).to_affine());
-
-		let eigen_trust = EigenTrustCircuit::<_, _, 3>::new(
+		let aux_generator = <Secp256 as CurveAffine>::CurveExt::random(&mut rng).to_affine();
+		let min_score = Fr::from_u128(1);
+		let eigen_trust = EigenTrustCircuit::<_, _, SIZE>::new(
 			pubkey_i,
 			sig_i,
-			c_ji,
-			t_j,
-			pubkeys,
-			sigs,
+			op_ji,
+			c_v,
+			min_score,
 			aux_generator,
 		);
 
-		let t_i = Fr::from_u128(3);
-		let pk_ix = Fr::from_bytes_wide(&to_wide(pubkey_i.unwrap().x.to_bytes()));
-		let pk_iy = Fr::from_bytes_wide(&to_wide(pubkey_i.unwrap().y.to_bytes()));
-		let r = Fr::from_bytes_wide(&to_wide(sig_i.unwrap().r.to_bytes()));
-		let s = Fr::from_bytes_wide(&to_wide(sig_i.unwrap().s.to_bytes()));
-		let m_hash = Fr::from_bytes_wide(&to_wide(sig_i.unwrap().m_hash.to_bytes()));
+		let op = Fr::from_u128(SIZE as u128) + min_score;
+		let r = Fr::from_bytes_wide(&to_wide(sig_i.r.to_bytes()));
+		let s = Fr::from_bytes_wide(&to_wide(sig_i.s.to_bytes()));
+		let m_hash = Fr::from_bytes_wide(&to_wide(sig_i.m_hash.to_bytes()));
+		let pk_ix = Fr::from_bytes_wide(&to_wide(pubkey_i.x.to_bytes()));
+		let pk_iy = Fr::from_bytes_wide(&to_wide(pubkey_i.y.to_bytes()));
 
 		let mut pub_ins = Vec::new();
-		pub_ins.push(t_i);
-		pub_ins.push(pk_ix);
-		pub_ins.push(pk_iy);
+		pub_ins.push(op);
 		pub_ins.push(r);
 		pub_ins.push(s);
 		pub_ins.push(m_hash);
-
-		for i in 0..SIZE {
-			pub_ins.push(c_ji[i].unwrap());
-		}
-
-		for i in 0..SIZE {
-			pub_ins.push(t_j[i].unwrap());
-		}
+		pub_ins.push(pk_ix);
+		pub_ins.push(pk_iy);
 
 		let prover = match MockProver::<Fr>::run(k, &eigen_trust, vec![pub_ins]) {
 			Ok(prover) => prover,
@@ -352,63 +305,43 @@ mod test {
 		let k = 18;
 		let mut rng = thread_rng();
 
-		let m_hash = Some(Fq::from_u128(12342));
+		let m_hash = Fq::from_u128(12342);
 
 		// Data for prover
 		let pair_i = Keypair::<Secp256>::new(&mut rng);
-		let pubkey_i = Some(pair_i.public().clone());
-		let sig_i = Some(generate_signature(pair_i, m_hash.unwrap(), &mut rng).unwrap());
+		let pubkey_i = pair_i.public().to_owned();
+		let sig_i = generate_signature(pair_i, m_hash, &mut rng).unwrap();
 
 		// Data from neighbors of i
-		let c_ji = [
-			Some(Fr::from_u128(1)),
-			Some(Fr::from_u128(1)),
-			Some(Fr::from_u128(1)),
-		];
-		let t_j = [
-			Some(Fr::from_u128(1)),
-			Some(Fr::from_u128(1)),
-			Some(Fr::from_u128(1)),
-		];
-		let pairs = [(); SIZE].map(|_| Keypair::<Secp256>::new(&mut rng));
-		let pubkeys = pairs.map(|p| Some(p.public().clone()));
-		let sigs = pairs.map(|p| Some(generate_signature(p, m_hash.unwrap(), &mut rng).unwrap()));
+		let op_ji = [(); SIZE].map(|_| Fr::from_u128(1));
+		let c_v = Fr::from_u128(1);
 
 		// Aux generator
-		let aux_generator = Some(<Secp256 as CurveAffine>::CurveExt::random(&mut rng).to_affine());
-
-		let eigen_trust = EigenTrustCircuit::<_, _, 3>::new(
+		let aux_generator = <Secp256 as CurveAffine>::CurveExt::random(&mut rng).to_affine();
+		let min_score = Fr::from_u128(1);
+		let eigen_trust = EigenTrustCircuit::<_, _, SIZE>::new(
 			pubkey_i,
 			sig_i,
-			c_ji,
-			t_j,
-			pubkeys,
-			sigs,
+			op_ji,
+			c_v,
+			min_score,
 			aux_generator,
 		);
 
-		let t_i = Fr::from_u128(3);
-		let pk_ix = Fr::from_bytes_wide(&to_wide(pubkey_i.unwrap().x.to_bytes()));
-		let pk_iy = Fr::from_bytes_wide(&to_wide(pubkey_i.unwrap().y.to_bytes()));
-		let r = Fr::from_bytes_wide(&to_wide(sig_i.unwrap().r.to_bytes()));
-		let s = Fr::from_bytes_wide(&to_wide(sig_i.unwrap().s.to_bytes()));
-		let m_hash = Fr::from_bytes_wide(&to_wide(sig_i.unwrap().m_hash.to_bytes()));
+		let op = Fr::from_u128(SIZE as u128) + min_score;
+		let r = Fr::from_bytes_wide(&to_wide(sig_i.r.to_bytes()));
+		let s = Fr::from_bytes_wide(&to_wide(sig_i.s.to_bytes()));
+		let m_hash = Fr::from_bytes_wide(&to_wide(sig_i.m_hash.to_bytes()));
+		let pk_ix = Fr::from_bytes_wide(&to_wide(pubkey_i.x.to_bytes()));
+		let pk_iy = Fr::from_bytes_wide(&to_wide(pubkey_i.y.to_bytes()));
 
 		let mut pub_ins = Vec::new();
-		pub_ins.push(t_i);
-		pub_ins.push(pk_ix);
-		pub_ins.push(pk_iy);
+		pub_ins.push(op);
 		pub_ins.push(r);
 		pub_ins.push(s);
 		pub_ins.push(m_hash);
-
-		for i in 0..SIZE {
-			pub_ins.push(c_ji[i].unwrap());
-		}
-
-		for i in 0..SIZE {
-			pub_ins.push(t_j[i].unwrap());
-		}
+		pub_ins.push(pk_ix);
+		pub_ins.push(pk_iy);
 
 		let params = generate_params(k);
 		prove_and_verify::<Bn256, _, _>(params, eigen_trust, &[&pub_ins[..]], &mut rng).unwrap();

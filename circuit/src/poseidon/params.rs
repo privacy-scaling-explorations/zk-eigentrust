@@ -1,3 +1,5 @@
+//! A module for defining pre-computed Poseidon parameters.
+
 use halo2wrong::{
 	curves::bn256::Fr,
 	halo2::{
@@ -7,16 +9,20 @@ use halo2wrong::{
 };
 use maingate::{AssignedValue, MainGate, MainGateInstructions, RegionCtx};
 
+/// A trait for implementing Poseidon parameters for specific curves, widths and
+/// sboxes.
 pub trait RoundParams<F: FieldExt, const WIDTH: usize>: Sbox {
+	/// Get the number of full rounds.
 	fn full_rounds() -> usize;
+	/// Get the number of partial rounds.
 	fn partial_rounds() -> usize;
-
+	/// Get the number of total rounds.
 	fn round_constants_count() -> usize {
 		let partial_rounds = Self::partial_rounds();
 		let full_rounds = Self::full_rounds();
 		(partial_rounds + full_rounds) * WIDTH
 	}
-
+	/// Get the round constants.
 	fn round_constants() -> Vec<F> {
 		let round_constants_raw = Self::round_constants_raw();
 		let round_constants: Vec<F> = round_constants_raw
@@ -26,7 +32,7 @@ pub trait RoundParams<F: FieldExt, const WIDTH: usize>: Sbox {
 		assert_eq!(round_constants.len(), Self::round_constants_count());
 		round_constants
 	}
-
+	/// Load the round constants into a buffer with a size of the state.
 	fn load_round_constants(round: usize, round_consts: &[F]) -> [F; WIDTH] {
 		let mut result = [F::zero(); WIDTH];
 		for i in 0..WIDTH {
@@ -34,46 +40,50 @@ pub trait RoundParams<F: FieldExt, const WIDTH: usize>: Sbox {
 		}
 		result
 	}
-
+	/// Get the MDS matrix.
 	fn mds() -> [[F; WIDTH]; WIDTH] {
 		let mds_raw = Self::mds_raw();
-		let mds = mds_raw.map(|row| row.map(|item| hex_to_field(item)));
-		mds
+		mds_raw.map(|row| row.map(|item| hex_to_field(item)))
 	}
-
+	/// Get the raw round constants -- the hex representation.
 	fn round_constants_raw() -> Vec<&'static str>;
+	/// Get the mds matrix raw -- the hex representation.
 	fn mds_raw() -> [[&'static str; WIDTH]; WIDTH];
 }
 
+/// The trait for sbox permutation.
 pub trait Sbox {
+	/// Sbox permutation for Expression.
 	fn sbox_expr<F: FieldExt>(exp: Expression<F>) -> Expression<F>;
+	/// Sbox permutation for AssignedValue.
 	fn sbox_asgn<F: FieldExt>(
 		main_gate: &MainGate<F>,
 		ctx: &mut RegionCtx<'_, '_, F>,
 		exp: &AssignedValue<F>,
 	) -> Result<AssignedValue<F>, Error>;
+	/// Sbox permutation for Field value.
 	fn sbox_f<F: FieldExt>(f: F) -> F;
 }
 
+/// Convert a hex string to a field element.
 pub fn hex_to_field<F: FieldExt>(s: &str) -> F {
 	let s = &s[2..];
 	let mut bytes = hex::decode(s).expect("Invalid params");
 	bytes.reverse();
 	let mut bytes_wide: [u8; 64] = [0; 64];
-	for i in 0..bytes.len() {
-		bytes_wide[i] = bytes[i];
-	}
+	bytes_wide[..bytes.len()].copy_from_slice(&bytes[..]);
 	F::from_bytes_wide(&bytes_wide)
 }
 
+/// The parameters for width = 5, sbox = 5, curve = Bn254.
 pub struct Params5x5Bn254;
 
+/// Implement the Sbox trait for the x5.
 impl Sbox for Params5x5Bn254 {
 	fn sbox_expr<F: FieldExt>(exp: Expression<F>) -> Expression<F> {
 		let exp2 = exp.clone() * exp.clone();
 		let exp4 = exp2.clone() * exp2;
-		let exp5 = exp4 * exp;
-		exp5
+		exp4 * exp
 	}
 
 	fn sbox_asgn<F: FieldExt>(
@@ -83,18 +93,18 @@ impl Sbox for Params5x5Bn254 {
 	) -> Result<AssignedValue<F>, Error> {
 		let exp2 = main_gate.mul(ctx, exp, exp)?;
 		let exp4 = main_gate.mul(ctx, &exp2, &exp2)?;
-		let exp5 = main_gate.mul(ctx, &exp4, &exp)?;
+		let exp5 = main_gate.mul(ctx, &exp4, exp)?;
 		Ok(exp5)
 	}
 
 	fn sbox_f<F: FieldExt>(f: F) -> F {
-		let f2 = f.clone() * f.clone();
-		let f4 = f2.clone() * f2;
-		let f5 = f4 * f;
-		f5
+		let f2 = f * f;
+		let f4 = f2 * f2;
+		f4 * f
 	}
 }
 
+/// Implement the RoundParams trait for the width = 5, curve = Bn254.
 impl RoundParams<Fr, 5> for Params5x5Bn254 {
 	fn partial_rounds() -> usize {
 		60

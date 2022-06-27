@@ -1,7 +1,11 @@
 //! The module for defining the request-response protocol.
 
-use crate::{epoch::Epoch, peer::opinion::Opinion};
+use crate::{
+	epoch::Epoch,
+	peer::{opinion::Opinion, MAX_NEIGHBORS},
+};
 use async_trait::async_trait;
+use eigen_trust_circuit::{ecdsa::SigData, halo2wrong::curves::secp256k1::Fq as Secp256k1Scalar};
 use futures::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use libp2p::request_response::{ProtocolName, RequestResponseCodec};
 use std::io::Result;
@@ -56,10 +60,10 @@ impl Request {
 }
 
 /// The EigenTrust protocol response struct.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Response {
 	/// Successful response with an opinion.
-	Success(Opinion),
+	Success(Opinion<MAX_NEIGHBORS>),
 	/// Failed response, because of invalid request.
 	InvalidRequest,
 	/// Failed response, because of the internal error.
@@ -115,19 +119,35 @@ impl RequestResponseCodec for EigenTrustCodec {
 				io.read_exact(&mut buf).await?;
 				let response = match buf[0] {
 					0 => {
+						// Opinion
 						let mut k_bytes = [0; 8];
-						let mut local_trust_score_bytes = [0; 8];
-						let mut global_trust_score_bytes = [0; 8];
+						let mut op_bytes = [0; 8];
+						let mut r = [0; 32];
+						let mut s = [0; 32];
+						let mut m_hash = [0; 32];
+						let mut proof_bytes = Vec::new();
 
 						io.read_exact(&mut k_bytes).await?;
-						io.read_exact(&mut local_trust_score_bytes).await?;
-						io.read_exact(&mut global_trust_score_bytes).await?;
+						io.read_exact(&mut op_bytes).await?;
+						io.read_exact(&mut r).await?;
+						io.read_exact(&mut s).await?;
+						io.read_exact(&mut m_hash).await?;
+						io.read_to_end(&mut proof_bytes).await?;
 
 						let k = u64::from_be_bytes(k_bytes);
-						let local_trust_score = f64::from_be_bytes(local_trust_score_bytes);
-						let global_trust_score = f64::from_be_bytes(global_trust_score_bytes);
+						let op = f64::from_be_bytes(op_bytes);
 
-						let opinion = Opinion::new(Epoch(k), local_trust_score, global_trust_score);
+						let r_f = Secp256k1Scalar::from_bytes(&r).unwrap();
+						let s_f = Secp256k1Scalar::from_bytes(&s).unwrap();
+						let m_hash_f = Secp256k1Scalar::from_bytes(&m_hash).unwrap();
+
+						let sig_data = SigData {
+							r: r_f,
+							s: s_f,
+							m_hash: m_hash_f,
+						};
+
+						let opinion = Opinion::new(Epoch(k), sig_data, op, proof_bytes);
 
 						Response::Success(opinion)
 					},
@@ -174,10 +194,14 @@ impl RequestResponseCodec for EigenTrustCodec {
 				match res {
 					Response::Success(opinion) => {
 						bytes.push(0);
+
+						// Opinion
 						bytes.extend(opinion.k.to_be_bytes());
-						bytes.extend(opinion.local_trust_score.to_be_bytes());
-						bytes.extend(opinion.global_trust_score.to_be_bytes());
-						bytes.extend(opinion.product.to_be_bytes());
+						bytes.extend(opinion.op.to_be_bytes());
+						bytes.extend(opinion.sig_i.r.to_bytes());
+						bytes.extend(opinion.sig_i.s.to_bytes());
+						bytes.extend(opinion.sig_i.m_hash.to_bytes());
+						bytes.extend(opinion.proof_bytes);
 					},
 					Response::InvalidRequest => bytes.push(1),
 					Response::InternalError(code) => bytes.push(code),
@@ -194,7 +218,7 @@ mod tests {
 	use super::*;
 
 	impl Response {
-		pub fn success(self) -> Opinion {
+		pub fn success(self) -> Opinion<MAX_NEIGHBORS> {
 			match self {
 				Response::Success(opinion) => opinion,
 				_ => panic!("Response::success called on invalid response"),
@@ -225,9 +249,8 @@ mod tests {
 
 	#[tokio::test]
 	async fn should_correctly_write_read_success_response() {
-		let epoch = Epoch(1);
-		let opinion = Opinion::new(epoch, 0.0, 0.0);
-		let good_res = Response::Success(opinion);
+		let opinion = Opinion::empty();
+		let good_res = Response::Success(opinion.clone());
 
 		let mut buf = vec![];
 		let mut codec = EigenTrustCodec::default();
@@ -239,9 +262,10 @@ mod tests {
 		let mut bytes = vec![];
 		bytes.push(0);
 		bytes.extend(opinion.k.to_be_bytes());
-		bytes.extend(opinion.local_trust_score.to_be_bytes());
-		bytes.extend(opinion.global_trust_score.to_be_bytes());
-		bytes.extend(opinion.product.to_be_bytes());
+		bytes.extend(opinion.op.to_be_bytes());
+		bytes.extend(opinion.sig_i.r.to_bytes());
+		bytes.extend(opinion.sig_i.s.to_bytes());
+		bytes.extend(opinion.sig_i.m_hash.to_bytes());
 
 		// compare the written bytes with the expected bytes
 		assert_eq!(buf, bytes);

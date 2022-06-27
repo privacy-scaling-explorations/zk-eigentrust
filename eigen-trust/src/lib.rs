@@ -17,30 +17,25 @@
 //!
 //! ## Usage:
 //! ```rust
-//! use eigen_trust::{EigenError, Keypair, LevelFilter, Multiaddr, Node, NodeConfig, PeerId};
+//! use eigen_trust::{
+//! 	eigen_trust_circuit::utils::read_params, EigenError, Keypair, LevelFilter, Multiaddr, Node,
+//! 	PeerId,
+//! };
 //! use std::str::FromStr;
 //!
-//! const BOOTSTRAP_PEERS: [(&str, &str, f64); 2] = [
+//! const BOOTSTRAP_PEERS: [(&str, &str); 2] = [
 //! 	(
 //! 		"/ip4/127.0.0.1/tcp/58584",
 //! 		"12D3KooWLyTCx9j2FMcsHe81RMoDfhXbdyyFgNGQMdcrnhShTvQh",
-//! 		0.5,
 //! 	),
 //! 	(
 //! 		"/ip4/127.0.0.1/tcp/58601",
 //! 		"12D3KooWKBKXsLwbmVBySEmbKayJzfWp3tPCKrnDCsmNy9prwjvy",
-//! 		0.5,
 //! 	),
 //! ];
 //!
 //! const DEFAULT_ADDRESS: &str = "/ip4/0.0.0.0/tcp/0";
-//!
-//! struct Config;
-//! impl NodeConfig for Config {
-//! 	const INTERVAL: u64 = 2;
-//! 	const NUM_CONNECTIONS: usize = 12;
-//! 	const PRE_TRUST_WEIGHT: f64 = 0.2;
-//! }
+//! const INTERVAL: u64 = 10;
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), EigenError> {
@@ -53,10 +48,11 @@
 //! 		let peer_addr = Multiaddr::from_str(info.0).map_err(|_| EigenError::InvalidAddress)?;
 //! 		let peer_id = PeerId::from_str(info.1).map_err(|_| EigenError::InvalidPeerId)?;
 //!
-//! 		bootstrap_nodes.push((peer_id, peer_addr, info.2));
+//! 		bootstrap_nodes.push((peer_id, peer_addr));
 //! 	}
 //!
-//! 	let node = Node::<Config>::new(local_key, local_address, bootstrap_nodes)?;
+//! 	let params = read_params("../data/params-18.bin");
+//! 	let node = Node::new(local_key, local_address, bootstrap_nodes, INTERVAL, params)?;
 //! 	node.main_loop(Some(1)).await?;
 //!
 //! 	Ok(())
@@ -67,6 +63,7 @@
 //! The library is implemented according to the original [Eigen Trust paper](http://ilpubs.stanford.edu:8090/562/1/2002-56.pdf).
 //! It is developed under the Ethereum Foundation grant.
 
+#![feature(array_zip, array_try_map)]
 #![allow(clippy::tabs_in_doc_comments)]
 #![deny(
 	future_incompatible,
@@ -81,10 +78,8 @@
 	clippy::panic,
 	clippy::unnecessary_cast,
 	clippy::cast_lossless,
-	clippy::cast_possible_truncation,
 	clippy::cast_possible_wrap,
-	clippy::cast_precision_loss,
-	clippy::cast_sign_loss
+	clippy::cast_precision_loss
 )]
 #![warn(trivial_casts)]
 #![forbid(unsafe_code)]
@@ -104,11 +99,14 @@ mod peer;
 /// The module for defining the request-response protocol.
 mod protocol;
 
+pub use eigen_trust_circuit;
 pub use epoch::Epoch;
 pub use libp2p::{identity::Keypair, Multiaddr, PeerId};
 pub use log::LevelFilter;
 pub use node::Node;
 pub use peer::Peer;
+
+use eigen_trust_circuit::halo2wrong::halo2::plonk::Error as H2Error;
 
 /// The crate-wide error variants.
 #[derive(Debug)]
@@ -118,10 +116,14 @@ pub enum EigenError {
 	InvalidKeypair,
 	/// Invalid multiaddress passed into node config.
 	InvalidAddress,
+	/// Invalid Pubkey
+	InvalidPubkey,
 	/// Invalid peer id passed.
 	InvalidPeerId,
 	/// Invalid trust score passed into node config.
 	InvalidNumNeighbours,
+	/// Peer not Identified
+	PeerNotIdentified,
 	/// Node failed to start listening on specified address. Usually because the
 	/// address is already in use.
 	ListenFailed,
@@ -131,4 +133,14 @@ pub enum EigenError {
 	MaxNeighboursReached,
 	/// Failed to calculate current epoch.
 	EpochError,
+	/// Signature generation failed.
+	SignatureError,
+	/// Hash error
+	HashError,
+	/// Proving error
+	ProvingError,
+	/// Verification error
+	VerificationError,
+	/// Halo2 error
+	Halo2Error(H2Error),
 }
