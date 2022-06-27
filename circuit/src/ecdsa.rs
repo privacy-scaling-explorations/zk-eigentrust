@@ -59,7 +59,7 @@ impl<E: CurveAffine> Keypair<E> {
 		Self { sk, pk }
 	}
 
-	/// Constructor from secret and public key
+	/// Constructor from secret and public key.
 	pub fn from_pair(sk: E::ScalarExt, pk: E) -> Self {
 		Self { sk, pk }
 	}
@@ -75,7 +75,7 @@ impl<E: CurveAffine> Keypair<E> {
 	}
 }
 
-/// Function for generating signatures
+/// Function for generating signatures.
 pub fn generate_signature<E: CurveAffine, R: Rng>(
 	pair: Keypair<E>,
 	m_hash: E::ScalarExt,
