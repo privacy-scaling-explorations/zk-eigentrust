@@ -14,6 +14,7 @@ use std::{iter::once, time::Duration};
 
 const PROTOCOL_VERSION: &str = "eigen_trust/1.0.0";
 
+/// The behaviour of the EigenTrust protocol.
 #[derive(NetworkBehaviour)]
 #[behaviour(out_event = "EigenEvent")]
 pub struct EigenTrustBehaviour {
@@ -21,6 +22,7 @@ pub struct EigenTrustBehaviour {
 	identify: Identify,
 }
 
+/// The events produced by the EigenTrust protocol.
 #[derive(Debug)]
 pub enum EigenEvent {
 	RequestResponse(RequestResponseEvent<Request, Response>),
@@ -40,6 +42,7 @@ impl From<IdentifyEvent> for EigenEvent {
 }
 
 impl EigenTrustBehaviour {
+	/// Constructs a new `EigenTrustBehaviour`.
 	pub fn new(
 		connection_duration: Duration,
 		interval_duration: Duration,
@@ -65,6 +68,7 @@ impl EigenTrustBehaviour {
 		}
 	}
 
+	/// Send response to a request in the request/response protocol.
 	pub fn send_response(
 		&mut self,
 		channel: ResponseChannel<Response>,
@@ -73,6 +77,7 @@ impl EigenTrustBehaviour {
 		self.req_res.send_response(channel, response)
 	}
 
+	/// Send a request in the request/response protocol.
 	pub fn send_request(&mut self, peer_id: &PeerId, request: Request) -> RequestId {
 		self.req_res.send_request(peer_id, request)
 	}

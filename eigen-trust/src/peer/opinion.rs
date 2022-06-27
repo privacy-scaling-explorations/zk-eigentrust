@@ -62,6 +62,7 @@ impl<const N: usize> Opinion<N> {
 		let pk_v_y = Bn256Scalar::from_bytes_wide(&to_wide(pubkey_v.y.to_bytes()));
 		let epoch_f = Bn256Scalar::from_u128(u128::from(k.0));
 
+		// Turn into scaled values and round the to avoid rounding errors.
 		let op_ji_scaled = op_ji.map(|op| (op * SCALE).round());
 		let c_v_scaled = (c_v * SCALE).round();
 		let min_score_scaled = (MIN_SCORE * SCALE).round();
@@ -70,6 +71,7 @@ impl<const N: usize> Opinion<N> {
 			.iter()
 			.fold(min_score_scaled, |acc, op| acc + op);
 		let op_v_scaled = t_i_scaled * c_v_scaled;
+		// Unscale the value.
 		let op_v_unscaled = op_v_scaled / (SCALE * SCALE);
 
 		let min_score = Bn256Scalar::from_u128(min_score_scaled as u128);
@@ -100,10 +102,9 @@ impl<const N: usize> Opinion<N> {
 		let proof_bytes = prove(params, circuit.clone(), &[&pub_ins], pk, &mut rng)
 			.map_err(|_| EigenError::ProvingError)?;
 
+		// Sanity check
 		let proof_res = verify(params, &[&pub_ins], &proof_bytes, pk.get_vk(), &mut rng)
 			.map_err(|_| EigenError::VerificationError)?;
-
-		// Sanity check
 		assert!(proof_res);
 
 		Ok(Self {
@@ -174,6 +175,7 @@ impl<const N: usize> Opinion<N> {
 	}
 }
 
+/// Convert the libp2p keypair into halo2 keypair.
 pub fn convert_keypair(kp: &IdentityKeypair) -> Result<Keypair<Secp256k1Affine>, EigenError> {
 	match kp {
 		IdentityKeypair::Secp256k1(secp_kp) => {
@@ -191,6 +193,7 @@ pub fn convert_keypair(kp: &IdentityKeypair) -> Result<Keypair<Secp256k1Affine>,
 	}
 }
 
+/// Convert the libp2p public key into halo2 public key.
 pub fn convert_pubkey(pk: &IdentityPublicKey) -> Result<Secp256k1Affine, EigenError> {
 	match pk {
 		IdentityPublicKey::Secp256k1(secp_pk) => {
@@ -217,6 +220,7 @@ pub fn convert_pubkey(pk: &IdentityPublicKey) -> Result<Secp256k1Affine, EigenEr
 	}
 }
 
+/// Write an array of 32 elements into an array of 64 elements.
 pub fn to_wide(p: [u8; 32]) -> [u8; 64] {
 	let mut res = [0u8; 64];
 	res[..32].copy_from_slice(&p[..]);

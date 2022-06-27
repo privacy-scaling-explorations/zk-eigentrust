@@ -1,3 +1,5 @@
+//! The module for the main EigenTrust circuit.
+
 #![feature(array_try_map)]
 #![allow(clippy::needless_range_loop)]
 
@@ -21,9 +23,11 @@ use maingate::{
 };
 use std::marker::PhantomData;
 
+// Constants for halo2wrong
 const BIT_LEN_LIMB: usize = 68;
 const NUMBER_OF_LIMBS: usize = 4;
 
+/// The halo2 columns config for the main circuit.
 #[derive(Clone, Debug)]
 pub struct EigenTrustConfig {
 	main_gate_config: MainGateConfig,
@@ -41,20 +45,27 @@ impl EigenTrustConfig {
 	}
 }
 
+/// The EigenTrust main circuit.
 #[derive(Clone)]
 pub struct EigenTrustCircuit<E: CurveAffine, N: FieldExt, const SIZE: usize> {
+	/// Public key of the prover.
 	pubkey_i: Option<E>,
+	/// Signature by the prover over the message: sig_i.m_hash.
 	sig_i: Option<SigData<E::ScalarExt>>,
+	/// Opinions of peers j to the peer i (the prover).
 	op_ji: [Option<N>; SIZE],
+	/// Opinon from peer i (the prover) to the peer v (the verifyer).
 	c_v: Option<N>,
-
+	/// Min score of the peers.
 	min_score: N,
+	// Range chip values
 	aux_generator: Option<E>,
 	window_size: usize,
 	_marker: PhantomData<N>,
 }
 
 impl<E: CurveAffine, N: FieldExt, const SIZE: usize> EigenTrustCircuit<E, N, SIZE> {
+	/// Create a new EigenTrustCircuit.
 	pub fn new(
 		pubkey_i: E,
 		sig_i: SigData<E::ScalarExt>,
@@ -95,6 +106,7 @@ impl<E: CurveAffine, N: FieldExt, const SIZE: usize> Circuit<N> for EigenTrustCi
 		}
 	}
 
+	/// Make the circuit config.
 	fn configure(meta: &mut ConstraintSystem<N>) -> Self::Config {
 		let (rns_base, rns_scalar) = GeneralEccChip::<E, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::rns();
 		let main_gate_config = MainGate::<N>::configure(meta);
@@ -108,6 +120,7 @@ impl<E: CurveAffine, N: FieldExt, const SIZE: usize> Circuit<N> for EigenTrustCi
 		}
 	}
 
+	/// Synthesize the circuit.
 	fn synthesize(
 		&self,
 		config: Self::Config,
@@ -119,6 +132,7 @@ impl<E: CurveAffine, N: FieldExt, const SIZE: usize> Circuit<N> for EigenTrustCi
 		let scalar_chip = ecc_chip.scalar_field_chip();
 		let main_gate = MainGate::<N>::new(config.main_gate_config.clone());
 
+		// Set up the Ecc chip
 		layouter.assign_region(
 			|| "assign_aux",
 			|mut region| {
@@ -131,6 +145,7 @@ impl<E: CurveAffine, N: FieldExt, const SIZE: usize> Circuit<N> for EigenTrustCi
 			},
 		)?;
 
+		// Calculate the opinion towards peer v.
 		let op_v = layouter.assign_region(
 			|| "t_i",
 			|mut region| {
@@ -146,10 +161,15 @@ impl<E: CurveAffine, N: FieldExt, const SIZE: usize> Circuit<N> for EigenTrustCi
 
 				let min_score = main_gate.assign_constant(ctx, self.min_score)?;
 				let mut sum = main_gate.assign_constant(ctx, N::zero())?;
+				// Calculate the sum of all opinions.
+				// t_i = op_1i + ... + op_nij
 				for i in 0..SIZE {
 					sum = main_gate.add(ctx, &sum, &assigned_op_jis[i])?;
 				}
+				// t_i = min_score + t_i
 				let t_i = main_gate.add(ctx, &sum, &min_score)?;
+				// Calculate the opinion
+				// op_v = t_i * c_v
 				let op = main_gate.mul(ctx, &t_i, &assigned_c_v)?;
 
 				Ok(op)
@@ -158,6 +178,7 @@ impl<E: CurveAffine, N: FieldExt, const SIZE: usize> Circuit<N> for EigenTrustCi
 
 		let ecdsa_chip = EcdsaChip::new(ecc_chip.clone());
 
+		/// Verify the ecdsa signature.
 		let (r, s, m_hash, pk) = layouter.assign_region(
 			|| "sig_i_verify",
 			|mut region| {
@@ -192,6 +213,7 @@ impl<E: CurveAffine, N: FieldExt, const SIZE: usize> Circuit<N> for EigenTrustCi
 
 		config.config_range(&mut layouter)?;
 
+		// Constrain the values to public inputs.
 		main_gate.expose_public(layouter.namespace(|| "op_v"), op_v, 0)?;
 		main_gate.expose_public(layouter.namespace(|| "r"), r.native(), 1)?;
 		main_gate.expose_public(layouter.namespace(|| "s"), s.native(), 2)?;

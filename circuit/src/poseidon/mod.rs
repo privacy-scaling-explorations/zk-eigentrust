@@ -1,13 +1,17 @@
+//! Poseidon hash function implementation.
+
 pub mod params;
 
 use halo2wrong::halo2::arithmetic::FieldExt;
 use params::RoundParams;
 use std::marker::PhantomData;
 
+/// Poseidon struct with generic field type and width of the state.
 pub struct Poseidon<F: FieldExt, const WIDTH: usize, P>
 where
 	P: RoundParams<F, WIDTH>,
 {
+	/// Input to the hash function.
 	inputs: [F; WIDTH],
 	_params: PhantomData<P>,
 }
@@ -16,6 +20,7 @@ impl<F: FieldExt, const WIDTH: usize, P> Poseidon<F, WIDTH, P>
 where
 	P: RoundParams<F, WIDTH>,
 {
+	/// Poseidon constructor.
 	pub fn new(inputs: [F; WIDTH]) -> Self {
 		Poseidon {
 			inputs,
@@ -23,6 +28,7 @@ where
 		}
 	}
 
+	/// Apply round constants to the state.
 	fn apply_round_constants(state: &[F; WIDTH], round_consts: &[F; WIDTH]) -> [F; WIDTH] {
 		let mut next_state = [F::zero(); WIDTH];
 		for i in 0..WIDTH {
@@ -34,6 +40,7 @@ where
 		next_state
 	}
 
+	/// Apply mds matrix to the state.
 	fn apply_mds(state: &[F; WIDTH], mds: &[[F; WIDTH]; WIDTH]) -> [F; WIDTH] {
 		let mut new_state = [F::zero(); WIDTH];
 		// Compute mds matrix
@@ -47,6 +54,7 @@ where
 		new_state
 	}
 
+	/// Run the Poseidon permutation.
 	pub fn permute(&self) -> [F; WIDTH] {
 		let full_rounds = P::full_rounds();
 		let half_full_rounds = full_rounds / 2;

@@ -27,6 +27,7 @@ use std::collections::HashMap;
 /// This is also the maximum number of peers that can be connected to the
 /// node.
 pub const MAX_NEIGHBORS: usize = 256;
+/// Minimum score a peer can have.
 pub const MIN_SCORE: f64 = 0.1;
 
 /// The peer struct.
@@ -44,6 +45,7 @@ pub struct Peer {
 impl Peer {
 	/// Creates a new peer.
 	pub fn new(keypair: Keypair, params: ParamsKZG<Bn256>) -> Result<Self, EigenError> {
+		// TODO: Do proving key generation outside the construct
 		let mut rng = thread_rng();
 		let min_score = Bn256Scalar::from_u128((MIN_SCORE * SCALE).round() as u128);
 		let random_circuit =
@@ -99,7 +101,7 @@ impl Peer {
 	}
 
 	/// Calculate the local trust score toward all neighbors in the specified
-	/// epoch.
+	/// epoch and generate zk proof of it.
 	pub fn calculate_local_opinion(&mut self, peer_id: PeerId, k: Epoch) {
 		if self.cached_local_opinion.contains_key(&(peer_id, k)) {
 			return;

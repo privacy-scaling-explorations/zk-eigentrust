@@ -124,6 +124,7 @@ impl Node {
 		}
 	}
 
+	/// Handle the request response event.
 	fn handle_req_res_events(&mut self, event: RequestResponseEvent<Request, Response>) {
 		use RequestResponseEvent::*;
 		use RequestResponseMessage::{Request as Req, Response as Res};
@@ -188,6 +189,7 @@ impl Node {
 		};
 	}
 
+	/// Handle the identify protocol events.
 	fn handle_identify_events(&mut self, event: IdentifyEvent) {
 		match event {
 			IdentifyEvent::Received { peer_id, info } => {

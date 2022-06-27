@@ -1,3 +1,5 @@
+//! Helper functions for generating params, pk/vk pairs, creating and verifying proofs, etc.
+
 use crate::{
 	ecdsa::{generate_signature, Keypair},
 	EigenTrustCircuit,
@@ -31,16 +33,19 @@ use halo2wrong::{
 use rand::Rng;
 use std::{fmt::Debug, fs::write, io::Read, time::Instant};
 
+/// Generate parameters with polynomial degere = `k`.
 pub fn generate_params<E: MultiMillerLoop + Debug>(k: u32) -> ParamsKZG<E> {
 	ParamsKZG::<E>::new(k)
 }
 
+/// Write parameters to a file.
 pub fn write_params<E: MultiMillerLoop + Debug>(params: &ParamsKZG<E>, path: &str) {
 	let mut buffer: Vec<u8> = Vec::new();
 	params.write(&mut buffer).unwrap();
 	write(path, buffer).unwrap();
 }
 
+/// Read parameters from a file.
 pub fn read_params<E: MultiMillerLoop + Debug>(path: &str) -> ParamsKZG<E> {
 	let mut buffer: Vec<u8> = Vec::new();
 	let mut file = std::fs::File::open(path).unwrap();
@@ -48,6 +53,7 @@ pub fn read_params<E: MultiMillerLoop + Debug>(path: &str) -> ParamsKZG<E> {
 	ParamsKZG::<E>::read(&mut &buffer[..]).unwrap()
 }
 
+/// Make a new circuit with the inputs being random values.
 pub fn random_circuit<
 	E: MultiMillerLoop + Debug,
 	N: CurveAffine,
@@ -74,6 +80,7 @@ pub fn random_circuit<
 	EigenTrustCircuit::<_, _, SIZE>::new(pubkey_i, sig_i, op_ji, op_v, min_score, aux_generator)
 }
 
+/// Proving/verifying key generation.
 pub fn keygen<E: MultiMillerLoop + Debug, C: Circuit<E::Scalar>>(
 	params: &ParamsKZG<E>,
 	circuit: &C,
@@ -96,6 +103,7 @@ pub fn finalize_verify<
 	v.finalize()
 }
 
+/// Make a proof for generic circuit.
 pub fn prove<E: MultiMillerLoop + Debug, C: Circuit<E::Scalar>, R: Rng + Clone>(
 	params: &ParamsKZG<E>,
 	circuit: C,
@@ -117,6 +125,7 @@ pub fn prove<E: MultiMillerLoop + Debug, C: Circuit<E::Scalar>, R: Rng + Clone>(
 	Ok(proof)
 }
 
+/// Verify a proof for generic circuit.
 pub fn verify<E: MultiMillerLoop + Debug, R: Rng + Clone>(
 	params: &ParamsKZG<E>,
 	pub_inps: &[&[<KZGCommitmentScheme<E> as CommitmentScheme>::Scalar]],
@@ -137,6 +146,7 @@ pub fn verify<E: MultiMillerLoop + Debug, R: Rng + Clone>(
 	Ok(finalize_verify(output))
 }
 
+/// Helper function for doing proof and verification at the same time.
 pub fn prove_and_verify<E: MultiMillerLoop + Debug, C: Circuit<E::Scalar>, R: Rng + Clone>(
 	params: ParamsKZG<E>,
 	circuit: C,
