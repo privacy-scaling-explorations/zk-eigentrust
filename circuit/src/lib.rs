@@ -178,7 +178,7 @@ impl<E: CurveAffine, N: FieldExt, const SIZE: usize> Circuit<N> for EigenTrustCi
 
 		let ecdsa_chip = EcdsaChip::new(ecc_chip.clone());
 
-		/// Verify the ecdsa signature.
+		// Verify the ecdsa signature.
 		let (r, s, m_hash, pk) = layouter.assign_region(
 			|| "sig_i_verify",
 			|mut region| {
