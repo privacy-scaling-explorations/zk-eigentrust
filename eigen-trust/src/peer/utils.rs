@@ -1,18 +1,18 @@
+use super::opinion::Posedion5x5;
 use crate::EigenError;
 use eigen_trust_circuit::{
 	ecdsa::Keypair,
 	halo2wrong::{
-		utils::decompose,
 		curves::{
 			bn256::Fr as Bn256Scalar,
 			group::Curve,
 			secp256k1::{Fp as Secp256k1Base, Fq as Secp256k1Scalar, Secp256k1Affine},
 			CurveAffine, FieldExt,
 		},
+		utils::decompose,
 	},
 };
 use libp2p::core::{identity::Keypair as IdentityKeypair, PublicKey as IdentityPublicKey};
-use super::opinion::Posedion5x5;
 
 /// Convert the libp2p keypair into halo2 keypair.
 pub fn convert_keypair(kp: &IdentityKeypair) -> Result<Keypair<Secp256k1Affine>, EigenError> {
@@ -68,15 +68,18 @@ pub fn extract_sk_limbs(kp: &IdentityKeypair) -> Result<[Bn256Scalar; 4], EigenE
 			let sk_op: Option<Secp256k1Scalar> = Secp256k1Scalar::from_bytes(&sk_bytes).into();
 			let sk = sk_op.ok_or(EigenError::InvalidKeypair)?;
 
-			let limbs: Vec<Bn256Scalar> = decompose(sk, 4, 254).iter().map(|item| {
-				let bytes = item.to_bytes();
-				Bn256Scalar::from_bytes_wide(&to_wide(bytes))
-			}).collect();
+			let limbs: Vec<Bn256Scalar> = decompose(sk, 4, 254)
+				.iter()
+				.map(|item| {
+					let bytes = item.to_bytes();
+					Bn256Scalar::from_bytes_wide(&to_wide(bytes))
+				})
+				.collect();
 
 			assert!(limbs.len() == 4);
 
 			Ok([limbs[0], limbs[1], limbs[2], limbs[3]])
-		}
+		},
 		_ => Err(EigenError::InvalidKeypair),
 	}
 }

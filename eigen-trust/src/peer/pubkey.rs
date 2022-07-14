@@ -1,13 +1,7 @@
-use crate::EigenError;
-use eigen_trust_circuit::{
-	halo2wrong::{
-		curves::{
-			bn256::Fr as Bn256Scalar,
-		},
-	},
-};
-use libp2p::core::{identity::Keypair as IdentityKeypair};
 use super::utils::extract_pub_key;
+use crate::EigenError;
+use eigen_trust_circuit::halo2wrong::curves::bn256::Fr as Bn256Scalar;
+use libp2p::core::identity::Keypair as IdentityKeypair;
 
 struct Pubkey(Bn256Scalar);
 

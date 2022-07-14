@@ -1,4 +1,7 @@
-use super::MIN_SCORE;
+use super::{
+	utils::{convert_keypair, convert_pubkey, to_wide},
+	MIN_SCORE,
+};
 use crate::{EigenError, Epoch};
 use eigen_trust_circuit::{
 	ecdsa::{generate_signature, SigData},
@@ -20,7 +23,6 @@ use eigen_trust_circuit::{
 };
 use libp2p::core::{identity::Keypair as IdentityKeypair, PublicKey as IdentityPublicKey};
 use rand::thread_rng;
-use super::utils::{convert_keypair, convert_pubkey, to_wide};
 
 pub type Posedion5x5 = Poseidon<Bn256Scalar, 5, Params5x5Bn254>;
 pub const SCALE: f64 = 100000000.;
