@@ -22,7 +22,7 @@ use halo2wrong::{
 			kzg::{
 				commitment::{KZGCommitmentScheme, ParamsKZG},
 				multiopen::{ProverSHPLONK, VerifierSHPLONK},
-				strategy::BatchVerifier,
+				strategy::AccumulatorStrategy,
 			},
 			VerificationStrategy,
 		},
@@ -96,8 +96,7 @@ pub fn keygen<E: MultiMillerLoop + Debug, C: Circuit<E::Scalar>>(
 pub fn finalize_verify<
 	'a,
 	E: MultiMillerLoop + Debug,
-	R: Rng + Clone,
-	V: VerificationStrategy<'a, KZGCommitmentScheme<E>, VerifierSHPLONK<'a, E>, R>,
+	V: VerificationStrategy<'a, KZGCommitmentScheme<E>, VerifierSHPLONK<'a, E>>,
 >(
 	v: V,
 ) -> bool {
@@ -127,16 +126,15 @@ pub fn prove<E: MultiMillerLoop + Debug, C: Circuit<E::Scalar>, R: Rng + Clone>(
 }
 
 /// Verify a proof for generic circuit.
-pub fn verify<E: MultiMillerLoop + Debug, R: Rng + Clone>(
+pub fn verify<E: MultiMillerLoop + Debug>(
 	params: &ParamsKZG<E>,
 	pub_inps: &[&[<KZGCommitmentScheme<E> as CommitmentScheme>::Scalar]],
 	proof: &[u8],
 	vk: &VerifyingKey<E::G1Affine>,
-	rng: &mut R,
 ) -> Result<bool, Error> {
-	let strategy = BatchVerifier::<E, R>::new(params, rng.clone());
+	let strategy = AccumulatorStrategy::<E>::new(params);
 	let mut transcript = Blake2bRead::<_, E::G1Affine, Challenge255<_>>::init(proof);
-	let output = verify_proof::<KZGCommitmentScheme<E>, _, _, VerifierSHPLONK<E>, _, _>(
+	let output = verify_proof::<KZGCommitmentScheme<E>, _, _, VerifierSHPLONK<E>, _>(
 		params,
 		vk,
 		strategy,
@@ -159,7 +157,7 @@ pub fn prove_and_verify<E: MultiMillerLoop + Debug, C: Circuit<E::Scalar>, R: Rn
 	let proof = prove(&params, circuit, pub_inps, &pk, rng)?;
 	let end = start.elapsed();
 	print!("Proving time: {:?}", end.as_secs());
-	let res = verify(&params, pub_inps, &proof[..], pk.get_vk(), rng)?;
+	let res = verify(&params, pub_inps, &proof[..], pk.get_vk())?;
 
 	Ok(res)
 }

@@ -103,7 +103,7 @@ impl<const N: usize> Opinion<N> {
 			.map_err(|_| EigenError::ProvingError)?;
 
 		// Sanity check
-		let proof_res = verify(params, &[&pub_ins], &proof_bytes, pk.get_vk(), &mut rng)
+		let proof_res = verify(params, &[&pub_ins], &proof_bytes, pk.get_vk())
 			.map_err(|_| EigenError::VerificationError)?;
 		assert!(proof_res);
 
@@ -142,8 +142,6 @@ impl<const N: usize> Opinion<N> {
 			return Ok(true);
 		}
 
-		let mut rng = thread_rng();
-
 		let pk_p = convert_pubkey(pubkey_p)?;
 		let pk_v = convert_pubkey(pubkey_v)?;
 
@@ -168,7 +166,7 @@ impl<const N: usize> Opinion<N> {
 
 		let pub_ins = vec![op_v_f, r, s, m_hash, pk_ix, pk_iy];
 
-		let proof_res = verify(params, &[&pub_ins], &self.proof_bytes, vk, &mut rng)
+		let proof_res = verify(params, &[&pub_ins], &self.proof_bytes, vk)
 			.map_err(|_| EigenError::VerificationError)?;
 
 		Ok(sig_res && proof_res)
