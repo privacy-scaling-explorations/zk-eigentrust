@@ -117,7 +117,7 @@ impl Node {
 	/// Send the request for an opinion to all neighbors, in the passed epoch.
 	pub fn send_epoch_requests(&mut self, epoch: Epoch) {
 		for peer_id in self.peer.neighbors() {
-			let request = Request::new(epoch);
+			let request = Request::new_opinon(epoch);
 			self.get_swarm_mut()
 				.behaviour_mut()
 				.send_request(&peer_id, request);
@@ -132,14 +132,14 @@ impl Node {
 			Message {
 				peer,
 				message: Req {
-					request, channel, ..
+					request: Request::Opinion(epoch), channel, ..
 				},
 			} => {
 				// First we calculate the local opinions for the requested epoch.
-				self.peer.calculate_local_opinion(peer, request.get_epoch());
+				self.peer.calculate_local_opinion(peer, epoch);
 				// Then we send the local opinion to the peer.
-				let opinion = self.peer.get_local_opinion(&(peer, request.get_epoch()));
-				let response = Response::Success(opinion);
+				let opinion = self.peer.get_local_opinion(&(peer, epoch));
+				let response = Response::Opinion(opinion);
 				let res = self
 					.get_swarm_mut()
 					.behaviour_mut()
@@ -153,7 +153,7 @@ impl Node {
 				message: Res { response, .. },
 			} => {
 				// If we receive a response, we update the neighbors's opinion about us.
-				if let Response::Success(opinion) = response {
+				if let Response::Opinion(opinion) = response {
 					self.peer.cache_neighbor_opinion((peer, opinion.k), opinion);
 				} else {
 					log::error!("Received error response {:?}", response);

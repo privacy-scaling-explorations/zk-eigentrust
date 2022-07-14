@@ -9,6 +9,8 @@ use eigen_trust_circuit::{ecdsa::SigData, halo2wrong::curves::secp256k1::Fq as S
 use futures::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use libp2p::request_response::{ProtocolName, RequestResponseCodec};
 use std::io::Result;
+use std::io::Error;
+use std::io::ErrorKind;
 
 /// EigenTrust protocol struct.
 #[derive(Debug, Clone, Default)]
@@ -43,19 +45,21 @@ pub struct EigenTrustCodec;
 
 /// The EigenTrust protocol request struct.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Request {
-	epoch: Epoch,
+pub enum Request {
+	Opinion(Epoch),
 }
 
 impl Request {
 	/// Create a new request.
-	pub fn new(epoch: Epoch) -> Self {
-		Self { epoch }
+	pub fn new_opinon(epoch: Epoch) -> Self {
+		Self::Opinion(epoch)
 	}
 
 	/// Get the epoch of the request.
-	pub fn get_epoch(&self) -> Epoch {
-		self.epoch
+	pub fn get_epoch(&self) -> Option<Epoch> {
+		match self {
+			Self::Opinion(epoch) => Some(*epoch),
+		}
 	}
 }
 
@@ -63,7 +67,7 @@ impl Request {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Response {
 	/// Successful response with an opinion.
-	Success(Opinion<MAX_NEIGHBORS>),
+	Opinion(Opinion<MAX_NEIGHBORS>),
 	/// Failed response, because of invalid request.
 	InvalidRequest,
 	/// Failed response, because of the internal error.
@@ -96,10 +100,17 @@ impl RequestResponseCodec for EigenTrustCodec {
 	{
 		match protocol.version {
 			EigenTrustProtocolVersion::V1 => {
-				let mut buf = [0; 8];
+				let mut buf = [0; 1];
 				io.read_exact(&mut buf).await?;
-				let k = u64::from_be_bytes(buf);
-				Ok(Request::new(Epoch(k)))
+				match buf[0] {
+					0 => {
+						let mut k_buf = [0; 8];
+						io.read_exact(&mut k_buf).await?;
+						let k = u64::from_be_bytes(k_buf);
+						Ok(Request::new_opinon(Epoch(k)))
+					},
+					_ => Err(Error::new(ErrorKind::InvalidData, "Invalid request")),
+				}
 			},
 		}
 	}
@@ -149,7 +160,7 @@ impl RequestResponseCodec for EigenTrustCodec {
 
 						let opinion = Opinion::new(Epoch(k), sig_data, op, proof_bytes);
 
-						Response::Success(opinion)
+						Response::Opinion(opinion)
 					},
 					1 => Response::InvalidRequest,
 					other => Response::InternalError(other),
@@ -171,8 +182,13 @@ impl RequestResponseCodec for EigenTrustCodec {
 	{
 		match protocol.version {
 			EigenTrustProtocolVersion::V1 => {
-				let k = req.get_epoch();
-				io.write_all(&k.to_be_bytes()).await?;
+				match req {
+					Request::Opinion(k) => {
+						let mut bytes = vec![0];
+						bytes.extend_from_slice(&k.to_be_bytes());
+						io.write_all(&bytes).await?;
+					},
+				}
 				Ok(())
 			},
 		}
@@ -192,7 +208,7 @@ impl RequestResponseCodec for EigenTrustCodec {
 			EigenTrustProtocolVersion::V1 => {
 				let mut bytes = Vec::new();
 				match res {
-					Response::Success(opinion) => {
+					Response::Opinion(opinion) => {
 						bytes.push(0);
 
 						// Opinion
@@ -220,7 +236,7 @@ mod tests {
 	impl Response {
 		pub fn success(self) -> Opinion<MAX_NEIGHBORS> {
 			match self {
-				Response::Success(opinion) => opinion,
+				Response::Opinion(opinion) => opinion,
 				_ => panic!("Response::success called on invalid response"),
 			}
 		}
@@ -231,26 +247,27 @@ mod tests {
 		let mut codec = EigenTrustCodec::default();
 		let mut buf = vec![];
 		let epoch = Epoch(1);
-		let req = Request::new(epoch);
+		let req = Request::new_opinon(epoch);
 		codec
 			.write_request(&EigenTrustProtocol::default(), &mut buf, req)
 			.await
 			.unwrap();
 
-		let bytes = epoch.to_be_bytes();
+		let mut bytes = vec![0];
+		bytes.extend(epoch.to_be_bytes());
 		assert_eq!(buf, bytes);
 
 		let req = codec
 			.read_request(&EigenTrustProtocol::default(), &mut &bytes[..])
 			.await
 			.unwrap();
-		assert_eq!(req.get_epoch(), epoch);
+		assert_eq!(req.get_epoch().unwrap(), epoch);
 	}
 
 	#[tokio::test]
 	async fn should_correctly_write_read_success_response() {
 		let opinion = Opinion::empty();
-		let good_res = Response::Success(opinion.clone());
+		let good_res = Response::Opinion(opinion.clone());
 
 		let mut buf = vec![];
 		let mut codec = EigenTrustCodec::default();
