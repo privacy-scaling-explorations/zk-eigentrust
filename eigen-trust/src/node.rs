@@ -117,7 +117,7 @@ impl Node {
 	/// Send the request for an opinion to all neighbors, in the passed epoch.
 	pub fn send_epoch_requests(&mut self, epoch: Epoch) {
 		for peer_id in self.peer.neighbors() {
-			let request = Request::new_opinon(epoch);
+			let request = Request::Opinion(epoch);
 			self.get_swarm_mut()
 				.behaviour_mut()
 				.send_request(&peer_id, request);

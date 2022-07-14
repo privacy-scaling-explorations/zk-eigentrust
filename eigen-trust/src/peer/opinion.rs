@@ -1,12 +1,12 @@
 use super::MIN_SCORE;
 use crate::{EigenError, Epoch};
 use eigen_trust_circuit::{
-	ecdsa::{generate_signature, Keypair, SigData},
+	ecdsa::{generate_signature, SigData},
 	halo2wrong::{
 		curves::{
 			bn256::{Bn256, Fr as Bn256Scalar, G1Affine},
 			group::{Curve, Group},
-			secp256k1::{Fp as Secp256k1Base, Fq as Secp256k1Scalar, Secp256k1Affine},
+			secp256k1::{Fq as Secp256k1Scalar, Secp256k1Affine},
 			CurveAffine, FieldExt,
 		},
 		halo2::{
@@ -20,6 +20,7 @@ use eigen_trust_circuit::{
 };
 use libp2p::core::{identity::Keypair as IdentityKeypair, PublicKey as IdentityPublicKey};
 use rand::thread_rng;
+use super::utils::{convert_keypair, convert_pubkey, to_wide};
 
 pub type Posedion5x5 = Poseidon<Bn256Scalar, 5, Params5x5Bn254>;
 pub const SCALE: f64 = 100000000.;
@@ -171,58 +172,6 @@ impl<const N: usize> Opinion<N> {
 
 		Ok(sig_res && proof_res)
 	}
-}
-
-/// Convert the libp2p keypair into halo2 keypair.
-pub fn convert_keypair(kp: &IdentityKeypair) -> Result<Keypair<Secp256k1Affine>, EigenError> {
-	match kp {
-		IdentityKeypair::Secp256k1(secp_kp) => {
-			let mut sk_bytes = secp_kp.secret().to_bytes();
-			sk_bytes.reverse();
-
-			let sk_op: Option<Secp256k1Scalar> = Secp256k1Scalar::from_bytes(&sk_bytes).into();
-			let sk = sk_op.ok_or(EigenError::InvalidKeypair)?;
-			let g = Secp256k1Affine::generator();
-			let pk = (g * sk).to_affine();
-
-			Ok(Keypair::from_pair(sk, pk))
-		},
-		_ => Err(EigenError::InvalidKeypair),
-	}
-}
-
-/// Convert the libp2p public key into halo2 public key.
-pub fn convert_pubkey(pk: &IdentityPublicKey) -> Result<Secp256k1Affine, EigenError> {
-	match pk {
-		IdentityPublicKey::Secp256k1(secp_pk) => {
-			let pk_bytes = secp_pk.encode_uncompressed();
-			let mut x_bytes: [u8; 32] = pk_bytes[1..33]
-				.try_into()
-				.map_err(|_| EigenError::InvalidPubkey)?;
-			let mut y_bytes: [u8; 32] = pk_bytes[33..65]
-				.try_into()
-				.map_err(|_| EigenError::InvalidPubkey)?;
-			x_bytes.reverse();
-			y_bytes.reverse();
-
-			let x_op: Option<Secp256k1Base> = Secp256k1Base::from_bytes(&x_bytes).into();
-			let y_op: Option<Secp256k1Base> = Secp256k1Base::from_bytes(&y_bytes).into();
-			let x = x_op.ok_or(EigenError::InvalidPubkey)?;
-			let y = y_op.ok_or(EigenError::InvalidPubkey)?;
-
-			let pubkey_op: Option<Secp256k1Affine> = Secp256k1Affine::from_xy(x, y).into();
-			let pubkey = pubkey_op.ok_or(EigenError::InvalidPubkey)?;
-			Ok(pubkey)
-		},
-		_ => Err(EigenError::InvalidPubkey),
-	}
-}
-
-/// Write an array of 32 elements into an array of 64 elements.
-pub fn to_wide(p: [u8; 32]) -> [u8; 64] {
-	let mut res = [0u8; 64];
-	res[..32].copy_from_slice(&p[..]);
-	res
 }
 
 #[cfg(test)]

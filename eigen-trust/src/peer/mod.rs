@@ -5,6 +5,8 @@
 //! - Keeping track of neighbors scores towards us
 
 pub mod opinion;
+pub mod pubkey;
+pub mod utils;
 
 use crate::{epoch::Epoch, EigenError};
 use eigen_trust_circuit::{

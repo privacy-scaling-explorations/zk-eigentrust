@@ -48,11 +48,6 @@ pub enum Request {
 }
 
 impl Request {
-	/// Create a new request.
-	pub fn new_opinon(epoch: Epoch) -> Self {
-		Self::Opinion(epoch)
-	}
-
 	/// Get the epoch of the request.
 	pub fn get_epoch(&self) -> Option<Epoch> {
 		match self {
@@ -105,7 +100,7 @@ impl RequestResponseCodec for EigenTrustCodec {
 						let mut k_buf = [0; 8];
 						io.read_exact(&mut k_buf).await?;
 						let k = u64::from_be_bytes(k_buf);
-						Ok(Request::new_opinon(Epoch(k)))
+						Ok(Request::Opinion(Epoch(k)))
 					},
 					_ => Err(Error::new(ErrorKind::InvalidData, "Invalid request")),
 				}
@@ -245,7 +240,7 @@ mod tests {
 		let mut codec = EigenTrustCodec::default();
 		let mut buf = vec![];
 		let epoch = Epoch(1);
-		let req = Request::new_opinon(epoch);
+		let req = Request::Opinion(epoch);
 		codec
 			.write_request(&EigenTrustProtocol::default(), &mut buf, req)
 			.await
