@@ -14,13 +14,12 @@ use ecc::{maingate::RegionCtx, EccConfig, GeneralEccChip};
 pub use halo2wrong;
 use halo2wrong::halo2::{
 	arithmetic::{CurveAffine, FieldExt},
-	circuit::{Layouter, SimpleFloorPlanner},
+	circuit::{Layouter, SimpleFloorPlanner, Value},
 	plonk::{Circuit, ConstraintSystem, Error},
 };
-use integer::{IntegerInstructions, Range, NUMBER_OF_LOOKUP_LIMBS};
+use integer::{IntegerInstructions, Range};
 use maingate::{
 	MainGate, MainGateConfig, MainGateInstructions, RangeChip, RangeConfig, RangeInstructions,
-	UnassignedValue,
 };
 use std::marker::PhantomData;
 
@@ -37,10 +36,9 @@ pub struct EigenTrustConfig {
 
 impl EigenTrustConfig {
 	pub fn config_range<N: FieldExt>(&self, layouter: &mut impl Layouter<N>) -> Result<(), Error> {
-		let bit_len_lookup = BIT_LEN_LIMB / NUMBER_OF_LOOKUP_LIMBS;
-		let range_chip = RangeChip::<N>::new(self.range_config.clone(), bit_len_lookup);
-		range_chip.load_limb_range_table(layouter)?;
-		range_chip.load_overflow_range_tables(layouter)?;
+		let range_chip = RangeChip::<N>::new(self.range_config.clone());
+		range_chip.load_composition_tables(layouter)?;
+		range_chip.load_overflow_tables(layouter)?;
 
 		Ok(())
 	}
@@ -50,17 +48,17 @@ impl EigenTrustConfig {
 #[derive(Clone)]
 pub struct EigenTrustCircuit<E: CurveAffine, N: FieldExt, const SIZE: usize> {
 	/// Public key of the prover.
-	pubkey_i: Option<E>,
+	pubkey_i: Value<E>,
 	/// Signature by the prover over the message: sig_i.m_hash.
-	sig_i: Option<SigData<E::ScalarExt>>,
+	sig_i: Value<SigData<E::ScalarExt>>,
 	/// Opinions of peers j to the peer i (the prover).
-	op_ji: [Option<N>; SIZE],
+	op_ji: [Value<N>; SIZE],
 	/// Opinon from peer i (the prover) to the peer v (the verifyer).
-	c_v: Option<N>,
+	c_v: Value<N>,
 	/// Min score of the peers.
 	min_score: N,
 	// Range chip values
-	aux_generator: Option<E>,
+	aux_generator: Value<E>,
 	window_size: usize,
 	_marker: PhantomData<N>,
 }
@@ -76,13 +74,13 @@ impl<E: CurveAffine, N: FieldExt, const SIZE: usize> EigenTrustCircuit<E, N, SIZ
 		aux_generator: E,
 	) -> Self {
 		Self {
-			pubkey_i: Some(pubkey_i),
-			sig_i: Some(sig_i),
-			op_ji: op_ji.map(|c| Some(c)),
-			c_v: Some(c_v),
+			pubkey_i: Value::known(pubkey_i),
+			sig_i: Value::known(sig_i),
+			op_ji: op_ji.map(|c| Value::known(c)),
+			c_v: Value::known(c_v),
 
 			min_score,
-			aux_generator: Some(aux_generator),
+			aux_generator: Value::known(aux_generator),
 			window_size: 2,
 			_marker: PhantomData,
 		}
@@ -95,13 +93,13 @@ impl<E: CurveAffine, N: FieldExt, const SIZE: usize> Circuit<N> for EigenTrustCi
 
 	fn without_witnesses(&self) -> Self {
 		Self {
-			pubkey_i: None,
-			sig_i: None,
-			op_ji: [None; SIZE],
-			c_v: None,
+			pubkey_i: Value::unknown(),
+			sig_i: Value::unknown(),
+			op_ji: [Value::unknown(); SIZE],
+			c_v: Value::unknown(),
 
 			min_score: self.min_score,
-			aux_generator: None,
+			aux_generator: Value::unknown(),
 			window_size: self.window_size,
 			_marker: PhantomData,
 		}
@@ -114,7 +112,13 @@ impl<E: CurveAffine, N: FieldExt, const SIZE: usize> Circuit<N> for EigenTrustCi
 		let mut overflow_bit_lengths: Vec<usize> = vec![];
 		overflow_bit_lengths.extend(rns_base.overflow_lengths());
 		overflow_bit_lengths.extend(rns_scalar.overflow_lengths());
-		let range_config = RangeChip::<N>::configure(meta, &main_gate_config, overflow_bit_lengths);
+		let composition_bit_lens = vec![BIT_LEN_LIMB / NUMBER_OF_LIMBS];
+		let range_config = RangeChip::<N>::configure(
+			meta,
+			&main_gate_config,
+			composition_bit_lens,
+			overflow_bit_lengths,
+		);
 		EigenTrustConfig {
 			main_gate_config,
 			range_config,
@@ -152,13 +156,9 @@ impl<E: CurveAffine, N: FieldExt, const SIZE: usize> Circuit<N> for EigenTrustCi
 			|mut region| {
 				let position = &mut 0;
 				let ctx = &mut RegionCtx::new(&mut region, position);
-				let unassigned_op_jis = self.op_ji.map(UnassignedValue::from);
-				let unassigned_c_v = UnassignedValue::from(self.c_v);
 
-				let assigned_op_jis =
-					unassigned_op_jis.try_map(|val| main_gate.assign_value(ctx, &val))?;
-
-				let assigned_c_v = main_gate.assign_value(ctx, &unassigned_c_v)?;
+				let assigned_op_jis = self.op_ji.try_map(|val| main_gate.assign_value(ctx, val))?;
+				let assigned_c_v = main_gate.assign_value(ctx, self.c_v)?;
 
 				let min_score = main_gate.assign_constant(ctx, self.min_score)?;
 				let mut sum = main_gate.assign_constant(ctx, N::zero())?;
