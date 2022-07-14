@@ -1,6 +1,7 @@
 //! The module for the main EigenTrust circuit.
 
 #![feature(array_try_map)]
+#![feature(array_zip)]
 #![allow(clippy::needless_range_loop)]
 
 pub mod ecdsa;
