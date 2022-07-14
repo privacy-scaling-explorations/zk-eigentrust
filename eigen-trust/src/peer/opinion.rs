@@ -14,7 +14,7 @@ use eigen_trust_circuit::{
 			poly::kzg::commitment::ParamsKZG,
 		},
 	},
-	poseidon::{params::bn254_5x5::Params5x5Bn254, native::Poseidon},
+	poseidon::{native::Poseidon, params::bn254_5x5::Params5x5Bn254},
 	utils::{prove, verify},
 	EigenTrustCircuit,
 };

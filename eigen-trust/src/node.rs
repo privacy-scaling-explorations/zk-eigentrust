@@ -132,7 +132,9 @@ impl Node {
 			Message {
 				peer,
 				message: Req {
-					request: Request::Opinion(epoch), channel, ..
+					request: Request::Opinion(epoch),
+					channel,
+					..
 				},
 			} => {
 				// First we calculate the local opinions for the requested epoch.
