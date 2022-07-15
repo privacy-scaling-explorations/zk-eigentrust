@@ -2,7 +2,8 @@
 
 use crate::{
 	epoch::Epoch,
-	peer::{opinion::Opinion, MAX_NEIGHBORS},
+	peer::{opinion::Opinion, pubkey::Pubkey, MAX_NEIGHBORS},
+	EigenError,
 };
 use async_trait::async_trait;
 use eigen_trust_circuit::{ecdsa::SigData, halo2wrong::curves::secp256k1::Fq as Secp256k1Scalar};
@@ -45,6 +46,7 @@ pub struct EigenTrustCodec;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Request {
 	Opinion(Epoch),
+	Identify(Pubkey),
 }
 
 impl Request {
@@ -52,6 +54,7 @@ impl Request {
 	pub fn get_epoch(&self) -> Option<Epoch> {
 		match self {
 			Self::Opinion(epoch) => Some(*epoch),
+			_ => None,
 		}
 	}
 }
@@ -61,10 +64,12 @@ impl Request {
 pub enum Response {
 	/// Successful response with an opinion.
 	Opinion(Opinion<MAX_NEIGHBORS>),
+	/// Successful response with a public key.
+	Identify(Pubkey),
 	/// Failed response, because of invalid request.
 	InvalidRequest,
 	/// Failed response, because of the internal error.
-	InternalError(u8),
+	InternalError(EigenError),
 }
 
 impl ProtocolName for EigenTrustProtocol {
@@ -101,6 +106,12 @@ impl RequestResponseCodec for EigenTrustCodec {
 						io.read_exact(&mut k_buf).await?;
 						let k = u64::from_be_bytes(k_buf);
 						Ok(Request::Opinion(Epoch(k)))
+					},
+					1 => {
+						let mut pk_buf = [0; 32];
+						io.read_exact(&mut pk_buf).await?;
+						let pubkey = Pubkey::from_bytes(pk_buf).unwrap();
+						Ok(Request::Identify(pubkey))
 					},
 					_ => Err(Error::new(ErrorKind::InvalidData, "Invalid request")),
 				}
@@ -153,12 +164,25 @@ impl RequestResponseCodec for EigenTrustCodec {
 
 						let opinion = Opinion::new(Epoch(k), sig_data, op, proof_bytes);
 
-						Response::Opinion(opinion)
+						Ok(Response::Opinion(opinion))
 					},
-					1 => Response::InvalidRequest,
-					other => Response::InternalError(other),
+					1 => {
+						// Identify
+						let mut pubkey_bytes = [0; 32];
+						io.read_exact(&mut pubkey_bytes).await?;
+						let pubkey = Pubkey::from_bytes(pubkey_bytes).unwrap();
+						Ok(Response::Identify(pubkey))
+					},
+					2 => Ok(Response::InvalidRequest),
+					3 => {
+						let mut err_code = [0; 1];
+						io.read_exact(&mut err_code).await?;
+						let err = EigenError::from(err_code[0]);
+						Ok(Response::InternalError(err))
+					},
+					_ => Err(Error::new(ErrorKind::InvalidData, "Invalid response")),
 				};
-				Ok(response)
+				response
 			},
 		}
 	}
@@ -179,6 +203,11 @@ impl RequestResponseCodec for EigenTrustCodec {
 					Request::Opinion(k) => {
 						let mut bytes = vec![0];
 						bytes.extend_from_slice(&k.to_be_bytes());
+						io.write_all(&bytes).await?;
+					},
+					Request::Identify(pub_key) => {
+						let mut bytes = vec![1];
+						bytes.extend_from_slice(&pub_key.to_bytes());
 						io.write_all(&bytes).await?;
 					},
 				}
@@ -212,8 +241,15 @@ impl RequestResponseCodec for EigenTrustCodec {
 						bytes.extend(opinion.sig_i.m_hash.to_bytes());
 						bytes.extend(opinion.proof_bytes);
 					},
-					Response::InvalidRequest => bytes.push(1),
-					Response::InternalError(code) => bytes.push(code),
+					Response::Identify(pub_key) => {
+						bytes.push(1);
+						bytes.extend_from_slice(&pub_key.to_bytes());
+					},
+					Response::InvalidRequest => bytes.push(2),
+					Response::InternalError(code) => {
+						bytes.push(3);
+						bytes.push(code.into());
+					},
 				};
 				io.write_all(&bytes).await?;
 				Ok(())
@@ -300,7 +336,7 @@ mod tests {
 			.unwrap();
 
 		let mut bytes = vec![];
-		bytes.push(1);
+		bytes.push(2);
 		assert_eq!(buf, bytes);
 
 		let read_res = codec
@@ -314,7 +350,7 @@ mod tests {
 	#[tokio::test]
 	async fn should_correctly_write_read_internal_error_response() {
 		// Testing internal error
-		let bad_res = Response::InternalError(2);
+		let bad_res = Response::InternalError(EigenError::InvalidAddress);
 
 		let mut buf = vec![];
 		let mut codec = EigenTrustCodec::default();
@@ -324,7 +360,10 @@ mod tests {
 			.unwrap();
 
 		let mut bytes = vec![];
-		bytes.push(2);
+		// 3 is internal error code
+		bytes.push(3);
+		// 1 is invalid address error code
+		bytes.push(1);
 		assert_eq!(buf, bytes);
 
 		let read_res = codec

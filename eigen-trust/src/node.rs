@@ -3,7 +3,7 @@
 
 use crate::{
 	epoch::Epoch,
-	peer::Peer,
+	peer::{pubkey::Pubkey, Peer},
 	protocol::{
 		req_res::{Request, Response},
 		EigenEvent, EigenTrustBehaviour,
@@ -152,14 +152,52 @@ impl Node {
 			},
 			Message {
 				peer,
+				message: Req {
+					request: Request::Identify(pub_key),
+					channel,
+					..
+				},
+			} => {
+				self.peer.identify_neighbor(peer, pub_key);
+				let res = Pubkey::from_keypair(self.peer.get_keypair());
+				match res {
+					Ok(local_pubkey) => {
+						let response = Response::Identify(local_pubkey);
+						let res = self
+							.get_swarm_mut()
+							.behaviour_mut()
+							.send_response(channel, response);
+						if let Err(e) = res {
+							log::error!("Failed to send the response {:?}", e);
+						}
+					},
+					Err(e) => {
+						log::error!("Failed to generate local pubkey {:?}", e);
+						let response = Response::InternalError(e);
+						let res = self
+							.get_swarm_mut()
+							.behaviour_mut()
+							.send_response(channel, response);
+						if let Err(e) = res {
+							log::error!("Failed to send the response {:?}", e);
+						}
+					},
+				}
+			},
+			Message {
+				peer,
 				message: Res { response, .. },
 			} => {
 				// If we receive a response, we update the neighbors's opinion about us.
-				if let Response::Opinion(opinion) = response {
-					self.peer.cache_neighbor_opinion((peer, opinion.k), opinion);
-				} else {
-					log::error!("Received error response {:?}", response);
-				}
+				match response {
+					Response::Opinion(opinion) => {
+						self.peer.cache_neighbor_opinion((peer, opinion.k), opinion);
+					},
+					Response::Identify(pub_key) => {
+						self.peer.identify_neighbor(peer, pub_key);
+					},
+					other => log::error!("Received error response {:?}", other),
+				};
 			},
 			OutboundFailure {
 				peer,
@@ -195,7 +233,7 @@ impl Node {
 	fn handle_identify_events(&mut self, event: IdentifyEvent) {
 		match event {
 			IdentifyEvent::Received { peer_id, info } => {
-				self.peer.identify_neighbor(peer_id, info.public_key);
+				self.peer.identify_neighbor_native(peer_id, info.public_key);
 				log::info!("Neighbor identified {:?}", peer_id);
 			},
 			IdentifyEvent::Sent { peer_id } => {
@@ -537,8 +575,8 @@ mod tests {
 		assert_eq!(neighbors1, expected_neighbor1);
 		assert_eq!(neighbors2, expected_neighbor2);
 
-		let pubkey1 = node2.get_peer().get_pub_key(peer_id1).unwrap();
-		let pubkey2 = node1.get_peer().get_pub_key(peer_id2).unwrap();
+		let pubkey1 = node2.get_peer().get_pub_key_native(peer_id1).unwrap();
+		let pubkey2 = node1.get_peer().get_pub_key_native(peer_id2).unwrap();
 		assert_eq!(pubkey1, local_pubkey1);
 		assert_eq!(pubkey2, local_pubkey2);
 	}

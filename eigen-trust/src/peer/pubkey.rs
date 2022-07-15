@@ -3,7 +3,8 @@ use crate::EigenError;
 use eigen_trust_circuit::halo2wrong::curves::bn256::Fr as Bn256Scalar;
 use libp2p::core::identity::Keypair as IdentityKeypair;
 
-struct Pubkey(Bn256Scalar);
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Pubkey(Bn256Scalar);
 
 impl Pubkey {
 	pub fn from_keypair(keypair: &IdentityKeypair) -> Result<Self, EigenError> {

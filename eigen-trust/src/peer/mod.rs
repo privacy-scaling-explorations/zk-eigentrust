@@ -22,6 +22,7 @@ use eigen_trust_circuit::{
 };
 use libp2p::{core::PublicKey, identity::Keypair, PeerId};
 use opinion::{Opinion, SCALE};
+use pubkey::Pubkey;
 use rand::thread_rng;
 use std::collections::HashMap;
 
@@ -35,7 +36,8 @@ pub const MIN_SCORE: f64 = 0.1;
 /// The peer struct.
 pub struct Peer {
 	pub(crate) neighbors: [Option<PeerId>; MAX_NEIGHBORS],
-	pubkeys: HashMap<PeerId, PublicKey>,
+	pubkeys_native: HashMap<PeerId, PublicKey>,
+	pubkeys: HashMap<PeerId, Pubkey>,
 	neighbor_scores: HashMap<PeerId, u32>,
 	cached_neighbor_opinion: HashMap<(PeerId, Epoch), Opinion<MAX_NEIGHBORS>>,
 	cached_local_opinion: HashMap<(PeerId, Epoch), Opinion<MAX_NEIGHBORS>>,
@@ -52,9 +54,10 @@ impl Peer {
 		let min_score = Bn256Scalar::from_u128((MIN_SCORE * SCALE).round() as u128);
 		let random_circuit =
 			random_circuit::<Bn256, Secp256k1Affine, _, MAX_NEIGHBORS>(min_score, &mut rng);
-		let pk = keygen(&params, &random_circuit).map_err(EigenError::Halo2Error)?;
+		let pk = keygen(&params, &random_circuit).map_err(|_| EigenError::KeygenFailed)?;
 		Ok(Peer {
 			neighbors: [None; MAX_NEIGHBORS],
+			pubkeys_native: HashMap::new(),
 			pubkeys: HashMap::new(),
 			neighbor_scores: HashMap::new(),
 			cached_neighbor_opinion: HashMap::new(),
@@ -79,8 +82,13 @@ impl Peer {
 		Ok(())
 	}
 
+	/// Identifies a neighbor, by saving its native public key.
+	pub fn identify_neighbor_native(&mut self, peer_id: PeerId, pubkey: PublicKey) {
+		self.pubkeys_native.insert(peer_id, pubkey);
+	}
+
 	/// Identifies a neighbor, by saving its public key.
-	pub fn identify_neighbor(&mut self, peer_id: PeerId, pubkey: PublicKey) {
+	pub fn identify_neighbor(&mut self, peer_id: PeerId, pubkey: Pubkey) {
 		self.pubkeys.insert(peer_id, pubkey);
 	}
 
@@ -116,7 +124,7 @@ impl Peer {
 
 		let op_ji = self.get_neighbor_opinions_at(k.previous());
 		let normalized_score = self.get_normalized_score(*score);
-		let pubkey_op = self.get_pub_key(peer_id);
+		let pubkey_op = self.get_pub_key_native(peer_id);
 		let opinion = match pubkey_op {
 			Some(pubkey) => Opinion::generate(
 				&self.keypair,
@@ -147,7 +155,7 @@ impl Peer {
 	pub fn get_neighbor_opinions_at(&self, k: Epoch) -> [f64; MAX_NEIGHBORS] {
 		self.neighbors.map(|peer| {
 			let peer_pk_pair =
-				peer.and_then(|peer_id| self.get_pub_key(peer_id).map(|pk| (peer_id, pk)));
+				peer.and_then(|peer_id| self.get_pub_key_native(peer_id).map(|pk| (peer_id, pk)));
 			peer_pk_pair
 				.map(|(peer_id, pubkey_p)| {
 					let opinion = self.get_neighbor_opinion(&(peer_id, k));
@@ -225,9 +233,19 @@ impl Peer {
 		self.cached_neighbor_opinion.insert(key, opinion);
 	}
 
+	/// Get the native public key of a neighbor.
+	pub fn get_pub_key_native(&self, peer_id: PeerId) -> Option<PublicKey> {
+		self.pubkeys_native.get(&peer_id).cloned()
+	}
+
 	/// Get the public key of a neighbor.
-	pub fn get_pub_key(&self, peer_id: PeerId) -> Option<PublicKey> {
+	pub fn get_pub_key(&self, peer_id: PeerId) -> Option<Pubkey> {
 		self.pubkeys.get(&peer_id).cloned()
+	}
+
+	/// Get the keypair for this peer.
+	pub fn get_keypair(&self) -> &Keypair {
+		&self.keypair
 	}
 }
 
@@ -261,7 +279,7 @@ mod tests {
 		let sig = SigData::<Secp256k1Scalar>::empty();
 
 		let pubkey = Keypair::generate_secp256k1().public();
-		peer.identify_neighbor(neighbor_id, pubkey);
+		peer.identify_neighbor_native(neighbor_id, pubkey);
 
 		let opinion = Opinion::new(epoch, sig, 0.5, Vec::new());
 		peer.cache_local_opinion((neighbor_id, epoch), opinion.clone());
@@ -309,7 +327,7 @@ mod tests {
 			let peer_id = pubkey.to_peer_id();
 
 			peer.add_neighbor(peer_id).unwrap();
-			peer.identify_neighbor(peer_id, pubkey.clone());
+			peer.identify_neighbor_native(peer_id, pubkey.clone());
 			peer.set_score(peer_id, 5);
 
 			// Create neighbor opinion.
