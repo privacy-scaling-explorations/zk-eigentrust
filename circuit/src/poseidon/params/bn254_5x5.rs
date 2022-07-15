@@ -11,17 +11,6 @@ impl Sbox for Params5x5Bn254 {
 		exp5
 	}
 
-	fn sbox_asgn<F: FieldExt>(
-		main_gate: &MainGate<F>,
-		ctx: &mut RegionCtx<'_, '_, F>,
-		exp: &AssignedValue<F>,
-	) -> Result<AssignedValue<F>, Error> {
-		let exp2 = main_gate.mul(ctx, exp, exp)?;
-		let exp4 = main_gate.mul(ctx, &exp2, &exp2)?;
-		let exp5 = main_gate.mul(ctx, &exp4, &exp)?;
-		Ok(exp5)
-	}
-
 	fn sbox_f<F: FieldExt>(f: F) -> F {
 		let f2 = f.clone() * f.clone();
 		let f4 = f2.clone() * f2;

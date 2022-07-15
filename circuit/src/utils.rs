@@ -1,16 +1,9 @@
 //! Helper functions for generating params, pk/vk pairs, creating and verifying
 //! proofs, etc.
 
-use crate::{
-	ecdsa::{generate_signature, Keypair},
-	EigenTrustCircuit,
-};
+use crate::EigenTrustCircuit;
 use halo2wrong::{
-	curves::{
-		group::{Curve, Group},
-		pairing::{Engine, MultiMillerLoop},
-		CurveAffine,
-	},
+	curves::pairing::{Engine, MultiMillerLoop},
 	halo2::{
 		arithmetic::Field,
 		plonk::{
@@ -55,30 +48,14 @@ pub fn read_params<E: MultiMillerLoop + Debug>(path: &str) -> ParamsKZG<E> {
 }
 
 /// Make a new circuit with the inputs being random values.
-pub fn random_circuit<
-	E: MultiMillerLoop + Debug,
-	N: CurveAffine,
-	R: Rng + Clone,
-	const SIZE: usize,
->(
-	min_score: E::Scalar,
+pub fn random_circuit<E: MultiMillerLoop + Debug, R: Rng + Clone, const SIZE: usize>(
 	rng: &mut R,
-) -> EigenTrustCircuit<N, <E as Engine>::Scalar, SIZE> {
-	let m_hash = N::ScalarExt::random(rng.clone());
-
-	// Data for prover
-	let pair_i = Keypair::<N>::new(rng);
-	let pubkey_i = pair_i.public().to_owned();
-	let sig_i = generate_signature(pair_i, m_hash, rng).unwrap();
-
+) -> EigenTrustCircuit<<E as Engine>::Scalar, SIZE> {
 	// Data from neighbors of i
 	let op_ji = [(); SIZE].map(|_| E::Scalar::random(rng.clone()));
 	let op_v = E::Scalar::random(rng.clone());
 
-	// Aux generator
-	let aux_generator = N::CurveExt::random(rng.clone()).to_affine();
-
-	EigenTrustCircuit::<_, _, SIZE>::new(pubkey_i, sig_i, op_ji, op_v, min_score, aux_generator)
+	EigenTrustCircuit::<_, SIZE>::new(op_ji, op_v)
 }
 
 /// Proving/verifying key generation.

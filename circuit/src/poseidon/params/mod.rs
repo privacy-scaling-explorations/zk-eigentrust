@@ -5,7 +5,6 @@ use halo2wrong::halo2::{
 	arithmetic::FieldExt,
 	plonk::{Error, Expression},
 };
-use maingate::{AssignedValue, MainGate, MainGateInstructions, RegionCtx};
 
 pub trait RoundParams<F: FieldExt, const WIDTH: usize>: Sbox {
 	fn full_rounds() -> usize;
@@ -47,11 +46,6 @@ pub trait RoundParams<F: FieldExt, const WIDTH: usize>: Sbox {
 
 pub trait Sbox {
 	fn sbox_expr<F: FieldExt>(exp: Expression<F>) -> Expression<F>;
-	fn sbox_asgn<F: FieldExt>(
-		main_gate: &MainGate<F>,
-		ctx: &mut RegionCtx<'_, '_, F>,
-		exp: &AssignedValue<F>,
-	) -> Result<AssignedValue<F>, Error>;
 	fn sbox_f<F: FieldExt>(f: F) -> F;
 }
 

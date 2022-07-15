@@ -146,11 +146,10 @@ mod test {
 
 	use crate::poseidon::params::{bn254_5x5::Params5x5Bn254, hex_to_field};
 
-	use ecc::halo2::circuit::Value;
 	use halo2wrong::{
 		curves::bn256::Fr,
 		halo2::{
-			circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner},
+			circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner, Value},
 			dev::MockProver,
 			plonk::{Circuit, Column, ConstraintSystem, Error, Instance},
 		},
