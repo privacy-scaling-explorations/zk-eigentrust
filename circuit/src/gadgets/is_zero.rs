@@ -1,11 +1,9 @@
 pub use halo2wrong;
 use halo2wrong::halo2::{
 	arithmetic::FieldExt,
-	circuit::{Layouter, Region, Value},
-	plonk::{Advice, Column, ConstraintSystem, Error, Selector},
+	circuit::{AssignedCell, Layouter, Region, Value},
+	plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
 	poly::Rotation,
-	circuit::AssignedCell,
-	plonk::Expression
 };
 
 #[derive(Clone)]
@@ -50,7 +48,12 @@ impl<F: FieldExt> IsZeroChip<F> {
 			]
 		});
 
-		IsZeroConfig { x, x_inv, b, selector: s }
+		IsZeroConfig {
+			x,
+			x_inv,
+			b,
+			selector: s,
+		}
 	}
 
 	/// Synthesize the circuit.
@@ -85,17 +88,15 @@ impl<F: FieldExt> IsZeroChip<F> {
 
 #[cfg(test)]
 mod test {
+	use super::*;
 	use halo2wrong::{
-		curves::{
-			bn256::Fr,
-		},
+		curves::bn256::Fr,
 		halo2::{
-			dev::MockProver,
-			plonk::{Instance, Circuit},
 			circuit::SimpleFloorPlanner,
+			dev::MockProver,
+			plonk::{Circuit, Instance},
 		},
 	};
-	use super::*;
 
 	#[derive(Clone)]
 	struct TestConfig {
@@ -111,9 +112,7 @@ mod test {
 
 	impl<F: FieldExt> TestCircuit<F> {
 		fn new(x: F) -> Self {
-			Self {
-				numba: x,
-			}
+			Self { numba: x }
 		}
 	}
 
@@ -133,7 +132,11 @@ mod test {
 			meta.enable_equality(instance);
 			meta.enable_equality(temp);
 
-			TestConfig { is_zero, pub_ins: instance, temp }
+			TestConfig {
+				is_zero,
+				pub_ins: instance,
+				temp,
+			}
 		}
 
 		fn synthesize(
@@ -145,7 +148,7 @@ mod test {
 				|| "temp",
 				|mut region: Region<'_, F>| {
 					region.assign_advice(|| "temp_x", config.temp, 0, || Value::known(self.numba))
-				}
+				},
 			)?;
 			let is_zero_chip = IsZeroChip::new(numba);
 			let is_zero = is_zero_chip.is_zero(config.is_zero, layouter.namespace(|| "is_zero"))?;
@@ -157,7 +160,7 @@ mod test {
 	#[test]
 	fn test_is_zero() {
 		let test_chip = TestCircuit::new(Fr::from(0));
-		
+
 		let pub_ins = vec![Fr::one()];
 		let k = 4;
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();

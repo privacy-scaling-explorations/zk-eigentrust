@@ -72,10 +72,8 @@ impl<N: FieldExt, const SIZE: usize> Circuit<N> for EigenTrustCircuit<N, SIZE> {
 mod test {
 	use super::*;
 	use halo2wrong::{
-		curves::{
-			bn256::{Bn256, Fr},
-		},
-		halo2::{dev::MockProver},
+		curves::bn256::{Bn256, Fr},
+		halo2::dev::MockProver,
 	};
 	use rand::thread_rng;
 	use utils::{generate_params, prove_and_verify};
