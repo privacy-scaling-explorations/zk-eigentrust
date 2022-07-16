@@ -1,4 +1,3 @@
-pub use halo2wrong;
 use halo2wrong::halo2::{
 	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region, Value},
@@ -24,7 +23,7 @@ impl<F: FieldExt> IsZeroChip<F> {
 	}
 
 	/// Make the circuit config.
-	fn configure(meta: &mut ConstraintSystem<F>) -> IsZeroConfig {
+	pub fn configure(meta: &mut ConstraintSystem<F>) -> IsZeroConfig {
 		let x = meta.advice_column();
 		let x_inv = meta.advice_column();
 		let b = meta.advice_column();
@@ -57,7 +56,7 @@ impl<F: FieldExt> IsZeroChip<F> {
 	}
 
 	/// Synthesize the circuit.
-	fn is_zero(
+	pub fn is_zero(
 		&self,
 		config: IsZeroConfig,
 		mut layouter: impl Layouter<F>,

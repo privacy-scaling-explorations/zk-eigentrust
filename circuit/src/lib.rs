@@ -89,7 +89,6 @@ mod test {
 	#[test]
 	fn test_eigen_trust_verify() {
 		let k = 18;
-		let mut rng = thread_rng();
 
 		// Data from neighbors of i
 		let op_ji = [(); SIZE].map(|_| Fr::from_u128(1));
