@@ -49,7 +49,11 @@ impl<F: FieldExt> IsEqualChip<F> {
 		});
 
 		IsEqualConfig {
-			is_zero: is_zero_config, lhs, rhs, out, s
+			is_zero: is_zero_config,
+			lhs,
+			rhs,
+			out,
+			s,
 		}
 	}
 
@@ -80,6 +84,7 @@ impl<F: FieldExt> IsEqualChip<F> {
 
 #[cfg(test)]
 mod test {
+	use super::*;
 	use halo2wrong::{
 		curves::bn256::Fr,
 		halo2::{
@@ -88,7 +93,6 @@ mod test {
 			plonk::{Circuit, Instance},
 		},
 	};
-	use super::*;
 
 	#[derive(Clone)]
 	struct TestConfig {
@@ -140,8 +144,18 @@ mod test {
 			let (lhs, rhs) = layouter.assign_region(
 				|| "temp",
 				|mut region: Region<'_, F>| {
-					let lhs = region.assign_advice(|| "temp_x", config.temp, 0, || Value::known(self.x))?;
-					let rhs = region.assign_advice(|| "temp_y", config.temp, 1, || Value::known(self.y))?;
+					let lhs = region.assign_advice(
+						|| "temp_x",
+						config.temp,
+						0,
+						|| Value::known(self.x),
+					)?;
+					let rhs = region.assign_advice(
+						|| "temp_y",
+						config.temp,
+						1,
+						|| Value::known(self.y),
+					)?;
 
 					Ok((lhs, rhs))
 				},
