@@ -38,10 +38,7 @@ impl<F: FieldExt> IsBooleanChip<F> {
 			]
 		});
 
-		IsBooleanConfig {
-			x,
-			selector: s,
-		}
+		IsBooleanConfig { x, selector: s }
 	}
 
 	/// Synthesize the circuit.
@@ -105,10 +102,7 @@ mod test {
 
 			meta.enable_equality(temp);
 
-			TestConfig {
-				is_bool,
-				temp,
-			}
+			TestConfig { is_bool, temp }
 		}
 
 		fn synthesize(
