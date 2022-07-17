@@ -1,10 +1,10 @@
+use super::is_zero::{IsZeroChip, IsZeroConfig};
 use halo2wrong::halo2::{
 	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region, Value},
-	plonk::{Advice, Column, ConstraintSystem, Error, Selector, Fixed},
+	plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Selector},
 	poly::Rotation,
 };
-use super::is_zero::{IsZeroConfig, IsZeroChip};
 
 #[derive(Clone)]
 pub struct FixedSetConfig {
@@ -77,26 +77,50 @@ impl<F: FieldExt, const N: usize> FixedSetChip<F, N> {
 		config: FixedSetConfig,
 		mut layouter: impl Layouter<F>,
 	) -> Result<AssignedCell<F, F>, Error> {
-		// Make the initial product to be one. We have to enforce it by assigning it to the fixed column.
-		let initial_product = layouter.assign_region(|| "initial_product", |mut region: Region<'_, F>| {
-			region.assign_fixed(|| "product_initial", config.temp, 0, || Value::known(F::one()))
-		})?;
+		// Make the initial product to be one. We have to enforce it by assigning it to
+		// the fixed column.
+		let initial_product = layouter.assign_region(
+			|| "initial_product",
+			|mut region: Region<'_, F>| {
+				region.assign_fixed(
+					|| "product_initial",
+					config.temp,
+					0,
+					|| Value::known(F::one()),
+				)
+			},
+		)?;
 		let product = layouter.assign_region(
 			|| "set_membership_product",
 			|mut region: Region<'_, F>| {
-				let mut assigned_product = initial_product.copy_advice(|| "product_0", &mut region, config.product, 0)?;
-				let mut assigned_target = self.target.copy_advice(|| "target", &mut region, config.target, 0)?;
+				let mut assigned_product =
+					initial_product.copy_advice(|| "product_0", &mut region, config.product, 0)?;
+				let mut assigned_target =
+					self.target
+						.copy_advice(|| "target", &mut region, config.target, 0)?;
 				for i in 0..N {
 					config.selector.enable(&mut region, i)?;
 
-					let assigned_item = region.assign_fixed(|| format!("item_{}", i), config.items, i, || self.items[i])?;
+					let assigned_item = region.assign_fixed(
+						|| format!("item_{}", i),
+						config.items,
+						i,
+						|| self.items[i],
+					)?;
 
 					let diff = assigned_target.value().cloned() - assigned_item.value();
 					let next_product = assigned_product.value().cloned() * diff;
 
 					region.assign_advice(|| format!("diff_{}", i), config.diffs, i, || diff)?;
-					assigned_product = region.assign_advice(|| format!("product_{}", i), config.product, i + 1, || next_product)?;
-					assigned_target = self.target.copy_advice(|| "target", &mut region, config.target, i + 1)?;
+					assigned_product = region.assign_advice(
+						|| format!("product_{}", i),
+						config.product,
+						i + 1,
+						|| next_product,
+					)?;
+					assigned_target =
+						self.target
+							.copy_advice(|| "target", &mut region, config.target, i + 1)?;
 				}
 
 				Ok(assigned_product)
@@ -137,7 +161,10 @@ mod test {
 
 	impl<F: FieldExt> TestCircuit<F> {
 		fn new(items: [F; 3], target: F) -> Self {
-			Self { items: items.map(|v| Value::known(v)), target: Value::known(target) }
+			Self {
+				items: items.map(|v| Value::known(v)),
+				target: Value::known(target),
+			}
 		}
 	}
 
@@ -176,7 +203,8 @@ mod test {
 				},
 			)?;
 			let fixed_set_chip = FixedSetChip::new(self.items, numba);
-			let is_zero = fixed_set_chip.is_member(config.set, layouter.namespace(|| "fixed_set"))?;
+			let is_zero =
+				fixed_set_chip.is_member(config.set, layouter.namespace(|| "fixed_set"))?;
 			layouter.constrain_instance(is_zero.cell(), config.pub_ins, 0)?;
 			Ok(())
 		}
