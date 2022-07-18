@@ -5,8 +5,8 @@ use halo2wrong::halo2::{
 	poly::Rotation,
 };
 
-use crate::gadgets::is_boolean::IsBooleanConfig;
 use super::is_boolean::IsBooleanChip;
+use crate::gadgets::is_boolean::IsBooleanConfig;
 
 #[derive(Clone)]
 pub struct SelectConfig {
@@ -74,14 +74,16 @@ impl<F: FieldExt> SelectChip<F> {
 		mut layouter: impl Layouter<F>,
 	) -> Result<AssignedCell<F, F>, Error> {
 		let is_boolean_chip = IsBooleanChip::new(self.bit.clone());
-		let assigned_bool = is_boolean_chip.is_bool(config.is_bool.clone(), layouter.namespace(|| "is_boolean"))?;
+		let assigned_bool =
+			is_boolean_chip.is_bool(config.is_bool.clone(), layouter.namespace(|| "is_boolean"))?;
 
 		layouter.assign_region(
 			|| "select",
 			|mut region: Region<'_, F>| {
 				config.selector.enable(&mut region, 0)?;
 
-				let assigned_bit = assigned_bool.copy_advice(|| "bit", &mut region, config.bit, 0)?;
+				let assigned_bit =
+					assigned_bool.copy_advice(|| "bit", &mut region, config.bit, 0)?;
 				let assigned_x = self.x.copy_advice(|| "x", &mut region, config.x, 0)?;
 				let assigned_y = self.y.copy_advice(|| "y", &mut region, config.y, 0)?;
 
