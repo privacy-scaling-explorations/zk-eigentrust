@@ -72,7 +72,7 @@ impl<F: FieldExt, const N: usize> FixedSetChip<F, N> {
 		}
 	}
 
-	pub fn is_member(
+	pub fn synthesize(
 		&self,
 		config: FixedSetConfig,
 		mut layouter: impl Layouter<F>,
@@ -128,7 +128,7 @@ impl<F: FieldExt, const N: usize> FixedSetChip<F, N> {
 		)?;
 
 		let is_zero_chip = IsZeroChip::new(product);
-		let is_zero = is_zero_chip.is_zero(config.is_zero, layouter)?;
+		let is_zero = is_zero_chip.synthesize(config.is_zero, layouter)?;
 
 		Ok(is_zero)
 	}
@@ -204,7 +204,7 @@ mod test {
 			)?;
 			let fixed_set_chip = FixedSetChip::new(self.items, numba);
 			let is_zero =
-				fixed_set_chip.is_member(config.set, layouter.namespace(|| "fixed_set"))?;
+				fixed_set_chip.synthesize(config.set, layouter.namespace(|| "fixed_set"))?;
 			layouter.constrain_instance(is_zero.cell(), config.pub_ins, 0)?;
 			Ok(())
 		}

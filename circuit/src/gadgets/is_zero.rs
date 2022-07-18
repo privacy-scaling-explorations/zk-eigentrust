@@ -56,7 +56,7 @@ impl<F: FieldExt> IsZeroChip<F> {
 	}
 
 	/// Synthesize the circuit.
-	pub fn is_zero(
+	pub fn synthesize(
 		&self,
 		config: IsZeroConfig,
 		mut layouter: impl Layouter<F>,
@@ -150,7 +150,7 @@ mod test {
 				},
 			)?;
 			let is_zero_chip = IsZeroChip::new(numba);
-			let is_zero = is_zero_chip.is_zero(config.is_zero, layouter.namespace(|| "is_zero"))?;
+			let is_zero = is_zero_chip.synthesize(config.is_zero, layouter.namespace(|| "is_zero"))?;
 			layouter.constrain_instance(is_zero.cell(), config.pub_ins, 0)?;
 			Ok(())
 		}

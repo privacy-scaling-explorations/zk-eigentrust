@@ -7,8 +7,8 @@ use halo2wrong::halo2::{
 
 #[derive(Clone)]
 pub struct IsBooleanConfig {
-	pub x: Column<Advice>,
-	pub selector: Selector,
+	x: Column<Advice>,
+	selector: Selector,
 }
 
 pub struct IsBooleanChip<F: FieldExt> {
@@ -42,7 +42,7 @@ impl<F: FieldExt> IsBooleanChip<F> {
 	}
 
 	/// Synthesize the circuit.
-	pub fn is_bool(
+	pub fn synthesize(
 		&self,
 		config: IsBooleanConfig,
 		mut layouter: impl Layouter<F>,
@@ -117,7 +117,7 @@ mod test {
 				},
 			)?;
 			let is_bool_chip = IsBooleanChip::new(numba);
-			is_bool_chip.is_bool(config.is_bool, layouter.namespace(|| "is_bool"))?;
+			is_bool_chip.synthesize(config.is_bool, layouter.namespace(|| "is_bool"))?;
 			Ok(())
 		}
 	}

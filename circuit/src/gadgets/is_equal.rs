@@ -57,7 +57,7 @@ impl<F: FieldExt> IsEqualChip<F> {
 		}
 	}
 
-	fn is_equal(
+	fn synthesize(
 		&self,
 		config: IsEqualConfig,
 		mut layouter: impl Layouter<F>,
@@ -77,7 +77,7 @@ impl<F: FieldExt> IsEqualChip<F> {
 		)?;
 
 		let is_zero_chip = IsZeroChip::new(out);
-		let is_zero = is_zero_chip.is_zero(config.is_zero, layouter.namespace(|| "is_zero"))?;
+		let is_zero = is_zero_chip.synthesize(config.is_zero, layouter.namespace(|| "is_zero"))?;
 		Ok(is_zero)
 	}
 }
@@ -161,7 +161,7 @@ mod test {
 				},
 			)?;
 			let is_eq_chip = IsEqualChip::new(lhs, rhs);
-			let is_eq = is_eq_chip.is_equal(config.is_zero, layouter.namespace(|| "is_zero"))?;
+			let is_eq = is_eq_chip.synthesize(config.is_zero, layouter.namespace(|| "is_zero"))?;
 			layouter.constrain_instance(is_eq.cell(), config.pub_ins, 0)?;
 			Ok(())
 		}
