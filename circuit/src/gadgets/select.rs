@@ -11,6 +11,7 @@ use super::is_boolean::IsBooleanChip;
 #[derive(Clone)]
 pub struct SelectConfig {
 	is_bool: IsBooleanConfig,
+	bit: Column<Advice>,
 	x: Column<Advice>,
 	y: Column<Advice>,
 	selector: Selector,
@@ -30,15 +31,20 @@ impl<F: FieldExt> SelectChip<F> {
 	/// Make the circuit config.
 	pub fn configure(meta: &mut ConstraintSystem<F>) -> SelectConfig {
 		let boolean_config = IsBooleanChip::configure(meta);
+		// Q: Should we make a new column for the bit?
+		// Or use the one from the IsBoolean chip
+		// This way seems more correct?
+		let bit = meta.advice_column();
 		let x = meta.advice_column();
 		let y = meta.advice_column();
 		let s = meta.selector();
 
+		meta.enable_equality(bit);
 		meta.enable_equality(x);
 		meta.enable_equality(y);
 
 		meta.create_gate("select", |v_cells| {
-			let bit_exp = v_cells.query_advice(boolean_config.x, Rotation::cur());
+			let bit_exp = v_cells.query_advice(bit, Rotation::cur());
 			let x_exp = v_cells.query_advice(x, Rotation::cur());
 			let y_exp = v_cells.query_advice(y, Rotation::cur());
 
@@ -54,6 +60,7 @@ impl<F: FieldExt> SelectChip<F> {
 
 		SelectConfig {
 			is_bool: boolean_config,
+			bit,
 			x,
 			y,
 			selector: s,
@@ -67,15 +74,14 @@ impl<F: FieldExt> SelectChip<F> {
 		mut layouter: impl Layouter<F>,
 	) -> Result<AssignedCell<F, F>, Error> {
 		let is_boolean_chip = IsBooleanChip::new(self.bit.clone());
-		is_boolean_chip.is_bool(config.is_bool.clone(), layouter.namespace(|| "is_boolean"))?;
+		let assigned_bool = is_boolean_chip.is_bool(config.is_bool.clone(), layouter.namespace(|| "is_boolean"))?;
 
 		layouter.assign_region(
 			|| "select",
 			|mut region: Region<'_, F>| {
 				config.selector.enable(&mut region, 0)?;
-				config.is_bool.selector.enable(&mut region, 0)?;
 
-				let assigned_bit = self.bit.copy_advice(|| "bit", &mut region, config.is_bool.x, 0)?;
+				let assigned_bit = assigned_bool.copy_advice(|| "bit", &mut region, config.bit, 0)?;
 				let assigned_x = self.x.copy_advice(|| "x", &mut region, config.x, 0)?;
 				let assigned_y = self.y.copy_advice(|| "y", &mut region, config.y, 0)?;
 
@@ -190,9 +196,9 @@ mod test {
 
 	#[test]
 	fn test_select() {
-		let test_chip = TestCircuit::new(Fr::from(1), Fr::from(2), Fr::from(3));
+		let test_chip = TestCircuit::new(Fr::from(0), Fr::from(2), Fr::from(3));
 
-		let pub_ins = vec![Fr::from(2)];
+		let pub_ins = vec![Fr::from(3)];
 		let k = 4;
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));

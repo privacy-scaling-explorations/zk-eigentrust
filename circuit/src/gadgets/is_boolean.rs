@@ -46,14 +46,14 @@ impl<F: FieldExt> IsBooleanChip<F> {
 		&self,
 		config: IsBooleanConfig,
 		mut layouter: impl Layouter<F>,
-	) -> Result<(), Error> {
+	) -> Result<AssignedCell<F, F>, Error> {
 		layouter.assign_region(
 			|| "is_boolean",
 			|mut region: Region<'_, F>| {
 				config.selector.enable(&mut region, 0)?;
-				self.x.copy_advice(|| "x", &mut region, config.x, 0)?;
+				let assigned_x = self.x.copy_advice(|| "x", &mut region, config.x, 0)?;
 
-				Ok(())
+				Ok(assigned_x)
 			},
 		)
 	}
