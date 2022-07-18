@@ -54,7 +54,12 @@ impl<F: FieldExt> SelectChip<F> {
 			]
 		});
 
-		SelectConfig { x, y, bit, selector: s }
+		SelectConfig {
+			x,
+			y,
+			bit,
+			selector: s,
+		}
 	}
 
 	/// Synthesize the circuit.
@@ -136,7 +141,11 @@ mod test {
 			meta.enable_equality(temp);
 			meta.enable_equality(pub_ins);
 
-			TestConfig { select, temp, pub_ins }
+			TestConfig {
+				select,
+				temp,
+				pub_ins,
+			}
 		}
 
 		fn synthesize(
@@ -147,9 +156,24 @@ mod test {
 			let (assigned_x, assigned_y, assigned_bit) = layouter.assign_region(
 				|| "temp",
 				|mut region: Region<'_, F>| {
-					let bit = region.assign_advice(|| "temp_bit", config.temp, 0, || Value::known(self.bit))?;
-					let x = region.assign_advice(|| "temp_x", config.temp, 1, || Value::known(self.x))?;
-					let y = region.assign_advice(|| "temp_y", config.temp, 2, || Value::known(self.y))?;
+					let bit = region.assign_advice(
+						|| "temp_bit",
+						config.temp,
+						0,
+						|| Value::known(self.bit),
+					)?;
+					let x = region.assign_advice(
+						|| "temp_x",
+						config.temp,
+						1,
+						|| Value::known(self.x),
+					)?;
+					let y = region.assign_advice(
+						|| "temp_y",
+						config.temp,
+						2,
+						|| Value::known(self.y),
+					)?;
 
 					Ok((x, y, bit))
 				},
