@@ -7,8 +7,8 @@ use halo2wrong::halo2::{
 
 #[derive(Clone)]
 pub struct IsBooleanConfig {
-	x: Column<Advice>,
-	selector: Selector,
+	pub x: Column<Advice>,
+	pub selector: Selector,
 }
 
 pub struct IsBooleanChip<F: FieldExt> {

@@ -1,13 +1,16 @@
 use halo2wrong::halo2::{
 	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region},
-	plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
+	plonk::{Advice, Column, ConstraintSystem, Error, Selector},
 	poly::Rotation,
 };
 
+use crate::gadgets::is_boolean::IsBooleanConfig;
+use super::is_boolean::IsBooleanChip;
+
 #[derive(Clone)]
 pub struct SelectConfig {
-	bit: Column<Advice>,
+	is_bool: IsBooleanConfig,
 	x: Column<Advice>,
 	y: Column<Advice>,
 	selector: Selector,
@@ -26,19 +29,16 @@ impl<F: FieldExt> SelectChip<F> {
 
 	/// Make the circuit config.
 	pub fn configure(meta: &mut ConstraintSystem<F>) -> SelectConfig {
-		let bit = meta.advice_column();
+		let boolean_config = IsBooleanChip::configure(meta);
 		let x = meta.advice_column();
 		let y = meta.advice_column();
 		let s = meta.selector();
 
-		meta.enable_equality(bit);
 		meta.enable_equality(x);
 		meta.enable_equality(y);
 
 		meta.create_gate("select", |v_cells| {
-			let one = Expression::Constant(F::one());
-
-			let bit_exp = v_cells.query_advice(bit, Rotation::cur());
+			let bit_exp = v_cells.query_advice(boolean_config.x, Rotation::cur());
 			let x_exp = v_cells.query_advice(x, Rotation::cur());
 			let y_exp = v_cells.query_advice(y, Rotation::cur());
 
@@ -47,17 +47,15 @@ impl<F: FieldExt> SelectChip<F> {
 			let s_exp = v_cells.query_selector(s);
 
 			vec![
-				// (1 - bit) * bit == 0
-				s_exp.clone() * ((one - bit_exp.clone()) * bit_exp.clone()),
 				// bit * (a - b) - (r - b)
 				s_exp * (bit_exp.clone() * (x_exp - y_exp.clone()) - (res_exp - y_exp)),
 			]
 		});
 
 		SelectConfig {
+			is_bool: boolean_config,
 			x,
 			y,
-			bit,
 			selector: s,
 		}
 	}
@@ -68,12 +66,16 @@ impl<F: FieldExt> SelectChip<F> {
 		config: SelectConfig,
 		mut layouter: impl Layouter<F>,
 	) -> Result<AssignedCell<F, F>, Error> {
+		let is_boolean_chip = IsBooleanChip::new(self.bit.clone());
+		is_boolean_chip.is_bool(config.is_bool.clone(), layouter.namespace(|| "is_boolean"))?;
+
 		layouter.assign_region(
 			|| "select",
 			|mut region: Region<'_, F>| {
 				config.selector.enable(&mut region, 0)?;
+				config.is_bool.selector.enable(&mut region, 0)?;
 
-				let assigned_bit = self.bit.copy_advice(|| "bit", &mut region, config.bit, 0)?;
+				let assigned_bit = self.bit.copy_advice(|| "bit", &mut region, config.is_bool.x, 0)?;
 				let assigned_x = self.x.copy_advice(|| "x", &mut region, config.x, 0)?;
 				let assigned_y = self.y.copy_advice(|| "y", &mut region, config.y, 0)?;
 
@@ -153,7 +155,7 @@ mod test {
 			config: TestConfig,
 			mut layouter: impl Layouter<F>,
 		) -> Result<(), Error> {
-			let (assigned_x, assigned_y, assigned_bit) = layouter.assign_region(
+			let (assigned_bit, assigned_x, assigned_y) = layouter.assign_region(
 				|| "temp",
 				|mut region: Region<'_, F>| {
 					let bit = region.assign_advice(
@@ -175,7 +177,7 @@ mod test {
 						|| Value::known(self.y),
 					)?;
 
-					Ok((x, y, bit))
+					Ok((bit, x, y))
 				},
 			)?;
 			let select_chip = SelectChip::new(assigned_bit, assigned_x, assigned_y);
