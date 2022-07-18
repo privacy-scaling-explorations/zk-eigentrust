@@ -74,8 +74,8 @@ impl<F: FieldExt> SelectChip<F> {
 		mut layouter: impl Layouter<F>,
 	) -> Result<AssignedCell<F, F>, Error> {
 		let is_boolean_chip = IsBooleanChip::new(self.bit.clone());
-		let assigned_bool =
-			is_boolean_chip.synthesize(config.is_bool.clone(), layouter.namespace(|| "is_boolean"))?;
+		let assigned_bool = is_boolean_chip
+			.synthesize(config.is_bool.clone(), layouter.namespace(|| "is_boolean"))?;
 
 		layouter.assign_region(
 			|| "select",

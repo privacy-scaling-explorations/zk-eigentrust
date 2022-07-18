@@ -5,7 +5,7 @@ use halo2wrong::halo2::{
 	poly::Rotation,
 };
 
-use super::is_boolean::{IsBooleanConfig, IsBooleanChip};
+use super::is_boolean::{IsBooleanChip, IsBooleanConfig};
 
 #[derive(Clone)]
 pub struct AndConfig {
@@ -47,7 +47,12 @@ impl<F: FieldExt> AndChip<F> {
 			]
 		});
 
-		AndConfig { is_bool, x, y, selector: s }
+		AndConfig {
+			is_bool,
+			x,
+			y,
+			selector: s,
+		}
 	}
 
 	/// Synthesize the circuit.
@@ -58,7 +63,8 @@ impl<F: FieldExt> AndChip<F> {
 	) -> Result<AssignedCell<F, F>, Error> {
 		let is_bool_x = IsBooleanChip::new(self.x.clone());
 		let is_bool_y = IsBooleanChip::new(self.y.clone());
-		let x_checked = is_bool_x.synthesize(config.is_bool.clone(), layouter.namespace(|| "is_bool_x"))?;
+		let x_checked =
+			is_bool_x.synthesize(config.is_bool.clone(), layouter.namespace(|| "is_bool_x"))?;
 		let y_checked = is_bool_y.synthesize(config.is_bool, layouter.namespace(|| "is_bool_y"))?;
 
 		layouter.assign_region(
@@ -137,8 +143,18 @@ mod test {
 			let (x, y) = layouter.assign_region(
 				|| "temp",
 				|mut region: Region<'_, F>| {
-					let x = region.assign_advice(|| "temp_x", config.temp, 0, || Value::known(self.x))?;
-					let y = region.assign_advice(|| "temp_y", config.temp, 1, || Value::known(self.y))?;
+					let x = region.assign_advice(
+						|| "temp_x",
+						config.temp,
+						0,
+						|| Value::known(self.x),
+					)?;
+					let y = region.assign_advice(
+						|| "temp_y",
+						config.temp,
+						1,
+						|| Value::known(self.y),
+					)?;
 
 					Ok((x, y))
 				},

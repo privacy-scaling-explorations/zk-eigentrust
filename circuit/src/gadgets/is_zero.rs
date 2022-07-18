@@ -150,7 +150,8 @@ mod test {
 				},
 			)?;
 			let is_zero_chip = IsZeroChip::new(numba);
-			let is_zero = is_zero_chip.synthesize(config.is_zero, layouter.namespace(|| "is_zero"))?;
+			let is_zero =
+				is_zero_chip.synthesize(config.is_zero, layouter.namespace(|| "is_zero"))?;
 			layouter.constrain_instance(is_zero.cell(), config.pub_ins, 0)?;
 			Ok(())
 		}
