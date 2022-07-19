@@ -5,7 +5,7 @@ use halo2wrong::halo2::{
 	poly::Rotation,
 };
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct IsBooleanConfig {
 	x: Column<Advice>,
 	selector: Selector,

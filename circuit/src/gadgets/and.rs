@@ -7,7 +7,7 @@ use halo2wrong::halo2::{
 
 use super::is_boolean::{IsBooleanChip, IsBooleanConfig};
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct AndConfig {
 	is_bool: IsBooleanConfig,
 	x: Column<Advice>,

@@ -32,25 +32,11 @@ impl<F: FieldExt, const WIDTH: usize, P> PoseidonChip<F, WIDTH, P>
 where
 	P: RoundParams<F, WIDTH>,
 {
-	fn new(inputs: [AssignedCell<F, F>; WIDTH]) -> Self {
+	pub fn new(inputs: [AssignedCell<F, F>; WIDTH]) -> Self {
 		PoseidonChip {
 			inputs,
 			_params: PhantomData,
 		}
-	}
-
-	fn load_state(
-		config: &PoseidonConfig<WIDTH>,
-		region: &mut Region<'_, F>,
-		round: usize,
-		init_state: [Value<F>; WIDTH],
-	) -> Result<[AssignedCell<F, F>; WIDTH], Error> {
-		let mut state: [Option<AssignedCell<F, F>>; WIDTH] = [(); WIDTH].map(|_| None);
-		for i in 0..WIDTH {
-			state[i] =
-				Some(region.assign_advice(|| "state", config.state[i], round, || init_state[i])?);
-		}
-		Ok(state.map(|item| item.unwrap()))
 	}
 
 	fn copy_state(
@@ -301,7 +287,7 @@ where
 		}
 	}
 
-	fn permute(
+	pub fn synthesize(
 		&self,
 		config: &PoseidonConfig<WIDTH>,
 		mut layouter: impl Layouter<F>,
@@ -398,6 +384,20 @@ mod test {
 		fn new(inputs: [Value<Fr>; 5]) -> Self {
 			Self { inputs }
 		}
+
+		fn load_state(
+			config: &PoseidonConfig<5>,
+			region: &mut Region<'_, Fr>,
+			round: usize,
+			init_state: [Value<Fr>; 5],
+		) -> Result<[AssignedCell<Fr, Fr>; 5], Error> {
+			let mut state: [Option<AssignedCell<Fr, Fr>>; 5] = [(); 5].map(|_| None);
+			for i in 0..5 {
+				state[i] =
+					Some(region.assign_advice(|| "state", config.state[i], round, || init_state[i])?);
+			}
+			Ok(state.map(|item| item.unwrap()))
+		}
 	}
 
 	impl Circuit<Fr> for PoseidonTester {
@@ -430,7 +430,7 @@ mod test {
 			let init_state = layouter.assign_region(
 				|| "load_state",
 				|mut region: Region<'_, Fr>| {
-					TestPoseidonChip::load_state(
+					Self::load_state(
 						&config.poseidon_config,
 						&mut region,
 						0,
@@ -441,7 +441,7 @@ mod test {
 
 			let poseidon = TestPoseidonChip::new(init_state);
 			let result_state =
-				poseidon.permute(&config.poseidon_config, layouter.namespace(|| "poseidon"))?;
+				poseidon.synthesize(&config.poseidon_config, layouter.namespace(|| "poseidon"))?;
 			for i in 0..5 {
 				layouter.constrain_instance(result_state[i].cell(), config.results, i)?;
 			}

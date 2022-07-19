@@ -8,7 +8,7 @@ use halo2wrong::halo2::{
 use super::is_boolean::IsBooleanChip;
 use crate::gadgets::is_boolean::IsBooleanConfig;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct SelectConfig {
 	is_bool: IsBooleanConfig,
 	bit: Column<Advice>,

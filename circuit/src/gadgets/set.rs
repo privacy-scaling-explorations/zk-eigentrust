@@ -6,7 +6,7 @@ use halo2wrong::halo2::{
 	poly::Rotation,
 };
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct FixedSetConfig {
 	is_zero: IsZeroConfig,
 	target: Column<Advice>,

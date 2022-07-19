@@ -5,7 +5,7 @@ use halo2wrong::halo2::{
 	poly::Rotation,
 };
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct IsZeroConfig {
 	x: Column<Advice>,
 	x_inv: Column<Advice>,

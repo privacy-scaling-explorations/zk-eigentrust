@@ -48,15 +48,15 @@ pub fn read_params<E: MultiMillerLoop + Debug>(path: &str) -> ParamsKZG<E> {
 }
 
 /// Make a new circuit with the inputs being random values.
-pub fn random_circuit<E: MultiMillerLoop + Debug, R: Rng + Clone, const SIZE: usize>(
-	rng: &mut R,
-) -> EigenTrustCircuit<<E as Engine>::Scalar, SIZE> {
-	// Data from neighbors of i
-	let op_ji = [(); SIZE].map(|_| E::Scalar::random(rng.clone()));
-	let op_v = E::Scalar::random(rng.clone());
+// pub fn random_circuit<E: MultiMillerLoop + Debug, R: Rng + Clone, const SIZE: usize>(
+// 	rng: &mut R,
+// ) -> EigenTrustCircuit<<E as Engine>::Scalar, SIZE> {
+// 	// Data from neighbors of i
+// 	let op_ji = [(); SIZE].map(|_| E::Scalar::random(rng.clone()));
+// 	let op_v = E::Scalar::random(rng.clone());
 
-	EigenTrustCircuit::<_, SIZE>::new(op_ji, op_v)
-}
+// 	EigenTrustCircuit::<_, SIZE>::new(op_ji, op_v)
+// }
 
 /// Proving/verifying key generation.
 pub fn keygen<E: MultiMillerLoop + Debug, C: Circuit<E::Scalar>>(

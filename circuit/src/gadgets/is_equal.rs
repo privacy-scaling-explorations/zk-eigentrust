@@ -7,8 +7,8 @@ use halo2wrong::halo2::{
 
 use super::is_zero::{IsZeroChip, IsZeroConfig};
 
-#[derive(Clone)]
-struct IsEqualConfig {
+#[derive(Clone, Debug)]
+pub struct IsEqualConfig {
 	is_zero: IsZeroConfig,
 	lhs: Column<Advice>,
 	rhs: Column<Advice>,
@@ -17,19 +17,19 @@ struct IsEqualConfig {
 }
 
 #[derive(Clone)]
-struct IsEqualChip<F: FieldExt> {
+pub struct IsEqualChip<F: FieldExt> {
 	lhs: AssignedCell<F, F>,
 	rhs: AssignedCell<F, F>,
 }
 
 impl<F: FieldExt> IsEqualChip<F> {
-	fn new(x: AssignedCell<F, F>, y: AssignedCell<F, F>) -> Self {
+	pub fn new(x: AssignedCell<F, F>, y: AssignedCell<F, F>) -> Self {
 		Self { lhs: x, rhs: y }
 	}
 }
 
 impl<F: FieldExt> IsEqualChip<F> {
-	fn configure(meta: &mut ConstraintSystem<F>) -> IsEqualConfig {
+	pub fn configure(meta: &mut ConstraintSystem<F>) -> IsEqualConfig {
 		let is_zero_config = IsZeroChip::configure(meta);
 		let lhs = meta.advice_column();
 		let rhs = meta.advice_column();
@@ -57,7 +57,7 @@ impl<F: FieldExt> IsEqualChip<F> {
 		}
 	}
 
-	fn synthesize(
+	pub fn synthesize(
 		&self,
 		config: IsEqualConfig,
 		mut layouter: impl Layouter<F>,

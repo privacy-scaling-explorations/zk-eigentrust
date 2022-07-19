@@ -3,7 +3,7 @@ pub mod bn254_5x5;
 
 use halo2wrong::halo2::{
 	arithmetic::FieldExt,
-	plonk::{Error, Expression},
+	plonk::Expression,
 };
 
 pub trait RoundParams<F: FieldExt, const WIDTH: usize>: Sbox {
