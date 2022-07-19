@@ -8,20 +8,21 @@ pub mod gadgets;
 pub mod poseidon;
 pub mod utils;
 
-use std::marker::PhantomData;
 use gadgets::{
-	set::{FixedSetConfig, FixedSetChip},
-	and::{AndConfig, AndChip},
-	select::{SelectConfig, SelectChip},
-	is_equal::{IsEqualConfig, IsEqualChip}};
+	and::{AndChip, AndConfig},
+	is_equal::{IsEqualChip, IsEqualConfig},
+	select::{SelectChip, SelectConfig},
+	set::{FixedSetChip, FixedSetConfig},
+};
 pub use halo2wrong;
 use halo2wrong::halo2::{
 	arithmetic::FieldExt,
-	circuit::{Layouter, SimpleFloorPlanner, Value, Region},
-	plonk::{Circuit, ConstraintSystem, Error, Column, Advice, Selector, Instance},
-	poly::{Rotation},
+	circuit::{Layouter, Region, SimpleFloorPlanner, Value},
+	plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Instance, Selector},
+	poly::Rotation,
 };
-use poseidon::{PoseidonConfig, PoseidonChip, params::RoundParams};
+use poseidon::{params::RoundParams, PoseidonChip, PoseidonConfig};
+use std::marker::PhantomData;
 
 /// The halo2 columns config for the main circuit.
 #[derive(Clone, Debug)]
@@ -64,12 +65,9 @@ pub struct EigenTrustCircuit<
 	_params: PhantomData<P>,
 }
 
-impl<
-	F: FieldExt,
-	const S: usize,
-	const B: usize,
-	P: RoundParams<F, 5>,
-> EigenTrustCircuit<F, S, B, P> {
+impl<F: FieldExt, const S: usize, const B: usize, P: RoundParams<F, 5>>
+	EigenTrustCircuit<F, S, B, P>
+{
 	/// Create a new EigenTrustCircuit.
 	pub fn new(
 		pubkey_v: F,
@@ -95,12 +93,9 @@ impl<
 	}
 }
 
-impl<
-	F: FieldExt,
-	const S: usize,
-	const B: usize,
-	P: RoundParams<F, 5>,
-> Circuit<F> for EigenTrustCircuit<F, S, B, P> {
+impl<F: FieldExt, const S: usize, const B: usize, P: RoundParams<F, 5>> Circuit<F>
+	for EigenTrustCircuit<F, S, B, P>
+{
 	type Config = EigenTrustConfig;
 	type FloorPlanner = SimpleFloorPlanner;
 
@@ -181,47 +176,100 @@ impl<
 		let (zero, sk, epoch, genesis_epoch, bootstrap_score, pubkey_v) = layouter.assign_region(
 			|| "temp",
 			|mut region: Region<'_, F>| {
-				let zero = region.assign_advice(|| "poseidon_pk_0", config.temp, 0, || Value::known(F::zero()))?;
-				let one = region.assign_advice(|| "poseidon_pk_1", config.temp, 1, || self.secret_i[0])?;
-				let two = region.assign_advice(|| "poseidon_pk_2", config.temp, 2, || self.secret_i[1])?;
-				let three = region.assign_advice(|| "poseidon_pk_3", config.temp, 3, || self.secret_i[2])?;
-				let four = region.assign_advice(|| "poseidon_pk_4", config.temp, 4, || self.secret_i[3])?;
+				let zero = region.assign_advice(
+					|| "poseidon_pk_0",
+					config.temp,
+					0,
+					|| Value::known(F::zero()),
+				)?;
+				let one = region.assign_advice(
+					|| "poseidon_pk_1",
+					config.temp,
+					1,
+					|| self.secret_i[0],
+				)?;
+				let two = region.assign_advice(
+					|| "poseidon_pk_2",
+					config.temp,
+					2,
+					|| self.secret_i[1],
+				)?;
+				let three = region.assign_advice(
+					|| "poseidon_pk_3",
+					config.temp,
+					3,
+					|| self.secret_i[2],
+				)?;
+				let four = region.assign_advice(
+					|| "poseidon_pk_4",
+					config.temp,
+					4,
+					|| self.secret_i[3],
+				)?;
 
-				let epoch  = region.assign_advice(|| "epoch", config.temp, 5, || self.epoch)?;
-				let genesis_epoch = region.assign_advice(|| "genesis_epoch", config.temp, 6, || self.genesis_epoch)?;
-				let bootstrap_score = region.assign_advice(|| "bootstrap_score", config.temp, 7, || self.boostrap_score)?;
-				let pubkey_v = region.assign_advice(|| "pubkey_v", config.temp, 8, || self.pubkey_v)?;
-				Ok((zero, [one, two, three, four], epoch, genesis_epoch, bootstrap_score, pubkey_v))
-			}
+				let epoch = region.assign_advice(|| "epoch", config.temp, 5, || self.epoch)?;
+				let genesis_epoch = region.assign_advice(
+					|| "genesis_epoch",
+					config.temp,
+					6,
+					|| self.genesis_epoch,
+				)?;
+				let bootstrap_score = region.assign_advice(
+					|| "bootstrap_score",
+					config.temp,
+					7,
+					|| self.boostrap_score,
+				)?;
+				let pubkey_v =
+					region.assign_advice(|| "pubkey_v", config.temp, 8, || self.pubkey_v)?;
+				Ok((
+					zero,
+					[one, two, three, four],
+					epoch,
+					genesis_epoch,
+					bootstrap_score,
+					pubkey_v,
+				))
+			},
 		)?;
 
 		let t_i = layouter.assign_region(
 			|| "t_i",
 			|mut region: Region<'_, F>| {
-				let mut accumulated_sum = region.assign_advice(|| "t_i_acc_0", config.acc, 0, || self.op_ji[0])?;
+				let mut accumulated_sum =
+					region.assign_advice(|| "t_i_acc_0", config.acc, 0, || self.op_ji[0])?;
 
 				for i in 1..(S - 1) {
 					config.acc_selector.enable(&mut region, i)?;
 					let next = accumulated_sum.value().cloned() + self.op_ji[i];
-					accumulated_sum = region.assign_advice(|| "t_i_acc_i", config.acc, i, || next)?;
+					accumulated_sum =
+						region.assign_advice(|| "t_i_acc_i", config.acc, i, || next)?;
 				}
 
 				let next = accumulated_sum.value().cloned() + self.op_ji[S - 1];
-				accumulated_sum = region.assign_advice(|| "t_i_acc_n", config.acc, S - 1, || next)?;
+				accumulated_sum =
+					region.assign_advice(|| "t_i_acc_n", config.acc, S - 1, || next)?;
 
 				Ok(accumulated_sum)
-			}
+			},
 		)?;
 
 		// Recreate the pubkey_i
-		let inputs = [zero.clone(), sk[0].clone(), sk[1].clone(), sk[2].clone(), sk[3].clone()];
+		let inputs = [
+			zero.clone(),
+			sk[0].clone(),
+			sk[1].clone(),
+			sk[2].clone(),
+			sk[3].clone(),
+		];
 		let poseidon_pk = PoseidonChip::<_, 5, P>::new(inputs);
 		let res = poseidon_pk.synthesize(&config.poseidon, layouter.namespace(|| "poseidon_pk"))?;
 		let pubkey_i = res[0].clone();
 
 		// Check the bootstrap set membership
 		let set_membership = FixedSetChip::new(self.bootstrap_pubkeys, pubkey_i.clone());
-		let is_bootstrap = set_membership.synthesize(config.set, layouter.namespace(|| "set_membership"))?;
+		let is_bootstrap =
+			set_membership.synthesize(config.set, layouter.namespace(|| "set_membership"))?;
 
 		// Is the epoch equal to the genesis epoch?
 		let is_eq_chip = IsEqualChip::new(epoch.clone(), genesis_epoch);
@@ -229,7 +277,8 @@ impl<
 
 		// Is this the bootstrap peer at genesis epoch?
 		let and_chip = AndChip::new(is_bootstrap, is_genesis);
-		let is_bootstrap_and_genesis = and_chip.synthesize(config.and, layouter.namespace(|| "and"))?;
+		let is_bootstrap_and_genesis =
+			and_chip.synthesize(config.and, layouter.namespace(|| "and"))?;
 
 		// Select the appropriate score, depending on the conditions
 		let select_chip = SelectChip::new(is_bootstrap_and_genesis, bootstrap_score, t_i);
@@ -241,18 +290,19 @@ impl<
 				config.opv_selector.enable(&mut region, 0)?;
 				let lhs = t_i_select.copy_advice(|| "t_i_final", &mut region, config.lhs, 0)?;
 				let rhs = region.assign_advice(|| "t_i", config.rhs, 0, || self.c_v)?;
-				
+
 				let out = lhs.value().cloned() * rhs.value();
 
 				let out_assigned = region.assign_advice(|| "op_v", config.lhs, 1, || out)?;
 
 				Ok(out_assigned)
-			}
+			},
 		)?;
 
 		let m_hash_input = [zero, epoch, op_v, pubkey_v, pubkey_i];
 		let poseidon_m_hash = PoseidonChip::<_, 5, P>::new(m_hash_input);
-		let res = poseidon_m_hash.synthesize(&config.poseidon, layouter.namespace(|| "poseidon_m_hash"))?;
+		let res = poseidon_m_hash
+			.synthesize(&config.poseidon, layouter.namespace(|| "poseidon_m_hash"))?;
 		let m_hash = res[0].clone();
 
 		layouter.constrain_instance(m_hash.cell(), config.pub_ins, 0)?;
@@ -266,7 +316,7 @@ mod test {
 	use super::*;
 	use halo2wrong::{
 		curves::bn256::{Bn256, Fr},
-		halo2::{dev::MockProver, arithmetic::Field},
+		halo2::{arithmetic::Field, dev::MockProver},
 	};
 	use poseidon::params::bn254_5x5::Params5x5Bn254;
 	use rand::thread_rng;

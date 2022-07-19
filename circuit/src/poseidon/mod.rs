@@ -393,8 +393,12 @@ mod test {
 		) -> Result<[AssignedCell<Fr, Fr>; 5], Error> {
 			let mut state: [Option<AssignedCell<Fr, Fr>>; 5] = [(); 5].map(|_| None);
 			for i in 0..5 {
-				state[i] =
-					Some(region.assign_advice(|| "state", config.state[i], round, || init_state[i])?);
+				state[i] = Some(region.assign_advice(
+					|| "state",
+					config.state[i],
+					round,
+					|| init_state[i],
+				)?);
 			}
 			Ok(state.map(|item| item.unwrap()))
 		}
@@ -430,12 +434,7 @@ mod test {
 			let init_state = layouter.assign_region(
 				|| "load_state",
 				|mut region: Region<'_, Fr>| {
-					Self::load_state(
-						&config.poseidon_config,
-						&mut region,
-						0,
-						self.inputs,
-					)
+					Self::load_state(&config.poseidon_config, &mut region, 0, self.inputs)
 				},
 			)?;
 

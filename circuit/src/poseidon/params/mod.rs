@@ -1,10 +1,7 @@
 pub mod bn254_10x5;
 pub mod bn254_5x5;
 
-use halo2wrong::halo2::{
-	arithmetic::FieldExt,
-	plonk::Expression,
-};
+use halo2wrong::halo2::{arithmetic::FieldExt, plonk::Expression};
 
 pub trait RoundParams<F: FieldExt, const WIDTH: usize>: Sbox {
 	fn full_rounds() -> usize;
