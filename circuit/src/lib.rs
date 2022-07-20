@@ -13,13 +13,14 @@ use gadgets::{
 	is_equal::{IsEqualChip, IsEqualConfig},
 	select::{SelectChip, SelectConfig},
 	set::{FixedSetChip, FixedSetConfig},
+	accumulate::{AccumulatorChip, AccumulatorConfig},
+	mul::{MulChip, MulConfig},
 };
 pub use halo2wrong;
 use halo2wrong::halo2::{
 	arithmetic::FieldExt,
-	circuit::{Layouter, Region, SimpleFloorPlanner, Value},
-	plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Instance, Selector},
-	poly::Rotation,
+	circuit::{Layouter, Region, SimpleFloorPlanner, Value, AssignedCell},
+	plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Instance, Fixed},
 };
 use poseidon::{params::RoundParams, PoseidonChip, PoseidonConfig};
 use std::marker::PhantomData;
@@ -33,13 +34,11 @@ pub struct EigenTrustConfig {
 	and: AndConfig,
 	select: SelectConfig,
 	poseidon: PoseidonConfig<5>,
+	accumulator: AccumulatorConfig,
+	mul: MulConfig,
 	// EigenTrust columns
 	temp: Column<Advice>,
-	acc: Column<Advice>,
-	lhs: Column<Advice>,
-	rhs: Column<Advice>,
-	acc_selector: Selector,
-	opv_selector: Selector,
+	fixed: Column<Fixed>,
 	pub_ins: Column<Instance>,
 }
 
@@ -120,36 +119,12 @@ impl<F: FieldExt, const S: usize, const B: usize, P: RoundParams<F, 5>> Circuit<
 		let and = AndChip::configure(meta);
 		let select = SelectChip::configure(meta);
 		let poseidon = PoseidonChip::<_, 5, P>::configure(meta);
-
-		let acc = meta.advice_column();
-		let acc_selector = meta.selector();
-
-		let lhs = meta.advice_column();
-		let rhs = meta.advice_column();
-		let opv_selector = meta.selector();
+		let accumulator = AccumulatorChip::<_, S>::configure(meta);
+		let mul = MulChip::configure(meta);
 
 		let temp = meta.advice_column();
-
+		let fixed = meta.fixed_column();
 		let pub_ins = meta.instance_column();
-
-		meta.create_gate("acc", |v_cells| {
-			let acc_prev = v_cells.query_advice(acc, Rotation::prev());
-			let acc_cur = v_cells.query_advice(acc, Rotation::cur());
-			let acc_next = v_cells.query_advice(acc, Rotation::cur());
-
-			let s = v_cells.query_selector(acc_selector);
-
-			vec![s * (acc_prev + acc_cur - acc_next)]
-		});
-
-		meta.create_gate("op_v", |v_cells| {
-			let lhs_exp = v_cells.query_advice(lhs, Rotation::cur());
-			let rhs_exp = v_cells.query_advice(rhs, Rotation::cur());
-			let out = v_cells.query_advice(lhs, Rotation::next());
-			let s = v_cells.query_selector(opv_selector);
-
-			vec![s * (lhs_exp * rhs_exp - out)]
-		});
 
 		EigenTrustConfig {
 			set,
@@ -157,12 +132,10 @@ impl<F: FieldExt, const S: usize, const B: usize, P: RoundParams<F, 5>> Circuit<
 			and,
 			select,
 			poseidon,
-			acc,
-			lhs,
-			rhs,
-			acc_selector,
-			opv_selector,
+			accumulator,
+			mul,
 			temp,
+			fixed,
 			pub_ins,
 		}
 	}
@@ -173,12 +146,12 @@ impl<F: FieldExt, const S: usize, const B: usize, P: RoundParams<F, 5>> Circuit<
 		config: Self::Config,
 		mut layouter: impl Layouter<F>,
 	) -> Result<(), Error> {
-		let (zero, sk, epoch, genesis_epoch, bootstrap_score, pubkey_v) = layouter.assign_region(
+		let (zero, ops, c_v, sk, epoch, genesis_epoch, bootstrap_score, pubkey_v) = layouter.assign_region(
 			|| "temp",
 			|mut region: Region<'_, F>| {
-				let zero = region.assign_advice(
-					|| "poseidon_pk_0",
-					config.temp,
+				let zero = region.assign_fixed(
+					|| "zero",
+					config.fixed,
 					0,
 					|| Value::known(F::zero()),
 				)?;
@@ -222,8 +195,21 @@ impl<F: FieldExt, const S: usize, const B: usize, P: RoundParams<F, 5>> Circuit<
 				)?;
 				let pubkey_v =
 					region.assign_advice(|| "pubkey_v", config.temp, 8, || self.pubkey_v)?;
+
+				let c_v =
+					region.assign_advice(|| "c_v", config.temp, 9, || self.c_v)?;
+
+				let mut offset = 10;
+				let ops = self.op_ji.try_map::<_, Result<AssignedCell<F, F>, Error>>(|op| {
+					let res = region.assign_advice(|| "op", config.temp, offset, || op)?;
+					offset += 1;
+					Ok(res)
+				})?;
+
 				Ok((
 					zero,
+					ops,
+					c_v,
 					[one, two, three, four],
 					epoch,
 					genesis_epoch,
@@ -233,26 +219,8 @@ impl<F: FieldExt, const S: usize, const B: usize, P: RoundParams<F, 5>> Circuit<
 			},
 		)?;
 
-		let t_i = layouter.assign_region(
-			|| "t_i",
-			|mut region: Region<'_, F>| {
-				let mut accumulated_sum =
-					region.assign_advice(|| "t_i_acc_0", config.acc, 0, || self.op_ji[0])?;
-
-				for i in 1..(S - 1) {
-					config.acc_selector.enable(&mut region, i)?;
-					let next = accumulated_sum.value().cloned() + self.op_ji[i];
-					accumulated_sum =
-						region.assign_advice(|| "t_i_acc_i", config.acc, i, || next)?;
-				}
-
-				let next = accumulated_sum.value().cloned() + self.op_ji[S - 1];
-				accumulated_sum =
-					region.assign_advice(|| "t_i_acc_n", config.acc, S - 1, || next)?;
-
-				Ok(accumulated_sum)
-			},
-		)?;
+		let acc_chip = AccumulatorChip::new(ops, zero.clone());
+		let t_i = acc_chip.synthesize(config.accumulator, layouter.namespace(|| "accumulator"))?;
 
 		// Recreate the pubkey_i
 		let inputs = [
@@ -284,20 +252,8 @@ impl<F: FieldExt, const S: usize, const B: usize, P: RoundParams<F, 5>> Circuit<
 		let select_chip = SelectChip::new(is_bootstrap_and_genesis, bootstrap_score, t_i);
 		let t_i_select = select_chip.synthesize(config.select, layouter.namespace(|| "select"))?;
 
-		let op_v = layouter.assign_region(
-			|| "op_v",
-			|mut region: Region<'_, F>| {
-				config.opv_selector.enable(&mut region, 0)?;
-				let lhs = t_i_select.copy_advice(|| "t_i_final", &mut region, config.lhs, 0)?;
-				let rhs = region.assign_advice(|| "t_i", config.rhs, 0, || self.c_v)?;
-
-				let out = lhs.value().cloned() * rhs.value();
-
-				let out_assigned = region.assign_advice(|| "op_v", config.lhs, 1, || out)?;
-
-				Ok(out_assigned)
-			},
-		)?;
+		let mul_chip = MulChip::new(t_i_select, c_v);
+		let op_v = mul_chip.synthesize(config.mul, layouter.namespace(|| "mul"))?;
 
 		let m_hash_input = [zero, epoch, op_v, pubkey_v, pubkey_i];
 		let poseidon_m_hash = PoseidonChip::<_, 5, P>::new(m_hash_input);

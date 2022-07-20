@@ -1,7 +1,7 @@
 use halo2wrong::halo2::{
 	arithmetic::FieldExt,
-	circuit::{AssignedCell, Layouter, Region, Value},
-	plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Selector},
+	circuit::{AssignedCell, Layouter, Region},
+	plonk::{Advice, Column, ConstraintSystem, Error, Selector},
 	poly::Rotation,
 };
 
@@ -9,17 +9,17 @@ use halo2wrong::halo2::{
 pub struct AccumulatorConfig {
 	acc: Column<Advice>,
 	items: Column<Advice>,
-	fixed: Column<Fixed>,
 	selector: Selector,
 }
 
 pub struct AccumulatorChip<F: FieldExt, const S: usize> {
 	items: [AssignedCell<F, F>; S],
+	start: AssignedCell<F, F>,
 }
 
 impl<F: FieldExt, const S: usize> AccumulatorChip<F, S> {
-	pub fn new(items: [AssignedCell<F, F>; S]) -> Self {
-		AccumulatorChip { items }
+	pub fn new(items: [AssignedCell<F, F>; S], start: AssignedCell<F, F>) -> Self {
+		AccumulatorChip { items, start }
 	}
 
 	/// Make the circuit config.
@@ -46,7 +46,6 @@ impl<F: FieldExt, const S: usize> AccumulatorChip<F, S> {
 		AccumulatorConfig {
 			acc,
 			items,
-			fixed,
 			selector: s,
 		}
 	}
@@ -57,18 +56,11 @@ impl<F: FieldExt, const S: usize> AccumulatorChip<F, S> {
 		config: AccumulatorConfig,
 		mut layouter: impl Layouter<F>,
 	) -> Result<AssignedCell<F, F>, Error> {
-		let zero_cell = layouter.assign_region(
-			|| "zero",
-			|mut region: Region<'_, F>| {
-				region.assign_fixed(|| "zero_var", config.fixed, 0, || Value::known(F::zero()))
-			},
-		)?;
-
 		layouter.assign_region(
 			|| "acc",
 			|mut region: Region<'_, F>| {
 				config.selector.enable(&mut region, 0)?;
-				let zero = zero_cell.copy_advice(|| "zero", &mut region, config.acc, 0)?;
+				let zero = self.start.copy_advice(|| "start", &mut region, config.acc, 0)?;
 				let item = self.items[0].copy_advice(|| "item", &mut region, config.items, 0)?;
 
 				let val = zero.value().cloned() + item.value();
@@ -142,7 +134,7 @@ mod test {
 			config: TestConfig,
 			mut layouter: impl Layouter<F>,
 		) -> Result<(), Error> {
-			let arr = layouter.assign_region(
+			let (arr, start) = layouter.assign_region(
 				|| "temp",
 				|mut region: Region<'_, F>| {
 					let mut arr: [Option<AssignedCell<F, F>>; 3] = [(); 3].map(|_| None);
@@ -154,10 +146,17 @@ mod test {
 							|| Value::known(self.items[i]),
 						)?);
 					}
-					Ok(arr.map(|a| a.unwrap()))
+
+					let start = region.assign_advice(
+						|| "temp",
+						config.temp,
+						3,
+						|| Value::known(F::zero()),
+					)?;
+					Ok((arr.map(|a| a.unwrap()), start))
 				},
 			)?;
-			let acc_chip = AccumulatorChip::new(arr);
+			let acc_chip = AccumulatorChip::new(arr, start);
 			let sum = acc_chip.synthesize(config.acc, layouter.namespace(|| "acc"))?;
 
 			layouter.constrain_instance(sum.cell(), config.pub_ins, 0)?;
