@@ -60,7 +60,9 @@ impl<F: FieldExt, const S: usize> AccumulatorChip<F, S> {
 			|| "acc",
 			|mut region: Region<'_, F>| {
 				config.selector.enable(&mut region, 0)?;
-				let zero = self.start.copy_advice(|| "start", &mut region, config.acc, 0)?;
+				let zero = self
+					.start
+					.copy_advice(|| "start", &mut region, config.acc, 0)?;
 				let item = self.items[0].copy_advice(|| "item", &mut region, config.items, 0)?;
 
 				let val = zero.value().cloned() + item.value();

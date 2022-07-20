@@ -9,18 +9,18 @@ pub mod poseidon;
 pub mod utils;
 
 use gadgets::{
+	accumulate::{AccumulatorChip, AccumulatorConfig},
 	and::{AndChip, AndConfig},
 	is_equal::{IsEqualChip, IsEqualConfig},
+	mul::{MulChip, MulConfig},
 	select::{SelectChip, SelectConfig},
 	set::{FixedSetChip, FixedSetConfig},
-	accumulate::{AccumulatorChip, AccumulatorConfig},
-	mul::{MulChip, MulConfig},
 };
 pub use halo2wrong;
 use halo2wrong::halo2::{
 	arithmetic::FieldExt,
-	circuit::{Layouter, Region, SimpleFloorPlanner, Value, AssignedCell},
-	plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Instance, Fixed},
+	circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner, Value},
+	plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Fixed, Instance},
 };
 use poseidon::{params::RoundParams, PoseidonChip, PoseidonConfig};
 use std::marker::PhantomData;
@@ -146,78 +146,80 @@ impl<F: FieldExt, const S: usize, const B: usize, P: RoundParams<F, 5>> Circuit<
 		config: Self::Config,
 		mut layouter: impl Layouter<F>,
 	) -> Result<(), Error> {
-		let (zero, ops, c_v, sk, epoch, genesis_epoch, bootstrap_score, pubkey_v) = layouter.assign_region(
-			|| "temp",
-			|mut region: Region<'_, F>| {
-				let zero = region.assign_fixed(
-					|| "zero",
-					config.fixed,
-					0,
-					|| Value::known(F::zero()),
-				)?;
-				let one = region.assign_advice(
-					|| "poseidon_pk_1",
-					config.temp,
-					1,
-					|| self.secret_i[0],
-				)?;
-				let two = region.assign_advice(
-					|| "poseidon_pk_2",
-					config.temp,
-					2,
-					|| self.secret_i[1],
-				)?;
-				let three = region.assign_advice(
-					|| "poseidon_pk_3",
-					config.temp,
-					3,
-					|| self.secret_i[2],
-				)?;
-				let four = region.assign_advice(
-					|| "poseidon_pk_4",
-					config.temp,
-					4,
-					|| self.secret_i[3],
-				)?;
+		let (zero, ops, c_v, sk, epoch, genesis_epoch, bootstrap_score, pubkey_v) = layouter
+			.assign_region(
+				|| "temp",
+				|mut region: Region<'_, F>| {
+					let zero = region.assign_fixed(
+						|| "zero",
+						config.fixed,
+						0,
+						|| Value::known(F::zero()),
+					)?;
+					let one = region.assign_advice(
+						|| "poseidon_pk_1",
+						config.temp,
+						1,
+						|| self.secret_i[0],
+					)?;
+					let two = region.assign_advice(
+						|| "poseidon_pk_2",
+						config.temp,
+						2,
+						|| self.secret_i[1],
+					)?;
+					let three = region.assign_advice(
+						|| "poseidon_pk_3",
+						config.temp,
+						3,
+						|| self.secret_i[2],
+					)?;
+					let four = region.assign_advice(
+						|| "poseidon_pk_4",
+						config.temp,
+						4,
+						|| self.secret_i[3],
+					)?;
 
-				let epoch = region.assign_advice(|| "epoch", config.temp, 5, || self.epoch)?;
-				let genesis_epoch = region.assign_advice(
-					|| "genesis_epoch",
-					config.temp,
-					6,
-					|| self.genesis_epoch,
-				)?;
-				let bootstrap_score = region.assign_advice(
-					|| "bootstrap_score",
-					config.temp,
-					7,
-					|| self.boostrap_score,
-				)?;
-				let pubkey_v =
-					region.assign_advice(|| "pubkey_v", config.temp, 8, || self.pubkey_v)?;
+					let epoch = region.assign_advice(|| "epoch", config.temp, 5, || self.epoch)?;
+					let genesis_epoch = region.assign_advice(
+						|| "genesis_epoch",
+						config.temp,
+						6,
+						|| self.genesis_epoch,
+					)?;
+					let bootstrap_score = region.assign_advice(
+						|| "bootstrap_score",
+						config.temp,
+						7,
+						|| self.boostrap_score,
+					)?;
+					let pubkey_v =
+						region.assign_advice(|| "pubkey_v", config.temp, 8, || self.pubkey_v)?;
 
-				let c_v =
-					region.assign_advice(|| "c_v", config.temp, 9, || self.c_v)?;
+					let c_v = region.assign_advice(|| "c_v", config.temp, 9, || self.c_v)?;
 
-				let mut offset = 10;
-				let ops = self.op_ji.try_map::<_, Result<AssignedCell<F, F>, Error>>(|op| {
-					let res = region.assign_advice(|| "op", config.temp, offset, || op)?;
-					offset += 1;
-					Ok(res)
-				})?;
+					let mut offset = 10;
+					let ops = self
+						.op_ji
+						.try_map::<_, Result<AssignedCell<F, F>, Error>>(|op| {
+							let res = region.assign_advice(|| "op", config.temp, offset, || op)?;
+							offset += 1;
+							Ok(res)
+						})?;
 
-				Ok((
-					zero,
-					ops,
-					c_v,
-					[one, two, three, four],
-					epoch,
-					genesis_epoch,
-					bootstrap_score,
-					pubkey_v,
-				))
-			},
-		)?;
+					Ok((
+						zero,
+						ops,
+						c_v,
+						[one, two, three, four],
+						epoch,
+						genesis_epoch,
+						bootstrap_score,
+						pubkey_v,
+					))
+				},
+			)?;
 
 		let acc_chip = AccumulatorChip::new(ops, zero.clone());
 		let t_i = acc_chip.synthesize(config.accumulator, layouter.namespace(|| "accumulator"))?;
