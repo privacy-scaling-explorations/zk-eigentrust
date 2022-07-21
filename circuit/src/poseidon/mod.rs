@@ -5,7 +5,7 @@ pub mod sponge;
 use halo2wrong::halo2::{
 	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region, Value},
-	plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector, VirtualCells},
+	plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector, VirtualCells},
 	poly::Rotation,
 };
 use params::RoundParams;
@@ -14,8 +14,8 @@ use std::marker::PhantomData;
 #[derive(Clone, Debug)]
 pub struct PoseidonConfig<const WIDTH: usize> {
 	state: [Column<Advice>; WIDTH],
-	round_constants: [Column<Fixed>; WIDTH],
-	mds: [[Column<Fixed>; WIDTH]; WIDTH],
+	round_constants: [Column<Advice>; WIDTH],
+	mds: [[Column<Advice>; WIDTH]; WIDTH],
 	full_round_selector: Selector,
 	partial_round_selector: Selector,
 }
@@ -61,11 +61,11 @@ where
 	) -> Result<[AssignedCell<F, F>; WIDTH], Error> {
 		let mut round_cells: [Option<AssignedCell<F, F>>; WIDTH] = [(); WIDTH].map(|_| None);
 		for i in 0..WIDTH {
-			round_cells[i] = Some(region.assign_fixed(
+			round_cells[i] = Some(region.assign_advice_from_constant(
 				|| "round_constant",
 				config.round_constants[i],
 				round,
-				|| Value::known(round_constants[round * WIDTH + i]),
+				round_constants[round * WIDTH + i],
 			)?);
 		}
 		Ok(round_cells.map(|item| item.unwrap()))
@@ -81,11 +81,11 @@ where
 			[[(); WIDTH]; WIDTH].map(|vec| vec.map(|_| None));
 		for i in 0..WIDTH {
 			for j in 0..WIDTH {
-				mds_cells[i][j] = Some(region.assign_fixed(
+				mds_cells[i][j] = Some(region.assign_advice_from_constant(
 					|| "mds",
 					config.mds[i][j],
 					round,
-					|| Value::known(mds[i][j]),
+					mds[i][j],
 				)?);
 			}
 		}
@@ -127,13 +127,13 @@ where
 	fn apply_round_constants_expr(
 		v_cells: &mut VirtualCells<F>,
 		state: &[Column<Advice>; WIDTH],
-		round_constants: &[Column<Fixed>; WIDTH],
+		round_constants: &[Column<Advice>; WIDTH],
 	) -> [Expression<F>; WIDTH] {
 		let mut exprs = [(); WIDTH].map(|_| Expression::Constant(F::zero()));
 		// Add round constants
 		for i in 0..WIDTH {
 			let curr_state = v_cells.query_advice(state[i], Rotation::cur());
-			let round_constant = v_cells.query_fixed(round_constants[i], Rotation::cur());
+			let round_constant = v_cells.query_advice(round_constants[i], Rotation::cur());
 			exprs[i] = curr_state + round_constant;
 		}
 		exprs
@@ -142,13 +142,13 @@ where
 	fn apply_mds_expr(
 		v_cells: &mut VirtualCells<F>,
 		exprs: &[Expression<F>; WIDTH],
-		mds: &[[Column<Fixed>; WIDTH]; WIDTH],
+		mds: &[[Column<Advice>; WIDTH]; WIDTH],
 	) -> [Expression<F>; WIDTH] {
 		let mut new_exprs = [(); WIDTH].map(|_| Expression::Constant(F::zero()));
 		// Mat mul with MDS
 		for i in 0..WIDTH {
 			for j in 0..WIDTH {
-				let mds_ij = v_cells.query_fixed(mds[i][j], Rotation::cur());
+				let mds_ij = v_cells.query_advice(mds[i][j], Rotation::cur());
 				new_exprs[i] = new_exprs[i].clone() + (exprs[j].clone() * mds_ij);
 			}
 		}
@@ -236,15 +236,17 @@ where
 	P: RoundParams<F, WIDTH>,
 {
 	pub fn configure(meta: &mut ConstraintSystem<F>) -> PoseidonConfig<WIDTH> {
-		let state = [(); WIDTH].map(|_| {
-			let column = meta.advice_column();
-			meta.enable_equality(column);
-			column
-		});
-		let round_constants = [(); WIDTH].map(|_| meta.fixed_column());
-		let mds = [[(); WIDTH]; WIDTH].map(|vec| vec.map(|_| meta.fixed_column()));
+		let state = [(); WIDTH].map(|_| meta.advice_column());
+		let round_constants = [(); WIDTH].map(|_| meta.advice_column());
+		let mds = [[(); WIDTH]; WIDTH].map(|vec| vec.map(|_| meta.advice_column()));
+		let fixed = meta.fixed_column();
 		let full_round_selector = meta.selector();
 		let partial_round_selector = meta.selector();
+
+		state.map(|c| meta.enable_equality(c));
+		round_constants.map(|c| meta.enable_equality(c));
+		mds.map(|vec| vec.map(|c| meta.enable_equality(c)));
+		meta.enable_constant(fixed);
 
 		meta.create_gate("poseidon_round", |v_cells| {
 			let mut exprs = Self::apply_round_constants_expr(v_cells, &state, &round_constants);
@@ -359,8 +361,9 @@ mod test {
 		params::{bn254_5x5::Params5x5Bn254, hex_to_field},
 		*,
 	};
+	use crate::utils::{generate_params, prove_and_verify};
 	use halo2wrong::{
-		curves::bn256::Fr,
+		curves::bn256::{Bn256, Fr},
 		halo2::{
 			circuit::{Layouter, SimpleFloorPlanner},
 			dev::MockProver,
@@ -470,8 +473,38 @@ mod test {
 
 		let poseidon_tester = PoseidonTester::new(inputs);
 
-		let k = 9;
+		let k = 11;
 		let prover = MockProver::run(k, &poseidon_tester, vec![outputs.to_vec()]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[test]
+	fn test_poseidon_x5_5_production() {
+		let inputs: [Value<Fr>; 5] = [
+			"0x0000000000000000000000000000000000000000000000000000000000000000",
+			"0x0000000000000000000000000000000000000000000000000000000000000001",
+			"0x0000000000000000000000000000000000000000000000000000000000000002",
+			"0x0000000000000000000000000000000000000000000000000000000000000003",
+			"0x0000000000000000000000000000000000000000000000000000000000000004",
+		]
+		.map(|n| Value::known(hex_to_field(n)));
+
+		let outputs: [Fr; 5] = [
+			"0x299c867db6c1fdd79dcefa40e4510b9837e60ebb1ce0663dbaa525df65250465",
+			"0x1148aaef609aa338b27dafd89bb98862d8bb2b429aceac47d86206154ffe053d",
+			"0x24febb87fed7462e23f6665ff9a0111f4044c38ee1672c1ac6b0637d34f24907",
+			"0x0eb08f6d809668a981c186beaf6110060707059576406b248e5d9cf6e78b3d3e",
+			"0x07748bc6877c9b82c8b98666ee9d0626ec7f5be4205f79ee8528ef1c4a376fc7",
+		]
+		.map(|n| hex_to_field(n));
+
+		let poseidon_tester = PoseidonTester::new(inputs);
+
+		let k = 11;
+		let rng = &mut rand::thread_rng();
+		let params = generate_params(k);
+		let res =
+			prove_and_verify::<Bn256, _, _>(params, poseidon_tester, &[&outputs], rng).unwrap();
+		assert!(res);
 	}
 }

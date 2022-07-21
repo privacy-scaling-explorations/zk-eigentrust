@@ -20,7 +20,7 @@ pub use halo2wrong;
 use halo2wrong::halo2::{
 	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner, Value},
-	plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Fixed, Instance},
+	plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Instance},
 };
 use poseidon::{params::RoundParams, PoseidonChip, PoseidonConfig};
 use std::marker::PhantomData;
@@ -38,7 +38,6 @@ pub struct EigenTrustConfig {
 	mul: MulConfig,
 	// EigenTrust columns
 	temp: Column<Advice>,
-	fixed: Column<Fixed>,
 	pub_ins: Column<Instance>,
 }
 
@@ -58,7 +57,7 @@ pub struct EigenTrustCircuit<
 	/// Opinon from peer i (the prover) to the peer v (the verifyer).
 	c_v: Value<F>,
 	// Bootstrap data
-	bootstrap_pubkeys: [Value<F>; NUM_BOOTSTRAP],
+	bootstrap_pubkeys: [F; NUM_BOOTSTRAP],
 	boostrap_score: Value<F>,
 	genesis_epoch: Value<F>,
 	_params: PhantomData<P>,
@@ -84,11 +83,37 @@ impl<F: FieldExt, const S: usize, const B: usize, P: RoundParams<F, 5>>
 			secret_i: secret_i.map(|val| Value::known(val)),
 			op_ji: op_ji.map(|c| Value::known(c)),
 			c_v: Value::known(c_v),
-			bootstrap_pubkeys: bootstrap_pubkeys.map(|val| Value::known(val)),
+			bootstrap_pubkeys,
 			boostrap_score: Value::known(boostrap_score),
 			genesis_epoch: Value::known(genesis_epoch),
 			_params: PhantomData,
 		}
+	}
+
+	pub fn assign_temp(
+		column: Column<Advice>,
+		name: &str,
+		region: &mut Region<'_, F>,
+		offset: &mut usize,
+		value: Value<F>,
+	) -> Result<AssignedCell<F, F>, Error> {
+		let res = region.assign_advice(|| name, column, *offset, || value)?;
+		*offset += 1;
+
+		Ok(res)
+	}
+
+	pub fn assign_fixed(
+		column: Column<Advice>,
+		name: &str,
+		region: &mut Region<'_, F>,
+		offset: &mut usize,
+		value: F,
+	) -> Result<AssignedCell<F, F>, Error> {
+		let res = region.assign_advice_from_constant(|| name, column, *offset, value)?;
+		*offset += 1;
+
+		Ok(res)
 	}
 }
 
@@ -105,7 +130,7 @@ impl<F: FieldExt, const S: usize, const B: usize, P: RoundParams<F, 5>> Circuit<
 			secret_i: [Value::unknown(); 4],
 			op_ji: [Value::unknown(); S],
 			c_v: Value::unknown(),
-			bootstrap_pubkeys: [Value::unknown(); B],
+			bootstrap_pubkeys: self.bootstrap_pubkeys.clone(),
 			boostrap_score: Value::unknown(),
 			genesis_epoch: Value::unknown(),
 			_params: PhantomData,
@@ -126,6 +151,10 @@ impl<F: FieldExt, const S: usize, const B: usize, P: RoundParams<F, 5>> Circuit<
 		let fixed = meta.fixed_column();
 		let pub_ins = meta.instance_column();
 
+		meta.enable_equality(temp);
+		meta.enable_constant(fixed);
+		meta.enable_equality(pub_ins);
+
 		EigenTrustConfig {
 			set,
 			is_equal,
@@ -135,7 +164,6 @@ impl<F: FieldExt, const S: usize, const B: usize, P: RoundParams<F, 5>> Circuit<
 			accumulator,
 			mul,
 			temp,
-			fixed,
 			pub_ins,
 		}
 	}
@@ -150,69 +178,63 @@ impl<F: FieldExt, const S: usize, const B: usize, P: RoundParams<F, 5>> Circuit<
 			.assign_region(
 				|| "temp",
 				|mut region: Region<'_, F>| {
-					let zero = region.assign_fixed(
-						|| "zero",
-						config.fixed,
-						0,
-						|| Value::known(F::zero()),
-					)?;
-					let one = region.assign_advice(
-						|| "poseidon_pk_1",
+					let mut offset = 0;
+					let zero = Self::assign_fixed(
 						config.temp,
-						1,
-						|| self.secret_i[0],
-					)?;
-					let two = region.assign_advice(
-						|| "poseidon_pk_2",
-						config.temp,
-						2,
-						|| self.secret_i[1],
-					)?;
-					let three = region.assign_advice(
-						|| "poseidon_pk_3",
-						config.temp,
-						3,
-						|| self.secret_i[2],
-					)?;
-					let four = region.assign_advice(
-						|| "poseidon_pk_4",
-						config.temp,
-						4,
-						|| self.secret_i[3],
+						"zero",
+						&mut region,
+						&mut offset,
+						F::zero(),
 					)?;
 
-					let epoch = region.assign_advice(|| "epoch", config.temp, 5, || self.epoch)?;
-					let genesis_epoch = region.assign_advice(
-						|| "genesis_epoch",
-						config.temp,
-						6,
-						|| self.genesis_epoch,
-					)?;
-					let bootstrap_score = region.assign_advice(
-						|| "bootstrap_score",
-						config.temp,
-						7,
-						|| self.boostrap_score,
-					)?;
-					let pubkey_v =
-						region.assign_advice(|| "pubkey_v", config.temp, 8, || self.pubkey_v)?;
+					let sk = self
+						.secret_i
+						.try_map::<_, Result<AssignedCell<F, F>, Error>>(|v| {
+							Self::assign_temp(config.temp, "op", &mut region, &mut offset, v)
+						})?;
 
-					let c_v = region.assign_advice(|| "c_v", config.temp, 9, || self.c_v)?;
+					let epoch = Self::assign_temp(
+						config.temp,
+						"epoch",
+						&mut region,
+						&mut offset,
+						self.epoch,
+					)?;
+					let genesis_epoch = Self::assign_temp(
+						config.temp,
+						"genesis_epoch",
+						&mut region,
+						&mut offset,
+						self.genesis_epoch,
+					)?;
+					let bootstrap_score = Self::assign_temp(
+						config.temp,
+						"bootstrap_score",
+						&mut region,
+						&mut offset,
+						self.boostrap_score,
+					)?;
+					let pubkey_v = Self::assign_temp(
+						config.temp,
+						"pubkey_v",
+						&mut region,
+						&mut offset,
+						self.pubkey_v,
+					)?;
+					let c_v =
+						Self::assign_temp(config.temp, "c_v", &mut region, &mut offset, self.c_v)?;
 
-					let mut offset = 10;
 					let ops = self
 						.op_ji
 						.try_map::<_, Result<AssignedCell<F, F>, Error>>(|op| {
-							let res = region.assign_advice(|| "op", config.temp, offset, || op)?;
-							offset += 1;
-							Ok(res)
+							Self::assign_temp(config.temp, "ops", &mut region, &mut offset, op)
 						})?;
 
 					Ok((
 						zero,
 						ops,
 						c_v,
-						[one, two, three, four],
+						sk,
 						epoch,
 						genesis_epoch,
 						bootstrap_score,
@@ -221,7 +243,7 @@ impl<F: FieldExt, const S: usize, const B: usize, P: RoundParams<F, 5>> Circuit<
 				},
 			)?;
 
-		let acc_chip = AccumulatorChip::new(ops, zero.clone());
+		let acc_chip = AccumulatorChip::new(ops);
 		let t_i = acc_chip.synthesize(config.accumulator, layouter.namespace(|| "accumulator"))?;
 
 		// Recreate the pubkey_i
@@ -276,17 +298,17 @@ mod test {
 		curves::bn256::{Bn256, Fr},
 		halo2::{arithmetic::Field, dev::MockProver},
 	};
-	use poseidon::params::bn254_5x5::Params5x5Bn254;
+	use poseidon::{native::Poseidon, params::bn254_5x5::Params5x5Bn254};
 	use rand::thread_rng;
 	use utils::{generate_params, prove_and_verify};
 
-	const SIZE: usize = 12;
-	const NUM_BOOTSTRAP: usize = 2;
+	const SIZE: usize = 256;
+	const NUM_BOOTSTRAP: usize = 12;
 	const MAX_SCORE: u64 = 100000000;
 
 	#[test]
 	fn test_eigen_trust_verify() {
-		let k = 18;
+		let k = 13;
 
 		let mut rng = thread_rng();
 		let pubkey_v = Fr::random(&mut rng);
@@ -313,7 +335,13 @@ mod test {
 			genesis_epoch,
 		);
 
-		let prover = match MockProver::<Fr>::run(k, &eigen_trust, vec![vec![]]) {
+		let inputs_sk = [Fr::zero(), sk[0], sk[1], sk[2], sk[3]];
+		let pubkey_i = Poseidon::<_, 5, Params5x5Bn254>::new(inputs_sk).permute()[0];
+		let opv = Fr::from(256);
+		let inputs = [Fr::zero(), epoch, opv, pubkey_v, pubkey_i];
+		let m_hash_poseidon = Poseidon::<_, 5, Params5x5Bn254>::new(inputs).permute()[0];
+
+		let prover = match MockProver::<Fr>::run(k, &eigen_trust, vec![vec![m_hash_poseidon]]) {
 			Ok(prover) => prover,
 			Err(e) => panic!("{}", e),
 		};
@@ -323,7 +351,7 @@ mod test {
 
 	#[test]
 	fn test_eigen_trust_production_prove_verify() {
-		let k = 18;
+		let k = 13;
 
 		let mut rng = thread_rng();
 		let pubkey_v = Fr::random(&mut rng);
@@ -350,7 +378,16 @@ mod test {
 			genesis_epoch,
 		);
 
+		let inputs_sk = [Fr::zero(), sk[0], sk[1], sk[2], sk[3]];
+		let pubkey_i = Poseidon::<_, 5, Params5x5Bn254>::new(inputs_sk).permute()[0];
+		let opv = Fr::from(256);
+		let inputs = [Fr::zero(), epoch, opv, pubkey_v, pubkey_i];
+		let m_hash_poseidon = Poseidon::<_, 5, Params5x5Bn254>::new(inputs).permute()[0];
+
 		let params = generate_params(k);
-		prove_and_verify::<Bn256, _, _>(params, eigen_trust, &[&[]], &mut rng).unwrap();
+		let res =
+			prove_and_verify::<Bn256, _, _>(params, eigen_trust, &[&[m_hash_poseidon]], &mut rng)
+				.unwrap();
+		assert!(res);
 	}
 }

@@ -14,12 +14,11 @@ pub struct AccumulatorConfig {
 
 pub struct AccumulatorChip<F: FieldExt, const S: usize> {
 	items: [AssignedCell<F, F>; S],
-	start: AssignedCell<F, F>,
 }
 
 impl<F: FieldExt, const S: usize> AccumulatorChip<F, S> {
-	pub fn new(items: [AssignedCell<F, F>; S], start: AssignedCell<F, F>) -> Self {
-		AccumulatorChip { items, start }
+	pub fn new(items: [AssignedCell<F, F>; S]) -> Self {
+		AccumulatorChip { items }
 	}
 
 	/// Make the circuit config.
@@ -31,7 +30,7 @@ impl<F: FieldExt, const S: usize> AccumulatorChip<F, S> {
 
 		meta.enable_equality(acc);
 		meta.enable_equality(items);
-		meta.enable_equality(fixed);
+		meta.enable_constant(fixed);
 
 		meta.create_gate("acc", |v_cells| {
 			let acc_exp = v_cells.query_advice(acc, Rotation::cur());
@@ -60,15 +59,14 @@ impl<F: FieldExt, const S: usize> AccumulatorChip<F, S> {
 			|| "acc",
 			|mut region: Region<'_, F>| {
 				config.selector.enable(&mut region, 0)?;
-				let zero = self
-					.start
-					.copy_advice(|| "start", &mut region, config.acc, 0)?;
-				let item = self.items[0].copy_advice(|| "item", &mut region, config.items, 0)?;
+				let mut acc = region.assign_advice_from_constant(
+					|| "initial_acc",
+					config.acc,
+					0,
+					F::zero(),
+				)?;
 
-				let val = zero.value().cloned() + item.value();
-				let mut acc = region.assign_advice(|| "acc", config.acc, 1, || val)?;
-
-				for i in 1..S {
+				for i in 0..S {
 					config.selector.enable(&mut region, i)?;
 					let item =
 						self.items[i].copy_advice(|| "item", &mut region, config.items, i)?;
@@ -85,8 +83,9 @@ impl<F: FieldExt, const S: usize> AccumulatorChip<F, S> {
 #[cfg(test)]
 mod test {
 	use super::*;
+	use crate::utils::{generate_params, prove_and_verify};
 	use halo2wrong::{
-		curves::bn256::Fr,
+		curves::bn256::{Bn256, Fr},
 		halo2::{
 			circuit::{SimpleFloorPlanner, Value},
 			dev::MockProver,
@@ -136,7 +135,7 @@ mod test {
 			config: TestConfig,
 			mut layouter: impl Layouter<F>,
 		) -> Result<(), Error> {
-			let (arr, start) = layouter.assign_region(
+			let arr = layouter.assign_region(
 				|| "temp",
 				|mut region: Region<'_, F>| {
 					let mut arr: [Option<AssignedCell<F, F>>; 3] = [(); 3].map(|_| None);
@@ -148,17 +147,10 @@ mod test {
 							|| Value::known(self.items[i]),
 						)?);
 					}
-
-					let start = region.assign_advice(
-						|| "temp",
-						config.temp,
-						3,
-						|| Value::known(F::zero()),
-					)?;
-					Ok((arr.map(|a| a.unwrap()), start))
+					Ok(arr.map(|a| a.unwrap()))
 				},
 			)?;
-			let acc_chip = AccumulatorChip::new(arr, start);
+			let acc_chip = AccumulatorChip::new(arr);
 			let sum = acc_chip.synthesize(config.acc, layouter.namespace(|| "acc"))?;
 
 			layouter.constrain_instance(sum.cell(), config.pub_ins, 0)?;
@@ -174,5 +166,15 @@ mod test {
 		let pub_ins = vec![Fr::from(3)];
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[test]
+	fn test_acc_production() {
+		let test_chip = TestCircuit::new([Fr::from(1); 3]);
+
+		let k = 4;
+		let rng = &mut rand::thread_rng();
+		let params = generate_params(k);
+		prove_and_verify::<Bn256, _, _>(params, test_chip, &[&[Fr::from(3)]], rng).unwrap();
 	}
 }

@@ -88,8 +88,9 @@ impl<F: FieldExt> AndChip<F> {
 #[cfg(test)]
 mod test {
 	use super::*;
+	use crate::utils::{generate_params, prove_and_verify};
 	use halo2wrong::{
-		curves::bn256::Fr,
+		curves::bn256::{Bn256, Fr},
 		halo2::{
 			circuit::{SimpleFloorPlanner, Value},
 			dev::MockProver,
@@ -175,5 +176,18 @@ mod test {
 		let k = 4;
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[test]
+	fn test_and_production() {
+		let test_chip = TestCircuit::new(Fr::from(1), Fr::from(1));
+
+		let k = 4;
+		let rng = &mut rand::thread_rng();
+		let params = generate_params(k);
+		let res =
+			prove_and_verify::<Bn256, _, _>(params, test_chip, &[&[Fr::from(1)]], rng).unwrap();
+
+		assert!(res);
 	}
 }

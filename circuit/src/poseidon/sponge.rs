@@ -280,7 +280,7 @@ mod test {
 
 		let poseidon_sponge = PoseidonTester::new(inputs1, inputs2);
 
-		let k = 9;
+		let k = 12;
 		let prover = MockProver::run(k, &poseidon_sponge, vec![vec![native_result]]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
 	}

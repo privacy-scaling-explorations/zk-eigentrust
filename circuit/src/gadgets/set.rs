@@ -1,8 +1,8 @@
 use super::is_zero::{IsZeroChip, IsZeroConfig};
 use halo2wrong::halo2::{
 	arithmetic::FieldExt,
-	circuit::{AssignedCell, Layouter, Region, Value},
-	plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Selector},
+	circuit::{AssignedCell, Layouter, Region},
+	plonk::{Advice, Column, ConstraintSystem, Error, Selector},
 	poly::Rotation,
 };
 
@@ -10,20 +10,19 @@ use halo2wrong::halo2::{
 pub struct FixedSetConfig {
 	is_zero: IsZeroConfig,
 	target: Column<Advice>,
-	items: Column<Fixed>,
+	items: Column<Advice>,
 	diffs: Column<Advice>,
 	product: Column<Advice>,
-	temp: Column<Fixed>,
 	selector: Selector,
 }
 
 pub struct FixedSetChip<F: FieldExt, const N: usize> {
-	items: [Value<F>; N],
+	items: [F; N],
 	target: AssignedCell<F, F>,
 }
 
 impl<F: FieldExt, const N: usize> FixedSetChip<F, N> {
-	pub fn new(items: [Value<F>; N], target: AssignedCell<F, F>) -> Self {
+	pub fn new(items: [F; N], target: AssignedCell<F, F>) -> Self {
 		FixedSetChip { items, target }
 	}
 
@@ -31,21 +30,22 @@ impl<F: FieldExt, const N: usize> FixedSetChip<F, N> {
 	pub fn configure(meta: &mut ConstraintSystem<F>) -> FixedSetConfig {
 		let is_zero = IsZeroChip::configure(meta);
 		let target = meta.advice_column();
-		let items = meta.fixed_column();
+		let items = meta.advice_column();
 		let diffs = meta.advice_column();
 		let product = meta.advice_column();
-		let temp = meta.fixed_column();
+		let fixed = meta.fixed_column();
 		let s = meta.selector();
 
 		meta.enable_equality(target);
-		meta.enable_equality(temp);
+		meta.enable_equality(items);
 		meta.enable_equality(product);
+		meta.enable_constant(fixed);
 
 		meta.create_gate("fixed_set_membership", |v_cells| {
 			let target_exp = v_cells.query_advice(target, Rotation::cur());
 			let next_target_exp = v_cells.query_advice(target, Rotation::next());
 
-			let item_exp = v_cells.query_fixed(items, Rotation::cur());
+			let item_exp = v_cells.query_advice(items, Rotation::cur());
 			let diff_exp = v_cells.query_advice(diffs, Rotation::cur());
 
 			let product_exp = v_cells.query_advice(product, Rotation::cur());
@@ -67,7 +67,6 @@ impl<F: FieldExt, const N: usize> FixedSetChip<F, N> {
 			items,
 			diffs,
 			product,
-			temp,
 			selector: s,
 		}
 	}
@@ -77,35 +76,26 @@ impl<F: FieldExt, const N: usize> FixedSetChip<F, N> {
 		config: FixedSetConfig,
 		mut layouter: impl Layouter<F>,
 	) -> Result<AssignedCell<F, F>, Error> {
-		// Make the initial product to be one. We have to enforce it by assigning it to
-		// the fixed column.
-		let initial_product = layouter.assign_region(
-			|| "initial_product",
-			|mut region: Region<'_, F>| {
-				region.assign_fixed(
-					|| "product_initial",
-					config.temp,
-					0,
-					|| Value::known(F::one()),
-				)
-			},
-		)?;
 		let product = layouter.assign_region(
-			|| "set_membership_product",
+			|| "set_membership",
 			|mut region: Region<'_, F>| {
-				let mut assigned_product =
-					initial_product.copy_advice(|| "product_0", &mut region, config.product, 0)?;
+				let mut assigned_product = region.assign_advice_from_constant(
+					|| "initial_product",
+					config.product,
+					0,
+					F::one(),
+				)?;
 				let mut assigned_target =
 					self.target
 						.copy_advice(|| "target", &mut region, config.target, 0)?;
 				for i in 0..N {
 					config.selector.enable(&mut region, i)?;
 
-					let assigned_item = region.assign_fixed(
+					let assigned_item = region.assign_advice_from_constant(
 						|| format!("item_{}", i),
 						config.items,
 						i,
-						|| self.items[i],
+						self.items[i],
 					)?;
 
 					let diff = assigned_target.value().cloned() - assigned_item.value();
@@ -137,10 +127,11 @@ impl<F: FieldExt, const N: usize> FixedSetChip<F, N> {
 #[cfg(test)]
 mod test {
 	use super::*;
+	use crate::utils::{generate_params, prove_and_verify};
 	use halo2wrong::{
-		curves::bn256::Fr,
+		curves::bn256::{Bn256, Fr},
 		halo2::{
-			circuit::SimpleFloorPlanner,
+			circuit::{SimpleFloorPlanner, Value},
 			dev::MockProver,
 			plonk::{Circuit, Instance},
 		},
@@ -155,14 +146,14 @@ mod test {
 
 	#[derive(Clone)]
 	struct TestCircuit<F: FieldExt> {
-		items: [Value<F>; 3],
+		items: [F; 3],
 		target: Value<F>,
 	}
 
 	impl<F: FieldExt> TestCircuit<F> {
 		fn new(items: [F; 3], target: F) -> Self {
 			Self {
-				items: items.map(|v| Value::known(v)),
+				items,
 				target: Value::known(target),
 			}
 		}
@@ -220,5 +211,18 @@ mod test {
 		let k = 4;
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[test]
+	fn test_is_member_production() {
+		let set = [Fr::from(1), Fr::from(2), Fr::from(3)];
+		let target = Fr::from(2);
+		let test_chip = TestCircuit::new(set, target);
+
+		let k = 4;
+		let rng = &mut rand::thread_rng();
+		let params = generate_params(k);
+		let res = prove_and_verify::<Bn256, _, _>(params, test_chip, &[&[Fr::one()]], rng).unwrap();
+		assert!(res);
 	}
 }
