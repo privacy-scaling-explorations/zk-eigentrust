@@ -8,12 +8,14 @@ pub mod opinion;
 pub mod pubkey;
 pub mod utils;
 
-use crate::{epoch::Epoch, EigenError, constants::{MAX_NEIGHBORS, MIN_SCORE, NUM_BOOTSTRAP_PEERS}};
+use crate::{
+	constants::{MAX_NEIGHBORS, MIN_SCORE, NUM_BOOTSTRAP_PEERS},
+	epoch::Epoch,
+	EigenError,
+};
 use eigen_trust_circuit::{
 	halo2wrong::{
-		curves::{
-			bn256::{Bn256, G1Affine},
-		},
+		curves::bn256::{Bn256, G1Affine},
 		halo2::{plonk::ProvingKey, poly::kzg::commitment::ParamsKZG},
 	},
 	poseidon::params::bn254_5x5::Params5x5Bn254,
@@ -44,7 +46,9 @@ impl Peer {
 		// TODO: Do proving key generation outside the construct
 		let mut rng = thread_rng();
 		let random_circuit =
-			random_circuit::<Bn256, _, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, Params5x5Bn254>(&mut rng);
+			random_circuit::<Bn256, _, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, Params5x5Bn254>(
+				&mut rng,
+			);
 		let pk = keygen(&params, &random_circuit).map_err(|_| EigenError::KeygenFailed)?;
 		Ok(Peer {
 			neighbors: [None; MAX_NEIGHBORS],
@@ -215,11 +219,7 @@ impl Peer {
 	}
 
 	/// Caches the neighbor opinion towards us in specified epoch.
-	pub fn cache_neighbor_opinion(
-		&mut self,
-		key: (PeerId, Epoch),
-		opinion: Opinion,
-	) {
+	pub fn cache_neighbor_opinion(&mut self, key: (PeerId, Epoch), opinion: Opinion) {
 		self.cached_neighbor_opinion.insert(key, opinion);
 	}
 
@@ -242,11 +242,7 @@ impl Peer {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use eigen_trust_circuit::{
-		halo2wrong::{
-			halo2::poly::commitment::ParamsProver,
-		},
-	};
+	use eigen_trust_circuit::halo2wrong::halo2::poly::commitment::ParamsProver;
 	use libp2p::core::identity::Keypair;
 
 	#[test]
@@ -325,9 +321,7 @@ mod tests {
 				Opinion::generate(&kp, &local_pubkey, epoch, op_ji, c_v, &params, &pk).unwrap();
 
 			// Sanity check
-			assert!(opinion
-				.verify(&pubkey, &kp, &params, &pk.get_vk())
-				.unwrap());
+			assert!(opinion.verify(&pubkey, &kp, &params, &pk.get_vk()).unwrap());
 
 			// Cache neighbor opinion.
 			peer.cache_neighbor_opinion((peer_id, epoch), opinion);

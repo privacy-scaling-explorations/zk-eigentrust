@@ -1,16 +1,10 @@
-use super::{opinion::Posedion5x5};
+use super::opinion::Posedion5x5;
 use crate::EigenError;
-use eigen_trust_circuit::{
-	halo2wrong::{
-		curves::{
-			bn256::Fr as Bn256Scalar,
-			secp256k1::{Fq as Secp256k1Scalar},
-			FieldExt,
-		},
-		utils::decompose,
-	},
+use eigen_trust_circuit::halo2wrong::{
+	curves::{bn256::Fr as Bn256Scalar, secp256k1::Fq as Secp256k1Scalar, FieldExt},
+	utils::decompose,
 };
-use libp2p::core::{identity::Keypair as IdentityKeypair};
+use libp2p::core::identity::Keypair as IdentityKeypair;
 
 pub fn extract_sk_limbs(kp: &IdentityKeypair) -> Result<[Bn256Scalar; 4], EigenError> {
 	match kp {

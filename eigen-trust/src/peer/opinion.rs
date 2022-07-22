@@ -1,8 +1,10 @@
-use super::{
-	pubkey::Pubkey,
+use super::pubkey::Pubkey;
+use crate::{
+	constants::*,
+	peer::utils::{extract_sk_limbs, to_wide_bytes},
+	EigenError, Epoch,
 };
 use bs58::decode::Error as Bs58Error;
-use crate::{EigenError, Epoch, peer::utils::{extract_sk_limbs, to_wide_bytes}, constants::*};
 use eigen_trust_circuit::{
 	halo2wrong::{
 		curves::{
@@ -18,11 +20,12 @@ use eigen_trust_circuit::{
 	utils::{prove, verify},
 	EigenTrustCircuit,
 };
-use libp2p::core::{identity::Keypair as IdentityKeypair};
+use libp2p::core::identity::Keypair as IdentityKeypair;
 use rand::thread_rng;
 
 pub type Posedion5x5 = Poseidon<Bn256Scalar, 5, Params5x5Bn254>;
-pub type ETCircuit = EigenTrustCircuit::<Bn256Scalar, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, Params5x5Bn254>;
+pub type ETCircuit =
+	EigenTrustCircuit<Bn256Scalar, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, Params5x5Bn254>;
 pub const SCALE: f64 = 100000000.;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -65,9 +68,7 @@ impl Opinion {
 		let op_ji_scaled = op_ji.map(|op| (op * SCALE).round());
 		let c_v_scaled = (c_v * SCALE).round();
 
-		let t_i_scaled = op_ji_scaled
-			.iter()
-			.fold(0., |acc, op| acc + op);
+		let t_i_scaled = op_ji_scaled.iter().fold(0., |acc, op| acc + op);
 		let op_v_scaled = t_i_scaled * c_v_scaled;
 		// Unscale the value.
 		let op_v_unscaled = op_v_scaled / (SCALE * SCALE);
@@ -80,10 +81,12 @@ impl Opinion {
 		let pos = Posedion5x5::new(m_hash_input);
 		let m_hash = pos.permute()[0];
 
-		let bootstrap_pubkeys = BOOTSTRAP_PEERS.try_map(|key| {
-			let bytes = &bs58::decode(key).into_vec()?;
-			Ok(Bn256Scalar::from_bytes_wide(&to_wide_bytes(&bytes)))
-		}).map_err(|_: Bs58Error| EigenError::InvalidBootstrapPubkey)?;
+		let bootstrap_pubkeys = BOOTSTRAP_PEERS
+			.try_map(|key| {
+				let bytes = &bs58::decode(key).into_vec()?;
+				Ok(Bn256Scalar::from_bytes_wide(&to_wide_bytes(&bytes)))
+			})
+			.map_err(|_: Bs58Error| EigenError::InvalidBootstrapPubkey)?;
 		let bootstrap_score = Bn256Scalar::from_u128((BOOTSTRAP_SCORE * SCALE).round() as u128);
 		let genesis_epoch = Bn256Scalar::from_u128(u128::from(GENESIS_EPOCH));
 
@@ -95,7 +98,7 @@ impl Opinion {
 			c_v_f,
 			bootstrap_pubkeys,
 			bootstrap_score,
-			genesis_epoch
+			genesis_epoch,
 		);
 
 		let pub_ins = vec![m_hash];
@@ -206,8 +209,7 @@ mod test {
 			random_circuit::<Bn256, _, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, Params5x5Bn254>(rng);
 		let pk = keygen(&params, &random_circuit).unwrap();
 		let proof =
-			Opinion::generate(&local_keypair, &pubkey_v, epoch, op_ji, c_v, &params, &pk)
-				.unwrap();
+			Opinion::generate(&local_keypair, &pubkey_v, epoch, op_ji, c_v, &params, &pk).unwrap();
 
 		assert!(proof
 			.verify(&local_pubkey, &keypair_v, &params, pk.get_vk())

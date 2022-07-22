@@ -84,6 +84,8 @@
 #![warn(trivial_casts)]
 #![forbid(unsafe_code)]
 
+/// The module for global constants.
+pub mod constants;
 /// The module for epoch-related calculations, like seconds until the next
 /// epoch, current epoch, etc.
 mod epoch;
@@ -98,8 +100,6 @@ mod node;
 mod peer;
 /// The module for defining the request-response protocol.
 mod protocol;
-/// The module for global constants.
-pub mod constants;
 
 pub use eigen_trust_circuit;
 pub use epoch::Epoch;

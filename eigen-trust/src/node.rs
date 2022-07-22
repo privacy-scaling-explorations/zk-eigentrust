@@ -191,7 +191,8 @@ impl Node {
 				// If we receive a response, we update the neighbors's opinion about us.
 				match response {
 					Response::Opinion(opinion) => {
-						self.peer.cache_neighbor_opinion((peer, opinion.epoch), opinion);
+						self.peer
+							.cache_neighbor_opinion((peer, opinion.epoch), opinion);
 					},
 					Response::Identify(pub_key) => {
 						self.peer.identify_neighbor(peer, pub_key);
