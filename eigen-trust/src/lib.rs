@@ -144,6 +144,8 @@ pub enum EigenError {
 	KeygenFailed,
 	/// Invalid bootstrap public key.
 	InvalidBootstrapPubkey,
+	/// Unknown error.
+	Unknown,
 }
 
 impl From<EigenError> for u8 {
@@ -165,6 +167,7 @@ impl From<EigenError> for u8 {
 			EigenError::VerificationError => 13,
 			EigenError::KeygenFailed => 14,
 			EigenError::InvalidBootstrapPubkey => 15,
+			EigenError::Unknown => 16,
 		}
 	}
 }
@@ -188,7 +191,7 @@ impl From<u8> for EigenError {
 			13 => EigenError::VerificationError,
 			14 => EigenError::KeygenFailed,
 			15 => EigenError::InvalidBootstrapPubkey,
-			_ => panic!("Invalid error code"),
+			_ => EigenError::Unknown,
 		}
 	}
 }
