@@ -1,6 +1,7 @@
 use super::*;
 use halo2wrong::curves::bn256::Fr;
 
+#[derive(Clone)]
 pub struct Params5x5Bn254;
 
 impl Sbox for Params5x5Bn254 {

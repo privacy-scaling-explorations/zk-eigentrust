@@ -1,16 +1,13 @@
 use super::{
-	utils::{convert_keypair, convert_pubkey, to_wide},
-	MIN_SCORE,
+	pubkey::Pubkey,
 };
-use crate::{EigenError, Epoch};
+use bs58::decode::Error as Bs58Error;
+use crate::{EigenError, Epoch, peer::utils::{extract_sk_limbs, to_wide_bytes}, constants::*};
 use eigen_trust_circuit::{
-	ecdsa::{generate_signature, SigData},
 	halo2wrong::{
 		curves::{
 			bn256::{Bn256, Fr as Bn256Scalar, G1Affine},
-			group::{Curve, Group},
-			secp256k1::{Fq as Secp256k1Scalar, Secp256k1Affine},
-			CurveAffine, FieldExt,
+			FieldExt,
 		},
 		halo2::{
 			plonk::{ProvingKey, VerifyingKey},
@@ -21,25 +18,24 @@ use eigen_trust_circuit::{
 	utils::{prove, verify},
 	EigenTrustCircuit,
 };
-use libp2p::core::{identity::Keypair as IdentityKeypair, PublicKey as IdentityPublicKey};
+use libp2p::core::{identity::Keypair as IdentityKeypair};
 use rand::thread_rng;
 
 pub type Posedion5x5 = Poseidon<Bn256Scalar, 5, Params5x5Bn254>;
+pub type ETCircuit = EigenTrustCircuit::<Bn256Scalar, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, Params5x5Bn254>;
 pub const SCALE: f64 = 100000000.;
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct Opinion<const N: usize> {
-	pub(crate) k: Epoch,
-	pub(crate) sig_i: SigData<Secp256k1Scalar>,
+pub struct Opinion {
+	pub(crate) epoch: Epoch,
 	pub(crate) op: f64,
 	pub(crate) proof_bytes: Vec<u8>,
 }
 
-impl<const N: usize> Opinion<N> {
-	pub fn new(k: Epoch, sig_i: SigData<Secp256k1Scalar>, op: f64, proof_bytes: Vec<u8>) -> Self {
+impl Opinion {
+	pub fn new(epoch: Epoch, op: f64, proof_bytes: Vec<u8>) -> Self {
 		Self {
-			k,
-			sig_i,
+			epoch,
 			op,
 			proof_bytes,
 		}
@@ -48,59 +44,61 @@ impl<const N: usize> Opinion<N> {
 	/// Creates a new opinion.
 	pub fn generate(
 		kp: &IdentityKeypair,
-		pubkey_v: &IdentityPublicKey,
+		pubkey_v: &Pubkey,
 		k: Epoch,
-		op_ji: [f64; N],
+		op_ji: [f64; MAX_NEIGHBORS],
 		c_v: f64,
 		params: &ParamsKZG<Bn256>,
 		pk: &ProvingKey<G1Affine>,
 	) -> Result<Self, EigenError> {
 		let mut rng = thread_rng();
 
-		let keypair = convert_keypair(kp)?;
-		let pubkey_i = keypair.public().to_owned();
-		let pubkey_v = convert_pubkey(pubkey_v)?;
+		let sk = extract_sk_limbs(kp)?;
+		let input = [Bn256Scalar::zero(), sk[0], sk[1], sk[2], sk[3]];
+		let pos = Posedion5x5::new(input);
+		let pk_i = pos.permute()[0];
 
-		let pk_v_x = Bn256Scalar::from_bytes_wide(&to_wide(pubkey_v.x.to_bytes()));
-		let pk_v_y = Bn256Scalar::from_bytes_wide(&to_wide(pubkey_v.y.to_bytes()));
+		let pk_v = pubkey_v.value();
 		let epoch_f = Bn256Scalar::from_u128(u128::from(k.0));
 
 		// Turn into scaled values and round the to avoid rounding errors.
 		let op_ji_scaled = op_ji.map(|op| (op * SCALE).round());
 		let c_v_scaled = (c_v * SCALE).round();
-		let min_score_scaled = (MIN_SCORE * SCALE).round();
 
 		let t_i_scaled = op_ji_scaled
 			.iter()
-			.fold(min_score_scaled, |acc, op| acc + op);
+			.fold(0., |acc, op| acc + op);
 		let op_v_scaled = t_i_scaled * c_v_scaled;
 		// Unscale the value.
 		let op_v_unscaled = op_v_scaled / (SCALE * SCALE);
 
-		let min_score = Bn256Scalar::from_u128(min_score_scaled as u128);
 		let op_ji_f = op_ji_scaled.map(|op| Bn256Scalar::from_u128(op as u128));
 		let c_v_f = Bn256Scalar::from_u128(c_v_scaled as u128);
 		let op_v_f = Bn256Scalar::from_u128(op_v_scaled as u128);
 
-		let m_hash_input = [Bn256Scalar::zero(), epoch_f, pk_v_x, pk_v_y, op_v_f];
+		let m_hash_input = [Bn256Scalar::zero(), epoch_f, op_v_f, pk_v, pk_i];
 		let pos = Posedion5x5::new(m_hash_input);
-		let out = pos.permute()[0];
-		let m_hash = Secp256k1Scalar::from_bytes(&out.to_bytes()).unwrap();
-		let sig_i = generate_signature(keypair, m_hash, &mut rng)
-			.map_err(|_| EigenError::SignatureError)?;
+		let m_hash = pos.permute()[0];
 
-		let aux_generator =
-			<Secp256k1Affine as CurveAffine>::CurveExt::random(&mut rng).to_affine();
-		let circuit =
-			EigenTrustCircuit::new(pubkey_i, sig_i, op_ji_f, c_v_f, min_score, aux_generator);
+		let bootstrap_pubkeys = BOOTSTRAP_PEERS.try_map(|key| {
+			let bytes = &bs58::decode(key).into_vec()?;
+			Ok(Bn256Scalar::from_bytes_wide(&to_wide_bytes(&bytes)))
+		}).map_err(|_: Bs58Error| EigenError::InvalidBootstrapPubkey)?;
+		let bootstrap_score = Bn256Scalar::from_u128((BOOTSTRAP_SCORE * SCALE).round() as u128);
+		let genesis_epoch = Bn256Scalar::from_u128(u128::from(GENESIS_EPOCH));
 
-		let r = Bn256Scalar::from_bytes_wide(&to_wide(sig_i.r.to_bytes()));
-		let s = Bn256Scalar::from_bytes_wide(&to_wide(sig_i.s.to_bytes()));
-		let m_hash = Bn256Scalar::from_bytes_wide(&to_wide(sig_i.m_hash.to_bytes()));
-		let pk_ix = Bn256Scalar::from_bytes_wide(&to_wide(pubkey_i.x.to_bytes()));
-		let pk_iy = Bn256Scalar::from_bytes_wide(&to_wide(pubkey_i.y.to_bytes()));
+		let circuit = ETCircuit::new(
+			pk_v,
+			epoch_f,
+			sk,
+			op_ji_f,
+			c_v_f,
+			bootstrap_pubkeys,
+			bootstrap_score,
+			genesis_epoch
+		);
 
-		let pub_ins = vec![op_v_f, r, s, m_hash, pk_ix, pk_iy];
+		let pub_ins = vec![m_hash];
 
 		let proof_bytes = prove(params, circuit.clone(), &[&pub_ins], pk, &mut rng)
 			.map_err(|_| EigenError::ProvingError)?;
@@ -111,23 +109,20 @@ impl<const N: usize> Opinion<N> {
 		assert!(proof_res);
 
 		Ok(Self {
-			k,
-			sig_i,
+			epoch: k,
 			op: op_v_unscaled,
 			proof_bytes,
 		})
 	}
 
 	pub fn empty() -> Self {
-		let k = Epoch(0);
-		let sig_i = SigData::empty();
+		let epoch = Epoch(0);
 		let op_v = 0.;
 
 		let proof_bytes = Vec::new();
 
 		Self {
-			k,
-			sig_i,
+			epoch,
 			op: op_v,
 			proof_bytes,
 		}
@@ -136,43 +131,34 @@ impl<const N: usize> Opinion<N> {
 	/// Verifies the proof.
 	pub fn verify(
 		&self,
-		pubkey_p: &IdentityPublicKey,
-		pubkey_v: &IdentityPublicKey,
+		pubkey_p: &Pubkey,
+		kp: &IdentityKeypair,
 		params: &ParamsKZG<Bn256>,
 		vk: &VerifyingKey<G1Affine>,
 	) -> Result<bool, EigenError> {
-		if self.k == Epoch(0) {
+		if self.op == 0. {
 			return Ok(true);
 		}
 
-		let pk_p = convert_pubkey(pubkey_p)?;
-		let pk_v = convert_pubkey(pubkey_v)?;
+		let pk_p = pubkey_p.value();
+		let sk = extract_sk_limbs(kp)?;
+		let input = [Bn256Scalar::zero(), sk[0], sk[1], sk[2], sk[3]];
+		let pos = Posedion5x5::new(input);
+		let pk_v = pos.permute()[0];
 
-		let epoch_f = Bn256Scalar::from_u128(u128::from(self.k.0));
-		let pk_v_x = Bn256Scalar::from_bytes_wide(&to_wide(pk_v.x.to_bytes()));
-		let pk_v_y = Bn256Scalar::from_bytes_wide(&to_wide(pk_v.y.to_bytes()));
+		let epoch_f = Bn256Scalar::from_u128(u128::from(self.epoch.0));
 		let op_v_f = Bn256Scalar::from_u128((self.op * SCALE * SCALE).round() as u128);
 
-		let m_hash_input = [Bn256Scalar::zero(), epoch_f, pk_v_x, pk_v_y, op_v_f];
+		let m_hash_input = [Bn256Scalar::zero(), epoch_f, op_v_f, pk_v, pk_p];
 		let pos = Posedion5x5::new(m_hash_input);
-		let out = pos.permute()[0];
-		let m_hash = Secp256k1Scalar::from_bytes(&out.to_bytes()).unwrap();
+		let m_hash = pos.permute()[0];
 
-		// TODO: Do inside the circuit
-		let sig_res = self.sig_i.m_hash == m_hash;
-
-		let r = Bn256Scalar::from_bytes_wide(&to_wide(self.sig_i.r.to_bytes()));
-		let s = Bn256Scalar::from_bytes_wide(&to_wide(self.sig_i.s.to_bytes()));
-		let m_hash = Bn256Scalar::from_bytes_wide(&to_wide(self.sig_i.m_hash.to_bytes()));
-		let pk_ix = Bn256Scalar::from_bytes_wide(&to_wide(pk_p.x.to_bytes()));
-		let pk_iy = Bn256Scalar::from_bytes_wide(&to_wide(pk_p.y.to_bytes()));
-
-		let pub_ins = vec![op_v_f, r, s, m_hash, pk_ix, pk_iy];
+		let pub_ins = vec![m_hash];
 
 		let proof_res = verify(params, &[&pub_ins], &self.proof_bytes, vk)
 			.map_err(|_| EigenError::VerificationError)?;
 
-		Ok(sig_res && proof_res)
+		Ok(proof_res)
 	}
 }
 
@@ -184,24 +170,20 @@ mod test {
 		utils::{keygen, random_circuit},
 	};
 
-	const N: usize = 3;
-
 	#[test]
 	fn should_verify_empty_opinion() {
 		let rng = &mut thread_rng();
-		let op = Opinion::<N>::empty();
+		let op = Opinion::empty();
 		let local_keypair = IdentityKeypair::generate_secp256k1();
-		let local_pubkey = local_keypair.public();
+		let local_pubkey = Pubkey::from_keypair(&local_keypair).unwrap();
 
 		let keypair_v = IdentityKeypair::generate_secp256k1();
-		let pubkey_v = keypair_v.public();
 		let params = ParamsKZG::<Bn256>::new(18);
-		let min_score = Bn256Scalar::from_u128((MIN_SCORE * SCALE).round() as u128);
 		let random_circuit =
-			random_circuit::<Bn256, Secp256k1Affine, _, N>(min_score, &mut rng.clone());
+			random_circuit::<Bn256, _, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, Params5x5Bn254>(rng);
 		let pk = keygen(&params, &random_circuit).unwrap();
 		let res = op
-			.verify(&local_pubkey, &pubkey_v, &params, &pk.get_vk())
+			.verify(&local_pubkey, &keypair_v, &params, &pk.get_vk())
 			.unwrap();
 		assert!(res);
 	}
@@ -210,26 +192,25 @@ mod test {
 	fn test_new_proof_generate() {
 		let rng = &mut thread_rng();
 		let local_keypair = IdentityKeypair::generate_secp256k1();
-		let local_pubkey = local_keypair.public();
+		let local_pubkey = Pubkey::from_keypair(&local_keypair).unwrap();
 
 		let keypair_v = IdentityKeypair::generate_secp256k1();
-		let pubkey_v = keypair_v.public();
+		let pubkey_v = Pubkey::from_keypair(&keypair_v).unwrap();
 
 		let epoch = Epoch(1);
-		let op_ji = [0.1; N];
+		let op_ji = [0.1; MAX_NEIGHBORS];
 		let c_v = 0.1;
-		let min_score = Bn256Scalar::from_u128((MIN_SCORE * SCALE).round() as u128);
 
 		let params = ParamsKZG::<Bn256>::new(18);
 		let random_circuit =
-			random_circuit::<Bn256, Secp256k1Affine, _, N>(min_score, &mut rng.clone());
+			random_circuit::<Bn256, _, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, Params5x5Bn254>(rng);
 		let pk = keygen(&params, &random_circuit).unwrap();
 		let proof =
-			Opinion::<N>::generate(&local_keypair, &pubkey_v, epoch, op_ji, c_v, &params, &pk)
+			Opinion::generate(&local_keypair, &pubkey_v, epoch, op_ji, c_v, &params, &pk)
 				.unwrap();
 
 		assert!(proof
-			.verify(&local_pubkey, &pubkey_v, &params, pk.get_vk())
+			.verify(&local_pubkey, &keypair_v, &params, pk.get_vk())
 			.unwrap());
 	}
 }

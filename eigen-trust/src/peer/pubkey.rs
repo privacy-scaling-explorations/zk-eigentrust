@@ -21,4 +21,8 @@ impl Pubkey {
 	pub fn to_bytes(&self) -> [u8; 32] {
 		self.0.to_bytes()
 	}
+
+	pub fn value(&self) -> Bn256Scalar {
+		self.0
+	}
 }

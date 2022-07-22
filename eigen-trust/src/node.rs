@@ -191,7 +191,7 @@ impl Node {
 				// If we receive a response, we update the neighbors's opinion about us.
 				match response {
 					Response::Opinion(opinion) => {
-						self.peer.cache_neighbor_opinion((peer, opinion.k), opinion);
+						self.peer.cache_neighbor_opinion((peer, opinion.epoch), opinion);
 					},
 					Response::Identify(pub_key) => {
 						self.peer.identify_neighbor(peer, pub_key);
@@ -746,10 +746,10 @@ mod tests {
 		let peer1_neighbor_opinion = peer1.get_neighbor_opinion(&(peer_id2, next_epoch));
 		let peer2_neighbor_opinion = peer2.get_neighbor_opinion(&(peer_id1, next_epoch));
 
-		assert_eq!(peer1_neighbor_opinion.k, next_epoch);
+		assert_eq!(peer1_neighbor_opinion.epoch, next_epoch);
 		assert_eq!(peer1_neighbor_opinion.op, 0.1);
 
-		assert_eq!(peer2_neighbor_opinion.k, next_epoch);
+		assert_eq!(peer2_neighbor_opinion.epoch, next_epoch);
 		assert_eq!(peer2_neighbor_opinion.op, 0.1);
 	}
 

@@ -2,11 +2,10 @@
 
 use crate::{
 	epoch::Epoch,
-	peer::{opinion::Opinion, pubkey::Pubkey, MAX_NEIGHBORS},
+	peer::{opinion::Opinion, pubkey::Pubkey},
 	EigenError,
 };
 use async_trait::async_trait;
-use eigen_trust_circuit::{ecdsa::SigData, halo2wrong::curves::secp256k1::Fq as Secp256k1Scalar};
 use futures::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use libp2p::request_response::{ProtocolName, RequestResponseCodec};
 use std::io::{Error, ErrorKind, Result};
@@ -63,7 +62,7 @@ impl Request {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Response {
 	/// Successful response with an opinion.
-	Opinion(Opinion<MAX_NEIGHBORS>),
+	Opinion(Opinion),
 	/// Successful response with a public key.
 	Identify(Pubkey),
 	/// Failed response, because of invalid request.
@@ -137,32 +136,17 @@ impl RequestResponseCodec for EigenTrustCodec {
 						// Opinion
 						let mut k_bytes = [0; 8];
 						let mut op_bytes = [0; 8];
-						let mut r = [0; 32];
-						let mut s = [0; 32];
-						let mut m_hash = [0; 32];
 						let mut proof_bytes = Vec::new();
 
 						io.read_exact(&mut k_bytes).await?;
 						io.read_exact(&mut op_bytes).await?;
-						io.read_exact(&mut r).await?;
-						io.read_exact(&mut s).await?;
-						io.read_exact(&mut m_hash).await?;
 						io.read_to_end(&mut proof_bytes).await?;
 
 						let k = u64::from_be_bytes(k_bytes);
 						let op = f64::from_be_bytes(op_bytes);
 
-						let r_f = Secp256k1Scalar::from_bytes(&r).unwrap();
-						let s_f = Secp256k1Scalar::from_bytes(&s).unwrap();
-						let m_hash_f = Secp256k1Scalar::from_bytes(&m_hash).unwrap();
-
-						let sig_data = SigData {
-							r: r_f,
-							s: s_f,
-							m_hash: m_hash_f,
-						};
-
-						let opinion = Opinion::new(Epoch(k), sig_data, op, proof_bytes);
+						let epoch = Epoch(k);
+						let opinion = Opinion::new(epoch, op, proof_bytes);
 
 						Ok(Response::Opinion(opinion))
 					},
@@ -234,11 +218,8 @@ impl RequestResponseCodec for EigenTrustCodec {
 						bytes.push(0);
 
 						// Opinion
-						bytes.extend(opinion.k.to_be_bytes());
+						bytes.extend(opinion.epoch.to_be_bytes());
 						bytes.extend(opinion.op.to_be_bytes());
-						bytes.extend(opinion.sig_i.r.to_bytes());
-						bytes.extend(opinion.sig_i.s.to_bytes());
-						bytes.extend(opinion.sig_i.m_hash.to_bytes());
 						bytes.extend(opinion.proof_bytes);
 					},
 					Response::Identify(pub_key) => {
@@ -263,7 +244,7 @@ mod tests {
 	use super::*;
 
 	impl Response {
-		pub fn success(self) -> Opinion<MAX_NEIGHBORS> {
+		pub fn success(self) -> Opinion {
 			match self {
 				Response::Opinion(opinion) => opinion,
 				_ => panic!("Response::success called on invalid response"),
@@ -307,11 +288,8 @@ mod tests {
 
 		let mut bytes = vec![];
 		bytes.push(0);
-		bytes.extend(opinion.k.to_be_bytes());
+		bytes.extend(opinion.epoch.to_be_bytes());
 		bytes.extend(opinion.op.to_be_bytes());
-		bytes.extend(opinion.sig_i.r.to_bytes());
-		bytes.extend(opinion.sig_i.s.to_bytes());
-		bytes.extend(opinion.sig_i.m_hash.to_bytes());
 
 		// compare the written bytes with the expected bytes
 		assert_eq!(buf, bytes);

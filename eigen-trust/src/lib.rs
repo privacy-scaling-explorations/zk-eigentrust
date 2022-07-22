@@ -98,6 +98,8 @@ mod node;
 mod peer;
 /// The module for defining the request-response protocol.
 mod protocol;
+/// The module for global constants.
+pub mod constants;
 
 pub use eigen_trust_circuit;
 pub use epoch::Epoch;
@@ -140,6 +142,8 @@ pub enum EigenError {
 	VerificationError,
 	/// Failed to generate proving key.
 	KeygenFailed,
+	/// Invalid bootstrap public key.
+	InvalidBootstrapPubkey,
 }
 
 impl From<EigenError> for u8 {
@@ -160,6 +164,7 @@ impl From<EigenError> for u8 {
 			EigenError::ProvingError => 12,
 			EigenError::VerificationError => 13,
 			EigenError::KeygenFailed => 14,
+			EigenError::InvalidBootstrapPubkey => 15,
 		}
 	}
 }
@@ -182,6 +187,7 @@ impl From<u8> for EigenError {
 			12 => EigenError::ProvingError,
 			13 => EigenError::VerificationError,
 			14 => EigenError::KeygenFailed,
+			15 => EigenError::InvalidBootstrapPubkey,
 			_ => panic!("Invalid error code"),
 		}
 	}

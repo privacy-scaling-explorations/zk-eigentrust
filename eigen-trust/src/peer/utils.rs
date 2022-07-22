@@ -1,63 +1,16 @@
-use super::opinion::Posedion5x5;
+use super::{opinion::Posedion5x5};
 use crate::EigenError;
 use eigen_trust_circuit::{
-	ecdsa::Keypair,
 	halo2wrong::{
 		curves::{
 			bn256::Fr as Bn256Scalar,
-			group::Curve,
-			secp256k1::{Fp as Secp256k1Base, Fq as Secp256k1Scalar, Secp256k1Affine},
-			CurveAffine, FieldExt,
+			secp256k1::{Fq as Secp256k1Scalar},
+			FieldExt,
 		},
 		utils::decompose,
 	},
 };
-use libp2p::core::{identity::Keypair as IdentityKeypair, PublicKey as IdentityPublicKey};
-
-/// Convert the libp2p keypair into halo2 keypair.
-pub fn convert_keypair(kp: &IdentityKeypair) -> Result<Keypair<Secp256k1Affine>, EigenError> {
-	match kp {
-		IdentityKeypair::Secp256k1(secp_kp) => {
-			let mut sk_bytes = secp_kp.secret().to_bytes();
-			sk_bytes.reverse();
-
-			let sk_op: Option<Secp256k1Scalar> = Secp256k1Scalar::from_bytes(&sk_bytes).into();
-			let sk = sk_op.ok_or(EigenError::InvalidKeypair)?;
-			let g = Secp256k1Affine::generator();
-			let pk = (g * sk).to_affine();
-
-			Ok(Keypair::from_pair(sk, pk))
-		},
-		_ => Err(EigenError::InvalidKeypair),
-	}
-}
-
-/// Convert the libp2p public key into halo2 public key.
-pub fn convert_pubkey(pk: &IdentityPublicKey) -> Result<Secp256k1Affine, EigenError> {
-	match pk {
-		IdentityPublicKey::Secp256k1(secp_pk) => {
-			let pk_bytes = secp_pk.encode_uncompressed();
-			let mut x_bytes: [u8; 32] = pk_bytes[1..33]
-				.try_into()
-				.map_err(|_| EigenError::InvalidPubkey)?;
-			let mut y_bytes: [u8; 32] = pk_bytes[33..65]
-				.try_into()
-				.map_err(|_| EigenError::InvalidPubkey)?;
-			x_bytes.reverse();
-			y_bytes.reverse();
-
-			let x_op: Option<Secp256k1Base> = Secp256k1Base::from_bytes(&x_bytes).into();
-			let y_op: Option<Secp256k1Base> = Secp256k1Base::from_bytes(&y_bytes).into();
-			let x = x_op.ok_or(EigenError::InvalidPubkey)?;
-			let y = y_op.ok_or(EigenError::InvalidPubkey)?;
-
-			let pubkey_op: Option<Secp256k1Affine> = Secp256k1Affine::from_xy(x, y).into();
-			let pubkey = pubkey_op.ok_or(EigenError::InvalidPubkey)?;
-			Ok(pubkey)
-		},
-		_ => Err(EigenError::InvalidPubkey),
-	}
-}
+use libp2p::core::{identity::Keypair as IdentityKeypair};
 
 pub fn extract_sk_limbs(kp: &IdentityKeypair) -> Result<[Bn256Scalar; 4], EigenError> {
 	match kp {
@@ -98,5 +51,12 @@ pub fn extract_pub_key(kp: &IdentityKeypair) -> Result<Bn256Scalar, EigenError> 
 pub fn to_wide(p: [u8; 32]) -> [u8; 64] {
 	let mut res = [0u8; 64];
 	res[..32].copy_from_slice(&p[..]);
+	res
+}
+
+/// Write a byte array into an array of 64 elements.
+pub fn to_wide_bytes(p: &[u8]) -> [u8; 64] {
+	let mut res = [0u8; 64];
+	res[..p.len()].copy_from_slice(&p[..]);
 	res
 }
