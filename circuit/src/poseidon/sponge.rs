@@ -97,7 +97,7 @@ where
 		config: &PoseidonSpongeConfig<WIDTH>,
 		mut layouter: impl Layouter<F>,
 	) -> Result<AssignedCell<F, F>, Error> {
-		assert!(self.inputs.len() > 0);
+		assert!(!self.inputs.is_empty());
 
 		let mut state = layouter.assign_region(
 			|| "load_chunks",

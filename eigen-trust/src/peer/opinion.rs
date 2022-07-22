@@ -84,7 +84,7 @@ impl Opinion {
 		let bootstrap_pubkeys = BOOTSTRAP_PEERS
 			.try_map(|key| {
 				let bytes = &bs58::decode(key).into_vec()?;
-				Ok(Bn256Scalar::from_bytes_wide(&to_wide_bytes(&bytes)))
+				Ok(Bn256Scalar::from_bytes_wide(&to_wide_bytes(bytes)))
 			})
 			.map_err(|_: Bs58Error| EigenError::InvalidBootstrapPubkey)?;
 		let bootstrap_score = Bn256Scalar::from_u128((BOOTSTRAP_SCORE * SCALE).round() as u128);
@@ -103,7 +103,7 @@ impl Opinion {
 
 		let pub_ins = vec![m_hash];
 
-		let proof_bytes = prove(params, circuit.clone(), &[&pub_ins], pk, &mut rng)
+		let proof_bytes = prove(params, circuit, &[&pub_ins], pk, &mut rng)
 			.map_err(|_| EigenError::ProvingError)?;
 
 		// Sanity check

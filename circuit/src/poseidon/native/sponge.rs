@@ -33,7 +33,7 @@ where
 	}
 
 	pub fn squeeze(&mut self) -> F {
-		assert!(self.inputs.len() > 0);
+		assert!(!self.inputs.is_empty());
 
 		let mut state = [F::zero(); WIDTH];
 

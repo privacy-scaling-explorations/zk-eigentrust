@@ -130,7 +130,7 @@ impl<F: FieldExt, const S: usize, const B: usize, P: RoundParams<F, 5>> Circuit<
 			secret_i: [Value::unknown(); 4],
 			op_ji: [Value::unknown(); S],
 			c_v: Value::unknown(),
-			bootstrap_pubkeys: self.bootstrap_pubkeys.clone(),
+			bootstrap_pubkeys: self.bootstrap_pubkeys,
 			boostrap_score: Value::unknown(),
 			genesis_epoch: Value::unknown(),
 			_params: PhantomData,

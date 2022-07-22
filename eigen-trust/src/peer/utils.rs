@@ -51,6 +51,6 @@ pub fn to_wide(p: [u8; 32]) -> [u8; 64] {
 /// Write a byte array into an array of 64 elements.
 pub fn to_wide_bytes(p: &[u8]) -> [u8; 64] {
 	let mut res = [0u8; 64];
-	res[..p.len()].copy_from_slice(&p[..]);
+	res[..p.len()].copy_from_slice(p);
 	res
 }

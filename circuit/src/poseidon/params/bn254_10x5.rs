@@ -7,15 +7,13 @@ impl Sbox for Params10x5Bn254 {
 	fn sbox_expr<F: FieldExt>(exp: Expression<F>) -> Expression<F> {
 		let exp2 = exp.clone() * exp.clone();
 		let exp4 = exp2.clone() * exp2;
-		let exp5 = exp4 * exp;
-		exp5
+		exp4 * exp
 	}
 
 	fn sbox_f<F: FieldExt>(f: F) -> F {
-		let f2 = f.clone() * f.clone();
-		let f4 = f2.clone() * f2;
-		let f5 = f4 * f;
-		f5
+		let f2 = f * f;
+		let f4 = f2 * f2;
+		f4 * f
 	}
 }
 

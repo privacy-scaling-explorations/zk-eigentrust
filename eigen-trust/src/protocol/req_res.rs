@@ -109,7 +109,7 @@ impl RequestResponseCodec for EigenTrustCodec {
 					1 => {
 						let mut pk_buf = [0; 32];
 						io.read_exact(&mut pk_buf).await?;
-						let pubkey = Pubkey::from_bytes(pk_buf).unwrap();
+						let pubkey = Pubkey::from_bytes(pk_buf);
 						Ok(Request::Identify(pubkey))
 					},
 					_ => Err(Error::new(ErrorKind::InvalidData, "Invalid request")),
@@ -154,7 +154,7 @@ impl RequestResponseCodec for EigenTrustCodec {
 						// Identify
 						let mut pubkey_bytes = [0; 32];
 						io.read_exact(&mut pubkey_bytes).await?;
-						let pubkey = Pubkey::from_bytes(pubkey_bytes).unwrap();
+						let pubkey = Pubkey::from_bytes(pubkey_bytes);
 						Ok(Response::Identify(pubkey))
 					},
 					2 => Ok(Response::InvalidRequest),

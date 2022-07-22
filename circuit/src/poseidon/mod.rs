@@ -164,15 +164,15 @@ where
 		prev_state: &[AssignedCell<F, F>; WIDTH],
 	) -> Result<[AssignedCell<F, F>; WIDTH], Error> {
 		// Assign initial state
-		let mut state_cells = Self::copy_state(&config, region, 0, prev_state)?;
+		let mut state_cells = Self::copy_state(config, region, 0, prev_state)?;
 		for round in 0..num_rounds {
 			config.full_round_selector.enable(region, round)?;
 
 			// Assign round constants
 			let round_const_cells =
-				Self::load_round_constants(&config, region, round, round_constants)?;
+				Self::load_round_constants(config, region, round, round_constants)?;
 			// Assign mds matrix
-			let mds_cells = Self::load_mds(&config, region, round, &mds)?;
+			let mds_cells = Self::load_mds(config, region, round, mds)?;
 
 			let mut next_state = Self::apply_round_constants(&state_cells, &round_const_cells);
 			for i in 0..WIDTH {
@@ -202,15 +202,15 @@ where
 		mds: &[[F; WIDTH]; WIDTH],
 		prev_state: &[AssignedCell<F, F>; WIDTH],
 	) -> Result<[AssignedCell<F, F>; WIDTH], Error> {
-		let mut state_cells = Self::copy_state(&config, region, 0, &prev_state)?;
+		let mut state_cells = Self::copy_state(config, region, 0, prev_state)?;
 		for round in 0..num_rounds {
 			config.partial_round_selector.enable(region, round)?;
 
 			// Assign round constants
 			let round_const_cells =
-				Self::load_round_constants(&config, region, round, round_constants)?;
+				Self::load_round_constants(config, region, round, round_constants)?;
 			// Assign mds matrix
-			let mds_cells = Self::load_mds(&config, region, round, &mds)?;
+			let mds_cells = Self::load_mds(config, region, round, mds)?;
 
 			let mut next_state = Self::apply_round_constants(&state_cells, &round_const_cells);
 			next_state[0] = next_state[0].map(|x| P::sbox_f(x));
@@ -313,7 +313,7 @@ where
 			|| "full_rounds_1",
 			|mut region: Region<'_, F>| {
 				Self::full_round(
-					&config,
+					config,
 					&mut region,
 					half_full_rounds,
 					first_round_constants,
@@ -327,7 +327,7 @@ where
 			|| "partial_rounds",
 			|mut region: Region<'_, F>| {
 				Self::partial_round(
-					&config,
+					config,
 					&mut region,
 					partial_rounds,
 					second_round_constants,
@@ -341,7 +341,7 @@ where
 			|| "full_rounds_2",
 			|mut region: Region<'_, F>| {
 				Self::full_round(
-					&config,
+					config,
 					&mut region,
 					half_full_rounds,
 					third_round_constants,
