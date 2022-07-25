@@ -4,8 +4,33 @@ use eigen_trust_circuit::halo2wrong::{
 	curves::{bn256::Fr as Bn256Scalar, secp256k1::Fq as Secp256k1Scalar, FieldExt},
 	utils::decompose,
 };
-use libp2p::core::identity::Keypair as IdentityKeypair;
+use libp2p::core::identity::{
+	secp256k1::{Keypair as Secp256k1Keypair, SecretKey},
+	Keypair as IdentityKeypair,
+};
 
+/// Make a new keypair from a secret key.
+pub fn keypair_from_sk_bytes(mut bytes: Vec<u8>) -> Result<IdentityKeypair, EigenError> {
+	bytes.reverse();
+	let sk = SecretKey::from_bytes(&mut bytes).map_err(|_| EigenError::InvalidKeypair)?;
+	let secp256kp = Secp256k1Keypair::from(sk);
+	let kp = IdentityKeypair::Secp256k1(secp256kp);
+	Ok(kp)
+}
+
+/// Extract raw bytes from a secret key.
+pub fn extract_sk_bytes(kp: &IdentityKeypair) -> Result<Vec<u8>, EigenError> {
+	match kp {
+		IdentityKeypair::Secp256k1(secp_kp) => {
+			let mut sk_bytes = secp_kp.secret().to_bytes();
+			sk_bytes.reverse();
+			Ok(sk_bytes.to_vec())
+		},
+		_ => Err(EigenError::InvalidKeypair),
+	}
+}
+
+/// Get the secret key for the keypair and return it as a bn254 scalar limbs.
 pub fn extract_sk_limbs(kp: &IdentityKeypair) -> Result<[Bn256Scalar; 4], EigenError> {
 	match kp {
 		IdentityKeypair::Secp256k1(secp_kp) => {
@@ -31,6 +56,7 @@ pub fn extract_sk_limbs(kp: &IdentityKeypair) -> Result<[Bn256Scalar; 4], EigenE
 	}
 }
 
+/// Hash the secret key limbs with Poseidon.
 pub fn extract_pub_key(kp: &IdentityKeypair) -> Result<Bn256Scalar, EigenError> {
 	let limbs = extract_sk_limbs(kp)?;
 

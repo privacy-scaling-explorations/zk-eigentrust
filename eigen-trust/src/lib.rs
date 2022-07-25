@@ -106,7 +106,10 @@ pub use epoch::Epoch;
 pub use libp2p::{identity::Keypair, Multiaddr, PeerId};
 pub use log::LevelFilter;
 pub use node::Node;
-pub use peer::Peer;
+pub use peer::{
+	utils::{extract_pub_key, extract_sk_bytes, extract_sk_limbs, keypair_from_sk_bytes},
+	Peer,
+};
 
 /// The crate-wide error variants.
 #[derive(Debug, Clone, PartialEq)]
