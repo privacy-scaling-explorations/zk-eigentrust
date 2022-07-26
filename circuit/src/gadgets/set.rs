@@ -1,8 +1,8 @@
 use super::is_zero::{IsZeroChip, IsZeroConfig};
 use halo2wrong::halo2::{
 	arithmetic::FieldExt,
-	circuit::{AssignedCell, Layouter, Region},
-	plonk::{Advice, Column, ConstraintSystem, Error, Selector},
+	circuit::{AssignedCell, Layouter, Region, Value},
+	plonk::{Advice, Column, ConstraintSystem, Error, Selector, Fixed},
 	poly::Rotation,
 };
 
@@ -10,7 +10,7 @@ use halo2wrong::halo2::{
 pub struct FixedSetConfig {
 	is_zero: IsZeroConfig,
 	target: Column<Advice>,
-	items: Column<Advice>,
+	items: Column<Fixed>,
 	diffs: Column<Advice>,
 	product: Column<Advice>,
 	selector: Selector,
@@ -30,7 +30,7 @@ impl<F: FieldExt, const N: usize> FixedSetChip<F, N> {
 	pub fn configure(meta: &mut ConstraintSystem<F>) -> FixedSetConfig {
 		let is_zero = IsZeroChip::configure(meta);
 		let target = meta.advice_column();
-		let items = meta.advice_column();
+		let items = meta.fixed_column();
 		let diffs = meta.advice_column();
 		let product = meta.advice_column();
 		let fixed = meta.fixed_column();
@@ -43,9 +43,8 @@ impl<F: FieldExt, const N: usize> FixedSetChip<F, N> {
 
 		meta.create_gate("fixed_set_membership", |v_cells| {
 			let target_exp = v_cells.query_advice(target, Rotation::cur());
-			let next_target_exp = v_cells.query_advice(target, Rotation::next());
 
-			let item_exp = v_cells.query_advice(items, Rotation::cur());
+			let item_exp = v_cells.query_fixed(items, Rotation::cur());
 			let diff_exp = v_cells.query_advice(diffs, Rotation::cur());
 
 			let product_exp = v_cells.query_advice(product, Rotation::cur());
@@ -55,9 +54,8 @@ impl<F: FieldExt, const N: usize> FixedSetChip<F, N> {
 
 			vec![
 				s_exp.clone() * (product_exp * diff_exp.clone() - next_product_exp),
-				s_exp.clone() * (diff_exp + item_exp - target_exp.clone()),
-				// Every target is the same
-				s_exp * (next_target_exp - target_exp),
+				// TODO: uncomment this line when the bug is fixed.
+				// s_exp * (target_exp.clone() - (diff_exp + item_exp)),
 			]
 		});
 
@@ -91,14 +89,15 @@ impl<F: FieldExt, const N: usize> FixedSetChip<F, N> {
 				for i in 0..N {
 					config.selector.enable(&mut region, i)?;
 
-					let assigned_item = region.assign_advice_from_constant(
+					let item_value = Value::known(self.items[i]);
+					region.assign_fixed(
 						|| format!("item_{}", i),
 						config.items,
 						i,
-						self.items[i],
+						|| item_value,
 					)?;
 
-					let diff = assigned_target.value().cloned() - assigned_item.value();
+					let diff = self.target.value().cloned() - item_value;
 					let next_product = assigned_product.value().cloned() * diff;
 
 					region.assign_advice(|| format!("diff_{}", i), config.diffs, i, || diff)?;
@@ -109,7 +108,7 @@ impl<F: FieldExt, const N: usize> FixedSetChip<F, N> {
 						|| next_product,
 					)?;
 					assigned_target =
-						self.target
+						assigned_target
 							.copy_advice(|| "target", &mut region, config.target, i + 1)?;
 				}
 
@@ -118,7 +117,7 @@ impl<F: FieldExt, const N: usize> FixedSetChip<F, N> {
 		)?;
 
 		let is_zero_chip = IsZeroChip::new(product);
-		let is_zero = is_zero_chip.synthesize(config.is_zero, layouter)?;
+		let is_zero = is_zero_chip.synthesize(config.is_zero, layouter.namespace(|| "is_member"))?;
 
 		Ok(is_zero)
 	}

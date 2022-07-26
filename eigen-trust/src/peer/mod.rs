@@ -248,7 +248,7 @@ mod tests {
 	#[test]
 	fn should_create_peer() {
 		let kp = Keypair::generate_secp256k1();
-		let params = ParamsKZG::new(13);
+		let params = ParamsKZG::new(9);
 		let peer = Peer::new(kp, params).unwrap();
 		assert_eq!(peer.get_sum_of_scores(), 0);
 	}
@@ -256,7 +256,7 @@ mod tests {
 	#[test]
 	fn should_cache_local_and_global_opinion() {
 		let kp = Keypair::generate_secp256k1();
-		let params = ParamsKZG::new(13);
+		let params = ParamsKZG::new(9);
 		let mut peer = Peer::new(kp, params).unwrap();
 
 		let epoch = Epoch(0);
@@ -276,7 +276,7 @@ mod tests {
 	#[test]
 	fn should_add_and_remove_neghbours() {
 		let kp = Keypair::generate_secp256k1();
-		let params = ParamsKZG::new(13);
+		let params = ParamsKZG::new(9);
 		let mut peer = Peer::new(kp, params).unwrap();
 		let neighbor_id = PeerId::random();
 
@@ -295,7 +295,7 @@ mod tests {
 		let local_keypair = Keypair::generate_secp256k1();
 		let local_pubkey = Pubkey::from_keypair(&local_keypair).unwrap();
 
-		let params = ParamsKZG::<Bn256>::new(18);
+		let params = ParamsKZG::<Bn256>::new(9);
 		let random_circuit =
 			random_circuit::<Bn256, _, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, Params5x5Bn254>(rng);
 		let pk = keygen(&params, &random_circuit).unwrap();

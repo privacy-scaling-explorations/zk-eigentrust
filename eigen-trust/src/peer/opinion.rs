@@ -15,7 +15,7 @@ use eigen_trust_circuit::{
 		},
 		halo2::{
 			plonk::{ProvingKey, VerifyingKey},
-			poly::kzg::commitment::ParamsKZG,
+			poly::kzg::commitment::ParamsKZG, dev::MockProver,
 		},
 	},
 	poseidon::{native::Poseidon, params::bn254_5x5::Params5x5Bn254},
@@ -116,16 +116,15 @@ impl Opinion {
 
 		let pub_ins = vec![m_hash];
 
-		let proof_bytes = prove(params, circuit.clone(), &[&pub_ins], pk, &mut rng)
+		let proof_bytes = prove(params, circuit, &[&pub_ins], pk, &mut rng)
 			.map_err(|_| EigenError::ProvingError)?;
 
 		// Sanity check
-		let _proof_res = verify(params, &[&pub_ins], &proof_bytes, pk.get_vk()).map_err(|e| {
+		let proof_res = verify(params, &[&pub_ins], &proof_bytes, pk.get_vk()).map_err(|e| {
 			println!("{}", e);
 			EigenError::VerificationError
 		})?;
-		// Comment out for now
-		// assert!(proof_res);
+		assert!(proof_res);
 
 		Ok(Self {
 			epoch: k,
@@ -174,13 +173,13 @@ impl Opinion {
 
 		let pub_ins = vec![m_hash];
 
-		let _proof_res = verify(params, &[&pub_ins], &self.proof_bytes, vk).map_err(|e| {
+		let proof_res = verify(params, &[&pub_ins], &self.proof_bytes, vk).map_err(|e| {
 			println!("{}", e);
 			EigenError::VerificationError
 		})?;
 
 		// Return true since we are having issues
-		Ok(true)
+		Ok(proof_res)
 	}
 }
 
@@ -200,7 +199,7 @@ mod test {
 		let local_pubkey = Pubkey::from_keypair(&local_keypair).unwrap();
 
 		let keypair_v = IdentityKeypair::generate_secp256k1();
-		let params = ParamsKZG::<Bn256>::new(13);
+		let params = ParamsKZG::<Bn256>::new(9);
 		let random_circuit =
 			random_circuit::<Bn256, _, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, Params5x5Bn254>(rng);
 		let pk = keygen(&params, &random_circuit).unwrap();
@@ -223,7 +222,7 @@ mod test {
 		let op_ji = [0.1; MAX_NEIGHBORS];
 		let c_v = 0.1;
 
-		let params = ParamsKZG::<Bn256>::new(13);
+		let params = ParamsKZG::<Bn256>::new(9);
 		let random_circuit =
 			random_circuit::<Bn256, _, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, Params5x5Bn254>(rng);
 		let pk = keygen(&params, &random_circuit).unwrap();

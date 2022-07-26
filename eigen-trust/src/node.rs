@@ -340,7 +340,7 @@ mod tests {
 	use eigen_trust_circuit::halo2wrong::halo2::poly::commitment::ParamsProver;
 	use std::str::FromStr;
 
-	const INTERVAL: u64 = 120;
+	const INTERVAL: u64 = 20;
 	const ADDR_1: &str = "/ip4/127.0.0.1/tcp/56706";
 	const ADDR_2: &str = "/ip4/127.0.0.1/tcp/58601";
 	const SK_1: &str = "AF4yAqwCPzpBcit4FtTrHso4BBR9onk7qS9Q1SWSLSaV";
@@ -360,7 +360,7 @@ mod tests {
 		let local_address1 = Multiaddr::from_str(ADDR_1).unwrap();
 		let local_address2 = Multiaddr::from_str(ADDR_2).unwrap();
 
-		let params = ParamsKZG::new(13);
+		let params = ParamsKZG::new(9);
 
 		let mut node1 =
 			Node::new(local_key1, local_address1.clone(), INTERVAL, params.clone()).unwrap();
@@ -407,7 +407,7 @@ mod tests {
 		let local_address1 = Multiaddr::from_str(ADDR_1).unwrap();
 		let local_address2 = Multiaddr::from_str(ADDR_2).unwrap();
 
-		let params = ParamsKZG::new(13);
+		let params = ParamsKZG::new(9);
 
 		let mut node1 =
 			Node::new(local_key1.clone(), local_address1, INTERVAL, params.clone()).unwrap();
@@ -459,7 +459,7 @@ mod tests {
 		let local_address1 = Multiaddr::from_str(ADDR_1).unwrap();
 		let local_address2 = Multiaddr::from_str(ADDR_2).unwrap();
 
-		let params = ParamsKZG::new(13);
+		let params = ParamsKZG::new(9);
 
 		let mut node1 = Node::new(local_key1, local_address1, INTERVAL, params.clone()).unwrap();
 
@@ -534,7 +534,7 @@ mod tests {
 		let local_address1 = Multiaddr::from_str(ADDR_1).unwrap();
 		let local_address2 = Multiaddr::from_str(ADDR_2).unwrap();
 
-		let params = ParamsKZG::new(13);
+		let params = ParamsKZG::new(9);
 
 		let mut node1 = Node::new(local_key1, local_address1, INTERVAL, params.clone()).unwrap();
 		let node2 = Node::new(local_key2, local_address2.clone(), INTERVAL, params).unwrap();
