@@ -6,4 +6,3 @@ pub mod is_zero;
 pub mod mul;
 pub mod select;
 pub mod set;
-pub mod test;

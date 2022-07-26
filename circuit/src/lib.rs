@@ -308,7 +308,7 @@ mod test {
 
 	#[test]
 	fn test_eigen_trust_verify() {
-		let k = 13;
+		let k = 9;
 
 		let mut rng = thread_rng();
 		let pubkey_v = Fr::random(&mut rng);
@@ -351,7 +351,7 @@ mod test {
 
 	#[test]
 	fn test_eigen_trust_production_prove_verify() {
-		let k = 13;
+		let k = 9;
 
 		let mut rng = thread_rng();
 		let pubkey_v = Fr::random(&mut rng);

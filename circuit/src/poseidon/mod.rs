@@ -5,7 +5,7 @@ pub mod sponge;
 use halo2wrong::halo2::{
 	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region, Value},
-	plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector, VirtualCells},
+	plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector, VirtualCells},
 	poly::Rotation,
 };
 use params::RoundParams;
@@ -14,8 +14,8 @@ use std::marker::PhantomData;
 #[derive(Clone, Debug)]
 pub struct PoseidonConfig<const WIDTH: usize> {
 	state: [Column<Advice>; WIDTH],
-	round_constants: [Column<Advice>; WIDTH],
-	mds: [[Column<Advice>; WIDTH]; WIDTH],
+	round_constants: [Column<Fixed>; WIDTH],
+	mds: [[Column<Fixed>; WIDTH]; WIDTH],
 	full_round_selector: Selector,
 	partial_round_selector: Selector,
 }
@@ -58,17 +58,18 @@ where
 		region: &mut Region<'_, F>,
 		round: usize,
 		round_constants: &[F],
-	) -> Result<[AssignedCell<F, F>; WIDTH], Error> {
-		let mut round_cells: [Option<AssignedCell<F, F>>; WIDTH] = [(); WIDTH].map(|_| None);
+	) -> Result<[Value<F>; WIDTH], Error> {
+		let mut round_values: [Value<F>; WIDTH] = [(); WIDTH].map(|_| Value::unknown());
 		for i in 0..WIDTH {
-			round_cells[i] = Some(region.assign_advice_from_constant(
+			round_values[i] = Value::known(round_constants[round * WIDTH + i]);
+			region.assign_fixed(
 				|| "round_constant",
 				config.round_constants[i],
 				round,
-				round_constants[round * WIDTH + i],
-			)?);
+				|| round_values[i],
+			)?;
 		}
-		Ok(round_cells.map(|item| item.unwrap()))
+		Ok(round_values)
 	}
 
 	fn load_mds(
@@ -76,33 +77,27 @@ where
 		region: &mut Region<'_, F>,
 		round: usize,
 		mds: &[[F; WIDTH]; WIDTH],
-	) -> Result<[[AssignedCell<F, F>; WIDTH]; WIDTH], Error> {
-		let mut mds_cells: [[Option<AssignedCell<F, F>>; WIDTH]; WIDTH] =
-			[[(); WIDTH]; WIDTH].map(|vec| vec.map(|_| None));
+	) -> Result<[[Value<F>; WIDTH]; WIDTH], Error> {
+		let mut mds_values: [[Value<F>; WIDTH]; WIDTH] =
+			[[(); WIDTH]; WIDTH].map(|vec| vec.map(|_| Value::unknown()));
 		for i in 0..WIDTH {
 			for j in 0..WIDTH {
-				mds_cells[i][j] = Some(region.assign_advice_from_constant(
-					|| "mds",
-					config.mds[i][j],
-					round,
-					mds[i][j],
-				)?);
+				mds_values[i][j] = Value::known(mds[i][j]);
+				region.assign_fixed(|| "mds", config.mds[i][j], round, || mds_values[i][j])?;
 			}
 		}
-		Ok(mds_cells.map(|vec| vec.map(|item| item.unwrap())))
+		Ok(mds_values)
 	}
 
 	fn apply_round_constants(
 		state_cells: &[AssignedCell<F, F>; WIDTH],
-		round_const_cells: &[AssignedCell<F, F>; WIDTH],
+		round_const_values: &[Value<F>; WIDTH],
 	) -> [Value<F>; WIDTH] {
 		let mut next_state = [Value::unknown(); WIDTH];
 		for i in 0..WIDTH {
 			let state = &state_cells[i];
-			let round_const = &round_const_cells[i];
-			let sum = state
-				.value()
-				.and_then(|&s| round_const.value().map(|&r| s + r));
+			let round_const = &round_const_values[i];
+			let sum = round_const.clone() + state.value();
 			next_state[i] = sum;
 		}
 		next_state
@@ -110,15 +105,15 @@ where
 
 	fn apply_mds(
 		next_state: &[Value<F>; WIDTH],
-		mds_cells: &[[AssignedCell<F, F>; WIDTH]; WIDTH],
+		mds_values: &[[Value<F>; WIDTH]; WIDTH],
 	) -> [Value<F>; WIDTH] {
 		let mut new_state = [Value::known(F::zero()); WIDTH];
 		// Compute mds matrix
 		for i in 0..WIDTH {
 			for j in 0..WIDTH {
-				let mds_ij = &mds_cells[i][j];
-				let m_product = next_state[j].and_then(|s| mds_ij.value().map(|&m| s * m));
-				new_state[i] = new_state[i].and_then(|a| m_product.map(|b| a + b));
+				let mds_ij = &mds_values[i][j];
+				let m_product = next_state[j] * mds_ij;
+				new_state[i] = new_state[i] + m_product;
 			}
 		}
 		new_state
@@ -127,13 +122,13 @@ where
 	fn apply_round_constants_expr(
 		v_cells: &mut VirtualCells<F>,
 		state: &[Column<Advice>; WIDTH],
-		round_constants: &[Column<Advice>; WIDTH],
+		round_constants: &[Column<Fixed>; WIDTH],
 	) -> [Expression<F>; WIDTH] {
 		let mut exprs = [(); WIDTH].map(|_| Expression::Constant(F::zero()));
 		// Add round constants
 		for i in 0..WIDTH {
 			let curr_state = v_cells.query_advice(state[i], Rotation::cur());
-			let round_constant = v_cells.query_advice(round_constants[i], Rotation::cur());
+			let round_constant = v_cells.query_fixed(round_constants[i], Rotation::cur());
 			exprs[i] = curr_state + round_constant;
 		}
 		exprs
@@ -142,13 +137,13 @@ where
 	fn apply_mds_expr(
 		v_cells: &mut VirtualCells<F>,
 		exprs: &[Expression<F>; WIDTH],
-		mds: &[[Column<Advice>; WIDTH]; WIDTH],
+		mds: &[[Column<Fixed>; WIDTH]; WIDTH],
 	) -> [Expression<F>; WIDTH] {
 		let mut new_exprs = [(); WIDTH].map(|_| Expression::Constant(F::zero()));
 		// Mat mul with MDS
 		for i in 0..WIDTH {
 			for j in 0..WIDTH {
-				let mds_ij = v_cells.query_advice(mds[i][j], Rotation::cur());
+				let mds_ij = v_cells.query_fixed(mds[i][j], Rotation::cur());
 				new_exprs[i] = new_exprs[i].clone() + (exprs[j].clone() * mds_ij);
 			}
 		}
@@ -169,17 +164,17 @@ where
 			config.full_round_selector.enable(region, round)?;
 
 			// Assign round constants
-			let round_const_cells =
+			let round_const_values =
 				Self::load_round_constants(config, region, round, round_constants)?;
 			// Assign mds matrix
-			let mds_cells = Self::load_mds(config, region, round, mds)?;
+			let mds_values = Self::load_mds(config, region, round, mds)?;
 
-			let mut next_state = Self::apply_round_constants(&state_cells, &round_const_cells);
+			let mut next_state = Self::apply_round_constants(&state_cells, &round_const_values);
 			for i in 0..WIDTH {
 				next_state[i] = next_state[i].map(|s| P::sbox_f(s));
 			}
 
-			next_state = Self::apply_mds(&next_state, &mds_cells);
+			next_state = Self::apply_mds(&next_state, &mds_values);
 
 			// Assign next state
 			for i in 0..WIDTH {
@@ -237,16 +232,14 @@ where
 {
 	pub fn configure(meta: &mut ConstraintSystem<F>) -> PoseidonConfig<WIDTH> {
 		let state = [(); WIDTH].map(|_| meta.advice_column());
-		let round_constants = [(); WIDTH].map(|_| meta.advice_column());
-		let mds = [[(); WIDTH]; WIDTH].map(|vec| vec.map(|_| meta.advice_column()));
-		let fixed = meta.fixed_column();
+		let round_constants = [(); WIDTH].map(|_| meta.fixed_column());
+		let mds = [[(); WIDTH]; WIDTH].map(|vec| vec.map(|_| meta.fixed_column()));
 		let full_round_selector = meta.selector();
 		let partial_round_selector = meta.selector();
 
 		state.map(|c| meta.enable_equality(c));
 		round_constants.map(|c| meta.enable_equality(c));
 		mds.map(|vec| vec.map(|c| meta.enable_equality(c)));
-		meta.enable_constant(fixed);
 
 		meta.create_gate("poseidon_round", |v_cells| {
 			let mut exprs = Self::apply_round_constants_expr(v_cells, &state, &round_constants);
@@ -473,7 +466,7 @@ mod test {
 
 		let poseidon_tester = PoseidonTester::new(inputs);
 
-		let k = 11;
+		let k = 7;
 		let prover = MockProver::run(k, &poseidon_tester, vec![outputs.to_vec()]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
 	}
@@ -500,7 +493,7 @@ mod test {
 
 		let poseidon_tester = PoseidonTester::new(inputs);
 
-		let k = 11;
+		let k = 7;
 		let rng = &mut rand::thread_rng();
 		let params = generate_params(k);
 		let res =
