@@ -14,8 +14,9 @@ use eigen_trust_circuit::{
 			FieldExt,
 		},
 		halo2::{
+			dev::MockProver,
 			plonk::{ProvingKey, VerifyingKey},
-			poly::kzg::commitment::ParamsKZG, dev::MockProver,
+			poly::kzg::commitment::ParamsKZG,
 		},
 	},
 	poseidon::{native::Poseidon, params::bn254_5x5::Params5x5Bn254},

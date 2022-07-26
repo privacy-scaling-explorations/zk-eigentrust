@@ -2,7 +2,7 @@ use super::is_zero::{IsZeroChip, IsZeroConfig};
 use halo2wrong::halo2::{
 	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region, Value},
-	plonk::{Advice, Column, ConstraintSystem, Error, Selector, Fixed},
+	plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Selector},
 	poly::Rotation,
 };
 
@@ -107,9 +107,12 @@ impl<F: FieldExt, const N: usize> FixedSetChip<F, N> {
 						i + 1,
 						|| next_product,
 					)?;
-					assigned_target =
-						assigned_target
-							.copy_advice(|| "target", &mut region, config.target, i + 1)?;
+					assigned_target = assigned_target.copy_advice(
+						|| "target",
+						&mut region,
+						config.target,
+						i + 1,
+					)?;
 				}
 
 				Ok(assigned_product)
@@ -117,7 +120,8 @@ impl<F: FieldExt, const N: usize> FixedSetChip<F, N> {
 		)?;
 
 		let is_zero_chip = IsZeroChip::new(product);
-		let is_zero = is_zero_chip.synthesize(config.is_zero, layouter.namespace(|| "is_member"))?;
+		let is_zero =
+			is_zero_chip.synthesize(config.is_zero, layouter.namespace(|| "is_member"))?;
 
 		Ok(is_zero)
 	}
