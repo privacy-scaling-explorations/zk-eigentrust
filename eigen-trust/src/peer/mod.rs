@@ -167,7 +167,7 @@ impl Peer {
 	/// Calculate the global trust score at the specified epoch.
 	pub fn global_trust_score_at(&self, at: Epoch) -> f64 {
 		let op_ji = self.get_neighbor_opinions_at(at.previous());
-		op_ji.iter().fold(0., |acc, t| acc + t)
+		op_ji.iter().sum()
 	}
 
 	/// Returns sum of local scores.
