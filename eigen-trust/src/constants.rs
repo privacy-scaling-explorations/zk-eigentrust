@@ -2,8 +2,6 @@
 /// This is also the maximum number of peers that can be connected to the
 /// node.
 pub const MAX_NEIGHBORS: usize = 256;
-/// Minimum score a peer can have.
-pub const MIN_SCORE: f64 = 0.1;
 /// List of predetermened bootstrap peers.
 pub const BOOTSTRAP_PEERS: [&str; NUM_BOOTSTRAP_PEERS] = [
 	"2745hHPZtf8prEv4TUSkLVhZN2tPW6KiYwRfC5yixfU9",

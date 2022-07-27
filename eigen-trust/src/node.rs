@@ -10,9 +10,6 @@ use crate::{
 	},
 	EigenError,
 };
-use eigen_trust_circuit::halo2wrong::{
-	curves::bn256::Bn256, halo2::poly::kzg::commitment::ParamsKZG,
-};
 use futures::StreamExt;
 use libp2p::{
 	core::{either::EitherError, upgrade::Version},
@@ -46,7 +43,7 @@ impl Node {
 		local_key: Keypair,
 		local_address: Multiaddr,
 		interval_secs: u64,
-		params: ParamsKZG<Bn256>,
+		peer: Peer,
 	) -> Result<Self, EigenError> {
 		let noise_keys = NoiseKeypair::<X25519Spec>::new()
 			.into_authentic(&local_key)
@@ -67,7 +64,6 @@ impl Node {
 			.timeout(connection_duration)
 			.boxed();
 
-		let peer = Peer::new(local_key.clone(), params)?;
 		let beh =
 			EigenTrustBehaviour::new(connection_duration, interval_duration, local_key.public());
 
@@ -336,8 +332,19 @@ impl Node {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::{constants::GENESIS_EPOCH, peer::utils::keypair_from_sk_bytes};
-	use eigen_trust_circuit::halo2wrong::halo2::poly::commitment::ParamsProver;
+	use crate::{
+		constants::{GENESIS_EPOCH, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS},
+		peer::utils::keypair_from_sk_bytes,
+	};
+	use eigen_trust_circuit::{
+		halo2wrong::{
+			curves::bn256::Bn256,
+			halo2::poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
+		},
+		poseidon::params::bn254_5x5::Params5x5Bn254,
+		utils::{keygen, random_circuit},
+	};
+	use rand::thread_rng;
 	use std::str::FromStr;
 
 	const INTERVAL: u64 = 20;
@@ -362,10 +369,17 @@ mod tests {
 
 		let params = ParamsKZG::new(9);
 
-		let mut node1 =
-			Node::new(local_key1, local_address1.clone(), INTERVAL, params.clone()).unwrap();
+		let rng = &mut thread_rng();
+		let random_circuit =
+			random_circuit::<Bn256, _, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, Params5x5Bn254>(rng);
+		let pk = keygen(&params, &random_circuit).unwrap();
 
-		let mut node2 = Node::new(local_key2, local_address2.clone(), INTERVAL, params).unwrap();
+		let peer1 = Peer::new(local_key1.clone(), params.clone(), pk.clone()).unwrap();
+		let peer2 = Peer::new(local_key2.clone(), params, pk).unwrap();
+
+		let mut node1 = Node::new(local_key1, local_address1.clone(), INTERVAL, peer1).unwrap();
+
+		let mut node2 = Node::new(local_key2, local_address2.clone(), INTERVAL, peer2).unwrap();
 
 		node1.dial_neighbor(local_address2);
 
@@ -409,11 +423,18 @@ mod tests {
 
 		let params = ParamsKZG::new(9);
 
-		let mut node1 =
-			Node::new(local_key1.clone(), local_address1, INTERVAL, params.clone()).unwrap();
+		let rng = &mut thread_rng();
+		let random_circuit =
+			random_circuit::<Bn256, _, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, Params5x5Bn254>(rng);
+		let pk = keygen(&params, &random_circuit).unwrap();
+
+		let peer1 = Peer::new(local_key1.clone(), params.clone(), pk.clone()).unwrap();
+		let peer2 = Peer::new(local_key2.clone(), params, pk).unwrap();
+
+		let mut node1 = Node::new(local_key1.clone(), local_address1, INTERVAL, peer1).unwrap();
 
 		let mut node2 =
-			Node::new(local_key2.clone(), local_address2.clone(), INTERVAL, params).unwrap();
+			Node::new(local_key2.clone(), local_address2.clone(), INTERVAL, peer2).unwrap();
 
 		node1.dial_neighbor(local_address2);
 
@@ -452,19 +473,28 @@ mod tests {
 
 		let local_key1 = keypair_from_sk_bytes(sk_bytes1).unwrap();
 		let peer_id1 = local_key1.public().to_peer_id();
+		let pubkey1 = Pubkey::from_keypair(&local_key1).unwrap();
 
 		let local_key2 = keypair_from_sk_bytes(sk_bytes2).unwrap();
 		let peer_id2 = local_key2.public().to_peer_id();
+		let pubkey2 = Pubkey::from_keypair(&local_key2).unwrap();
 
 		let local_address1 = Multiaddr::from_str(ADDR_1).unwrap();
 		let local_address2 = Multiaddr::from_str(ADDR_2).unwrap();
 
 		let params = ParamsKZG::new(9);
 
-		let mut node1 = Node::new(local_key1, local_address1, INTERVAL, params.clone()).unwrap();
+		let rng = &mut thread_rng();
+		let random_circuit =
+			random_circuit::<Bn256, _, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, Params5x5Bn254>(rng);
+		let pk = keygen(&params, &random_circuit).unwrap();
 
-		let mut node2 =
-			Node::new(local_key2, local_address2.clone(), INTERVAL, params.clone()).unwrap();
+		let peer1 = Peer::new(local_key1.clone(), params.clone(), pk.clone()).unwrap();
+		let peer2 = Peer::new(local_key2.clone(), params, pk).unwrap();
+
+		let mut node1 = Node::new(local_key1, local_address1, INTERVAL, peer1).unwrap();
+
+		let mut node2 = Node::new(local_key2, local_address2.clone(), INTERVAL, peer2).unwrap();
 
 		node1.dial_neighbor(local_address2);
 
@@ -484,6 +514,9 @@ mod tests {
 
 		let peer1 = node1.get_peer_mut();
 		let peer2 = node2.get_peer_mut();
+
+		peer1.identify_neighbor(peer_id2, pubkey2);
+		peer2.identify_neighbor(peer_id1, pubkey1);
 
 		let next_epoch = Epoch(GENESIS_EPOCH);
 
@@ -517,10 +550,10 @@ mod tests {
 		let peer2_neighbor_opinion = peer2.get_neighbor_opinion(&(peer_id1, next_epoch));
 
 		assert_eq!(peer1_neighbor_opinion.epoch, next_epoch);
-		assert_eq!(peer1_neighbor_opinion.op, 0.1);
+		assert_eq!(peer1_neighbor_opinion.op, 0.5);
 
 		assert_eq!(peer2_neighbor_opinion.epoch, next_epoch);
-		assert_eq!(peer2_neighbor_opinion.op, 0.1);
+		assert_eq!(peer2_neighbor_opinion.op, 0.5);
 	}
 
 	#[tokio::test]
@@ -536,8 +569,16 @@ mod tests {
 
 		let params = ParamsKZG::new(9);
 
-		let mut node1 = Node::new(local_key1, local_address1, INTERVAL, params.clone()).unwrap();
-		let node2 = Node::new(local_key2, local_address2.clone(), INTERVAL, params).unwrap();
+		let rng = &mut thread_rng();
+		let random_circuit =
+			random_circuit::<Bn256, _, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, Params5x5Bn254>(rng);
+		let pk = keygen(&params, &random_circuit).unwrap();
+
+		let peer1 = Peer::new(local_key1.clone(), params.clone(), pk.clone()).unwrap();
+		let peer2 = Peer::new(local_key2.clone(), params, pk).unwrap();
+
+		let mut node1 = Node::new(local_key1, local_address1, INTERVAL, peer1).unwrap();
+		let node2 = Node::new(local_key2, local_address2.clone(), INTERVAL, peer2).unwrap();
 
 		node1.dial_neighbor(local_address2);
 

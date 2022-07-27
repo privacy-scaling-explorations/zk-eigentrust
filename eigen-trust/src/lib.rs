@@ -15,50 +15,6 @@
 //! one can cheat the system and obtain a higher reputation. It is also
 //! resistant to malicious collectives.
 //!
-//! ## Usage:
-//! ```rust
-//! use eigen_trust::{
-//! 	eigen_trust_circuit::utils::read_params, EigenError, Keypair, LevelFilter, Multiaddr, Node,
-//! 	PeerId,
-//! };
-//! use std::str::FromStr;
-//!
-//! const BOOTSTRAP_PEERS: [(&str, &str); 2] = [
-//! 	(
-//! 		"/ip4/127.0.0.1/tcp/58584",
-//! 		"12D3KooWLyTCx9j2FMcsHe81RMoDfhXbdyyFgNGQMdcrnhShTvQh",
-//! 	),
-//! 	(
-//! 		"/ip4/127.0.0.1/tcp/58601",
-//! 		"12D3KooWKBKXsLwbmVBySEmbKayJzfWp3tPCKrnDCsmNy9prwjvy",
-//! 	),
-//! ];
-//!
-//! const DEFAULT_ADDRESS: &str = "/ip4/0.0.0.0/tcp/0";
-//! const INTERVAL: u64 = 10;
-//!
-//! #[tokio::main]
-//! async fn main() -> Result<(), EigenError> {
-//! 	let local_key = Keypair::generate_ed25519();
-//! 	let local_address =
-//! 		Multiaddr::from_str(DEFAULT_ADDRESS).map_err(|_| EigenError::InvalidAddress)?;
-//!
-//! 	let mut bootstrap_nodes = Vec::new();
-//! 	for info in BOOTSTRAP_PEERS.iter() {
-//! 		let peer_addr = Multiaddr::from_str(info.0).map_err(|_| EigenError::InvalidAddress)?;
-//! 		let peer_id = PeerId::from_str(info.1).map_err(|_| EigenError::InvalidPeerId)?;
-//!
-//! 		bootstrap_nodes.push((peer_id, peer_addr));
-//! 	}
-//!
-//! 	let params = read_params("../data/params-18.bin");
-//! 	let node = Node::new(local_key, local_address, bootstrap_nodes, INTERVAL, params)?;
-//! 	node.main_loop(Some(1)).await?;
-//!
-//! 	Ok(())
-//! }
-//! ```
-//!
 //! ## Implementation
 //! The library is implemented according to the original [Eigen Trust paper](http://ilpubs.stanford.edu:8090/562/1/2002-56.pdf).
 //! It is developed under the Ethereum Foundation grant.

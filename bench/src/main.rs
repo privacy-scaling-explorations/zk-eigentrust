@@ -2,9 +2,16 @@ use env_logger::Builder;
 use futures::future::join_all;
 use std::str::FromStr;
 
-use eigen_trust::{keypair_from_sk_bytes, LevelFilter, Multiaddr, Node};
-use eigen_trust_circuit::utils::read_params;
-use rand::Rng;
+use eigen_trust::{
+	constants::{MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS},
+	keypair_from_sk_bytes, LevelFilter, Multiaddr, Node, Peer,
+};
+use eigen_trust_circuit::{
+	halo2wrong::curves::bn256::Bn256,
+	poseidon::params::bn254_5x5::Params5x5Bn254,
+	utils::{keygen, random_circuit, read_params},
+};
+use rand::{thread_rng, Rng};
 use std::fs;
 
 const INTERVAL: u64 = 70;
@@ -44,6 +51,10 @@ async fn main() {
 	}
 
 	let params = read_params("./data/params-18.bin");
+	let rng = &mut thread_rng();
+	let random_circuit =
+		random_circuit::<Bn256, _, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, Params5x5Bn254>(rng);
+	let pk = keygen(&params, &random_circuit).unwrap();
 
 	let mut tasks = Vec::new();
 	for i in 0..(NUM_CONNECTIONS + 1) {
@@ -51,9 +62,11 @@ async fn main() {
 		let local_address = local_addresses[i].clone();
 		let bootstrap_nodes = bootstrap_nodes.clone();
 		let params = params.clone();
+		let pk = pk.clone();
 
 		let join_handle = tokio::spawn(async move {
-			let mut node = Node::new(local_key, local_address, INTERVAL, params).unwrap();
+			let peer = Peer::new(local_key.clone(), params, pk).unwrap();
+			let mut node = Node::new(local_key, local_address, INTERVAL, peer).unwrap();
 
 			let peer = node.get_peer_mut();
 			for (peer_id, ..) in bootstrap_nodes {

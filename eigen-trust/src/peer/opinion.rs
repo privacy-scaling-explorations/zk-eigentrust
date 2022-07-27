@@ -14,7 +14,6 @@ use eigen_trust_circuit::{
 			FieldExt,
 		},
 		halo2::{
-			dev::MockProver,
 			plonk::{ProvingKey, VerifyingKey},
 			poly::kzg::commitment::ParamsKZG,
 		},
@@ -62,7 +61,7 @@ impl Opinion {
 		let sk = extract_sk_limbs(kp)?;
 		let input = [Bn256Scalar::zero(), sk[0], sk[1], sk[2], sk[3]];
 		let pos = Posedion5x5::new(input);
-		let pk_i = pos.permute()[0];
+		let pk_p = pos.permute()[0];
 
 		let pk_v = pubkey_v.value();
 
@@ -81,7 +80,7 @@ impl Opinion {
 
 		let t_i_scaled = op_ji_scaled.iter().fold(0, |acc, op| acc + op);
 
-		let is_bootstrap = bootstrap_pubkeys.contains(&pk_i);
+		let is_bootstrap = bootstrap_pubkeys.contains(&pk_p);
 		let is_genesis = k == genesis_epoch;
 		let t_i_final = if is_bootstrap && is_genesis {
 			bootstrap_score_scaled
@@ -100,7 +99,7 @@ impl Opinion {
 		let bootstrap_score_f = Bn256Scalar::from_u128(bootstrap_score_scaled);
 		let genesis_epoch_f = Bn256Scalar::from_u128(genesis_epoch.0.into());
 
-		let m_hash_input = [Bn256Scalar::zero(), epoch_f, op_v_f, pk_v, pk_i];
+		let m_hash_input = [Bn256Scalar::zero(), epoch_f, op_v_f, pk_v, pk_p];
 		let pos = Posedion5x5::new(m_hash_input);
 		let m_hash = pos.permute()[0];
 
@@ -165,8 +164,9 @@ impl Opinion {
 		let pos = Posedion5x5::new(input);
 		let pk_v = pos.permute()[0];
 
+		let op_v_scaled = (self.op * SCALE * SCALE).round() as u128;
 		let epoch_f = Bn256Scalar::from_u128(self.epoch.0.into());
-		let op_v_f = Bn256Scalar::from_u128((self.op * SCALE * SCALE).round() as u128);
+		let op_v_f = Bn256Scalar::from_u128(op_v_scaled);
 
 		let m_hash_input = [Bn256Scalar::zero(), epoch_f, op_v_f, pk_v, pk_p];
 		let pos = Posedion5x5::new(m_hash_input);
@@ -179,7 +179,6 @@ impl Opinion {
 			EigenError::VerificationError
 		})?;
 
-		// Return true since we are having issues
 		Ok(proof_res)
 	}
 }
