@@ -34,8 +34,7 @@
 	clippy::panic,
 	clippy::unnecessary_cast,
 	clippy::cast_lossless,
-	clippy::cast_possible_wrap,
-	clippy::cast_precision_loss
+	clippy::cast_possible_wrap
 )]
 #![warn(trivial_casts)]
 #![forbid(unsafe_code)]

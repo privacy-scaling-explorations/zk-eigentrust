@@ -97,7 +97,7 @@ where
 		for i in 0..WIDTH {
 			let state = &state_cells[i];
 			let round_const = &round_const_values[i];
-			let sum = round_const.clone() + state.value();
+			let sum = *round_const + state.value();
 			next_state[i] = sum;
 		}
 		next_state

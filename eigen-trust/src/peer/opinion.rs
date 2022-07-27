@@ -78,7 +78,7 @@ impl Opinion {
 		let op_ji_scaled = op_ji.map(|op| (op * SCALE).round() as u128);
 		let c_v_scaled = (c_v * SCALE).round() as u128;
 
-		let t_i_scaled = op_ji_scaled.iter().fold(0, |acc, op| acc + op);
+		let t_i_scaled = op_ji_scaled.iter().sum();
 
 		let is_bootstrap = bootstrap_pubkeys.contains(&pk_p);
 		let is_genesis = k == genesis_epoch;
@@ -92,7 +92,7 @@ impl Opinion {
 		let op_v_unscaled = (op_v_scaled as f64) / (SCALE * SCALE);
 
 		// Converting into field
-		let op_ji_f = op_ji_scaled.map(|op| Bn256Scalar::from_u128(op));
+		let op_ji_f = op_ji_scaled.map(Bn256Scalar::from_u128);
 		let c_v_f = Bn256Scalar::from_u128(c_v_scaled);
 		let op_v_f = Bn256Scalar::from_u128(op_v_scaled);
 		let epoch_f = Bn256Scalar::from_u128(k.0.into());
