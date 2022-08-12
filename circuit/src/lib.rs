@@ -4,8 +4,8 @@
 #![feature(array_zip)]
 #![allow(clippy::needless_range_loop)]
 
-pub mod gadgets;
 pub mod eddsa;
+pub mod gadgets;
 pub mod poseidon;
 pub mod utils;
 
