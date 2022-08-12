@@ -1,6 +1,3 @@
-// BabyJubJub elliptic curve implementation in Rust.
-// For LICENSE check https://github.com/arnaucube/babyjubjub-rs
-
 use halo2wrong::curves::{
 	bn256::Fr,
 	group::ff::{Field, PrimeField},
@@ -53,7 +50,6 @@ impl PointProjective {
 		Point { x, y }
 	}
 
-	#[allow(clippy::many_single_char_names)]
 	pub fn add(&self, q: &PointProjective) -> PointProjective {
 		// add-2008-bbjlp https://hyperelliptic.org/EFD/g1p/auto-twisted-projective.html#doubling-dbl-2008-bbjlp
 
