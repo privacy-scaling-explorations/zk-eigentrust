@@ -50,12 +50,43 @@ impl PointProjective {
 		Point { x, y }
 	}
 
-	pub fn add(&self, q: &PointProjective) -> PointProjective {
-		// add-2008-bbjlp https://hyperelliptic.org/EFD/g1p/auto-twisted-projective.html#doubling-dbl-2008-bbjlp
+	pub fn double(&self) -> Self {
+		// dbl-2008-bbjlp https://hyperelliptic.org/EFD/g1p/auto-twisted-projective.html#doubling-dbl-2008-bbjlp
+
+		// B = (X1+Y1)^2
+		let b = self.x.add(&self.y).square();
+		// C = X1^2
+		let c = self.x.square();
+		// D = Y1^2
+		let d = self.y.square();
+		// E = a*C
+		let e = A.mul(&c);
+		// F = E+D
+		let f = e.add(&d);
+		// H = Z1^2
+		let h = self.z.square();
+		// J = F-2*H
+		let j = f.sub(&h.double());
+		// X3 = (B-C-D)*J
+		let x3 = b.sub(&c).sub(&d).mul(&j);
+		// Y3 = F*(E-D)
+		let y3 = f.mul(&e.sub(&d));
+		// Z3 = F*J
+		let z3 = f.mul(&j);
+
+		PointProjective {
+			x: x3,
+			y: y3,
+			z: z3,
+		}
+	}
+
+	pub fn add(&self, q: &Self) -> Self {
+		// add-2008-bbjlp https://hyperelliptic.org/EFD/g1p/auto-twisted-projective.html#addition-add-2008-bbjlp
 
 		// A = Z1*Z2
 		let a = self.z.mul(&q.z);
-		// B = A2
+		// B = A^2
 		let b = a.square();
 		// C = X1*X2
 		let c = self.x.mul(&q.x);
@@ -111,7 +142,7 @@ impl Point {
 			if test_bit(&b, i) {
 				r = r.add(&exp);
 			}
-			exp = exp.add(&exp);
+			exp = exp.double();
 		}
 		r.affine()
 	}
