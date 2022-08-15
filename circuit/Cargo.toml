@@ -12,3 +12,7 @@ rand = "0.8"
 group = "0.11"
 hex = { version = "0.4", default-features = false, features = ["alloc"] }
 halo2wrong = { git = "https://github.com/privacy-scaling-explorations/halo2wrong.git", branch = "master" }
+halo2curves = { git = "https://github.com/lazovicff/halo2curves", branch = "main" }
+blake = "2.0.2"
+num-bigint = {version = "0.2.2", features = ["rand"]}
+num-traits = "0.2.8"
