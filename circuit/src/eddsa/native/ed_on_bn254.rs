@@ -1,13 +1,19 @@
-use halo2wrong::curves::{
-	bn256::Fr,
-	group::ff::{Field, PrimeField},
-};
+use halo2wrong::curves::{bn256::Fr, group::ff::Field};
 
 // D = 168696
 pub const D: Fr = Fr::from_raw([0x292F8, 0x00, 0x00, 0x00]);
 
 // A = 168700
 pub const A: Fr = Fr::from_raw([0x292FC, 0x00, 0x00, 0x00]);
+
+// SUBORDER =
+// 2736030358979909402780800718157159386076813972158567259200215660948447373041
+pub const SUBORDER: Fr = Fr::from_raw([
+	0x677297DC392126F1,
+	0xAB3EEDB83920EE0A,
+	0x370A08B6D0302B0B,
+	0x60C89CE5C263405,
+]);
 
 // 5299619240641551281634865583518297030282874472190772894086521144482721001553
 pub const B8_X: Fr = Fr::from_raw([
@@ -176,6 +182,7 @@ pub fn test_bit(b: &[u8], i: usize) -> bool {
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use halo2wrong::curves::group::ff::PrimeField;
 
 	#[test]
 	fn test_add_same_point() {

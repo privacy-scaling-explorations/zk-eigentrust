@@ -1,11 +1,11 @@
 pub mod ed_on_bn254;
 
-use std::str::FromStr;
-
 use crate::poseidon::{native::Poseidon, params::bn254_5x5::Params5x5Bn254};
-use ed_on_bn254::{Point, B8};
-use halo2curves::FieldExt;
-use halo2wrong::{curves::bn256::Fr, halo2::arithmetic::Field};
+use ed_on_bn254::{Point, B8, SUBORDER};
+use halo2wrong::{
+	curves::{bn256::Fr, FieldExt},
+	halo2::arithmetic::Field,
+};
 use num_bigint::BigUint;
 use rand::RngCore;
 
@@ -20,7 +20,7 @@ fn blh(b: &[u8]) -> Vec<u8> {
 pub struct SecretKey(BigUint, Fr);
 
 impl SecretKey {
-	fn random<R: RngCore + Clone>(rng: &mut R) -> Self {
+	pub fn random<R: RngCore + Clone>(rng: &mut R) -> Self {
 		let a = Fr::random(rng.clone());
 		let hash: Vec<u8> = blh(&a.to_bytes());
 		let sk0 = BigUint::from_bytes_le(&hash[..32]);
@@ -31,7 +31,7 @@ impl SecretKey {
 		SecretKey(sk0, sk1)
 	}
 
-	fn public_key(&self) -> PublicKey {
+	pub fn public_key(&self) -> PublicKey {
 		let a = B8.mul_scalar(&self.0.to_bytes_le());
 		PublicKey(a)
 	}
@@ -56,10 +56,7 @@ pub fn sign(sk: &SecretKey, pk: &PublicKey, m: Fr) -> Signature {
 	let m_hash_bn = BigUint::from_bytes_le(&m_hash.to_bytes());
 	// S = r + H(R || A || M) * sk0   (mod n)
 	let s = r_bn + &sk.0 * m_hash_bn;
-	let s = s % BigUint::from_str(
-		"2736030358979909402780800718157159386076813972158567259200215660948447373041",
-	)
-	.unwrap();
+	let s = s % BigUint::from_bytes_le(&SUBORDER.to_bytes());
 
 	Signature { big_r, s }
 }
@@ -78,7 +75,7 @@ pub fn verify(sig: &Signature, pk: &PublicKey, m: Fr) -> bool {
 #[cfg(test)]
 mod test {
 	use super::*;
-	use halo2curves::group::ff::PrimeField;
+	use halo2wrong::curves::group::ff::PrimeField;
 	use rand::thread_rng;
 
 	#[test]
