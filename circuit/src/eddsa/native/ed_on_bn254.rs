@@ -148,16 +148,16 @@ impl Point {
 		}
 	}
 
-	pub fn mul_scalar(&self, f: &Fr) -> Point {
+	pub fn mul_scalar(&self, b: &[u8]) -> Point {
 		let mut r: PointProjective = PointProjective {
 			x: Fr::zero(),
 			y: Fr::one(),
 			z: Fr::one(),
 		};
+		println!("{:?}", b.len());
 		let mut exp: PointProjective = self.projective();
-		let b = f.to_bytes();
-		for i in 0..Fr::NUM_BITS {
-			if test_bit(&b, i) {
+		for i in 0..b.len() * 8 {
+			if test_bit(b, i) {
 				r = r.add(&exp);
 			}
 			exp = exp.double();
@@ -170,8 +170,8 @@ impl Point {
 	}
 }
 
-pub fn test_bit(b: &[u8], i: u32) -> bool {
-	b[(i / 8) as usize] & (1 << (i % 8)) != 0
+pub fn test_bit(b: &[u8], i: usize) -> bool {
+	b[i / 8] & (1 << (i % 8)) != 0
 }
 
 #[cfg(test)]
@@ -276,7 +276,7 @@ mod tests {
 			)
 			.unwrap(),
 		};
-		let res_m = p.mul_scalar(&Fr::from(3));
+		let res_m = p.mul_scalar(&Fr::from(3).to_bytes());
 		let res_a = p.projective().add(&p.projective());
 		let res_a = res_a.add(&p.projective()).affine();
 		assert_eq!(res_m.x, res_a.x);
@@ -300,7 +300,7 @@ mod tests {
 			"14035240266687799601661095864649209771790948434046947201833777492504781204499",
 		)
 		.unwrap();
-		let res2 = p.mul_scalar(&n);
+		let res2 = p.mul_scalar(&n.to_bytes());
 		assert_eq!(
 			res2.x,
 			Fr::from_str_vartime(
