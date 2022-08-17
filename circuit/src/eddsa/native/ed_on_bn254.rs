@@ -154,7 +154,6 @@ impl Point {
 			y: Fr::one(),
 			z: Fr::one(),
 		};
-		println!("{:?}", b.len());
 		let mut exp: PointProjective = self.projective();
 		for i in 0..b.len() * 8 {
 			if test_bit(b, i) {
