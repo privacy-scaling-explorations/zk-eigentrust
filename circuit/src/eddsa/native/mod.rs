@@ -17,6 +17,12 @@ fn blh(b: &[u8]) -> Vec<u8> {
 	hash.to_vec()
 }
 
+fn to_wide(b: &[u8]) -> [u8; 64] {
+	let mut bytes = [0u8; 64];
+	bytes[..b.len()].copy_from_slice(b);
+	bytes
+}
+
 pub struct SecretKey(BigUint, Fr);
 
 impl SecretKey {
@@ -25,13 +31,12 @@ impl SecretKey {
 		let hash: Vec<u8> = blh(&a.to_bytes());
 		let sk0 = BigUint::from_bytes_le(&hash[..32]);
 
-		let mut bytes = [0u8; 64];
-		bytes[..32].copy_from_slice(&hash[32..]);
-		let sk1 = Fr::from_bytes_wide(&bytes);
+		let bytes_wide = to_wide(&hash[32..]);
+		let sk1 = Fr::from_bytes_wide(&bytes_wide);
 		SecretKey(sk0, sk1)
 	}
 
-	pub fn public_key(&self) -> PublicKey {
+	pub fn public(&self) -> PublicKey {
 		let a = B8.mul_scalar(&self.0.to_bytes_le());
 		PublicKey(a)
 	}
@@ -39,9 +44,10 @@ impl SecretKey {
 
 pub struct PublicKey(Point);
 
+#[derive(Clone)]
 pub struct Signature {
 	big_r: Point,
-	s: BigUint,
+	s: Fr,
 }
 
 pub fn sign(sk: &SecretKey, pk: &PublicKey, m: Fr) -> Signature {
@@ -57,13 +63,14 @@ pub fn sign(sk: &SecretKey, pk: &PublicKey, m: Fr) -> Signature {
 	// S = r + H(R || A || M) * sk0   (mod n)
 	let s = r_bn + &sk.0 * m_hash_bn;
 	let s = s % BigUint::from_bytes_le(&SUBORDER.to_bytes());
+	let s = Fr::from_bytes_wide(&to_wide(&s.to_bytes_le()));
 
 	Signature { big_r, s }
 }
 
 pub fn verify(sig: &Signature, pk: &PublicKey, m: Fr) -> bool {
 	// Cl = s * G
-	let cl = B8.mul_scalar(&sig.s.to_bytes_le());
+	let cl = B8.mul_scalar(&sig.s.to_bytes());
 	let m_hash_input = [sig.big_r.x, sig.big_r.y, pk.0.x, pk.0.y, m];
 	let m_hash = Hasher::new(m_hash_input).permute()[0];
 	let pk_h = pk.0.mul_scalar(&m_hash.to_bytes());
@@ -83,7 +90,7 @@ mod test {
 		let mut rng = thread_rng();
 
 		let sk = SecretKey::random(&mut rng);
-		let pk = sk.public_key();
+		let pk = sk.public();
 
 		let m = Fr::from_str_vartime("123456789012345678901234567890").unwrap();
 		let sig = sign(&sk, &pk, m);
