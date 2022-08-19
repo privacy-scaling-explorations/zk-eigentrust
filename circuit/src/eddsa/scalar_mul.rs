@@ -1,10 +1,10 @@
-use super::native::ed_on_bn254::{A, D};
+use super::native::ops::{add_exp, add_value, double_exp, double_value};
 use crate::gadgets::bits2num::{Bits2NumChip, Bits2NumConfig};
 use halo2wrong::{
 	curves::bn256::Fr,
 	halo2::{
-		circuit::{AssignedCell, Layouter, Region, Value},
-		plonk::{Advice, Assigned, Column, ConstraintSystem, Error, Expression, Selector},
+		circuit::{AssignedCell, Layouter, Region},
+		plonk::{Advice, Column, ConstraintSystem, Error, Selector},
 		poly::Rotation,
 	},
 };
@@ -61,9 +61,6 @@ impl ScalarMulChip {
 		let s = meta.selector();
 
 		meta.create_gate("scalar_mul", |v_cells| {
-			let const_d = Expression::Constant(D);
-			let const_a = Expression::Constant(A);
-
 			let s_exp = v_cells.query_selector(s);
 			let bit_exp = v_cells.query_advice(bits, Rotation::cur());
 
@@ -83,54 +80,16 @@ impl ScalarMulChip {
 			let e_y_next_exp = v_cells.query_advice(e_y, Rotation::next());
 			let e_z_next_exp = v_cells.query_advice(e_z, Rotation::next());
 
-			// ADD operation between points `r` and `e`
-			// add-2008-bbjlp https://hyperelliptic.org/EFD/g1p/auto-twisted-projective.html#addition-add-2008-bbjlp
-			// A = Z1*Z2
-			let r_a = r_z_exp.clone() * e_z_exp.clone();
-			// B = A^2
-			let r_b = r_a.clone().square();
-			// C = X1*X2
-			let r_c = r_x_exp.clone() * e_x_exp.clone();
-			// D = Y1*Y2
-			let r_d = r_y_exp.clone() * e_y_exp.clone();
-			// E = d*C*D
-			let r_e = const_d * r_c.clone() * r_d.clone();
-			// F = B-E
-			let r_f = r_b.clone() - r_e.clone();
-			// G = B+E
-			let r_g = r_b + r_e;
-			// X3 = A*F*((X1+Y1)*(X2+Y2)-C-D)
-			let r_x3 = r_a.clone()
-				* r_f.clone() * ((r_x_exp.clone() + r_y_exp.clone())
-				* (e_x_exp.clone() + e_y_exp.clone())
-				- r_c.clone() - r_d.clone());
-			// Y3 = A*G*(D-a*C)
-			let r_y3 = r_a * r_g.clone() * (r_d - const_a.clone() * r_c);
-			// Z3 = F*G
-			let r_z3 = r_f * r_g;
+			let (r_x3, r_y3, r_z3) = add_exp(
+				r_x_exp.clone(),
+				r_y_exp.clone(),
+				r_z_exp.clone(),
+				e_x_exp.clone(),
+				e_y_exp.clone(),
+				e_z_exp.clone(),
+			);
 
-			// DOUBLE operation of point `e`
-			// dbl-2008-bbjlp https://hyperelliptic.org/EFD/g1p/auto-twisted-projective.html#doubling-dbl-2008-bbjlp
-			// B = (X1+Y1)^2
-			let e_b = (e_x_exp.clone() + e_y_exp.clone()).square();
-			// C = X1^2
-			let e_c = e_x_exp.square();
-			// D = Y1^2
-			let e_d = e_y_exp.square();
-			// E = a*C
-			let e_e = const_a * e_c.clone();
-			// F = E+D
-			let e_f = e_e.clone() + e_d.clone();
-			// H = Z1^2
-			let e_h = e_z_exp.square();
-			// J = F-2*H
-			let e_j = e_f.clone() - (e_h.clone() + e_h);
-			// X3 = (B-C-D)*J
-			let e_x3 = (e_b - e_c - e_d.clone()) * e_j.clone();
-			// Y3 = F*(E-D)
-			let e_y3 = e_f.clone() * (e_e - e_d);
-			// Z3 = F*J
-			let e_z3 = e_f * e_j;
+			let (e_x3, e_y3, e_z3) = double_exp(e_x_exp, e_y_exp, e_z_exp);
 
 			// Select the next value based on a `bit` -- see `select` gadget.
 			let selected_r_x =
@@ -170,7 +129,14 @@ impl ScalarMulChip {
 		&self,
 		config: ScalarMulConfig,
 		mut layouter: impl Layouter<Fr>,
-	) -> Result<(), Error> {
+	) -> Result<
+		(
+			AssignedCell<Fr, Fr>,
+			AssignedCell<Fr, Fr>,
+			AssignedCell<Fr, Fr>,
+		),
+		Error,
+	> {
 		let bits2num = Bits2NumChip::new(self.value.clone(), self.value_bits);
 		let bits = bits2num.synthesize(config.bits2num, layouter.namespace(|| "bits2num"))?;
 
@@ -181,8 +147,6 @@ impl ScalarMulChip {
 					bits[i].copy_advice(|| "bit", &mut region, config.bits, i)?;
 				}
 
-				let const_a = Value::known(Assigned::from(A));
-				let const_d = Value::known(Assigned::from(D));
 				let mut r_x =
 					region.assign_advice_from_constant(|| "r_x_0", config.r_x, 0, Fr::zero())?;
 				let mut r_y =
@@ -198,51 +162,18 @@ impl ScalarMulChip {
 					config.selector.enable(&mut region, i)?;
 
 					// Add `r` and `e`
-					// A = Z1*Z2
-					let r_a = r_z.value_field() * e_z.value_field();
-					// B = A^2
-					let r_b = r_a.square();
-					// C = X1*X2
-					let r_c = r_x.value_field() * e_x.value_field();
-					// D = Y1*Y2
-					let r_d = r_y.value_field() * e_y.value_field();
-					// E = d*C*D
-					let r_e = const_d * r_c * r_d;
-					// F = B-E
-					let r_f = r_b - r_e;
-					// G = B+E
-					let r_g = r_b + r_e;
-					// X3 = A*F*((X1+Y1)*(X2+Y2)-C-D)
-					let r_x3 = r_a
-						* r_f * ((r_x.value_field() + r_y.value_field())
-						* (e_x.value_field() + e_y.value_field())
-						- r_c - r_d);
-					// Y3 = A*G*(D-a*C)
-					let r_y3 = r_a * r_g * (r_d - const_a * r_c);
-					// Z3 = F*G
-					let r_z3 = r_f * r_g;
+					let (r_x3, r_y3, r_z3) = add_value(
+						r_x.value_field(),
+						r_y.value_field(),
+						r_z.value_field(),
+						e_x.value_field(),
+						e_y.value_field(),
+						e_z.value_field(),
+					);
 
 					// Double `e`
-					// B = (X1+Y1)^2
-					let e_b = (e_x.value_field() + e_y.value_field()).square();
-					// C = X1^2
-					let e_c = e_x.value_field().square();
-					// D = Y1^2
-					let e_d = e_y.value_field().square();
-					// E = a*C
-					let e_e = const_a.to_field() * e_c;
-					// F = E+D
-					let e_f = e_e + e_d;
-					// H = Z1^2
-					let e_h = e_z.value_field().square();
-					// J = F-2*H
-					let e_j = e_f - (e_h + e_h);
-					// X3 = (B-C-D)*J
-					let e_x3 = (e_b - e_c - e_d) * e_j;
-					// Y3 = F*(E-D)
-					let e_y3 = e_f * (e_e - e_d);
-					// Z3 = F*J
-					let e_z3 = e_f * e_j;
+					let (e_x3, e_y3, e_z3) =
+						double_value(e_x.value_field(), e_y.value_field(), e_z.value_field());
 
 					let (r_x_next, r_y_next, r_z_next) = if self.value_bits[i] == Fr::one() {
 						(r_x3, r_y3, r_z3)
@@ -274,7 +205,7 @@ impl ScalarMulChip {
 					e_z = region.assign_advice(|| "e_z", config.e_z, i + 1, || e_z3.evaluate())?;
 				}
 
-				Ok(())
+				Ok((r_x, r_y, r_z))
 			},
 		)
 	}

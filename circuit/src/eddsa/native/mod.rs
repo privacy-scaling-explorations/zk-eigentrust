@@ -1,4 +1,5 @@
 pub mod ed_on_bn254;
+pub mod ops;
 
 use crate::poseidon::{native::Poseidon, params::bn254_5x5::Params5x5Bn254};
 use ed_on_bn254::{Point, B8, SUBORDER};

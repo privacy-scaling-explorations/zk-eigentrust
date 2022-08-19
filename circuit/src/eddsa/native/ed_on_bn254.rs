@@ -1,3 +1,4 @@
+use super::ops::{add, double};
 use halo2wrong::curves::{bn256::Fr, group::ff::Field};
 
 // D = 168696
@@ -76,27 +77,7 @@ impl PointProjective {
 
 	pub fn double(&self) -> Self {
 		// dbl-2008-bbjlp https://hyperelliptic.org/EFD/g1p/auto-twisted-projective.html#doubling-dbl-2008-bbjlp
-
-		// B = (X1+Y1)^2
-		let b = self.x.add(&self.y).square();
-		// C = X1^2
-		let c = self.x.square();
-		// D = Y1^2
-		let d = self.y.square();
-		// E = a*C
-		let e = A.mul(&c);
-		// F = E+D
-		let f = e.add(&d);
-		// H = Z1^2
-		let h = self.z.square();
-		// J = F-2*H
-		let j = f.sub(&h.double());
-		// X3 = (B-C-D)*J
-		let x3 = b.sub(&c).sub(&d).mul(&j);
-		// Y3 = F*(E-D)
-		let y3 = f.mul(&e.sub(&d));
-		// Z3 = F*J
-		let z3 = f.mul(&j);
+		let (x3, y3, z3) = double(self.x, self.y, self.z);
 
 		PointProjective {
 			x: x3,
@@ -107,29 +88,7 @@ impl PointProjective {
 
 	pub fn add(&self, q: &Self) -> Self {
 		// add-2008-bbjlp https://hyperelliptic.org/EFD/g1p/auto-twisted-projective.html#addition-add-2008-bbjlp
-
-		// A = Z1*Z2
-		let a = self.z.mul(&q.z);
-		// B = A^2
-		let b = a.square();
-		// C = X1*X2
-		let c = self.x.mul(&q.x);
-		// D = Y1*Y2
-		let d = self.y.mul(&q.y);
-		// E = d*C*D
-		let e = D.mul(&c).mul(&d);
-		// F = B-E
-		let f = b.sub(&e);
-		// G = B+E
-		let g = b.add(&e);
-		// X3 = A*F*((X1+Y1)*(X2+Y2)-C-D)
-		let x3 = a
-			.mul(&f)
-			.mul(&self.x.add(&self.y).mul(&q.x.add(&q.y)).sub(&c).sub(&d));
-		// Y3 = A*G*(D-a*C)
-		let y3 = a.mul(&g).mul(&d.sub(&A.mul(&c)));
-		// Z3 = F*G
-		let z3 = f.mul(&g);
+		let (x3, y3, z3) = add(self.x, self.y, self.z, q.x, q.y, q.z);
 
 		PointProjective {
 			x: x3,
