@@ -9,6 +9,7 @@ use halo2wrong::{
 	},
 };
 
+#[derive(Clone)]
 pub struct ScalarMulConfig {
 	bits2num: Bits2NumConfig,
 	bits: Column<Advice>,
@@ -213,10 +214,128 @@ impl ScalarMulChip {
 
 #[cfg(test)]
 mod test {
+	use super::*;
+	use crate::{
+		eddsa::native::ed_on_bn254::B8,
+		gadgets::bits2num::to_bits,
+		utils::{generate_params, prove_and_verify},
+	};
+	use halo2wrong::{
+		curves::bn256::{Bn256, Fr},
+		halo2::{
+			circuit::{SimpleFloorPlanner, Value},
+			dev::MockProver,
+			plonk::{Circuit, Instance},
+		},
+	};
+
+	#[derive(Clone)]
+	struct TestConfig {
+		scalar_mul: ScalarMulConfig,
+		pub_ins: Column<Instance>,
+		temp: Column<Advice>,
+	}
+
+	#[derive(Clone)]
+	struct TestCircuit {
+		r_x: Value<Fr>,
+		r_y: Value<Fr>,
+		r_z: Value<Fr>,
+		value: Value<Fr>,
+		value_bits: [Fr; 256],
+	}
+
+	impl TestCircuit {
+		fn new(r_x: Fr, r_y: Fr, r_z: Fr, value: Fr) -> Self {
+			Self {
+				r_x: Value::known(r_x),
+				r_y: Value::known(r_y),
+				r_z: Value::known(r_z),
+				value: Value::known(value),
+				value_bits: to_bits(value.to_bytes()).map(Fr::from),
+			}
+		}
+	}
+
+	impl Circuit<Fr> for TestCircuit {
+		type Config = TestConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			self.clone()
+		}
+
+		fn configure(meta: &mut ConstraintSystem<Fr>) -> TestConfig {
+			let scalar_mul = ScalarMulChip::configure(meta);
+			let temp = meta.advice_column();
+			let instance = meta.instance_column();
+
+			meta.enable_equality(instance);
+			meta.enable_equality(temp);
+
+			TestConfig {
+				scalar_mul,
+				pub_ins: instance,
+				temp,
+			}
+		}
+
+		fn synthesize(
+			&self,
+			config: TestConfig,
+			mut layouter: impl Layouter<Fr>,
+		) -> Result<(), Error> {
+			let (r_x, r_y, r_z, value) = layouter.assign_region(
+				|| "temp",
+				|mut region: Region<'_, Fr>| {
+					let r_x_assigned =
+						region.assign_advice(|| "temp_x", config.temp, 0, || self.r_x)?;
+					let r_y_assigned =
+						region.assign_advice(|| "temp_y", config.temp, 1, || self.r_y)?;
+					let r_z_assigned =
+						region.assign_advice(|| "temp_z", config.temp, 2, || self.r_z)?;
+					let value_assigned =
+						region.assign_advice(|| "temp_value", config.temp, 3, || self.value)?;
+
+					Ok((r_x_assigned, r_y_assigned, r_z_assigned, value_assigned))
+				},
+			)?;
+			let scalar_mul_chip = ScalarMulChip::new(r_x, r_y, r_z, value, self.value_bits);
+			let (x, y, z) = scalar_mul_chip
+				.synthesize(config.scalar_mul, layouter.namespace(|| "scalar_mul"))?;
+			layouter.constrain_instance(x.cell(), config.pub_ins, 0)?;
+			layouter.constrain_instance(y.cell(), config.pub_ins, 1)?;
+			layouter.constrain_instance(z.cell(), config.pub_ins, 2)?;
+			Ok(())
+		}
+	}
 
 	#[test]
-	fn should_mul_point_with_scalar() {}
+	fn should_mul_point_with_scalar() {
+		let scalar = Fr::from(8);
+		let r = B8.projective();
+		let res = B8.mul_scalar(&scalar.to_bytes()).projective();
+		let circuit = TestCircuit::new(r.x, r.y, r.z, scalar);
+
+		let k = 9;
+		let pub_ins = vec![res.x, res.y, res.z];
+		let prover = MockProver::run(k, &circuit, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
 
 	#[test]
-	fn should_mul_point_with_scalar_production() {}
+	fn should_mul_point_with_scalar_production() {
+		let scalar = Fr::from(8);
+		let r = B8.projective();
+		let res = B8.mul_scalar(&scalar.to_bytes()).projective();
+		let circuit = TestCircuit::new(r.x, r.y, r.z, scalar);
+
+		let k = 9;
+		let rng = &mut rand::thread_rng();
+		let params = generate_params(k);
+		let pub_ins = [res.x, res.y, res.z];
+		let res = prove_and_verify::<Bn256, _, _>(params, circuit, &[&pub_ins], rng).unwrap();
+
+		assert!(res);
+	}
 }
