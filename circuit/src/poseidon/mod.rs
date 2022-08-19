@@ -241,7 +241,7 @@ where
 		round_constants.map(|c| meta.enable_equality(c));
 		mds.map(|vec| vec.map(|c| meta.enable_equality(c)));
 
-		meta.create_gate("poseidon_round", |v_cells| {
+		meta.create_gate("full_round", |v_cells| {
 			let mut exprs = Self::apply_round_constants_expr(v_cells, &state, &round_constants);
 			for i in 0..WIDTH {
 				exprs[i] = P::sbox_expr(exprs[i].clone());

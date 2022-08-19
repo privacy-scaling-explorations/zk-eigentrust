@@ -5,22 +5,30 @@ use halo2wrong::halo2::{
 	poly::Rotation,
 };
 
+pub fn to_bits(num: [u8; 32]) -> [bool; 256] {
+	let mut bits = [false; 256];
+	for i in 0..256 {
+		bits[i] = num[i / 8] & (1 << (i % 8)) != 0;
+	}
+	bits
+}
+
 #[derive(Clone)]
-struct Bits2NumConfig {
-	bits: Column<Advice>,
+pub struct Bits2NumConfig {
+	pub bits: Column<Advice>,
 	lc1: Column<Advice>,
 	e2: Column<Advice>,
 	selector: Selector,
 }
 
 #[derive(Clone)]
-struct Bits2NumChip<F: FieldExt> {
+pub struct Bits2NumChip<F: FieldExt> {
 	value: AssignedCell<F, F>,
 	bits: [Value<F>; 256],
 }
 
 impl<F: FieldExt> Bits2NumChip<F> {
-	fn new(value: AssignedCell<F, F>, bits: [F; 256]) -> Self {
+	pub fn new(value: AssignedCell<F, F>, bits: [F; 256]) -> Self {
 		Self {
 			value,
 			bits: bits.map(|b| Value::known(b)),
@@ -29,14 +37,7 @@ impl<F: FieldExt> Bits2NumChip<F> {
 }
 
 impl<F: FieldExt> Bits2NumChip<F> {
-	fn without_witnesses(&self) -> Self {
-		Self {
-			value: self.value.clone(),
-			bits: [Value::unknown(); 256],
-		}
-	}
-
-	fn configure(meta: &mut ConstraintSystem<F>) -> Bits2NumConfig {
+	pub fn configure(meta: &mut ConstraintSystem<F>) -> Bits2NumConfig {
 		let bits = meta.advice_column();
 		let lc1 = meta.advice_column();
 		let e2 = meta.advice_column();
@@ -62,9 +63,9 @@ impl<F: FieldExt> Bits2NumChip<F> {
 			vec![
 				// bit * (1 - bit) == 0 (bit is boolean)
 				s_exp.clone() * (bit_exp.clone() * (one_exp - bit_exp.clone())),
-				// e2 + e2 = e2_next
+				// e2 + e2 == e2_next
 				s_exp.clone() * ((e2_exp.clone() + e2_exp.clone()) - e2_next_exp),
-				// lc1 + bit * e2 = lc1_next
+				// lc1 + bit * e2 == lc1_next
 				s_exp * ((bit_exp * e2_exp + lc1_exp) - lc1_next_exp),
 			]
 		});
@@ -77,7 +78,7 @@ impl<F: FieldExt> Bits2NumChip<F> {
 		}
 	}
 
-	fn synthesize(
+	pub fn synthesize(
 		&self,
 		config: Bits2NumConfig,
 		mut layouter: impl Layouter<F>,
@@ -95,7 +96,6 @@ impl<F: FieldExt> Bits2NumChip<F> {
 					config.selector.enable(&mut region, i)?;
 
 					let bit = region.assign_advice(|| "bits", config.bits, i, || self.bits[i])?;
-
 					bits[i] = Some(bit.clone());
 
 					let next_lc1 =
@@ -103,7 +103,6 @@ impl<F: FieldExt> Bits2NumChip<F> {
 					let next_e2 = e2.value().cloned() + e2.value();
 
 					lc1 = region.assign_advice(|| "lc1", config.lc1, i + 1, || next_lc1)?;
-
 					e2 = region.assign_advice(|| "e2", config.e2, i + 1, || next_e2)?;
 				}
 
@@ -123,14 +122,6 @@ mod test {
 		curves::bn256::{Bn256, Fr},
 		halo2::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit},
 	};
-
-	fn to_bits(num: [u8; 32]) -> [bool; 256] {
-		let mut bits = [false; 256];
-		for i in 0..256 {
-			bits[i] = num[i / 8] & (1 << (i % 8)) != 0;
-		}
-		bits
-	}
 
 	#[derive(Clone)]
 	struct TestConfig {
