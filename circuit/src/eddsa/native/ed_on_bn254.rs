@@ -241,7 +241,7 @@ mod tests {
 			)
 			.unwrap(),
 		};
-		let res_m = p.mul_scalar(&Fr::from(3).to_bytes());
+		let res_m = p.mul_scalar(&Fr::from(3).to_bytes()).affine();
 		let res_a = p.projective().add(&p.projective());
 		let res_a = res_a.add(&p.projective()).affine();
 		assert_eq!(res_m.x, res_a.x);
@@ -265,7 +265,7 @@ mod tests {
 			"14035240266687799601661095864649209771790948434046947201833777492504781204499",
 		)
 		.unwrap();
-		let res2 = p.mul_scalar(&n.to_bytes());
+		let res2 = p.mul_scalar(&n.to_bytes()).affine();
 		assert_eq!(
 			res2.x,
 			Fr::from_str_vartime(
