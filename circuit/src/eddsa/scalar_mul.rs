@@ -61,6 +61,14 @@ impl ScalarMulChip {
 		let e_z = meta.advice_column();
 		let s = meta.selector();
 
+		meta.enable_equality(bits);
+		meta.enable_equality(r_x);
+		meta.enable_equality(r_y);
+		meta.enable_equality(r_z);
+		meta.enable_equality(e_x);
+		meta.enable_equality(e_y);
+		meta.enable_equality(e_z);
+
 		meta.create_gate("scalar_mul", |v_cells| {
 			let s_exp = v_cells.query_selector(s);
 			let bit_exp = v_cells.query_advice(bits, Rotation::cur());
@@ -94,11 +102,11 @@ impl ScalarMulChip {
 
 			// Select the next value based on a `bit` -- see `select` gadget.
 			let selected_r_x =
-				bit_exp.clone() * (r_x_exp - r_x3.clone()) - (r_x_next_exp.clone() - r_x3.clone());
+				bit_exp.clone() * (r_x3 - r_x_exp.clone()) - (r_x_next_exp - r_x_exp);
 			let selected_r_y =
-				bit_exp.clone() * (r_y_exp - r_y3.clone()) - (r_y_next_exp.clone() - r_y3.clone());
+				bit_exp.clone() * (r_y3 - r_y_exp.clone()) - (r_y_next_exp - r_y_exp);
 			let selected_r_z =
-				bit_exp.clone() * (r_z_exp - r_z3.clone()) - (r_z_next_exp.clone() - r_z3.clone());
+				bit_exp.clone() * (r_z3 - r_z_exp.clone()) - (r_z_next_exp - r_z_exp);
 
 			vec![
 				// Ensure the point addition of `r` and `e` is properly calculated
@@ -314,7 +322,7 @@ mod test {
 	fn should_mul_point_with_scalar() {
 		let scalar = Fr::from(8);
 		let r = B8.projective();
-		let res = B8.mul_scalar(&scalar.to_bytes()).projective();
+		let res = B8.mul_scalar(&scalar.to_bytes());
 		let circuit = TestCircuit::new(r.x, r.y, r.z, scalar);
 
 		let k = 9;
@@ -327,7 +335,7 @@ mod test {
 	fn should_mul_point_with_scalar_production() {
 		let scalar = Fr::from(8);
 		let r = B8.projective();
-		let res = B8.mul_scalar(&scalar.to_bytes()).projective();
+		let res = B8.mul_scalar(&scalar.to_bytes());
 		let circuit = TestCircuit::new(r.x, r.y, r.z, scalar);
 
 		let k = 9;

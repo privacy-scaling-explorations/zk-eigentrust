@@ -113,7 +113,7 @@ impl Point {
 		}
 	}
 
-	pub fn mul_scalar(&self, b: &[u8]) -> Point {
+	pub fn mul_scalar(&self, b: &[u8]) -> PointProjective {
 		let mut r: PointProjective = PointProjective {
 			x: Fr::zero(),
 			y: Fr::one(),
@@ -126,7 +126,7 @@ impl Point {
 			}
 			exp = exp.double();
 		}
-		r.affine()
+		r
 	}
 
 	pub fn equals(&self, p: Point) -> bool {

@@ -39,7 +39,7 @@ impl SecretKey {
 
 	pub fn public(&self) -> PublicKey {
 		let a = B8.mul_scalar(&self.0.to_bytes_le());
-		PublicKey(a)
+		PublicKey(a.affine())
 	}
 }
 
@@ -57,7 +57,7 @@ pub fn sign(sk: &SecretKey, pk: &PublicKey, m: Fr) -> Signature {
 	let r_bn = BigUint::from_bytes_le(&r.to_bytes());
 
 	// R = B8 * r
-	let big_r = B8.mul_scalar(&r.to_bytes());
+	let big_r = B8.mul_scalar(&r.to_bytes()).affine();
 	let m_hash_input = [big_r.x, big_r.y, pk.0.x, pk.0.y, m];
 	let m_hash = Hasher::new(m_hash_input).permute()[0];
 	let m_hash_bn = BigUint::from_bytes_le(&m_hash.to_bytes());
@@ -76,8 +76,8 @@ pub fn verify(sig: &Signature, pk: &PublicKey, m: Fr) -> bool {
 	let m_hash = Hasher::new(m_hash_input).permute()[0];
 	let pk_h = pk.0.mul_scalar(&m_hash.to_bytes());
 	// Cr = R + H(R || A || M) * A
-	let cr = sig.big_r.projective().add(&pk_h.projective());
-	cr.affine().equals(cl)
+	let cr = sig.big_r.projective().add(&pk_h);
+	cr.affine().equals(cl.affine())
 }
 
 #[cfg(test)]

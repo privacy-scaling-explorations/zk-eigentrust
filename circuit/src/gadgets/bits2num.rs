@@ -44,6 +44,7 @@ impl<F: FieldExt> Bits2NumChip<F> {
 		let fixed = meta.fixed_column();
 		let s = meta.selector();
 
+		meta.enable_equality(bits);
 		meta.enable_equality(lc1);
 		meta.enable_equality(e2);
 		meta.enable_constant(fixed);
