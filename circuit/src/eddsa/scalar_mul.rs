@@ -51,7 +51,7 @@ impl ScalarMulChip {
 
 impl ScalarMulChip {
 	pub fn configure(meta: &mut ConstraintSystem<Fr>) -> ScalarMulConfig {
-		let bits2num = Bits2NumChip::configure(meta);
+		let bits2num = Bits2NumChip::<_, 256>::configure(meta);
 		let bits = meta.advice_column();
 		let r_x = meta.advice_column();
 		let r_y = meta.advice_column();

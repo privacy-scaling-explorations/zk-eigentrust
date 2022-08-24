@@ -1,7 +1,10 @@
 pub mod ed_on_bn254;
 pub mod ops;
 
-use crate::poseidon::{native::Poseidon, params::bn254_5x5::Params5x5Bn254};
+use crate::{
+	poseidon::{native::Poseidon, params::bn254_5x5::Params5x5Bn254},
+	utils::to_wide,
+};
 use ed_on_bn254::{Point, B8, SUBORDER};
 use halo2wrong::{
 	curves::{bn256::Fr, FieldExt},
@@ -16,12 +19,6 @@ fn blh(b: &[u8]) -> Vec<u8> {
 	let mut hash = [0; 64];
 	blake::hash(512, b, &mut hash).unwrap();
 	hash.to_vec()
-}
-
-fn to_wide(b: &[u8]) -> [u8; 64] {
-	let mut bytes = [0u8; 64];
-	bytes[..b.len()].copy_from_slice(b);
-	bytes
 }
 
 pub struct SecretKey(BigUint, Fr);

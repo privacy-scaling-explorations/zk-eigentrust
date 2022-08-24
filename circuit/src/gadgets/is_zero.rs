@@ -32,7 +32,7 @@ impl<F: FieldExt> IsZeroChip<F> {
 		meta.enable_equality(x);
 		meta.enable_equality(b);
 
-		meta.create_gate("is_equal", |v_cells| {
+		meta.create_gate("is_zero", |v_cells| {
 			let one = Expression::Constant(F::one());
 			let x_exp = v_cells.query_advice(x, Rotation::cur());
 			let x_inv_exp = v_cells.query_advice(x_inv, Rotation::cur());
@@ -62,7 +62,7 @@ impl<F: FieldExt> IsZeroChip<F> {
 		mut layouter: impl Layouter<F>,
 	) -> Result<AssignedCell<F, F>, Error> {
 		let is_zero = layouter.assign_region(
-			|| "is_eq",
+			|| "is_zero",
 			|mut region: Region<'_, F>| {
 				config.selector.enable(&mut region, 0)?;
 

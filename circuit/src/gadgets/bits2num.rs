@@ -5,9 +5,9 @@ use halo2wrong::halo2::{
 	poly::Rotation,
 };
 
-pub fn to_bits(num: [u8; 32]) -> [bool; 256] {
-	let mut bits = [false; 256];
-	for i in 0..256 {
+pub fn to_bits<const B: usize>(num: [u8; 32]) -> [bool; B] {
+	let mut bits = [false; B];
+	for i in 0..B {
 		bits[i] = num[i / 8] & (1 << (i % 8)) != 0;
 	}
 	bits
@@ -22,13 +22,13 @@ pub struct Bits2NumConfig {
 }
 
 #[derive(Clone)]
-pub struct Bits2NumChip<F: FieldExt> {
+pub struct Bits2NumChip<F: FieldExt, const B: usize> {
 	value: AssignedCell<F, F>,
-	bits: [Value<F>; 256],
+	bits: [Value<F>; B],
 }
 
-impl<F: FieldExt> Bits2NumChip<F> {
-	pub fn new(value: AssignedCell<F, F>, bits: [F; 256]) -> Self {
+impl<F: FieldExt, const B: usize> Bits2NumChip<F, B> {
+	pub fn new(value: AssignedCell<F, F>, bits: [F; B]) -> Self {
 		Self {
 			value,
 			bits: bits.map(|b| Value::known(b)),
@@ -36,7 +36,7 @@ impl<F: FieldExt> Bits2NumChip<F> {
 	}
 }
 
-impl<F: FieldExt> Bits2NumChip<F> {
+impl<F: FieldExt, const B: usize> Bits2NumChip<F, B> {
 	pub fn configure(meta: &mut ConstraintSystem<F>) -> Bits2NumConfig {
 		let bits = meta.advice_column();
 		let lc1 = meta.advice_column();
@@ -83,7 +83,7 @@ impl<F: FieldExt> Bits2NumChip<F> {
 		&self,
 		config: Bits2NumConfig,
 		mut layouter: impl Layouter<F>,
-	) -> Result<[AssignedCell<F, F>; 256], Error> {
+	) -> Result<[AssignedCell<F, F>; B], Error> {
 		layouter.assign_region(
 			|| "bits2num",
 			|mut region: Region<'_, F>| {
@@ -92,7 +92,7 @@ impl<F: FieldExt> Bits2NumChip<F> {
 				let mut e2 =
 					region.assign_advice_from_constant(|| "e2_0", config.e2, 0, F::one())?;
 
-				let mut bits: [Option<AssignedCell<F, F>>; 256] = [(); 256].map(|_| None);
+				let mut bits: [Option<AssignedCell<F, F>>; B] = [(); B].map(|_| None);
 				for i in 0..self.bits.len() {
 					config.selector.enable(&mut region, i)?;
 
@@ -150,7 +150,7 @@ mod test {
 		}
 
 		fn configure(meta: &mut ConstraintSystem<Fr>) -> TestConfig {
-			let bits2num = Bits2NumChip::configure(meta);
+			let bits2num = Bits2NumChip::<_, 256>::configure(meta);
 			let temp = meta.advice_column();
 
 			meta.enable_equality(temp);
@@ -170,7 +170,7 @@ mod test {
 				},
 			)?;
 
-			let bits = to_bits(self.numba.to_bytes()).map(|b| Fr::from(b));
+			let bits = to_bits::<256>(self.numba.to_bytes()).map(|b| Fr::from(b));
 			let bits2num = Bits2NumChip::new(numba, bits);
 			let _ = bits2num.synthesize(config.bits2num, layouter.namespace(|| "bits2num"))?;
 			Ok(())
