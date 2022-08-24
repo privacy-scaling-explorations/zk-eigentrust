@@ -2,7 +2,6 @@
 
 #![feature(array_try_map)]
 #![feature(array_zip)]
-#![feature(adt_const_params)]
 #![allow(clippy::needless_range_loop)]
 
 pub mod eddsa;
