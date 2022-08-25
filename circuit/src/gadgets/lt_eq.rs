@@ -13,6 +13,10 @@ use super::{
 	is_zero::{IsZeroChip, IsZeroConfig},
 };
 
+const N_SHIFTED: [u8; 32] = [
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 16,
+];
+
 #[derive(Clone)]
 pub struct LessEqualConfig {
 	bits2num: Bits2NumConfig,
@@ -22,14 +26,14 @@ pub struct LessEqualConfig {
 	selector: Selector,
 }
 
-pub struct LessEqualChip<F: FieldExt, const B: usize, const N: [u8; 32]> {
+pub struct LessEqualChip<F: FieldExt> {
 	x: AssignedCell<F, F>,
 	y: AssignedCell<F, F>,
-	n2b_input_bits: [F; B],
+	n2b_input_bits: [F; 252],
 }
 
-impl<F: FieldExt, const B: usize, const N: [u8; 32]> LessEqualChip<F, B, N> {
-	pub fn new(x: AssignedCell<F, F>, y: AssignedCell<F, F>, n2b_input_bits: [F; B]) -> Self {
+impl<F: FieldExt> LessEqualChip<F> {
+	pub fn new(x: AssignedCell<F, F>, y: AssignedCell<F, F>, n2b_input_bits: [F; 252]) -> Self {
 		LessEqualChip {
 			x,
 			y,
@@ -39,7 +43,7 @@ impl<F: FieldExt, const B: usize, const N: [u8; 32]> LessEqualChip<F, B, N> {
 
 	/// Make the circuit config.
 	pub fn configure(meta: &mut ConstraintSystem<F>) -> LessEqualConfig {
-		let bits2num = Bits2NumChip::<_, B>::configure(meta);
+		let bits2num = Bits2NumChip::<_, 252>::configure(meta);
 		let is_zero = IsZeroChip::configure(meta);
 		let x = meta.advice_column();
 		let y = meta.advice_column();
@@ -48,7 +52,7 @@ impl<F: FieldExt, const B: usize, const N: [u8; 32]> LessEqualChip<F, B, N> {
 		meta.enable_equality(x);
 		meta.enable_equality(y);
 
-		let n_shifted = F::from_bytes_wide(&to_wide(&N));
+		let n_shifted = F::from_bytes_wide(&to_wide(&N_SHIFTED));
 
 		meta.create_gate("x + n_shifted - y", |v_cells| {
 			let n_shifted_exp = Expression::Constant(n_shifted);
@@ -84,7 +88,7 @@ impl<F: FieldExt, const B: usize, const N: [u8; 32]> LessEqualChip<F, B, N> {
 				let assigned_x = self.x.copy_advice(|| "x", &mut region, config.x, 0)?;
 				let assigned_y = self.y.copy_advice(|| "y", &mut region, config.y, 0)?;
 
-				let n_shifted = Value::known(F::from_bytes_wide(&to_wide(&N)));
+				let n_shifted = Value::known(F::from_bytes_wide(&to_wide(&N_SHIFTED)));
 				let res = assigned_x.value().cloned() + n_shifted - assigned_y.value();
 
 				let assigned_res =
@@ -96,7 +100,7 @@ impl<F: FieldExt, const B: usize, const N: [u8; 32]> LessEqualChip<F, B, N> {
 		let bits2num = Bits2NumChip::new(inp, self.n2b_input_bits);
 		let bits = bits2num.synthesize(config.bits2num, layouter.namespace(|| "bits2num"))?;
 
-		let is_zero = IsZeroChip::new(bits[B - 1].clone());
+		let is_zero = IsZeroChip::new(bits[251].clone());
 		let res = is_zero.synthesize(config.is_zero, layouter.namespace(|| "is_zero"))?;
 		Ok(res)
 	}
@@ -117,13 +121,6 @@ mod test {
 			plonk::{Circuit, Instance},
 		},
 	};
-
-	const N_SHIFTED: [u8; 32] = [
-		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-		0, 8,
-	];
-
-	const NUM_BITS: usize = 252;
 
 	#[derive(Clone)]
 	struct TestConfig {
@@ -153,7 +150,7 @@ mod test {
 		}
 
 		fn configure(meta: &mut ConstraintSystem<Fr>) -> TestConfig {
-			let lt_eq = LessEqualChip::<Fr, NUM_BITS, N_SHIFTED>::configure(meta);
+			let lt_eq = LessEqualChip::<Fr>::configure(meta);
 			let temp = meta.advice_column();
 			let pub_ins = meta.instance_column();
 
@@ -193,8 +190,8 @@ mod test {
 			)?;
 			let n_shifted = Fr::from_bytes(&N_SHIFTED).unwrap();
 			let b = self.x + n_shifted - self.y;
-			let b2n_bits = to_bits::<NUM_BITS>(b.to_bytes()).map(Fr::from);
-			let lt_eq_chip = LessEqualChip::<Fr, NUM_BITS, N_SHIFTED>::new(x, y, b2n_bits);
+			let b2n_bits = to_bits(b.to_bytes()).map(Fr::from);
+			let lt_eq_chip = LessEqualChip::<Fr>::new(x, y, b2n_bits);
 			let res = lt_eq_chip.synthesize(config.lt_eq, layouter.namespace(|| "less_eq"))?;
 
 			layouter.constrain_instance(res.cell(), config.pub_ins, 0)?;
