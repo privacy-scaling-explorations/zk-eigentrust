@@ -13,13 +13,20 @@ use super::{
 	is_zero::{IsZeroChip, IsZeroConfig},
 };
 
+// 1 << 252
 const N_SHIFTED: [u8; 32] = [
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 16,
 ];
+// Number are limited to 252 to avoid overflow
+const NUM_BITS: usize = 252;
+// Same number of bits as N_SHIFTED, since we are doing NUM + N_SHIFTED
+const DIFF_BITS: usize = 253;
 
 #[derive(Clone)]
 pub struct LessEqualConfig {
-	bits2num: Bits2NumConfig,
+	x_b2n: Bits2NumConfig,
+	y_b2n: Bits2NumConfig,
+	diff_b2n: Bits2NumConfig,
 	is_zero: IsZeroConfig,
 	x: Column<Advice>,
 	y: Column<Advice>,
@@ -29,21 +36,33 @@ pub struct LessEqualConfig {
 pub struct LessEqualChip<F: FieldExt> {
 	x: AssignedCell<F, F>,
 	y: AssignedCell<F, F>,
-	n2b_input_bits: [F; 252],
+	x_bits: [F; NUM_BITS],
+	y_bits: [F; NUM_BITS],
+	diff_bits: [F; DIFF_BITS],
 }
 
 impl<F: FieldExt> LessEqualChip<F> {
-	pub fn new(x: AssignedCell<F, F>, y: AssignedCell<F, F>, n2b_input_bits: [F; 252]) -> Self {
+	pub fn new(
+		x: AssignedCell<F, F>,
+		y: AssignedCell<F, F>,
+		x_bits: [F; NUM_BITS],
+		y_bits: [F; NUM_BITS],
+		diff_bits: [F; DIFF_BITS],
+	) -> Self {
 		LessEqualChip {
 			x,
 			y,
-			n2b_input_bits,
+			x_bits,
+			y_bits,
+			diff_bits,
 		}
 	}
 
 	/// Make the circuit config.
 	pub fn configure(meta: &mut ConstraintSystem<F>) -> LessEqualConfig {
-		let bits2num = Bits2NumChip::<_, 252>::configure(meta);
+		let diff_b2n = Bits2NumChip::<_, DIFF_BITS>::configure(meta);
+		let x_b2n = Bits2NumChip::<_, NUM_BITS>::configure(meta);
+		let y_b2n = Bits2NumChip::<_, NUM_BITS>::configure(meta);
 		let is_zero = IsZeroChip::configure(meta);
 		let x = meta.advice_column();
 		let y = meta.advice_column();
@@ -67,7 +86,9 @@ impl<F: FieldExt> LessEqualChip<F> {
 		});
 
 		LessEqualConfig {
-			bits2num,
+			diff_b2n,
+			x_b2n,
+			y_b2n,
 			is_zero,
 			x,
 			y,
@@ -81,6 +102,12 @@ impl<F: FieldExt> LessEqualChip<F> {
 		config: LessEqualConfig,
 		mut layouter: impl Layouter<F>,
 	) -> Result<AssignedCell<F, F>, Error> {
+		let x_b2n = Bits2NumChip::new(self.x.clone(), self.x_bits);
+		let _ = x_b2n.synthesize(config.x_b2n, layouter.namespace(|| "x_b2n"))?;
+
+		let y_b2n = Bits2NumChip::new(self.y.clone(), self.y_bits);
+		let _ = y_b2n.synthesize(config.y_b2n, layouter.namespace(|| "y_b2n"))?;
+
 		let inp = layouter.assign_region(
 			|| "less_than_equal",
 			|mut region: Region<'_, F>| {
@@ -97,10 +124,10 @@ impl<F: FieldExt> LessEqualChip<F> {
 			},
 		)?;
 
-		let bits2num = Bits2NumChip::new(inp, self.n2b_input_bits);
-		let bits = bits2num.synthesize(config.bits2num, layouter.namespace(|| "bits2num"))?;
+		let diff_b2n = Bits2NumChip::new(inp, self.diff_bits);
+		let bits = diff_b2n.synthesize(config.diff_b2n, layouter.namespace(|| "bits2num"))?;
 
-		let is_zero = IsZeroChip::new(bits[251].clone());
+		let is_zero = IsZeroChip::new(bits[DIFF_BITS - 1].clone());
 		let res = is_zero.synthesize(config.is_zero, layouter.namespace(|| "is_zero"))?;
 		Ok(res)
 	}
@@ -190,8 +217,10 @@ mod test {
 			)?;
 			let n_shifted = Fr::from_bytes(&N_SHIFTED).unwrap();
 			let b = self.x + n_shifted - self.y;
-			let b2n_bits = to_bits(b.to_bytes()).map(Fr::from);
-			let lt_eq_chip = LessEqualChip::<Fr>::new(x, y, b2n_bits);
+			let diff_bits = to_bits(b.to_bytes()).map(Fr::from);
+			let x_bits = to_bits(self.x.to_bytes()).map(Fr::from);
+			let y_bits = to_bits(self.y.to_bytes()).map(Fr::from);
+			let lt_eq_chip = LessEqualChip::<Fr>::new(x, y, x_bits, y_bits, diff_bits);
 			let res = lt_eq_chip.synthesize(config.lt_eq, layouter.namespace(|| "less_eq"))?;
 
 			layouter.constrain_instance(res.cell(), config.pub_ins, 0)?;
@@ -203,30 +232,6 @@ mod test {
 	fn test_less_than() {
 		let x = Fr::from(8);
 		let y = Fr::from(4);
-		// let n_shifted = Fr::from_bytes(&N_SHIFTED).unwrap();
-		// let b = x + n_shifted - y;
-		// let b_bits = to_bits::<NUM_BITS>(b.to_bytes()).map(|v| if v { "1" } else {
-		// "0" }).join(""); println!("{:?}", b_bits);
-		// println!("{:?}", b_bits.len());
-
-		// let n_shifted: u8 = 0b10000000;
-
-		// let a1: u8 = 0b00000010;
-		// let b1: u8 = 0b00000100;
-
-		// let a2: u8 = 0b00000100;
-		// let b2: u8 = 0b00000010;
-
-		// let a3: u8 = 0b00010000;
-		// let b3: u8 = 0b00100000;
-
-		// let a4: u8 = 0b00100000;
-		// let b4: u8 = 0b00010000;
-
-		// println!("{:08b}", a1 + n_shifted - b1);
-		// println!("{:08b}", a2 + n_shifted - b2);
-		// println!("{:08b}", a3 + n_shifted - b3);
-		// println!("{:08b}", a4 + n_shifted - b4);
 
 		let test_chip = TestCircuit::new(x, y);
 
@@ -237,7 +242,6 @@ mod test {
 	}
 
 	#[test]
-	#[ignore = "skip"]
 	fn test_less_than_production() {
 		let x = Fr::from(8);
 		let y = Fr::from(4);
