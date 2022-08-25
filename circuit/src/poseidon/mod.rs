@@ -284,7 +284,7 @@ where
 
 	pub fn synthesize(
 		&self,
-		config: &PoseidonConfig<WIDTH>,
+		config: PoseidonConfig<WIDTH>,
 		mut layouter: impl Layouter<F>,
 	) -> Result<[AssignedCell<F, F>; WIDTH], Error> {
 		let full_rounds = P::full_rounds();
@@ -306,7 +306,7 @@ where
 			|| "full_rounds_1",
 			|mut region: Region<'_, F>| {
 				Self::full_round(
-					config,
+					&config,
 					&mut region,
 					half_full_rounds,
 					first_round_constants,
@@ -320,7 +320,7 @@ where
 			|| "partial_rounds",
 			|mut region: Region<'_, F>| {
 				Self::partial_round(
-					config,
+					&config,
 					&mut region,
 					partial_rounds,
 					second_round_constants,
@@ -334,7 +334,7 @@ where
 			|| "full_rounds_2",
 			|mut region: Region<'_, F>| {
 				Self::full_round(
-					config,
+					&config,
 					&mut region,
 					half_full_rounds,
 					third_round_constants,
@@ -436,7 +436,7 @@ mod test {
 
 			let poseidon = TestPoseidonChip::new(init_state);
 			let result_state =
-				poseidon.synthesize(&config.poseidon_config, layouter.namespace(|| "poseidon"))?;
+				poseidon.synthesize(config.poseidon_config, layouter.namespace(|| "poseidon"))?;
 			for i in 0..5 {
 				layouter.constrain_instance(result_state[i].cell(), config.results, i)?;
 			}

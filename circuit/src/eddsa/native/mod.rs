@@ -40,12 +40,12 @@ impl SecretKey {
 	}
 }
 
-pub struct PublicKey(Point);
+pub struct PublicKey(pub Point);
 
 #[derive(Clone)]
 pub struct Signature {
-	big_r: Point,
-	s: Fr,
+	pub big_r: Point,
+	pub s: Fr,
 }
 
 pub fn sign(sk: &SecretKey, pk: &PublicKey, m: Fr) -> Signature {
@@ -67,6 +67,9 @@ pub fn sign(sk: &SecretKey, pk: &PublicKey, m: Fr) -> Signature {
 }
 
 pub fn verify(sig: &Signature, pk: &PublicKey, m: Fr) -> bool {
+	if sig.s > SUBORDER {
+		panic!("S can't be higher than SUBORDER");
+	}
 	// Cl = s * G
 	let cl = B8.mul_scalar(&sig.s.to_bytes());
 	let m_hash_input = [sig.big_r.x, sig.big_r.y, pk.0.x, pk.0.y, m];

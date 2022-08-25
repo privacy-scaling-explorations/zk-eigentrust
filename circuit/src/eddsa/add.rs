@@ -9,7 +9,7 @@ use halo2wrong::{
 };
 
 #[derive(Clone)]
-pub struct AddConfig {
+pub struct PointAddConfig {
 	r_x: Column<Advice>,
 	r_y: Column<Advice>,
 	r_z: Column<Advice>,
@@ -20,7 +20,7 @@ pub struct AddConfig {
 }
 
 #[derive(Clone)]
-pub struct AddChip {
+pub struct PointAddChip {
 	r_x: AssignedCell<Fr, Fr>,
 	r_y: AssignedCell<Fr, Fr>,
 	r_z: AssignedCell<Fr, Fr>,
@@ -29,7 +29,7 @@ pub struct AddChip {
 	e_z: AssignedCell<Fr, Fr>,
 }
 
-impl AddChip {
+impl PointAddChip {
 	pub fn new(
 		r_x: AssignedCell<Fr, Fr>,
 		r_y: AssignedCell<Fr, Fr>,
@@ -49,8 +49,8 @@ impl AddChip {
 	}
 }
 
-impl AddChip {
-	pub fn configure(meta: &mut ConstraintSystem<Fr>) -> AddConfig {
+impl PointAddChip {
+	pub fn configure(meta: &mut ConstraintSystem<Fr>) -> PointAddConfig {
 		let r_x = meta.advice_column();
 		let r_y = meta.advice_column();
 		let r_z = meta.advice_column();
@@ -66,7 +66,7 @@ impl AddChip {
 		meta.enable_equality(e_y);
 		meta.enable_equality(e_z);
 
-		meta.create_gate("add", |v_cells| {
+		meta.create_gate("point_add", |v_cells| {
 			let s_exp = v_cells.query_selector(s);
 
 			let r_x_exp = v_cells.query_advice(r_x, Rotation::cur());
@@ -98,7 +98,7 @@ impl AddChip {
 			]
 		});
 
-		AddConfig {
+		PointAddConfig {
 			r_x,
 			r_y,
 			r_z,
@@ -112,7 +112,7 @@ impl AddChip {
 	/// Synthesize the circuit.
 	pub fn synthesize(
 		&self,
-		config: AddConfig,
+		config: PointAddConfig,
 		mut layouter: impl Layouter<Fr>,
 	) -> Result<
 		(
@@ -175,7 +175,7 @@ mod test {
 
 	#[derive(Clone)]
 	struct TestConfig {
-		add: AddConfig,
+		add: PointAddConfig,
 		pub_ins: Column<Instance>,
 		temp: Column<Advice>,
 	}
@@ -212,7 +212,7 @@ mod test {
 		}
 
 		fn configure(meta: &mut ConstraintSystem<Fr>) -> TestConfig {
-			let add = AddChip::configure(meta);
+			let add = PointAddChip::configure(meta);
 			let temp = meta.advice_column();
 			let instance = meta.instance_column();
 
@@ -258,7 +258,7 @@ mod test {
 					))
 				},
 			)?;
-			let add_chip = AddChip::new(r_x, r_y, r_z, e_x, e_y, e_z);
+			let add_chip = PointAddChip::new(r_x, r_y, r_z, e_x, e_y, e_z);
 			let (x, y, z) = add_chip.synthesize(config.add, layouter.namespace(|| "add"))?;
 			layouter.constrain_instance(x.cell(), config.pub_ins, 0)?;
 			layouter.constrain_instance(y.cell(), config.pub_ins, 1)?;

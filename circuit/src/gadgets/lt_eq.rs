@@ -14,7 +14,7 @@ use super::{
 };
 
 // 1 << 252
-const N_SHIFTED: [u8; 32] = [
+pub const N_SHIFTED: [u8; 32] = [
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 16,
 ];
 // Number are limited to 252 to avoid overflow

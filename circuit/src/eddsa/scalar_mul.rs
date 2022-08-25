@@ -23,21 +23,21 @@ pub struct ScalarMulConfig {
 }
 
 #[derive(Clone)]
-pub struct ScalarMulChip {
+pub struct ScalarMulChip<const B: usize> {
 	e_x: AssignedCell<Fr, Fr>,
 	e_y: AssignedCell<Fr, Fr>,
 	e_z: AssignedCell<Fr, Fr>,
 	value: AssignedCell<Fr, Fr>,
-	value_bits: [Fr; 256],
+	value_bits: [Fr; B],
 }
 
-impl ScalarMulChip {
+impl<const B: usize> ScalarMulChip<B> {
 	pub fn new(
 		e_x: AssignedCell<Fr, Fr>,
 		e_y: AssignedCell<Fr, Fr>,
 		e_z: AssignedCell<Fr, Fr>,
 		value: AssignedCell<Fr, Fr>,
-		value_bits: [Fr; 256],
+		value_bits: [Fr; B],
 	) -> Self {
 		Self {
 			e_x,
@@ -49,9 +49,9 @@ impl ScalarMulChip {
 	}
 }
 
-impl ScalarMulChip {
+impl<const B: usize> ScalarMulChip<B> {
 	pub fn configure(meta: &mut ConstraintSystem<Fr>) -> ScalarMulConfig {
-		let bits2num = Bits2NumChip::<_, 256>::configure(meta);
+		let bits2num = Bits2NumChip::<_, B>::configure(meta);
 		let bits = meta.advice_column();
 		let r_x = meta.advice_column();
 		let r_y = meta.advice_column();
@@ -274,7 +274,7 @@ mod test {
 		}
 
 		fn configure(meta: &mut ConstraintSystem<Fr>) -> TestConfig {
-			let scalar_mul = ScalarMulChip::configure(meta);
+			let scalar_mul = ScalarMulChip::<256>::configure(meta);
 			let temp = meta.advice_column();
 			let instance = meta.instance_column();
 
