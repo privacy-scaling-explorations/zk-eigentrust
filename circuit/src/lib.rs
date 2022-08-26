@@ -4,6 +4,7 @@
 #![feature(array_zip)]
 #![allow(clippy::needless_range_loop)]
 
+pub mod eddsa;
 pub mod gadgets;
 pub mod poseidon;
 pub mod utils;
@@ -255,7 +256,10 @@ impl<F: FieldExt, const S: usize, const B: usize, P: RoundParams<F, 5>> Circuit<
 			sk[3].clone(),
 		];
 		let poseidon_pk = PoseidonChip::<_, 5, P>::new(inputs);
-		let res = poseidon_pk.synthesize(&config.poseidon, layouter.namespace(|| "poseidon_pk"))?;
+		let res = poseidon_pk.synthesize(
+			config.poseidon.clone(),
+			layouter.namespace(|| "poseidon_pk"),
+		)?;
 		let pubkey_i = res[0].clone();
 
 		// Check the bootstrap set membership
@@ -282,7 +286,7 @@ impl<F: FieldExt, const S: usize, const B: usize, P: RoundParams<F, 5>> Circuit<
 		let m_hash_input = [zero, epoch, op_v, pubkey_v, pubkey_i];
 		let poseidon_m_hash = PoseidonChip::<_, 5, P>::new(m_hash_input);
 		let res = poseidon_m_hash
-			.synthesize(&config.poseidon, layouter.namespace(|| "poseidon_m_hash"))?;
+			.synthesize(config.poseidon, layouter.namespace(|| "poseidon_m_hash"))?;
 		let m_hash = res[0].clone();
 
 		layouter.constrain_instance(m_hash.cell(), config.pub_ins, 0)?;

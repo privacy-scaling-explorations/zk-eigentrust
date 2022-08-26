@@ -27,6 +27,12 @@ use halo2wrong::{
 use rand::Rng;
 use std::{fmt::Debug, fs::write, io::Read, time::Instant};
 
+pub fn to_wide(b: &[u8]) -> [u8; 64] {
+	let mut bytes = [0u8; 64];
+	bytes[..b.len()].copy_from_slice(b);
+	bytes
+}
+
 /// Generate parameters with polynomial degere = `k`.
 pub fn generate_params<E: MultiMillerLoop + Debug>(k: u32) -> ParamsKZG<E> {
 	ParamsKZG::<E>::new(k)

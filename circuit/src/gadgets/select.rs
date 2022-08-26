@@ -54,6 +54,10 @@ impl<F: FieldExt> SelectChip<F> {
 
 			vec![
 				// bit * (a - b) - (r - b)
+				// a = 2
+				// b = 1
+				// r = 2
+				// 1 * (a - b) - (r - b) = 1 * 1 - (2 - 1) = 0
 				s_exp * (bit_exp.clone() * (x_exp - y_exp.clone()) - (res_exp - y_exp)),
 			]
 		});

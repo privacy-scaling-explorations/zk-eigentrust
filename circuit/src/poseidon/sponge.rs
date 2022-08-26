@@ -130,7 +130,7 @@ where
 
 			let pos = PoseidonChip::<_, WIDTH, P>::new(inputs);
 			state = pos.synthesize(
-				&config.poseidon_config,
+				config.poseidon_config.clone(),
 				layouter.namespace(|| format!("absorb_{}", i)),
 			)?;
 		}
