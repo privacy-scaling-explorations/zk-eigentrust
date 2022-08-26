@@ -188,14 +188,14 @@ impl EddsaChip {
 		let and = AndChip::new(x_eq, y_eq);
 		let point_eq = and.synthesize(config.and, layouter.namespace(|| "point_eq"))?;
 
-		// layouter.assign_region(
-		// 	|| "enforce_equal",
-		// 	|mut region: Region<'_, Fr>| {
-		// 		region.constrain_constant(is_lt_eq.cell(), Fr::one())?;
-		// 		region.constrain_constant(point_eq.cell(), Fr::one())?;
-		// 		Ok(())
-		// 	},
-		// )?;
+		layouter.assign_region(
+			|| "enforce_equal",
+			|mut region: Region<'_, Fr>| {
+				region.constrain_constant(is_lt_eq.cell(), Fr::one())?;
+				region.constrain_constant(point_eq.cell(), Fr::one())?;
+				Ok(())
+			},
+		)?;
 
 		Ok(())
 	}
@@ -319,7 +319,7 @@ mod test {
 
 			let s_bits = to_bits(self.s.to_bytes()).map(Fr::from);
 			let suborder_bits = to_bits(SUBORDER.to_bytes()).map(Fr::from);
-			let diff = SUBORDER + Fr::from_bytes(&N_SHIFTED).unwrap() - self.s;
+			let diff = self.s + Fr::from_bytes(&N_SHIFTED).unwrap() - SUBORDER;
 			let diff_bits = to_bits(diff.to_bytes()).map(Fr::from);
 			let h_inputs = [self.big_r_x, self.big_r_y, self.pk_x, self.pk_y, self.m];
 			let res = Poseidon::<_, 5, Params5x5Bn254>::new(h_inputs).permute()[0];
