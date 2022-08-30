@@ -39,6 +39,8 @@
 #![warn(trivial_casts)]
 #![forbid(unsafe_code)]
 
+/// The module for defining the request-response protocol.
+mod behaviour;
 /// The module for global constants.
 pub mod constants;
 /// The module for epoch-related calculations, like seconds until the next
@@ -53,8 +55,6 @@ mod node;
 /// - Calculating local scores toward neighbors for a given epoch
 /// - Keeping track of neighbors scores towards us
 mod peer;
-/// The module for defining the request-response protocol.
-mod protocol;
 
 pub use eigen_trust_circuit;
 pub use epoch::Epoch;

@@ -2,12 +2,12 @@
 //! events.
 
 use crate::{
-	epoch::Epoch,
-	peer::{pubkey::Pubkey, Peer},
-	protocol::{
+	behaviour::{
 		req_res::{Request, Response},
 		EigenEvent, EigenTrustBehaviour,
 	},
+	epoch::Epoch,
+	peer::{pubkey::Pubkey, Peer},
 	EigenError,
 };
 use futures::StreamExt;

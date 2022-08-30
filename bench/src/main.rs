@@ -2,14 +2,14 @@ use env_logger::Builder;
 use futures::future::join_all;
 use std::str::FromStr;
 
-use eigen_trust::{
-	constants::{MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS},
-	keypair_from_sk_bytes, LevelFilter, Multiaddr, Node, Peer,
-};
 use eigen_trust_circuit::{
 	halo2wrong::curves::bn256::Bn256,
 	poseidon::params::bn254_5x5::Params5x5Bn254,
 	utils::{keygen, random_circuit, read_params},
+};
+use eigen_trust_protocol::{
+	constants::{MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS},
+	keypair_from_sk_bytes, LevelFilter, Multiaddr, Node, Peer,
 };
 use rand::{thread_rng, Rng};
 use std::fs;
