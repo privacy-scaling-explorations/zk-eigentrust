@@ -101,8 +101,8 @@ impl Peer {
 		let op_ji = self.get_neighbor_opinions_at(k - 1);
 		let normalized_score = self.get_normalized_score(*score);
 		let pubkey_op = self.get_pub_key(peer_id);
-		let opinion = match pubkey_op {
-			Some(pubkey) => Opinion::generate(
+		let opinion = if let Some(pubkey) = pubkey_op {
+			Opinion::generate(
 				&self.keypair,
 				&pubkey,
 				k,
@@ -114,14 +114,13 @@ impl Peer {
 			.unwrap_or_else(|e| {
 				log::debug!("Error while generating opinion for {:?}: {:?}", peer_id, e);
 				Opinion::empty(k, &self.params, &self.proving_key).unwrap()
-			}),
-			None => {
-				log::debug!(
-					"Pubkey not found for {:?}, generating empty opinion.",
-					peer_id
-				);
-				Opinion::empty(k, &self.params, &self.proving_key).unwrap()
-			},
+			})
+		} else {
+			log::debug!(
+				"Pubkey not found for {:?}, generating empty opinion.",
+				peer_id
+			);
+			Opinion::empty(k, &self.params, &self.proving_key).unwrap()
 		};
 
 		self.cache_local_opinion((peer_id, opinion.iter), opinion);
@@ -129,32 +128,23 @@ impl Peer {
 
 	/// Returns all of the opinions of the neighbors in the specified epoch.
 	pub fn get_neighbor_opinions_at(&self, k: u8) -> [f64; MAX_NEIGHBORS] {
-		self.neighbors.map(|peer| {
-			let peer_pk_pair =
-				peer.and_then(|peer_id| self.get_pub_key(peer_id).map(|pk| (peer_id, pk)));
-			peer_pk_pair
-				.map(|(peer_id, pubkey_p)| {
-					let opinion = self.get_neighbor_opinion(&(peer_id, k));
-					let vk = self.proving_key.get_vk();
+		let mut scores: [f64; MAX_NEIGHBORS] = [0.; MAX_NEIGHBORS];
+		for (i, peer) in self.neighbors.iter().enumerate() {
+			let peer_pk_pair = peer.and_then(|peer_id| {
+				let pub_k = self.get_pub_key(peer_id);
+				pub_k.map(|pk| (peer_id, pk))
+			});
 
-					match opinion.verify(&pubkey_p, &self.keypair, &self.params, vk) {
-						Ok(true) => opinion.op,
-						Ok(false) => {
-							println!("Invalid opinion for {:?}", peer_id);
-							0.0
-						},
-						Err(e) => {
-							log::debug!(
-								"Error while verifying opinion from {:?}: {:?}",
-								peer_id,
-								e
-							);
-							0.0
-						},
-					}
-				})
-				.unwrap_or(0.0)
-		})
+			peer_pk_pair.map(|(peer_id, pubkey_p)| {
+				let opinion = self.get_neighbor_opinion(&(peer_id, k));
+				let vk = self.proving_key.get_vk();
+
+				if opinion.verify(&pubkey_p, &self.keypair, &self.params, vk) == Ok(true) {
+					scores[i] = opinion.op;
+				}
+			});
+		}
+		scores
 	}
 
 	/// Calculate the global trust score at the specified epoch.
