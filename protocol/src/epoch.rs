@@ -30,11 +30,9 @@ impl Epoch {
 
 	/// Calculates the current epoch number based on the interval duration.
 	pub fn current_epoch(interval: u64) -> Result<Self, EigenError> {
-		let unix_timestamp = SystemTime::now()
-			.duration_since(UNIX_EPOCH)
-			.map_err(|_| EigenError::EpochError)?;
+		let secs = Self::current_timestamp()?;
 
-		let current_epoch = unix_timestamp.as_secs() / interval;
+		let current_epoch = secs / interval;
 
 		Ok(Epoch(current_epoch))
 	}
@@ -42,12 +40,9 @@ impl Epoch {
 	/// Calculates the seconds until the next epoch based on the interval
 	/// duration.
 	pub fn secs_until_next_epoch(interval: u64) -> Result<u64, EigenError> {
-		let unix_timestamp = SystemTime::now()
-			.duration_since(UNIX_EPOCH)
-			.map_err(|_| EigenError::EpochError)?;
-
-		let current_epoch = unix_timestamp.as_secs() / interval;
-		let secs_until_next_epoch = (current_epoch + 1) * interval - unix_timestamp.as_secs();
+		let secs = Self::current_timestamp()?;
+		let current_epoch = Self::current_epoch(interval)?;
+		let secs_until_next_epoch = (current_epoch.0 + 1) * interval - secs;
 
 		Ok(secs_until_next_epoch)
 	}
