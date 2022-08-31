@@ -72,7 +72,6 @@ pub fn random_circuit<
 
 	let bootstrap_pubkeys = [(); NUM_BOOTSTRAP].map(|_| E::Scalar::random(rng.clone()));
 	let bootstrap_score = E::Scalar::random(rng.clone());
-	let genesis_epoch = E::Scalar::random(rng.clone());
 
 	EigenTrustCircuit::<_, SIZE, NUM_BOOTSTRAP, P>::new(
 		pubkey_v,
@@ -82,7 +81,6 @@ pub fn random_circuit<
 		c_v,
 		bootstrap_pubkeys,
 		bootstrap_score,
-		genesis_epoch,
 	)
 }
 

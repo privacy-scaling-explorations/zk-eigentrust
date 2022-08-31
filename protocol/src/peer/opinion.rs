@@ -4,7 +4,7 @@ use super::pubkey::Pubkey;
 use crate::{
 	constants::*,
 	peer::utils::{extract_sk_limbs, to_wide_bytes},
-	EigenError, Epoch,
+	EigenError,
 };
 use bs58::decode::Error as Bs58Error;
 use eigen_trust_circuit::{
@@ -32,17 +32,19 @@ pub const SCALE: f64 = 100000000.;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Opinion {
-	pub(crate) epoch: Epoch,
+	pub(crate) iter: u8,
 	pub(crate) op: f64,
 	pub(crate) proof_bytes: Vec<u8>,
+	pub(crate) m_hash: [u8; 32],
 }
 
 impl Opinion {
-	pub fn new(epoch: Epoch, op: f64, proof_bytes: Vec<u8>) -> Self {
+	pub fn new(iter: u8, op: f64, proof_bytes: Vec<u8>) -> Self {
 		Self {
-			epoch,
+			iter,
 			op,
 			proof_bytes,
+			m_hash: [0; 32],
 		}
 	}
 
@@ -50,7 +52,7 @@ impl Opinion {
 	pub fn generate(
 		kp: &IdentityKeypair,
 		pubkey_v: &Pubkey,
-		k: Epoch,
+		k: u8,
 		op_ji: [f64; MAX_NEIGHBORS],
 		c_v: f64,
 		params: &ParamsKZG<Bn256>,
@@ -72,7 +74,6 @@ impl Opinion {
 			})
 			.map_err(|_: Bs58Error| EigenError::InvalidBootstrapPubkey)?;
 		let bootstrap_score_scaled = (BOOTSTRAP_SCORE * SCALE).round() as u128;
-		let genesis_epoch = Epoch(GENESIS_EPOCH);
 
 		// Turn into scaled values and round the to avoid rounding errors.
 		let op_ji_scaled = op_ji.map(|op| (op * SCALE).round() as u128);
@@ -81,8 +82,8 @@ impl Opinion {
 		let t_i_scaled = op_ji_scaled.iter().sum();
 
 		let is_bootstrap = bootstrap_pubkeys.contains(&pk_p);
-		let is_genesis = k == genesis_epoch;
-		let t_i_final = if is_bootstrap && is_genesis {
+		let is_first_iter = k == 0;
+		let t_i_final = if is_bootstrap && is_first_iter {
 			bootstrap_score_scaled
 		} else {
 			t_i_scaled
@@ -95,9 +96,8 @@ impl Opinion {
 		let op_ji_f = op_ji_scaled.map(Bn256Scalar::from_u128);
 		let c_v_f = Bn256Scalar::from_u128(c_v_scaled);
 		let op_v_f = Bn256Scalar::from_u128(op_v_scaled);
-		let epoch_f = Bn256Scalar::from_u128(k.0.into());
+		let epoch_f = Bn256Scalar::from_u128(k as u128);
 		let bootstrap_score_f = Bn256Scalar::from_u128(bootstrap_score_scaled);
-		let genesis_epoch_f = Bn256Scalar::from_u128(genesis_epoch.0.into());
 
 		let m_hash_input = [Bn256Scalar::zero(), epoch_f, op_v_f, pk_v, pk_p];
 		let pos = Posedion5x5::new(m_hash_input);
@@ -111,7 +111,6 @@ impl Opinion {
 			c_v_f,
 			bootstrap_pubkeys,
 			bootstrap_score_f,
-			genesis_epoch_f,
 		);
 
 		let pub_ins = vec![m_hash];
@@ -127,23 +126,24 @@ impl Opinion {
 		assert!(proof_res);
 
 		Ok(Self {
-			epoch: k,
+			iter: k,
 			op: op_v_unscaled,
 			proof_bytes,
+			m_hash: m_hash.to_bytes(),
 		})
 	}
 
-	pub fn empty() -> Self {
-		let epoch = Epoch(0);
-		let op_v = 0.;
+	pub fn empty(
+		k: u8,
+		params: &ParamsKZG<Bn256>,
+		pk: &ProvingKey<G1Affine>,
+	) -> Result<Self, EigenError> {
+		let kp: IdentityKeypair = IdentityKeypair::generate_secp256k1();
+		let pubkey_v = Pubkey::from_keypair(&kp).unwrap();
+		let op_ji: [f64; MAX_NEIGHBORS] = [0.; MAX_NEIGHBORS];
+		let c_v: f64 = 0.;
 
-		let proof_bytes = Vec::new();
-
-		Self {
-			epoch,
-			op: op_v,
-			proof_bytes,
-		}
+		Self::generate(&kp, &pubkey_v, k, op_ji, c_v, params, pk)
 	}
 
 	/// Verifies the proof.
@@ -154,10 +154,6 @@ impl Opinion {
 		params: &ParamsKZG<Bn256>,
 		vk: &VerifyingKey<G1Affine>,
 	) -> Result<bool, EigenError> {
-		if self.epoch.is_zero() {
-			return Ok(true);
-		}
-
 		let pk_p = pubkey_p.value();
 		let sk = extract_sk_limbs(kp)?;
 		let input = [Bn256Scalar::zero(), sk[0], sk[1], sk[2], sk[3]];
@@ -165,14 +161,21 @@ impl Opinion {
 		let pk_v = pos.permute()[0];
 
 		let op_v_scaled = (self.op * SCALE * SCALE).round() as u128;
-		let epoch_f = Bn256Scalar::from_u128(self.epoch.0.into());
+		let epoch_f = Bn256Scalar::from_u128(self.iter as u128);
 		let op_v_f = Bn256Scalar::from_u128(op_v_scaled);
 
 		let m_hash_input = [Bn256Scalar::zero(), epoch_f, op_v_f, pk_v, pk_p];
 		let pos = Posedion5x5::new(m_hash_input);
 		let m_hash = pos.permute()[0];
+		let m_hash_passed = Bn256Scalar::from_bytes(&self.m_hash).unwrap();
 
-		let pub_ins = vec![m_hash];
+		let final_hash = if op_v_f == Bn256Scalar::zero() {
+			m_hash_passed
+		} else {
+			m_hash
+		};
+
+		let pub_ins = vec![final_hash];
 
 		let proof_res = verify(params, &[&pub_ins], &self.proof_bytes, vk).map_err(|e| {
 			println!("{}", e);
@@ -194,15 +197,17 @@ mod test {
 	#[test]
 	fn should_verify_empty_opinion() {
 		let rng = &mut thread_rng();
-		let op = Opinion::empty();
 		let local_keypair = IdentityKeypair::generate_secp256k1();
 		let local_pubkey = Pubkey::from_keypair(&local_keypair).unwrap();
 
 		let keypair_v = IdentityKeypair::generate_secp256k1();
 		let params = ParamsKZG::<Bn256>::new(9);
+
 		let random_circuit =
 			random_circuit::<Bn256, _, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, Params5x5Bn254>(rng);
 		let pk = keygen(&params, &random_circuit).unwrap();
+
+		let op = Opinion::empty(1, &params, &pk).unwrap();
 		let res = op
 			.verify(&local_pubkey, &keypair_v, &params, &pk.get_vk())
 			.unwrap();
@@ -218,7 +223,7 @@ mod test {
 		let keypair_v = IdentityKeypair::generate_secp256k1();
 		let pubkey_v = Pubkey::from_keypair(&keypair_v).unwrap();
 
-		let epoch = Epoch(5);
+		let iter = 0;
 		let op_ji = [0.1; MAX_NEIGHBORS];
 		let c_v = 0.1;
 
@@ -227,7 +232,7 @@ mod test {
 			random_circuit::<Bn256, _, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, Params5x5Bn254>(rng);
 		let pk = keygen(&params, &random_circuit).unwrap();
 		let proof =
-			Opinion::generate(&local_keypair, &pubkey_v, epoch, op_ji, c_v, &params, &pk).unwrap();
+			Opinion::generate(&local_keypair, &pubkey_v, iter, op_ji, c_v, &params, &pk).unwrap();
 
 		assert!(proof
 			.verify(&local_pubkey, &keypair_v, &params, pk.get_vk())
