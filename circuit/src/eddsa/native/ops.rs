@@ -25,9 +25,7 @@ pub fn add(r_x: Fr, r_y: Fr, r_z: Fr, e_x: Fr, e_y: Fr, e_z: Fr) -> (Fr, Fr, Fr)
 	// G = B+E
 	let g = b.add(&e);
 	// X3 = A*F*((X1+Y1)*(X2+Y2)-C-D)
-	let x3 = a
-		.mul(&f)
-		.mul(&r_x.add(&r_y).mul(&e_x.add(&e_y)).sub(&c).sub(&d));
+	let x3 = a.mul(&f).mul(&r_x.add(&r_y).mul(&e_x.add(&e_y)).sub(&c).sub(&d));
 	// Y3 = A*G*(D-a*C)
 	let y3 = a.mul(&g).mul(&d.sub(&A.mul(&c)));
 	// Z3 = F*G
@@ -37,12 +35,8 @@ pub fn add(r_x: Fr, r_y: Fr, r_z: Fr, e_x: Fr, e_y: Fr, e_z: Fr) -> (Fr, Fr, Fr)
 }
 
 pub fn add_exp(
-	r_x: Expression<Fr>,
-	r_y: Expression<Fr>,
-	r_z: Expression<Fr>,
-	e_x: Expression<Fr>,
-	e_y: Expression<Fr>,
-	e_z: Expression<Fr>,
+	r_x: Expression<Fr>, r_y: Expression<Fr>, r_z: Expression<Fr>, e_x: Expression<Fr>,
+	e_y: Expression<Fr>, e_z: Expression<Fr>,
 ) -> (Expression<Fr>, Expression<Fr>, Expression<Fr>) {
 	let const_d = Expression::Constant(D);
 	let const_a = Expression::Constant(A);
@@ -72,12 +66,8 @@ pub fn add_exp(
 }
 
 pub fn add_value(
-	r_x: Value<Assigned<Fr>>,
-	r_y: Value<Assigned<Fr>>,
-	r_z: Value<Assigned<Fr>>,
-	e_x: Value<Assigned<Fr>>,
-	e_y: Value<Assigned<Fr>>,
-	e_z: Value<Assigned<Fr>>,
+	r_x: Value<Assigned<Fr>>, r_y: Value<Assigned<Fr>>, r_z: Value<Assigned<Fr>>,
+	e_x: Value<Assigned<Fr>>, e_y: Value<Assigned<Fr>>, e_z: Value<Assigned<Fr>>,
 ) -> (
 	Value<Assigned<Fr>>,
 	Value<Assigned<Fr>>,
@@ -138,9 +128,7 @@ pub fn double(e_x: Fr, e_y: Fr, e_z: Fr) -> (Fr, Fr, Fr) {
 }
 
 pub fn double_exp(
-	e_x: Expression<Fr>,
-	e_y: Expression<Fr>,
-	e_z: Expression<Fr>,
+	e_x: Expression<Fr>, e_y: Expression<Fr>, e_z: Expression<Fr>,
 ) -> (Expression<Fr>, Expression<Fr>, Expression<Fr>) {
 	let const_a = Expression::Constant(A);
 	// B = (X1+Y1)^2
@@ -168,9 +156,7 @@ pub fn double_exp(
 }
 
 pub fn double_value(
-	e_x: Value<Assigned<Fr>>,
-	e_y: Value<Assigned<Fr>>,
-	e_z: Value<Assigned<Fr>>,
+	e_x: Value<Assigned<Fr>>, e_y: Value<Assigned<Fr>>, e_z: Value<Assigned<Fr>>,
 ) -> (
 	Value<Assigned<Fr>>,
 	Value<Assigned<Fr>>,

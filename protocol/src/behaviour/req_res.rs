@@ -18,9 +18,7 @@ pub struct EigenTrustProtocol {
 impl EigenTrustProtocol {
 	/// Create a new EigenTrust protocol.
 	pub fn new() -> Self {
-		Self {
-			version: EigenTrustProtocolVersion::V1,
-		}
+		Self { version: EigenTrustProtocolVersion::V1 }
 	}
 }
 
@@ -87,9 +85,7 @@ impl RequestResponseCodec for EigenTrustCodec {
 
 	/// Read the request from the given stream.
 	async fn read_request<T>(
-		&mut self,
-		protocol: &Self::Protocol,
-		io: &mut T,
+		&mut self, protocol: &Self::Protocol, io: &mut T,
 	) -> Result<Self::Request>
 	where
 		T: AsyncRead + Unpin + Send,
@@ -118,9 +114,7 @@ impl RequestResponseCodec for EigenTrustCodec {
 
 	/// Read the response from the given stream.
 	async fn read_response<T>(
-		&mut self,
-		protocol: &Self::Protocol,
-		io: &mut T,
+		&mut self, protocol: &Self::Protocol, io: &mut T,
 	) -> Result<Self::Response>
 	where
 		T: AsyncRead + Unpin + Send,
@@ -169,10 +163,7 @@ impl RequestResponseCodec for EigenTrustCodec {
 
 	/// Write the request to the given stream.
 	async fn write_request<T>(
-		&mut self,
-		protocol: &Self::Protocol,
-		io: &mut T,
-		req: Self::Request,
+		&mut self, protocol: &Self::Protocol, io: &mut T, req: Self::Request,
 	) -> Result<()>
 	where
 		T: AsyncWrite + Unpin + Send,
@@ -198,10 +189,7 @@ impl RequestResponseCodec for EigenTrustCodec {
 
 	/// Write the response to the given stream.
 	async fn write_response<T>(
-		&mut self,
-		protocol: &Self::Protocol,
-		io: &mut T,
-		res: Self::Response,
+		&mut self, protocol: &Self::Protocol, io: &mut T, res: Self::Response,
 	) -> Result<()>
 	where
 		T: AsyncWrite + Unpin + Send,
@@ -264,19 +252,14 @@ mod tests {
 		let mut buf = vec![];
 		let iter = 1;
 		let req = Request::Opinion(iter);
-		codec
-			.write_request(&EigenTrustProtocol::default(), &mut buf, req)
-			.await
-			.unwrap();
+		codec.write_request(&EigenTrustProtocol::default(), &mut buf, req).await.unwrap();
 
 		let mut bytes = vec![0];
 		bytes.push(iter);
 		assert_eq!(buf, bytes);
 
-		let req = codec
-			.read_request(&EigenTrustProtocol::default(), &mut &bytes[..])
-			.await
-			.unwrap();
+		let req =
+			codec.read_request(&EigenTrustProtocol::default(), &mut &bytes[..]).await.unwrap();
 		assert_eq!(req.get_iter().unwrap(), iter);
 	}
 
@@ -287,15 +270,12 @@ mod tests {
 		let random_circuit =
 			random_circuit::<Bn256, _, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, Params5x5Bn254>(rng);
 		let pk = keygen(&params, &random_circuit).unwrap();
-		let opinion = Opinion::empty(0, &params, &pk).unwrap();
+		let mut opinion = Opinion::empty(0, &params, &pk).unwrap();
 		let good_res = Response::Opinion(opinion.clone());
 
 		let mut buf = vec![];
 		let mut codec = EigenTrustCodec::default();
-		codec
-			.write_response(&EigenTrustProtocol::default(), &mut buf, good_res)
-			.await
-			.unwrap();
+		codec.write_response(&EigenTrustProtocol::default(), &mut buf, good_res).await.unwrap();
 
 		let mut bytes = vec![];
 		bytes.push(0);
@@ -303,13 +283,13 @@ mod tests {
 		bytes.extend(opinion.op.to_be_bytes());
 		bytes.extend(&opinion.proof_bytes[..]);
 
+		opinion.m_hash = [0; 32];
+
 		// compare the written bytes with the expected bytes
 		assert_eq!(buf, bytes);
 
-		let read_res = codec
-			.read_response(&EigenTrustProtocol::default(), &mut &bytes[..])
-			.await
-			.unwrap();
+		let read_res =
+			codec.read_response(&EigenTrustProtocol::default(), &mut &bytes[..]).await.unwrap();
 		assert_eq!(read_res.success(), opinion);
 	}
 
@@ -329,10 +309,8 @@ mod tests {
 		bytes.push(2);
 		assert_eq!(buf, bytes);
 
-		let read_res = codec
-			.read_response(&EigenTrustProtocol::default(), &mut &bytes[..])
-			.await
-			.unwrap();
+		let read_res =
+			codec.read_response(&EigenTrustProtocol::default(), &mut &bytes[..]).await.unwrap();
 
 		assert_eq!(read_res, bad_res);
 	}
@@ -356,10 +334,8 @@ mod tests {
 		bytes.push(1);
 		assert_eq!(buf, bytes);
 
-		let read_res = codec
-			.read_response(&EigenTrustProtocol::default(), &mut &bytes[..])
-			.await
-			.unwrap();
+		let read_res =
+			codec.read_response(&EigenTrustProtocol::default(), &mut &bytes[..]).await.unwrap();
 
 		assert_eq!(read_res, bad_res);
 	}

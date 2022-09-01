@@ -8,7 +8,7 @@ use crate::{
 	},
 	constants::NUM_ITERATIONS,
 	epoch::Epoch,
-	peer::{pubkey::Pubkey, Peer},
+	peer::Peer,
 	EigenError,
 };
 use futures::StreamExt;
@@ -32,24 +32,21 @@ use tokio::{
 /// The Node struct.
 pub struct Node {
 	/// Swarm object.
-	swarm: Swarm<EigenTrustBehaviour>,
+	pub(crate) swarm: Swarm<EigenTrustBehaviour>,
 	interval: Duration,
-	sent_requests: HashSet<(PeerId, Request)>,
-	peer: Peer,
+	incoming_requests: HashSet<(PeerId, Request)>,
+	outgoing_requests: HashSet<(PeerId, Request)>,
+	pub(crate) peer: Peer,
 }
 
 impl Node {
 	/// Create a new node, given the local keypair, local address, and bootstrap
 	/// nodes.
 	pub fn new(
-		local_key: Keypair,
-		local_address: Multiaddr,
-		interval_secs: u64,
-		peer: Peer,
+		local_key: Keypair, local_address: Multiaddr, interval_secs: u64, peer: Peer,
 	) -> Result<Self, EigenError> {
-		let noise_keys = NoiseKeypair::<X25519Spec>::new()
-			.into_authentic(&local_key)
-			.map_err(|e| {
+		let noise_keys =
+			NoiseKeypair::<X25519Spec>::new().into_authentic(&local_key).map_err(|e| {
 				log::error!("NoiseKeypair.into_authentic {}", e);
 				EigenError::InvalidKeypair
 			})?;
@@ -80,39 +77,18 @@ impl Node {
 
 		Ok(Self {
 			swarm,
-			sent_requests: HashSet::new(),
+			incoming_requests: HashSet::new(),
+			outgoing_requests: HashSet::new(),
 			interval: interval_duration,
 			peer,
 		})
-	}
-
-	/// Get the mutable swarm.
-	pub fn get_swarm_mut(&mut self) -> &mut Swarm<EigenTrustBehaviour> {
-		&mut self.swarm
-	}
-
-	/// Get the swarm.
-	pub fn get_swarm(&self) -> &Swarm<EigenTrustBehaviour> {
-		&self.swarm
-	}
-
-	/// Get the peer struct.
-	pub fn get_peer(&self) -> &Peer {
-		&self.peer
-	}
-
-	/// Get the mutable peer struct.
-	pub fn get_peer_mut(&mut self) -> &mut Peer {
-		&mut self.peer
 	}
 
 	/// Send the request for an opinion to all neighbors, in the passed epoch.
 	pub fn send_epoch_requests(&mut self, k: u8) {
 		for peer_id in self.peer.neighbors() {
 			let request = Request::Opinion(k);
-			self.get_swarm_mut()
-				.behaviour_mut()
-				.send_request(&peer_id, request);
+			self.swarm.behaviour_mut().send_request(&peer_id, request);
 		}
 	}
 
@@ -121,100 +97,40 @@ impl Node {
 		use RequestResponseEvent::*;
 		use RequestResponseMessage::{Request as Req, Response as Res};
 		match event {
-			Message {
-				peer,
-				message: Req {
-					request: Request::Opinion(iter),
-					channel,
-					..
-				},
-			} => {
+			Message { peer, message: Req { request: Request::Opinion(iter), channel, .. } } => {
 				// First we calculate the local opinions for the requested epoch.
 				self.peer.calculate_local_opinion(peer, iter);
 				// Then we send the local opinion to the peer.
 				let opinion = self.peer.get_local_opinion(&(peer, iter));
 				let response = Response::Opinion(opinion);
-				let res = self
-					.get_swarm_mut()
-					.behaviour_mut()
-					.send_response(channel, response);
+				let res = self.swarm.behaviour_mut().send_response(channel, response);
 				if let Err(e) = res {
 					log::error!("Failed to send the response {:?}", e);
 				}
 			},
-			Message {
-				peer,
-				message: Req {
-					request: Request::Identify(pub_key),
-					channel,
-					..
-				},
-			} => {
+			Message { peer, message: Req { request: Request::Identify(pub_key), channel, .. } } => {
 				self.peer.identify_neighbor(peer, pub_key);
-				let res = Pubkey::from_keypair(self.peer.get_keypair());
-				match res {
-					Ok(local_pubkey) => {
-						let response = Response::Identify(local_pubkey);
-						let res = self
-							.get_swarm_mut()
-							.behaviour_mut()
-							.send_response(channel, response);
-						if let Err(e) = res {
-							log::error!("Failed to send the response {:?}", e);
-						}
-					},
-					Err(e) => {
-						log::error!("Failed to generate local pubkey {:?}", e);
-						let response = Response::InternalError(e);
-						let res = self
-							.get_swarm_mut()
-							.behaviour_mut()
-							.send_response(channel, response);
-						if let Err(e) = res {
-							log::error!("Failed to send the response {:?}", e);
-						}
-					},
+				let response = Response::Identify(self.peer.pubkey.clone());
+				let res = self.swarm.behaviour_mut().send_response(channel, response);
+				if let Err(e) = res {
+					log::error!("Failed to send the response {:?}", e);
 				}
 			},
-			Message {
-				peer,
-				message: Res { response, .. },
-			} => {
+			Message { peer, message: Res { response: Response::Opinion(opinion), .. } } => {
 				// If we receive a response, we update the neighbors's opinion about us.
-				match response {
-					Response::Opinion(opinion) => {
-						self.peer
-							.cache_neighbor_opinion((peer, opinion.iter), opinion);
-					},
-					Response::Identify(pub_key) => {
-						self.peer.identify_neighbor(peer, pub_key);
-					},
-					other => log::error!("Received error response {:?}", other),
-				};
+				self.peer.cache_neighbor_opinion((peer, opinion.iter), opinion);
 			},
-			OutboundFailure {
-				peer,
-				request_id,
-				error,
-			} => {
-				log::error!(
-					"Outbound failure {:?} from {:?}: {:?}",
-					request_id,
-					peer,
-					error
-				);
+			Message { peer, message: Res { response: Response::Identify(pub_key), .. } } => {
+				self.peer.identify_neighbor(peer, pub_key);
 			},
-			InboundFailure {
-				peer,
-				request_id,
-				error,
-			} => {
-				log::error!(
-					"Inbound failure {:?} from {:?}: {:?}",
-					request_id,
-					peer,
-					error
-				);
+			Message { message: Res { response, .. }, .. } => {
+				log::error!("Received error response {:?}", response)
+			},
+			OutboundFailure { peer, request_id, error } => {
+				log::error!("Outbound failure {:?} from {:?}: {:?}", request_id, peer, error);
+			},
+			InboundFailure { peer, request_id, error } => {
+				log::error!("Inbound failure {:?} from {:?}: {:?}", request_id, peer, error);
 			},
 			ResponseSent { peer, request_id } => {
 				log::debug!("Response sent {:?} to {:?}", request_id, peer);
@@ -259,7 +175,7 @@ impl Node {
 			SwarmEvent::NewListenAddr { address, .. } => log::info!("Listening on {:?}", address),
 			// When we connect to a peer, we automatically add him as a neighbor.
 			SwarmEvent::ConnectionEstablished { peer_id, .. } => {
-				let res = self.get_peer_mut().add_neighbor(peer_id);
+				let res = self.peer.add_neighbor(peer_id);
 				if let Err(e) = res {
 					log::error!("Failed to add neighbor {:?}", e);
 				}
@@ -267,7 +183,7 @@ impl Node {
 			},
 			// When we disconnect from a peer, we automatically remove him from the neighbors list.
 			SwarmEvent::ConnectionClosed { peer_id, cause, .. } => {
-				self.get_peer_mut().remove_neighbor(peer_id);
+				self.peer.remove_neighbor(peer_id);
 				log::info!("Connection closed with {:?} ({:?})", peer_id, cause);
 			},
 			SwarmEvent::Dialing(peer_id) => log::info!("Dialing {:?}", peer_id),
@@ -387,12 +303,12 @@ mod tests {
 		// 2. Connection established
 		for _ in 0..5 {
 			select! {
-				event2 = node2.get_swarm_mut().select_next_some() => {
+				event2 = node2.swarm.select_next_some() => {
 					if let SwarmEvent::ConnectionEstablished { peer_id, .. } = event2 {
 						assert_eq!(peer_id, peer_id1);
 					}
 				},
-				event1 = node1.get_swarm_mut().select_next_some() => {
+				event1 = node1.swarm.select_next_some() => {
 					if let SwarmEvent::ConnectionEstablished { peer_id, .. } = event1 {
 						assert_eq!(peer_id, peer_id2);
 					}
@@ -442,21 +358,21 @@ mod tests {
 		// 2. Connection established
 		for _ in 0..9 {
 			select! {
-				event2 = node2.get_swarm_mut().select_next_some() => node2.handle_swarm_events(event2),
-				event1 = node1.get_swarm_mut().select_next_some() => node1.handle_swarm_events(event1),
+				event2 = node2.swarm.select_next_some() => node2.handle_swarm_events(event2),
+				event1 = node1.swarm.select_next_some() => node1.handle_swarm_events(event1),
 
 			}
 		}
 
-		let neighbors1: Vec<PeerId> = node1.get_peer().neighbors();
-		let neighbors2: Vec<PeerId> = node2.get_peer().neighbors();
+		let neighbors1: Vec<PeerId> = node1.peer.neighbors();
+		let neighbors2: Vec<PeerId> = node2.peer.neighbors();
 		let expected_neighbor1 = vec![peer_id2];
 		let expected_neighbor2 = vec![peer_id1];
 		assert_eq!(neighbors1, expected_neighbor1);
 		assert_eq!(neighbors2, expected_neighbor2);
 
-		let pubkey1 = node2.get_peer().get_pub_key_native(peer_id1).unwrap();
-		let pubkey2 = node1.get_peer().get_pub_key_native(peer_id2).unwrap();
+		let pubkey1 = node2.peer.get_pub_key_native(peer_id1).unwrap();
+		let pubkey2 = node1.peer.get_pub_key_native(peer_id2).unwrap();
 		assert_eq!(pubkey1, local_key1.public());
 		assert_eq!(pubkey2, local_key2.public());
 	}

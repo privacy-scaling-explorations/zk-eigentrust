@@ -40,23 +40,13 @@ pub struct Opinion {
 
 impl Opinion {
 	pub fn new(iter: u8, op: f64, proof_bytes: Vec<u8>) -> Self {
-		Self {
-			iter,
-			op,
-			proof_bytes,
-			m_hash: [0; 32],
-		}
+		Self { iter, op, proof_bytes, m_hash: [0; 32] }
 	}
 
 	/// Creates a new opinion.
 	pub fn generate(
-		kp: &IdentityKeypair,
-		pubkey_v: &Pubkey,
-		k: u8,
-		op_ji: [f64; MAX_NEIGHBORS],
-		c_v: f64,
-		params: &ParamsKZG<Bn256>,
-		pk: &ProvingKey<G1Affine>,
+		kp: &IdentityKeypair, pubkey_v: &Pubkey, k: u8, op_ji: [f64; MAX_NEIGHBORS], c_v: f64,
+		params: &ParamsKZG<Bn256>, pk: &ProvingKey<G1Affine>,
 	) -> Result<Self, EigenError> {
 		let mut rng = thread_rng();
 
@@ -83,11 +73,8 @@ impl Opinion {
 
 		let is_bootstrap = bootstrap_pubkeys.contains(&pk_p);
 		let is_first_iter = k == 0;
-		let t_i_final = if is_bootstrap && is_first_iter {
-			bootstrap_score_scaled
-		} else {
-			t_i_scaled
-		};
+		let t_i_final =
+			if is_bootstrap && is_first_iter { bootstrap_score_scaled } else { t_i_scaled };
 
 		let op_v_scaled = t_i_final * c_v_scaled;
 		let op_v_unscaled = (op_v_scaled as f64) / (SCALE * SCALE);
@@ -104,13 +91,7 @@ impl Opinion {
 		let m_hash = pos.permute()[0];
 
 		let circuit = ETCircuit::new(
-			pk_v,
-			epoch_f,
-			sk,
-			op_ji_f,
-			c_v_f,
-			bootstrap_pubkeys,
-			bootstrap_score_f,
+			pk_v, epoch_f, sk, op_ji_f, c_v_f, bootstrap_pubkeys, bootstrap_score_f,
 		);
 
 		let pub_ins = vec![m_hash];
@@ -125,18 +106,11 @@ impl Opinion {
 		})?;
 		assert!(proof_res);
 
-		Ok(Self {
-			iter: k,
-			op: op_v_unscaled,
-			proof_bytes,
-			m_hash: m_hash.to_bytes(),
-		})
+		Ok(Self { iter: k, op: op_v_unscaled, proof_bytes, m_hash: m_hash.to_bytes() })
 	}
 
 	pub fn empty(
-		k: u8,
-		params: &ParamsKZG<Bn256>,
-		pk: &ProvingKey<G1Affine>,
+		k: u8, params: &ParamsKZG<Bn256>, pk: &ProvingKey<G1Affine>,
 	) -> Result<Self, EigenError> {
 		let kp: IdentityKeypair = IdentityKeypair::generate_secp256k1();
 		let pubkey_v = Pubkey::from_keypair(&kp).unwrap();
@@ -148,10 +122,7 @@ impl Opinion {
 
 	/// Verifies the proof.
 	pub fn verify(
-		&self,
-		pubkey_p: &Pubkey,
-		kp: &IdentityKeypair,
-		params: &ParamsKZG<Bn256>,
+		&self, pubkey_p: &Pubkey, kp: &IdentityKeypair, params: &ParamsKZG<Bn256>,
 		vk: &VerifyingKey<G1Affine>,
 	) -> Result<bool, EigenError> {
 		let pk_p = pubkey_p.value();
@@ -169,11 +140,7 @@ impl Opinion {
 		let m_hash = pos.permute()[0];
 		let m_hash_passed = Bn256Scalar::from_bytes(&self.m_hash).unwrap();
 
-		let final_hash = if op_v_f == Bn256Scalar::zero() {
-			m_hash_passed
-		} else {
-			m_hash
-		};
+		let final_hash = if op_v_f == Bn256Scalar::zero() { m_hash_passed } else { m_hash };
 
 		let pub_ins = vec![final_hash];
 
@@ -208,9 +175,7 @@ mod test {
 		let pk = keygen(&params, &random_circuit).unwrap();
 
 		let op = Opinion::empty(1, &params, &pk).unwrap();
-		let res = op
-			.verify(&local_pubkey, &keypair_v, &params, &pk.get_vk())
-			.unwrap();
+		let res = op.verify(&local_pubkey, &keypair_v, &params, &pk.get_vk()).unwrap();
 		assert!(res);
 	}
 
@@ -234,8 +199,6 @@ mod test {
 		let proof =
 			Opinion::generate(&local_keypair, &pubkey_v, iter, op_ji, c_v, &params, &pk).unwrap();
 
-		assert!(proof
-			.verify(&local_pubkey, &keypair_v, &params, pk.get_vk())
-			.unwrap());
+		assert!(proof.verify(&local_pubkey, &keypair_v, &params, pk.get_vk()).unwrap());
 	}
 }

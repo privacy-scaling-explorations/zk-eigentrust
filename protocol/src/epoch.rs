@@ -50,9 +50,8 @@ impl Epoch {
 	/// Calculates the current timestamp. The difference between UNIX timestamp
 	/// start and now.
 	pub fn current_timestamp() -> Result<u64, EigenError> {
-		let unix_timestamp = SystemTime::now()
-			.duration_since(UNIX_EPOCH)
-			.map_err(|_| EigenError::EpochError)?;
+		let unix_timestamp =
+			SystemTime::now().duration_since(UNIX_EPOCH).map_err(|_| EigenError::EpochError)?;
 
 		Ok(unix_timestamp.as_secs())
 	}

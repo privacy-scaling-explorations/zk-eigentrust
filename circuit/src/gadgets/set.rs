@@ -59,20 +59,11 @@ impl<F: FieldExt, const N: usize> FixedSetChip<F, N> {
 			]
 		});
 
-		FixedSetConfig {
-			is_zero,
-			target,
-			items,
-			diffs,
-			product,
-			selector: s,
-		}
+		FixedSetConfig { is_zero, target, items, diffs, product, selector: s }
 	}
 
 	pub fn synthesize(
-		&self,
-		config: FixedSetConfig,
-		mut layouter: impl Layouter<F>,
+		&self, config: FixedSetConfig, mut layouter: impl Layouter<F>,
 	) -> Result<AssignedCell<F, F>, Error> {
 		let product = layouter.assign_region(
 			|| "set_membership",
@@ -84,8 +75,7 @@ impl<F: FieldExt, const N: usize> FixedSetChip<F, N> {
 					F::one(),
 				)?;
 				let mut assigned_target =
-					self.target
-						.copy_advice(|| "target", &mut region, config.target, 0)?;
+					self.target.copy_advice(|| "target", &mut region, config.target, 0)?;
 				for i in 0..N {
 					config.selector.enable(&mut region, i)?;
 
@@ -155,10 +145,7 @@ mod test {
 
 	impl<F: FieldExt> TestCircuit<F> {
 		fn new(items: [F; 3], target: F) -> Self {
-			Self {
-				items,
-				target: Value::known(target),
-			}
+			Self { items, target: Value::known(target) }
 		}
 	}
 
@@ -178,17 +165,11 @@ mod test {
 			meta.enable_equality(instance);
 			meta.enable_equality(temp);
 
-			TestConfig {
-				set: fixed_set,
-				pub_ins: instance,
-				temp,
-			}
+			TestConfig { set: fixed_set, pub_ins: instance, temp }
 		}
 
 		fn synthesize(
-			&self,
-			config: TestConfig,
-			mut layouter: impl Layouter<F>,
+			&self, config: TestConfig, mut layouter: impl Layouter<F>,
 		) -> Result<(), Error> {
 			let numba = layouter.assign_region(
 				|| "temp",

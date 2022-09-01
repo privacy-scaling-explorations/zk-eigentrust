@@ -33,19 +33,10 @@ pub struct ScalarMulChip<const B: usize> {
 
 impl<const B: usize> ScalarMulChip<B> {
 	pub fn new(
-		e_x: AssignedCell<Fr, Fr>,
-		e_y: AssignedCell<Fr, Fr>,
-		e_z: AssignedCell<Fr, Fr>,
-		value: AssignedCell<Fr, Fr>,
-		value_bits: [Fr; B],
+		e_x: AssignedCell<Fr, Fr>, e_y: AssignedCell<Fr, Fr>, e_z: AssignedCell<Fr, Fr>,
+		value: AssignedCell<Fr, Fr>, value_bits: [Fr; B],
 	) -> Self {
-		Self {
-			e_x,
-			e_y,
-			e_z,
-			value,
-			value_bits,
-		}
+		Self { e_x, e_y, e_z, value, value_bits }
 	}
 }
 
@@ -120,24 +111,12 @@ impl<const B: usize> ScalarMulChip<B> {
 			]
 		});
 
-		ScalarMulConfig {
-			bits2num,
-			bits,
-			r_x,
-			r_y,
-			r_z,
-			e_x,
-			e_y,
-			e_z,
-			selector: s,
-		}
+		ScalarMulConfig { bits2num, bits, r_x, r_y, r_z, e_x, e_y, e_z, selector: s }
 	}
 
 	/// Synthesize the circuit.
 	pub fn synthesize(
-		&self,
-		config: ScalarMulConfig,
-		mut layouter: impl Layouter<Fr>,
+		&self, config: ScalarMulConfig, mut layouter: impl Layouter<Fr>,
 	) -> Result<
 		(
 			AssignedCell<Fr, Fr>,
@@ -281,17 +260,11 @@ mod test {
 			meta.enable_equality(instance);
 			meta.enable_equality(temp);
 
-			TestConfig {
-				scalar_mul,
-				pub_ins: instance,
-				temp,
-			}
+			TestConfig { scalar_mul, pub_ins: instance, temp }
 		}
 
 		fn synthesize(
-			&self,
-			config: TestConfig,
-			mut layouter: impl Layouter<Fr>,
+			&self, config: TestConfig, mut layouter: impl Layouter<Fr>,
 		) -> Result<(), Error> {
 			let (r_x, r_y, r_z, value) = layouter.assign_region(
 				|| "temp",

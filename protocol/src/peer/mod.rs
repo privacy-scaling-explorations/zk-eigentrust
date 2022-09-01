@@ -27,6 +27,7 @@ pub struct Peer {
 	cached_neighbor_opinion: HashMap<(PeerId, u8), Opinion>,
 	cached_local_opinion: HashMap<(PeerId, u8), Opinion>,
 	keypair: Keypair,
+	pub(crate) pubkey: Pubkey,
 	params: ParamsKZG<Bn256>,
 	proving_key: ProvingKey<G1Affine>,
 }
@@ -34,10 +35,9 @@ pub struct Peer {
 impl Peer {
 	/// Creates a new peer.
 	pub fn new(
-		keypair: Keypair,
-		params: ParamsKZG<Bn256>,
-		pk: ProvingKey<G1Affine>,
+		keypair: Keypair, params: ParamsKZG<Bn256>, pk: ProvingKey<G1Affine>,
 	) -> Result<Self, EigenError> {
+		let pubkey = Pubkey::from_keypair(&keypair)?;
 		Ok(Peer {
 			neighbors: [None; MAX_NEIGHBORS],
 			pubkeys_native: HashMap::new(),
@@ -46,6 +46,7 @@ impl Peer {
 			cached_neighbor_opinion: HashMap::new(),
 			cached_local_opinion: HashMap::new(),
 			keypair,
+			pubkey,
 			params,
 			proving_key: pk,
 		})
@@ -103,13 +104,7 @@ impl Peer {
 		let pubkey_op = self.get_pub_key(peer_id);
 		let opinion = if let Some(pubkey) = pubkey_op {
 			Opinion::generate(
-				&self.keypair,
-				&pubkey,
-				k,
-				op_ji,
-				normalized_score,
-				&self.params,
-				&self.proving_key,
+				&self.keypair, &pubkey, k, op_ji, normalized_score, &self.params, &self.proving_key,
 			)
 			.unwrap_or_else(|e| {
 				log::debug!("Error while generating opinion for {:?}: {:?}", peer_id, e);

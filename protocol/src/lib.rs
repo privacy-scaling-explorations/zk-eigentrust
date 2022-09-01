@@ -22,19 +22,9 @@
 #![feature(array_zip, array_try_map)]
 #![allow(clippy::tabs_in_doc_comments)]
 #![deny(
-	future_incompatible,
-	nonstandard_style,
-	missing_docs,
-	deprecated,
-	unreachable_code,
-	unreachable_patterns,
-	absolute_paths_not_starting_with_crate,
-	unsafe_code,
-	clippy::unwrap_used,
-	clippy::panic,
-	clippy::unnecessary_cast,
-	clippy::cast_lossless,
-	clippy::cast_possible_wrap
+	future_incompatible, nonstandard_style, missing_docs, deprecated, unreachable_code,
+	unreachable_patterns, absolute_paths_not_starting_with_crate, unsafe_code, clippy::unwrap_used,
+	clippy::panic, clippy::unnecessary_cast, clippy::cast_lossless, clippy::cast_possible_wrap
 )]
 #![warn(trivial_casts)]
 #![forbid(unsafe_code)]

@@ -42,18 +42,12 @@ impl<F: FieldExt, const S: usize> AccumulatorChip<F, S> {
 			vec![s * (acc_exp + item_exp - acc_next)]
 		});
 
-		AccumulatorConfig {
-			acc,
-			items,
-			selector: s,
-		}
+		AccumulatorConfig { acc, items, selector: s }
 	}
 
 	/// Synthesize the circuit.
 	pub fn synthesize(
-		&self,
-		config: AccumulatorConfig,
-		mut layouter: impl Layouter<F>,
+		&self, config: AccumulatorConfig, mut layouter: impl Layouter<F>,
 	) -> Result<AssignedCell<F, F>, Error> {
 		layouter.assign_region(
 			|| "acc",
@@ -131,9 +125,7 @@ mod test {
 		}
 
 		fn synthesize(
-			&self,
-			config: TestConfig,
-			mut layouter: impl Layouter<F>,
+			&self, config: TestConfig, mut layouter: impl Layouter<F>,
 		) -> Result<(), Error> {
 			let arr = layouter.assign_region(
 				|| "temp",

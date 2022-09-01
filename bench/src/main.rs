@@ -20,10 +20,7 @@ const NUM_CONNECTIONS: usize = 12;
 pub fn init_logger() {
 	let mut builder = Builder::from_default_env();
 
-	builder
-		.filter(Some("eigen_trust"), LevelFilter::Debug)
-		.format_timestamp(None)
-		.init();
+	builder.filter(Some("eigen_trust"), LevelFilter::Debug).format_timestamp(None).init();
 }
 
 #[tokio::main]
@@ -68,10 +65,9 @@ async fn main() {
 			let peer = Peer::new(local_key.clone(), params, pk).unwrap();
 			let mut node = Node::new(local_key, local_address, INTERVAL, peer).unwrap();
 
-			let peer = node.get_peer_mut();
 			for (peer_id, ..) in bootstrap_nodes {
 				let random_score: u32 = rand::thread_rng().gen_range(0..100);
-				peer.set_score(peer_id, random_score);
+				// peer.set_score(peer_id, random_score);
 			}
 
 			node.main_loop(Some(10)).await.unwrap();
@@ -79,10 +75,6 @@ async fn main() {
 		tasks.push(join_handle);
 	}
 
-	let _ = join_all(tasks)
-		.await
-		.iter()
-		.map(|r| r.as_ref().unwrap())
-		.collect::<Vec<_>>();
+	let _ = join_all(tasks).await.iter().map(|r| r.as_ref().unwrap()).collect::<Vec<_>>();
 	println!("Done");
 }

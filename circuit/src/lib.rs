@@ -70,13 +70,8 @@ impl<F: FieldExt, const S: usize, const B: usize, P: RoundParams<F, 5>>
 {
 	/// Create a new EigenTrustCircuit.
 	pub fn new(
-		pubkey_v: F,
-		iteration: F,
-		secret_i: [F; 4],
-		op_ji: [F; S],
-		c_v: F,
-		bootstrap_pubkeys: [F; B],
-		boostrap_score: F,
+		pubkey_v: F, iteration: F, secret_i: [F; 4], op_ji: [F; S], c_v: F,
+		bootstrap_pubkeys: [F; B], boostrap_score: F,
 	) -> Self {
 		Self {
 			pubkey_v: Value::known(pubkey_v),
@@ -91,10 +86,7 @@ impl<F: FieldExt, const S: usize, const B: usize, P: RoundParams<F, 5>>
 	}
 
 	pub fn assign_temp(
-		column: Column<Advice>,
-		name: &str,
-		region: &mut Region<'_, F>,
-		offset: &mut usize,
+		column: Column<Advice>, name: &str, region: &mut Region<'_, F>, offset: &mut usize,
 		value: Value<F>,
 	) -> Result<AssignedCell<F, F>, Error> {
 		let res = region.assign_advice(|| name, column, *offset, || value)?;
@@ -104,10 +96,7 @@ impl<F: FieldExt, const S: usize, const B: usize, P: RoundParams<F, 5>>
 	}
 
 	pub fn assign_fixed(
-		column: Column<Advice>,
-		name: &str,
-		region: &mut Region<'_, F>,
-		offset: &mut usize,
+		column: Column<Advice>, name: &str, region: &mut Region<'_, F>, offset: &mut usize,
 		value: F,
 	) -> Result<AssignedCell<F, F>, Error> {
 		let res = region.assign_advice_from_constant(|| name, column, *offset, value)?;
@@ -171,9 +160,7 @@ impl<F: FieldExt, const S: usize, const B: usize, P: RoundParams<F, 5>> Circuit<
 
 	/// Synthesize the circuit.
 	fn synthesize(
-		&self,
-		config: Self::Config,
-		mut layouter: impl Layouter<F>,
+		&self, config: Self::Config, mut layouter: impl Layouter<F>,
 	) -> Result<(), Error> {
 		let (zero, ops, c_v, sk, iteration, bootstrap_score, pubkey_v, out_m_hash) = layouter
 			.assign_region(
@@ -188,41 +175,27 @@ impl<F: FieldExt, const S: usize, const B: usize, P: RoundParams<F, 5>> Circuit<
 						F::zero(),
 					)?;
 
-					let sk = self
-						.secret_i
-						.try_map::<_, Result<AssignedCell<F, F>, Error>>(|v| {
+					let sk =
+						self.secret_i.try_map::<_, Result<AssignedCell<F, F>, Error>>(|v| {
 							Self::assign_temp(config.temp, "op", &mut region, &mut offset, v)
 						})?;
 
 					let iteration = Self::assign_temp(
-						config.temp,
-						"iteration",
-						&mut region,
-						&mut offset,
-						self.iteration,
+						config.temp, "iteration", &mut region, &mut offset, self.iteration,
 					)?;
 					let bootstrap_score = Self::assign_temp(
-						config.temp,
-						"bootstrap_score",
-						&mut region,
-						&mut offset,
+						config.temp, "bootstrap_score", &mut region, &mut offset,
 						self.boostrap_score,
 					)?;
 					let pubkey_v = Self::assign_temp(
-						config.temp,
-						"pubkey_v",
-						&mut region,
-						&mut offset,
-						self.pubkey_v,
+						config.temp, "pubkey_v", &mut region, &mut offset, self.pubkey_v,
 					)?;
 					let c_v =
 						Self::assign_temp(config.temp, "c_v", &mut region, &mut offset, self.c_v)?;
 
-					let ops = self
-						.op_ji
-						.try_map::<_, Result<AssignedCell<F, F>, Error>>(|op| {
-							Self::assign_temp(config.temp, "ops", &mut region, &mut offset, op)
-						})?;
+					let ops = self.op_ji.try_map::<_, Result<AssignedCell<F, F>, Error>>(|op| {
+						Self::assign_temp(config.temp, "ops", &mut region, &mut offset, op)
+					})?;
 
 					let out_m_hash = region.assign_advice_from_instance(
 						|| "m_hash",
@@ -233,14 +206,7 @@ impl<F: FieldExt, const S: usize, const B: usize, P: RoundParams<F, 5>> Circuit<
 					)?;
 
 					Ok((
-						zero,
-						ops,
-						c_v,
-						sk,
-						iteration,
-						bootstrap_score,
-						pubkey_v,
-						out_m_hash,
+						zero, ops, c_v, sk, iteration, bootstrap_score, pubkey_v, out_m_hash,
 					))
 				},
 			)?;
@@ -249,13 +215,7 @@ impl<F: FieldExt, const S: usize, const B: usize, P: RoundParams<F, 5>> Circuit<
 		let t_i = acc_chip.synthesize(config.accumulator, layouter.namespace(|| "accumulator"))?;
 
 		// Recreate the pubkey_i
-		let inputs = [
-			zero.clone(),
-			sk[0].clone(),
-			sk[1].clone(),
-			sk[2].clone(),
-			sk[3].clone(),
-		];
+		let inputs = [zero.clone(), sk[0].clone(), sk[1].clone(), sk[2].clone(), sk[3].clone()];
 		let poseidon_pk = PoseidonChip::<_, 5, P>::new(inputs);
 		let res = poseidon_pk.synthesize(
 			config.poseidon.clone(),
@@ -339,13 +299,7 @@ mod test {
 		let bootstrap_score = Fr::from(MAX_SCORE);
 
 		let eigen_trust = EigenTrustCircuit::<Fr, SIZE, NUM_BOOTSTRAP, Params5x5Bn254>::new(
-			pubkey_v,
-			epoch,
-			sk,
-			op_ji,
-			c_v,
-			bootstrap_pubkeys,
-			bootstrap_score,
+			pubkey_v, epoch, sk, op_ji, c_v, bootstrap_pubkeys, bootstrap_score,
 		);
 
 		let inputs_sk = [Fr::zero(), sk[0], sk[1], sk[2], sk[3]];
@@ -381,13 +335,7 @@ mod test {
 		let bootstrap_score = Fr::from(MAX_SCORE);
 
 		let eigen_trust = EigenTrustCircuit::<Fr, SIZE, NUM_BOOTSTRAP, Params5x5Bn254>::new(
-			pubkey_v,
-			epoch,
-			sk,
-			op_ji,
-			c_v,
-			bootstrap_pubkeys,
-			bootstrap_score,
+			pubkey_v, epoch, sk, op_ji, c_v, bootstrap_pubkeys, bootstrap_score,
 		);
 
 		let inputs_sk = [Fr::zero(), sk[0], sk[1], sk[2], sk[3]];
