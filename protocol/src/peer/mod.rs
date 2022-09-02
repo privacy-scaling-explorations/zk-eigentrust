@@ -8,7 +8,7 @@ pub mod opinion;
 pub mod pubkey;
 pub mod utils;
 
-use crate::{constants::MAX_NEIGHBORS, EigenError};
+use crate::{constants::MAX_NEIGHBORS, EigenError, Epoch};
 use eigen_trust_circuit::halo2wrong::{
 	curves::bn256::{Bn256, G1Affine},
 	halo2::{plonk::ProvingKey, poly::kzg::commitment::ParamsKZG},
@@ -24,8 +24,8 @@ pub struct Peer {
 	pubkeys_native: HashMap<PeerId, PublicKey>,
 	pubkeys: HashMap<PeerId, Pubkey>,
 	neighbor_scores: HashMap<PeerId, u32>,
-	cached_neighbor_opinion: HashMap<(PeerId, u8), Opinion>,
-	cached_local_opinion: HashMap<(PeerId, u8), Opinion>,
+	cached_neighbor_opinion: HashMap<(PeerId, Epoch, u8), Opinion>,
+	cached_local_opinion: HashMap<(PeerId, Epoch, u8), Opinion>,
 	keypair: Keypair,
 	pub(crate) pubkey: Pubkey,
 	params: ParamsKZG<Bn256>,
@@ -96,55 +96,55 @@ impl Peer {
 
 	/// Calculate the local trust score toward all neighbors in the specified
 	/// epoch and generate zk proof of it.
-	pub fn calculate_local_opinion(&mut self, peer_id: PeerId, k: u8) {
+	pub fn calculate_local_opinion(&mut self, peer_id: PeerId, epoch: Epoch, k: u8) {
 		let score = self.neighbor_scores.get(&peer_id).unwrap_or(&0);
 
-		let op_ji = self.get_neighbor_opinions_at(k - 1);
+		let op_ji = self.get_neighbor_opinions_at(epoch, k - 1);
 		let normalized_score = self.get_normalized_score(*score);
 		let pubkey_op = self.get_pub_key(peer_id);
 		let opinion = if let Some(pubkey) = pubkey_op {
 			Opinion::generate(
-				&self.keypair, &pubkey, k, op_ji, normalized_score, &self.params, &self.proving_key,
+				&self.keypair, &pubkey, epoch, k, op_ji, normalized_score, &self.params,
+				&self.proving_key,
 			)
 			.unwrap_or_else(|e| {
 				log::debug!("Error while generating opinion for {:?}: {:?}", peer_id, e);
-				Opinion::empty(k, &self.params, &self.proving_key).unwrap()
+				Opinion::empty(&self.params, &self.proving_key).unwrap()
 			})
 		} else {
 			log::debug!(
 				"Pubkey not found for {:?}, generating empty opinion.",
 				peer_id
 			);
-			Opinion::empty(k, &self.params, &self.proving_key).unwrap()
+			Opinion::empty(&self.params, &self.proving_key).unwrap()
 		};
 
-		self.cache_local_opinion((peer_id, opinion.iter), opinion);
+		self.cache_local_opinion((peer_id, epoch, opinion.iter), opinion);
 	}
 
 	/// Returns all of the opinions of the neighbors in the specified epoch.
-	pub fn get_neighbor_opinions_at(&self, k: u8) -> [f64; MAX_NEIGHBORS] {
+	pub fn get_neighbor_opinions_at(&self, epoch: Epoch, k: u8) -> [f64; MAX_NEIGHBORS] {
 		let mut scores: [f64; MAX_NEIGHBORS] = [0.; MAX_NEIGHBORS];
 		for (i, peer) in self.neighbors.iter().enumerate() {
-			let peer_pk_pair = peer.and_then(|peer_id| {
-				let pub_k = self.get_pub_key(peer_id);
-				pub_k.map(|pk| (peer_id, pk))
-			});
-
-			peer_pk_pair.map(|(peer_id, pubkey_p)| {
-				let opinion = self.get_neighbor_opinion(&(peer_id, k));
-				let vk = self.proving_key.get_vk();
-
-				if opinion.verify(&pubkey_p, &self.keypair, &self.params, vk) == Ok(true) {
-					scores[i] = opinion.op;
-				}
+			peer.map(|peer_id| {
+				let opinion = self.get_neighbor_opinion(&(peer_id, epoch, k));
+				scores[i] = opinion.op;
 			});
 		}
 		scores
 	}
 
+	/// Checks whether the neighbor has opinions from all of it's neighbors at
+	/// iteration `k`
+	pub fn has_neighbor_opinions_at(&self, epoch: Epoch, k: u8) -> bool {
+		self.neighbors()
+			.iter()
+			.all(|v| self.cached_neighbor_opinion.contains_key(&(*v, epoch, k)))
+	}
+
 	/// Calculate the global trust score at the specified epoch.
-	pub fn global_trust_score_at(&self, at: u8) -> f64 {
-		let op_ji = self.get_neighbor_opinions_at(at - 1);
+	pub fn global_trust_score_at(&self, epoch: Epoch, at: u8) -> f64 {
+		let op_ji = self.get_neighbor_opinions_at(epoch, at - 1);
 		op_ji.iter().sum()
 	}
 
@@ -167,29 +167,38 @@ impl Peer {
 	}
 
 	/// Returns the local score towards a neighbor in a specified epoch.
-	pub fn get_local_opinion(&self, key: &(PeerId, u8)) -> Opinion {
+	pub fn get_local_opinion(&self, key: &(PeerId, Epoch, u8)) -> Opinion {
 		self.cached_local_opinion
 			.get(key)
-			.unwrap_or(&Opinion::empty(key.1, &self.params, &self.proving_key).unwrap())
+			.unwrap_or(&Opinion::empty(&self.params, &self.proving_key).unwrap())
 			.clone()
 	}
 
 	/// Caches the local opinion towards a peer in a specified epoch.
-	pub fn cache_local_opinion(&mut self, key: (PeerId, u8), opinion: Opinion) {
+	pub fn cache_local_opinion(&mut self, key: (PeerId, Epoch, u8), opinion: Opinion) {
 		self.cached_local_opinion.insert(key, opinion);
 	}
 
 	/// Returns the neighbor's opinion towards us in a specified epoch.
-	pub fn get_neighbor_opinion(&self, key: &(PeerId, u8)) -> Opinion {
+	pub fn get_neighbor_opinion(&self, key: &(PeerId, Epoch, u8)) -> Opinion {
 		self.cached_neighbor_opinion
 			.get(key)
-			.unwrap_or(&Opinion::empty(key.1, &self.params, &self.proving_key).unwrap())
+			.unwrap_or(&Opinion::empty(&self.params, &self.proving_key).unwrap())
 			.clone()
 	}
 
 	/// Caches the neighbor opinion towards us in specified epoch.
-	pub fn cache_neighbor_opinion(&mut self, key: (PeerId, u8), opinion: Opinion) {
-		self.cached_neighbor_opinion.insert(key, opinion);
+	pub fn cache_neighbor_opinion(&mut self, key: (PeerId, Epoch, u8), opinion: Opinion) {
+		let vk = self.proving_key.get_vk();
+		let pubkey_p = self.get_pub_key(key.0);
+		if pubkey_p.is_none() {
+			return;
+		}
+		let pubkey_p = pubkey_p.unwrap();
+		// We add it only if its a valid proof
+		if opinion.verify(&pubkey_p, &self.keypair, &self.params, vk) == Ok(true) {
+			self.cached_neighbor_opinion.insert(key, opinion);
+		}
 	}
 
 	/// Get the native public key of a neighbor.
@@ -245,17 +254,21 @@ mod tests {
 		let mut peer = Peer::new(kp, params.clone(), pk.clone()).unwrap();
 
 		let iter = 0;
+		let epoch = Epoch(0);
 		let neighbor_id = PeerId::random();
 
 		let pubkey = Keypair::generate_secp256k1().public();
 		peer.identify_neighbor_native(neighbor_id, pubkey);
 
-		let opinion = Opinion::empty(iter, &params, &pk).unwrap();
-		peer.cache_local_opinion((neighbor_id, iter), opinion.clone());
-		peer.cache_neighbor_opinion((neighbor_id, iter), opinion.clone());
+		let opinion = Opinion::empty(&params, &pk).unwrap();
+		peer.cache_local_opinion((neighbor_id, epoch, iter), opinion.clone());
+		peer.cache_neighbor_opinion((neighbor_id, epoch, iter), opinion.clone());
 
-		assert_eq!(peer.get_local_opinion(&(neighbor_id, iter)), opinion);
-		assert_eq!(peer.get_neighbor_opinion(&(neighbor_id, iter)), opinion);
+		assert_eq!(peer.get_local_opinion(&(neighbor_id, epoch, iter)), opinion);
+		assert_eq!(
+			peer.get_neighbor_opinion(&(neighbor_id, epoch, iter)),
+			opinion
+		);
 	}
 
 	#[test]

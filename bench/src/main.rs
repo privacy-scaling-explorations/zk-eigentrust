@@ -70,7 +70,7 @@ async fn main() {
 				// peer.set_score(peer_id, random_score);
 			}
 
-			node.main_loop(Some(10)).await.unwrap();
+			node.main_loop(Some(10)).await;
 		});
 		tasks.push(join_handle);
 	}

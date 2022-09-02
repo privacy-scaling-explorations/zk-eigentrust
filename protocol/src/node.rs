@@ -23,7 +23,7 @@ use libp2p::{
 	yamux::YamuxConfig,
 	Multiaddr, PeerId, Transport,
 };
-use std::{collections::HashSet, io::Error as IoError};
+use std::io::Error as IoError;
 use tokio::{
 	select,
 	time::{self, Duration, Instant},
@@ -34,8 +34,6 @@ pub struct Node {
 	/// Swarm object.
 	pub(crate) swarm: Swarm<EigenTrustBehaviour>,
 	interval: Duration,
-	incoming_requests: HashSet<(PeerId, Request)>,
-	outgoing_requests: HashSet<(PeerId, Request)>,
 	pub(crate) peer: Peer,
 }
 
@@ -50,7 +48,6 @@ impl Node {
 				log::error!("NoiseKeypair.into_authentic {}", e);
 				EigenError::InvalidKeypair
 			})?;
-
 		// 30 years in seconds
 		// Basically, we want connections to be open for a long time.
 		let connection_duration = Duration::from_secs(86400 * 365 * 30);
@@ -65,7 +62,6 @@ impl Node {
 
 		let beh =
 			EigenTrustBehaviour::new(connection_duration, interval_duration, local_key.public());
-
 		// Setting up the transport and swarm.
 		let local_peer_id = PeerId::from(local_key.public());
 		let mut swarm = SwarmBuilder::new(transport, beh, local_peer_id).build();
@@ -77,19 +73,9 @@ impl Node {
 
 		Ok(Self {
 			swarm,
-			incoming_requests: HashSet::new(),
-			outgoing_requests: HashSet::new(),
 			interval: interval_duration,
 			peer,
 		})
-	}
-
-	/// Send the request for an opinion to all neighbors, in the passed epoch.
-	pub fn send_epoch_requests(&mut self, k: u8) {
-		for peer_id in self.peer.neighbors() {
-			let request = Request::Opinion(k);
-			self.swarm.behaviour_mut().send_request(&peer_id, request);
-		}
 	}
 
 	/// Handle the request response event.
@@ -97,11 +83,14 @@ impl Node {
 		use RequestResponseEvent::*;
 		use RequestResponseMessage::{Request as Req, Response as Res};
 		match event {
-			Message { peer, message: Req { request: Request::Opinion(iter), channel, .. } } => {
+			Message {
+				peer,
+				message: Req { request: Request::Opinion(epoch, iter), channel, .. },
+			} => {
 				// First we calculate the local opinions for the requested epoch.
-				self.peer.calculate_local_opinion(peer, iter);
+				self.peer.calculate_local_opinion(peer, epoch, iter);
 				// Then we send the local opinion to the peer.
-				let opinion = self.peer.get_local_opinion(&(peer, iter));
+				let opinion = self.peer.get_local_opinion(&(peer, epoch, iter));
 				let response = Response::Opinion(opinion);
 				let res = self.swarm.behaviour_mut().send_response(channel, response);
 				if let Err(e) = res {
@@ -118,7 +107,7 @@ impl Node {
 			},
 			Message { peer, message: Res { response: Response::Opinion(opinion), .. } } => {
 				// If we receive a response, we update the neighbors's opinion about us.
-				self.peer.cache_neighbor_opinion((peer, opinion.iter), opinion);
+				self.peer.cache_neighbor_opinion((peer, opinion.epoch, opinion.iter), opinion);
 			},
 			Message { peer, message: Res { response: Response::Identify(pub_key), .. } } => {
 				self.peer.identify_neighbor(peer, pub_key);
@@ -172,7 +161,9 @@ impl Node {
 			SwarmEvent::Behaviour(EigenEvent::Identify(event)) => {
 				self.handle_identify_events(event);
 			},
-			SwarmEvent::NewListenAddr { address, .. } => log::info!("Listening on {:?}", address),
+			SwarmEvent::NewListenAddr { address, .. } => {
+				log::info!("Listening on {:?}", address);
+			},
 			// When we connect to a peer, we automatically add him as a neighbor.
 			SwarmEvent::ConnectionEstablished { peer_id, .. } => {
 				let res = self.peer.add_neighbor(peer_id);
@@ -186,7 +177,9 @@ impl Node {
 				self.peer.remove_neighbor(peer_id);
 				log::info!("Connection closed with {:?} ({:?})", peer_id, cause);
 			},
-			SwarmEvent::Dialing(peer_id) => log::info!("Dialing {:?}", peer_id),
+			SwarmEvent::Dialing(peer_id) => {
+				log::info!("Dialing {:?}", peer_id);
+			},
 			e => log::debug!("{:?}", e),
 		}
 	}
@@ -197,21 +190,28 @@ impl Node {
 		log::debug!("swarm.dial {:?}", res);
 	}
 
+	/// Send the request for an opinion to all neighbors, in the passed epoch.
+	pub fn send_epoch_requests(&mut self, epoch: Epoch, k: u8) {
+		for peer_id in self.peer.neighbors() {
+			let request = Request::Opinion(epoch, k);
+			self.swarm.behaviour_mut().send_request(&peer_id, request);
+		}
+	}
+
 	/// Start the main loop of the program. This function has two main tasks:
 	/// - To start an interval timer for sending the request for opinions.
 	/// - To handle the swarm + request/response events.
 	/// The amount of intervals/epochs is determined by the `interval_limit`
 	/// parameter.
-	pub async fn main_loop(mut self, interval_limit: Option<u32>) -> Result<(), EigenError> {
+	pub async fn main_loop(mut self, interval_limit: Option<u32>) {
 		let now = Instant::now();
-		let secs_until_next_epoch = Epoch::secs_until_next_epoch(self.interval.as_secs())?;
+		let secs_until_next_epoch = Epoch::secs_until_next_epoch(self.interval.as_secs());
 		log::info!("Epoch starts in: {} seconds", secs_until_next_epoch);
 		// Figure out when the next epoch will start.
 		let start = now + Duration::from_secs(secs_until_next_epoch);
-
 		// Setup the interval timer.
 		let mut interval = time::interval_at(start, self.interval);
-
+		interval.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
 		// Count the number of epochs passed
 		let mut count = 0;
 
@@ -220,9 +220,9 @@ impl Node {
 				biased;
 				// The interval timer tick. This is where we request opinions from the neighbors.
 				_ = interval.tick() => {
+					let epoch = Epoch::current_epoch(self.interval.as_secs());
 					// Send the request for opinions to all neighbors.
-					self.send_epoch_requests(NUM_ITERATIONS);
-
+					self.send_epoch_requests(epoch, NUM_ITERATIONS);
 					// Increment the epoch counter, break out of the loop if we reached the limit
 					if let Some(num) = interval_limit {
 						count += 1;
@@ -235,8 +235,6 @@ impl Node {
 				event = self.swarm.select_next_some() => self.handle_swarm_events(event),
 			}
 		}
-
-		Ok(())
 	}
 }
 
@@ -289,7 +287,6 @@ mod tests {
 		let peer2 = Peer::new(local_key2.clone(), params, pk).unwrap();
 
 		let mut node1 = Node::new(local_key1, local_address1.clone(), INTERVAL, peer1).unwrap();
-
 		let mut node2 = Node::new(local_key2, local_address2.clone(), INTERVAL, peer2).unwrap();
 
 		node1.dial_neighbor(local_address2);
@@ -502,7 +499,7 @@ mod tests {
 		let join2 = tokio::spawn(async move { node2.main_loop(Some(1)).await });
 
 		let (res1, res2) = tokio::join!(join1, join2);
-		res1.unwrap().unwrap();
-		res2.unwrap().unwrap();
+		res1.unwrap();
+		res2.unwrap();
 	}
 }

@@ -4,7 +4,7 @@ use super::pubkey::Pubkey;
 use crate::{
 	constants::*,
 	peer::utils::{extract_sk_limbs, to_wide_bytes},
-	EigenError,
+	EigenError, Epoch,
 };
 use bs58::decode::Error as Bs58Error;
 use eigen_trust_circuit::{
@@ -32,6 +32,7 @@ pub const SCALE: f64 = 100000000.;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Opinion {
+	pub(crate) epoch: Epoch,
 	pub(crate) iter: u8,
 	pub(crate) op: f64,
 	pub(crate) proof_bytes: Vec<u8>,
@@ -39,14 +40,14 @@ pub struct Opinion {
 }
 
 impl Opinion {
-	pub fn new(iter: u8, op: f64, proof_bytes: Vec<u8>) -> Self {
-		Self { iter, op, proof_bytes, m_hash: [0; 32] }
+	pub fn new(epoch: Epoch, iter: u8, op: f64, proof_bytes: Vec<u8>) -> Self {
+		Self { epoch, iter, op, proof_bytes, m_hash: [0; 32] }
 	}
 
 	/// Creates a new opinion.
 	pub fn generate(
-		kp: &IdentityKeypair, pubkey_v: &Pubkey, k: u8, op_ji: [f64; MAX_NEIGHBORS], c_v: f64,
-		params: &ParamsKZG<Bn256>, pk: &ProvingKey<G1Affine>,
+		kp: &IdentityKeypair, pubkey_v: &Pubkey, epoch: Epoch, k: u8, op_ji: [f64; MAX_NEIGHBORS],
+		c_v: f64, params: &ParamsKZG<Bn256>, pk: &ProvingKey<G1Affine>,
 	) -> Result<Self, EigenError> {
 		let mut rng = thread_rng();
 
@@ -64,7 +65,6 @@ impl Opinion {
 			})
 			.map_err(|_: Bs58Error| EigenError::InvalidBootstrapPubkey)?;
 		let bootstrap_score_scaled = (BOOTSTRAP_SCORE * SCALE).round() as u128;
-
 		// Turn into scaled values and round the to avoid rounding errors.
 		let op_ji_scaled = op_ji.map(|op| (op * SCALE).round() as u128);
 		let c_v_scaled = (c_v * SCALE).round() as u128;
@@ -78,20 +78,20 @@ impl Opinion {
 
 		let op_v_scaled = t_i_final * c_v_scaled;
 		let op_v_unscaled = (op_v_scaled as f64) / (SCALE * SCALE);
-
 		// Converting into field
 		let op_ji_f = op_ji_scaled.map(Bn256Scalar::from_u128);
 		let c_v_f = Bn256Scalar::from_u128(c_v_scaled);
 		let op_v_f = Bn256Scalar::from_u128(op_v_scaled);
-		let epoch_f = Bn256Scalar::from_u128(k as u128);
+		let epoch_f = Bn256Scalar::from(epoch.0);
+		let iter_f = Bn256Scalar::from_u128(k as u128);
 		let bootstrap_score_f = Bn256Scalar::from_u128(bootstrap_score_scaled);
 
-		let m_hash_input = [Bn256Scalar::zero(), epoch_f, op_v_f, pk_v, pk_p];
+		let m_hash_input = [epoch_f, iter_f, op_v_f, pk_v, pk_p];
 		let pos = Posedion5x5::new(m_hash_input);
 		let m_hash = pos.permute()[0];
 
 		let circuit = ETCircuit::new(
-			pk_v, epoch_f, sk, op_ji_f, c_v_f, bootstrap_pubkeys, bootstrap_score_f,
+			pk_v, epoch_f, iter_f, sk, op_ji_f, c_v_f, bootstrap_pubkeys, bootstrap_score_f,
 		);
 
 		let pub_ins = vec![m_hash];
@@ -106,18 +106,18 @@ impl Opinion {
 		})?;
 		assert!(proof_res);
 
-		Ok(Self { iter: k, op: op_v_unscaled, proof_bytes, m_hash: m_hash.to_bytes() })
+		Ok(Self { epoch, iter: k, op: op_v_unscaled, proof_bytes, m_hash: m_hash.to_bytes() })
 	}
 
-	pub fn empty(
-		k: u8, params: &ParamsKZG<Bn256>, pk: &ProvingKey<G1Affine>,
-	) -> Result<Self, EigenError> {
+	pub fn empty(params: &ParamsKZG<Bn256>, pk: &ProvingKey<G1Affine>) -> Result<Self, EigenError> {
 		let kp: IdentityKeypair = IdentityKeypair::generate_secp256k1();
 		let pubkey_v = Pubkey::from_keypair(&kp).unwrap();
 		let op_ji: [f64; MAX_NEIGHBORS] = [0.; MAX_NEIGHBORS];
 		let c_v: f64 = 0.;
+		let k = 1;
+		let epoch = Epoch(1);
 
-		Self::generate(&kp, &pubkey_v, k, op_ji, c_v, params, pk)
+		Self::generate(&kp, &pubkey_v, epoch, k, op_ji, c_v, params, pk)
 	}
 
 	/// Verifies the proof.
@@ -174,7 +174,7 @@ mod test {
 			random_circuit::<Bn256, _, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, Params5x5Bn254>(rng);
 		let pk = keygen(&params, &random_circuit).unwrap();
 
-		let op = Opinion::empty(1, &params, &pk).unwrap();
+		let op = Opinion::empty(&params, &pk).unwrap();
 		let res = op.verify(&local_pubkey, &keypair_v, &params, &pk.get_vk()).unwrap();
 		assert!(res);
 	}
@@ -188,6 +188,7 @@ mod test {
 		let keypair_v = IdentityKeypair::generate_secp256k1();
 		let pubkey_v = Pubkey::from_keypair(&keypair_v).unwrap();
 
+		let epoch = Epoch(1);
 		let iter = 0;
 		let op_ji = [0.1; MAX_NEIGHBORS];
 		let c_v = 0.1;
@@ -196,8 +197,10 @@ mod test {
 		let random_circuit =
 			random_circuit::<Bn256, _, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, Params5x5Bn254>(rng);
 		let pk = keygen(&params, &random_circuit).unwrap();
-		let proof =
-			Opinion::generate(&local_keypair, &pubkey_v, iter, op_ji, c_v, &params, &pk).unwrap();
+		let proof = Opinion::generate(
+			&local_keypair, &pubkey_v, epoch, iter, op_ji, c_v, &params, &pk,
+		)
+		.unwrap();
 
 		assert!(proof.verify(&local_pubkey, &keypair_v, &params, pk.get_vk()).unwrap());
 	}

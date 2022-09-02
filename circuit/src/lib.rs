@@ -53,6 +53,7 @@ pub struct EigenTrustCircuit<
 	P: RoundParams<F, 5>,
 > {
 	pubkey_v: Value<F>,
+	epoch: Value<F>,
 	iteration: Value<F>,
 	secret_i: [Value<F>; 4],
 	/// Opinions of peers j to the peer i (the prover).
@@ -70,11 +71,12 @@ impl<F: FieldExt, const S: usize, const B: usize, P: RoundParams<F, 5>>
 {
 	/// Create a new EigenTrustCircuit.
 	pub fn new(
-		pubkey_v: F, iteration: F, secret_i: [F; 4], op_ji: [F; S], c_v: F,
+		pubkey_v: F, epoch: F, iteration: F, secret_i: [F; 4], op_ji: [F; S], c_v: F,
 		bootstrap_pubkeys: [F; B], boostrap_score: F,
 	) -> Self {
 		Self {
 			pubkey_v: Value::known(pubkey_v),
+			epoch: Value::known(epoch),
 			iteration: Value::known(iteration),
 			secret_i: secret_i.map(|val| Value::known(val)),
 			op_ji: op_ji.map(|c| Value::known(c)),
@@ -115,6 +117,7 @@ impl<F: FieldExt, const S: usize, const B: usize, P: RoundParams<F, 5>> Circuit<
 	fn without_witnesses(&self) -> Self {
 		Self {
 			pubkey_v: Value::unknown(),
+			epoch: Value::unknown(),
 			iteration: Value::unknown(),
 			secret_i: [Value::unknown(); 4],
 			op_ji: [Value::unknown(); S],
@@ -162,7 +165,7 @@ impl<F: FieldExt, const S: usize, const B: usize, P: RoundParams<F, 5>> Circuit<
 	fn synthesize(
 		&self, config: Self::Config, mut layouter: impl Layouter<F>,
 	) -> Result<(), Error> {
-		let (zero, ops, c_v, sk, iteration, bootstrap_score, pubkey_v, out_m_hash) = layouter
+		let (zero, ops, c_v, sk, epoch, iteration, bootstrap_score, pubkey_v, out_m_hash) = layouter
 			.assign_region(
 				|| "temp",
 				|mut region: Region<'_, F>| {
@@ -180,6 +183,9 @@ impl<F: FieldExt, const S: usize, const B: usize, P: RoundParams<F, 5>> Circuit<
 							Self::assign_temp(config.temp, "op", &mut region, &mut offset, v)
 						})?;
 
+					let epoch = Self::assign_temp(
+						config.temp, "epoch", &mut region, &mut offset, self.epoch,
+					)?;
 					let iteration = Self::assign_temp(
 						config.temp, "iteration", &mut region, &mut offset, self.iteration,
 					)?;
@@ -206,14 +212,13 @@ impl<F: FieldExt, const S: usize, const B: usize, P: RoundParams<F, 5>> Circuit<
 					)?;
 
 					Ok((
-						zero, ops, c_v, sk, iteration, bootstrap_score, pubkey_v, out_m_hash,
+						zero, ops, c_v, sk, epoch, iteration, bootstrap_score, pubkey_v, out_m_hash,
 					))
 				},
 			)?;
 
 		let acc_chip = AccumulatorChip::new(ops);
 		let t_i = acc_chip.synthesize(config.accumulator, layouter.namespace(|| "accumulator"))?;
-
 		// Recreate the pubkey_i
 		let inputs = [zero.clone(), sk[0].clone(), sk[1].clone(), sk[2].clone(), sk[3].clone()];
 		let poseidon_pk = PoseidonChip::<_, 5, P>::new(inputs);
@@ -222,21 +227,17 @@ impl<F: FieldExt, const S: usize, const B: usize, P: RoundParams<F, 5>> Circuit<
 			layouter.namespace(|| "poseidon_pk"),
 		)?;
 		let pubkey_i = res[0].clone();
-
 		// Check the bootstrap set membership
 		let set_membership = FixedSetChip::new(self.bootstrap_pubkeys, pubkey_i.clone());
 		let is_bootstrap =
 			set_membership.synthesize(config.set, layouter.namespace(|| "set_membership"))?;
-
 		// Is the iteration equal to 0?
 		let is_eq_chip = IsEqualChip::new(iteration.clone(), zero.clone());
 		let is_genesis = is_eq_chip.synthesize(config.is_equal, layouter.namespace(|| "is_eq"))?;
-
 		// Is this the bootstrap peer at genesis epoch?
 		let and_chip = AndChip::new(is_bootstrap, is_genesis);
 		let is_bootstrap_and_genesis =
 			and_chip.synthesize(config.and, layouter.namespace(|| "and"))?;
-
 		// Select the appropriate score, depending on the conditions
 		let select_chip = SelectChip::new(is_bootstrap_and_genesis, bootstrap_score, t_i);
 		let t_i_select =
@@ -245,7 +246,7 @@ impl<F: FieldExt, const S: usize, const B: usize, P: RoundParams<F, 5>> Circuit<
 		let mul_chip = MulChip::new(t_i_select, c_v);
 		let op_v = mul_chip.synthesize(config.mul, layouter.namespace(|| "mul"))?;
 
-		let m_hash_input = [zero, iteration, op_v.clone(), pubkey_v, pubkey_i];
+		let m_hash_input = [epoch, iteration, op_v.clone(), pubkey_v, pubkey_i];
 		let poseidon_m_hash = PoseidonChip::<_, 5, P>::new(m_hash_input);
 		let res = poseidon_m_hash
 			.synthesize(config.poseidon, layouter.namespace(|| "poseidon_m_hash"))?;
@@ -289,6 +290,7 @@ mod test {
 		let pubkey_v = Fr::random(&mut rng);
 
 		let epoch = Fr::one();
+		let iter = Fr::one();
 		let sk = [(); 4].map(|_| Fr::random(&mut rng));
 
 		// Data from neighbors of i
@@ -299,7 +301,7 @@ mod test {
 		let bootstrap_score = Fr::from(MAX_SCORE);
 
 		let eigen_trust = EigenTrustCircuit::<Fr, SIZE, NUM_BOOTSTRAP, Params5x5Bn254>::new(
-			pubkey_v, epoch, sk, op_ji, c_v, bootstrap_pubkeys, bootstrap_score,
+			pubkey_v, epoch, iter, sk, op_ji, c_v, bootstrap_pubkeys, bootstrap_score,
 		);
 
 		let inputs_sk = [Fr::zero(), sk[0], sk[1], sk[2], sk[3]];
@@ -325,8 +327,8 @@ mod test {
 		let pubkey_v = Fr::random(&mut rng);
 
 		let epoch = Fr::one();
+		let iter = Fr::one();
 		let sk = [(); 4].map(|_| Fr::random(&mut rng));
-
 		// Data from neighbors of i
 		let op_ji = [(); SIZE].map(|_| Fr::from_u128(1));
 		let c_v = Fr::from_u128(1);
@@ -335,7 +337,7 @@ mod test {
 		let bootstrap_score = Fr::from(MAX_SCORE);
 
 		let eigen_trust = EigenTrustCircuit::<Fr, SIZE, NUM_BOOTSTRAP, Params5x5Bn254>::new(
-			pubkey_v, epoch, sk, op_ji, c_v, bootstrap_pubkeys, bootstrap_score,
+			pubkey_v, epoch, iter, sk, op_ji, c_v, bootstrap_pubkeys, bootstrap_score,
 		);
 
 		let inputs_sk = [Fr::zero(), sk[0], sk[1], sk[2], sk[3]];

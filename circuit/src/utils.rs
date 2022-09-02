@@ -65,6 +65,7 @@ pub fn random_circuit<
 ) -> EigenTrustCircuit<<E as Engine>::Scalar, SIZE, NUM_BOOTSTRAP, P> {
 	let pubkey_v = E::Scalar::random(rng.clone());
 	let epoch = E::Scalar::random(rng.clone());
+	let iter = E::Scalar::random(rng.clone());
 	let secret_i = [(); 4].map(|_| E::Scalar::random(rng.clone()));
 	// Data from neighbors of i
 	let op_ji = [(); SIZE].map(|_| E::Scalar::random(rng.clone()));
@@ -74,7 +75,7 @@ pub fn random_circuit<
 	let bootstrap_score = E::Scalar::random(rng.clone());
 
 	EigenTrustCircuit::<_, SIZE, NUM_BOOTSTRAP, P>::new(
-		pubkey_v, epoch, secret_i, op_ji, c_v, bootstrap_pubkeys, bootstrap_score,
+		pubkey_v, epoch, iter, secret_i, op_ji, c_v, bootstrap_pubkeys, bootstrap_score,
 	)
 }
 
