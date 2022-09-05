@@ -8,19 +8,27 @@ use halo2wrong::halo2::{
 use super::is_boolean::{IsBooleanChip, IsBooleanConfig};
 
 #[derive(Clone, Debug)]
+/// Configuration elements for the circuit defined here.
 pub struct AndConfig {
+	/// Constructs is_bool circuit elements.
 	is_bool: IsBooleanConfig,
+	/// Configures a column for x.
 	x: Column<Advice>,
+	/// Configures a column for y.
 	y: Column<Advice>,
+	/// Configures a fixed boolean value for each row of the circuit.
 	selector: Selector,
 }
-
+/// Constructs individual cells for the configuration elements.
 pub struct AndChip<F: FieldExt> {
+	/// Assigns a cell for x.
 	x: AssignedCell<F, F>,
+	/// Assigns a cell for y.
 	y: AssignedCell<F, F>,
 }
 
 impl<F: FieldExt> AndChip<F> {
+	/// Create a new chip.
 	pub fn new(x: AssignedCell<F, F>, y: AssignedCell<F, F>) -> Self {
 		AndChip { x, y }
 	}
@@ -43,6 +51,14 @@ impl<F: FieldExt> AndChip<F> {
 
 			vec![
 				// (x * y) - z == 0
+				// z is the next rotation cell for the x value.
+				// Example for an and gate:
+				// let x = 1;
+				// let y = 0;
+				// let z = (x * y);
+				// z;
+				//
+				// z = (1 * 0) = 0 => We check the constraint (1 * 0) - 0 == 0
 				s_exp * ((x_exp * y_exp) - res_exp),
 			]
 		});
@@ -63,6 +79,9 @@ impl<F: FieldExt> AndChip<F> {
 	) -> Result<AssignedCell<F, F>, Error> {
 		let is_bool_x = IsBooleanChip::new(self.x.clone());
 		let is_bool_y = IsBooleanChip::new(self.y.clone());
+
+		// Here we check our values x and y.
+		// Both of the values have to be boolean.
 		let x_checked =
 			is_bool_x.synthesize(config.is_bool.clone(), layouter.namespace(|| "is_bool_x"))?;
 		let y_checked = is_bool_y.synthesize(config.is_bool, layouter.namespace(|| "is_bool_y"))?;
@@ -169,10 +188,44 @@ mod test {
 	}
 
 	#[test]
-	fn test_and() {
+	fn test_and_x1_y1() {
+		// Testing x = 1 and y = 1
 		let test_chip = TestCircuit::new(Fr::from(1), Fr::from(1));
 
 		let pub_ins = vec![Fr::from(1)];
+		let k = 4;
+		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[test]
+	fn test_and_x1_y0() {
+		// Testing x = 1 and y = 0
+		let test_chip = TestCircuit::new(Fr::from(1), Fr::from(0));
+
+		let pub_ins = vec![Fr::from(0)];
+		let k = 4;
+		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[test]
+	fn test_and_x0_y0() {
+		// Testing x = 0 and y = 0
+		let test_chip = TestCircuit::new(Fr::from(0), Fr::from(0));
+
+		let pub_ins = vec![Fr::from(0)];
+		let k = 4;
+		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[test]
+	fn test_and_x0_y1() {
+		// Testing x = 0 and y = 1
+		let test_chip = TestCircuit::new(Fr::from(0), Fr::from(1));
+
+		let pub_ins = vec![Fr::from(0)];
 		let k = 4;
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
