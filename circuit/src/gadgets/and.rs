@@ -189,7 +189,7 @@ mod test {
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
 	}
-	
+
 	#[test]
 	fn test_and_production() {
 		// Testing x = 1 and y = 1 (Different production with same inputs)
