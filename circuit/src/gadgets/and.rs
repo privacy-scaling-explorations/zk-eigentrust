@@ -21,6 +21,17 @@ pub struct AndChip<F: FieldExt> {
 }
 
 impl<F: FieldExt> AndChip<F> {
+	/// Make a new chip.
+	/// # Examples
+	///
+	/// ```
+	/// let x = 1;
+	/// let y = 0;
+	/// // (x * y) - z == 0
+	/// //z is the next rotation cell for the x value.
+	/// let z = (x * y);
+	/// z;
+	/// ```
 	pub fn new(x: AssignedCell<F, F>, y: AssignedCell<F, F>) -> Self {
 		AndChip { x, y }
 	}
@@ -170,6 +181,7 @@ mod test {
 
 	#[test]
 	fn test_and() {
+		// Testing x = 1 and y = 1
 		let test_chip = TestCircuit::new(Fr::from(1), Fr::from(1));
 
 		let pub_ins = vec![Fr::from(1)];
@@ -177,16 +189,42 @@ mod test {
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
 	}
-
+	
 	#[test]
 	fn test_and_production() {
-		let test_chip = TestCircuit::new(Fr::from(1), Fr::from(1));
+		// Testing x = 1 and y = 0
+		let test_chip = TestCircuit::new(Fr::from(1), Fr::from(0));
 
 		let k = 4;
 		let rng = &mut rand::thread_rng();
 		let params = generate_params(k);
 		let res =
-			prove_and_verify::<Bn256, _, _>(params, test_chip, &[&[Fr::from(1)]], rng).unwrap();
+			prove_and_verify::<Bn256, _, _>(params, test_chip, &[&[Fr::from(0)]], rng).unwrap();
+
+		assert!(res);
+	}
+
+	#[test]
+	fn test_and_x0_y0() {
+		// Testing x = 0 and y = 0
+		let test_chip = TestCircuit::new(Fr::from(0), Fr::from(0));
+
+		let pub_ins = vec![Fr::from(0)];
+		let k = 4;
+		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[test]
+	fn test_and_x0_y1() {
+		// Testing x = 0 and y = 1
+		let test_chip = TestCircuit::new(Fr::from(0), Fr::from(1));
+
+		let k = 4;
+		let rng = &mut rand::thread_rng();
+		let params = generate_params(k);
+		let res =
+			prove_and_verify::<Bn256, _, _>(params, test_chip, &[&[Fr::from(0)]], rng).unwrap();
 
 		assert!(res);
 	}
