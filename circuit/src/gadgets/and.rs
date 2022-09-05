@@ -21,17 +21,6 @@ pub struct AndChip<F: FieldExt> {
 }
 
 impl<F: FieldExt> AndChip<F> {
-	/// Make a new chip.
-	/// # Examples
-	///
-	/// ```
-	/// let x = 1;
-	/// let y = 0;
-	/// // (x * y) - z == 0
-	/// //z is the next rotation cell for the x value.
-	/// let z = (x * y);
-	/// z;
-	/// ```
 	pub fn new(x: AssignedCell<F, F>, y: AssignedCell<F, F>) -> Self {
 		AndChip { x, y }
 	}
@@ -54,6 +43,14 @@ impl<F: FieldExt> AndChip<F> {
 
 			vec![
 				// (x * y) - z == 0
+				// z is the next rotation cell for the x value.
+				// Example for an and gate:
+				// let x = 1;
+				// let y = 0;
+				// let z = (x * y);
+				// z;
+				//
+				// z = (1 * 0) = 0 => We check the constraint (1 * 0) - 0 == 0
 				s_exp * ((x_exp * y_exp) - res_exp),
 			]
 		});
@@ -74,6 +71,9 @@ impl<F: FieldExt> AndChip<F> {
 	) -> Result<AssignedCell<F, F>, Error> {
 		let is_bool_x = IsBooleanChip::new(self.x.clone());
 		let is_bool_y = IsBooleanChip::new(self.y.clone());
+
+		// Here we check our values x and y if they are boolean or not.
+		// Both of the values must be boolean.
 		let x_checked =
 			is_bool_x.synthesize(config.is_bool.clone(), layouter.namespace(|| "is_bool_x"))?;
 		let y_checked = is_bool_y.synthesize(config.is_bool, layouter.namespace(|| "is_bool_y"))?;
@@ -180,7 +180,7 @@ mod test {
 	}
 
 	#[test]
-	fn test_and() {
+	fn test_and_x1_y1() {
 		// Testing x = 1 and y = 1
 		let test_chip = TestCircuit::new(Fr::from(1), Fr::from(1));
 
@@ -191,31 +191,14 @@ mod test {
 	}
 
 	#[test]
-	fn test_and_production() {
-		// Testing x = 1 and y = 1 (Different production with same inputs)
-		let test_chip = TestCircuit::new(Fr::from(1), Fr::from(1));
-
-		let k = 4;
-		let rng = &mut rand::thread_rng();
-		let params = generate_params(k);
-		let res =
-			prove_and_verify::<Bn256, _, _>(params, test_chip, &[&[Fr::from(1)]], rng).unwrap();
-
-		assert!(res);
-	}
-
-	#[test]
 	fn test_and_x1_y0() {
 		// Testing x = 1 and y = 0
 		let test_chip = TestCircuit::new(Fr::from(1), Fr::from(0));
 
+		let pub_ins = vec![Fr::from(0)];
 		let k = 4;
-		let rng = &mut rand::thread_rng();
-		let params = generate_params(k);
-		let res =
-			prove_and_verify::<Bn256, _, _>(params, test_chip, &[&[Fr::from(0)]], rng).unwrap();
-
-		assert!(res);
+		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
 	}
 
 	#[test]
@@ -234,11 +217,21 @@ mod test {
 		// Testing x = 0 and y = 1
 		let test_chip = TestCircuit::new(Fr::from(0), Fr::from(1));
 
+		let pub_ins = vec![Fr::from(0)];
+		let k = 4;
+		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[test]
+	fn test_and_production() {
+		let test_chip = TestCircuit::new(Fr::from(1), Fr::from(1));
+
 		let k = 4;
 		let rng = &mut rand::thread_rng();
 		let params = generate_params(k);
 		let res =
-			prove_and_verify::<Bn256, _, _>(params, test_chip, &[&[Fr::from(0)]], rng).unwrap();
+			prove_and_verify::<Bn256, _, _>(params, test_chip, &[&[Fr::from(1)]], rng).unwrap();
 
 		assert!(res);
 	}
