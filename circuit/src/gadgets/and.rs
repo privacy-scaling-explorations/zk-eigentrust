@@ -8,19 +8,27 @@ use halo2wrong::halo2::{
 use super::is_boolean::{IsBooleanChip, IsBooleanConfig};
 
 #[derive(Clone, Debug)]
+/// Configuration elements for the circuit defined here.
 pub struct AndConfig {
+	/// Constructs is_bool circuit elements.
 	is_bool: IsBooleanConfig,
+	/// Configures a column for x.
 	x: Column<Advice>,
+	/// Configures a column for y.
 	y: Column<Advice>,
+	/// Configures a fixed boolean value for each row of the circuit.
 	selector: Selector,
 }
-
+/// Constructs individual cells for the configuration elements.
 pub struct AndChip<F: FieldExt> {
+	/// Assigns a cell for x.
 	x: AssignedCell<F, F>,
+	/// Assigns a cell for y.
 	y: AssignedCell<F, F>,
 }
 
 impl<F: FieldExt> AndChip<F> {
+	/// Create a new chip.
 	pub fn new(x: AssignedCell<F, F>, y: AssignedCell<F, F>) -> Self {
 		AndChip { x, y }
 	}
