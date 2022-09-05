@@ -72,8 +72,8 @@ impl<F: FieldExt> AndChip<F> {
 		let is_bool_x = IsBooleanChip::new(self.x.clone());
 		let is_bool_y = IsBooleanChip::new(self.y.clone());
 
-		// Here we check our values x and y if they are boolean or not.
-		// Both of the values must be boolean.
+		// Here we check our values x and y.
+		// Both of the values have to be boolean.
 		let x_checked =
 			is_bool_x.synthesize(config.is_bool.clone(), layouter.namespace(|| "is_bool_x"))?;
 		let y_checked = is_bool_y.synthesize(config.is_bool, layouter.namespace(|| "is_bool_y"))?;
