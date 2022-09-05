@@ -192,6 +192,20 @@ mod test {
 	
 	#[test]
 	fn test_and_production() {
+		// Testing x = 1 and y = 1 (Different production with same inputs)
+		let test_chip = TestCircuit::new(Fr::from(1), Fr::from(1));
+
+		let k = 4;
+		let rng = &mut rand::thread_rng();
+		let params = generate_params(k);
+		let res =
+			prove_and_verify::<Bn256, _, _>(params, test_chip, &[&[Fr::from(1)]], rng).unwrap();
+
+		assert!(res);
+	}
+
+	#[test]
+	fn test_and_x1_y0() {
 		// Testing x = 1 and y = 0
 		let test_chip = TestCircuit::new(Fr::from(1), Fr::from(0));
 
