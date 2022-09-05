@@ -165,8 +165,8 @@ impl<F: FieldExt, const S: usize, const B: usize, P: RoundParams<F, 5>> Circuit<
 	fn synthesize(
 		&self, config: Self::Config, mut layouter: impl Layouter<F>,
 	) -> Result<(), Error> {
-		let (zero, ops, c_v, sk, epoch, iteration, bootstrap_score, pubkey_v, out_m_hash) = layouter
-			.assign_region(
+		let (zero, ops, c_v, sk, epoch, iteration, bootstrap_score, pubkey_v, out_m_hash) =
+			layouter.assign_region(
 				|| "temp",
 				|mut region: Region<'_, F>| {
 					let mut offset = 0;

@@ -6,7 +6,6 @@
 
 pub mod opinion;
 pub mod pubkey;
-pub mod utils;
 
 use crate::{constants::MAX_NEIGHBORS, EigenError, Epoch};
 use eigen_trust_circuit::halo2wrong::{

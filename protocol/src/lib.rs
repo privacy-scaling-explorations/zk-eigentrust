@@ -45,16 +45,16 @@ mod node;
 /// - Calculating local scores toward neighbors for a given epoch
 /// - Keeping track of neighbors scores towards us
 mod peer;
+/// Common utility functions used across the crate
+mod utils;
 
 pub use eigen_trust_circuit;
 pub use epoch::Epoch;
 pub use libp2p::{identity::Keypair, Multiaddr, PeerId};
 pub use log::LevelFilter;
 pub use node::Node;
-pub use peer::{
-	utils::{extract_pub_key, extract_sk_bytes, extract_sk_limbs, keypair_from_sk_bytes},
-	Peer,
-};
+pub use peer::Peer;
+pub use utils::{extract_pub_key, extract_sk_bytes, extract_sk_limbs, keypair_from_sk_bytes};
 
 /// The crate-wide error variants.
 #[derive(Debug, Clone, PartialEq)]

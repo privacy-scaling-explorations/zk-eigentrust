@@ -26,14 +26,14 @@ use libp2p::{
 use std::io::Error as IoError;
 use tokio::{
 	select,
-	time::{self, Duration, Instant},
+	time::{self, Duration, Instant, MissedTickBehavior},
 };
 
 /// The Node struct.
 pub struct Node {
 	/// Swarm object.
 	pub(crate) swarm: Swarm<EigenTrustBehaviour>,
-	interval: Duration,
+	epoch_interval: Duration,
 	pub(crate) peer: Peer,
 }
 
@@ -71,11 +71,7 @@ impl Node {
 			EigenError::ListenFailed
 		})?;
 
-		Ok(Self {
-			swarm,
-			interval: interval_duration,
-			peer,
-		})
+		Ok(Self { swarm, epoch_interval: interval_duration, peer })
 	}
 
 	/// Handle the request response event.
@@ -205,13 +201,13 @@ impl Node {
 	/// parameter.
 	pub async fn main_loop(mut self, interval_limit: Option<u32>) {
 		let now = Instant::now();
-		let secs_until_next_epoch = Epoch::secs_until_next_epoch(self.interval.as_secs());
+		let secs_until_next_epoch = Epoch::secs_until_next_epoch(self.epoch_interval.as_secs());
 		log::info!("Epoch starts in: {} seconds", secs_until_next_epoch);
 		// Figure out when the next epoch will start.
 		let start = now + Duration::from_secs(secs_until_next_epoch);
 		// Setup the interval timer.
-		let mut interval = time::interval_at(start, self.interval);
-		interval.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
+		let mut interval = time::interval_at(start, self.epoch_interval);
+		interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
 		// Count the number of epochs passed
 		let mut count = 0;
 
@@ -220,7 +216,7 @@ impl Node {
 				biased;
 				// The interval timer tick. This is where we request opinions from the neighbors.
 				_ = interval.tick() => {
-					let epoch = Epoch::current_epoch(self.interval.as_secs());
+					let epoch = Epoch::current_epoch(self.epoch_interval.as_secs());
 					// Send the request for opinions to all neighbors.
 					self.send_epoch_requests(epoch, NUM_ITERATIONS);
 					// Increment the epoch counter, break out of the loop if we reached the limit
@@ -243,7 +239,7 @@ mod tests {
 	use super::*;
 	use crate::{
 		constants::{MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS},
-		peer::utils::keypair_from_sk_bytes,
+		utils::keypair_from_sk_bytes,
 	};
 	use eigen_trust_circuit::{
 		halo2wrong::{

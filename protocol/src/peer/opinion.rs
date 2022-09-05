@@ -3,7 +3,7 @@ use std::vec;
 use super::pubkey::Pubkey;
 use crate::{
 	constants::*,
-	peer::utils::{extract_sk_limbs, to_wide_bytes},
+	utils::{extract_sk_limbs, to_wide_bytes},
 	EigenError, Epoch,
 };
 use bs58::decode::Error as Bs58Error;
