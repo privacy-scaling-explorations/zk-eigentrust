@@ -194,7 +194,7 @@ mod test {
 		let array = [(); 512].map(|_| <Fr as Field>::random(rand::thread_rng()));
 		let test_chip = TestCircuit::new(array);
 		let mut ins: Vec<Fr> = vec![Fr::from(0)];
-		for i in 0..512{
+		for i in 0..512 {
 			let temp = array[i];
 			ins[0] = ins[0].add(&temp);
 		}
