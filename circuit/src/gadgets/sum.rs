@@ -195,8 +195,7 @@ mod test {
 		let test_chip = TestCircuit::new(array);
 		let mut ins: Vec<Fr> = vec![Fr::from(0)];
 		for i in 0..512 {
-			let temp = array[i];
-			ins[0] = ins[0].add(&temp);
+			ins[0] = ins[0].add(&array[i]);
 		}
 		let k = 10;
 		let prover = MockProver::run(k, &test_chip, vec![ins]).unwrap();
