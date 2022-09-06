@@ -45,16 +45,14 @@ impl Epoch {
 	pub fn secs_until_next_epoch(interval: u64) -> u64 {
 		let secs = Self::current_timestamp();
 		let current_epoch = Self::current_epoch(interval);
-		let secs_until_next_epoch = (current_epoch.0 + 1) * interval - secs;
-
-		secs_until_next_epoch
+		(current_epoch.0 + 1) * interval - secs
 	}
 
 	/// Calculates the current timestamp. The difference between UNIX timestamp
 	/// start and now.
 	pub fn current_timestamp() -> u64 {
-		let unix_timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
-
+		let unix_timestamp =
+			SystemTime::now().duration_since(UNIX_EPOCH).expect("SystemTime Error - Unix time");
 		unix_timestamp.as_secs()
 	}
 

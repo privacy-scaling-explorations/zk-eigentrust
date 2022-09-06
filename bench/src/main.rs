@@ -32,7 +32,7 @@ async fn main() {
 	let starting_port = 58400;
 
 	let contents = fs::read_to_string("../../data/bootstrap_nodes.txt").unwrap();
-	let keys = contents.split("\n").step_by(2);
+	let keys = contents.split('\n').step_by(2);
 
 	for (i, key) in keys.enumerate() {
 		let sk_bytes = bs58::decode(key).into_vec().unwrap();
@@ -56,18 +56,18 @@ async fn main() {
 	for i in 0..(NUM_CONNECTIONS + 1) {
 		let local_key = local_keys[i].clone();
 		let local_address = local_addresses[i].clone();
-		let bootstrap_nodes = bootstrap_nodes.clone();
+		// let bootstrap_nodes = bootstrap_nodes.clone();
 		let params = params.clone();
 		let pk = pk.clone();
 
 		let join_handle = tokio::spawn(async move {
 			let peer = Peer::new(local_key.clone(), params, pk).unwrap();
-			let mut node = Node::new(local_key, local_address, peer).unwrap();
+			let node = Node::new(local_key, local_address, peer).unwrap();
 
-			for (peer_id, ..) in bootstrap_nodes {
-				let random_score: u32 = rand::thread_rng().gen_range(0..100);
-				// peer.set_score(peer_id, random_score);
-			}
+			// for (peer_id, ..) in bootstrap_nodes {
+			// 	let random_score: u32 = rand::thread_rng().gen_range(0..100);
+			// 	// peer.set_score(peer_id, random_score);
+			// }
 
 			node.main_loop(10).await;
 		});

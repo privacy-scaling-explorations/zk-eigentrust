@@ -232,7 +232,7 @@ impl<F: FieldExt, const S: usize, const B: usize, P: RoundParams<F, 5>> Circuit<
 		let is_bootstrap =
 			set_membership.synthesize(config.set, layouter.namespace(|| "set_membership"))?;
 		// Is the iteration equal to 0?
-		let is_eq_chip = IsEqualChip::new(iteration.clone(), zero.clone());
+		let is_eq_chip = IsEqualChip::new(iteration.clone(), zero);
 		let is_genesis = is_eq_chip.synthesize(config.is_equal, layouter.namespace(|| "is_eq"))?;
 		// Is this the bootstrap peer at genesis epoch?
 		let and_chip = AndChip::new(is_bootstrap, is_genesis);
@@ -256,8 +256,7 @@ impl<F: FieldExt, const S: usize, const B: usize, P: RoundParams<F, 5>> Circuit<
 		let is_zero_opinion =
 			is_zero_chip.synthesize(config.is_zero, layouter.namespace(|| "is_zero_opinion"))?;
 
-		let m_hash_select =
-			SelectChip::new(is_zero_opinion.clone(), out_m_hash.clone(), m_hash.clone());
+		let m_hash_select = SelectChip::new(is_zero_opinion, out_m_hash, m_hash);
 		let final_m_hash =
 			m_hash_select.synthesize(config.select, layouter.namespace(|| "m_hash_select"))?;
 

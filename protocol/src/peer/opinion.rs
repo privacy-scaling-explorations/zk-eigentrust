@@ -83,7 +83,7 @@ impl Opinion {
 		let c_v_f = Bn256Scalar::from_u128(c_v_scaled);
 		let op_v_f = Bn256Scalar::from_u128(op_v_scaled);
 		let epoch_f = Bn256Scalar::from(epoch.0);
-		let iter_f = Bn256Scalar::from_u128(k as u128);
+		let iter_f = Bn256Scalar::from_u128(u128::from(k));
 		let bootstrap_score_f = Bn256Scalar::from_u128(bootstrap_score_scaled);
 
 		let m_hash_input = [epoch_f, iter_f, op_v_f, pk_v, pk_p];
@@ -132,8 +132,8 @@ impl Opinion {
 		let pk_v = pos.permute()[0];
 
 		let op_v_scaled = (self.op * SCALE * SCALE).round() as u128;
-		let epoch_f = Bn256Scalar::from_u128(self.epoch.0 as u128);
-		let iter_f = Bn256Scalar::from_u128(self.iter as u128);
+		let epoch_f = Bn256Scalar::from_u128(u128::from(self.epoch.0));
+		let iter_f = Bn256Scalar::from_u128(u128::from(self.iter));
 		let op_v_f = Bn256Scalar::from_u128(op_v_scaled);
 
 		let m_hash_input = [epoch_f, iter_f, op_v_f, pk_v, pk_p];
