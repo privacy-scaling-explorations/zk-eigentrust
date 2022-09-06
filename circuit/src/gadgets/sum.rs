@@ -191,24 +191,27 @@ mod test {
 	#[test]
 	fn test_sum_random_element() {
 		// Testing big array with a random element from the field.
-		let rng = &mut rand::thread_rng();
-		let array = [<Fr as Field>::random(rng); 20];
+		let array = [(); 512].map(|_| <Fr as Field>::random(rand::thread_rng()));
 		let test_chip = TestCircuit::new(array);
-
-		let k = 5;
-		let ins = vec![array[0].mul(&Fr::from(20))];
+		let mut ins: Vec<Fr> = vec![Fr::from(0)];
+		for i in 0..512{
+			let temp = array[i];
+			ins[0] = ins[0].add(&temp);
+		}
+		let k = 10;
 		let prover = MockProver::run(k, &test_chip, vec![ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
 	}
 
 	#[test]
 	fn test_sum_zero_arr() {
-		// Testing zero array. Returns InvalidInstance error.
-		let test_chip: TestCircuit<Fr, 0> = TestCircuit::new([]);
+		// Testing zero array. Returns CellNotAssigned error.
+		let test_chip = TestCircuit::new([]);
 
+		let pub_ins = vec![Fr::from(0)];
 		let k = 4;
-		let prover = MockProver::run(k, &test_chip, vec![]);
-		assert!(prover.is_err());
+		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+		assert!(prover.verify().is_err());
 	}
 
 	#[test]
