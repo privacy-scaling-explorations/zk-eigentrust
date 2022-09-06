@@ -6,12 +6,13 @@ use crate::{
 		req_res::{Request, Response},
 		EigenEvent, EigenTrustBehaviour,
 	},
-	constants::NUM_ITERATIONS,
+	constants::{EPOCH_INTERVAL, ITER_INTERVAL, NUM_ITERATIONS},
 	epoch::Epoch,
 	peer::Peer,
+	utils::create_iter,
 	EigenError,
 };
-use futures::StreamExt;
+use futures::{stream, StreamExt};
 use libp2p::{
 	core::{either::EitherError, upgrade::Version},
 	identify::IdentifyEvent,
@@ -26,7 +27,7 @@ use libp2p::{
 use std::io::Error as IoError;
 use tokio::{
 	select,
-	time::{self, Duration, Instant, MissedTickBehavior},
+	time::{Duration, Instant},
 };
 
 /// The Node struct.
@@ -34,6 +35,7 @@ pub struct Node {
 	/// Swarm object.
 	pub(crate) swarm: Swarm<EigenTrustBehaviour>,
 	epoch_interval: Duration,
+	iter_interval: Duration,
 	pub(crate) peer: Peer,
 }
 
@@ -41,7 +43,7 @@ impl Node {
 	/// Create a new node, given the local keypair, local address, and bootstrap
 	/// nodes.
 	pub fn new(
-		local_key: Keypair, local_address: Multiaddr, interval_secs: u64, peer: Peer,
+		local_key: Keypair, local_address: Multiaddr, peer: Peer,
 	) -> Result<Self, EigenError> {
 		let noise_keys =
 			NoiseKeypair::<X25519Spec>::new().into_authentic(&local_key).map_err(|e| {
@@ -51,7 +53,8 @@ impl Node {
 		// 30 years in seconds
 		// Basically, we want connections to be open for a long time.
 		let connection_duration = Duration::from_secs(86400 * 365 * 30);
-		let interval_duration = Duration::from_secs(interval_secs);
+		let epoch_interval_duration = Duration::from_secs(EPOCH_INTERVAL);
+		let iter_interval_duration = Duration::from_secs(ITER_INTERVAL);
 		let transport = TcpConfig::new()
 			.nodelay(true)
 			.upgrade(Version::V1)
@@ -60,8 +63,11 @@ impl Node {
 			.timeout(connection_duration)
 			.boxed();
 
-		let beh =
-			EigenTrustBehaviour::new(connection_duration, interval_duration, local_key.public());
+		let beh = EigenTrustBehaviour::new(
+			connection_duration,
+			iter_interval_duration,
+			local_key.public(),
+		);
 		// Setting up the transport and swarm.
 		let local_peer_id = PeerId::from(local_key.public());
 		let mut swarm = SwarmBuilder::new(transport, beh, local_peer_id).build();
@@ -71,7 +77,12 @@ impl Node {
 			EigenError::ListenFailed
 		})?;
 
-		Ok(Self { swarm, epoch_interval: interval_duration, peer })
+		Ok(Self {
+			swarm,
+			epoch_interval: epoch_interval_duration,
+			iter_interval: iter_interval_duration,
+			peer,
+		})
 	}
 
 	/// Handle the request response event.
@@ -187,7 +198,7 @@ impl Node {
 	}
 
 	/// Send the request for an opinion to all neighbors, in the passed epoch.
-	pub fn send_epoch_requests(&mut self, epoch: Epoch, k: u8) {
+	pub fn send_epoch_requests(&mut self, epoch: Epoch, k: u32) {
 		for peer_id in self.peer.neighbors() {
 			let request = Request::Opinion(epoch, k);
 			self.swarm.behaviour_mut().send_request(&peer_id, request);
@@ -199,33 +210,31 @@ impl Node {
 	/// - To handle the swarm + request/response events.
 	/// The amount of intervals/epochs is determined by the `interval_limit`
 	/// parameter.
-	pub async fn main_loop(mut self, interval_limit: Option<u32>) {
+	pub async fn main_loop(mut self, interval_limit: usize) {
 		let now = Instant::now();
 		let secs_until_next_epoch = Epoch::secs_until_next_epoch(self.epoch_interval.as_secs());
 		log::info!("Epoch starts in: {} seconds", secs_until_next_epoch);
 		// Figure out when the next epoch will start.
 		let start = now + Duration::from_secs(secs_until_next_epoch);
-		// Setup the interval timer.
-		let mut interval = time::interval_at(start, self.epoch_interval);
-		interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
-		// Count the number of epochs passed
-		let mut count = 0;
+		// Setup the epoch interval timer.
+		let mut outer_interval = create_iter(start, self.epoch_interval, interval_limit);
+		// Setup iteration interval timer
+		let mut inner_interval = stream::pending::<u32>().boxed().fuse();
 
 		loop {
 			select! {
 				biased;
 				// The interval timer tick. This is where we request opinions from the neighbors.
-				_ = interval.tick() => {
+				epoch_opt = outer_interval.next() => if let Some(epoch) = epoch_opt {
+					log::info!("Epoch({}) has started", epoch);
+					inner_interval = create_iter(Instant::now(), self.iter_interval, NUM_ITERATIONS as usize);
+				} else {
+					break;
+				},
+				iter_opt = inner_interval.next() => if let Some(iter) = iter_opt {
 					let epoch = Epoch::current_epoch(self.epoch_interval.as_secs());
 					// Send the request for opinions to all neighbors.
-					self.send_epoch_requests(epoch, NUM_ITERATIONS);
-					// Increment the epoch counter, break out of the loop if we reached the limit
-					if let Some(num) = interval_limit {
-						count += 1;
-						if count >= num {
-							break;
-						}
-					}
+					self.send_epoch_requests(epoch, iter);
 				},
 				// The swarm event.
 				event = self.swarm.select_next_some() => self.handle_swarm_events(event),
@@ -239,6 +248,7 @@ mod tests {
 	use super::*;
 	use crate::{
 		constants::{MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS},
+		peer::pubkey::Pubkey,
 		utils::keypair_from_sk_bytes,
 	};
 	use eigen_trust_circuit::{
@@ -252,7 +262,6 @@ mod tests {
 	use rand::thread_rng;
 	use std::str::FromStr;
 
-	const INTERVAL: u64 = 20;
 	const ADDR_1: &str = "/ip4/127.0.0.1/tcp/56706";
 	const ADDR_2: &str = "/ip4/127.0.0.1/tcp/58601";
 	const SK_1: &str = "AF4yAqwCPzpBcit4FtTrHso4BBR9onk7qS9Q1SWSLSaV";
@@ -282,8 +291,8 @@ mod tests {
 		let peer1 = Peer::new(local_key1.clone(), params.clone(), pk.clone()).unwrap();
 		let peer2 = Peer::new(local_key2.clone(), params, pk).unwrap();
 
-		let mut node1 = Node::new(local_key1, local_address1.clone(), INTERVAL, peer1).unwrap();
-		let mut node2 = Node::new(local_key2, local_address2.clone(), INTERVAL, peer2).unwrap();
+		let mut node1 = Node::new(local_key1, local_address1.clone(), peer1).unwrap();
+		let mut node2 = Node::new(local_key2, local_address2.clone(), peer2).unwrap();
 
 		node1.dial_neighbor(local_address2);
 
@@ -335,10 +344,9 @@ mod tests {
 		let peer1 = Peer::new(local_key1.clone(), params.clone(), pk.clone()).unwrap();
 		let peer2 = Peer::new(local_key2.clone(), params, pk).unwrap();
 
-		let mut node1 = Node::new(local_key1.clone(), local_address1, INTERVAL, peer1).unwrap();
+		let mut node1 = Node::new(local_key1.clone(), local_address1, peer1).unwrap();
 
-		let mut node2 =
-			Node::new(local_key2.clone(), local_address2.clone(), INTERVAL, peer2).unwrap();
+		let mut node2 = Node::new(local_key2.clone(), local_address2.clone(), peer2).unwrap();
 
 		node1.dial_neighbor(local_address2);
 
@@ -370,108 +378,18 @@ mod tests {
 		assert_eq!(pubkey2, local_key2.public());
 	}
 
-	// #[tokio::test]
-	// async fn should_handle_request_for_opinion() {
-	// 	let sk_bytes1 = bs58::decode(SK_1).into_vec().unwrap();
-	// 	let sk_bytes2 = bs58::decode(SK_2).into_vec().unwrap();
-
-	// 	let local_key1 = keypair_from_sk_bytes(sk_bytes1).unwrap();
-	// 	let peer_id1 = local_key1.public().to_peer_id();
-	// 	let pubkey1 = Pubkey::from_keypair(&local_key1).unwrap();
-
-	// 	let local_key2 = keypair_from_sk_bytes(sk_bytes2).unwrap();
-	// 	let peer_id2 = local_key2.public().to_peer_id();
-	// 	let pubkey2 = Pubkey::from_keypair(&local_key2).unwrap();
-
-	// 	let local_address1 = Multiaddr::from_str(ADDR_1).unwrap();
-	// 	let local_address2 = Multiaddr::from_str(ADDR_2).unwrap();
-
-	// 	let params = ParamsKZG::new(9);
-
-	// 	let rng = &mut thread_rng();
-	// 	let random_circuit =
-	// 		random_circuit::<Bn256, _, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS,
-	// Params5x5Bn254>(rng); 	let pk = keygen(&params, &random_circuit).unwrap();
-
-	// 	let peer1 = Peer::new(local_key1.clone(), params.clone(),
-	// pk.clone()).unwrap(); 	let peer2 = Peer::new(local_key2.clone(), params,
-	// pk).unwrap();
-
-	// 	let mut node1 = Node::new(local_key1, local_address1, INTERVAL,
-	// peer1).unwrap();
-
-	// 	let mut node2 = Node::new(local_key2, local_address2.clone(), INTERVAL,
-	// peer2).unwrap();
-
-	// 	node1.dial_neighbor(local_address2);
-
-	// 	// For node 2
-	// 	// 1. New listen addr
-	// 	// 2. Incoming connection
-	// 	// 3. Connection established
-	// 	// For node 1
-	// 	// 1. New listen addr
-	// 	// 2. Connection established
-	// 	for _ in 0..9 {
-	// 		select! {
-	// 			event2 = node2.get_swarm_mut().select_next_some() =>
-	// node2.handle_swarm_events(event2), 			event1 =
-	// node1.get_swarm_mut().select_next_some() =>
-	// node1.handle_swarm_events(event1), 		}
-	// 	}
-
-	// 	let peer1 = node1.get_peer_mut();
-	// 	let peer2 = node2.get_peer_mut();
-
-	// 	peer1.identify_neighbor(peer_id2, pubkey2);
-	// 	peer2.identify_neighbor(peer_id1, pubkey1);
-
-	// 	let next_epoch = Epoch(GENESIS_EPOCH);
-
-	// 	peer1.set_score(peer_id2, 5);
-	// 	peer2.set_score(peer_id1, 5);
-
-	// 	peer1.calculate_local_opinion(peer_id2, next_epoch);
-	// 	peer2.calculate_local_opinion(peer_id1, next_epoch);
-
-	// 	node1.send_epoch_requests(next_epoch);
-	// 	node2.send_epoch_requests(next_epoch);
-
-	// 	// Expecting 2 request messages
-	// 	// Expecting 2 response sent messages
-	// 	// Expecting 2 response received messages
-	// 	// Total of 6 messages
-	// 	for _ in 0..6 {
-	// 		select! {
-	// 			event1 = node1.get_swarm_mut().select_next_some() => {
-	// 				node1.handle_swarm_events(event1);
-	// 			},
-	// 			event2 = node2.get_swarm_mut().select_next_some() => {
-	// 				node2.handle_swarm_events(event2);
-	// 			},
-	// 		}
-	// 	}
-
-	// 	let peer1 = node1.get_peer();
-	// 	let peer2 = node2.get_peer();
-	// 	let peer1_neighbor_opinion = peer1.get_neighbor_opinion(&(peer_id2,
-	// next_epoch)); 	let peer2_neighbor_opinion =
-	// peer2.get_neighbor_opinion(&(peer_id1, next_epoch));
-
-	// 	assert_eq!(peer1_neighbor_opinion.epoch, next_epoch);
-	// 	assert_eq!(peer1_neighbor_opinion.op, 0.5);
-
-	// 	assert_eq!(peer2_neighbor_opinion.epoch, next_epoch);
-	// 	assert_eq!(peer2_neighbor_opinion.op, 0.5);
-	// }
-
 	#[tokio::test]
-	async fn should_run_main_loop() {
+	async fn should_handle_request_for_opinion() {
 		let sk_bytes1 = bs58::decode(SK_1).into_vec().unwrap();
 		let sk_bytes2 = bs58::decode(SK_2).into_vec().unwrap();
 
 		let local_key1 = keypair_from_sk_bytes(sk_bytes1).unwrap();
+		let peer_id1 = local_key1.public().to_peer_id();
+		let pubkey1 = Pubkey::from_keypair(&local_key1).unwrap();
+
 		let local_key2 = keypair_from_sk_bytes(sk_bytes2).unwrap();
+		let peer_id2 = local_key2.public().to_peer_id();
+		let pubkey2 = Pubkey::from_keypair(&local_key2).unwrap();
 
 		let local_address1 = Multiaddr::from_str(ADDR_1).unwrap();
 		let local_address2 = Multiaddr::from_str(ADDR_2).unwrap();
@@ -486,16 +404,69 @@ mod tests {
 		let peer1 = Peer::new(local_key1.clone(), params.clone(), pk.clone()).unwrap();
 		let peer2 = Peer::new(local_key2.clone(), params, pk).unwrap();
 
-		let mut node1 = Node::new(local_key1, local_address1, INTERVAL, peer1).unwrap();
-		let node2 = Node::new(local_key2, local_address2.clone(), INTERVAL, peer2).unwrap();
+		let mut node1 = Node::new(local_key1, local_address1, peer1).unwrap();
+		let mut node2 = Node::new(local_key2, local_address2.clone(), peer2).unwrap();
 
 		node1.dial_neighbor(local_address2);
 
-		let join1 = tokio::spawn(async move { node1.main_loop(Some(1)).await });
-		let join2 = tokio::spawn(async move { node2.main_loop(Some(1)).await });
+		// For node 2
+		// 1. New listen addr
+		// 2. Incoming connection
+		// 3. Connection established
+		// For node 1
+		// 1. New listen addr
+		// 2. Connection established
+		for _ in 0..9 {
+			select! {
+				event2 = node2.swarm.select_next_some() => {
+					node2.handle_swarm_events(event2)
+				},
+				event1 = node1.swarm.select_next_some() => {
+					node1.handle_swarm_events(event1)
+				},
+			}
+		}
 
-		let (res1, res2) = tokio::join!(join1, join2);
-		res1.unwrap();
-		res2.unwrap();
+		node1.peer.identify_neighbor(peer_id2, pubkey2);
+		node2.peer.identify_neighbor(peer_id1, pubkey1);
+
+		let next_epoch = Epoch(3);
+		let next_iter = 1;
+
+		node1.peer.set_score(peer_id2, 5);
+		node2.peer.set_score(peer_id1, 5);
+
+		node1.peer.calculate_local_opinion(peer_id2, next_epoch, next_iter);
+		node2.peer.calculate_local_opinion(peer_id1, next_epoch, next_iter);
+
+		node1.send_epoch_requests(next_epoch, next_iter);
+		node2.send_epoch_requests(next_epoch, next_iter);
+
+		// Expecting 2 request messages
+		// Expecting 2 response sent messages
+		// Expecting 2 response received messages
+		// Total of 6 messages
+		for _ in 0..6 {
+			select! {
+				event1 = node1.swarm.select_next_some() => {
+					node1.handle_swarm_events(event1);
+				},
+				event2 = node2.swarm.select_next_some() => {
+					node2.handle_swarm_events(event2);
+				},
+			}
+		}
+
+		let peer1_neighbor_opinion =
+			node1.peer.get_neighbor_opinion(&(peer_id2, next_epoch, next_iter));
+		let peer2_neighbor_opinion =
+			node2.peer.get_neighbor_opinion(&(peer_id1, next_epoch, next_iter));
+
+		// TODO: Fix after proper circuit implementation
+		assert_eq!(peer1_neighbor_opinion.epoch, Epoch(0));
+		assert_eq!(peer1_neighbor_opinion.op, 0.);
+
+		assert_eq!(peer2_neighbor_opinion.epoch, Epoch(0));
+		assert_eq!(peer2_neighbor_opinion.op, 0.);
 	}
 }

@@ -14,7 +14,6 @@ use eigen_trust_protocol::{
 use rand::{thread_rng, Rng};
 use std::fs;
 
-const INTERVAL: u64 = 70;
 const NUM_CONNECTIONS: usize = 12;
 
 pub fn init_logger() {
@@ -63,14 +62,14 @@ async fn main() {
 
 		let join_handle = tokio::spawn(async move {
 			let peer = Peer::new(local_key.clone(), params, pk).unwrap();
-			let mut node = Node::new(local_key, local_address, INTERVAL, peer).unwrap();
+			let mut node = Node::new(local_key, local_address, peer).unwrap();
 
 			for (peer_id, ..) in bootstrap_nodes {
 				let random_score: u32 = rand::thread_rng().gen_range(0..100);
 				// peer.set_score(peer_id, random_score);
 			}
 
-			node.main_loop(Some(10)).await;
+			node.main_loop(10).await;
 		});
 		tasks.push(join_handle);
 	}

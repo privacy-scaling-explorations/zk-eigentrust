@@ -307,7 +307,7 @@ mod test {
 		let inputs_sk = [Fr::zero(), sk[0], sk[1], sk[2], sk[3]];
 		let pubkey_i = Poseidon::<_, 5, Params5x5Bn254>::new(inputs_sk).permute()[0];
 		let opv = Fr::from(256);
-		let inputs = [Fr::zero(), epoch, opv, pubkey_v, pubkey_i];
+		let inputs = [epoch, iter, opv, pubkey_v, pubkey_i];
 		let m_hash_poseidon = Poseidon::<_, 5, Params5x5Bn254>::new(inputs).permute()[0];
 		// let m_hash_poseidon = Fr::one();
 
@@ -343,7 +343,7 @@ mod test {
 		let inputs_sk = [Fr::zero(), sk[0], sk[1], sk[2], sk[3]];
 		let pubkey_i = Poseidon::<_, 5, Params5x5Bn254>::new(inputs_sk).permute()[0];
 		let opv = Fr::from(256);
-		let inputs = [Fr::zero(), epoch, opv, pubkey_v, pubkey_i];
+		let inputs = [epoch, iter, opv, pubkey_v, pubkey_i];
 		let m_hash_poseidon = Poseidon::<_, 5, Params5x5Bn254>::new(inputs).permute()[0];
 
 		let params = generate_params(k);

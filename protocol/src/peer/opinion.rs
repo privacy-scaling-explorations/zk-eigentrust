@@ -33,20 +33,20 @@ pub const SCALE: f64 = 100000000.;
 #[derive(Clone, Debug, PartialEq)]
 pub struct Opinion {
 	pub(crate) epoch: Epoch,
-	pub(crate) iter: u8,
+	pub(crate) iter: u32,
 	pub(crate) op: f64,
 	pub(crate) proof_bytes: Vec<u8>,
 	pub(crate) m_hash: [u8; 32],
 }
 
 impl Opinion {
-	pub fn new(epoch: Epoch, iter: u8, op: f64, proof_bytes: Vec<u8>) -> Self {
+	pub fn new(epoch: Epoch, iter: u32, op: f64, proof_bytes: Vec<u8>) -> Self {
 		Self { epoch, iter, op, proof_bytes, m_hash: [0; 32] }
 	}
 
 	/// Creates a new opinion.
 	pub fn generate(
-		kp: &IdentityKeypair, pubkey_v: &Pubkey, epoch: Epoch, k: u8, op_ji: [f64; MAX_NEIGHBORS],
+		kp: &IdentityKeypair, pubkey_v: &Pubkey, epoch: Epoch, k: u32, op_ji: [f64; MAX_NEIGHBORS],
 		c_v: f64, params: &ParamsKZG<Bn256>, pk: &ProvingKey<G1Affine>,
 	) -> Result<Self, EigenError> {
 		let mut rng = thread_rng();
@@ -114,8 +114,8 @@ impl Opinion {
 		let pubkey_v = Pubkey::from_keypair(&kp).unwrap();
 		let op_ji: [f64; MAX_NEIGHBORS] = [0.; MAX_NEIGHBORS];
 		let c_v: f64 = 0.;
-		let k = 1;
-		let epoch = Epoch(1);
+		let k = 0;
+		let epoch = Epoch(0);
 
 		Self::generate(&kp, &pubkey_v, epoch, k, op_ji, c_v, params, pk)
 	}
@@ -132,10 +132,11 @@ impl Opinion {
 		let pk_v = pos.permute()[0];
 
 		let op_v_scaled = (self.op * SCALE * SCALE).round() as u128;
-		let epoch_f = Bn256Scalar::from_u128(self.iter as u128);
+		let epoch_f = Bn256Scalar::from_u128(self.epoch.0 as u128);
+		let iter_f = Bn256Scalar::from_u128(self.iter as u128);
 		let op_v_f = Bn256Scalar::from_u128(op_v_scaled);
 
-		let m_hash_input = [Bn256Scalar::zero(), epoch_f, op_v_f, pk_v, pk_p];
+		let m_hash_input = [epoch_f, iter_f, op_v_f, pk_v, pk_p];
 		let pos = Posedion5x5::new(m_hash_input);
 		let m_hash = pos.permute()[0];
 		let m_hash_passed = Bn256Scalar::from_bytes(&self.m_hash).unwrap();

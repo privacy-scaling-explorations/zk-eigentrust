@@ -87,14 +87,12 @@ pub fn to_wide_bytes(p: &[u8]) -> [u8; 64] {
 
 /// Schedule `num` intervals with a duration of `interval` that starts at
 /// `start`.
-pub fn create_iter<'a>(
-	start: Instant, interval: Duration, num: usize,
-) -> Fuse<BoxStream<'a, Instant>> {
-	let inner_interval = time::interval_at(start, interval);
-	stream::unfold(inner_interval, |mut interval| async move {
+pub fn create_iter<'a>(start: Instant, interval: Duration, num: usize) -> Fuse<BoxStream<'a, u32>> {
+	let mut inner_interval = time::interval_at(start, interval);
+	inner_interval.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
+	stream::unfold((inner_interval, 0), |(mut interval, count)| async move {
 		interval.tick().await;
-		let now = Instant::now();
-		Some((now, interval))
+		Some((count, (interval, count + 1)))
 	})
 	.take(num)
 	.boxed()

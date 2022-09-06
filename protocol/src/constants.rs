@@ -15,4 +15,8 @@ pub const NUM_BOOTSTRAP_PEERS: usize = 5;
 /// The score of a bootstrap peer.
 pub const BOOTSTRAP_SCORE: f64 = 0.5;
 /// Number of iterations to loop in each epoch.
-pub const NUM_ITERATIONS: u8 = 10;
+pub const NUM_ITERATIONS: u32 = 10;
+/// Epoch duration in seconds
+pub const EPOCH_INTERVAL: u64 = 60 * 60; // One hour
+/// Iteration duration in seconds
+pub const ITER_INTERVAL: u64 = 20;

@@ -23,8 +23,8 @@ pub struct Peer {
 	pubkeys_native: HashMap<PeerId, PublicKey>,
 	pubkeys: HashMap<PeerId, Pubkey>,
 	neighbor_scores: HashMap<PeerId, u32>,
-	cached_neighbor_opinion: HashMap<(PeerId, Epoch, u8), Opinion>,
-	cached_local_opinion: HashMap<(PeerId, Epoch, u8), Opinion>,
+	cached_neighbor_opinion: HashMap<(PeerId, Epoch, u32), Opinion>,
+	cached_local_opinion: HashMap<(PeerId, Epoch, u32), Opinion>,
 	keypair: Keypair,
 	pub(crate) pubkey: Pubkey,
 	params: ParamsKZG<Bn256>,
@@ -95,7 +95,7 @@ impl Peer {
 
 	/// Calculate the local trust score toward all neighbors in the specified
 	/// epoch and generate zk proof of it.
-	pub fn calculate_local_opinion(&mut self, peer_id: PeerId, epoch: Epoch, k: u8) {
+	pub fn calculate_local_opinion(&mut self, peer_id: PeerId, epoch: Epoch, k: u32) {
 		let score = self.neighbor_scores.get(&peer_id).unwrap_or(&0);
 
 		let op_ji = self.get_neighbor_opinions_at(epoch, k - 1);
@@ -122,7 +122,7 @@ impl Peer {
 	}
 
 	/// Returns all of the opinions of the neighbors in the specified epoch.
-	pub fn get_neighbor_opinions_at(&self, epoch: Epoch, k: u8) -> [f64; MAX_NEIGHBORS] {
+	pub fn get_neighbor_opinions_at(&self, epoch: Epoch, k: u32) -> [f64; MAX_NEIGHBORS] {
 		let mut scores: [f64; MAX_NEIGHBORS] = [0.; MAX_NEIGHBORS];
 		for (i, peer) in self.neighbors.iter().enumerate() {
 			peer.map(|peer_id| {
@@ -135,14 +135,14 @@ impl Peer {
 
 	/// Checks whether the neighbor has opinions from all of it's neighbors at
 	/// iteration `k`
-	pub fn has_neighbor_opinions_at(&self, epoch: Epoch, k: u8) -> bool {
+	pub fn has_neighbor_opinions_at(&self, epoch: Epoch, k: u32) -> bool {
 		self.neighbors()
 			.iter()
 			.all(|v| self.cached_neighbor_opinion.contains_key(&(*v, epoch, k)))
 	}
 
 	/// Calculate the global trust score at the specified epoch.
-	pub fn global_trust_score_at(&self, epoch: Epoch, at: u8) -> f64 {
+	pub fn global_trust_score_at(&self, epoch: Epoch, at: u32) -> f64 {
 		let op_ji = self.get_neighbor_opinions_at(epoch, at - 1);
 		op_ji.iter().sum()
 	}
@@ -166,7 +166,7 @@ impl Peer {
 	}
 
 	/// Returns the local score towards a neighbor in a specified epoch.
-	pub fn get_local_opinion(&self, key: &(PeerId, Epoch, u8)) -> Opinion {
+	pub fn get_local_opinion(&self, key: &(PeerId, Epoch, u32)) -> Opinion {
 		self.cached_local_opinion
 			.get(key)
 			.unwrap_or(&Opinion::empty(&self.params, &self.proving_key).unwrap())
@@ -174,12 +174,12 @@ impl Peer {
 	}
 
 	/// Caches the local opinion towards a peer in a specified epoch.
-	pub fn cache_local_opinion(&mut self, key: (PeerId, Epoch, u8), opinion: Opinion) {
+	pub fn cache_local_opinion(&mut self, key: (PeerId, Epoch, u32), opinion: Opinion) {
 		self.cached_local_opinion.insert(key, opinion);
 	}
 
 	/// Returns the neighbor's opinion towards us in a specified epoch.
-	pub fn get_neighbor_opinion(&self, key: &(PeerId, Epoch, u8)) -> Opinion {
+	pub fn get_neighbor_opinion(&self, key: &(PeerId, Epoch, u32)) -> Opinion {
 		self.cached_neighbor_opinion
 			.get(key)
 			.unwrap_or(&Opinion::empty(&self.params, &self.proving_key).unwrap())
@@ -187,7 +187,7 @@ impl Peer {
 	}
 
 	/// Caches the neighbor opinion towards us in specified epoch.
-	pub fn cache_neighbor_opinion(&mut self, key: (PeerId, Epoch, u8), opinion: Opinion) {
+	pub fn cache_neighbor_opinion(&mut self, key: (PeerId, Epoch, u32), opinion: Opinion) {
 		let vk = self.proving_key.get_vk();
 		let pubkey_p = self.get_pub_key(key.0);
 		if pubkey_p.is_none() {
@@ -219,7 +219,7 @@ impl Peer {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::constants::NUM_BOOTSTRAP_PEERS;
+	use crate::{constants::NUM_BOOTSTRAP_PEERS, extract_pub_key};
 	use eigen_trust_circuit::{
 		halo2wrong::halo2::poly::commitment::ParamsProver,
 		poseidon::params::bn254_5x5::Params5x5Bn254,
@@ -256,8 +256,11 @@ mod tests {
 		let epoch = Epoch(0);
 		let neighbor_id = PeerId::random();
 
-		let pubkey = Keypair::generate_secp256k1().public();
-		peer.identify_neighbor_native(neighbor_id, pubkey);
+		let neighbour_kp = Keypair::generate_secp256k1();
+		let pubkey_native = neighbour_kp.public();
+		let pubkey = Pubkey::from_keypair(&neighbour_kp).unwrap();
+		peer.identify_neighbor_native(neighbor_id, pubkey_native);
+		peer.identify_neighbor(neighbor_id, pubkey);
 
 		let opinion = Opinion::empty(&params, &pk).unwrap();
 		peer.cache_local_opinion((neighbor_id, epoch, iter), opinion.clone());
@@ -292,58 +295,56 @@ mod tests {
 		assert_eq!(num_neighbors, 0);
 	}
 
-	// #[test]
-	// fn should_add_neighbors_and_calculate_global_score() {
-	// 	let rng = &mut thread_rng();
-	// 	let local_keypair = Keypair::generate_secp256k1();
-	// 	let local_pubkey = Pubkey::from_keypair(&local_keypair).unwrap();
+	#[test]
+	fn should_add_neighbors_and_calculate_global_score() {
+		let rng = &mut thread_rng();
+		let local_keypair = Keypair::generate_secp256k1();
+		let local_pubkey = Pubkey::from_keypair(&local_keypair).unwrap();
 
-	// 	let params = ParamsKZG::<Bn256>::new(9);
-	// 	let random_circuit =
-	// 		random_circuit::<Bn256, _, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS,
-	// Params5x5Bn254>(rng); 	let pk = keygen(&params, &random_circuit).unwrap();
+		let params = ParamsKZG::<Bn256>::new(9);
+		let random_circuit =
+			random_circuit::<Bn256, _, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, Params5x5Bn254>(rng);
+		let pk = keygen(&params, &random_circuit).unwrap();
 
-	// 	let mut peer = Peer::new(local_keypair.clone(), params.clone(),
-	// pk.clone()).unwrap();
+		let mut peer = Peer::new(local_keypair.clone(), params.clone(), pk.clone()).unwrap();
 
-	// 	let iter = 3;
-	// 	for _ in 0..4 {
-	// 		let kp = Keypair::generate_secp256k1();
-	// 		let pubkey = Pubkey::from_keypair(&kp).unwrap();
-	// 		let peer_id = kp.public().to_peer_id();
+		let iter = 3;
+		let epoch = Epoch(3);
+		for _ in 0..4 {
+			let kp = Keypair::generate_secp256k1();
+			let pubkey = Pubkey::from_keypair(&kp).unwrap();
+			let peer_id = kp.public().to_peer_id();
 
-	// 		peer.add_neighbor(peer_id).unwrap();
-	// 		peer.identify_neighbor(peer_id, pubkey.clone());
-	// 		peer.set_score(peer_id, 5);
+			peer.add_neighbor(peer_id).unwrap();
+			peer.identify_neighbor(peer_id, pubkey.clone());
+			peer.set_score(peer_id, 5);
 
-	// 		// Create neighbor opinion.
-	// 		let mut op_ji = [0.; MAX_NEIGHBORS];
-	// 		op_ji[0] = 0.1;
-	// 		let c_v = 1.;
-	// 		let opinion =
-	// 			Opinion::generate(&kp, &local_pubkey, iter, op_ji, c_v, &params,
-	// &pk).unwrap();
+			// Create neighbor opinion.
+			let mut op_ji = [0.; MAX_NEIGHBORS];
+			op_ji[0] = 0.1;
+			let c_v = 1.;
+			let opinion =
+				Opinion::generate(&kp, &local_pubkey, epoch, iter, op_ji, c_v, &params, &pk)
+					.unwrap();
 
-	// 		// Sanity check
-	// 		assert!(opinion
-	// 			.verify(&pubkey, &local_keypair, &params, &pk.get_vk())
-	// 			.unwrap());
+			// Sanity check
+			assert!(opinion.verify(&pubkey, &local_keypair, &params, &pk.get_vk()).unwrap());
 
-	// 		// Cache neighbor opinion.
-	// 		peer.cache_neighbor_opinion((peer_id, iter), opinion);
-	// 	}
+			// Cache neighbor opinion.
+			peer.cache_neighbor_opinion((peer_id, epoch, iter), opinion);
+		}
 
-	// 	for peer_id in peer.neighbors() {
-	// 		peer.calculate_local_opinion(peer_id, epoch.next());
-	// 	}
+		for peer_id in peer.neighbors() {
+			peer.calculate_local_opinion(peer_id, epoch, iter + 1);
+		}
 
-	// 	let t_i = peer.global_trust_score_at(epoch.next());
-	// 	assert_eq!(t_i, 0.4);
-	// 	let c_v = t_i * 0.25;
+		let t_i = peer.global_trust_score_at(epoch, iter + 1);
+		assert_eq!(t_i, 0.4);
+		let c_v = t_i * 0.25;
 
-	// 	for peer_id in peer.neighbors() {
-	// 		let opinion = peer.get_local_opinion(&(peer_id, epoch.next()));
-	// 		assert_eq!(opinion.op, c_v);
-	// 	}
-	// }
+		for peer_id in peer.neighbors() {
+			let opinion = peer.get_local_opinion(&(peer_id, epoch, iter + 1));
+			assert_eq!(opinion.op, c_v);
+		}
+	}
 }
