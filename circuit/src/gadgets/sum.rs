@@ -72,7 +72,6 @@ impl<F: FieldExt, const S: usize> SumChip<F, S> {
 		layouter.assign_region(
 			|| "sum",
 			|mut region: Region<'_, F>| {
-				config.selector.enable(&mut region, 0)?;
 				let mut sum = region.assign_advice_from_constant(
 					|| "initial_sum",
 					config.sum,
@@ -204,13 +203,13 @@ mod test {
 
 	#[test]
 	fn test_sum_zero_arr() {
-		// Testing zero array. Returns CellNotAssigned error.
+		// Testing zero array.
 		let test_chip = TestCircuit::new([]);
 
 		let pub_ins = vec![Fr::from(0)];
 		let k = 4;
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
-		assert!(prover.verify().is_err());
+		assert_eq!(prover.verify(), Ok(()));
 	}
 
 	#[test]
