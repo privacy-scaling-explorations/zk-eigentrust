@@ -5,17 +5,23 @@ use halo2wrong::halo2::{
 	poly::Rotation,
 };
 
+/// Configuration elements for the circuit defined here.
 #[derive(Clone, Debug)]
 pub struct IsBooleanConfig {
+	/// Configures a column for the x.
 	x: Column<Advice>,
+	/// Configures a fixed boolean value for each row of the circuit.
 	selector: Selector,
 }
 
+/// Constructs individual cell for the configuration element.
 pub struct IsBooleanChip<F: FieldExt> {
+	/// Assigns a cell for the x.
 	x: AssignedCell<F, F>,
 }
 
 impl<F: FieldExt> IsBooleanChip<F> {
+	/// Create a new chip.
 	pub fn new(x: AssignedCell<F, F>) -> Self {
 		IsBooleanChip { x }
 	}
@@ -34,6 +40,14 @@ impl<F: FieldExt> IsBooleanChip<F> {
 
 			vec![
 				// (1 - x) * x == 0
+				// Only two valid example exist for a boolean gate
+				// We only work on current rotation cells
+				// First example:
+				// let x = 1;
+				// (1 - 1) * 1 == 0 => We check the constraint 0 * 1 == 0
+				// Second example:
+				// let x = 0;
+				// (1 - 0) * 0 == 0 => We check the constraint 1 * 0 == 0
 				s_exp * ((one - x_exp.clone()) * x_exp),
 			]
 		});
@@ -124,12 +138,33 @@ mod test {
 	}
 
 	#[test]
-	fn test_is_bool() {
+	fn test_is_bool_value_zero() {
+		// Testing input zero as value.
 		let test_chip = TestCircuit::new(Fr::from(0));
 
 		let k = 4;
 		let prover = MockProver::run(k, &test_chip, vec![]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[test]
+	fn test_is_bool_value_one() {
+		// Testing input one as value.
+		let test_chip = TestCircuit::new(Fr::from(1));
+
+		let k = 4;
+		let prover = MockProver::run(k, &test_chip, vec![]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[test]
+	fn test_is_bool_invalid_value() {
+		// Testing input two as value, which is invalid for the boolean circuit.
+		let test_chip = TestCircuit::new(Fr::from(2));
+
+		let k = 4;
+		let prover = MockProver::run(k, &test_chip, vec![]).unwrap();
+		assert!(prover.verify().is_err());
 	}
 
 	#[test]
