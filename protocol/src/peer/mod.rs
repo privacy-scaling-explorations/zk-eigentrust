@@ -103,7 +103,13 @@ impl Peer {
 		let pubkey_op = self.get_pub_key(peer_id);
 		let opinion = if let Some(pubkey) = pubkey_op {
 			Opinion::generate(
-				&self.keypair, &pubkey, epoch, k + 1, op_ji, normalized_score, &self.params,
+				&self.keypair,
+				&pubkey,
+				epoch,
+				k + 1,
+				op_ji,
+				normalized_score,
+				&self.params,
 				&self.proving_key,
 			)
 			.unwrap_or_else(|e| {
@@ -219,7 +225,7 @@ impl Peer {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::{constants::NUM_BOOTSTRAP_PEERS};
+	use crate::constants::NUM_BOOTSTRAP_PEERS;
 	use eigen_trust_circuit::{
 		halo2wrong::halo2::poly::commitment::ParamsProver,
 		poseidon::params::bn254_5x5::Params5x5Bn254,
@@ -343,7 +349,7 @@ mod tests {
 		let c_v = t_i * 0.25;
 
 		for peer_id in peer.neighbors() {
-			let opinion = peer.get_local_opinion(&(peer_id, epoch, iter));
+			let opinion = peer.get_local_opinion(&(peer_id, epoch, iter + 1));
 			assert_eq!(opinion.op, c_v);
 		}
 	}

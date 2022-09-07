@@ -157,11 +157,11 @@ impl Opinion {
 #[cfg(test)]
 mod test {
 	use super::*;
+	use crate::utils::keypair_from_sk_bytes;
 	use eigen_trust_circuit::{
 		halo2wrong::halo2::poly::commitment::ParamsProver,
 		utils::{keygen, random_circuit},
 	};
-	use crate::utils::keypair_from_sk_bytes;
 
 	#[test]
 	fn should_verify_empty_opinion() {
