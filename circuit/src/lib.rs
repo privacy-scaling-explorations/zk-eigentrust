@@ -10,13 +10,13 @@ pub mod poseidon;
 pub mod utils;
 
 use gadgets::{
-	accumulate::{AccumulatorChip, AccumulatorConfig},
 	and::{AndChip, AndConfig},
 	is_equal::{IsEqualChip, IsEqualConfig},
 	is_zero::{IsZeroChip, IsZeroConfig},
 	mul::{MulChip, MulConfig},
 	select::{SelectChip, SelectConfig},
 	set::{FixedSetChip, FixedSetConfig},
+	sum::{SumChip, SumConfig},
 };
 pub use halo2wrong;
 use halo2wrong::halo2::{
@@ -36,7 +36,7 @@ pub struct EigenTrustConfig {
 	and: AndConfig,
 	select: SelectConfig,
 	poseidon: PoseidonConfig<5>,
-	accumulator: AccumulatorConfig,
+	sum: SumConfig,
 	mul: MulConfig,
 	is_zero: IsZeroConfig,
 	// EigenTrust columns
@@ -135,7 +135,7 @@ impl<F: FieldExt, const S: usize, const B: usize, P: RoundParams<F, 5>> Circuit<
 		let and = AndChip::configure(meta);
 		let select = SelectChip::configure(meta);
 		let poseidon = PoseidonChip::<_, 5, P>::configure(meta);
-		let accumulator = AccumulatorChip::<_, S>::configure(meta);
+		let sum = SumChip::<_, S>::configure(meta);
 		let mul = MulChip::configure(meta);
 		let is_zero = IsZeroChip::configure(meta);
 
@@ -147,18 +147,7 @@ impl<F: FieldExt, const S: usize, const B: usize, P: RoundParams<F, 5>> Circuit<
 		meta.enable_constant(fixed);
 		meta.enable_equality(pub_ins);
 
-		EigenTrustConfig {
-			set,
-			is_equal,
-			and,
-			select,
-			poseidon,
-			accumulator,
-			mul,
-			is_zero,
-			temp,
-			pub_ins,
-		}
+		EigenTrustConfig { set, is_equal, and, select, poseidon, sum, mul, is_zero, temp, pub_ins }
 	}
 
 	/// Synthesize the circuit.
@@ -217,8 +206,9 @@ impl<F: FieldExt, const S: usize, const B: usize, P: RoundParams<F, 5>> Circuit<
 				},
 			)?;
 
-		let acc_chip = AccumulatorChip::new(ops);
-		let t_i = acc_chip.synthesize(config.accumulator, layouter.namespace(|| "accumulator"))?;
+		let sum_chip = SumChip::new(ops);
+		let t_i = sum_chip.synthesize(config.sum, layouter.namespace(|| "sum"))?;
+
 		// Recreate the pubkey_i
 		let inputs = [zero.clone(), sk[0].clone(), sk[1].clone(), sk[2].clone(), sk[3].clone()];
 		let poseidon_pk = PoseidonChip::<_, 5, P>::new(inputs);
