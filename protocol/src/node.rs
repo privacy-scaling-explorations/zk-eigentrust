@@ -94,9 +94,7 @@ impl Node {
 				peer,
 				message: Req { request: Request::Opinion(epoch, iter), channel, .. },
 			} => {
-				// First we calculate the local opinions for the requested epoch.
-				self.peer.calculate_local_opinion(peer, epoch, iter);
-				// Then we send the local opinion to the peer.
+				// We send the local opinion to the peer.
 				let opinion = self.peer.get_local_opinion(&(peer, epoch, iter));
 				let response = Response::Opinion(opinion);
 				let res = self.swarm.behaviour_mut().send_response(channel, response);
@@ -233,6 +231,10 @@ impl Node {
 				},
 				iter_opt = inner_interval.next() => if let Some(iter) = iter_opt {
 					let epoch = Epoch::current_epoch(self.epoch_interval.as_secs());
+					// First we calculate the local opinions for the this iter.
+					for peer in self.peer.neighbors() {
+						self.peer.calculate_local_opinion(peer, epoch, iter);
+					}
 					// Send the request for opinions to all neighbors.
 					self.send_epoch_requests(epoch, iter);
 				},
@@ -430,14 +432,22 @@ mod tests {
 		node1.peer.identify_neighbor(peer_id2, pubkey2);
 		node2.peer.identify_neighbor(peer_id1, pubkey1);
 
-		let next_epoch = Epoch(3);
-		let next_iter = 0;
+		node1.peer.set_score(peer_id2, 5);
+		node2.peer.set_score(peer_id1, 5);
 
-		node1.peer.calculate_local_opinion(peer_id2, next_epoch, next_iter);
-		node2.peer.calculate_local_opinion(peer_id1, next_epoch, next_iter);
+		let epoch = Epoch(3);
+		let iter = 0;
 
-		node1.send_epoch_requests(next_epoch, next_iter);
-		node2.send_epoch_requests(next_epoch, next_iter);
+		for peer in node1.peer.neighbors() {
+			node1.peer.calculate_local_opinion(peer, epoch, iter);
+		}
+
+		for peer in node2.peer.neighbors() {
+			node2.peer.calculate_local_opinion(peer, epoch, iter);
+		}
+
+		node1.send_epoch_requests(epoch, iter);
+		node2.send_epoch_requests(epoch, iter);
 
 		// Expecting 2 request messages
 		// Expecting 2 response sent messages
@@ -454,16 +464,13 @@ mod tests {
 			}
 		}
 
-		let peer1_neighbor_opinion =
-			node1.peer.get_neighbor_opinion(&(peer_id2, next_epoch, next_iter));
-		let peer2_neighbor_opinion =
-			node2.peer.get_neighbor_opinion(&(peer_id1, next_epoch, next_iter));
+		let peer1_neighbor_opinion = node1.peer.get_neighbor_opinion(&(peer_id2, epoch, iter));
+		let peer2_neighbor_opinion = node2.peer.get_neighbor_opinion(&(peer_id1, epoch, iter));
 
-		// TODO: Fix after proper circuit implementation
-		assert_eq!(peer1_neighbor_opinion.epoch, Epoch(0));
-		assert_eq!(peer1_neighbor_opinion.op, 0.);
+		assert_eq!(peer1_neighbor_opinion.epoch, Epoch(3));
+		assert_eq!(peer1_neighbor_opinion.op, 0.5);
 
-		assert_eq!(peer2_neighbor_opinion.epoch, Epoch(0));
-		assert_eq!(peer2_neighbor_opinion.op, 0.);
+		assert_eq!(peer2_neighbor_opinion.epoch, Epoch(3));
+		assert_eq!(peer2_neighbor_opinion.op, 0.5);
 	}
 }

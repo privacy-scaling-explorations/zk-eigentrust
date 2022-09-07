@@ -103,13 +103,7 @@ impl Peer {
 		let pubkey_op = self.get_pub_key(peer_id);
 		let opinion = if let Some(pubkey) = pubkey_op {
 			Opinion::generate(
-				&self.keypair,
-				&pubkey,
-				epoch,
-				k + 1,
-				op_ji,
-				normalized_score,
-				&self.params,
+				&self.keypair, &pubkey, epoch, k, op_ji, normalized_score, &self.params,
 				&self.proving_key,
 			)
 			.unwrap_or_else(|e| {
@@ -127,12 +121,18 @@ impl Peer {
 		self.cache_local_opinion((peer_id, epoch, opinion.iter), opinion);
 	}
 
-	/// Returns all of the opinions of the neighbors in the specified epoch.
+	/// Returns all of the opinions of the neighbors in the specified iteration.
 	pub fn get_neighbor_opinions_at(&self, epoch: Epoch, k: u32) -> [f64; MAX_NEIGHBORS] {
 		let mut scores: [f64; MAX_NEIGHBORS] = [0.; MAX_NEIGHBORS];
+		// At iteration 0, scores are 0
+		if k == 0 {
+			return scores;
+		}
+		// At other itrations we calculate it by taking the opinions from previous
+		// iterations
 		for (i, peer) in self.neighbors.iter().enumerate() {
 			peer.map(|peer_id| {
-				let opinion = self.get_neighbor_opinion(&(peer_id, epoch, k));
+				let opinion = self.get_neighbor_opinion(&(peer_id, epoch, k - 1));
 				scores[i] = opinion.op;
 			});
 		}
@@ -201,7 +201,8 @@ impl Peer {
 		}
 		let pubkey_p = pubkey_p.unwrap();
 		// We add it only if its a valid proof
-		if opinion.verify(&pubkey_p, &self.keypair, &self.params, vk) == Ok(true) {
+		let res = opinion.verify(&pubkey_p, &self.keypair, &self.params, vk);
+		if res == Ok(true) {
 			self.cached_neighbor_opinion.insert(key, opinion);
 		}
 	}
@@ -329,15 +330,23 @@ mod tests {
 			let mut op_ji = [0.; MAX_NEIGHBORS];
 			op_ji[0] = 0.1;
 			let c_v = 1.;
-			let opinion =
-				Opinion::generate(&kp, &local_pubkey, epoch, iter, op_ji, c_v, &params, &pk)
-					.unwrap();
+			let opinion = Opinion::generate(
+				&kp,
+				&local_pubkey,
+				epoch,
+				iter - 1,
+				op_ji,
+				c_v,
+				&params,
+				&pk,
+			)
+			.unwrap();
 
 			// Sanity check
 			assert!(opinion.verify(&pubkey, &local_keypair, &params, &pk.get_vk()).unwrap());
 
 			// Cache neighbor opinion.
-			peer.cache_neighbor_opinion((peer_id, epoch, iter), opinion);
+			peer.cache_neighbor_opinion((peer_id, epoch, iter - 1), opinion);
 		}
 
 		for peer_id in peer.neighbors() {
@@ -349,7 +358,7 @@ mod tests {
 		let c_v = t_i * 0.25;
 
 		for peer_id in peer.neighbors() {
-			let opinion = peer.get_local_opinion(&(peer_id, epoch, iter + 1));
+			let opinion = peer.get_local_opinion(&(peer_id, epoch, iter));
 			assert_eq!(opinion.op, c_v);
 		}
 	}
