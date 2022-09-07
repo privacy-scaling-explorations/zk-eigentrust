@@ -33,7 +33,7 @@ jobs:
         run: ./scripts/clippy.sh
 
       - name: Build
-        run: ./scripts/build.sh
+        run: ./scripts/build.sh && ./scripts/diff.sh
 
       - name: Test
         run: ./scripts/test.sh
