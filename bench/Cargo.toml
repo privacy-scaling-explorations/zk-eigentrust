@@ -14,6 +14,8 @@ futures = { version = "0.3.21", features = ["alloc"] }
 env_logger = "0.9.0"
 rand = "0.8"
 bs58 = "0.4.0"
+csv = "1"
+serde = "1"
 
 eigen-trust-protocol = { path = "../protocol" }
 eigen-trust-circuit = { path = "../circuit" }

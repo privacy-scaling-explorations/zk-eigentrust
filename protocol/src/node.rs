@@ -231,6 +231,8 @@ impl Node {
 				},
 				iter_opt = inner_interval.next() => if let Some(iter) = iter_opt {
 					let epoch = Epoch::current_epoch(self.epoch_interval.as_secs());
+					let score = self.peer.global_trust_score_at(epoch, iter);
+					log::info!("iter({}) score: {}", iter, score);
 					// First we calculate the local opinions for the this iter.
 					for peer in self.peer.neighbors() {
 						self.peer.calculate_local_opinion(peer, epoch, iter);
