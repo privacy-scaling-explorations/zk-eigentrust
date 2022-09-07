@@ -431,10 +431,7 @@ mod tests {
 		node2.peer.identify_neighbor(peer_id1, pubkey1);
 
 		let next_epoch = Epoch(3);
-		let next_iter = 1;
-
-		node1.peer.set_score(peer_id2, 5);
-		node2.peer.set_score(peer_id1, 5);
+		let next_iter = 0;
 
 		node1.peer.calculate_local_opinion(peer_id2, next_epoch, next_iter);
 		node2.peer.calculate_local_opinion(peer_id1, next_epoch, next_iter);

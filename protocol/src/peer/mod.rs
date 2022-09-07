@@ -98,12 +98,12 @@ impl Peer {
 	pub fn calculate_local_opinion(&mut self, peer_id: PeerId, epoch: Epoch, k: u32) {
 		let score = self.neighbor_scores.get(&peer_id).unwrap_or(&0);
 
-		let op_ji = self.get_neighbor_opinions_at(epoch, k - 1);
+		let op_ji = self.get_neighbor_opinions_at(epoch, k);
 		let normalized_score = self.get_normalized_score(*score);
 		let pubkey_op = self.get_pub_key(peer_id);
 		let opinion = if let Some(pubkey) = pubkey_op {
 			Opinion::generate(
-				&self.keypair, &pubkey, epoch, k, op_ji, normalized_score, &self.params,
+				&self.keypair, &pubkey, epoch, k + 1, op_ji, normalized_score, &self.params,
 				&self.proving_key,
 			)
 			.unwrap_or_else(|e| {
@@ -142,8 +142,8 @@ impl Peer {
 	}
 
 	/// Calculate the global trust score at the specified epoch.
-	pub fn global_trust_score_at(&self, epoch: Epoch, at: u32) -> f64 {
-		let op_ji = self.get_neighbor_opinions_at(epoch, at - 1);
+	pub fn global_trust_score_at(&self, epoch: Epoch, k: u32) -> f64 {
+		let op_ji = self.get_neighbor_opinions_at(epoch, k);
 		op_ji.iter().sum()
 	}
 
@@ -219,7 +219,7 @@ impl Peer {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::{constants::NUM_BOOTSTRAP_PEERS, extract_pub_key};
+	use crate::{constants::NUM_BOOTSTRAP_PEERS};
 	use eigen_trust_circuit::{
 		halo2wrong::halo2::poly::commitment::ParamsProver,
 		poseidon::params::bn254_5x5::Params5x5Bn254,
@@ -335,15 +335,15 @@ mod tests {
 		}
 
 		for peer_id in peer.neighbors() {
-			peer.calculate_local_opinion(peer_id, epoch, iter + 1);
+			peer.calculate_local_opinion(peer_id, epoch, iter);
 		}
 
-		let t_i = peer.global_trust_score_at(epoch, iter + 1);
+		let t_i = peer.global_trust_score_at(epoch, iter);
 		assert_eq!(t_i, 0.4);
 		let c_v = t_i * 0.25;
 
 		for peer_id in peer.neighbors() {
-			let opinion = peer.get_local_opinion(&(peer_id, epoch, iter + 1));
+			let opinion = peer.get_local_opinion(&(peer_id, epoch, iter));
 			assert_eq!(opinion.op, c_v);
 		}
 	}

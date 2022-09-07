@@ -161,6 +161,7 @@ mod test {
 		halo2wrong::halo2::poly::commitment::ParamsProver,
 		utils::{keygen, random_circuit},
 	};
+	use crate::utils::keypair_from_sk_bytes;
 
 	#[test]
 	fn should_verify_empty_opinion() {
@@ -204,5 +205,35 @@ mod test {
 		.unwrap();
 
 		assert!(proof.verify(&local_pubkey, &keypair_v, &params, pk.get_vk()).unwrap());
+	}
+
+	#[test]
+	fn test_bootstrap_proof() {
+		let rng = &mut thread_rng();
+		let sk = "AF4yAqwCPzpBcit4FtTrHso4BBR9onk7qS9Q1SWSLSaV";
+		let sk_bytes1 = bs58::decode(sk).into_vec().unwrap();
+		let local_keypair = keypair_from_sk_bytes(sk_bytes1).unwrap();
+		let local_pubkey = Pubkey::from_keypair(&local_keypair).unwrap();
+
+		let keypair_v = IdentityKeypair::generate_secp256k1();
+		let pubkey_v = Pubkey::from_keypair(&keypair_v).unwrap();
+
+		let epoch = Epoch(1);
+		let iter = 0;
+		let op_ji = [0.1; MAX_NEIGHBORS];
+		let c_v = 0.1;
+
+		let params = ParamsKZG::<Bn256>::new(9);
+		let random_circuit =
+			random_circuit::<Bn256, _, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, Params5x5Bn254>(rng);
+		let pk = keygen(&params, &random_circuit).unwrap();
+		let opinion = Opinion::generate(
+			&local_keypair, &pubkey_v, epoch, iter, op_ji, c_v, &params, &pk,
+		)
+		.unwrap();
+
+		assert_eq!(opinion.op, BOOTSTRAP_SCORE * c_v);
+
+		assert!(opinion.verify(&local_pubkey, &keypair_v, &params, pk.get_vk()).unwrap());
 	}
 }
