@@ -10,12 +10,12 @@ pub mod poseidon;
 pub mod utils;
 
 use gadgets::{
-	accumulate::{AccumulatorChip, AccumulatorConfig},
 	and::{AndChip, AndConfig},
 	is_equal::{IsEqualChip, IsEqualConfig},
 	mul::{MulChip, MulConfig},
 	select::{SelectChip, SelectConfig},
 	set::{FixedSetChip, FixedSetConfig},
+	sum::{SumChip, SumConfig},
 };
 pub use halo2wrong;
 use halo2wrong::halo2::{
@@ -35,7 +35,7 @@ pub struct EigenTrustConfig {
 	and: AndConfig,
 	select: SelectConfig,
 	poseidon: PoseidonConfig<5>,
-	accumulator: AccumulatorConfig,
+	sum: SumConfig,
 	mul: MulConfig,
 	// EigenTrust columns
 	temp: Column<Advice>,
@@ -145,7 +145,7 @@ impl<F: FieldExt, const S: usize, const B: usize, P: RoundParams<F, 5>> Circuit<
 		let and = AndChip::configure(meta);
 		let select = SelectChip::configure(meta);
 		let poseidon = PoseidonChip::<_, 5, P>::configure(meta);
-		let accumulator = AccumulatorChip::<_, S>::configure(meta);
+		let sum = SumChip::<_, S>::configure(meta);
 		let mul = MulChip::configure(meta);
 
 		let temp = meta.advice_column();
@@ -162,7 +162,7 @@ impl<F: FieldExt, const S: usize, const B: usize, P: RoundParams<F, 5>> Circuit<
 			and,
 			select,
 			poseidon,
-			accumulator,
+			sum,
 			mul,
 			temp,
 			pub_ins,
@@ -244,8 +244,8 @@ impl<F: FieldExt, const S: usize, const B: usize, P: RoundParams<F, 5>> Circuit<
 				},
 			)?;
 
-		let acc_chip = AccumulatorChip::new(ops);
-		let t_i = acc_chip.synthesize(config.accumulator, layouter.namespace(|| "accumulator"))?;
+		let sum_chip = SumChip::new(ops);
+		let t_i = sum_chip.synthesize(config.sum, layouter.namespace(|| "sum"))?;
 
 		// Recreate the pubkey_i
 		let inputs = [
