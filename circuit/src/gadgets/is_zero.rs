@@ -51,6 +51,7 @@ impl<F: FieldExt> IsZeroChip<F> {
 				// x * b == 0
 				// Here we check this constraint because we want to be sure
 				// that one of the variables is 0.
+				// b is the boolean and we want to output (x == 0)
 				sel_exp.clone() * (x_exp.clone() * b_exp.clone()),
 				// x * x_inv + b - 1 == 0
 				// Example 1:
@@ -59,7 +60,7 @@ impl<F: FieldExt> IsZeroChip<F> {
 				// In this case our b value must be 0.
 				// Example 2:
 				// If b = 1
-				// (x * x_inv + 0 - 1) == 0 => (x * x_inv) must be equal to 0.
+				// (x * x_inv + 1 - 1) == 0 => (x * x_inv) must be equal to 0.
 				// Which is only can be obtainable by x = 0.
 				sel_exp * (x_exp * x_inv_exp + b_exp - one),
 			]
