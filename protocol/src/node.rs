@@ -51,7 +51,7 @@ impl Node {
 		// 30 years in seconds
 		// Basically, we want connections to be open for a long time.
 		let connection_duration = Duration::from_secs(86400 * 365 * 30);
-		let iter_interval_duration = Duration::from_secs(ITER_INTERVAL);
+		let iter_interval_duration = Duration::from_secs(ITER_INTERVAL * 2);
 		let transport = TcpConfig::new()
 			.nodelay(true)
 			.upgrade(Version::V1)
