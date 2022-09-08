@@ -8,27 +8,36 @@ use halo2wrong::halo2::{
 use super::is_zero::{IsZeroChip, IsZeroConfig};
 
 #[derive(Clone, Debug)]
+/// Configuration elements for the circuit defined here.
 pub struct IsEqualConfig {
+	/// Constructs is_zero circuit elements.
 	is_zero: IsZeroConfig,
+	/// Configures a column for the lhs.
 	lhs: Column<Advice>,
+	/// Configures a column for the rhs.
 	rhs: Column<Advice>,
+	/// Configures a column for the out.
 	out: Column<Advice>,
+	/// Configures a fixed boolean value for each row of the circuit.
 	s: Selector,
 }
 
 #[derive(Clone)]
+/// Constructs individual cells for the configuration elements.
 pub struct IsEqualChip<F: FieldExt> {
+	/// Assigns a cell for lhs.
 	lhs: AssignedCell<F, F>,
+	/// Assigns a cell for rhs.
 	rhs: AssignedCell<F, F>,
 }
 
 impl<F: FieldExt> IsEqualChip<F> {
+	/// Create a new chip.
 	pub fn new(x: AssignedCell<F, F>, y: AssignedCell<F, F>) -> Self {
 		Self { lhs: x, rhs: y }
 	}
-}
 
-impl<F: FieldExt> IsEqualChip<F> {
+	/// Make the circuit config.
 	pub fn configure(meta: &mut ConstraintSystem<F>) -> IsEqualConfig {
 		let is_zero_config = IsZeroChip::configure(meta);
 		let lhs = meta.advice_column();
@@ -45,7 +54,17 @@ impl<F: FieldExt> IsEqualChip<F> {
 			let rhs_exp = v_cells.query_advice(rhs, Rotation::cur());
 			let out_exp = v_cells.query_advice(out, Rotation::cur());
 			let s_exp = v_cells.query_selector(s);
-			vec![s_exp * ((out_exp + rhs_exp) - lhs_exp)]
+			vec![
+				// (x + y) - z == 0
+				// Example:
+				// let y = 123;
+				// let z = 123;
+				// let x = (y - z);
+				// x;
+				//
+				// x = (123 - 123) = 0 => We check the constraint (0 + 123) - 123 == 0
+				s_exp * ((out_exp + rhs_exp) - lhs_exp),
+			]
 		});
 
 		IsEqualConfig {
@@ -57,6 +76,7 @@ impl<F: FieldExt> IsEqualChip<F> {
 		}
 	}
 
+	/// Synthesize the circuit.
 	pub fn synthesize(
 		&self,
 		config: IsEqualConfig,
@@ -76,6 +96,7 @@ impl<F: FieldExt> IsEqualChip<F> {
 			},
 		)?;
 
+		// If variable out holds 0 as value, that means is_zero circuit will return 1.
 		let is_zero_chip = IsZeroChip::new(out);
 		let is_zero = is_zero_chip.synthesize(config.is_zero, layouter.namespace(|| "is_zero"))?;
 		Ok(is_zero)
@@ -169,7 +190,8 @@ mod test {
 	}
 
 	#[test]
-	fn should_test_equal_chip() {
+	fn test_is_equal() {
+		// Testing equal values.
 		let test_chip = TestCircuit::new(Fr::from(123), Fr::from(123));
 
 		let pub_ins = vec![Fr::one()];
@@ -179,7 +201,18 @@ mod test {
 	}
 
 	#[test]
-	fn should_test_equal_chip_production() {
+	fn test_is_not_equal() {
+		// Testing not equal values.
+		let test_chip = TestCircuit::new(Fr::from(123), Fr::from(124));
+
+		let pub_ins = vec![Fr::zero()];
+		let k = 4;
+		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[test]
+	fn test_is_equal_production() {
 		let test_chip = TestCircuit::new(Fr::from(123), Fr::from(123));
 
 		let k = 4;
