@@ -34,8 +34,6 @@ use tokio::{
 pub struct Node {
 	/// Swarm object.
 	pub(crate) swarm: Swarm<EigenTrustBehaviour>,
-	epoch_interval: Duration,
-	iter_interval: Duration,
 	pub(crate) peer: Peer,
 }
 
@@ -53,7 +51,6 @@ impl Node {
 		// 30 years in seconds
 		// Basically, we want connections to be open for a long time.
 		let connection_duration = Duration::from_secs(86400 * 365 * 30);
-		let epoch_interval_duration = Duration::from_secs(EPOCH_INTERVAL);
 		let iter_interval_duration = Duration::from_secs(ITER_INTERVAL);
 		let transport = TcpConfig::new()
 			.nodelay(true)
@@ -77,12 +74,7 @@ impl Node {
 			EigenError::ListenFailed
 		})?;
 
-		Ok(Self {
-			swarm,
-			epoch_interval: epoch_interval_duration,
-			iter_interval: iter_interval_duration,
-			peer,
-		})
+		Ok(Self { swarm, peer })
 	}
 
 	/// Handle the request response event.
@@ -210,12 +202,16 @@ impl Node {
 	/// parameter.
 	pub async fn main_loop(mut self, interval_limit: usize) {
 		let now = Instant::now();
-		let secs_until_next_epoch = Epoch::secs_until_next_epoch(self.epoch_interval.as_secs());
+		// Set up epoch interval
+		let epoch_interval = Duration::from_secs(EPOCH_INTERVAL);
+		// Set up iter interval
+		let iter_interval = Duration::from_secs(ITER_INTERVAL);
+		let secs_until_next_epoch = Epoch::secs_until_next_epoch(epoch_interval.as_secs());
 		log::info!("Epoch starts in: {} seconds", secs_until_next_epoch);
 		// Figure out when the next epoch will start.
 		let start = now + Duration::from_secs(secs_until_next_epoch);
 		// Setup the epoch interval timer.
-		let mut outer_interval = create_iter(start, self.epoch_interval, interval_limit);
+		let mut outer_interval = create_iter(start, epoch_interval, interval_limit);
 		// Setup iteration interval timer
 		let mut inner_interval = stream::pending::<u32>().boxed().fuse();
 
@@ -225,12 +221,12 @@ impl Node {
 				// The interval timer tick. This is where we request opinions from the neighbors.
 				epoch_opt = outer_interval.next() => if let Some(epoch) = epoch_opt {
 					log::info!("Epoch({}) has started", epoch);
-					inner_interval = create_iter(Instant::now(), self.iter_interval, NUM_ITERATIONS as usize);
+					inner_interval = create_iter(Instant::now(), iter_interval, NUM_ITERATIONS as usize);
 				} else {
 					break;
 				},
 				iter_opt = inner_interval.next() => if let Some(iter) = iter_opt {
-					let epoch = Epoch::current_epoch(self.epoch_interval.as_secs());
+					let epoch = Epoch::current_epoch(epoch_interval.as_secs());
 					let score = self.peer.global_trust_score_at(epoch, iter);
 					log::info!("iter({}) score: {}", iter, score);
 					// First we calculate the local opinions for the this iter.
@@ -458,9 +454,11 @@ mod tests {
 		for _ in 0..6 {
 			select! {
 				event1 = node1.swarm.select_next_some() => {
+					println!("{:?}", event1);
 					node1.handle_swarm_events(event1);
 				},
 				event2 = node2.swarm.select_next_some() => {
+					println!("{:?}", event2);
 					node2.handle_swarm_events(event2);
 				},
 			}
