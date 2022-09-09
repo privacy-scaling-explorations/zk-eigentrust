@@ -62,20 +62,22 @@ impl<F: FieldExt> SelectChip<F> {
 
 			vec![
 				// bit * (x - y) - (z - y)
-				// z is the next rotation cell for the x value.
-				// Next rotation cell for x will carry the same value. (x == z)
 				// Example 1:
 				// bit = 1
+				// z is the next rotation cell for the x value.
+				// Next rotation cell for x will carry the same value when bit == 1. (x == z)
 				// x = 5
 				// y = 3
 				// z = 5
 				// 1 * (x - y) - (z - y) = 1 * (5 - 3) - (5 - 3) = 0
 				// Example 2:
 				// bit = 0
+				// z is the next rotation cell for the y value.
+				// Next rotation cell for y will carry the same value when bit == 0. (x == z)
 				// x = 5
 				// y = 3
-				// z = 5
-				// 0 * (x - y) - (z - y) = 0 * (5 - 3) - (5 - 3) = 2
+				// z = 3
+				// 0 * (x - y) - (z - y) = 0 * (5 - 3) - (3 - 3) = 0
 				// When the bit is 0 and one of the variables are non-zero,
 				// constraint returns a non-zero value.
 				s_exp * (bit_exp.clone() * (x_exp - y_exp.clone()) - (res_exp - y_exp)),
@@ -98,6 +100,7 @@ impl<F: FieldExt> SelectChip<F> {
 		mut layouter: impl Layouter<F>,
 	) -> Result<AssignedCell<F, F>, Error> {
 		let is_boolean_chip = IsBooleanChip::new(self.bit.clone());
+		// Here we check bit is boolean or not.
 		let assigned_bool = is_boolean_chip
 			.synthesize(config.is_bool.clone(), layouter.namespace(|| "is_boolean"))?;
 
@@ -106,13 +109,12 @@ impl<F: FieldExt> SelectChip<F> {
 			|mut region: Region<'_, F>| {
 				config.selector.enable(&mut region, 0)?;
 
-				// Here we check bit is boolean or not.
 				let assigned_bit =
 					assigned_bool.copy_advice(|| "bit", &mut region, config.bit, 0)?;
 				let assigned_x = self.x.copy_advice(|| "x", &mut region, config.x, 0)?;
 				let assigned_y = self.y.copy_advice(|| "y", &mut region, config.y, 0)?;
 
-				// Conditional control checks the result. Is it zero or not?
+				// Conditional control checks the bit. Is it zero or not?
 				// If yes returns the y value, else x.
 				let res = assigned_bit.value().and_then(|bit_f| {
 					if bool::from(bit_f.is_zero()) {
