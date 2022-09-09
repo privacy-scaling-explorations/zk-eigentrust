@@ -29,10 +29,7 @@ where
 	P: RoundParams<F, WIDTH>,
 {
 	fn new() -> Self {
-		Self {
-			inputs: Vec::new(),
-			_params: PhantomData,
-		}
+		Self { inputs: Vec::new(), _params: PhantomData }
 	}
 
 	fn configure(meta: &mut ConstraintSystem<F>) -> PoseidonSpongeConfig<WIDTH> {
@@ -59,17 +56,11 @@ where
 			exprs
 		});
 
-		PoseidonSpongeConfig {
-			poseidon_config,
-			state,
-			absorb_selector,
-		}
+		PoseidonSpongeConfig { poseidon_config, state, absorb_selector }
 	}
 
 	fn load_state(
-		columns: [Column<Advice>; WIDTH],
-		region: &mut Region<'_, F>,
-		round: usize,
+		columns: [Column<Advice>; WIDTH], region: &mut Region<'_, F>, round: usize,
 		prev_state: &[AssignedCell<F, F>],
 	) -> Result<[AssignedCell<F, F>; WIDTH], Error> {
 		let mut state: [Option<AssignedCell<F, F>>; WIDTH] = [(); WIDTH].map(|_| None);
@@ -93,9 +84,7 @@ where
 	}
 
 	pub fn squeeze(
-		&self,
-		config: &PoseidonSpongeConfig<WIDTH>,
-		mut layouter: impl Layouter<F>,
+		&self, config: &PoseidonSpongeConfig<WIDTH>, mut layouter: impl Layouter<F>,
 	) -> Result<AssignedCell<F, F>, Error> {
 		assert!(!self.inputs.is_empty());
 
@@ -181,9 +170,7 @@ mod test {
 
 	impl PoseidonTester {
 		fn load_state(
-			config: &PoseidonSpongeConfig<5>,
-			region: &mut Region<'_, Fr>,
-			round: usize,
+			config: &PoseidonSpongeConfig<5>, region: &mut Region<'_, Fr>, round: usize,
 			init_state: [Value<Fr>; 5],
 		) -> Result<[AssignedCell<Fr, Fr>; 5], Error> {
 			let mut state: [Option<AssignedCell<Fr, Fr>>; 5] = [(); 5].map(|_| None);
@@ -204,10 +191,7 @@ mod test {
 		type FloorPlanner = SimpleFloorPlanner;
 
 		fn without_witnesses(&self) -> Self {
-			Self {
-				inputs1: [Value::unknown(); 5],
-				inputs2: [Value::unknown(); 5],
-			}
+			Self { inputs1: [Value::unknown(); 5], inputs2: [Value::unknown(); 5] }
 		}
 
 		fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
@@ -216,16 +200,11 @@ mod test {
 
 			meta.enable_equality(results);
 
-			Self::Config {
-				sponge: sponge_config,
-				results,
-			}
+			Self::Config { sponge: sponge_config, results }
 		}
 
 		fn synthesize(
-			&self,
-			config: Self::Config,
-			mut layouter: impl Layouter<Fr>,
+			&self, config: Self::Config, mut layouter: impl Layouter<Fr>,
 		) -> Result<(), Error> {
 			let inputs1 = layouter.assign_region(
 				|| "load_state1",

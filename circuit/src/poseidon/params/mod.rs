@@ -15,10 +15,7 @@ pub trait RoundParams<F: FieldExt, const WIDTH: usize>: Sbox {
 
 	fn round_constants() -> Vec<F> {
 		let round_constants_raw = Self::round_constants_raw();
-		let round_constants: Vec<F> = round_constants_raw
-			.iter()
-			.map(|x| hex_to_field(x))
-			.collect();
+		let round_constants: Vec<F> = round_constants_raw.iter().map(|x| hex_to_field(x)).collect();
 		assert_eq!(round_constants.len(), Self::round_constants_count());
 		round_constants
 	}

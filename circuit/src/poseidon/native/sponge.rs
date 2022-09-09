@@ -15,10 +15,7 @@ where
 	P: RoundParams<F, WIDTH>,
 {
 	pub fn new() -> Self {
-		Self {
-			inputs: Vec::new(),
-			_params: PhantomData,
-		}
+		Self { inputs: Vec::new(), _params: PhantomData }
 	}
 
 	pub fn update(&mut self, inputs: &[F]) {

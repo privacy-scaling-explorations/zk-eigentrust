@@ -80,20 +80,12 @@ impl<F: FieldExt> SelectChip<F> {
 			]
 		});
 
-		SelectConfig {
-			is_bool: boolean_config,
-			bit,
-			x,
-			y,
-			selector: s,
-		}
+		SelectConfig { is_bool: boolean_config, bit, x, y, selector: s }
 	}
 
 	/// Synthesize the circuit.
 	pub fn synthesize(
-		&self,
-		config: SelectConfig,
-		mut layouter: impl Layouter<F>,
+		&self, config: SelectConfig, mut layouter: impl Layouter<F>,
 	) -> Result<AssignedCell<F, F>, Error> {
 		let is_boolean_chip = IsBooleanChip::new(self.bit.clone());
 		// Here we check bit is boolean or not.
@@ -177,17 +169,11 @@ mod test {
 			meta.enable_equality(temp);
 			meta.enable_equality(pub_ins);
 
-			TestConfig {
-				select,
-				temp,
-				pub_ins,
-			}
+			TestConfig { select, temp, pub_ins }
 		}
 
 		fn synthesize(
-			&self,
-			config: TestConfig,
-			mut layouter: impl Layouter<F>,
+			&self, config: TestConfig, mut layouter: impl Layouter<F>,
 		) -> Result<(), Error> {
 			let (assigned_bit, assigned_x, assigned_y) = layouter.assign_region(
 				|| "temp",

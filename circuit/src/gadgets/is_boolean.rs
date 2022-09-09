@@ -57,9 +57,7 @@ impl<F: FieldExt> IsBooleanChip<F> {
 
 	/// Synthesize the circuit.
 	pub fn synthesize(
-		&self,
-		config: IsBooleanConfig,
-		mut layouter: impl Layouter<F>,
+		&self, config: IsBooleanConfig, mut layouter: impl Layouter<F>,
 	) -> Result<AssignedCell<F, F>, Error> {
 		layouter.assign_region(
 			|| "is_boolean",
@@ -121,9 +119,7 @@ mod test {
 		}
 
 		fn synthesize(
-			&self,
-			config: TestConfig,
-			mut layouter: impl Layouter<F>,
+			&self, config: TestConfig, mut layouter: impl Layouter<F>,
 		) -> Result<(), Error> {
 			let numba = layouter.assign_region(
 				|| "temp",

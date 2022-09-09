@@ -22,9 +22,7 @@ pub struct IntoAffineChip {
 
 impl IntoAffineChip {
 	pub fn new(
-		r_x: AssignedCell<Fr, Fr>,
-		r_y: AssignedCell<Fr, Fr>,
-		r_z: AssignedCell<Fr, Fr>,
+		r_x: AssignedCell<Fr, Fr>, r_y: AssignedCell<Fr, Fr>, r_z: AssignedCell<Fr, Fr>,
 	) -> Self {
 		Self { r_x, r_y, r_z }
 	}
@@ -32,11 +30,7 @@ impl IntoAffineChip {
 
 impl IntoAffineChip {
 	pub fn configure(meta: &mut ConstraintSystem<Fr>) -> IntoAffineConfig {
-		let advice = [
-			meta.advice_column(),
-			meta.advice_column(),
-			meta.advice_column(),
-		];
+		let advice = [meta.advice_column(), meta.advice_column(), meta.advice_column()];
 		let s = meta.selector();
 
 		advice.map(|c| meta.enable_equality(c));
@@ -63,29 +57,21 @@ impl IntoAffineChip {
 			]
 		});
 
-		IntoAffineConfig {
-			advice,
-			selector: s,
-		}
+		IntoAffineConfig { advice, selector: s }
 	}
 
 	/// Synthesize the circuit.
 	pub fn synthesize(
-		&self,
-		config: IntoAffineConfig,
-		mut layouter: impl Layouter<Fr>,
+		&self, config: IntoAffineConfig, mut layouter: impl Layouter<Fr>,
 	) -> Result<(AssignedCell<Fr, Fr>, AssignedCell<Fr, Fr>), Error> {
 		layouter.assign_region(
 			|| "into_affine",
 			|mut region: Region<'_, Fr>| {
 				config.selector.enable(&mut region, 0)?;
 
-				self.r_x
-					.copy_advice(|| "r_x", &mut region, config.advice[0], 0)?;
-				self.r_y
-					.copy_advice(|| "r_y", &mut region, config.advice[1], 0)?;
-				self.r_z
-					.copy_advice(|| "r_z", &mut region, config.advice[2], 0)?;
+				self.r_x.copy_advice(|| "r_x", &mut region, config.advice[0], 0)?;
+				self.r_y.copy_advice(|| "r_y", &mut region, config.advice[1], 0)?;
+				self.r_z.copy_advice(|| "r_z", &mut region, config.advice[2], 0)?;
 
 				let z_invert = self.r_z.value_field().invert();
 				let r_x_affine = self.r_x.value_field() * z_invert;
@@ -148,11 +134,7 @@ mod test {
 
 	impl TestCircuit {
 		fn new(r_x: Fr, r_y: Fr, r_z: Fr) -> Self {
-			Self {
-				r_x: Value::known(r_x),
-				r_y: Value::known(r_y),
-				r_z: Value::known(r_z),
-			}
+			Self { r_x: Value::known(r_x), r_y: Value::known(r_y), r_z: Value::known(r_z) }
 		}
 	}
 
@@ -172,17 +154,11 @@ mod test {
 			meta.enable_equality(instance);
 			meta.enable_equality(temp);
 
-			TestConfig {
-				into_affine,
-				pub_ins: instance,
-				temp,
-			}
+			TestConfig { into_affine, pub_ins: instance, temp }
 		}
 
 		fn synthesize(
-			&self,
-			config: TestConfig,
-			mut layouter: impl Layouter<Fr>,
+			&self, config: TestConfig, mut layouter: impl Layouter<Fr>,
 		) -> Result<(), Error> {
 			let (r_x, r_y, r_z) = layouter.assign_region(
 				|| "temp",

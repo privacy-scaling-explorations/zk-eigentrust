@@ -54,15 +54,9 @@ struct EddsaChip {
 
 impl EddsaChip {
 	fn new(
-		big_r_x: AssignedCell<Fr, Fr>,
-		big_r_y: AssignedCell<Fr, Fr>,
-		s: AssignedCell<Fr, Fr>,
-		pk_x: AssignedCell<Fr, Fr>,
-		pk_y: AssignedCell<Fr, Fr>,
-		m: AssignedCell<Fr, Fr>,
-		s_bits: [Fr; 252],
-		suborder_bits: [Fr; 252],
-		s_suborder_diff_bits: [Fr; 253],
+		big_r_x: AssignedCell<Fr, Fr>, big_r_y: AssignedCell<Fr, Fr>, s: AssignedCell<Fr, Fr>,
+		pk_x: AssignedCell<Fr, Fr>, pk_y: AssignedCell<Fr, Fr>, m: AssignedCell<Fr, Fr>,
+		s_bits: [Fr; 252], suborder_bits: [Fr; 252], s_suborder_diff_bits: [Fr; 253],
 		m_hash_bits: [Fr; 256],
 	) -> Self {
 		Self {
@@ -109,9 +103,7 @@ impl EddsaChip {
 
 	/// Synthesize the circuit.
 	pub fn synthesize(
-		&self,
-		config: EddsaConfig,
-		mut layouter: impl Layouter<Fr>,
+		&self, config: EddsaConfig, mut layouter: impl Layouter<Fr>,
 	) -> Result<(), Error> {
 		let (b8_x, b8_y, one, suborder) = layouter.assign_region(
 			|| "assign_values",
@@ -241,14 +233,7 @@ mod test {
 
 	impl TestCircuit {
 		fn new(big_r_x: Fr, big_r_y: Fr, s: Fr, pk_x: Fr, pk_y: Fr, m: Fr) -> Self {
-			Self {
-				big_r_x,
-				big_r_y,
-				s,
-				pk_x,
-				pk_y,
-				m,
-			}
+			Self { big_r_x, big_r_y, s, pk_x, pk_y, m }
 		}
 	}
 
@@ -270,9 +255,7 @@ mod test {
 		}
 
 		fn synthesize(
-			&self,
-			config: TestConfig,
-			mut layouter: impl Layouter<Fr>,
+			&self, config: TestConfig, mut layouter: impl Layouter<Fr>,
 		) -> Result<(), Error> {
 			let (big_r_x, big_r_y, s, pk_x, pk_y, m) = layouter.assign_region(
 				|| "temp",
@@ -307,12 +290,8 @@ mod test {
 						region.assign_advice(|| "m", config.temp, 5, || Value::known(self.m))?;
 
 					Ok((
-						big_r_x_assigned,
-						big_r_y_assigned,
-						s_assigned,
-						pk_x_assigned,
-						pk_y_assigned,
-						m_assigned,
+						big_r_x_assigned, big_r_y_assigned, s_assigned, pk_x_assigned,
+						pk_y_assigned, m_assigned,
 					))
 				},
 			)?;
@@ -325,16 +304,7 @@ mod test {
 			let res = Poseidon::<_, 5, Params5x5Bn254>::new(h_inputs).permute()[0];
 			let m_hash_bits = to_bits(res.to_bytes()).map(Fr::from);
 			let eddsa = EddsaChip::new(
-				big_r_x,
-				big_r_y,
-				s,
-				pk_x,
-				pk_y,
-				m,
-				s_bits,
-				suborder_bits,
-				diff_bits,
-				m_hash_bits,
+				big_r_x, big_r_y, s, pk_x, pk_y, m, s_bits, suborder_bits, diff_bits, m_hash_bits,
 			);
 			eddsa.synthesize(config.eddsa, layouter.namespace(|| "eddsa"))?;
 			Ok(())

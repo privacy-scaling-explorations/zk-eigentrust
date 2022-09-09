@@ -67,20 +67,12 @@ impl<F: FieldExt> IsEqualChip<F> {
 			]
 		});
 
-		IsEqualConfig {
-			is_zero: is_zero_config,
-			lhs,
-			rhs,
-			out,
-			s,
-		}
+		IsEqualConfig { is_zero: is_zero_config, lhs, rhs, out, s }
 	}
 
 	/// Synthesize the circuit.
 	pub fn synthesize(
-		&self,
-		config: IsEqualConfig,
-		mut layouter: impl Layouter<F>,
+		&self, config: IsEqualConfig, mut layouter: impl Layouter<F>,
 	) -> Result<AssignedCell<F, F>, Error> {
 		let out = layouter.assign_region(
 			|| "temp",
@@ -151,17 +143,11 @@ mod test {
 			meta.enable_equality(instance);
 			meta.enable_equality(temp);
 
-			TestConfig {
-				is_zero,
-				pub_ins: instance,
-				temp,
-			}
+			TestConfig { is_zero, pub_ins: instance, temp }
 		}
 
 		fn synthesize(
-			&self,
-			config: TestConfig,
-			mut layouter: impl Layouter<F>,
+			&self, config: TestConfig, mut layouter: impl Layouter<F>,
 		) -> Result<(), Error> {
 			let (lhs, rhs) = layouter.assign_region(
 				|| "temp",

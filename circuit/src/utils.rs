@@ -65,6 +65,7 @@ pub fn random_circuit<
 ) -> EigenTrustCircuit<<E as Engine>::Scalar, SIZE, NUM_BOOTSTRAP, P> {
 	let pubkey_v = E::Scalar::random(rng.clone());
 	let epoch = E::Scalar::random(rng.clone());
+	let iter = E::Scalar::random(rng.clone());
 	let secret_i = [(); 4].map(|_| E::Scalar::random(rng.clone()));
 	// Data from neighbors of i
 	let op_ji = [(); SIZE].map(|_| E::Scalar::random(rng.clone()));
@@ -72,24 +73,15 @@ pub fn random_circuit<
 
 	let bootstrap_pubkeys = [(); NUM_BOOTSTRAP].map(|_| E::Scalar::random(rng.clone()));
 	let bootstrap_score = E::Scalar::random(rng.clone());
-	let genesis_epoch = E::Scalar::random(rng.clone());
 
 	EigenTrustCircuit::<_, SIZE, NUM_BOOTSTRAP, P>::new(
-		pubkey_v,
-		epoch,
-		secret_i,
-		op_ji,
-		c_v,
-		bootstrap_pubkeys,
-		bootstrap_score,
-		genesis_epoch,
+		pubkey_v, epoch, iter, secret_i, op_ji, c_v, bootstrap_pubkeys, bootstrap_score,
 	)
 }
 
 /// Proving/verifying key generation.
 pub fn keygen<E: MultiMillerLoop + Debug, C: Circuit<E::Scalar>>(
-	params: &ParamsKZG<E>,
-	circuit: &C,
+	params: &ParamsKZG<E>, circuit: &C,
 ) -> Result<ProvingKey<<E as Engine>::G1Affine>, Error> {
 	let vk = keygen_vk::<KZGCommitmentScheme<E>, _>(params, circuit)?;
 	let pk = keygen_pk::<KZGCommitmentScheme<E>, _>(params, vk, circuit)?;
@@ -110,11 +102,9 @@ pub fn finalize_verify<
 
 /// Make a proof for generic circuit.
 pub fn prove<E: MultiMillerLoop + Debug, C: Circuit<E::Scalar>, R: Rng + Clone>(
-	params: &ParamsKZG<E>,
-	circuit: C,
+	params: &ParamsKZG<E>, circuit: C,
 	pub_inps: &[&[<KZGCommitmentScheme<E> as CommitmentScheme>::Scalar]],
-	pk: &ProvingKey<E::G1Affine>,
-	rng: &mut R,
+	pk: &ProvingKey<E::G1Affine>, rng: &mut R,
 ) -> Result<Vec<u8>, Error> {
 	let mut transcript = Blake2bWrite::<_, E::G1Affine, Challenge255<_>>::init(vec![]);
 	create_proof::<KZGCommitmentScheme<E>, ProverSHPLONK<_>, _, _, _, _>(
@@ -132,10 +122,8 @@ pub fn prove<E: MultiMillerLoop + Debug, C: Circuit<E::Scalar>, R: Rng + Clone>(
 
 /// Verify a proof for generic circuit.
 pub fn verify<E: MultiMillerLoop + Debug>(
-	params: &ParamsKZG<E>,
-	pub_inps: &[&[<KZGCommitmentScheme<E> as CommitmentScheme>::Scalar]],
-	proof: &[u8],
-	vk: &VerifyingKey<E::G1Affine>,
+	params: &ParamsKZG<E>, pub_inps: &[&[<KZGCommitmentScheme<E> as CommitmentScheme>::Scalar]],
+	proof: &[u8], vk: &VerifyingKey<E::G1Affine>,
 ) -> Result<bool, Error> {
 	let strategy = AccumulatorStrategy::<E>::new(params);
 	let mut transcript = Blake2bRead::<_, E::G1Affine, Challenge255<_>>::init(proof);
@@ -152,10 +140,8 @@ pub fn verify<E: MultiMillerLoop + Debug>(
 
 /// Helper function for doing proof and verification at the same time.
 pub fn prove_and_verify<E: MultiMillerLoop + Debug, C: Circuit<E::Scalar>, R: Rng + Clone>(
-	params: ParamsKZG<E>,
-	circuit: C,
-	pub_inps: &[&[<KZGCommitmentScheme<E> as CommitmentScheme>::Scalar]],
-	rng: &mut R,
+	params: ParamsKZG<E>, circuit: C,
+	pub_inps: &[&[<KZGCommitmentScheme<E> as CommitmentScheme>::Scalar]], rng: &mut R,
 ) -> Result<bool, Error> {
 	let pk = keygen(&params, &circuit)?;
 	let start = Instant::now();

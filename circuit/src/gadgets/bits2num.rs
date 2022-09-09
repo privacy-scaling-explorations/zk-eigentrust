@@ -29,10 +29,7 @@ pub struct Bits2NumChip<F: FieldExt, const B: usize> {
 
 impl<F: FieldExt, const B: usize> Bits2NumChip<F, B> {
 	pub fn new(value: AssignedCell<F, F>, bits: [F; B]) -> Self {
-		Self {
-			value,
-			bits: bits.map(|b| Value::known(b)),
-		}
+		Self { value, bits: bits.map(|b| Value::known(b)) }
 	}
 }
 
@@ -71,18 +68,11 @@ impl<F: FieldExt, const B: usize> Bits2NumChip<F, B> {
 			]
 		});
 
-		Bits2NumConfig {
-			bits,
-			lc1,
-			e2,
-			selector: s,
-		}
+		Bits2NumConfig { bits, lc1, e2, selector: s }
 	}
 
 	pub fn synthesize(
-		&self,
-		config: Bits2NumConfig,
-		mut layouter: impl Layouter<F>,
+		&self, config: Bits2NumConfig, mut layouter: impl Layouter<F>,
 	) -> Result<[AssignedCell<F, F>; B], Error> {
 		layouter.assign_region(
 			|| "bits2num",
@@ -159,9 +149,7 @@ mod test {
 		}
 
 		fn synthesize(
-			&self,
-			config: TestConfig,
-			mut layouter: impl Layouter<Fr>,
+			&self, config: TestConfig, mut layouter: impl Layouter<Fr>,
 		) -> Result<(), Error> {
 			let numba = layouter.assign_region(
 				|| "temp",

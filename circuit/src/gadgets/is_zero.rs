@@ -66,19 +66,12 @@ impl<F: FieldExt> IsZeroChip<F> {
 			]
 		});
 
-		IsZeroConfig {
-			x,
-			x_inv,
-			b,
-			selector: s,
-		}
+		IsZeroConfig { x, x_inv, b, selector: s }
 	}
 
 	/// Synthesize the circuit.
 	pub fn synthesize(
-		&self,
-		config: IsZeroConfig,
-		mut layouter: impl Layouter<F>,
+		&self, config: IsZeroConfig, mut layouter: impl Layouter<F>,
 	) -> Result<AssignedCell<F, F>, Error> {
 		let is_zero = layouter.assign_region(
 			|| "is_zero",
@@ -153,17 +146,11 @@ mod test {
 			meta.enable_equality(instance);
 			meta.enable_equality(temp);
 
-			TestConfig {
-				is_zero,
-				pub_ins: instance,
-				temp,
-			}
+			TestConfig { is_zero, pub_ins: instance, temp }
 		}
 
 		fn synthesize(
-			&self,
-			config: TestConfig,
-			mut layouter: impl Layouter<F>,
+			&self, config: TestConfig, mut layouter: impl Layouter<F>,
 		) -> Result<(), Error> {
 			let numba = layouter.assign_region(
 				|| "temp",

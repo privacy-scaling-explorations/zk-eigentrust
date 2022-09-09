@@ -31,21 +31,10 @@ pub struct PointAddChip {
 
 impl PointAddChip {
 	pub fn new(
-		r_x: AssignedCell<Fr, Fr>,
-		r_y: AssignedCell<Fr, Fr>,
-		r_z: AssignedCell<Fr, Fr>,
-		e_x: AssignedCell<Fr, Fr>,
-		e_y: AssignedCell<Fr, Fr>,
-		e_z: AssignedCell<Fr, Fr>,
+		r_x: AssignedCell<Fr, Fr>, r_y: AssignedCell<Fr, Fr>, r_z: AssignedCell<Fr, Fr>,
+		e_x: AssignedCell<Fr, Fr>, e_y: AssignedCell<Fr, Fr>, e_z: AssignedCell<Fr, Fr>,
 	) -> Self {
-		Self {
-			r_x,
-			r_y,
-			r_z,
-			e_x,
-			e_y,
-			e_z,
-		}
+		Self { r_x, r_y, r_z, e_x, e_y, e_z }
 	}
 }
 
@@ -98,22 +87,12 @@ impl PointAddChip {
 			]
 		});
 
-		PointAddConfig {
-			r_x,
-			r_y,
-			r_z,
-			e_x,
-			e_y,
-			e_z,
-			selector: s,
-		}
+		PointAddConfig { r_x, r_y, r_z, e_x, e_y, e_z, selector: s }
 	}
 
 	/// Synthesize the circuit.
 	pub fn synthesize(
-		&self,
-		config: PointAddConfig,
-		mut layouter: impl Layouter<Fr>,
+		&self, config: PointAddConfig, mut layouter: impl Layouter<Fr>,
 	) -> Result<
 		(
 			AssignedCell<Fr, Fr>,
@@ -219,17 +198,11 @@ mod test {
 			meta.enable_equality(instance);
 			meta.enable_equality(temp);
 
-			TestConfig {
-				add,
-				pub_ins: instance,
-				temp,
-			}
+			TestConfig { add, pub_ins: instance, temp }
 		}
 
 		fn synthesize(
-			&self,
-			config: TestConfig,
-			mut layouter: impl Layouter<Fr>,
+			&self, config: TestConfig, mut layouter: impl Layouter<Fr>,
 		) -> Result<(), Error> {
 			let (r_x, r_y, r_z, e_x, e_y, e_z) = layouter.assign_region(
 				|| "temp",
@@ -249,11 +222,7 @@ mod test {
 						region.assign_advice(|| "temp_z", config.temp, 5, || self.e_z)?;
 
 					Ok((
-						r_x_assigned,
-						r_y_assigned,
-						r_z_assigned,
-						e_x_assigned,
-						e_y_assigned,
+						r_x_assigned, r_y_assigned, r_z_assigned, e_x_assigned, e_y_assigned,
 						e_z_assigned,
 					))
 				},

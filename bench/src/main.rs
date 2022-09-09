@@ -2,28 +2,32 @@ use env_logger::Builder;
 use futures::future::join_all;
 use std::str::FromStr;
 
-use eigen_trust::{
-	constants::{MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS},
-	keypair_from_sk_bytes, LevelFilter, Multiaddr, Node, Peer,
-};
+use csv::Reader as CsvReader;
 use eigen_trust_circuit::{
 	halo2wrong::curves::bn256::Bn256,
 	poseidon::params::bn254_5x5::Params5x5Bn254,
 	utils::{keygen, random_circuit, read_params},
 };
+use eigen_trust_protocol::{
+	constants::{MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS},
+	keypair_from_sk_bytes, LevelFilter, Multiaddr, Node, Peer,
+};
 use rand::{thread_rng, Rng};
-use std::fs;
+use serde::Deserialize;
+use std::env::current_dir;
 
-const INTERVAL: u64 = 70;
 const NUM_CONNECTIONS: usize = 12;
+
+#[derive(Debug, Deserialize)]
+struct Keypair {
+	secret_key: String,
+	public_key: String,
+}
 
 pub fn init_logger() {
 	let mut builder = Builder::from_default_env();
 
-	builder
-		.filter(Some("eigen_trust"), LevelFilter::Debug)
-		.format_timestamp(None)
-		.init();
+	builder.filter(Some("eigen_trust"), LevelFilter::Debug).format_timestamp(None).init();
 }
 
 #[tokio::main]
@@ -35,10 +39,16 @@ async fn main() {
 	let mut bootstrap_nodes = Vec::new();
 	let starting_port = 58400;
 
-	let contents = fs::read_to_string("../../data/bootstrap_nodes.txt").unwrap();
-	let keys = contents.split("\n").step_by(2);
+	let current_path = current_dir().unwrap();
+	let path_to_data = format!("{}/../data", current_path.display());
+	let mut rdr = CsvReader::from_path(format!("{}/bootstrap-nodes.csv", path_to_data)).unwrap();
+	let mut keys = Vec::new();
+	for result in rdr.deserialize() {
+		let record: Keypair = result.expect("Failed to Keypair");
+		keys.push(record.secret_key);
+	}
 
-	for (i, key) in keys.enumerate() {
+	for (i, key) in keys.iter().enumerate() {
 		let sk_bytes = bs58::decode(key).into_vec().unwrap();
 		let local_key = keypair_from_sk_bytes(sk_bytes).unwrap();
 		let peer_id = local_key.public().to_peer_id();
@@ -50,14 +60,14 @@ async fn main() {
 		bootstrap_nodes.push((peer_id, local_address));
 	}
 
-	let params = read_params("./data/params-18.bin");
+	let params = read_params::<Bn256>(&format!("{}/params-9.bin", path_to_data));
 	let rng = &mut thread_rng();
 	let random_circuit =
 		random_circuit::<Bn256, _, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, Params5x5Bn254>(rng);
 	let pk = keygen(&params, &random_circuit).unwrap();
 
 	let mut tasks = Vec::new();
-	for i in 0..(NUM_CONNECTIONS + 1) {
+	for i in 0..NUM_CONNECTIONS {
 		let local_key = local_keys[i].clone();
 		let local_address = local_addresses[i].clone();
 		let bootstrap_nodes = bootstrap_nodes.clone();
@@ -65,24 +75,19 @@ async fn main() {
 		let pk = pk.clone();
 
 		let join_handle = tokio::spawn(async move {
-			let peer = Peer::new(local_key.clone(), params, pk).unwrap();
-			let mut node = Node::new(local_key, local_address, INTERVAL, peer).unwrap();
-
-			let peer = node.get_peer_mut();
+			let mut peer = Peer::new(local_key.clone(), params, pk).unwrap();
 			for (peer_id, ..) in bootstrap_nodes {
 				let random_score: u32 = rand::thread_rng().gen_range(0..100);
 				peer.set_score(peer_id, random_score);
 			}
 
-			node.main_loop(Some(10)).await.unwrap();
+			let node = Node::new(local_key, local_address, peer).unwrap();
+
+			node.main_loop(10).await;
 		});
 		tasks.push(join_handle);
 	}
 
-	let _ = join_all(tasks)
-		.await
-		.iter()
-		.map(|r| r.as_ref().unwrap())
-		.collect::<Vec<_>>();
+	let _ = join_all(tasks).await.iter().map(|r| r.as_ref().unwrap()).collect::<Vec<_>>();
 	println!("Done");
 }

@@ -1,4 +1,4 @@
-use eigen_trust::{extract_pub_key, extract_sk_bytes, EigenError, Keypair};
+use eigen_trust_protocol::{extract_pub_key, extract_sk_bytes, EigenError, Keypair};
 
 #[tokio::main]
 async fn main() -> Result<(), EigenError> {
