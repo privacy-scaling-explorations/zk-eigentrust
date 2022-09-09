@@ -9,21 +9,32 @@ use super::is_boolean::IsBooleanChip;
 use crate::gadgets::is_boolean::IsBooleanConfig;
 
 #[derive(Clone, Debug)]
+/// Configuration elements for the circuit defined here.
 pub struct SelectConfig {
+	/// Constructs is_bool circuit elements.
 	is_bool: IsBooleanConfig,
+	/// Configures a column for the bit.
 	bit: Column<Advice>,
+	/// Configures a column for the x.
 	x: Column<Advice>,
+	/// Configures a column for the y.
 	y: Column<Advice>,
+	/// Configures a fixed boolean value for each row of the circuit.
 	selector: Selector,
 }
 
+/// Constructs individual cells for the configuration elements.
 pub struct SelectChip<F: FieldExt> {
+	/// Assigns a cell for the bits.
 	bit: AssignedCell<F, F>,
+	/// Assigns a cell for the x.
 	x: AssignedCell<F, F>,
+	/// Assigns a cell for the y.
 	y: AssignedCell<F, F>,
 }
 
 impl<F: FieldExt> SelectChip<F> {
+	/// Create a new chip.
 	pub fn new(bit: AssignedCell<F, F>, x: AssignedCell<F, F>, y: AssignedCell<F, F>) -> Self {
 		SelectChip { bit, x, y }
 	}
@@ -31,9 +42,6 @@ impl<F: FieldExt> SelectChip<F> {
 	/// Make the circuit config.
 	pub fn configure(meta: &mut ConstraintSystem<F>) -> SelectConfig {
 		let boolean_config = IsBooleanChip::configure(meta);
-		// Q: Should we make a new column for the bit?
-		// Or use the one from the IsBoolean chip
-		// This way seems more correct?
 		let bit = meta.advice_column();
 		let x = meta.advice_column();
 		let y = meta.advice_column();
@@ -53,11 +61,21 @@ impl<F: FieldExt> SelectChip<F> {
 			let s_exp = v_cells.query_selector(s);
 
 			vec![
-				// bit * (a - b) - (r - b)
-				// a = 2
-				// b = 1
-				// r = 2
-				// 1 * (a - b) - (r - b) = 1 * 1 - (2 - 1) = 0
+				// bit * (x - y) - (z - y)
+				// Example 1:
+				// bit = 1
+				// z will carry the same value with x when bit == 1. (x == z)
+				// x = 5
+				// y = 3
+				// z = 5
+				// 1 * (x - y) - (z - y) = 1 * (5 - 3) - (5 - 3) = 0
+				// Example 2:
+				// bit = 0
+				// z will carry the same value with y when bit == 0. (y == z)
+				// x = 5
+				// y = 3
+				// z = 3
+				// 0 * (x - y) - (z - y) = 0 * (5 - 3) - (3 - 3) = 0
 				s_exp * (bit_exp.clone() * (x_exp - y_exp.clone()) - (res_exp - y_exp)),
 			]
 		});
@@ -70,6 +88,7 @@ impl<F: FieldExt> SelectChip<F> {
 		&self, config: SelectConfig, mut layouter: impl Layouter<F>,
 	) -> Result<AssignedCell<F, F>, Error> {
 		let is_boolean_chip = IsBooleanChip::new(self.bit.clone());
+		// Here we check bit is boolean or not.
 		let assigned_bool = is_boolean_chip
 			.synthesize(config.is_bool.clone(), layouter.namespace(|| "is_boolean"))?;
 
@@ -83,6 +102,8 @@ impl<F: FieldExt> SelectChip<F> {
 				let assigned_x = self.x.copy_advice(|| "x", &mut region, config.x, 0)?;
 				let assigned_y = self.y.copy_advice(|| "y", &mut region, config.y, 0)?;
 
+				// Conditional control checks the bit. Is it zero or not?
+				// If yes returns the y value, else x.
 				let res = assigned_bit.value().and_then(|bit_f| {
 					if bool::from(bit_f.is_zero()) {
 						assigned_y.value().cloned()
@@ -189,12 +210,36 @@ mod test {
 
 	#[test]
 	fn test_select() {
+		// Testing bit = 0.
 		let test_chip = TestCircuit::new(Fr::from(0), Fr::from(2), Fr::from(3));
 
 		let pub_ins = vec![Fr::from(3)];
 		let k = 4;
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[test]
+	fn test_select_one_as_bit() {
+		// Testing bit = 1.
+		let test_chip = TestCircuit::new(Fr::from(1), Fr::from(7), Fr::from(4));
+
+		let pub_ins = vec![Fr::from(7)];
+		let k = 4;
+		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[test]
+	fn test_select_two_as_bit() {
+		// Testing bit = 2. Constraint not satisfied error will return because bit is
+		// not a boolean value.
+		let test_chip = TestCircuit::new(Fr::from(2), Fr::from(3), Fr::from(6));
+
+		let pub_ins = vec![Fr::from(3)];
+		let k = 4;
+		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+		assert!(prover.verify().is_err());
 	}
 
 	#[test]
