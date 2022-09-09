@@ -6,18 +6,26 @@ use halo2wrong::halo2::{
 };
 
 #[derive(Clone, Debug)]
+/// Configuration elements for the circuit defined here.
 pub struct MulConfig {
+	/// Configures a column for the x.
 	x: Column<Advice>,
+	/// Configures a column for the y.
 	y: Column<Advice>,
+	/// Configures a fixed boolean value for each row of the circuit.
 	selector: Selector,
 }
 
+/// Constructs individual cells for the configuration elements.
 pub struct MulChip<F: FieldExt> {
+	/// Assigns a cell for x.
 	x: AssignedCell<F, F>,
+	/// Assigns a cell for y.
 	y: AssignedCell<F, F>,
 }
 
 impl<F: FieldExt> MulChip<F> {
+	/// Create a new chip.
 	pub fn new(x: AssignedCell<F, F>, y: AssignedCell<F, F>) -> Self {
 		MulChip { x, y }
 	}
@@ -38,7 +46,15 @@ impl<F: FieldExt> MulChip<F> {
 			let s_exp = v_cells.query_selector(s);
 
 			vec![
-				// (x * y) - res == 0
+				// (x * y) - z == 0
+				// z is the next rotation cell for the x value.
+				// Example:
+				// let x = 3;
+				// let y = 2;
+				// let z = (x * y);
+				// z;
+				//
+				// z = (3 * 2) = 6 => We check the constraint (3 * 2) - 6 == 0
 				s_exp * ((x_exp * y_exp) - x_next_exp),
 			]
 		});
@@ -153,10 +169,33 @@ mod test {
 
 	#[test]
 	fn test_mul() {
+		// Testing x = 5, y = 2.
 		let test_chip = TestCircuit::new(Fr::from(5), Fr::from(2));
 
 		let k = 4;
 		let pub_ins = vec![Fr::from(10)];
+		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[test]
+	fn test_mul_y1() {
+		// Testing x = 3, y = 1.
+		let test_chip = TestCircuit::new(Fr::from(3), Fr::from(1));
+
+		let k = 4;
+		let pub_ins = vec![Fr::from(3)];
+		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[test]
+	fn test_mul_y0() {
+		// Testing x = 4, y = 0.
+		let test_chip = TestCircuit::new(Fr::from(4), Fr::from(0));
+
+		let k = 4;
+		let pub_ins = vec![Fr::from(0)];
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
 	}

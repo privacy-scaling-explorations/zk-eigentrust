@@ -20,7 +20,7 @@ pub struct IsZeroConfig {
 
 /// Constructs individual cell for the configuration element.
 pub struct IsZeroChip<F: FieldExt> {
-	/// Assigns a cell for lhs.
+	/// Assigns a cell for the x.
 	x: AssignedCell<F, F>,
 }
 
