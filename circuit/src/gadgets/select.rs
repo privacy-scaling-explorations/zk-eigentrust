@@ -73,7 +73,7 @@ impl<F: FieldExt> SelectChip<F> {
 				// Example 2:
 				// bit = 0
 				// z is the next rotation cell for the y value.
-				// Next rotation cell for y will carry the same value when bit == 0. (x == z)
+				// Next rotation cell for y will carry the same value when bit == 0. (y == z)
 				// x = 5
 				// y = 3
 				// z = 3
