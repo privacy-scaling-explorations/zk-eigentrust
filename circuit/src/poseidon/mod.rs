@@ -33,16 +33,11 @@ where
 	P: RoundParams<F, WIDTH>,
 {
 	pub fn new(inputs: [AssignedCell<F, F>; WIDTH]) -> Self {
-		PoseidonChip {
-			inputs,
-			_params: PhantomData,
-		}
+		PoseidonChip { inputs, _params: PhantomData }
 	}
 
 	fn copy_state(
-		config: &PoseidonConfig<WIDTH>,
-		region: &mut Region<'_, F>,
-		round: usize,
+		config: &PoseidonConfig<WIDTH>, region: &mut Region<'_, F>, round: usize,
 		prev_state: &[AssignedCell<F, F>; WIDTH],
 	) -> Result<[AssignedCell<F, F>; WIDTH], Error> {
 		let mut state: [Option<AssignedCell<F, F>>; WIDTH] = [(); WIDTH].map(|_| None);
@@ -54,9 +49,7 @@ where
 	}
 
 	fn load_round_constants(
-		config: &PoseidonConfig<WIDTH>,
-		region: &mut Region<'_, F>,
-		round: usize,
+		config: &PoseidonConfig<WIDTH>, region: &mut Region<'_, F>, round: usize,
 		round_constants: &[F],
 	) -> Result<[Value<F>; WIDTH], Error> {
 		let mut round_values: [Value<F>; WIDTH] = [(); WIDTH].map(|_| Value::unknown());
@@ -73,9 +66,7 @@ where
 	}
 
 	fn load_mds(
-		config: &PoseidonConfig<WIDTH>,
-		region: &mut Region<'_, F>,
-		round: usize,
+		config: &PoseidonConfig<WIDTH>, region: &mut Region<'_, F>, round: usize,
 		mds: &[[F; WIDTH]; WIDTH],
 	) -> Result<[[Value<F>; WIDTH]; WIDTH], Error> {
 		let mut mds_values: [[Value<F>; WIDTH]; WIDTH] =
@@ -90,8 +81,7 @@ where
 	}
 
 	fn apply_round_constants(
-		state_cells: &[AssignedCell<F, F>; WIDTH],
-		round_const_values: &[Value<F>; WIDTH],
+		state_cells: &[AssignedCell<F, F>; WIDTH], round_const_values: &[Value<F>; WIDTH],
 	) -> [Value<F>; WIDTH] {
 		let mut next_state = [Value::unknown(); WIDTH];
 		for i in 0..WIDTH {
@@ -104,8 +94,7 @@ where
 	}
 
 	fn apply_mds(
-		next_state: &[Value<F>; WIDTH],
-		mds_values: &[[Value<F>; WIDTH]; WIDTH],
+		next_state: &[Value<F>; WIDTH], mds_values: &[[Value<F>; WIDTH]; WIDTH],
 	) -> [Value<F>; WIDTH] {
 		let mut new_state = [Value::known(F::zero()); WIDTH];
 		// Compute mds matrix
@@ -120,8 +109,7 @@ where
 	}
 
 	fn apply_round_constants_expr(
-		v_cells: &mut VirtualCells<F>,
-		state: &[Column<Advice>; WIDTH],
+		v_cells: &mut VirtualCells<F>, state: &[Column<Advice>; WIDTH],
 		round_constants: &[Column<Fixed>; WIDTH],
 	) -> [Expression<F>; WIDTH] {
 		let mut exprs = [(); WIDTH].map(|_| Expression::Constant(F::zero()));
@@ -135,8 +123,7 @@ where
 	}
 
 	fn apply_mds_expr(
-		v_cells: &mut VirtualCells<F>,
-		exprs: &[Expression<F>; WIDTH],
+		v_cells: &mut VirtualCells<F>, exprs: &[Expression<F>; WIDTH],
 		mds: &[[Column<Fixed>; WIDTH]; WIDTH],
 	) -> [Expression<F>; WIDTH] {
 		let mut new_exprs = [(); WIDTH].map(|_| Expression::Constant(F::zero()));
@@ -151,12 +138,8 @@ where
 	}
 
 	fn full_round(
-		config: &PoseidonConfig<WIDTH>,
-		region: &mut Region<'_, F>,
-		num_rounds: usize,
-		round_constants: &[F],
-		mds: &[[F; WIDTH]; WIDTH],
-		prev_state: &[AssignedCell<F, F>; WIDTH],
+		config: &PoseidonConfig<WIDTH>, region: &mut Region<'_, F>, num_rounds: usize,
+		round_constants: &[F], mds: &[[F; WIDTH]; WIDTH], prev_state: &[AssignedCell<F, F>; WIDTH],
 	) -> Result<[AssignedCell<F, F>; WIDTH], Error> {
 		// Assign initial state
 		let mut state_cells = Self::copy_state(config, region, 0, prev_state)?;
@@ -190,12 +173,8 @@ where
 	}
 
 	fn partial_round(
-		config: &PoseidonConfig<WIDTH>,
-		region: &mut Region<'_, F>,
-		num_rounds: usize,
-		round_constants: &[F],
-		mds: &[[F; WIDTH]; WIDTH],
-		prev_state: &[AssignedCell<F, F>; WIDTH],
+		config: &PoseidonConfig<WIDTH>, region: &mut Region<'_, F>, num_rounds: usize,
+		round_constants: &[F], mds: &[[F; WIDTH]; WIDTH], prev_state: &[AssignedCell<F, F>; WIDTH],
 	) -> Result<[AssignedCell<F, F>; WIDTH], Error> {
 		let mut state_cells = Self::copy_state(config, region, 0, prev_state)?;
 		for round in 0..num_rounds {
@@ -273,19 +252,11 @@ where
 			exprs
 		});
 
-		PoseidonConfig {
-			state,
-			round_constants,
-			mds,
-			full_round_selector,
-			partial_round_selector,
-		}
+		PoseidonConfig { state, round_constants, mds, full_round_selector, partial_round_selector }
 	}
 
 	pub fn synthesize(
-		&self,
-		config: PoseidonConfig<WIDTH>,
-		mut layouter: impl Layouter<F>,
+		&self, config: PoseidonConfig<WIDTH>, mut layouter: impl Layouter<F>,
 	) -> Result<[AssignedCell<F, F>; WIDTH], Error> {
 		let full_rounds = P::full_rounds();
 		let half_full_rounds = full_rounds / 2;
@@ -306,11 +277,7 @@ where
 			|| "full_rounds_1",
 			|mut region: Region<'_, F>| {
 				Self::full_round(
-					&config,
-					&mut region,
-					half_full_rounds,
-					first_round_constants,
-					&mds,
+					&config, &mut region, half_full_rounds, first_round_constants, &mds,
 					&self.inputs,
 				)
 			},
@@ -320,12 +287,7 @@ where
 			|| "partial_rounds",
 			|mut region: Region<'_, F>| {
 				Self::partial_round(
-					&config,
-					&mut region,
-					partial_rounds,
-					second_round_constants,
-					&mds,
-					&state1,
+					&config, &mut region, partial_rounds, second_round_constants, &mds, &state1,
 				)
 			},
 		)?;
@@ -334,12 +296,7 @@ where
 			|| "full_rounds_2",
 			|mut region: Region<'_, F>| {
 				Self::full_round(
-					&config,
-					&mut region,
-					half_full_rounds,
-					third_round_constants,
-					&mds,
-					&state2,
+					&config, &mut region, half_full_rounds, third_round_constants, &mds, &state2,
 				)
 			},
 		)?;
@@ -382,9 +339,7 @@ mod test {
 		}
 
 		fn load_state(
-			config: &PoseidonConfig<5>,
-			region: &mut Region<'_, Fr>,
-			round: usize,
+			config: &PoseidonConfig<5>, region: &mut Region<'_, Fr>, round: usize,
 			init_state: [Value<Fr>; 5],
 		) -> Result<[AssignedCell<Fr, Fr>; 5], Error> {
 			let mut state: [Option<AssignedCell<Fr, Fr>>; 5] = [(); 5].map(|_| None);
@@ -405,9 +360,7 @@ mod test {
 		type FloorPlanner = SimpleFloorPlanner;
 
 		fn without_witnesses(&self) -> Self {
-			Self {
-				inputs: [Value::unknown(); 5],
-			}
+			Self { inputs: [Value::unknown(); 5] }
 		}
 
 		fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
@@ -416,16 +369,11 @@ mod test {
 
 			meta.enable_equality(results);
 
-			Self::Config {
-				poseidon_config,
-				results,
-			}
+			Self::Config { poseidon_config, results }
 		}
 
 		fn synthesize(
-			&self,
-			config: Self::Config,
-			mut layouter: impl Layouter<Fr>,
+			&self, config: Self::Config, mut layouter: impl Layouter<Fr>,
 		) -> Result<(), Error> {
 			let init_state = layouter.assign_region(
 				|| "load_state",

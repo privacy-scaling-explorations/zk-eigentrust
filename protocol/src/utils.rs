@@ -1,13 +1,17 @@
-use super::opinion::Posedion5x5;
-use crate::EigenError;
+use crate::{peer::opinion::Posedion5x5, EigenError};
 use eigen_trust_circuit::halo2wrong::{
 	curves::{bn256::Fr as Bn256Scalar, secp256k1::Fq as Secp256k1Scalar, FieldExt},
 	utils::decompose,
+};
+use futures::{
+	stream::{self, BoxStream, Fuse},
+	StreamExt,
 };
 use libp2p::core::identity::{
 	secp256k1::{Keypair as Secp256k1Keypair, SecretKey},
 	Keypair as IdentityKeypair,
 };
+use tokio::time::{self, Duration, Instant};
 
 /// Make a new keypair from a secret key.
 pub fn keypair_from_sk_bytes(mut bytes: Vec<u8>) -> Result<IdentityKeypair, EigenError> {
@@ -79,4 +83,18 @@ pub fn to_wide_bytes(p: &[u8]) -> [u8; 64] {
 	let mut res = [0u8; 64];
 	res[..p.len()].copy_from_slice(p);
 	res
+}
+
+/// Schedule `num` intervals with a duration of `interval` that starts at
+/// `start`.
+pub fn create_iter<'a>(start: Instant, interval: Duration, num: usize) -> Fuse<BoxStream<'a, u32>> {
+	let mut inner_interval = time::interval_at(start, interval);
+	inner_interval.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
+	stream::unfold((inner_interval, 0), |(mut interval, count)| async move {
+		interval.tick().await;
+		Some((count, (interval, count + 1)))
+	})
+	.take(num)
+	.boxed()
+	.fuse()
 }

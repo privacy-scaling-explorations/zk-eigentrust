@@ -17,10 +17,7 @@ where
 	P: RoundParams<F, WIDTH>,
 {
 	pub fn new(inputs: [F; WIDTH]) -> Self {
-		Poseidon {
-			inputs,
-			_params: PhantomData,
-		}
+		Poseidon { inputs, _params: PhantomData }
 	}
 
 	fn apply_round_constants(state: &[F; WIDTH], round_consts: &[F; WIDTH]) -> [F; WIDTH] {

@@ -54,19 +54,10 @@ pub struct LessEqualChip<F: FieldExt> {
 impl<F: FieldExt> LessEqualChip<F> {
 	/// Create a new chip.
 	pub fn new(
-		x: AssignedCell<F, F>,
-		y: AssignedCell<F, F>,
-		x_bits: [F; NUM_BITS],
-		y_bits: [F; NUM_BITS],
+		x: AssignedCell<F, F>, y: AssignedCell<F, F>, x_bits: [F; NUM_BITS], y_bits: [F; NUM_BITS],
 		diff_bits: [F; DIFF_BITS],
 	) -> Self {
-		LessEqualChip {
-			x,
-			y,
-			x_bits,
-			y_bits,
-			diff_bits,
-		}
+		LessEqualChip { x, y, x_bits, y_bits, diff_bits }
 	}
 
 	/// Make the circuit config.
@@ -109,22 +100,12 @@ impl<F: FieldExt> LessEqualChip<F> {
 			]
 		});
 
-		LessEqualConfig {
-			diff_b2n,
-			x_b2n,
-			y_b2n,
-			is_zero,
-			x,
-			y,
-			selector: s,
-		}
+		LessEqualConfig { diff_b2n, x_b2n, y_b2n, is_zero, x, y, selector: s }
 	}
 
 	/// Synthesize the circuit.
 	pub fn synthesize(
-		&self,
-		config: LessEqualConfig,
-		mut layouter: impl Layouter<F>,
+		&self, config: LessEqualConfig, mut layouter: impl Layouter<F>,
 	) -> Result<AssignedCell<F, F>, Error> {
 		let x_b2n = Bits2NumChip::new(self.x.clone(), self.x_bits);
 		let _ = x_b2n.synthesize(config.x_b2n, layouter.namespace(|| "x_b2n"))?;
@@ -215,17 +196,11 @@ mod test {
 			meta.enable_equality(temp);
 			meta.enable_equality(pub_ins);
 
-			TestConfig {
-				lt_eq,
-				temp,
-				pub_ins,
-			}
+			TestConfig { lt_eq, temp, pub_ins }
 		}
 
 		fn synthesize(
-			&self,
-			config: TestConfig,
-			mut layouter: impl Layouter<Fr>,
+			&self, config: TestConfig, mut layouter: impl Layouter<Fr>,
 		) -> Result<(), Error> {
 			let (x, y) = layouter.assign_region(
 				|| "temp",
