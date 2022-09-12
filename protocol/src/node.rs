@@ -94,6 +94,10 @@ impl Node {
 					log::error!("Failed to send the response {:?}", e);
 				}
 			},
+			Message { peer, message: Res { response: Response::Opinion(opinion), .. } } => {
+				// If we receive a response, we update the neighbors's opinion about us.
+				self.peer.cache_neighbor_opinion((peer, opinion.epoch, opinion.iter), opinion);
+			},
 			Message { peer, message: Req { request: Request::Identify(pub_key), channel, .. } } => {
 				self.peer.identify_neighbor(peer, pub_key);
 				let response = Response::Identify(self.peer.pubkey.clone());
@@ -101,10 +105,6 @@ impl Node {
 				if let Err(e) = res {
 					log::error!("Failed to send the response {:?}", e);
 				}
-			},
-			Message { peer, message: Res { response: Response::Opinion(opinion), .. } } => {
-				// If we receive a response, we update the neighbors's opinion about us.
-				self.peer.cache_neighbor_opinion((peer, opinion.epoch, opinion.iter), opinion);
 			},
 			Message { peer, message: Res { response: Response::Identify(pub_key), .. } } => {
 				self.peer.identify_neighbor(peer, pub_key);
@@ -247,6 +247,7 @@ impl Node {
 mod tests {
 	use super::*;
 	use crate::{
+		behaviour::req_res::{Request as ETRequest, Response as ETResponse},
 		constants::{MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS},
 		peer::pubkey::Pubkey,
 		utils::keypair_from_sk_bytes,
@@ -259,16 +260,21 @@ mod tests {
 		poseidon::params::bn254_5x5::Params5x5Bn254,
 		utils::{keygen, random_circuit},
 	};
+	use libp2p::{
+		core::{ConnectedPoint, Endpoint},
+		identify::{IdentifyEvent, IdentifyInfo},
+		request_response::{RequestResponseEvent, RequestResponseMessage},
+	};
 	use rand::thread_rng;
-	use std::str::FromStr;
+	use std::{iter::once, num::NonZeroU32, str::FromStr, time::Duration};
 
 	const ADDR_1: &str = "/ip4/127.0.0.1/tcp/56706";
 	const ADDR_2: &str = "/ip4/127.0.0.1/tcp/58601";
 	const SK_1: &str = "AF4yAqwCPzpBcit4FtTrHso4BBR9onk7qS9Q1SWSLSaV";
 	const SK_2: &str = "7VoQFngkSo36s5yzZtnjtZ5SLe1VGukCZdb5Uc9tSDNC";
 
-	#[tokio::test]
-	async fn should_emit_connection_event_on_bootstrap() {
+	#[test]
+	fn should_add_neighbour_on_connection() {
 		let sk_bytes1 = bs58::decode(SK_1).into_vec().unwrap();
 		let sk_bytes2 = bs58::decode(SK_2).into_vec().unwrap();
 
@@ -294,42 +300,43 @@ mod tests {
 		let mut node1 = Node::new(local_key1, local_address1.clone(), peer1).unwrap();
 		let mut node2 = Node::new(local_key2, local_address2.clone(), peer2).unwrap();
 
-		node1.dial_neighbor(local_address2);
+		let conn_event1 = SwarmEvent::ConnectionEstablished {
+			peer_id: peer_id1,
+			endpoint: ConnectedPoint::Dialer {
+				address: local_address1,
+				role_override: Endpoint::Dialer,
+			},
+			num_established: NonZeroU32::new(1u32).unwrap(),
+			concurrent_dial_errors: None,
+		};
+		let conn_event2 = SwarmEvent::ConnectionEstablished {
+			peer_id: peer_id2,
+			endpoint: ConnectedPoint::Dialer {
+				address: local_address2,
+				role_override: Endpoint::Dialer,
+			},
+			num_established: NonZeroU32::new(1u32).unwrap(),
+			concurrent_dial_errors: None,
+		};
+		node2.handle_swarm_events(conn_event1);
+		node1.handle_swarm_events(conn_event2);
 
-		// For node 2
-		// 1. New listen addr
-		// 2. Incoming connection
-		// 3. Connection established
-		// For node 1
-		// 1. New listen addr
-		// 2. Connection established
-		for _ in 0..5 {
-			select! {
-				event2 = node2.swarm.select_next_some() => {
-					if let SwarmEvent::ConnectionEstablished { peer_id, .. } = event2 {
-						assert_eq!(peer_id, peer_id1);
-					}
-				},
-				event1 = node1.swarm.select_next_some() => {
-					if let SwarmEvent::ConnectionEstablished { peer_id, .. } = event1 {
-						assert_eq!(peer_id, peer_id2);
-					}
-				},
-
-			}
-		}
+		assert_eq!(node2.peer.neighbors(), vec![peer_id1]);
+		assert_eq!(node1.peer.neighbors(), vec![peer_id2]);
 	}
 
-	#[tokio::test]
-	async fn should_identify_neighbors() {
+	#[test]
+	fn should_identify_neighbors() {
 		let sk_bytes1 = bs58::decode(SK_1).into_vec().unwrap();
 		let sk_bytes2 = bs58::decode(SK_2).into_vec().unwrap();
 
 		let local_key1 = keypair_from_sk_bytes(sk_bytes1).unwrap();
-		let peer_id1 = local_key1.public().to_peer_id();
+		let pub_key1 = local_key1.public();
+		let peer_id1 = pub_key1.to_peer_id();
 
 		let local_key2 = keypair_from_sk_bytes(sk_bytes2).unwrap();
-		let peer_id2 = local_key2.public().to_peer_id();
+		let pub_key2 = local_key2.public();
+		let peer_id2 = pub_key2.to_peer_id();
 
 		let local_address1 = Multiaddr::from_str(ADDR_1).unwrap();
 		let local_address2 = Multiaddr::from_str(ADDR_2).unwrap();
@@ -344,42 +351,42 @@ mod tests {
 		let peer1 = Peer::new(local_key1.clone(), params.clone(), pk.clone()).unwrap();
 		let peer2 = Peer::new(local_key2.clone(), params, pk).unwrap();
 
-		let mut node1 = Node::new(local_key1.clone(), local_address1, peer1).unwrap();
-
+		let mut node1 = Node::new(local_key1.clone(), local_address1.clone(), peer1).unwrap();
 		let mut node2 = Node::new(local_key2.clone(), local_address2.clone(), peer2).unwrap();
 
-		node1.dial_neighbor(local_address2);
-
-		// For node 2
-		// 1. New listen addr
-		// 2. Incoming connection
-		// 3. Connection established
-		// For node 1
-		// 1. New listen addr
-		// 2. Connection established
-		for _ in 0..9 {
-			select! {
-				event2 = node2.swarm.select_next_some() => node2.handle_swarm_events(event2),
-				event1 = node1.swarm.select_next_some() => node1.handle_swarm_events(event1),
-
-			}
-		}
-
-		let neighbors1: Vec<PeerId> = node1.peer.neighbors();
-		let neighbors2: Vec<PeerId> = node2.peer.neighbors();
-		let expected_neighbor1 = vec![peer_id2];
-		let expected_neighbor2 = vec![peer_id1];
-		assert_eq!(neighbors1, expected_neighbor1);
-		assert_eq!(neighbors2, expected_neighbor2);
+		let identify_event1 = IdentifyEvent::Received {
+			peer_id: peer_id1,
+			info: IdentifyInfo {
+				public_key: pub_key1.clone(),
+				protocol_version: String::from("eigen_trust/1.0.0"),
+				agent_version: String::from("foo"),
+				listen_addrs: vec![local_address1.clone()],
+				protocols: vec![String::from("eigen_trust")],
+				observed_addr: local_address1,
+			},
+		};
+		let identify_event2 = IdentifyEvent::Received {
+			peer_id: peer_id2,
+			info: IdentifyInfo {
+				public_key: pub_key2.clone(),
+				protocol_version: String::from("eigen_trust/1.0.0"),
+				agent_version: String::from("foo"),
+				listen_addrs: vec![local_address2.clone()],
+				protocols: vec![String::from("eigen_trust")],
+				observed_addr: local_address2,
+			},
+		};
+		node2.handle_identify_events(identify_event1);
+		node1.handle_identify_events(identify_event2);
 
 		let pubkey1 = node2.peer.get_pub_key_native(peer_id1).unwrap();
 		let pubkey2 = node1.peer.get_pub_key_native(peer_id2).unwrap();
-		assert_eq!(pubkey1, local_key1.public());
-		assert_eq!(pubkey2, local_key2.public());
+		assert_eq!(pubkey1, pub_key1);
+		assert_eq!(pubkey2, pubkey2);
 	}
 
-	#[tokio::test]
-	async fn should_handle_request_for_opinion() {
+	#[test]
+	fn should_handle_request_for_opinion() {
 		let sk_bytes1 = bs58::decode(SK_1).into_vec().unwrap();
 		let sk_bytes2 = bs58::decode(SK_2).into_vec().unwrap();
 
@@ -407,25 +414,8 @@ mod tests {
 		let mut node1 = Node::new(local_key1, local_address1, peer1).unwrap();
 		let mut node2 = Node::new(local_key2, local_address2.clone(), peer2).unwrap();
 
-		node1.dial_neighbor(local_address2);
-
-		// For node 2
-		// 1. New listen addr
-		// 2. Incoming connection
-		// 3. Connection established
-		// For node 1
-		// 1. New listen addr
-		// 2. Connection established
-		for _ in 0..9 {
-			select! {
-				event2 = node2.swarm.select_next_some() => {
-					node2.handle_swarm_events(event2)
-				},
-				event1 = node1.swarm.select_next_some() => {
-					node1.handle_swarm_events(event1)
-				},
-			}
-		}
+		node1.peer.add_neighbor(peer_id2).unwrap();
+		node2.peer.add_neighbor(peer_id1).unwrap();
 
 		node1.peer.identify_neighbor(peer_id2, pubkey2);
 		node2.peer.identify_neighbor(peer_id1, pubkey1);
@@ -436,33 +426,32 @@ mod tests {
 		let epoch = Epoch(3);
 		let iter = 0;
 
-		for peer in node1.peer.neighbors() {
-			node1.peer.calculate_local_opinion(peer, epoch, iter);
-		}
+		node1.peer.calculate_local_opinion(peer_id2, epoch, iter);
+		node2.peer.calculate_local_opinion(peer_id1, epoch, iter);
 
-		for peer in node2.peer.neighbors() {
-			node2.peer.calculate_local_opinion(peer, epoch, iter);
-		}
+		let opinion1 = node1.peer.get_local_opinion(&(peer_id2, epoch, iter));
+		let opinion2 = node2.peer.get_local_opinion(&(peer_id1, epoch, iter));
 
-		node1.send_epoch_requests(epoch, iter);
-		node2.send_epoch_requests(epoch, iter);
+		// Mock sending the request to obtain request id
+		let req_id1 =
+			node1.swarm.behaviour_mut().send_request(&peer_id2, Request::Opinion(epoch, iter));
+		let req_id2 =
+			node1.swarm.behaviour_mut().send_request(&peer_id2, Request::Opinion(epoch, iter));
 
-		// Expecting 2 request messages
-		// Expecting 2 response sent messages
-		// Expecting 2 response received messages
-		// Total of 6 messages
-		for _ in 0..6 {
-			select! {
-				event1 = node1.swarm.select_next_some() => {
-					println!("{:?}", event1);
-					node1.handle_swarm_events(event1);
-				},
-				event2 = node2.swarm.select_next_some() => {
-					println!("{:?}", event2);
-					node2.handle_swarm_events(event2);
-				},
-			}
-		}
+		let message1: RequestResponseMessage<ETRequest, ETResponse> =
+			RequestResponseMessage::Response {
+				request_id: req_id1,
+				response: Response::Opinion(opinion1),
+			};
+		let response1 = RequestResponseEvent::Message { peer: peer_id1, message: message1 };
+		let message2 = RequestResponseMessage::Response {
+			request_id: req_id2,
+			response: Response::Opinion(opinion2),
+		};
+		let response2 = RequestResponseEvent::Message { peer: peer_id2, message: message2 };
+
+		node1.handle_req_res_events(response2);
+		node2.handle_req_res_events(response1);
 
 		let peer1_neighbor_opinion = node1.peer.get_neighbor_opinion(&(peer_id2, epoch, iter));
 		let peer2_neighbor_opinion = node2.peer.get_neighbor_opinion(&(peer_id1, epoch, iter));
