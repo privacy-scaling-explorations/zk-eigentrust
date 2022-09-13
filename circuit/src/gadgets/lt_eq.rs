@@ -87,8 +87,8 @@ impl<F: FieldExt> LessEqualChip<F> {
 			vec![
 				// (x + n_shifted - y) - z == 0
 				// n_shifted value is equal to smallest 253 bit number.
-				// Because of that calculations will be done in between 252 to 254 bit range.
-				// That range can hold 252 bit number calculations without overflowing.
+				// Because of that calculations will be done in between the 252 to 254-bit range.
+				// That range can hold 252-bit number calculations without overflowing.
 				// Example:
 				// x = 5;
 				// y = 3;
