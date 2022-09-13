@@ -133,12 +133,12 @@ impl<F: FieldExt> LessEqualChip<F> {
 		let bits = diff_b2n.synthesize(config.diff_b2n, layouter.namespace(|| "bits2num"))?;
 
 		// Check the last bit.
-		// If it is 1 that means result is bigger than 253 bits.
-		// Which means x is bigger than y and is_zero will return 0.
-		// If it is 0 that means result is smaller than 253 bits.
-		// Which means y is bigger than x and is_zero will return 1.
-		// If both are equal last bit still will be 1 and number will be exactly 253
-		// bits. In that case is_zero will return 0 as well.
+		// If it is 1, that means the result is bigger than 253 bits.
+		// This means x is bigger than y and is_zero will return 0.
+		// If it is 0, that means the result is smaller than 253 bits.
+		// This means y is bigger than x and is_zero will return 1.
+		// If both are equal last bit still will be 1 and the number will be exactly 253
+		// bits. In that case, is_zero will return 0 as well.
 		let is_zero = IsZeroChip::new(bits[DIFF_BITS - 1].clone());
 		let res = is_zero.synthesize(config.is_zero, layouter.namespace(|| "is_zero"))?;
 		Ok(res)
