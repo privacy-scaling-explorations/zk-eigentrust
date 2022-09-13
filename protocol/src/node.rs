@@ -85,7 +85,10 @@ impl Node {
 			} => {
 				// We send the local opinion to the peer.
 				let opinion = self.peer.calculate_local_opinion(peer, epoch, iter);
-				let response = Response::Opinion(opinion);
+				let response = match opinion {
+					Ok(op) => Response::Opinion(op),
+					Err(e) => Response::InternalError(e),
+				};
 				let res = self.swarm.behaviour_mut().send_response(channel, response);
 				if let Err(e) = res {
 					log::error!("Failed to send the response {:?}", e);
@@ -93,7 +96,11 @@ impl Node {
 			},
 			Message { peer, message: Res { response: Response::Opinion(opinion), .. } } => {
 				// If we receive a response, we update the neighbors's opinion about us.
-				self.peer.cache_neighbor_opinion((peer, opinion.epoch, opinion.iter), opinion);
+				let res =
+					self.peer.cache_neighbor_opinion((peer, opinion.epoch, opinion.iter), opinion);
+				if let Err(e) = res {
+					log::error!("Failed to cache neighbour opinion: {:?}", e);
+				}
 			},
 			Message { peer, message: Req { request: Request::Identify(pub_key), channel, .. } } => {
 				self.peer.identify_neighbor(peer, pub_key);
@@ -221,8 +228,11 @@ impl Node {
 				},
 				iter = inner_interval.select_next_some() => {
 					let epoch = Epoch::current_epoch(epoch_interval.as_secs());
-					let score = self.peer.global_trust_score_at(epoch, iter);
-					log::info!("iter({}) score: {}", iter, score);
+					let scores = self.peer.get_neighbor_opinions_at(epoch, iter);
+					if let Ok(scores_v) = scores {
+						let sum = scores_v.iter().sum::<f64>();
+						log::info!("iter({}) score: {}", iter, sum);
+					}
 					// Send the request for opinions to all neighbors.
 					self.send_epoch_requests(epoch, iter);
 				},
@@ -238,7 +248,6 @@ impl Node {
 mod tests {
 	use super::*;
 	use crate::{
-		behaviour::req_res::{Request as ETRequest, Response as ETResponse},
 		constants::{MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS},
 		peer::pubkey::Pubkey,
 		utils::keypair_from_sk_bytes,
@@ -257,7 +266,7 @@ mod tests {
 		request_response::{RequestResponseEvent, RequestResponseMessage},
 	};
 	use rand::thread_rng;
-	use std::{iter::once, num::NonZeroU32, str::FromStr, time::Duration};
+	use std::{num::NonZeroU32, str::FromStr};
 
 	const ADDR_1: &str = "/ip4/127.0.0.1/tcp/56706";
 	const ADDR_2: &str = "/ip4/127.0.0.1/tcp/58601";
@@ -417,11 +426,13 @@ mod tests {
 		let epoch = Epoch(3);
 		let iter = 0;
 
-		node1.peer.calculate_local_opinion(peer_id2, epoch, iter);
-		node2.peer.calculate_local_opinion(peer_id1, epoch, iter);
+		node1.peer.calculate_local_opinion(peer_id2, epoch, iter).unwrap();
+		node2.peer.calculate_local_opinion(peer_id1, epoch, iter).unwrap();
 
-		let opinion1 = node1.peer.get_local_opinion(&(peer_id2, epoch, iter));
-		let opinion2 = node2.peer.get_local_opinion(&(peer_id1, epoch, iter));
+		let opinion1 =
+			node1.peer.cached_local_opinion.get(&(peer_id2, epoch, iter)).cloned().unwrap();
+		let opinion2 =
+			node2.peer.cached_local_opinion.get(&(peer_id1, epoch, iter)).cloned().unwrap();
 
 		// Mock sending the request to obtain request id
 		let req_id1 =
@@ -429,11 +440,10 @@ mod tests {
 		let req_id2 =
 			node1.swarm.behaviour_mut().send_request(&peer_id2, Request::Opinion(epoch, iter));
 
-		let message1: RequestResponseMessage<ETRequest, ETResponse> =
-			RequestResponseMessage::Response {
-				request_id: req_id1,
-				response: Response::Opinion(opinion1),
-			};
+		let message1 = RequestResponseMessage::Response {
+			request_id: req_id1,
+			response: Response::Opinion(opinion1),
+		};
 		let response1 = RequestResponseEvent::Message { peer: peer_id1, message: message1 };
 		let message2 = RequestResponseMessage::Response {
 			request_id: req_id2,
@@ -444,8 +454,10 @@ mod tests {
 		node1.handle_req_res_events(response2);
 		node2.handle_req_res_events(response1);
 
-		let peer1_neighbor_opinion = node1.peer.get_neighbor_opinion(&(peer_id2, epoch, iter));
-		let peer2_neighbor_opinion = node2.peer.get_neighbor_opinion(&(peer_id1, epoch, iter));
+		let peer1_neighbor_opinion =
+			node1.peer.cached_neighbor_opinion.get(&(peer_id2, epoch, iter)).unwrap();
+		let peer2_neighbor_opinion =
+			node2.peer.cached_neighbor_opinion.get(&(peer_id1, epoch, iter)).unwrap();
 
 		assert_eq!(peer1_neighbor_opinion.epoch, Epoch(3));
 		assert_eq!(peer1_neighbor_opinion.op, 0.5);
