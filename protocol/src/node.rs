@@ -12,7 +12,7 @@ use crate::{
 	utils::create_iter,
 	EigenError,
 };
-use futures::{stream, StreamExt};
+use futures::{select_biased, stream, StreamExt};
 use libp2p::{
 	core::{either::EitherError, upgrade::Version},
 	identify::IdentifyEvent,
@@ -25,10 +25,7 @@ use libp2p::{
 	Multiaddr, PeerId, Transport,
 };
 use std::io::Error as IoError;
-use tokio::{
-	select,
-	time::{Duration, Instant},
-};
+use tokio::time::{Duration, Instant};
 
 /// The Node struct.
 pub struct Node {
@@ -87,7 +84,7 @@ impl Node {
 				message: Req { request: Request::Opinion(epoch, iter), channel, .. },
 			} => {
 				// We send the local opinion to the peer.
-				let opinion = self.peer.get_local_opinion(&(peer, epoch, iter));
+				let opinion = self.peer.calculate_local_opinion(peer, epoch, iter);
 				let response = Response::Opinion(opinion);
 				let res = self.swarm.behaviour_mut().send_response(channel, response);
 				if let Err(e) = res {
@@ -216,28 +213,22 @@ impl Node {
 		let mut inner_interval = stream::pending::<u32>().boxed().fuse();
 
 		loop {
-			select! {
-				biased;
+			select_biased! {
 				// The interval timer tick. This is where we request opinions from the neighbors.
-				epoch_opt = outer_interval.next() => if let Some(epoch) = epoch_opt {
+				epoch = outer_interval.select_next_some() => {
 					log::info!("Epoch({}) has started", epoch);
 					inner_interval = create_iter(Instant::now(), iter_interval, NUM_ITERATIONS as usize);
-				} else {
-					break;
 				},
-				iter_opt = inner_interval.next() => if let Some(iter) = iter_opt {
+				iter = inner_interval.select_next_some() => {
 					let epoch = Epoch::current_epoch(epoch_interval.as_secs());
 					let score = self.peer.global_trust_score_at(epoch, iter);
 					log::info!("iter({}) score: {}", iter, score);
-					// First we calculate the local opinions for the this iter.
-					for peer in self.peer.neighbors() {
-						self.peer.calculate_local_opinion(peer, epoch, iter);
-					}
 					// Send the request for opinions to all neighbors.
 					self.send_epoch_requests(epoch, iter);
 				},
 				// The swarm event.
 				event = self.swarm.select_next_some() => self.handle_swarm_events(event),
+				complete => break,
 			}
 		}
 	}

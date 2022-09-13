@@ -26,7 +26,6 @@ struct Keypair {
 
 pub fn init_logger() {
 	let mut builder = Builder::from_default_env();
-
 	builder.filter(Some("eigen_trust"), LevelFilter::Debug).format_timestamp(None).init();
 }
 
@@ -82,8 +81,7 @@ async fn main() {
 			}
 
 			let node = Node::new(local_key, local_address, peer).unwrap();
-
-			node.main_loop(10).await;
+			node.main_loop(1).await;
 		});
 		tasks.push(join_handle);
 	}

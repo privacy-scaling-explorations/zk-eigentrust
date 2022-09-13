@@ -95,9 +95,12 @@ impl Peer {
 
 	/// Calculate the local trust score toward all neighbors in the specified
 	/// epoch and generate zk proof of it.
-	pub fn calculate_local_opinion(&mut self, peer_id: PeerId, epoch: Epoch, k: u32) {
-		let score = self.neighbor_scores.get(&peer_id).unwrap_or(&0);
+	pub fn calculate_local_opinion(&mut self, peer_id: PeerId, epoch: Epoch, k: u32) -> Opinion {
+		if self.cached_local_opinion.contains_key(&(peer_id, epoch, k)) {
+			return self.get_local_opinion(&(peer_id, epoch, k));
+		}
 
+		let score = self.neighbor_scores.get(&peer_id).unwrap_or(&0);
 		let op_ji = self.get_neighbor_opinions_at(epoch, k);
 		let normalized_score = self.get_normalized_score(*score);
 		let pubkey_op = self.get_pub_key(peer_id);
@@ -118,7 +121,9 @@ impl Peer {
 			Opinion::empty(&self.params, &self.proving_key).unwrap()
 		};
 
-		self.cache_local_opinion((peer_id, epoch, opinion.iter), opinion);
+		self.cache_local_opinion((peer_id, epoch, opinion.iter), opinion.clone());
+
+		opinion
 	}
 
 	/// Returns all of the opinions of the neighbors in the specified iteration.
