@@ -44,9 +44,7 @@ impl From<IdentifyEvent> for EigenEvent {
 impl EigenTrustBehaviour {
 	/// Constructs a new `EigenTrustBehaviour`.
 	pub fn new(
-		connection_duration: Duration,
-		interval_duration: Duration,
-		local_public_key: PublicKey,
+		connection_duration: Duration, interval_duration: Duration, local_public_key: PublicKey,
 	) -> Self {
 		// Setting up the request/response protocol.
 		let protocols = once((EigenTrustProtocol::new(), ProtocolSupport::Full));
@@ -62,17 +60,12 @@ impl EigenTrustBehaviour {
 			.with_initial_delay(Duration::from_millis(100))
 			.with_interval(Duration::from_secs(60 * 60));
 		let identify = Identify::new(config);
-		Self {
-			req_res: req_proto,
-			identify,
-		}
+		Self { req_res: req_proto, identify }
 	}
 
 	/// Send response to a request in the request/response protocol.
 	pub fn send_response(
-		&mut self,
-		channel: ResponseChannel<Response>,
-		response: Response,
+		&mut self, channel: ResponseChannel<Response>, response: Response,
 	) -> Result<(), Response> {
 		self.req_res.send_response(channel, response)
 	}

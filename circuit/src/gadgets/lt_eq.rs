@@ -19,7 +19,7 @@ pub const N_SHIFTED: [u8; 32] = [
 ];
 // Numbers are limited to 252 to avoid overflow
 const NUM_BITS: usize = 252;
-// Same number of bits as N_SHIFTED, since we are doing NUM + N_SHIFTED
+// Same number of bits as N_SHIFTED, since NUM + N_SHIFTED is the operation.
 const DIFF_BITS: usize = 253;
 
 #[derive(Clone)]
@@ -95,7 +95,7 @@ impl<F: FieldExt> LessEqualChip<F> {
 				// z = (x + n_shifted - y);
 				// z = (5 - 3) + n_shifted = 2 + n_shifted =>
 				// diff_bits holds (x + n_shifted - y) as bits.
-				// After that we check the constraint diff_bits - z = 0.
+				// After that, checking the constraint diff_bits - z = 0.
 				s_exp * ((x_exp + n_shifted_exp - y_exp) - x_next_exp),
 			]
 		});

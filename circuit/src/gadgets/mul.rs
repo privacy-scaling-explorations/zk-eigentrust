@@ -63,7 +63,8 @@ impl<F: FieldExt> MulChip<F> {
 	}
 
 	/// Synthesize the circuit.
-	pub fn synthesize( &self, config: MulConfig, mut layouter: impl Layouter<F>,
+	pub fn synthesize(
+		&self, config: MulConfig, mut layouter: impl Layouter<F>,
 	) -> Result<AssignedCell<F, F>, Error> {
 		layouter.assign_region(
 			|| "mul",
@@ -133,7 +134,8 @@ mod test {
 			TestConfig { mul, temp, pub_ins }
 		}
 
-		fn synthesize( &self, config: TestConfig, mut layouter: impl Layouter<F>,
+		fn synthesize(
+			&self, config: TestConfig, mut layouter: impl Layouter<F>,
 		) -> Result<(), Error> {
 			let (x, y) = layouter.assign_region(
 				|| "temp",

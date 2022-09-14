@@ -1,5 +1,7 @@
-use super::utils::{extract_pub_key, to_wide};
-use crate::EigenError;
+use crate::{
+	utils::{extract_pub_key, to_wide},
+	EigenError,
+};
 use eigen_trust_circuit::halo2wrong::curves::{bn256::Fr as Bn256Scalar, FieldExt};
 use libp2p::core::identity::Keypair as IdentityKeypair;
 

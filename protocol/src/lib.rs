@@ -22,23 +22,15 @@
 #![feature(array_zip, array_try_map)]
 #![allow(clippy::tabs_in_doc_comments)]
 #![deny(
-	future_incompatible,
-	nonstandard_style,
-	missing_docs,
-	deprecated,
-	unreachable_code,
-	unreachable_patterns,
-	absolute_paths_not_starting_with_crate,
-	unsafe_code,
-	clippy::unwrap_used,
-	clippy::panic,
-	clippy::unnecessary_cast,
-	clippy::cast_lossless,
-	clippy::cast_possible_wrap
+	future_incompatible, nonstandard_style, missing_docs, deprecated, unreachable_code,
+	unreachable_patterns, absolute_paths_not_starting_with_crate, unsafe_code, clippy::panic,
+	clippy::unnecessary_cast, clippy::cast_lossless, clippy::cast_possible_wrap
 )]
 #![warn(trivial_casts)]
 #![forbid(unsafe_code)]
 
+/// The module for defining the request-response protocol.
+mod behaviour;
 /// The module for global constants.
 pub mod constants;
 /// The module for epoch-related calculations, like seconds until the next
@@ -53,18 +45,16 @@ mod node;
 /// - Calculating local scores toward neighbors for a given epoch
 /// - Keeping track of neighbors scores towards us
 mod peer;
-/// The module for defining the request-response protocol.
-mod protocol;
+/// Common utility functions used across the crate
+mod utils;
 
 pub use eigen_trust_circuit;
 pub use epoch::Epoch;
 pub use libp2p::{identity::Keypair, Multiaddr, PeerId};
 pub use log::LevelFilter;
 pub use node::Node;
-pub use peer::{
-	utils::{extract_pub_key, extract_sk_bytes, extract_sk_limbs, keypair_from_sk_bytes},
-	Peer,
-};
+pub use peer::Peer;
+pub use utils::{extract_pub_key, extract_sk_bytes, extract_sk_limbs, keypair_from_sk_bytes};
 
 /// The crate-wide error variants.
 #[derive(Debug, Clone, PartialEq)]

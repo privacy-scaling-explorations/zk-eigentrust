@@ -67,7 +67,8 @@ impl<F: FieldExt> AndChip<F> {
 	}
 
 	/// Synthesize the circuit.
-	pub fn synthesize( &self, config: AndConfig, mut layouter: impl Layouter<F>,
+	pub fn synthesize(
+		&self, config: AndConfig, mut layouter: impl Layouter<F>,
 	) -> Result<AssignedCell<F, F>, Error> {
 		let is_bool_x = IsBooleanChip::new(self.x.clone());
 		let is_bool_y = IsBooleanChip::new(self.y.clone());
@@ -147,7 +148,8 @@ mod test {
 			TestConfig { and, pub_ins, temp }
 		}
 
-		fn synthesize( &self, config: TestConfig, mut layouter: impl Layouter<F>,
+		fn synthesize(
+			&self, config: TestConfig, mut layouter: impl Layouter<F>,
 		) -> Result<(), Error> {
 			let (x, y) = layouter.assign_region(
 				|| "temp",

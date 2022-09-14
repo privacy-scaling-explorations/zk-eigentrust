@@ -9,46 +9,26 @@ pub const A: Fr = Fr::from_raw([0x292FC, 0x00, 0x00, 0x00]);
 
 // SUBORDER =
 // 2736030358979909402780800718157159386076813972158567259200215660948447373041
-pub const SUBORDER: Fr = Fr::from_raw([
-	0x677297DC392126F1,
-	0xAB3EEDB83920EE0A,
-	0x370A08B6D0302B0B,
-	0x60C89CE5C263405,
-]);
+pub const SUBORDER: Fr =
+	Fr::from_raw([0x677297DC392126F1, 0xAB3EEDB83920EE0A, 0x370A08B6D0302B0B, 0x60C89CE5C263405]);
 
 // 5299619240641551281634865583518297030282874472190772894086521144482721001553
-pub const B8_X: Fr = Fr::from_raw([
-	0x2893F3F6BB957051,
-	0x2AB8D8010534E0B6,
-	0x4EACB2E09D6277C1,
-	0xBB77A6AD63E739B,
-]);
+pub const B8_X: Fr =
+	Fr::from_raw([0x2893F3F6BB957051, 0x2AB8D8010534E0B6, 0x4EACB2E09D6277C1, 0xBB77A6AD63E739B]);
 
 // 16950150798460657717958625567821834550301663161624707787222815936182638968203
-pub const B8_Y: Fr = Fr::from_raw([
-	0x4B3C257A872D7D8B,
-	0xFCE0051FB9E13377,
-	0x25572E1CD16BF9ED,
-	0x25797203F7A0B249,
-]);
+pub const B8_Y: Fr =
+	Fr::from_raw([0x4B3C257A872D7D8B, 0xFCE0051FB9E13377, 0x25572E1CD16BF9ED, 0x25797203F7A0B249]);
 
 pub const B8: Point = Point { x: B8_X, y: B8_Y };
 
 // 995203441582195749578291179787384436505546430278305826713579947235728471134
-pub const G_X: Fr = Fr::from_raw([
-	0x40F41A59F4D4B45E,
-	0xB494B1255B1162BB,
-	0x38BCBA38F25645AD,
-	0x23343E3445B673D,
-]);
+pub const G_X: Fr =
+	Fr::from_raw([0x40F41A59F4D4B45E, 0xB494B1255B1162BB, 0x38BCBA38F25645AD, 0x23343E3445B673D]);
 
 // 5472060717959818805561601436314318772137091100104008585924551046643952123905
-pub const G_Y: Fr = Fr::from_raw([
-	0x50F87D64FC000001,
-	0x4A0CFA121E6E5C24,
-	0x6E14116DA0605617,
-	0xC19139CB84C680A,
-]);
+pub const G_Y: Fr =
+	Fr::from_raw([0x50F87D64FC000001, 0x4A0CFA121E6E5C24, 0x6E14116DA0605617, 0xC19139CB84C680A]);
 
 pub const G: Point = Point { x: G_X, y: G_Y };
 
@@ -62,10 +42,7 @@ pub struct PointProjective {
 impl PointProjective {
 	pub fn affine(&self) -> Point {
 		if bool::from(self.z.is_zero()) {
-			return Point {
-				x: Fr::zero(),
-				y: Fr::zero(),
-			};
+			return Point { x: Fr::zero(), y: Fr::zero() };
 		}
 
 		let zinv = self.z.invert().unwrap();
@@ -79,22 +56,14 @@ impl PointProjective {
 		// dbl-2008-bbjlp https://hyperelliptic.org/EFD/g1p/auto-twisted-projective.html#doubling-dbl-2008-bbjlp
 		let (x3, y3, z3) = double(self.x, self.y, self.z);
 
-		PointProjective {
-			x: x3,
-			y: y3,
-			z: z3,
-		}
+		PointProjective { x: x3, y: y3, z: z3 }
 	}
 
 	pub fn add(&self, q: &Self) -> Self {
 		// add-2008-bbjlp https://hyperelliptic.org/EFD/g1p/auto-twisted-projective.html#addition-add-2008-bbjlp
 		let (x3, y3, z3) = add(self.x, self.y, self.z, q.x, q.y, q.z);
 
-		PointProjective {
-			x: x3,
-			y: y3,
-			z: z3,
-		}
+		PointProjective { x: x3, y: y3, z: z3 }
 	}
 }
 
@@ -106,19 +75,11 @@ pub struct Point {
 
 impl Point {
 	pub fn projective(&self) -> PointProjective {
-		PointProjective {
-			x: self.x,
-			y: self.y,
-			z: Fr::one(),
-		}
+		PointProjective { x: self.x, y: self.y, z: Fr::one() }
 	}
 
 	pub fn mul_scalar(&self, b: &[u8]) -> PointProjective {
-		let mut r: PointProjective = PointProjective {
-			x: Fr::zero(),
-			y: Fr::one(),
-			z: Fr::one(),
-		};
+		let mut r: PointProjective = PointProjective { x: Fr::zero(), y: Fr::one(), z: Fr::one() };
 		let mut exp: PointProjective = self.projective();
 		for i in 0..b.len() * 8 {
 			if test_bit(b, i) {

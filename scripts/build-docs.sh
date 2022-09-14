@@ -1,1 +1,1 @@
-cargo doc -p eigen-trust --no-deps
+cargo doc -p eigen-trust-protocol --no-deps

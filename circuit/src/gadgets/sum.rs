@@ -60,7 +60,8 @@ impl<F: FieldExt, const S: usize> SumChip<F, S> {
 	}
 
 	/// Synthesize the circuit.
-	pub fn synthesize( &self, config: SumConfig, mut layouter: impl Layouter<F>,
+	pub fn synthesize(
+		&self, config: SumConfig, mut layouter: impl Layouter<F>,
 	) -> Result<AssignedCell<F, F>, Error> {
 		layouter.assign_region(
 			|| "sum",
@@ -141,7 +142,8 @@ mod test {
 			TestConfig { sum, temp, pub_ins }
 		}
 
-		fn synthesize( &self, config: TestConfig, mut layouter: impl Layouter<F>,
+		fn synthesize(
+			&self, config: TestConfig, mut layouter: impl Layouter<F>,
 		) -> Result<(), Error> {
 			let arr = layouter.assign_region(
 				|| "temp",
