@@ -17,31 +17,42 @@ use super::{
 pub const N_SHIFTED: [u8; 32] = [
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 16,
 ];
-// Number are limited to 252 to avoid overflow
+// Numbers are limited to 252 to avoid overflow
 const NUM_BITS: usize = 252;
-// Same number of bits as N_SHIFTED, since we are doing NUM + N_SHIFTED
+// Same number of bits as N_SHIFTED, since NUM + N_SHIFTED is the operation.
 const DIFF_BITS: usize = 253;
 
 #[derive(Clone)]
+/// Configuration elements for the circuit are defined here.
 pub struct LessEqualConfig {
+	/// Constructs bits2num circuit elements.
 	x_b2n: Bits2NumConfig,
 	y_b2n: Bits2NumConfig,
 	diff_b2n: Bits2NumConfig,
+	/// Constructs is_zero circuit elements.
 	is_zero: IsZeroConfig,
+	/// Configures a column for the x.
 	x: Column<Advice>,
+	/// Configures a column for the y.
 	y: Column<Advice>,
+	/// Configures a fixed boolean value for each row of the circuit.
 	selector: Selector,
 }
 
+/// Constructs individual cells for the configuration elements.
 pub struct LessEqualChip<F: FieldExt> {
+	/// Assigns a cell for the x.
 	x: AssignedCell<F, F>,
+	/// Assigns a cell for the y.
 	y: AssignedCell<F, F>,
+	/// Constructs bits variables for the circuit.
 	x_bits: [F; NUM_BITS],
 	y_bits: [F; NUM_BITS],
 	diff_bits: [F; DIFF_BITS],
 }
 
 impl<F: FieldExt> LessEqualChip<F> {
+	/// Create a new chip.
 	pub fn new(
 		x: AssignedCell<F, F>, y: AssignedCell<F, F>, x_bits: [F; NUM_BITS], y_bits: [F; NUM_BITS],
 		diff_bits: [F; DIFF_BITS],
@@ -73,7 +84,20 @@ impl<F: FieldExt> LessEqualChip<F> {
 
 			let x_next_exp = v_cells.query_advice(x, Rotation::next());
 
-			vec![s_exp * ((x_exp + n_shifted_exp - y_exp) - x_next_exp)]
+			vec![
+				// (x + n_shifted - y) - z == 0
+				// n_shifted value is equal to smallest 253 bit number.
+				// Because of that calculations will be done in between the 252 to 254-bit range.
+				// That range can hold 252-bit number calculations without overflowing.
+				// Example:
+				// x = 5;
+				// y = 3;
+				// z = (x + n_shifted - y);
+				// z = (5 - 3) + n_shifted = 2 + n_shifted =>
+				// diff_bits holds (x + n_shifted - y) as bits.
+				// After that, checking the constraint diff_bits - z = 0.
+				s_exp * ((x_exp + n_shifted_exp - y_exp) - x_next_exp),
+			]
 		});
 
 		LessEqualConfig { diff_b2n, x_b2n, y_b2n, is_zero, x, y, selector: s }
@@ -108,6 +132,13 @@ impl<F: FieldExt> LessEqualChip<F> {
 		let diff_b2n = Bits2NumChip::new(inp, self.diff_bits);
 		let bits = diff_b2n.synthesize(config.diff_b2n, layouter.namespace(|| "bits2num"))?;
 
+		// Check the last bit.
+		// If it is 1, that means the result is bigger than 253 bits.
+		// This means x is bigger than y and is_zero will return 0.
+		// If it is 0, that means the result is smaller than 253 bits.
+		// This means y is bigger than x and is_zero will return 1.
+		// If both are equal last bit still will be 1 and the number will be exactly 253
+		// bits. In that case, is_zero will return 0 as well.
 		let is_zero = IsZeroChip::new(bits[DIFF_BITS - 1].clone());
 		let res = is_zero.synthesize(config.is_zero, layouter.namespace(|| "is_zero"))?;
 		Ok(res)
@@ -204,9 +235,83 @@ mod test {
 	}
 
 	#[test]
-	fn test_less_than() {
+	fn test_less_than_y_x() {
+		// Testing x > y.
 		let x = Fr::from(8);
 		let y = Fr::from(4);
+
+		let test_chip = TestCircuit::new(x, y);
+
+		let k = 9;
+		let pub_ins = vec![Fr::from(0)];
+		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[test]
+	fn test_less_than_x_y() {
+		// Testing x < y.
+		let x = Fr::from(3);
+		let y = Fr::from(9);
+
+		let test_chip = TestCircuit::new(x, y);
+
+		let k = 9;
+		let pub_ins = vec![Fr::from(1)];
+		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[test]
+	fn test_less_than_x_y_equal() {
+		// Testing x = y.
+		let x = Fr::from(4);
+		let y = Fr::from(4);
+
+		let test_chip = TestCircuit::new(x, y);
+
+		let k = 9;
+		let pub_ins = vec![Fr::from(0)];
+		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[test]
+	fn test_less_than_x252_y() {
+		// Testing x = biggest 252 bit number.
+		let bit252: Fr = FieldExt::from_bytes_wide(&to_wide(&N_SHIFTED));
+		let x = bit252.sub(&Fr::one());
+		let y = Fr::from(9);
+
+		let test_chip = TestCircuit::new(x, y);
+
+		let k = 9;
+		let pub_ins = vec![Fr::from(0)];
+		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[test]
+	fn test_less_than_x_y252() {
+		// Testing y = biggest 252 bit number.
+		let bit252: Fr = FieldExt::from_bytes_wide(&to_wide(&N_SHIFTED));
+		let x = Fr::from(2);
+		let y = bit252.sub(&Fr::from(1));
+
+		let test_chip = TestCircuit::new(x, y);
+
+		let k = 9;
+		let pub_ins = vec![Fr::from(1)];
+		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[test]
+	fn test_less_than_x252_y252() {
+		// Testing x = y = biggest 252 bit number.
+		let bit252: Fr = FieldExt::from_bytes_wide(&to_wide(&N_SHIFTED));
+		let x = bit252.sub(&Fr::from(1));
+		let y = bit252.sub(&Fr::from(1));
 
 		let test_chip = TestCircuit::new(x, y);
 

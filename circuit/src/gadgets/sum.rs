@@ -6,7 +6,7 @@ use halo2wrong::halo2::{
 };
 
 #[derive(Clone, Debug)]
-/// Configuration elements for the circuit defined here.
+/// Configuration elements for the circuit are defined here.
 pub struct SumConfig {
 	/// Configures a column for the sum.
 	sum: Column<Advice>,
@@ -15,7 +15,7 @@ pub struct SumConfig {
 	/// Configures a fixed boolean value for each row of the circuit.
 	selector: Selector,
 }
-/// Constructs individual cells for the configuration elements.
+/// Constructs individual cell for the configuration element.
 pub struct SumChip<F: FieldExt, const S: usize> {
 	/// Assigns a cell for the items.
 	items: [AssignedCell<F, F>; S],
@@ -46,13 +46,13 @@ impl<F: FieldExt, const S: usize> SumChip<F, S> {
 			let s = v_cells.query_selector(s);
 			// (x + y) - z == 0
 			// z is the next rotation cell for the x value.
-			// Example for a sum gate:
+			// Example:
 			// let x = 2;
 			// let y = 1;
 			// let z = (x + y);
 			// z;
 			//
-			// z = (2 + 1) = 3 => We check the constraint (2 + 1) - 3 == 0
+			// z = (2 + 1) = 3 => Checking the constraint (2 + 1) - 3 == 0
 			vec![s * (sum_exp + item_exp - sum_next)]
 		});
 
@@ -73,8 +73,8 @@ impl<F: FieldExt, const S: usize> SumChip<F, S> {
 					F::zero(),
 				)?;
 
-				// This circuit can take many inputs. It will loop and accumulate all of the
-				// items to the sum value.
+				// This circuit can take many inputs.
+				// It will loop and accumulate all of the items to the sum value.
 				for i in 0..S {
 					config.selector.enable(&mut region, i)?;
 					let item =
@@ -181,7 +181,7 @@ mod test {
 
 	#[test]
 	fn test_sum_random_element() {
-		// Testing big array with a random element from the field.
+		// Testing a big array full with random elements from the field.
 		let array = [(); 512].map(|_| <Fr as Field>::random(rand::thread_rng()));
 		let test_chip = TestCircuit::new(array);
 		let mut ins: Vec<Fr> = vec![Fr::from(0)];

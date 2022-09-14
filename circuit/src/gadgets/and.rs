@@ -8,22 +8,22 @@ use halo2wrong::halo2::{
 use super::is_boolean::{IsBooleanChip, IsBooleanConfig};
 
 #[derive(Clone, Debug)]
-/// Configuration elements for the circuit defined here.
+/// Configuration elements for the circuit are defined here.
 pub struct AndConfig {
 	/// Constructs is_bool circuit elements.
 	is_bool: IsBooleanConfig,
-	/// Configures a column for x.
+	/// Configures a column for the x.
 	x: Column<Advice>,
-	/// Configures a column for y.
+	/// Configures a column for the y.
 	y: Column<Advice>,
 	/// Configures a fixed boolean value for each row of the circuit.
 	selector: Selector,
 }
 /// Constructs individual cells for the configuration elements.
 pub struct AndChip<F: FieldExt> {
-	/// Assigns a cell for x.
+	/// Assigns a cell for the x.
 	x: AssignedCell<F, F>,
-	/// Assigns a cell for y.
+	/// Assigns a cell for the y.
 	y: AssignedCell<F, F>,
 }
 
@@ -52,13 +52,13 @@ impl<F: FieldExt> AndChip<F> {
 			vec![
 				// (x * y) - z == 0
 				// z is the next rotation cell for the x value.
-				// Example for an and gate:
+				// Example:
 				// let x = 1;
 				// let y = 0;
 				// let z = (x * y);
 				// z;
 				//
-				// z = (1 * 0) = 0 => We check the constraint (1 * 0) - 0 == 0
+				// z = (1 * 0) = 0 => Checking the constraint (1 * 0) - 0 == 0
 				s_exp * ((x_exp * y_exp) - res_exp),
 			]
 		});
@@ -180,7 +180,7 @@ mod test {
 
 	#[test]
 	fn test_and_x1_y1() {
-		// Testing x = 1 and y = 1
+		// Testing x = 1 and y = 1.
 		let test_chip = TestCircuit::new(Fr::from(1), Fr::from(1));
 
 		let pub_ins = vec![Fr::from(1)];
@@ -191,7 +191,7 @@ mod test {
 
 	#[test]
 	fn test_and_x1_y0() {
-		// Testing x = 1 and y = 0
+		// Testing x = 1 and y = 0.
 		let test_chip = TestCircuit::new(Fr::from(1), Fr::from(0));
 
 		let pub_ins = vec![Fr::from(0)];
@@ -202,7 +202,7 @@ mod test {
 
 	#[test]
 	fn test_and_x0_y0() {
-		// Testing x = 0 and y = 0
+		// Testing x = 0 and y = 0.
 		let test_chip = TestCircuit::new(Fr::from(0), Fr::from(0));
 
 		let pub_ins = vec![Fr::from(0)];
@@ -213,7 +213,7 @@ mod test {
 
 	#[test]
 	fn test_and_x0_y1() {
-		// Testing x = 0 and y = 1
+		// Testing x = 0 and y = 1.
 		let test_chip = TestCircuit::new(Fr::from(0), Fr::from(1));
 
 		let pub_ins = vec![Fr::from(0)];

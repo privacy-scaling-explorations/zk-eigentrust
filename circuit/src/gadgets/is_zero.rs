@@ -6,7 +6,7 @@ use halo2wrong::halo2::{
 };
 
 #[derive(Clone, Debug)]
-/// Configuration elements for the circuit defined here.
+/// Configuration elements for the circuit are defined here.
 pub struct IsZeroConfig {
 	/// Configures a column for the x.
 	x: Column<Advice>,
@@ -49,17 +49,17 @@ impl<F: FieldExt> IsZeroChip<F> {
 
 			vec![
 				// x * b == 0
-				// Here we check this constraint because we want to be sure
-				// that one of the variables is 0.
-				// b is the boolean and we want to output (x == 0)
+				// Checking this constraint to be sure
+				// that one of the variable is equal to 0.
+				// b is the boolean and desired output is (x == 0)
 				sel_exp.clone() * (x_exp.clone() * b_exp.clone()),
 				// x * x_inv + b - 1 == 0
 				// Example 1:
-				// If x = 1 => x_inv = 1;
+				// If x = 1 => x_inv = 1,
 				// (1 * 1 + b - 1) == 0
-				// In this case our b value must be 0.
+				// In this case, b must be equal to 0.
 				// Example 2:
-				// If b = 1
+				// If b = 1,
 				// (x * x_inv + 1 - 1) == 0 => (x * x_inv) must be equal to 0.
 				// Which is only can be obtainable by x = 0.
 				sel_exp * (x_exp * x_inv_exp + b_exp - one),
@@ -83,8 +83,8 @@ impl<F: FieldExt> IsZeroChip<F> {
 					let val_opt: Option<F> = val.invert().into();
 					Value::known(val_opt.unwrap_or(F::one()))
 				});
-				// Here in the circuit, if x = 0, b will be assigned to value 1.
-				// If x = 1, means x_inv = 1 as well, b will be assigned to value 0.
+				// In the circuit here, if x = 0, b will be assigned to the value 1.
+				// If x = 1, means x_inv = 1 as well, b will be assigned to the value 0.
 				let b = one - self.x.value().cloned() * x_inv;
 
 				self.x.copy_advice(|| "x", &mut region, config.x, 0)?;
@@ -179,7 +179,7 @@ mod test {
 
 	#[test]
 	fn test_is_zero_not() {
-		// Testing non-zero value.
+		// Testing a non-zero value.
 		let test_chip = TestCircuit::new(Fr::from(1));
 
 		let pub_ins = vec![Fr::zero()];

@@ -9,7 +9,7 @@ use super::is_boolean::IsBooleanChip;
 use crate::gadgets::is_boolean::IsBooleanConfig;
 
 #[derive(Clone, Debug)]
-/// Configuration elements for the circuit defined here.
+/// Configuration elements for the circuit are defined here.
 pub struct SelectConfig {
 	/// Constructs is_bool circuit elements.
 	is_bool: IsBooleanConfig,
@@ -88,7 +88,7 @@ impl<F: FieldExt> SelectChip<F> {
 		&self, config: SelectConfig, mut layouter: impl Layouter<F>,
 	) -> Result<AssignedCell<F, F>, Error> {
 		let is_boolean_chip = IsBooleanChip::new(self.bit.clone());
-		// Here we check bit is boolean or not.
+		// Checking bit is boolean or not.
 		let assigned_bool = is_boolean_chip
 			.synthesize(config.is_bool.clone(), layouter.namespace(|| "is_boolean"))?;
 
@@ -232,8 +232,8 @@ mod test {
 
 	#[test]
 	fn test_select_two_as_bit() {
-		// Testing bit = 2. Constraint not satisfied error will return because bit is
-		// not a boolean value.
+		// Testing bit = 2. Constraint not satisfied error will return
+		// because the bit is not a boolean value.
 		let test_chip = TestCircuit::new(Fr::from(2), Fr::from(3), Fr::from(6));
 
 		let pub_ins = vec![Fr::from(3)];

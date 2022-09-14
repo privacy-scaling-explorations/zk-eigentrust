@@ -8,7 +8,7 @@ use halo2wrong::halo2::{
 use super::is_zero::{IsZeroChip, IsZeroConfig};
 
 #[derive(Clone, Debug)]
-/// Configuration elements for the circuit defined here.
+/// Configuration elements for the circuit are defined here.
 pub struct IsEqualConfig {
 	/// Constructs is_zero circuit elements.
 	is_zero: IsZeroConfig,
@@ -25,9 +25,9 @@ pub struct IsEqualConfig {
 #[derive(Clone)]
 /// Constructs individual cells for the configuration elements.
 pub struct IsEqualChip<F: FieldExt> {
-	/// Assigns a cell for lhs.
+	/// Assigns a cell for the lhs.
 	lhs: AssignedCell<F, F>,
-	/// Assigns a cell for rhs.
+	/// Assigns a cell for the rhs.
 	rhs: AssignedCell<F, F>,
 }
 
@@ -62,7 +62,7 @@ impl<F: FieldExt> IsEqualChip<F> {
 				// let x = (y - z);
 				// x;
 				//
-				// x = (123 - 123) = 0 => We check the constraint (0 + 123) - 123 == 0
+				// x = (123 - 123) = 0 => Checking the constraint (0 + 123) - 123 == 0
 				s_exp * ((out_exp + rhs_exp) - lhs_exp),
 			]
 		});
