@@ -37,8 +37,8 @@ mod consts {
 	];
 	pub const NUM_BOOTSTRAP_PEERS: usize = 5;
 	pub const BOOTSTRAP_SCORE: f64 = 0.5;
-	pub const NUM_ITERATIONS: u32 = 4;
-	pub const EPOCH_INTERVAL: u64 = 60;
+	pub const NUM_ITERATIONS: u32 = 6;
+	pub const EPOCH_INTERVAL: u64 = 100;
 	pub const ITER_INTERVAL: u64 = 10;
 }
 

@@ -16,7 +16,7 @@ use rand::{thread_rng, Rng};
 use serde::Deserialize;
 use std::env::current_dir;
 
-const NUM_CONNECTIONS: usize = 12;
+const NUM_CONNECTIONS: usize = 4;
 
 #[derive(Debug, Deserialize)]
 struct Keypair {
@@ -67,25 +67,30 @@ async fn main() {
 
 	let mut tasks = Vec::new();
 	for i in 0..NUM_CONNECTIONS {
+		let la_clone = local_addresses.clone();
 		let local_key = local_keys[i].clone();
-		let local_address = local_addresses[i].clone();
+		let local_address = la_clone[i].clone();
 		let bootstrap_nodes = bootstrap_nodes.clone();
 		let params = params.clone();
 		let pk = pk.clone();
 
 		let join_handle = tokio::spawn(async move {
+			let neighbor_addr = la_clone.clone();
 			let mut peer = Peer::new(local_key.clone(), params, pk).unwrap();
 			for (peer_id, ..) in bootstrap_nodes {
 				let random_score: u32 = rand::thread_rng().gen_range(0..100);
 				peer.set_score(peer_id, random_score);
 			}
 
-			let node = Node::new(local_key, local_address, peer).unwrap();
+			let mut node = Node::new(local_key, local_address, peer).unwrap();
+			for j in 0..NUM_CONNECTIONS {
+				node.dial_neighbor(neighbor_addr[j].clone());
+			}
 			node.main_loop(1).await;
 		});
 		tasks.push(join_handle);
 	}
 
-	let _ = join_all(tasks).await.iter().map(|r| r.as_ref().unwrap()).collect::<Vec<_>>();
+	let _ = join_all(tasks).await;
 	println!("Done");
 }

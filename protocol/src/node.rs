@@ -48,7 +48,7 @@ impl Node {
 		// 30 years in seconds
 		// Basically, we want connections to be open for a long time.
 		let connection_duration = Duration::from_secs(86400 * 365 * 30);
-		let iter_interval_duration = Duration::from_secs(ITER_INTERVAL * 2);
+		let iter_interval_duration = Duration::from_secs(ITER_INTERVAL);
 		let transport = TcpConfig::new()
 			.nodelay(true)
 			.upgrade(Version::V1)
@@ -172,6 +172,9 @@ impl Node {
 					log::error!("Failed to add neighbor {:?}", e);
 				}
 				log::info!("Connection established with {:?}", peer_id);
+				// Send identify request
+				let request = Request::Identify(self.peer.pubkey.clone());
+				self.swarm.behaviour_mut().send_request(&peer_id, request);
 			},
 			// When we disconnect from a peer, we automatically remove him from the neighbors list.
 			SwarmEvent::ConnectionClosed { peer_id, cause, .. } => {
@@ -217,30 +220,35 @@ impl Node {
 		// Setup the epoch interval timer.
 		let mut outer_interval = create_iter(start, epoch_interval, interval_limit);
 		// Setup iteration interval timer
-		let mut inner_interval = stream::pending::<u32>().boxed().fuse();
+		let mut inner_interval = stream::empty::<u32>().boxed().fuse();
 
 		loop {
 			select_biased! {
-				// The interval timer tick. This is where we request opinions from the neighbors.
+				// The interval timer tick. This is where we create new iteration interval
 				epoch = outer_interval.select_next_some() => {
 					log::info!("Epoch({}) has started", epoch);
 					inner_interval = create_iter(Instant::now(), iter_interval, NUM_ITERATIONS as usize);
 				},
 				iter = inner_interval.select_next_some() => {
 					let epoch = Epoch::current_epoch(epoch_interval.as_secs());
-					let scores = self.peer.get_neighbor_opinions_at(epoch, iter);
-					if let Ok(scores_v) = scores {
-						let sum = scores_v.iter().sum::<f64>();
+					// Log the scores from previous epoch
+					if iter > 0 {
+						let scores = self.peer.get_neighbor_opinions_at(epoch, iter - 1).unwrap();
+						let sum = scores.iter().sum::<f64>();
 						log::info!("iter({}) score: {}", iter, sum);
 					}
 					// Send the request for opinions to all neighbors.
 					self.send_epoch_requests(epoch, iter);
 				},
 				// The swarm event.
-				event = self.swarm.select_next_some() => self.handle_swarm_events(event),
+				event = self.swarm.select_next_some() => {
+					self.handle_swarm_events(event);
+				},
 				complete => break,
 			}
 		}
+
+		log::info!("Breaking out of a loop");
 	}
 }
 
