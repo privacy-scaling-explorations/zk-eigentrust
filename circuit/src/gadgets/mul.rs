@@ -6,7 +6,7 @@ use halo2wrong::halo2::{
 };
 
 #[derive(Clone, Debug)]
-/// Configuration elements for the circuit defined here.
+/// Configuration elements for the circuit are defined here.
 pub struct MulConfig {
 	/// Configures a column for the x.
 	x: Column<Advice>,
@@ -18,9 +18,9 @@ pub struct MulConfig {
 
 /// Constructs individual cells for the configuration elements.
 pub struct MulChip<F: FieldExt> {
-	/// Assigns a cell for x.
+	/// Assigns a cell for the x.
 	x: AssignedCell<F, F>,
-	/// Assigns a cell for y.
+	/// Assigns a cell for the y.
 	y: AssignedCell<F, F>,
 }
 
@@ -54,7 +54,7 @@ impl<F: FieldExt> MulChip<F> {
 				// let z = (x * y);
 				// z;
 				//
-				// z = (3 * 2) = 6 => We check the constraint (3 * 2) - 6 == 0
+				// z = (3 * 2) = 6 => Checking the constraint (3 * 2) - 6 == 0
 				s_exp * ((x_exp * y_exp) - x_next_exp),
 			]
 		});
@@ -63,10 +63,7 @@ impl<F: FieldExt> MulChip<F> {
 	}
 
 	/// Synthesize the circuit.
-	pub fn synthesize(
-		&self,
-		config: MulConfig,
-		mut layouter: impl Layouter<F>,
+	pub fn synthesize( &self, config: MulConfig, mut layouter: impl Layouter<F>,
 	) -> Result<AssignedCell<F, F>, Error> {
 		layouter.assign_region(
 			|| "mul",
@@ -136,10 +133,7 @@ mod test {
 			TestConfig { mul, temp, pub_ins }
 		}
 
-		fn synthesize(
-			&self,
-			config: TestConfig,
-			mut layouter: impl Layouter<F>,
+		fn synthesize( &self, config: TestConfig, mut layouter: impl Layouter<F>,
 		) -> Result<(), Error> {
 			let (x, y) = layouter.assign_region(
 				|| "temp",
@@ -169,7 +163,7 @@ mod test {
 
 	#[test]
 	fn test_mul() {
-		// Testing x = 5, y = 2.
+		// Testing x = 5 and y = 2.
 		let test_chip = TestCircuit::new(Fr::from(5), Fr::from(2));
 
 		let k = 4;
@@ -180,7 +174,7 @@ mod test {
 
 	#[test]
 	fn test_mul_y1() {
-		// Testing x = 3, y = 1.
+		// Testing x = 3 and y = 1.
 		let test_chip = TestCircuit::new(Fr::from(3), Fr::from(1));
 
 		let k = 4;
@@ -191,7 +185,7 @@ mod test {
 
 	#[test]
 	fn test_mul_y0() {
-		// Testing x = 4, y = 0.
+		// Testing x = 4 and y = 0.
 		let test_chip = TestCircuit::new(Fr::from(4), Fr::from(0));
 
 		let k = 4;

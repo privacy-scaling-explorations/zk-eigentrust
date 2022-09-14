@@ -23,7 +23,7 @@ const NUM_BITS: usize = 252;
 const DIFF_BITS: usize = 253;
 
 #[derive(Clone)]
-/// Configuration elements for the circuit defined here.
+/// Configuration elements for the circuit are defined here.
 pub struct LessEqualConfig {
 	/// Constructs bits2num circuit elements.
 	x_b2n: Bits2NumConfig,
@@ -54,19 +54,10 @@ pub struct LessEqualChip<F: FieldExt> {
 impl<F: FieldExt> LessEqualChip<F> {
 	/// Create a new chip.
 	pub fn new(
-		x: AssignedCell<F, F>,
-		y: AssignedCell<F, F>,
-		x_bits: [F; NUM_BITS],
-		y_bits: [F; NUM_BITS],
+		x: AssignedCell<F, F>, y: AssignedCell<F, F>, x_bits: [F; NUM_BITS], y_bits: [F; NUM_BITS],
 		diff_bits: [F; DIFF_BITS],
 	) -> Self {
-		LessEqualChip {
-			x,
-			y,
-			x_bits,
-			y_bits,
-			diff_bits,
-		}
+		LessEqualChip { x, y, x_bits, y_bits, diff_bits }
 	}
 
 	/// Make the circuit config.
@@ -96,8 +87,8 @@ impl<F: FieldExt> LessEqualChip<F> {
 			vec![
 				// (x + n_shifted - y) - z == 0
 				// n_shifted value is equal to smallest 253 bit number.
-				// Because of that calculations will be done in between 252 to 254 bit range.
-				// That range can hold 252 bit number calculations without overflowing.
+				// Because of that calculations will be done in between the 252 to 254-bit range.
+				// That range can hold 252-bit number calculations without overflowing.
 				// Example:
 				// x = 5;
 				// y = 3;
@@ -109,22 +100,12 @@ impl<F: FieldExt> LessEqualChip<F> {
 			]
 		});
 
-		LessEqualConfig {
-			diff_b2n,
-			x_b2n,
-			y_b2n,
-			is_zero,
-			x,
-			y,
-			selector: s,
-		}
+		LessEqualConfig { diff_b2n, x_b2n, y_b2n, is_zero, x, y, selector: s }
 	}
 
 	/// Synthesize the circuit.
 	pub fn synthesize(
-		&self,
-		config: LessEqualConfig,
-		mut layouter: impl Layouter<F>,
+		&self, config: LessEqualConfig, mut layouter: impl Layouter<F>,
 	) -> Result<AssignedCell<F, F>, Error> {
 		let x_b2n = Bits2NumChip::new(self.x.clone(), self.x_bits);
 		let _ = x_b2n.synthesize(config.x_b2n, layouter.namespace(|| "x_b2n"))?;
@@ -152,12 +133,12 @@ impl<F: FieldExt> LessEqualChip<F> {
 		let bits = diff_b2n.synthesize(config.diff_b2n, layouter.namespace(|| "bits2num"))?;
 
 		// Check the last bit.
-		// If it is 1 that means result is bigger than 253 bits.
-		// Which means x is bigger than y and is_zero will return 0.
-		// If it is 0 that means result is smaller than 253 bits.
-		// Which means y is bigger than x and is_zero will return 1.
-		// If both are equal last bit still will be 1 and number will be exactly 253
-		// bits. In that case is_zero will return 0 as well.
+		// If it is 1, that means the result is bigger than 253 bits.
+		// This means x is bigger than y and is_zero will return 0.
+		// If it is 0, that means the result is smaller than 253 bits.
+		// This means y is bigger than x and is_zero will return 1.
+		// If both are equal last bit still will be 1 and the number will be exactly 253
+		// bits. In that case, is_zero will return 0 as well.
 		let is_zero = IsZeroChip::new(bits[DIFF_BITS - 1].clone());
 		let res = is_zero.synthesize(config.is_zero, layouter.namespace(|| "is_zero"))?;
 		Ok(res)
@@ -215,17 +196,11 @@ mod test {
 			meta.enable_equality(temp);
 			meta.enable_equality(pub_ins);
 
-			TestConfig {
-				lt_eq,
-				temp,
-				pub_ins,
-			}
+			TestConfig { lt_eq, temp, pub_ins }
 		}
 
 		fn synthesize(
-			&self,
-			config: TestConfig,
-			mut layouter: impl Layouter<Fr>,
+			&self, config: TestConfig, mut layouter: impl Layouter<Fr>,
 		) -> Result<(), Error> {
 			let (x, y) = layouter.assign_region(
 				|| "temp",

@@ -5,7 +5,7 @@ use halo2wrong::halo2::{
 	poly::Rotation,
 };
 
-/// Configuration elements for the circuit defined here.
+/// Configuration elements for the circuit are defined here.
 #[derive(Clone, Debug)]
 pub struct IsBooleanConfig {
 	/// Configures a column for the x.
@@ -40,14 +40,14 @@ impl<F: FieldExt> IsBooleanChip<F> {
 
 			vec![
 				// (1 - x) * x == 0
-				// Only two valid example exist for a boolean gate
-				// We only work on current rotation cells
+				// Only two valid examples exist for a boolean gate.
+				// Circuit working only on current rotation cells.
 				// First example:
-				// let x = 1;
-				// (1 - 1) * 1 == 0 => We check the constraint 0 * 1 == 0
+				// If x = 1,
+				// (1 - 1) * 1 == 0 => Checking the constraint 0 * 1 == 0
 				// Second example:
-				// let x = 0;
-				// (1 - 0) * 0 == 0 => We check the constraint 1 * 0 == 0
+				// If x = 0,
+				// (1 - 0) * 0 == 0 => Checking the constraint 1 * 0 == 0
 				s_exp * ((one - x_exp.clone()) * x_exp),
 			]
 		});
@@ -56,10 +56,7 @@ impl<F: FieldExt> IsBooleanChip<F> {
 	}
 
 	/// Synthesize the circuit.
-	pub fn synthesize(
-		&self,
-		config: IsBooleanConfig,
-		mut layouter: impl Layouter<F>,
+	pub fn synthesize( &self, config: IsBooleanConfig, mut layouter: impl Layouter<F>,
 	) -> Result<AssignedCell<F, F>, Error> {
 		layouter.assign_region(
 			|| "is_boolean",
@@ -120,10 +117,7 @@ mod test {
 			TestConfig { is_bool, temp }
 		}
 
-		fn synthesize(
-			&self,
-			config: TestConfig,
-			mut layouter: impl Layouter<F>,
+		fn synthesize( &self, config: TestConfig, mut layouter: impl Layouter<F>,
 		) -> Result<(), Error> {
 			let numba = layouter.assign_region(
 				|| "temp",
