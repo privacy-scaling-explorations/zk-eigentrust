@@ -29,3 +29,6 @@ features = [
 	"noise",
 	"yamux",
 ]
+
+[features]
+prod = []
