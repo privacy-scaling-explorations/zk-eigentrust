@@ -157,15 +157,11 @@ impl Peer {
 		let pubkey_p = self.get_pub_key(key.0).ok_or(EigenError::PubkeyNotFound)?;
 		// We add it only if its a valid proof
 		let res = opinion.verify(&pubkey_p, &self.keypair, &self.params, vk)?;
-		match res {
-			true => {
-				self.cached_neighbor_opinion.insert(key, opinion);
-				log::debug!("Neighbour opinion is added {:?}", key);
-			},
-			false => {
-				log::debug!("Neighbour opinion is not valid {:?}", key);
-			},
-		};
+		if res {
+			self.cached_neighbor_opinion.insert(key, opinion);
+		} else {
+			log::debug!("Neighbour opinion is not valid {:?}", key);
+		}
 		Ok(())
 	}
 
