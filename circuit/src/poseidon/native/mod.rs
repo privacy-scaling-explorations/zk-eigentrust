@@ -4,6 +4,7 @@ use super::params::RoundParams;
 use halo2wrong::halo2::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
+/// Constructs objects.
 pub struct Poseidon<F: FieldExt, const WIDTH: usize, P>
 where
 	P: RoundParams<F, WIDTH>,
@@ -16,10 +17,13 @@ impl<F: FieldExt, const WIDTH: usize, P> Poseidon<F, WIDTH, P>
 where
 	P: RoundParams<F, WIDTH>,
 {
+	/// Create the objects.
 	pub fn new(inputs: [F; WIDTH]) -> Self {
 		Poseidon { inputs, _params: PhantomData }
 	}
 
+	/// Add round constants to the state values
+	/// for the AddRoundConstants operation.
 	fn apply_round_constants(state: &[F; WIDTH], round_consts: &[F; WIDTH]) -> [F; WIDTH] {
 		let mut next_state = [F::zero(); WIDTH];
 		for i in 0..WIDTH {
@@ -31,9 +35,9 @@ where
 		next_state
 	}
 
+	/// Compute MDS matrix for MixLayer operation.
 	fn apply_mds(state: &[F; WIDTH], mds: &[[F; WIDTH]; WIDTH]) -> [F; WIDTH] {
 		let mut new_state = [F::zero(); WIDTH];
-		// Compute mds matrix
 		for i in 0..WIDTH {
 			for j in 0..WIDTH {
 				let mds_ij = &mds[i][j];
@@ -44,6 +48,12 @@ where
 		new_state
 	}
 
+	/// The Hades Design Strategy for Hashing.
+	/// Mixing rounds with half-full S-box layers and
+	/// rounds with partial S-box layers.
+	/// More detailed explanation for
+	/// The Round Function (TRF) and Hades:
+	/// https://eprint.iacr.org/2019/458.pdf#page=5
 	pub fn permute(&self) -> [F; WIDTH] {
 		let full_rounds = P::full_rounds();
 		let half_full_rounds = full_rounds / 2;
@@ -63,26 +73,47 @@ where
 		let mut state = self.inputs;
 		for round in 0..half_full_rounds {
 			let round_consts = P::load_round_constants(round, first_round_constants);
+			// 1. step for the TRF.
+			// AddRoundConstants step.
 			state = Self::apply_round_constants(&state, &round_consts);
+			// Applying S-boxes for the full round.
 			for i in 0..WIDTH {
+				// 2. step for the TRF.
+				// SubWords step.
 				state[i] = P::sbox_f(state[i]);
 			}
+			// 3. step for the TRF.
+			// MixLayer step.
 			state = Self::apply_mds(&state, &mds);
 		}
 
 		for round in 0..partial_rounds {
 			let round_consts = P::load_round_constants(round, second_round_constants);
+			// 1. step for the TRF.
+			// AddRoundConstants step.
 			state = Self::apply_round_constants(&state, &round_consts);
+			// Applying single S-box for the partial round.
+			// 2. step for the TRF.
+			// SubWords step, denoted by S-box.
 			state[0] = P::sbox_f(state[0]);
+			// 3. step for the TRF.
+			// MixLayer step.
 			state = Self::apply_mds(&state, &mds);
 		}
 
 		for round in 0..half_full_rounds {
 			let round_consts = P::load_round_constants(round, third_round_constants);
+			// 1. step for the TRF.
+			// AddRoundConstants step.
 			state = Self::apply_round_constants(&state, &round_consts);
+			// Applying S-boxes for the full round.
 			for i in 0..WIDTH {
+				// 2. step for the TRF.
+				// SubWords step, denoted by S-box.
 				state[i] = P::sbox_f(state[i]);
 			}
+			// 3. step for the TRF.
+			// MixLayer step.
 			state = Self::apply_mds(&state, &mds);
 		}
 

@@ -10,12 +10,14 @@ use halo2wrong::halo2::{
 };
 
 #[derive(Clone)]
+/// Configuration elements for the circuit are defined here.
 struct PoseidonSpongeConfig<const WIDTH: usize> {
 	poseidon_config: PoseidonConfig<WIDTH>,
 	state: [Column<Advice>; WIDTH],
 	absorb_selector: Selector,
 }
 
+/// Constructs a chip structure for the circuit.
 struct PoseidonSpongeChip<F: FieldExt, const WIDTH: usize, P>
 where
 	P: RoundParams<F, WIDTH>,
@@ -28,10 +30,12 @@ impl<F: FieldExt, const WIDTH: usize, P> PoseidonSpongeChip<F, WIDTH, P>
 where
 	P: RoundParams<F, WIDTH>,
 {
+	/// Create a new chip.
 	fn new() -> Self {
 		Self { inputs: Vec::new(), _params: PhantomData }
 	}
 
+	/// Make the circuit config.
 	fn configure(meta: &mut ConstraintSystem<F>) -> PoseidonSpongeConfig<WIDTH> {
 		let poseidon_config = PoseidonChip::<_, WIDTH, P>::configure(meta);
 		let state = [(); WIDTH].map(|_| {
@@ -59,6 +63,8 @@ where
 		PoseidonSpongeConfig { poseidon_config, state, absorb_selector }
 	}
 
+	/// Absorb the data in and split it into
+	/// chunks of size WIDTH.
 	fn load_state(
 		columns: [Column<Advice>; WIDTH], region: &mut Region<'_, F>, round: usize,
 		prev_state: &[AssignedCell<F, F>],
@@ -79,10 +85,13 @@ where
 		Ok(state.map(|item| item.unwrap()))
 	}
 
+	/// Clones and appends all elements from a slice to the vec.
 	fn update(&mut self, inputs: &[AssignedCell<F, F>]) {
 		self.inputs.extend_from_slice(inputs);
 	}
 
+	/// Squeeze the data out by
+	/// permuting until no more chunks are left.
 	pub fn squeeze(
 		&self, config: &PoseidonSpongeConfig<WIDTH>, mut layouter: impl Layouter<F>,
 	) -> Result<AssignedCell<F, F>, Error> {
@@ -166,9 +175,7 @@ mod test {
 				inputs2: inputs2.map(|item| Value::known(item)),
 			}
 		}
-	}
 
-	impl PoseidonTester {
 		fn load_state(
 			config: &PoseidonSpongeConfig<5>, region: &mut Region<'_, Fr>, round: usize,
 			init_state: [Value<Fr>; 5],
