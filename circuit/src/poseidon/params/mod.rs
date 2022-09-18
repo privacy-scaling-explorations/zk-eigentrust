@@ -4,9 +4,9 @@ pub mod bn254_5x5;
 use halo2wrong::halo2::{arithmetic::FieldExt, plonk::Expression};
 
 pub trait RoundParams<F: FieldExt, const WIDTH: usize>: Sbox {
-	/// Returns integer 8 as usize.
+	/// Returns a number of full rounds.
 	fn full_rounds() -> usize;
-	/// Returns integer 60 as usize.
+	/// Returns a number of partial rounds.
 	fn partial_rounds() -> usize;
 
 	/// Returns total count size.
@@ -16,7 +16,7 @@ pub trait RoundParams<F: FieldExt, const WIDTH: usize>: Sbox {
 		(partial_rounds + full_rounds) * WIDTH
 	}
 
-	/// Returns enough length vector to track counting.
+	/// Returns round constants array to be used in permutation.
 	fn round_constants() -> Vec<F> {
 		let round_constants_raw = Self::round_constants_raw();
 		let round_constants: Vec<F> = round_constants_raw.iter().map(|x| hex_to_field(x)).collect();
@@ -33,15 +33,15 @@ pub trait RoundParams<F: FieldExt, const WIDTH: usize>: Sbox {
 		result
 	}
 
-	/// Returns fixed string array values as field elements.
+	/// Returns MDS matrix with the size of WIDTH x WIDTH.
 	fn mds() -> [[F; WIDTH]; WIDTH] {
 		let mds_raw = Self::mds_raw();
 		mds_raw.map(|row| row.map(|item| hex_to_field(item)))
 	}
 
-	/// Returns fixed string vector.
+	/// Returns round constants in its hex string form.
 	fn round_constants_raw() -> Vec<&'static str>;
-	/// Returns fixed string array.
+	/// Returns MDS martrix in its hex string form.
 	fn mds_raw() -> [[&'static str; WIDTH]; WIDTH];
 }
 
@@ -52,7 +52,7 @@ pub trait Sbox {
 	fn sbox_f<F: FieldExt>(f: F) -> F;
 }
 
-/// Returns congruent Field element for the given hex string.
+/// Returns congruent field element for the given hex string.
 pub fn hex_to_field<F: FieldExt>(s: &str) -> F {
 	let s = &s[2..];
 	let mut bytes = hex::decode(s).expect("Invalid params");

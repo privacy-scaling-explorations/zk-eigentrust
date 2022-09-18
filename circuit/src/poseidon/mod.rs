@@ -14,10 +14,15 @@ use std::marker::PhantomData;
 #[derive(Clone, Debug)]
 /// Configuration elements for the circuit are defined here.
 pub struct PoseidonConfig<const WIDTH: usize> {
+	/// Configures columns for the state.
 	state: [Column<Advice>; WIDTH],
+	/// Configures columns for the round constants.
 	round_constants: [Column<Fixed>; WIDTH],
+	/// Configures columns for the MDS matrix.
 	mds: [[Column<Fixed>; WIDTH]; WIDTH],
+	/// Configures a fixed boolean value for each row of the circuit.
 	full_round_selector: Selector,
+	/// Configures a fixed boolean value for each row of the circuit.
 	partial_round_selector: Selector,
 }
 
@@ -26,7 +31,9 @@ pub struct PoseidonChip<F: FieldExt, const WIDTH: usize, P>
 where
 	P: RoundParams<F, WIDTH>,
 {
+	/// Constructs a cell array for the inputs.
 	inputs: [AssignedCell<F, F>; WIDTH],
+	/// Constructs a phantom data for the parameters.
 	_params: PhantomData<P>,
 }
 

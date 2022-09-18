@@ -1,6 +1,7 @@
 use super::*;
 use halo2wrong::curves::bn256::Fr;
 
+/// Configures a structure.
 pub struct Params10x5Bn254;
 
 impl Sbox for Params10x5Bn254 {

@@ -7,7 +7,9 @@ pub struct PoseidonSponge<F: FieldExt, const WIDTH: usize, P>
 where
 	P: RoundParams<F, WIDTH>,
 {
+	/// Constructs a vector for the inputs.
 	inputs: Vec<F>,
+	/// Constructs a phantom data for the parameters.
 	_params: PhantomData<P>,
 }
 

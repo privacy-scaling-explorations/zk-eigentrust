@@ -12,8 +12,11 @@ use halo2wrong::halo2::{
 #[derive(Clone)]
 /// Configuration elements for the circuit are defined here.
 struct PoseidonSpongeConfig<const WIDTH: usize> {
+	/// Constructs poseidon circuit elements.
 	poseidon_config: PoseidonConfig<WIDTH>,
+	/// Configures columns for the state.
 	state: [Column<Advice>; WIDTH],
+	/// Configures a fixed boolean value for each row of the circuit.
 	absorb_selector: Selector,
 }
 
@@ -22,7 +25,9 @@ struct PoseidonSpongeChip<F: FieldExt, const WIDTH: usize, P>
 where
 	P: RoundParams<F, WIDTH>,
 {
+	/// Constructs a cell vector for the inputs.
 	inputs: Vec<AssignedCell<F, F>>,
+	/// Constructs a phantom data for the parameters.
 	_params: PhantomData<P>,
 }
 

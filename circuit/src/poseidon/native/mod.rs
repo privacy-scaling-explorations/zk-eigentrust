@@ -9,7 +9,9 @@ pub struct Poseidon<F: FieldExt, const WIDTH: usize, P>
 where
 	P: RoundParams<F, WIDTH>,
 {
+	/// Constructs an array for the inputs.
 	inputs: [F; WIDTH],
+	/// Constructs a phantom data for the parameters.
 	_params: PhantomData<P>,
 }
 
