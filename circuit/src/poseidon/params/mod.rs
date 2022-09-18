@@ -33,7 +33,7 @@ pub trait RoundParams<F: FieldExt, const WIDTH: usize>: Sbox {
 		result
 	}
 
-	/// Returns MDS matrix with the size of WIDTH x WIDTH.
+	/// Returns MDS matrix with a size of WIDTH x WIDTH.
 	fn mds() -> [[F; WIDTH]; WIDTH] {
 		let mds_raw = Self::mds_raw();
 		mds_raw.map(|row| row.map(|item| hex_to_field(item)))
