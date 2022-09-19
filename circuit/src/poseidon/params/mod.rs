@@ -46,9 +46,9 @@ pub trait RoundParams<F: FieldExt, const WIDTH: usize>: Sbox {
 }
 
 pub trait Sbox {
-	/// Returns exp^5.
+	/// Returns the S-box exponentiation for the expression.
 	fn sbox_expr<F: FieldExt>(exp: Expression<F>) -> Expression<F>;
-	/// Returns f^5.
+	/// Returns the S-box exponentiation for the field element.
 	fn sbox_f<F: FieldExt>(f: F) -> F;
 }
 
