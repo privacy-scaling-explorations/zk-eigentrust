@@ -10,17 +10,24 @@ use halo2wrong::halo2::{
 };
 
 #[derive(Clone)]
+/// Configuration elements for the circuit are defined here.
 struct PoseidonSpongeConfig<const WIDTH: usize> {
+	/// Constructs poseidon circuit elements.
 	poseidon_config: PoseidonConfig<WIDTH>,
+	/// Configures columns for the state.
 	state: [Column<Advice>; WIDTH],
+	/// Configures a fixed boolean value for each row of the circuit.
 	absorb_selector: Selector,
 }
 
+/// Constructs a chip structure for the circuit.
 struct PoseidonSpongeChip<F: FieldExt, const WIDTH: usize, P>
 where
 	P: RoundParams<F, WIDTH>,
 {
+	/// Constructs a cell vector for the inputs.
 	inputs: Vec<AssignedCell<F, F>>,
+	/// Constructs a phantom data for the parameters.
 	_params: PhantomData<P>,
 }
 
@@ -28,10 +35,12 @@ impl<F: FieldExt, const WIDTH: usize, P> PoseidonSpongeChip<F, WIDTH, P>
 where
 	P: RoundParams<F, WIDTH>,
 {
+	/// Create a new chip.
 	fn new() -> Self {
 		Self { inputs: Vec::new(), _params: PhantomData }
 	}
 
+	/// Make the circuit config.
 	fn configure(meta: &mut ConstraintSystem<F>) -> PoseidonSpongeConfig<WIDTH> {
 		let poseidon_config = PoseidonChip::<_, WIDTH, P>::configure(meta);
 		let state = [(); WIDTH].map(|_| {
@@ -59,6 +68,8 @@ where
 		PoseidonSpongeConfig { poseidon_config, state, absorb_selector }
 	}
 
+	/// Absorb the data in and split it into
+	/// chunks of size WIDTH.
 	fn load_state(
 		columns: [Column<Advice>; WIDTH], region: &mut Region<'_, F>, round: usize,
 		prev_state: &[AssignedCell<F, F>],
@@ -79,10 +90,13 @@ where
 		Ok(state.map(|item| item.unwrap()))
 	}
 
+	/// Clones and appends all elements from a slice to the vec.
 	fn update(&mut self, inputs: &[AssignedCell<F, F>]) {
 		self.inputs.extend_from_slice(inputs);
 	}
 
+	/// Squeeze the data out by
+	/// permuting until no more chunks are left.
 	pub fn squeeze(
 		&self, config: &PoseidonSpongeConfig<WIDTH>, mut layouter: impl Layouter<F>,
 	) -> Result<AssignedCell<F, F>, Error> {
@@ -166,9 +180,7 @@ mod test {
 				inputs2: inputs2.map(|item| Value::known(item)),
 			}
 		}
-	}
 
-	impl PoseidonTester {
 		fn load_state(
 			config: &PoseidonSpongeConfig<5>, region: &mut Region<'_, Fr>, round: usize,
 			init_state: [Value<Fr>; 5],
@@ -233,6 +245,7 @@ mod test {
 
 	#[test]
 	fn should_match_native_sponge() {
+		// Testing circuit and native sponge equality.
 		let inputs1: [Fr; 5] = [
 			"0x0000000000000000000000000000000000000000000000000000000000000000",
 			"0x0000000000000000000000000000000000000000000000000000000000000001",

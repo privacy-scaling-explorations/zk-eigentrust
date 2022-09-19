@@ -12,19 +12,28 @@ use params::RoundParams;
 use std::marker::PhantomData;
 
 #[derive(Clone, Debug)]
+/// Configuration elements for the circuit are defined here.
 pub struct PoseidonConfig<const WIDTH: usize> {
+	/// Configures columns for the state.
 	state: [Column<Advice>; WIDTH],
+	/// Configures columns for the round constants.
 	round_constants: [Column<Fixed>; WIDTH],
+	/// Configures columns for the MDS matrix.
 	mds: [[Column<Fixed>; WIDTH]; WIDTH],
+	/// Configures a fixed boolean value for each row of the circuit.
 	full_round_selector: Selector,
+	/// Configures a fixed boolean value for each row of the circuit.
 	partial_round_selector: Selector,
 }
 
+/// Constructs a chip structure for the circuit.
 pub struct PoseidonChip<F: FieldExt, const WIDTH: usize, P>
 where
 	P: RoundParams<F, WIDTH>,
 {
+	/// Constructs a cell array for the inputs.
 	inputs: [AssignedCell<F, F>; WIDTH],
+	/// Constructs a phantom data for the parameters.
 	_params: PhantomData<P>,
 }
 
@@ -32,10 +41,12 @@ impl<F: FieldExt, const WIDTH: usize, P> PoseidonChip<F, WIDTH, P>
 where
 	P: RoundParams<F, WIDTH>,
 {
+	/// Create a new chip.
 	pub fn new(inputs: [AssignedCell<F, F>; WIDTH]) -> Self {
 		PoseidonChip { inputs, _params: PhantomData }
 	}
 
+	/// Copy given state variables to the circuit.
 	fn copy_state(
 		config: &PoseidonConfig<WIDTH>, region: &mut Region<'_, F>, round: usize,
 		prev_state: &[AssignedCell<F, F>; WIDTH],
@@ -48,6 +59,7 @@ where
 		Ok(state.map(|item| item.unwrap()))
 	}
 
+	/// Assign relevant constants to the circuit for the given round.
 	fn load_round_constants(
 		config: &PoseidonConfig<WIDTH>, region: &mut Region<'_, F>, round: usize,
 		round_constants: &[F],
@@ -65,6 +77,7 @@ where
 		Ok(round_values)
 	}
 
+	/// Assign MDS variables to the circuit.
 	fn load_mds(
 		config: &PoseidonConfig<WIDTH>, region: &mut Region<'_, F>, round: usize,
 		mds: &[[F; WIDTH]; WIDTH],
@@ -80,6 +93,8 @@ where
 		Ok(mds_values)
 	}
 
+	/// Add round constants to the state values
+	/// for the AddRoundConstants operation.
 	fn apply_round_constants(
 		state_cells: &[AssignedCell<F, F>; WIDTH], round_const_values: &[Value<F>; WIDTH],
 	) -> [Value<F>; WIDTH] {
@@ -93,11 +108,11 @@ where
 		next_state
 	}
 
+	/// Compute MDS matrix for MixLayer operation.
 	fn apply_mds(
 		next_state: &[Value<F>; WIDTH], mds_values: &[[Value<F>; WIDTH]; WIDTH],
 	) -> [Value<F>; WIDTH] {
 		let mut new_state = [Value::known(F::zero()); WIDTH];
-		// Compute mds matrix
 		for i in 0..WIDTH {
 			for j in 0..WIDTH {
 				let mds_ij = &mds_values[i][j];
@@ -108,12 +123,13 @@ where
 		new_state
 	}
 
+	/// Add round constants expression to the state values
+	/// expression for the AddRoundConstants operation in the circuit.
 	fn apply_round_constants_expr(
 		v_cells: &mut VirtualCells<F>, state: &[Column<Advice>; WIDTH],
 		round_constants: &[Column<Fixed>; WIDTH],
 	) -> [Expression<F>; WIDTH] {
 		let mut exprs = [(); WIDTH].map(|_| Expression::Constant(F::zero()));
-		// Add round constants
 		for i in 0..WIDTH {
 			let curr_state = v_cells.query_advice(state[i], Rotation::cur());
 			let round_constant = v_cells.query_fixed(round_constants[i], Rotation::cur());
@@ -122,6 +138,7 @@ where
 		exprs
 	}
 
+	/// Compute MDS matrix for MixLayer operation in the circuit.
 	fn apply_mds_expr(
 		v_cells: &mut VirtualCells<F>, exprs: &[Expression<F>; WIDTH],
 		mds: &[[Column<Fixed>; WIDTH]; WIDTH],
@@ -137,6 +154,7 @@ where
 		new_exprs
 	}
 
+	/// Configures full_round.
 	fn full_round(
 		config: &PoseidonConfig<WIDTH>, region: &mut Region<'_, F>, num_rounds: usize,
 		round_constants: &[F], mds: &[[F; WIDTH]; WIDTH], prev_state: &[AssignedCell<F, F>; WIDTH],
@@ -152,11 +170,17 @@ where
 			// Assign mds matrix
 			let mds_values = Self::load_mds(config, region, round, mds)?;
 
+			// 1. step for the TRF.
+			// AddRoundConstants step.
 			let mut next_state = Self::apply_round_constants(&state_cells, &round_const_values);
 			for i in 0..WIDTH {
+				// 2. step for the TRF.
+				// SubWords step, denoted by S-box.
 				next_state[i] = next_state[i].map(|s| P::sbox_f(s));
 			}
 
+			// 3. step for the TRF.
+			// MixLayer step.
 			next_state = Self::apply_mds(&next_state, &mds_values);
 
 			// Assign next state
@@ -172,6 +196,7 @@ where
 		Ok(state_cells)
 	}
 
+	/// Configures partial_round.
 	fn partial_round(
 		config: &PoseidonConfig<WIDTH>, region: &mut Region<'_, F>, num_rounds: usize,
 		round_constants: &[F], mds: &[[F; WIDTH]; WIDTH], prev_state: &[AssignedCell<F, F>; WIDTH],
@@ -186,9 +211,15 @@ where
 			// Assign mds matrix
 			let mds_cells = Self::load_mds(config, region, round, mds)?;
 
+			// 1. step for the TRF.
+			// AddRoundConstants step.
 			let mut next_state = Self::apply_round_constants(&state_cells, &round_const_cells);
+			// 2. step for the TRF.
+			// SubWords step, denoted by S-box.
 			next_state[0] = next_state[0].map(|x| P::sbox_f(x));
 
+			// 3. step for the TRF.
+			// MixLayer step.
 			next_state = Self::apply_mds(&next_state, &mds_cells);
 
 			// Assign next state
@@ -209,6 +240,7 @@ impl<F: FieldExt, const WIDTH: usize, P> PoseidonChip<F, WIDTH, P>
 where
 	P: RoundParams<F, WIDTH>,
 {
+	/// Make the circuit config.
 	pub fn configure(meta: &mut ConstraintSystem<F>) -> PoseidonConfig<WIDTH> {
 		let state = [(); WIDTH].map(|_| meta.advice_column());
 		let round_constants = [(); WIDTH].map(|_| meta.fixed_column());
@@ -221,10 +253,17 @@ where
 		mds.map(|vec| vec.map(|c| meta.enable_equality(c)));
 
 		meta.create_gate("full_round", |v_cells| {
+			// 1. step for the TRF.
+			// AddRoundConstants step.
 			let mut exprs = Self::apply_round_constants_expr(v_cells, &state, &round_constants);
+			// Applying S-boxes for the full round.
 			for i in 0..WIDTH {
+				// 2. step for the TRF.
+				// SubWords step, denoted by S-box.
 				exprs[i] = P::sbox_expr(exprs[i].clone());
 			}
+			// 3. step for the TRF.
+			// MixLayer step.
 			exprs = Self::apply_mds_expr(v_cells, &exprs, &mds);
 
 			let s_cells = v_cells.query_selector(full_round_selector);
@@ -237,9 +276,16 @@ where
 		});
 
 		meta.create_gate("partial_round", |v_cells| {
+			// 1. step for the TRF.
+			// AddRoundConstants step.
 			let mut exprs = Self::apply_round_constants_expr(v_cells, &state, &round_constants);
+			// Applying single S-box for the partial round.
+			// 2. step for the TRF.
+			// SubWords step, denoted by S-box.
 			exprs[0] = P::sbox_expr(exprs[0].clone());
 
+			// 3. step for the TRF.
+			// MixLayer step.
 			exprs = Self::apply_mds_expr(v_cells, &exprs, &mds);
 
 			let s_cells = v_cells.query_selector(partial_round_selector);
@@ -255,6 +301,7 @@ where
 		PoseidonConfig { state, round_constants, mds, full_round_selector, partial_round_selector }
 	}
 
+	/// Synthesize the circuit.
 	pub fn synthesize(
 		&self, config: PoseidonConfig<WIDTH>, mut layouter: impl Layouter<F>,
 	) -> Result<[AssignedCell<F, F>; WIDTH], Error> {
@@ -273,6 +320,12 @@ where
 
 		let third_round_constants = &round_constants[second_round_end..total_count];
 
+		// The Hades Design Strategy for Hashing.
+		// Mixing rounds with half-full S-box layers and
+		// rounds with partial S-box layers.
+		// More detailed explanation for
+		// The Round Function (TRF) and Hades:
+		// https://eprint.iacr.org/2019/458.pdf#page=5
 		let state1 = layouter.assign_region(
 			|| "full_rounds_1",
 			|mut region: Region<'_, F>| {
@@ -394,6 +447,7 @@ mod test {
 
 	#[test]
 	fn test_poseidon_x5_5() {
+		// Testing 5x5 input.
 		let inputs: [Value<Fr>; 5] = [
 			"0x0000000000000000000000000000000000000000000000000000000000000000",
 			"0x0000000000000000000000000000000000000000000000000000000000000001",
