@@ -27,32 +27,53 @@ use halo2wrong::{
 use native::ed_on_bn254::{B8, SUBORDER};
 
 #[derive(Clone)]
+/// Configuration elements for the circuit are defined here.
 struct EddsaConfig {
+	/// Constructs scalar mul circuit elements.
 	scalar_mul_s: ScalarMulConfig,
 	scalar_mul_mh: ScalarMulConfig,
+	/// Constructs lt_eq circuit elements.
 	lt_eq: LessEqualConfig,
+	/// Constructs point add circuit elements.
 	point_add: PointAddConfig,
+	/// Constructs into_affine circuit elements.
 	into_affine: IntoAffineConfig,
+	/// Constructs poseidon circuit elements.
 	poseidon: PoseidonConfig<5>,
+	/// Constructs is_eq circuit elements.
 	is_eq: IsEqualConfig,
+	/// Constructs and circuit elements.
 	and: AndConfig,
+	/// Configures a column for the temp.
 	temp: Column<Advice>,
 }
 
+/// Constructs individual cells for the configuration elements.
 struct EddsaChip {
+	/// Assigns a cell for the big_r_x.
 	big_r_x: AssignedCell<Fr, Fr>,
+	/// Assigns a cell for the big_r_y.
 	big_r_y: AssignedCell<Fr, Fr>,
+	/// Assigns a cell for the s.
 	s: AssignedCell<Fr, Fr>,
+	/// Assigns a cell for the pk_x.
 	pk_x: AssignedCell<Fr, Fr>,
+	/// Assigns a cell for the pk_y.
 	pk_y: AssignedCell<Fr, Fr>,
+	/// Assigns a cell for the m.
 	m: AssignedCell<Fr, Fr>,
+	/// Constructs an array for the s_bits.
 	s_bits: [Fr; 252],
+	/// Constructs an array for the suborder_bits.
 	suborder_bits: [Fr; 252],
+	/// Constructs an array for the s_suborder_diff_bits.
 	s_suborder_diff_bits: [Fr; 253],
+	/// Constructs an array for the m_hash_bits.
 	m_hash_bits: [Fr; 256],
 }
 
 impl EddsaChip {
+	/// Create a new chip.
 	fn new(
 		big_r_x: AssignedCell<Fr, Fr>, big_r_y: AssignedCell<Fr, Fr>, s: AssignedCell<Fr, Fr>,
 		pk_x: AssignedCell<Fr, Fr>, pk_y: AssignedCell<Fr, Fr>, m: AssignedCell<Fr, Fr>,
@@ -72,9 +93,8 @@ impl EddsaChip {
 			m_hash_bits,
 		}
 	}
-}
 
-impl EddsaChip {
+	/// Make the circuit config.
 	pub fn configure(meta: &mut ConstraintSystem<Fr>) -> EddsaConfig {
 		let scalar_mul_s = ScalarMulChip::<252>::configure(meta);
 		let scalar_mul_mh = ScalarMulChip::<256>::configure(meta);
@@ -214,6 +234,7 @@ mod test {
 		},
 	};
 	use rand::thread_rng;
+	type Hasher = Poseidon<Fr, 5, Params5x5Bn254>;
 
 	#[derive(Clone)]
 	struct TestConfig {
@@ -313,6 +334,7 @@ mod test {
 
 	#[test]
 	fn test_eddsa() {
+		// Testing a valid case.
 		let mut rng = thread_rng();
 
 		let sk = SecretKey::random(&mut rng);
@@ -325,6 +347,84 @@ mod test {
 		let k = 9;
 		let prover = MockProver::run(k, &circuit, vec![]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[test]
+	fn test_eddsa_invalid_big_r() {
+		// Testing invalid R.
+		let mut rng = thread_rng();
+
+		let sk = SecretKey::random(&mut rng);
+		let pk = sk.public();
+
+		let inputs = [Fr::zero(), Fr::one(), Fr::one(), Fr::zero(), Fr::zero()];
+		let different_r = Hasher::new(inputs).permute()[0];
+
+		let m = Fr::from_str_vartime("123456789012345678901234567890").unwrap();
+		let mut sig = sign(&sk, &pk, m);
+		sig.big_r = B8.mul_scalar(&different_r.to_bytes()).affine();
+		let circuit = TestCircuit::new(sig.big_r.x, sig.big_r.y, sig.s, pk.0.x, pk.0.y, m);
+
+		let k = 9;
+		let prover = MockProver::run(k, &circuit, vec![]).unwrap();
+		//assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[test]
+	fn test_eddsa_invalid_s() {
+		// Testing invalid s.
+		let mut rng = thread_rng();
+
+		let sk = SecretKey::random(&mut rng);
+		let pk = sk.public();
+
+		let m = Fr::from_str_vartime("123456789012345678901234567890").unwrap();
+		let mut sig = sign(&sk, &pk, m);
+		sig.s = sig.s.add(&Fr::from(1));
+		let circuit = TestCircuit::new(sig.big_r.x, sig.big_r.y, sig.s, pk.0.x, pk.0.y, m);
+
+		let k = 9;
+		let prover = MockProver::run(k, &circuit, vec![]).unwrap();
+		//assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[test]
+	fn test_eddsa_invalid_pk() {
+		// Testing invalid public key.
+		let mut rng = thread_rng();
+
+		let sk1 = SecretKey::random(&mut rng);
+		let pk1 = sk1.public();
+
+		let sk2 = SecretKey::random(&mut rng);
+		let pk2 = sk2.public();
+
+		let m = Fr::from_str_vartime("123456789012345678901234567890").unwrap();
+		let sig = sign(&sk1, &pk1, m);
+		let circuit = TestCircuit::new(sig.big_r.x, sig.big_r.y, sig.s, pk2.0.x, pk2.0.y, m);
+		let k = 9;
+		let prover = MockProver::run(k, &circuit, vec![]).unwrap();
+		//assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[test]
+	fn test_eddsa_invalid_message() {
+		// Testing invalid message.
+		let mut rng = thread_rng();
+
+		let sk = SecretKey::random(&mut rng);
+		let pk = sk.public();
+
+		let m1 = Fr::from_str_vartime("123456789012345678901234567890").unwrap();
+		let m2 = Fr::from_str_vartime("123456789012345678901234567890123123").unwrap();
+
+		let sig = sign(&sk, &pk, m1);
+		let circuit = TestCircuit::new(sig.big_r.x, sig.big_r.y, sig.s, pk.0.x, pk.0.y, m2);
+
+		let k = 9;
+		let prover = MockProver::run(k, &circuit, vec![]).unwrap();
+
+		//assert_eq!(prover.unwrap().verify(), Ok(()));
 	}
 
 	#[test]
