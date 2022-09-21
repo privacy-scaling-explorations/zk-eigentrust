@@ -81,16 +81,8 @@ impl EddsaChip {
 		m_hash_bits: [Fr; 256],
 	) -> Self {
 		Self {
-			big_r_x,
-			big_r_y,
-			s,
-			pk_x,
-			pk_y,
-			m,
-			s_bits,
-			suborder_bits,
-			s_suborder_diff_bits,
-			m_hash_bits,
+			big_r_x, big_r_y, s, pk_x, pk_y, m, s_bits,
+			suborder_bits, s_suborder_diff_bits, m_hash_bits,
 		}
 	}
 
@@ -108,16 +100,8 @@ impl EddsaChip {
 
 		meta.enable_equality(temp);
 
-		EddsaConfig {
-			scalar_mul_s,
-			scalar_mul_mh,
-			lt_eq,
-			point_add,
-			into_affine,
-			poseidon,
-			is_eq,
-			and,
-			temp,
+		EddsaConfig { scalar_mul_s, scalar_mul_mh, lt_eq, point_add,
+			into_affine, poseidon, is_eq, and, temp,
 		}
 	}
 
@@ -138,6 +122,7 @@ impl EddsaChip {
 			},
 		)?;
 
+		// s cannot be higher than the suborder.
 		let lt_eq = LessEqualChip::new(
 			self.s.clone(),
 			suborder,
@@ -147,9 +132,12 @@ impl EddsaChip {
 		);
 		let is_lt_eq = lt_eq.synthesize(config.lt_eq, layouter.namespace(|| "s_lt_eq_suborder"))?;
 
+		// Cl = s * G
 		let scalar_mul1 = ScalarMulChip::new(b8_x, b8_y, one.clone(), self.s.clone(), self.s_bits);
 		let cl = scalar_mul1.synthesize(config.scalar_mul_s, layouter.namespace(|| "b_8 * s"))?;
 
+		// H(R || PK || M)
+		// Hashing R, public key and message composition.
 		let m_hash_input = [
 			self.big_r_x.clone(),
 			self.big_r_y.clone(),
@@ -160,6 +148,8 @@ impl EddsaChip {
 		let hasher = PoseidonChip::<_, 5, Params5x5Bn254>::new(m_hash_input);
 		let m_hash_res = hasher.synthesize(config.poseidon, layouter.namespace(|| "m_hash"))?;
 
+		// H(R || PK || M) * PK
+		// Scalar multiplication for the public key and hash.
 		let scalar_mul2 = ScalarMulChip::new(
 			self.pk_x.clone(),
 			self.pk_y.clone(),
@@ -170,6 +160,7 @@ impl EddsaChip {
 		let pk_h =
 			scalar_mul2.synthesize(config.scalar_mul_mh, layouter.namespace(|| "pk * m_hash"))?;
 
+		// Cr = R + H(R || PK || M) * PK
 		let point_add = PointAddChip::new(
 			self.big_r_x.clone(),
 			self.big_r_y.clone(),
@@ -180,6 +171,7 @@ impl EddsaChip {
 		);
 		let cr = point_add.synthesize(config.point_add, layouter.namespace(|| "big_r + pk_h"))?;
 
+		// Converts two projective space points to their affine representation.
 		let into_affine1 = IntoAffineChip::new(cl.0, cl.1, cl.2);
 		let into_affine2 = IntoAffineChip::new(cr.0, cr.1, cr.2);
 
@@ -190,6 +182,7 @@ impl EddsaChip {
 		let cr_affine =
 			into_affine2.synthesize(config.into_affine, layouter.namespace(|| "cr_affine"))?;
 
+		// Check if Clx == Crx and Cly == Cry.
 		let is_eq1 = IsEqualChip::new(cl_affine.0, cr_affine.0);
 		let is_eq2 = IsEqualChip::new(cl_affine.1, cr_affine.1);
 
@@ -197,14 +190,22 @@ impl EddsaChip {
 			is_eq1.synthesize(config.is_eq.clone(), layouter.namespace(|| "point_x_equal"))?;
 		let y_eq = is_eq2.synthesize(config.is_eq, layouter.namespace(|| "point_y_equal"))?;
 
+		// Use And gate between x and y equality.
+		// If equal returns 1, else 0.
 		let and = AndChip::new(x_eq, y_eq);
 		let point_eq = and.synthesize(config.and, layouter.namespace(|| "point_eq"))?;
 
+		// Enforce equality.
+		// If either one of them returns 0, the circuit will give an error.
 		layouter.assign_region(
 			|| "enforce_equal",
 			|mut region: Region<'_, Fr>| {
-				region.constrain_constant(is_lt_eq.cell(), Fr::one())?;
-				region.constrain_constant(point_eq.cell(), Fr::one())?;
+				let lt_eq_copied =
+					is_lt_eq.copy_advice(|| "lt_eq_temp", &mut region, config.temp, 0)?;
+				let point_eq_copied =
+					point_eq.copy_advice(|| "point_eq_temp", &mut region, config.temp, 1)?;
+				region.constrain_constant(lt_eq_copied.cell(), Fr::one())?;
+				region.constrain_constant(point_eq_copied.cell(), Fr::one())?;
 				Ok(())
 			},
 		)?;
@@ -367,7 +368,7 @@ mod test {
 
 		let k = 9;
 		let prover = MockProver::run(k, &circuit, vec![]).unwrap();
-		//assert_eq!(prover.verify(), Ok(()));
+		assert!(prover.verify().is_err());
 	}
 
 	#[test]
@@ -385,7 +386,7 @@ mod test {
 
 		let k = 9;
 		let prover = MockProver::run(k, &circuit, vec![]).unwrap();
-		//assert_eq!(prover.verify(), Ok(()));
+		assert!(prover.verify().is_err());
 	}
 
 	#[test]
@@ -404,7 +405,7 @@ mod test {
 		let circuit = TestCircuit::new(sig.big_r.x, sig.big_r.y, sig.s, pk2.0.x, pk2.0.y, m);
 		let k = 9;
 		let prover = MockProver::run(k, &circuit, vec![]).unwrap();
-		//assert_eq!(prover.verify(), Ok(()));
+		assert!(prover.verify().is_err());
 	}
 
 	#[test]
@@ -424,7 +425,7 @@ mod test {
 		let k = 9;
 		let prover = MockProver::run(k, &circuit, vec![]).unwrap();
 
-		//assert_eq!(prover.unwrap().verify(), Ok(()));
+		assert!(prover.verify().is_err());
 	}
 
 	#[test]

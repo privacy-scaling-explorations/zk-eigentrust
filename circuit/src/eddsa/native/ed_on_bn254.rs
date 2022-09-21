@@ -33,13 +33,19 @@ pub const G_Y: Fr =
 pub const G: Point = Point { x: G_X, y: G_Y };
 
 #[derive(Clone, Copy, Debug)]
+/// Constructs PointProjective objects.
 pub struct PointProjective {
+	/// Constructs a field element for the x.
 	pub x: Fr,
+	/// Constructs a field element for the y.
 	pub y: Fr,
+	/// Constructs a field element for the z.
 	pub z: Fr,
 }
 
 impl PointProjective {
+	/// Returns affine representation from the given projective space
+	/// representation.
 	pub fn affine(&self) -> Point {
 		if bool::from(self.z.is_zero()) {
 			return Point { x: Fr::zero(), y: Fr::zero() };
@@ -52,6 +58,7 @@ impl PointProjective {
 		Point { x, y }
 	}
 
+	/// DOUBLE operation of point `self`
 	pub fn double(&self) -> Self {
 		// dbl-2008-bbjlp https://hyperelliptic.org/EFD/g1p/auto-twisted-projective.html#doubling-dbl-2008-bbjlp
 		let (x3, y3, z3) = double(self.x, self.y, self.z);
@@ -59,6 +66,7 @@ impl PointProjective {
 		PointProjective { x: x3, y: y3, z: z3 }
 	}
 
+	/// ADD operation between points `self` and `q`
 	pub fn add(&self, q: &Self) -> Self {
 		// add-2008-bbjlp https://hyperelliptic.org/EFD/g1p/auto-twisted-projective.html#addition-add-2008-bbjlp
 		let (x3, y3, z3) = add(self.x, self.y, self.z, q.x, q.y, q.z);
@@ -68,19 +76,26 @@ impl PointProjective {
 }
 
 #[derive(Clone, Debug)]
+/// Configures Point objects.
 pub struct Point {
+	/// Constructs a field element for the x.
 	pub x: Fr,
+	/// Constructs a field element for the y.
 	pub y: Fr,
 }
 
 impl Point {
+	/// Returns projective space representation from the given affine
+	/// representation.
 	pub fn projective(&self) -> PointProjective {
 		PointProjective { x: self.x, y: self.y, z: Fr::one() }
 	}
 
+	/// Returns scalar multiplication of the element.
 	pub fn mul_scalar(&self, b: &[u8]) -> PointProjective {
 		let mut r: PointProjective = PointProjective { x: Fr::zero(), y: Fr::one(), z: Fr::one() };
 		let mut exp: PointProjective = self.projective();
+		// Double and add operation.
 		for i in 0..b.len() * 8 {
 			if test_bit(b, i) {
 				r = r.add(&exp);
@@ -90,11 +105,13 @@ impl Point {
 		r
 	}
 
+	/// Returns true if the given point is equal to the element. Else, false.
 	pub fn equals(&self, p: Point) -> bool {
 		self.x == p.x && self.y == p.y
 	}
 }
 
+/// Performs bitwise AND to test bits.
 pub fn test_bit(b: &[u8], i: usize) -> bool {
 	b[i / 8] & (1 << (i % 8)) != 0
 }
@@ -106,6 +123,7 @@ mod tests {
 
 	#[test]
 	fn test_add_same_point() {
+		// Testing addition operation with identical points.
 		let p: PointProjective = PointProjective {
 			x: Fr::from_str_vartime(
 				"17777552123799933955779906779655732241715742912184938656739573121738514868268",
@@ -149,6 +167,7 @@ mod tests {
 
 	#[test]
 	fn test_add_different_points() {
+		// Testing addition operation with different points.
 		let p: PointProjective = PointProjective {
 			x: Fr::from_str_vartime(
 				"17777552123799933955779906779655732241715742912184938656739573121738514868268",
@@ -192,6 +211,7 @@ mod tests {
 
 	#[test]
 	fn test_mul_scalar() {
+		// Testing scalar multiplication operation.
 		let p: Point = Point {
 			x: Fr::from_str_vartime(
 				"17777552123799933955779906779655732241715742912184938656739573121738514868268",
