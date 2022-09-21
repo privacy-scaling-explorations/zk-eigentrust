@@ -81,8 +81,16 @@ impl EddsaChip {
 		m_hash_bits: [Fr; 256],
 	) -> Self {
 		Self {
-			big_r_x, big_r_y, s, pk_x, pk_y, m, s_bits,
-			suborder_bits, s_suborder_diff_bits, m_hash_bits,
+			big_r_x,
+			big_r_y,
+			s,
+			pk_x,
+			pk_y,
+			m,
+			s_bits,
+			suborder_bits,
+			s_suborder_diff_bits,
+			m_hash_bits,
 		}
 	}
 
@@ -100,8 +108,16 @@ impl EddsaChip {
 
 		meta.enable_equality(temp);
 
-		EddsaConfig { scalar_mul_s, scalar_mul_mh, lt_eq, point_add,
-			into_affine, poseidon, is_eq, and, temp,
+		EddsaConfig {
+			scalar_mul_s,
+			scalar_mul_mh,
+			lt_eq,
+			point_add,
+			into_affine,
+			poseidon,
+			is_eq,
+			and,
+			temp,
 		}
 	}
 
