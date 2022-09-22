@@ -64,11 +64,11 @@ impl<F: FieldExt, const N: usize> FixedSetChip<F, N> {
 			let s_exp = v_cells.query_selector(s);
 
 			vec![
-				// If difference == 0, that will make products equal to 0 in the circuit.
+				// If the difference is equal to 0, that will make the next product equal to 0.
 				// Example:
 				// product_exp = 1
 				// diff_exp = 0
-				// Check the constraint 1 * 0 == next_product_exp
+				// Check the constraint (1 * 0 == next_product_exp)
 				// That makes next_product_exp = 0
 				// => (1 * 0) - 0 == 0
 				s_exp.clone() * (product_exp * diff_exp.clone() - next_product_exp),
@@ -109,8 +109,8 @@ impl<F: FieldExt, const N: usize> FixedSetChip<F, N> {
 
 					// Calculating difference between given target and item from the set.
 					let diff = self.target.value().cloned() - item_value;
-					// If difference is 0, that means target is in the set and next product will
-					// become 0.
+					// If the difference is equal to 0, that means the target is in the set and next
+					// product will become 0.
 					let next_product = assigned_product.value().cloned() * diff;
 
 					region.assign_advice(|| format!("diff_{}", i), config.diffs, i, || diff)?;
