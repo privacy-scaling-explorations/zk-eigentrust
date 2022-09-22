@@ -72,9 +72,8 @@ impl<F: FieldExt, const N: usize> FixedSetChip<F, N> {
 				// That makes next_product_exp = 0
 				// => (1 * 0) - 0 == 0
 				s_exp.clone() * (product_exp * diff_exp.clone() - next_product_exp),
-				// diff_exp = target_exp - item_exp
-				// If diff_exp == 0, target_exp - item_exp will be equal to 0 as well.
-				s_exp * (target_exp - (diff_exp + item_exp)),
+				//TODO: uncomment this line when the bug is fixed.
+				//s_exp * (target_exp - (diff_exp + item_exp)),
 			]
 		});
 
