@@ -7,7 +7,7 @@ use halo2wrong::{
 	},
 };
 
-// ADD operation between points `r` and `e`
+/// ADD operation between points `r` and `e`
 // add-2008-bbjlp https://hyperelliptic.org/EFD/g1p/auto-twisted-projective.html#addition-add-2008-bbjlp
 pub fn add(r_x: Fr, r_y: Fr, r_z: Fr, e_x: Fr, e_y: Fr, e_z: Fr) -> (Fr, Fr, Fr) {
 	// A = Z1*Z2
@@ -34,6 +34,7 @@ pub fn add(r_x: Fr, r_y: Fr, r_z: Fr, e_x: Fr, e_y: Fr, e_z: Fr) -> (Fr, Fr, Fr)
 	(x3, y3, z3)
 }
 
+/// ADD operation between expressions `r` and `e`
 pub fn add_exp(
 	r_x: Expression<Fr>, r_y: Expression<Fr>, r_z: Expression<Fr>, e_x: Expression<Fr>,
 	e_y: Expression<Fr>, e_z: Expression<Fr>,
@@ -65,6 +66,7 @@ pub fn add_exp(
 	(r_x3, r_y3, r_z3)
 }
 
+/// ADD operation between assigned values `r` and `e`
 pub fn add_value(
 	r_x: Value<Assigned<Fr>>, r_y: Value<Assigned<Fr>>, r_z: Value<Assigned<Fr>>,
 	e_x: Value<Assigned<Fr>>, e_y: Value<Assigned<Fr>>, e_z: Value<Assigned<Fr>>,
@@ -100,7 +102,7 @@ pub fn add_value(
 	(r_x3, r_y3, r_z3)
 }
 
-// DOUBLE operation of point `e`
+/// DOUBLE operation of point `e`
 // dbl-2008-bbjlp https://hyperelliptic.org/EFD/g1p/auto-twisted-projective.html#doubling-dbl-2008-bbjlp
 pub fn double(e_x: Fr, e_y: Fr, e_z: Fr) -> (Fr, Fr, Fr) {
 	// B = (X1+Y1)^2
@@ -127,6 +129,7 @@ pub fn double(e_x: Fr, e_y: Fr, e_z: Fr) -> (Fr, Fr, Fr) {
 	(x3, y3, z3)
 }
 
+/// DOUBLE operation of expression `e`
 pub fn double_exp(
 	e_x: Expression<Fr>, e_y: Expression<Fr>, e_z: Expression<Fr>,
 ) -> (Expression<Fr>, Expression<Fr>, Expression<Fr>) {
@@ -155,6 +158,7 @@ pub fn double_exp(
 	(e_x3, e_y3, e_z3)
 }
 
+/// DOUBLE operation of assigned value `e`
 pub fn double_value(
 	e_x: Value<Assigned<Fr>>, e_y: Value<Assigned<Fr>>, e_z: Value<Assigned<Fr>>,
 ) -> (

@@ -8,27 +8,34 @@ use halo2wrong::{
 };
 
 #[derive(Clone)]
+/// Configuration elements for the circuit are defined here.
 pub struct IntoAffineConfig {
+	/// Configures columns for the advice.
 	advice: [Column<Advice>; 3],
+	/// Configures a fixed boolean value for each row of the circuit.
 	selector: Selector,
 }
 
 #[derive(Clone)]
+/// Constructs individual cells for the configuration elements.
 pub struct IntoAffineChip {
+	/// Assigns a cell for the r_x.
 	r_x: AssignedCell<Fr, Fr>,
+	/// Assigns a cell for the r_y.
 	r_y: AssignedCell<Fr, Fr>,
+	/// Assigns a cell for the r_z.
 	r_z: AssignedCell<Fr, Fr>,
 }
 
 impl IntoAffineChip {
+	/// Create a new chip.
 	pub fn new(
 		r_x: AssignedCell<Fr, Fr>, r_y: AssignedCell<Fr, Fr>, r_z: AssignedCell<Fr, Fr>,
 	) -> Self {
 		Self { r_x, r_y, r_z }
 	}
-}
 
-impl IntoAffineChip {
+	/// Make the circuit config.
 	pub fn configure(meta: &mut ConstraintSystem<Fr>) -> IntoAffineConfig {
 		let advice = [meta.advice_column(), meta.advice_column(), meta.advice_column()];
 		let s = meta.selector();
@@ -51,6 +58,7 @@ impl IntoAffineChip {
 			let affine_y = r_y_exp * r_z_invert_exp.clone();
 
 			vec![
+				// Ensure the affine calculation properly calculated.
 				s_exp.clone() * (r_x_affine_exp - affine_x),
 				s_exp.clone() * (r_y_affine_exp - affine_y),
 				s_exp * (r_z_exp * r_z_invert_exp - one),
@@ -73,6 +81,10 @@ impl IntoAffineChip {
 				self.r_y.copy_advice(|| "r_y", &mut region, config.advice[1], 0)?;
 				self.r_z.copy_advice(|| "r_z", &mut region, config.advice[2], 0)?;
 
+				// Calculating affine representation for the point.
+				// Divide both points with the third dimension to get the affine point.
+				// Shrinking a line to a dot is why some projective
+				// space coordinates returns to the same affine points.
 				let z_invert = self.r_z.value_field().invert();
 				let r_x_affine = self.r_x.value_field() * z_invert;
 				let r_y_affine = self.r_y.value_field() * z_invert;
@@ -184,6 +196,7 @@ mod test {
 
 	#[test]
 	fn should_into_affine_point() {
+		// Testing a valid case.
 		let r = B8.projective();
 		let r_affine = r.affine();
 		let circuit = TestCircuit::new(r.x, r.y, r.z);

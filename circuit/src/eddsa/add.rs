@@ -9,36 +9,51 @@ use halo2wrong::{
 };
 
 #[derive(Clone)]
+/// Configuration elements for the circuit are defined here.
 pub struct PointAddConfig {
+	/// Configures a column for the r_x.
 	r_x: Column<Advice>,
+	/// Configures a column for the r_y.
 	r_y: Column<Advice>,
+	/// Configures a column for the r_z.
 	r_z: Column<Advice>,
+	/// Configures a column for the e_x.
 	e_x: Column<Advice>,
+	/// Configures a column for the e_y.
 	e_y: Column<Advice>,
+	/// Configures a column for the e_z.
 	e_z: Column<Advice>,
+	/// Configures a fixed boolean value for each row of the circuit.
 	selector: Selector,
 }
 
 #[derive(Clone)]
+/// Constructs individual cells for the configuration elements.
 pub struct PointAddChip {
+	/// Assigns a cell for the r_x.
 	r_x: AssignedCell<Fr, Fr>,
+	/// Assigns a cell for the r_y.
 	r_y: AssignedCell<Fr, Fr>,
+	/// Assigns a cell for the r_z.
 	r_z: AssignedCell<Fr, Fr>,
+	/// Assigns a cell for the e_x.
 	e_x: AssignedCell<Fr, Fr>,
+	/// Assigns a cell for the e_y.
 	e_y: AssignedCell<Fr, Fr>,
+	/// Assigns a cell for the e_z.
 	e_z: AssignedCell<Fr, Fr>,
 }
 
 impl PointAddChip {
+	/// Create a new chip.
 	pub fn new(
 		r_x: AssignedCell<Fr, Fr>, r_y: AssignedCell<Fr, Fr>, r_z: AssignedCell<Fr, Fr>,
 		e_x: AssignedCell<Fr, Fr>, e_y: AssignedCell<Fr, Fr>, e_z: AssignedCell<Fr, Fr>,
 	) -> Self {
 		Self { r_x, r_y, r_z, e_x, e_y, e_z }
 	}
-}
 
-impl PointAddChip {
+	/// Make the circuit config.
 	pub fn configure(meta: &mut ConstraintSystem<Fr>) -> PointAddConfig {
 		let r_x = meta.advice_column();
 		let r_y = meta.advice_column();
@@ -80,7 +95,7 @@ impl PointAddChip {
 			);
 
 			vec![
-				// Ensure the point addition of `r` and `e` is properly calculated
+				// Ensure the point addition of `r` and `e` is properly calculated.
 				s_exp.clone() * (r_x_next_exp - r_x3),
 				s_exp.clone() * (r_y_next_exp - r_y3),
 				s_exp.clone() * (r_z_next_exp - r_z3),
@@ -113,7 +128,7 @@ impl PointAddChip {
 				let e_y = self.e_y.copy_advice(|| "e_y", &mut region, config.e_y, 0)?;
 				let e_z = self.e_z.copy_advice(|| "e_z", &mut region, config.e_z, 0)?;
 
-				// Add `r` and `e`
+				// Add `r` and `e`.
 				let (r_x3, r_y3, r_z3) = add_value(
 					r_x.value_field(),
 					r_y.value_field(),
@@ -238,6 +253,7 @@ mod test {
 
 	#[test]
 	fn should_add_point() {
+		// Testing a valid case.
 		let r = B8.projective();
 		let e = G.projective();
 		let (x_res, y_res, z_res) = add(r.x, r.y, r.z, e.x, e.y, e.z);

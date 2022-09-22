@@ -10,37 +10,53 @@ use halo2wrong::{
 };
 
 #[derive(Clone)]
+/// Configuration elements for the circuit are defined here.
 pub struct ScalarMulConfig {
+	/// Constructs bits2num circuit elements.
 	bits2num: Bits2NumConfig,
+	/// Configures a column for the bits.
 	bits: Column<Advice>,
+	/// Configures a column for the r_x.
 	r_x: Column<Advice>,
+	/// Configures a column for the r_y.
 	r_y: Column<Advice>,
+	/// Configures a column for the r_z.
 	r_z: Column<Advice>,
+	/// Configures a column for the e_x.
 	e_x: Column<Advice>,
+	/// Configures a column for the e_y.
 	e_y: Column<Advice>,
+	/// Configures a column for the e_z.
 	e_z: Column<Advice>,
+	/// Configures a fixed boolean value for each row of the circuit.
 	selector: Selector,
 }
 
 #[derive(Clone)]
+/// Constructs individual cells for the configuration elements.
 pub struct ScalarMulChip<const B: usize> {
+	/// Assigns a cell for the e_x.
 	e_x: AssignedCell<Fr, Fr>,
+	/// Assigns a cell for the e_y.
 	e_y: AssignedCell<Fr, Fr>,
+	/// Assigns a cell for the e_z.
 	e_z: AssignedCell<Fr, Fr>,
+	/// Assigns a cell for the value.
 	value: AssignedCell<Fr, Fr>,
+	/// Constructs an array for the value bits.
 	value_bits: [Fr; B],
 }
 
 impl<const B: usize> ScalarMulChip<B> {
+	/// Create a new chip.
 	pub fn new(
 		e_x: AssignedCell<Fr, Fr>, e_y: AssignedCell<Fr, Fr>, e_z: AssignedCell<Fr, Fr>,
 		value: AssignedCell<Fr, Fr>, value_bits: [Fr; B],
 	) -> Self {
 		Self { e_x, e_y, e_z, value, value_bits }
 	}
-}
 
-impl<const B: usize> ScalarMulChip<B> {
+	/// Make the circuit config.
 	pub fn configure(meta: &mut ConstraintSystem<Fr>) -> ScalarMulConfig {
 		let bits2num = Bits2NumChip::<_, B>::configure(meta);
 		let bits = meta.advice_column();
@@ -100,11 +116,11 @@ impl<const B: usize> ScalarMulChip<B> {
 				bit_exp.clone() * (r_z3 - r_z_exp.clone()) - (r_z_next_exp - r_z_exp);
 
 			vec![
-				// Ensure the point addition of `r` and `e` is properly calculated
+				// Ensure the point addition of `r` and `e` is properly calculated.
 				s_exp.clone() * selected_r_x,
 				s_exp.clone() * selected_r_y,
 				s_exp.clone() * selected_r_z,
-				// Ensure the `e` doubling is properly calculated
+				// Ensure the `e` doubling is properly calculated.
 				s_exp.clone() * (e_x_next_exp - e_x3),
 				s_exp.clone() * (e_y_next_exp - e_y3),
 				s_exp * (e_z_next_exp - e_z3),
@@ -146,10 +162,11 @@ impl<const B: usize> ScalarMulChip<B> {
 				let mut e_y = self.e_y.copy_advice(|| "e_y", &mut region, config.e_y, 0)?;
 				let mut e_z = self.e_z.copy_advice(|| "e_z", &mut region, config.e_z, 0)?;
 
+				// Double and add operation.
 				for i in 0..self.value_bits.len() {
 					config.selector.enable(&mut region, i)?;
 
-					// Add `r` and `e`
+					// Add `r` and `e`.
 					let (r_x3, r_y3, r_z3) = add_value(
 						r_x.value_field(),
 						r_y.value_field(),
@@ -159,7 +176,7 @@ impl<const B: usize> ScalarMulChip<B> {
 						e_z.value_field(),
 					);
 
-					// Double `e`
+					// Double `e`.
 					let (e_x3, e_y3, e_z3) =
 						double_value(e_x.value_field(), e_y.value_field(), e_z.value_field());
 
@@ -293,7 +310,36 @@ mod test {
 
 	#[test]
 	fn should_mul_point_with_scalar() {
+		// Testing scalar as value 8.
 		let scalar = Fr::from(8);
+		let r = B8.projective();
+		let res = B8.mul_scalar(&scalar.to_bytes());
+		let circuit = TestCircuit::new(r.x, r.y, r.z, scalar);
+
+		let k = 9;
+		let pub_ins = vec![res.x, res.y, res.z];
+		let prover = MockProver::run(k, &circuit, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[test]
+	fn test_scalar_mul_zero() {
+		// Testing scalar as value 0.
+		let scalar = Fr::from(0);
+		let r = B8.projective();
+		let res = B8.mul_scalar(&scalar.to_bytes());
+		let circuit = TestCircuit::new(r.x, r.y, r.z, scalar);
+
+		let k = 9;
+		let pub_ins = vec![res.x, res.y, res.z];
+		let prover = MockProver::run(k, &circuit, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[test]
+	fn test_scalar_mul_one() {
+		// Testing scalar as value 1.
+		let scalar = Fr::from(1);
 		let r = B8.projective();
 		let res = B8.mul_scalar(&scalar.to_bytes());
 		let circuit = TestCircuit::new(r.x, r.y, r.z, scalar);
