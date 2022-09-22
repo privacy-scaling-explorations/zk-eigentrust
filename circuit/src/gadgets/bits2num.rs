@@ -79,13 +79,13 @@ impl<F: FieldExt, const B: usize> Bits2NumChip<F, B> {
 				// Starting from 1, doubling.
 				s_exp.clone() * ((e2_exp.clone() + e2_exp.clone()) - e2_next_exp),
 				// lc1 + bit * e2 == lc1_next
-				// If the bit is equal to 1, accumulator gets the e2 value.
+				// If the bit is equal to 1, e2 will be added to the sum.
 				// Example:
 				// bit = 1
 				// e2 = 1 (first rotation)
 				// lc1 = 0
 				// If the bit == 1, double the e2.
-				// This will be used next rotation if bit == 1 again, (e2_next = 1 + 1 = 2)
+				// This will be used in the next rotation, if bit == 1 again. (e2_next = 1 + 1 = 2)
 				//
 				// Check the constraint => (1 * 1 + 0)
 				// lc1_next = 1
