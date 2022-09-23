@@ -82,7 +82,8 @@ pub fn sign(sk: &SecretKey, pk: &PublicKey, m: Fr) -> Signature {
 /// Checks if the signature holds with the given PK and message.
 pub fn verify(sig: &Signature, pk: &PublicKey, m: Fr) -> bool {
 	if sig.s > SUBORDER {
-		panic!("S can't be higher than SUBORDER");
+		// S can't be higher than SUBORDER
+		return false;
 	}
 	// Cl = s * G
 	let cl = B8.mul_scalar(&sig.s.to_bytes());
