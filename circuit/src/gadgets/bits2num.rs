@@ -6,7 +6,7 @@ use halo2wrong::halo2::{
 };
 
 /// Converts given bytes to the bits.
-pub fn to_bits<const B: usize, const N: usize>(num: [u8; N]) -> [bool; B] {
+pub fn to_bits<const B: usize>(num: [u8; 32]) -> [bool; B] {
 	let mut bits = [false; B];
 	for i in 0..B {
 		bits[i] = num[i / 8] & (1 << (i % 8)) != 0;
@@ -143,18 +143,18 @@ mod test {
 	}
 
 	#[derive(Clone)]
-	struct TestCircuit<const N: usize> {
+	struct TestCircuit {
 		numba: Fr,
-		bytes: [u8; N],
+		bytes: [u8; 32],
 	}
 
-	impl<const N: usize> TestCircuit<N> {
-		fn new(x: Fr, y: [u8; N]) -> Self {
+	impl TestCircuit {
+		fn new(x: Fr, y: [u8; 32]) -> Self {
 			Self { numba: x, bytes: y }
 		}
 	}
 
-	impl<const N: usize> Circuit<Fr> for TestCircuit<N> {
+	impl Circuit<Fr> for TestCircuit {
 		type Config = TestConfig;
 		type FloorPlanner = SimpleFloorPlanner;
 
@@ -181,11 +181,11 @@ mod test {
 				},
 			)?;
 
-			if N == 0 {
+			if self.bytes == [0; 32] {
 				let bits2num = Bits2NumChip::new(numba, []);
 				let _ = bits2num.synthesize(config.bits2num, layouter.namespace(|| "bits2num"))?;
 			} else {
-				let bits = to_bits::<256, N>(self.bytes).map(|b| Fr::from(b));
+				let bits = to_bits::<256>(self.bytes).map(|b| Fr::from(b));
 				let bits2num = Bits2NumChip::new(numba, bits);
 				let _ = bits2num.synthesize(config.bits2num, layouter.namespace(|| "bits2num"))?;
 			}
@@ -227,7 +227,7 @@ mod test {
 
 	#[test]
 	fn test_bits_to_num_big_plus() {
-		// Testing biggest value + 1.
+		// Testing biggest value in the field + 1.
 		let numba_bytes = [
 			1, 0, 0, 240, 147, 245, 225, 67, 145, 112, 185, 121, 72, 232, 51, 40, 93, 88, 129, 129,
 			182, 69, 80, 184, 41, 160, 49, 225, 114, 78, 100, 48,
@@ -242,8 +242,8 @@ mod test {
 
 	#[test]
 	fn test_bits_to_num_zero_value() {
-		// Testing zero as value.
-		let circuit = TestCircuit::new(Fr::zero(), []);
+		// Testing zero as value with empty bits.
+		let circuit = TestCircuit::new(Fr::zero(), [0; 32]);
 		let k = 9;
 		let prover = MockProver::run(k, &circuit, vec![]).unwrap();
 
