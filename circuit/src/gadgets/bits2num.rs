@@ -8,14 +8,10 @@ use halo2wrong::halo2::{
 /// Converts given bytes to the bits.
 pub fn to_bits<const B: usize, const N: usize>(num: [u8; N]) -> [bool; B] {
 	let mut bits = [false; B];
-	if N == 0 {
-		bits
-	} else {
-		for i in 0..B {
-			bits[i] = num[i / 8] & (1 << (i % 8)) != 0;
-		}
-		bits
+	for i in 0..B {
+		bits[i] = num[i / 8] & (1 << (i % 8)) != 0;
 	}
+	bits
 }
 
 /// Configuration elements for the circuit defined here.
@@ -185,9 +181,14 @@ mod test {
 				},
 			)?;
 
-			let bits = to_bits::<256, N>(self.bytes).map(|b| Fr::from(b));
-			let bits2num = Bits2NumChip::new(numba, bits);
-			let _ = bits2num.synthesize(config.bits2num, layouter.namespace(|| "bits2num"))?;
+			if N == 0 {
+				let bits2num = Bits2NumChip::new(numba, []);
+				let _ = bits2num.synthesize(config.bits2num, layouter.namespace(|| "bits2num"))?;
+			} else {
+				let bits = to_bits::<256, N>(self.bytes).map(|b| Fr::from(b));
+				let bits2num = Bits2NumChip::new(numba, bits);
+				let _ = bits2num.synthesize(config.bits2num, layouter.namespace(|| "bits2num"))?;
+			}
 			Ok(())
 		}
 	}
