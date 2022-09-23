@@ -27,6 +27,7 @@ use halo2wrong::{
 use rand::Rng;
 use std::{fmt::Debug, fs::write, io::Read, time::Instant};
 
+/// Convert bytes array to a wide representation of 64 bytes
 pub fn to_wide(b: &[u8]) -> [u8; 64] {
 	let mut bytes = [0u8; 64];
 	bytes[..b.len()].copy_from_slice(b);
@@ -89,6 +90,7 @@ pub fn keygen<E: MultiMillerLoop + Debug, C: Circuit<E::Scalar>>(
 	Ok(pk)
 }
 
+/// Helper function for finalizing verification
 // Rust compiler can't infer the type, so we need to make a helper function
 pub fn finalize_verify<
 	'a,

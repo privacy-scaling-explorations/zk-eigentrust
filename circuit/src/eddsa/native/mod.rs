@@ -1,4 +1,6 @@
+/// Implementation of Edwards on Bn254 curve AKA BabyJubJub
 pub mod ed_on_bn254;
+/// Helper functions for point arithmetic
 pub mod ops;
 
 use crate::{

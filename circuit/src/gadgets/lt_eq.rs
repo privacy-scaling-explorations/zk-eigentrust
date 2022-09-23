@@ -13,13 +13,13 @@ use super::{
 	is_zero::{IsZeroChip, IsZeroConfig},
 };
 
-// 1 << 252
+/// 1 << 252
 pub const N_SHIFTED: [u8; 32] = [
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 16,
 ];
-// Numbers are limited to 252 to avoid overflow
+/// Numbers are limited to 252 to avoid overflow
 const NUM_BITS: usize = 252;
-// Same number of bits as N_SHIFTED, since NUM + N_SHIFTED is the operation.
+/// Same number of bits as N_SHIFTED, since NUM + N_SHIFTED is the operation.
 const DIFF_BITS: usize = 253;
 
 #[derive(Clone)]
