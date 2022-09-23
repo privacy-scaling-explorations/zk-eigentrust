@@ -1,12 +1,22 @@
 //! The module for the main EigenTrust circuit.
 
-#![feature(array_try_map)]
-#![feature(array_zip)]
-#![allow(clippy::needless_range_loop)]
+#![feature(array_zip, array_try_map)]
+#![allow(clippy::tabs_in_doc_comments)]
+#![deny(
+	future_incompatible, nonstandard_style, missing_docs, deprecated, unreachable_code,
+	unreachable_patterns, absolute_paths_not_starting_with_crate, unsafe_code, clippy::panic,
+	clippy::unnecessary_cast, clippy::cast_lossless, clippy::cast_possible_wrap
+)]
+#![warn(trivial_casts)]
+#![forbid(unsafe_code)]
 
+/// EDDSA signature scheme gadgets + native version
 pub mod eddsa;
+/// Common gadgets used across circuits
 pub mod gadgets;
+/// Poseidon hash function gadgets + native version
 pub mod poseidon;
+/// Utilities for proving and verifying
 pub mod utils;
 
 use gadgets::{
@@ -87,6 +97,7 @@ impl<F: FieldExt, const S: usize, const B: usize, P: RoundParams<F, 5>>
 		}
 	}
 
+	/// Assign a Value to a column, used in the "temp" region
 	pub fn assign_temp(
 		column: Column<Advice>, name: &str, region: &mut Region<'_, F>, offset: &mut usize,
 		value: Value<F>,
@@ -97,6 +108,7 @@ impl<F: FieldExt, const S: usize, const B: usize, P: RoundParams<F, 5>>
 		Ok(res)
 	}
 
+	/// Assinged a const to a cell in the column, used in the "temp" region
 	pub fn assign_fixed(
 		column: Column<Advice>, name: &str, region: &mut Region<'_, F>, offset: &mut usize,
 		value: F,

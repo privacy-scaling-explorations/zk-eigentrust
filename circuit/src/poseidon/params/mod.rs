@@ -1,8 +1,11 @@
+/// Bn254 with WIDTH = 10 and EXPONENTIATION = 5
 pub mod bn254_10x5;
+/// Bn254 with WIDTH = 5 and EXPONENTIATION = 5
 pub mod bn254_5x5;
 
 use halo2wrong::halo2::{arithmetic::FieldExt, plonk::Expression};
 
+/// Trait definition of Round parameters of Poseidon
 pub trait RoundParams<F: FieldExt, const WIDTH: usize>: Sbox {
 	/// Returns a number of full rounds.
 	fn full_rounds() -> usize;
@@ -45,6 +48,7 @@ pub trait RoundParams<F: FieldExt, const WIDTH: usize>: Sbox {
 	fn mds_raw() -> [[&'static str; WIDTH]; WIDTH];
 }
 
+/// Trait definition for Sbox operation of Poseidon
 pub trait Sbox {
 	/// Returns the S-box exponentiation for the expression.
 	fn sbox_expr<F: FieldExt>(exp: Expression<F>) -> Expression<F>;

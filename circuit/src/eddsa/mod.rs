@@ -1,6 +1,10 @@
+/// Gadget for adding two points on an elliptic curve
 pub mod add;
+/// Gadget for converting a point into affine representation
 pub mod into_affine;
+/// Native implementation of EDDSA signature scheme
 pub mod native;
+/// Gadget for multiplying an elliptic curve point with a scalar
 pub mod scalar_mul;
 
 use self::{

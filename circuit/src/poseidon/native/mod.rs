@@ -1,3 +1,4 @@
+/// Native sponge implementation
 pub mod sponge;
 
 use super::params::RoundParams;
