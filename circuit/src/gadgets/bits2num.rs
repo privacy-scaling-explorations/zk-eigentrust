@@ -143,18 +143,18 @@ mod test {
 	}
 
 	#[derive(Clone)]
-	struct TestCircuit {
+	struct TestCircuit<const B: usize> {
 		numba: Fr,
 		bytes: [u8; 32],
 	}
 
-	impl TestCircuit {
+	impl<const B: usize> TestCircuit<B> {
 		fn new(x: Fr, y: [u8; 32]) -> Self {
 			Self { numba: x, bytes: y }
 		}
 	}
 
-	impl Circuit<Fr> for TestCircuit {
+	impl<const B: usize> Circuit<Fr> for TestCircuit<B> {
 		type Config = TestConfig;
 		type FloorPlanner = SimpleFloorPlanner;
 
@@ -181,14 +181,10 @@ mod test {
 				},
 			)?;
 
-			if self.bytes == [0; 32] {
-				let bits2num = Bits2NumChip::new(numba, []);
-				let _ = bits2num.synthesize(config.bits2num, layouter.namespace(|| "bits2num"))?;
-			} else {
-				let bits = to_bits::<256>(self.bytes).map(|b| Fr::from(b));
-				let bits2num = Bits2NumChip::new(numba, bits);
-				let _ = bits2num.synthesize(config.bits2num, layouter.namespace(|| "bits2num"))?;
-			}
+			let bits = to_bits::<B>(self.bytes).map(|b| Fr::from(b));
+			let bits2num = Bits2NumChip::new(numba, bits);
+			let _ = bits2num.synthesize(config.bits2num, layouter.namespace(|| "bits2num"))?;
+
 			Ok(())
 		}
 	}
@@ -202,7 +198,7 @@ mod test {
 			0, 0, 0, 0, 0, 0, 0,
 		];
 
-		let circuit = TestCircuit::new(numba, numba_bytes);
+		let circuit = TestCircuit::<256>::new(numba, numba_bytes);
 		let k = 9;
 		let prover = MockProver::run(k, &circuit, vec![]).unwrap();
 
@@ -218,7 +214,7 @@ mod test {
 			182, 69, 80, 184, 41, 160, 49, 225, 114, 78, 100, 48,
 		];
 
-		let circuit = TestCircuit::new(numba, numba_bytes);
+		let circuit = TestCircuit::<256>::new(numba, numba_bytes);
 		let k = 9;
 		let prover = MockProver::run(k, &circuit, vec![]).unwrap();
 
@@ -233,7 +229,17 @@ mod test {
 			182, 69, 80, 184, 41, 160, 49, 225, 114, 78, 100, 48,
 		];
 
-		let circuit = TestCircuit::new(Fr::zero(), numba_bytes);
+		let circuit = TestCircuit::<256>::new(Fr::zero(), numba_bytes);
+		let k = 9;
+		let prover = MockProver::run(k, &circuit, vec![]).unwrap();
+
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[test]
+	fn test_bits_to_num_zero_bits() {
+		// Testing zero as value with 0 bits.
+		let circuit = TestCircuit::<0>::new(Fr::zero(), [0; 32]);
 		let k = 9;
 		let prover = MockProver::run(k, &circuit, vec![]).unwrap();
 
@@ -242,8 +248,8 @@ mod test {
 
 	#[test]
 	fn test_bits_to_num_zero_value() {
-		// Testing zero as value with empty bits.
-		let circuit = TestCircuit::new(Fr::zero(), [0; 32]);
+		// Testing zero as value with 254 bits.
+		let circuit = TestCircuit::<254>::new(Fr::zero(), [0; 32]);
 		let k = 9;
 		let prover = MockProver::run(k, &circuit, vec![]).unwrap();
 
@@ -258,7 +264,7 @@ mod test {
 			0, 0, 0, 0, 0, 0, 0,
 		];
 
-		let circuit = TestCircuit::new(numba, numba_bytes);
+		let circuit = TestCircuit::<256>::new(numba, numba_bytes);
 		let k = 9;
 		let rng = &mut rand::thread_rng();
 		let params = generate_params(k);
