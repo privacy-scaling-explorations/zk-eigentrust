@@ -5,6 +5,7 @@ use halo2wrong::halo2::{
 	poly::Rotation,
 };
 
+/// Converts given bytes to the bits.
 pub fn to_bits<const B: usize>(num: [u8; 32]) -> [bool; B] {
 	let mut bits = [false; B];
 	for i in 0..B {
@@ -13,27 +14,35 @@ pub fn to_bits<const B: usize>(num: [u8; 32]) -> [bool; B] {
 	bits
 }
 
+/// Configuration elements for the circuit defined here.
 #[derive(Clone)]
 pub struct Bits2NumConfig {
+	/// Configures a column for the bits.
 	pub bits: Column<Advice>,
+	/// Configures a column for the lc1.
 	lc1: Column<Advice>,
+	/// Configures a column for the e2.
 	e2: Column<Advice>,
+	/// Configures a fixed boolean value for each row of the circuit.
 	selector: Selector,
 }
 
+/// Constructs a cell and a variable for the circuit.
 #[derive(Clone)]
 pub struct Bits2NumChip<F: FieldExt, const B: usize> {
+	/// Assigns a cell for the value.
 	value: AssignedCell<F, F>,
+	/// Constructs bits variable for the circuit.
 	bits: [Value<F>; B],
 }
 
 impl<F: FieldExt, const B: usize> Bits2NumChip<F, B> {
+	/// Create a new chip.
 	pub fn new(value: AssignedCell<F, F>, bits: [F; B]) -> Self {
 		Self { value, bits: bits.map(|b| Value::known(b)) }
 	}
-}
 
-impl<F: FieldExt, const B: usize> Bits2NumChip<F, B> {
+	/// Make the circuit config.
 	pub fn configure(meta: &mut ConstraintSystem<F>) -> Bits2NumConfig {
 		let bits = meta.advice_column();
 		let lc1 = meta.advice_column();
@@ -59,11 +68,23 @@ impl<F: FieldExt, const B: usize> Bits2NumChip<F, B> {
 			let s_exp = v_cells.query_selector(s);
 
 			vec![
-				// bit * (1 - bit) == 0 (bit is boolean)
+				// bit * (1 - bit) == 0
+				// Constraining bit to be a boolean.
 				s_exp.clone() * (bit_exp.clone() * (one_exp - bit_exp.clone())),
 				// e2 + e2 == e2_next
+				// Starting from 1, doubling.
 				s_exp.clone() * ((e2_exp.clone() + e2_exp.clone()) - e2_next_exp),
 				// lc1 + bit * e2 == lc1_next
+				// If the bit is equal to 1, e2 will be added to the sum.
+				// Example:
+				// bit = 1
+				// e2 = 1 (first rotation)
+				// lc1 = 0
+				// If the bit == 1, double the e2.
+				// This will be used in the next rotation, if bit == 1 again. (e2_next = 1 + 1 = 2)
+				//
+				// Check the constraint => (1 * 1 + 0)
+				// lc1_next = 1
 				s_exp * ((bit_exp * e2_exp + lc1_exp) - lc1_next_exp),
 			]
 		});
@@ -71,6 +92,7 @@ impl<F: FieldExt, const B: usize> Bits2NumChip<F, B> {
 		Bits2NumConfig { bits, lc1, e2, selector: s }
 	}
 
+	/// Synthesize the circuit.
 	pub fn synthesize(
 		&self, config: Bits2NumConfig, mut layouter: impl Layouter<F>,
 	) -> Result<[AssignedCell<F, F>; B], Error> {
@@ -121,17 +143,18 @@ mod test {
 	}
 
 	#[derive(Clone)]
-	struct TestCircuit {
+	struct TestCircuit<const B: usize> {
 		numba: Fr,
+		bytes: [u8; 32],
 	}
 
-	impl TestCircuit {
-		fn new(x: Fr) -> Self {
-			Self { numba: x }
+	impl<const B: usize> TestCircuit<B> {
+		fn new(x: Fr, y: [u8; 32]) -> Self {
+			Self { numba: x, bytes: y }
 		}
 	}
 
-	impl Circuit<Fr> for TestCircuit {
+	impl<const B: usize> Circuit<Fr> for TestCircuit<B> {
 		type Config = TestConfig;
 		type FloorPlanner = SimpleFloorPlanner;
 
@@ -158,28 +181,90 @@ mod test {
 				},
 			)?;
 
-			let bits = to_bits::<256>(self.numba.to_bytes()).map(|b| Fr::from(b));
+			let bits = to_bits::<B>(self.bytes).map(|b| Fr::from(b));
 			let bits2num = Bits2NumChip::new(numba, bits);
 			let _ = bits2num.synthesize(config.bits2num, layouter.namespace(|| "bits2num"))?;
+
 			Ok(())
 		}
 	}
 
 	#[test]
 	fn test_bits_to_num() {
+		// Testing field element 0x01234567890abcdef.
 		let numba = Fr::from(1311768467294899695u64);
-		let circuit = TestCircuit::new(numba);
+		let numba_bytes = [
+			239, 205, 171, 144, 120, 86, 52, 18, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+			0, 0, 0, 0, 0, 0, 0,
+		];
 
+		let circuit = TestCircuit::<256>::new(numba, numba_bytes);
 		let k = 9;
 		let prover = MockProver::run(k, &circuit, vec![]).unwrap();
+
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[test]
+	fn test_bits_to_num_big() {
+		// Testing biggest value in the field.
+		let numba = Fr::zero().sub(&Fr::one());
+		let numba_bytes = [
+			0, 0, 0, 240, 147, 245, 225, 67, 145, 112, 185, 121, 72, 232, 51, 40, 93, 88, 129, 129,
+			182, 69, 80, 184, 41, 160, 49, 225, 114, 78, 100, 48,
+		];
+
+		let circuit = TestCircuit::<256>::new(numba, numba_bytes);
+		let k = 9;
+		let prover = MockProver::run(k, &circuit, vec![]).unwrap();
+
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[test]
+	fn test_bits_to_num_big_plus() {
+		// Testing biggest value in the field + 1.
+		let numba_bytes = [
+			1, 0, 0, 240, 147, 245, 225, 67, 145, 112, 185, 121, 72, 232, 51, 40, 93, 88, 129, 129,
+			182, 69, 80, 184, 41, 160, 49, 225, 114, 78, 100, 48,
+		];
+
+		let circuit = TestCircuit::<256>::new(Fr::zero(), numba_bytes);
+		let k = 9;
+		let prover = MockProver::run(k, &circuit, vec![]).unwrap();
+
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[test]
+	fn test_bits_to_num_zero_bits() {
+		// Testing zero as value with 0 bits.
+		let circuit = TestCircuit::<0>::new(Fr::zero(), [0; 32]);
+		let k = 9;
+		let prover = MockProver::run(k, &circuit, vec![]).unwrap();
+
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[test]
+	fn test_bits_to_num_zero_value() {
+		// Testing zero as value with 254 bits.
+		let circuit = TestCircuit::<254>::new(Fr::zero(), [0; 32]);
+		let k = 9;
+		let prover = MockProver::run(k, &circuit, vec![]).unwrap();
+
 		assert_eq!(prover.verify(), Ok(()));
 	}
 
 	#[test]
 	fn test_bits_to_num_production() {
 		let numba = Fr::from(1311768467294899695u64);
-		let circuit = TestCircuit::new(numba);
+		let numba_bytes = [
+			239, 205, 171, 144, 120, 86, 52, 18, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+			0, 0, 0, 0, 0, 0, 0,
+		];
 
+		let circuit = TestCircuit::<256>::new(numba, numba_bytes);
 		let k = 9;
 		let rng = &mut rand::thread_rng();
 		let params = generate_params(k);
