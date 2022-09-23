@@ -1,6 +1,7 @@
 /// Native version of Poseidon
 pub mod native;
-/// A module for defining round parameters and MDS matrix for Poseidon permutation
+/// A module for defining round parameters and MDS matrix for Poseidon
+/// permutation
 pub mod params;
 /// Implementation of a Poseidon sponge
 pub mod sponge;
