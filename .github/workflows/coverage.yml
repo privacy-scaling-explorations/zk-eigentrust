@@ -41,11 +41,12 @@ jobs:
           LLVM_PROFILE_FILE: "coverage-%p-%m.profraw"
 
       - name: Generate Coverage data
-        run: grcov . -s . --binary-path ./target/debug/ --ignore-not-existing -t coveralls
+        run: grcov . -s . --binary-path ./target/debug/ --ignore-not-existing --ignore **/lib.rs -t lcov -o lcov.info
 
       - uses: actions/checkout@master
       - uses: codecov/codecov-action@v3
         with:
+          files: lcov.info
           name: codecov-umbrella
           fail_ci_if_error: true
           verbose: true
