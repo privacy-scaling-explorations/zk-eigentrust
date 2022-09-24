@@ -84,8 +84,8 @@ pub fn random_circuit<
 pub fn keygen<E: MultiMillerLoop + Debug, C: Circuit<E::Scalar>>(
 	params: &ParamsKZG<E>, circuit: &C,
 ) -> Result<ProvingKey<<E as Engine>::G1Affine>, Error> {
-	let vk = keygen_vk::<KZGCommitmentScheme<E>, _>(params, circuit)?;
-	let pk = keygen_pk::<KZGCommitmentScheme<E>, _>(params, vk, circuit)?;
+	let vk = keygen_vk::<<E as Engine>::G1Affine, ParamsKZG<E>, _>(params, circuit)?;
+	let pk = keygen_pk::<<E as Engine>::G1Affine, ParamsKZG<E>, _>(params, vk, circuit)?;
 
 	Ok(pk)
 }
@@ -129,7 +129,7 @@ pub fn verify<E: MultiMillerLoop + Debug>(
 ) -> Result<bool, Error> {
 	let strategy = AccumulatorStrategy::<E>::new(params);
 	let mut transcript = Blake2bRead::<_, E::G1Affine, Challenge255<_>>::init(proof);
-	let output = verify_proof::<KZGCommitmentScheme<E>, _, _, VerifierSHPLONK<E>, _>(
+	let output = verify_proof::<KZGCommitmentScheme<E>, VerifierSHPLONK<E>, _, _, _>(
 		params,
 		vk,
 		strategy,
