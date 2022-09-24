@@ -43,7 +43,6 @@ jobs:
       - name: Generate Coverage data
         run: grcov . -s . --binary-path ./target/debug/ --ignore-not-existing --ignore **/lib.rs -t covdir -o cov.json
 
-      - uses: actions/checkout@master
       - uses: codecov/codecov-action@v3
         with:
           files: ./cov.json
