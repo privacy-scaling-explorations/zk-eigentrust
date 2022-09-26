@@ -287,7 +287,7 @@ impl<F: FieldExt> CommonChip<F> {
 	pub fn mul(
 		// Assigns a cell for the x.
 		x: AssignedCell<F, F>,
-		// Assigns a cell for the x.
+		// Assigns a cell for the y.
 		y: AssignedCell<F, F>,
 		config: CommonConfig,
 		mut layouter: impl Layouter<F>,
