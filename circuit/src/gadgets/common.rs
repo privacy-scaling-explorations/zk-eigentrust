@@ -174,7 +174,7 @@ impl<F: FieldExt> CommonChip<F> {
 		CommonConfig { advice, selectors }
 	}
 
-	/// Synthesize and circuit.
+	/// Synthesize the and circuit.
 	pub fn and(
 		// Assigns a cell for the x.
 		x: AssignedCell<F, F>,
@@ -205,7 +205,7 @@ impl<F: FieldExt> CommonChip<F> {
 		)
 	}
 
-	/// Synthesize is_bool circuit.
+	/// Synthesize the is_bool circuit.
 	pub fn is_bool(
 		// Assigns a cell for the x.
 		x: AssignedCell<F, F>,
@@ -223,7 +223,7 @@ impl<F: FieldExt> CommonChip<F> {
 		)
 	}
 
-	/// Synthesize is_equal circuit.
+	/// Synthesize the is_equal circuit.
 	pub fn is_equal(
 		// Assigns a cell for the lhs.
 		lhs: AssignedCell<F, F>,
@@ -251,7 +251,7 @@ impl<F: FieldExt> CommonChip<F> {
 		Ok(is_zero)
 	}
 
-	/// Synthesize is_zero circuit.
+	/// Synthesize the is_zero circuit.
 	pub fn is_zero(
 		// Assigns a cell for the x.
 		x: AssignedCell<F, F>,
@@ -283,7 +283,7 @@ impl<F: FieldExt> CommonChip<F> {
 		Ok(is_zero)
 	}
 
-	/// Synthesize mul circuit.
+	/// Synthesize the mul circuit.
 	pub fn mul(
 		// Assigns a cell for the x.
 		x: AssignedCell<F, F>,
@@ -308,7 +308,7 @@ impl<F: FieldExt> CommonChip<F> {
 		)
 	}
 
-	/// Synthesize select circuit.
+	/// Synthesize the select circuit.
 	pub fn select(
 		// Assigns a cell for the bit.
 		bit: AssignedCell<F, F>,
@@ -364,6 +364,16 @@ mod test {
 	};
 
 	#[derive(Clone)]
+	enum Gadgets {
+		And,
+		IsBool,
+		IsEqual,
+		IsZero,
+		Mul,
+		Select,
+	}
+
+	#[derive(Clone)]
 	struct TestConfig {
 		common: CommonConfig,
 		temp: Column<Advice>,
@@ -373,12 +383,12 @@ mod test {
 	#[derive(Clone)]
 	struct TestCircuit<F: FieldExt, const N: usize> {
 		inputs: [F; N],
-		c: char,
+		gadget: Gadgets,
 	}
 
 	impl<F: FieldExt, const N: usize> TestCircuit<F, N> {
-		fn new(inputs: [F; N], c: char) -> Self {
-			Self { inputs, c }
+		fn new(inputs: [F; N], gadget: Gadgets) -> Self {
+			Self { inputs, gadget }
 		}
 	}
 
@@ -419,8 +429,8 @@ mod test {
 				)?);
 			}
 
-			match self.c {
-				'a' => {
+			match self.gadget {
+				Gadgets::And => {
 					let and = CommonChip::and(
 						items[0].clone(),
 						items[1].clone(),
@@ -429,14 +439,14 @@ mod test {
 					)?;
 					layouter.constrain_instance(and.cell(), config.pub_ins, 0)?;
 				},
-				'b' => {
+				Gadgets::IsBool => {
 					CommonChip::is_bool(
 						items[0].clone(),
 						config.common,
 						layouter.namespace(|| "is_bool"),
 					)?;
 				},
-				'e' => {
+				Gadgets::IsEqual => {
 					let is_equal = CommonChip::is_equal(
 						items[0].clone(),
 						items[1].clone(),
@@ -445,7 +455,7 @@ mod test {
 					)?;
 					layouter.constrain_instance(is_equal.cell(), config.pub_ins, 0)?;
 				},
-				'z' => {
+				Gadgets::IsZero => {
 					let is_zero = CommonChip::is_zero(
 						items[0].clone(),
 						config.common,
@@ -453,7 +463,7 @@ mod test {
 					)?;
 					layouter.constrain_instance(is_zero.cell(), config.pub_ins, 0)?;
 				},
-				'm' => {
+				Gadgets::Mul => {
 					let mul = CommonChip::mul(
 						items[0].clone(),
 						items[1].clone(),
@@ -462,17 +472,16 @@ mod test {
 					)?;
 					layouter.constrain_instance(mul.cell(), config.pub_ins, 0)?;
 				},
-				's' => {
-					let res = CommonChip::select(
+				Gadgets::Select => {
+					let select = CommonChip::select(
 						items[0].clone(),
 						items[1].clone(),
 						items[2].clone(),
 						config.common,
 						layouter.namespace(|| "select"),
 					)?;
-					layouter.constrain_instance(res.cell(), config.pub_ins, 0)?;
+					layouter.constrain_instance(select.cell(), config.pub_ins, 0)?;
 				},
-				_ => (),
 			}
 
 			Ok(())
@@ -483,7 +492,7 @@ mod test {
 	#[test]
 	fn test_and_x1_y1() {
 		// Testing x = 1 and y = 1.
-		let test_chip = TestCircuit::new([Fr::from(1), Fr::from(1)], 'a');
+		let test_chip = TestCircuit::new([Fr::from(1), Fr::from(1)], Gadgets::And);
 
 		let pub_ins = vec![Fr::from(1)];
 		let k = 4;
@@ -494,7 +503,7 @@ mod test {
 	#[test]
 	fn test_and_x1_y0() {
 		// Testing x = 1 and y = 0.
-		let test_chip = TestCircuit::new([Fr::from(1), Fr::from(0)], 'a');
+		let test_chip = TestCircuit::new([Fr::from(1), Fr::from(0)], Gadgets::And);
 
 		let pub_ins = vec![Fr::from(0)];
 		let k = 4;
@@ -505,7 +514,7 @@ mod test {
 	#[test]
 	fn test_and_x0_y0() {
 		// Testing x = 0 and y = 0.
-		let test_chip = TestCircuit::new([Fr::from(0), Fr::from(0)], 'a');
+		let test_chip = TestCircuit::new([Fr::from(0), Fr::from(0)], Gadgets::And);
 
 		let pub_ins = vec![Fr::from(0)];
 		let k = 4;
@@ -516,7 +525,7 @@ mod test {
 	#[test]
 	fn test_and_x0_y1() {
 		// Testing x = 0 and y = 1.
-		let test_chip = TestCircuit::new([Fr::from(0), Fr::from(1)], 'a');
+		let test_chip = TestCircuit::new([Fr::from(0), Fr::from(1)], Gadgets::And);
 
 		let pub_ins = vec![Fr::from(0)];
 		let k = 4;
@@ -526,7 +535,7 @@ mod test {
 
 	#[test]
 	fn test_and_production() {
-		let test_chip = TestCircuit::new([Fr::from(1), Fr::from(1)], 'a');
+		let test_chip = TestCircuit::new([Fr::from(1), Fr::from(1)], Gadgets::And);
 
 		let k = 4;
 		let rng = &mut rand::thread_rng();
@@ -541,7 +550,7 @@ mod test {
 	#[test]
 	fn test_is_bool_value_zero() {
 		// Testing input zero as value.
-		let test_chip = TestCircuit::new([Fr::from(0)], 'b');
+		let test_chip = TestCircuit::new([Fr::from(0)], Gadgets::IsBool);
 
 		let k = 4;
 		let dummy_instance = vec![Fr::zero()];
@@ -552,7 +561,7 @@ mod test {
 	#[test]
 	fn test_is_bool_value_one() {
 		// Testing input one as value.
-		let test_chip = TestCircuit::new([Fr::from(1)], 'b');
+		let test_chip = TestCircuit::new([Fr::from(1)], Gadgets::IsBool);
 
 		let k = 4;
 		let dummy_instance = vec![Fr::zero()];
@@ -563,7 +572,7 @@ mod test {
 	#[test]
 	fn test_is_bool_invalid_value() {
 		// Testing input two as value, which is invalid for the boolean circuit.
-		let test_chip = TestCircuit::new([Fr::from(2)], 'b');
+		let test_chip = TestCircuit::new([Fr::from(2)], Gadgets::IsBool);
 
 		let k = 4;
 		let dummy_instance = vec![Fr::zero()];
@@ -573,7 +582,7 @@ mod test {
 
 	#[test]
 	fn test_is_bool_production() {
-		let test_chip = TestCircuit::new([Fr::from(0)], 'b');
+		let test_chip = TestCircuit::new([Fr::from(0)], Gadgets::IsBool);
 
 		let k = 4;
 		let rng = &mut rand::thread_rng();
@@ -589,7 +598,7 @@ mod test {
 	#[test]
 	fn test_is_equal() {
 		// Testing equal values.
-		let test_chip = TestCircuit::new([Fr::from(123), Fr::from(123)], 'e');
+		let test_chip = TestCircuit::new([Fr::from(123), Fr::from(123)], Gadgets::IsEqual);
 
 		let pub_ins = vec![Fr::one()];
 		let k = 4;
@@ -600,7 +609,7 @@ mod test {
 	#[test]
 	fn test_is_not_equal() {
 		// Testing not equal values.
-		let test_chip = TestCircuit::new([Fr::from(123), Fr::from(124)], 'e');
+		let test_chip = TestCircuit::new([Fr::from(123), Fr::from(124)], Gadgets::IsEqual);
 
 		let pub_ins = vec![Fr::zero()];
 		let k = 4;
@@ -610,7 +619,7 @@ mod test {
 
 	#[test]
 	fn test_is_equal_production() {
-		let test_chip = TestCircuit::new([Fr::from(123), Fr::from(123)], 'e');
+		let test_chip = TestCircuit::new([Fr::from(123), Fr::from(123)], Gadgets::IsEqual);
 
 		let k = 4;
 		let rng = &mut rand::thread_rng();
@@ -623,7 +632,7 @@ mod test {
 	#[test]
 	fn test_is_zero() {
 		// Testing zero as value.
-		let test_chip = TestCircuit::new([Fr::from(0)], 'z');
+		let test_chip = TestCircuit::new([Fr::from(0)], Gadgets::IsZero);
 
 		let pub_ins = vec![Fr::one()];
 		let k = 4;
@@ -634,7 +643,7 @@ mod test {
 	#[test]
 	fn test_is_zero_not() {
 		// Testing a non-zero value.
-		let test_chip = TestCircuit::new([Fr::from(1)], 'z');
+		let test_chip = TestCircuit::new([Fr::from(1)], Gadgets::IsZero);
 
 		let pub_ins = vec![Fr::zero()];
 		let k = 4;
@@ -644,7 +653,7 @@ mod test {
 
 	#[test]
 	fn test_is_zero_production() {
-		let test_chip = TestCircuit::new([Fr::from(0)], 'z');
+		let test_chip = TestCircuit::new([Fr::from(0)], Gadgets::IsZero);
 
 		let k = 4;
 		let rng = &mut rand::thread_rng();
@@ -658,7 +667,7 @@ mod test {
 	#[test]
 	fn test_mul() {
 		// Testing x = 5 and y = 2.
-		let test_chip = TestCircuit::new([Fr::from(5), Fr::from(2)], 'm');
+		let test_chip = TestCircuit::new([Fr::from(5), Fr::from(2)], Gadgets::Mul);
 
 		let k = 4;
 		let pub_ins = vec![Fr::from(10)];
@@ -669,7 +678,7 @@ mod test {
 	#[test]
 	fn test_mul_y1() {
 		// Testing x = 3 and y = 1.
-		let test_chip = TestCircuit::new([Fr::from(3), Fr::from(1)], 'm');
+		let test_chip = TestCircuit::new([Fr::from(3), Fr::from(1)], Gadgets::Mul);
 
 		let k = 4;
 		let pub_ins = vec![Fr::from(3)];
@@ -680,7 +689,7 @@ mod test {
 	#[test]
 	fn test_mul_y0() {
 		// Testing x = 4 and y = 0.
-		let test_chip = TestCircuit::new([Fr::from(4), Fr::from(0)], 'm');
+		let test_chip = TestCircuit::new([Fr::from(4), Fr::from(0)], Gadgets::Mul);
 
 		let k = 4;
 		let pub_ins = vec![Fr::from(0)];
@@ -690,7 +699,7 @@ mod test {
 
 	#[test]
 	fn test_mul_production() {
-		let test_chip = TestCircuit::new([Fr::from(5), Fr::from(2)], 'm');
+		let test_chip = TestCircuit::new([Fr::from(5), Fr::from(2)], Gadgets::Mul);
 
 		let k = 4;
 		let rng = &mut rand::thread_rng();
@@ -705,7 +714,7 @@ mod test {
 	#[test]
 	fn test_select() {
 		// Testing bit = 0.
-		let test_chip = TestCircuit::new([Fr::from(0), Fr::from(2), Fr::from(3)], 's');
+		let test_chip = TestCircuit::new([Fr::from(0), Fr::from(2), Fr::from(3)], Gadgets::Select);
 
 		let pub_ins = vec![Fr::from(3)];
 		let k = 4;
@@ -716,7 +725,7 @@ mod test {
 	#[test]
 	fn test_select_one_as_bit() {
 		// Testing bit = 1.
-		let test_chip = TestCircuit::new([Fr::from(1), Fr::from(7), Fr::from(4)], 's');
+		let test_chip = TestCircuit::new([Fr::from(1), Fr::from(7), Fr::from(4)], Gadgets::Select);
 
 		let pub_ins = vec![Fr::from(7)];
 		let k = 4;
@@ -728,7 +737,7 @@ mod test {
 	fn test_select_two_as_bit() {
 		// Testing bit = 2. Constraint not satisfied error will return
 		// because the bit is not a boolean value.
-		let test_chip = TestCircuit::new([Fr::from(2), Fr::from(3), Fr::from(6)], 's');
+		let test_chip = TestCircuit::new([Fr::from(2), Fr::from(3), Fr::from(6)], Gadgets::Select);
 
 		let pub_ins = vec![Fr::from(3)];
 		let k = 4;
@@ -738,7 +747,7 @@ mod test {
 
 	#[test]
 	fn test_select_production() {
-		let test_chip = TestCircuit::new([Fr::from(0), Fr::from(2), Fr::from(3)], 's');
+		let test_chip = TestCircuit::new([Fr::from(0), Fr::from(2), Fr::from(3)], Gadgets::Select);
 
 		let k = 4;
 		let rng = &mut rand::thread_rng();
