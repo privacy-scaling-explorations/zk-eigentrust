@@ -2,6 +2,8 @@
 pub mod poseidon_bn254_10x5;
 /// Poseidon Bn254 with WIDTH = 5 and EXPONENTIATION = 5
 pub mod poseidon_bn254_5x5;
+/// Rescue Prime Bn254 with WIDTH = 5 and EXPONENTIATION = 5
+pub mod rescue_prime_bn254_5x5;
 
 use halo2wrong::halo2::{arithmetic::FieldExt, plonk::Expression};
 
@@ -54,6 +56,8 @@ pub trait Sbox {
 	fn sbox_expr<F: FieldExt>(exp: Expression<F>) -> Expression<F>;
 	/// Returns the S-box exponentiation for the field element.
 	fn sbox_f<F: FieldExt>(f: F) -> F;
+	/// Returns the S-box exponentiation of the inverse for the field element.
+	fn sbox_inv_f<F: FieldExt>(f: F) -> F;
 }
 
 /// Returns congruent field element for the given hex string.
