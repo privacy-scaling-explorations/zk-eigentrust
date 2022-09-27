@@ -629,6 +629,7 @@ mod test {
 		assert!(res);
 	}
 
+	// IS_ZERO CIRCUIT TESTS
 	#[test]
 	fn test_is_zero() {
 		// Testing zero as value.
