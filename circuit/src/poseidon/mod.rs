@@ -361,11 +361,11 @@ where
 
 #[cfg(test)]
 mod test {
-	use super::{
-		params::{bn254_5x5::Params5x5Bn254, hex_to_field},
+	use crate::{
+		params::{hex_to_field, poseidon_bn254_5x5::Params},
+		utils::{generate_params, prove_and_verify},
 		*,
 	};
-	use crate::utils::{generate_params, prove_and_verify};
 	use halo2wrong::{
 		curves::bn256::{Bn256, Fr},
 		halo2::{
@@ -375,7 +375,7 @@ mod test {
 		},
 	};
 
-	type TestPoseidonChip = PoseidonChip<Fr, 5, Params5x5Bn254>;
+	type TestPoseidonChip = PoseidonChip<Fr, 5, Params>;
 
 	#[derive(Clone)]
 	struct PoseidonTesterConfig {

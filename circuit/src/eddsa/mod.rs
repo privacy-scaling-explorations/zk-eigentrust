@@ -256,7 +256,7 @@ mod test {
 		},
 	};
 	use rand::thread_rng;
-	type Hasher = Poseidon<Fr, 5, Params5x5Bn254>;
+	type Hasher = Poseidon<Fr, 5, Params>;
 
 	#[derive(Clone)]
 	struct TestConfig {
@@ -344,7 +344,7 @@ mod test {
 			let diff = self.s + Fr::from_bytes(&N_SHIFTED).unwrap() - SUBORDER;
 			let diff_bits = to_bits(diff.to_bytes()).map(Fr::from);
 			let h_inputs = [self.big_r_x, self.big_r_y, self.pk_x, self.pk_y, self.m];
-			let res = Poseidon::<_, 5, Params5x5Bn254>::new(h_inputs).permute()[0];
+			let res = Poseidon::<_, 5, Params>::new(h_inputs).permute()[0];
 			let m_hash_bits = to_bits(res.to_bytes()).map(Fr::from);
 			let eddsa = EddsaChip::new(
 				big_r_x, big_r_y, s, pk_x, pk_y, m, s_bits, suborder_bits, diff_bits, m_hash_bits,

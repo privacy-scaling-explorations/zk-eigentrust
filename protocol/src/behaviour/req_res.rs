@@ -243,7 +243,7 @@ mod tests {
 			curves::bn256::Bn256,
 			halo2::poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
 		},
-		poseidon::params::bn254_5x5::Params5x5Bn254,
+		params::poseidon_bn254_5x5::Params,
 		utils::{keygen, random_circuit},
 	};
 	use rand::thread_rng;
@@ -281,7 +281,7 @@ mod tests {
 		let rng = &mut thread_rng();
 		let params = ParamsKZG::<Bn256>::new(9);
 		let random_circuit =
-			random_circuit::<Bn256, _, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, Params5x5Bn254>(rng);
+			random_circuit::<Bn256, _, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, Params>(rng);
 		let pk = keygen(&params, &random_circuit).unwrap();
 		let mut opinion = Opinion::empty(&params, &pk).unwrap();
 		let good_res = Response::Opinion(opinion.clone());

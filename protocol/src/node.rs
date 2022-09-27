@@ -265,7 +265,7 @@ mod tests {
 			curves::bn256::Bn256,
 			halo2::poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
 		},
-		poseidon::params::bn254_5x5::Params5x5Bn254,
+		params::poseidon_bn254_5x5::Params,
 		utils::{keygen, random_circuit},
 	};
 	use libp2p::{
@@ -299,7 +299,7 @@ mod tests {
 
 		let rng = &mut thread_rng();
 		let random_circuit =
-			random_circuit::<Bn256, _, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, Params5x5Bn254>(rng);
+			random_circuit::<Bn256, _, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, Params>(rng);
 		let pk = keygen(&params, &random_circuit).unwrap();
 
 		let peer1 = Peer::new(local_key1.clone(), params.clone(), pk.clone()).unwrap();
@@ -353,7 +353,7 @@ mod tests {
 
 		let rng = &mut thread_rng();
 		let random_circuit =
-			random_circuit::<Bn256, _, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, Params5x5Bn254>(rng);
+			random_circuit::<Bn256, _, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, Params>(rng);
 		let pk = keygen(&params, &random_circuit).unwrap();
 
 		let peer1 = Peer::new(local_key1.clone(), params.clone(), pk.clone()).unwrap();
@@ -413,7 +413,7 @@ mod tests {
 
 		let rng = &mut thread_rng();
 		let random_circuit =
-			random_circuit::<Bn256, _, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, Params5x5Bn254>(rng);
+			random_circuit::<Bn256, _, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, Params>(rng);
 		let pk = keygen(&params, &random_circuit).unwrap();
 
 		let peer1 = Peer::new(local_key1.clone(), params.clone(), pk.clone()).unwrap();

@@ -173,7 +173,7 @@ mod test {
 		let params = ParamsKZG::<Bn256>::new(9);
 
 		let random_circuit =
-			random_circuit::<Bn256, _, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, Params5x5Bn254>(rng);
+			random_circuit::<Bn256, _, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, Params>(rng);
 		let pk = keygen(&params, &random_circuit).unwrap();
 
 		let op = Opinion::empty(&params, &pk).unwrap();
@@ -197,7 +197,7 @@ mod test {
 
 		let params = ParamsKZG::<Bn256>::new(9);
 		let random_circuit =
-			random_circuit::<Bn256, _, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, Params5x5Bn254>(rng);
+			random_circuit::<Bn256, _, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, Params>(rng);
 		let pk = keygen(&params, &random_circuit).unwrap();
 		let proof = Opinion::generate(
 			&local_keypair, &pubkey_v, epoch, iter, op_ji, c_v, &params, &pk,
@@ -225,7 +225,7 @@ mod test {
 
 		let params = ParamsKZG::<Bn256>::new(9);
 		let random_circuit =
-			random_circuit::<Bn256, _, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, Params5x5Bn254>(rng);
+			random_circuit::<Bn256, _, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, Params>(rng);
 		let pk = keygen(&params, &random_circuit).unwrap();
 		let opinion = Opinion::generate(
 			&local_keypair, &pubkey_v, epoch, iter, op_ji, c_v, &params, &pk,

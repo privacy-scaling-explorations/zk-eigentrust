@@ -48,6 +48,30 @@ pub trait RoundParams<F: FieldExt, const WIDTH: usize>: Sbox {
 	fn round_constants_raw() -> Vec<&'static str>;
 	/// Returns MDS martrix in its hex string form.
 	fn mds_raw() -> [[&'static str; WIDTH]; WIDTH];
+	/// Add round constants to the state values
+	/// for the AddRoundConstants operation.
+	fn apply_round_constants(state: &[F; WIDTH], round_consts: &[F; WIDTH]) -> [F; WIDTH] {
+		let mut next_state = [F::zero(); WIDTH];
+		for i in 0..WIDTH {
+			let state = state[i];
+			let round_const = round_consts[i];
+			let sum = state + round_const;
+			next_state[i] = sum;
+		}
+		next_state
+	}
+	/// Compute MDS matrix for MixLayer operation.
+	fn apply_mds(state: &[F; WIDTH], mds: &[[F; WIDTH]; WIDTH]) -> [F; WIDTH] {
+		let mut new_state = [F::zero(); WIDTH];
+		for i in 0..WIDTH {
+			for j in 0..WIDTH {
+				let mds_ij = &mds[i][j];
+				let m_product = state[j] * mds_ij;
+				new_state[i] += m_product;
+			}
+		}
+		new_state
+	}
 }
 
 /// Trait definition for Sbox operation of Poseidon

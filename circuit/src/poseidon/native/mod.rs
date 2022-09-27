@@ -25,32 +25,6 @@ where
 		Poseidon { inputs, _params: PhantomData }
 	}
 
-	/// Add round constants to the state values
-	/// for the AddRoundConstants operation.
-	fn apply_round_constants(state: &[F; WIDTH], round_consts: &[F; WIDTH]) -> [F; WIDTH] {
-		let mut next_state = [F::zero(); WIDTH];
-		for i in 0..WIDTH {
-			let state = state[i];
-			let round_const = round_consts[i];
-			let sum = state + round_const;
-			next_state[i] = sum;
-		}
-		next_state
-	}
-
-	/// Compute MDS matrix for MixLayer operation.
-	fn apply_mds(state: &[F; WIDTH], mds: &[[F; WIDTH]; WIDTH]) -> [F; WIDTH] {
-		let mut new_state = [F::zero(); WIDTH];
-		for i in 0..WIDTH {
-			for j in 0..WIDTH {
-				let mds_ij = &mds[i][j];
-				let m_product = state[j] * mds_ij;
-				new_state[i] += m_product;
-			}
-		}
-		new_state
-	}
-
 	/// The Hades Design Strategy for Hashing.
 	/// Mixing rounds with half-full S-box layers and
 	/// rounds with partial S-box layers.
@@ -78,7 +52,7 @@ where
 			let round_consts = P::load_round_constants(round, first_round_constants);
 			// 1. step for the TRF.
 			// AddRoundConstants step.
-			state = Self::apply_round_constants(&state, &round_consts);
+			state = P::apply_round_constants(&state, &round_consts);
 			// Applying S-boxes for the full round.
 			for i in 0..WIDTH {
 				// 2. step for the TRF.
@@ -87,28 +61,28 @@ where
 			}
 			// 3. step for the TRF.
 			// MixLayer step.
-			state = Self::apply_mds(&state, &mds);
+			state = P::apply_mds(&state, &mds);
 		}
 
 		for round in 0..partial_rounds {
 			let round_consts = P::load_round_constants(round, second_round_constants);
 			// 1. step for the TRF.
 			// AddRoundConstants step.
-			state = Self::apply_round_constants(&state, &round_consts);
+			state = P::apply_round_constants(&state, &round_consts);
 			// Applying single S-box for the partial round.
 			// 2. step for the TRF.
 			// SubWords step, denoted by S-box.
 			state[0] = P::sbox_f(state[0]);
 			// 3. step for the TRF.
 			// MixLayer step.
-			state = Self::apply_mds(&state, &mds);
+			state = P::apply_mds(&state, &mds);
 		}
 
 		for round in 0..half_full_rounds {
 			let round_consts = P::load_round_constants(round, third_round_constants);
 			// 1. step for the TRF.
 			// AddRoundConstants step.
-			state = Self::apply_round_constants(&state, &round_consts);
+			state = P::apply_round_constants(&state, &round_consts);
 			// Applying S-boxes for the full round.
 			for i in 0..WIDTH {
 				// 2. step for the TRF.
@@ -117,7 +91,7 @@ where
 			}
 			// 3. step for the TRF.
 			// MixLayer step.
-			state = Self::apply_mds(&state, &mds);
+			state = P::apply_mds(&state, &mds);
 		}
 
 		state
@@ -127,10 +101,10 @@ where
 #[cfg(test)]
 mod test {
 	use super::*;
-	use crate::poseidon::params::{bn254_5x5::Params5x5Bn254, hex_to_field};
+	use crate::params::{hex_to_field, poseidon_bn254_5x5::Params};
 	use halo2wrong::curves::bn256::Fr;
 
-	type TestPoseidon = Poseidon<Fr, 5, Params5x5Bn254>;
+	type TestPoseidon = Poseidon<Fr, 5, Params>;
 
 	#[test]
 	fn test_native_poseidon_5x5() {
