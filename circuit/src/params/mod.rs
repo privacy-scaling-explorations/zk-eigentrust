@@ -1,7 +1,7 @@
-/// Bn254 with WIDTH = 10 and EXPONENTIATION = 5
-pub mod bn254_10x5;
-/// Bn254 with WIDTH = 5 and EXPONENTIATION = 5
-pub mod bn254_5x5;
+/// Poseidon Bn254 with WIDTH = 10 and EXPONENTIATION = 5
+pub mod poseidon_bn254_10x5;
+/// Poseidon Bn254 with WIDTH = 5 and EXPONENTIATION = 5
+pub mod poseidon_bn254_5x5;
 
 use halo2wrong::halo2::{arithmetic::FieldExt, plonk::Expression};
 

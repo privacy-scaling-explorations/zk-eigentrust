@@ -18,16 +18,16 @@ use eigen_trust_circuit::{
 			poly::kzg::commitment::ParamsKZG,
 		},
 	},
-	poseidon::{native::Poseidon, params::bn254_5x5::Params5x5Bn254},
+	params::poseidon_bn254_5x5::Params,
+	poseidon::native::Poseidon,
 	utils::{prove, verify},
 	EigenTrustCircuit,
 };
 use libp2p::core::identity::Keypair as IdentityKeypair;
 use rand::thread_rng;
 
-pub type Posedion5x5 = Poseidon<Bn256Scalar, 5, Params5x5Bn254>;
-pub type ETCircuit =
-	EigenTrustCircuit<Bn256Scalar, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, Params5x5Bn254>;
+pub type Posedion5x5 = Poseidon<Bn256Scalar, 5, Params>;
+pub type ETCircuit = EigenTrustCircuit<Bn256Scalar, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, Params>;
 pub const SCALE: f64 = 100000000.;
 
 #[derive(Clone, Debug, PartialEq)]

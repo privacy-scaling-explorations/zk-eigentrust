@@ -1,7 +1,7 @@
 /// Native sponge implementation
 pub mod sponge;
 
-use super::params::RoundParams;
+use crate::params::RoundParams;
 use halo2wrong::halo2::arithmetic::FieldExt;
 use std::marker::PhantomData;
 

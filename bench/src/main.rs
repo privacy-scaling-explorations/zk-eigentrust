@@ -5,7 +5,7 @@ use std::str::FromStr;
 use csv::Reader as CsvReader;
 use eigen_trust_circuit::{
 	halo2wrong::curves::bn256::Bn256,
-	poseidon::params::bn254_5x5::Params5x5Bn254,
+	params::poseidon_bn254_5x5::Params,
 	utils::{keygen, random_circuit, read_params},
 };
 use eigen_trust_protocol::{
@@ -62,7 +62,7 @@ async fn main() {
 	let params = read_params::<Bn256>(&format!("{}/params-9.bin", path_to_data));
 	let rng = &mut thread_rng();
 	let random_circuit =
-		random_circuit::<Bn256, _, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, Params5x5Bn254>(rng);
+		random_circuit::<Bn256, _, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, Params>(rng);
 	let pk = keygen(&params, &random_circuit).unwrap();
 
 	let mut tasks = Vec::new();

@@ -1,7 +1,9 @@
 use std::marker::PhantomData;
 
-use super::{params::RoundParams, PoseidonConfig};
-use crate::poseidon::PoseidonChip;
+use crate::{
+	params::RoundParams,
+	poseidon::{PoseidonChip, PoseidonConfig},
+};
 use halo2wrong::halo2::{
 	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region, Value},

@@ -14,6 +14,9 @@
 pub mod eddsa;
 /// Common gadgets used across circuits
 pub mod gadgets;
+/// A module for defining round parameters and MDS matrix for hash
+/// permutations
+pub mod params;
 /// Poseidon hash function gadgets + native version
 pub mod poseidon;
 /// Utilities for proving and verifying
@@ -34,7 +37,8 @@ use halo2wrong::halo2::{
 	circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner, Value},
 	plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Instance},
 };
-use poseidon::{params::RoundParams, PoseidonChip, PoseidonConfig};
+use params::RoundParams;
+use poseidon::{PoseidonChip, PoseidonConfig};
 use std::marker::PhantomData;
 
 /// The halo2 columns config for the main circuit.

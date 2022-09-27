@@ -2,9 +2,9 @@ use super::*;
 use halo2wrong::curves::bn256::Fr;
 
 /// Configures a structure.
-pub struct Params10x5Bn254;
+pub struct Params;
 
-impl Sbox for Params10x5Bn254 {
+impl Sbox for Params {
 	fn sbox_expr<F: FieldExt>(exp: Expression<F>) -> Expression<F> {
 		let exp2 = exp.clone() * exp.clone();
 		let exp4 = exp2.clone() * exp2;
@@ -18,7 +18,7 @@ impl Sbox for Params10x5Bn254 {
 	}
 }
 
-impl RoundParams<Fr, 10> for Params10x5Bn254 {
+impl RoundParams<Fr, 10> for Params {
 	fn partial_rounds() -> usize {
 		60
 	}

@@ -3,10 +3,7 @@ pub mod ed_on_bn254;
 /// Helper functions for point arithmetic
 pub mod ops;
 
-use crate::{
-	poseidon::{native::Poseidon, params::bn254_5x5::Params5x5Bn254},
-	utils::to_wide,
-};
+use crate::{params::poseidon_bn254_5x5::Params, poseidon::native::Poseidon, utils::to_wide};
 use ed_on_bn254::{Point, B8, SUBORDER};
 use halo2wrong::{
 	curves::{bn256::Fr, FieldExt},
@@ -15,7 +12,7 @@ use halo2wrong::{
 use num_bigint::BigUint;
 use rand::RngCore;
 
-type Hasher = Poseidon<Fr, 5, Params5x5Bn254>;
+type Hasher = Poseidon<Fr, 5, Params>;
 
 /// Hashes the input with using the BLAKE hash function.
 fn blh(b: &[u8]) -> Vec<u8> {
