@@ -1,7 +1,9 @@
 use std::marker::PhantomData;
 
-use super::{params::RoundParams, PoseidonConfig};
-use crate::poseidon::PoseidonChip;
+use crate::{
+	params::RoundParams,
+	poseidon::{PoseidonChip, PoseidonConfig},
+};
 use halo2wrong::halo2::{
 	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region, Value},
@@ -147,7 +149,7 @@ mod test {
 	use super::{PoseidonSpongeChip, PoseidonSpongeConfig};
 	use crate::poseidon::native::sponge::PoseidonSponge;
 
-	use crate::poseidon::params::{bn254_5x5::Params5x5Bn254, hex_to_field};
+	use crate::params::{hex_to_field, poseidon_bn254_5x5::Params};
 
 	use halo2wrong::{
 		curves::bn256::Fr,
@@ -158,9 +160,8 @@ mod test {
 		},
 	};
 
-	type TestPoseidonSponge = PoseidonSponge<Fr, 5, Params5x5Bn254>;
-
-	type TestPoseidonSpongeChip = PoseidonSpongeChip<Fr, 5, Params5x5Bn254>;
+	type TestPoseidonSponge = PoseidonSponge<Fr, 5, Params>;
+	type TestPoseidonSpongeChip = PoseidonSpongeChip<Fr, 5, Params>;
 
 	#[derive(Clone)]
 	struct PoseidonTesterConfig {

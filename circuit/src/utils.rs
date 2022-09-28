@@ -1,7 +1,7 @@
 //! Helper functions for generating params, pk/vk pairs, creating and verifying
 //! proofs, etc.
 
-use crate::{EigenTrustCircuit, RoundParams};
+use crate::{params::RoundParams, EigenTrustCircuit};
 use halo2wrong::{
 	curves::pairing::{Engine, MultiMillerLoop},
 	halo2::{

@@ -14,8 +14,13 @@
 pub mod eddsa;
 /// Common gadgets used across circuits
 pub mod gadgets;
+/// A module for defining round parameters and MDS matrix for hash
+/// permutations
+pub mod params;
 /// Poseidon hash function gadgets + native version
 pub mod poseidon;
+/// Rescue Prime hash function gadgets + native version
+pub mod rescue_prime;
 /// Utilities for proving and verifying
 pub mod utils;
 
@@ -34,7 +39,8 @@ use halo2wrong::halo2::{
 	circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner, Value},
 	plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Instance},
 };
-use poseidon::{params::RoundParams, PoseidonChip, PoseidonConfig};
+use params::RoundParams;
+use poseidon::{PoseidonChip, PoseidonConfig};
 use std::marker::PhantomData;
 
 /// The halo2 columns config for the main circuit.
@@ -275,7 +281,8 @@ mod test {
 		curves::bn256::{Bn256, Fr},
 		halo2::{arithmetic::Field, dev::MockProver},
 	};
-	use poseidon::{native::Poseidon, params::bn254_5x5::Params5x5Bn254};
+	use params::poseidon_bn254_5x5::Params;
+	use poseidon::native::Poseidon;
 	use rand::thread_rng;
 	use utils::{generate_params, prove_and_verify};
 
@@ -301,15 +308,15 @@ mod test {
 		let bootstrap_pubkeys = [(); NUM_BOOTSTRAP].map(|_| Fr::random(&mut rng));
 		let bootstrap_score = Fr::from(MAX_SCORE);
 
-		let eigen_trust = EigenTrustCircuit::<Fr, SIZE, NUM_BOOTSTRAP, Params5x5Bn254>::new(
+		let eigen_trust = EigenTrustCircuit::<Fr, SIZE, NUM_BOOTSTRAP, Params>::new(
 			pubkey_v, epoch, iter, sk, op_ji, c_v, bootstrap_pubkeys, bootstrap_score,
 		);
 
 		let inputs_sk = [Fr::zero(), sk[0], sk[1], sk[2], sk[3]];
-		let pubkey_i = Poseidon::<_, 5, Params5x5Bn254>::new(inputs_sk).permute()[0];
+		let pubkey_i = Poseidon::<_, 5, Params>::new(inputs_sk).permute()[0];
 		let opv = Fr::from(256);
 		let inputs = [epoch, iter, opv, pubkey_v, pubkey_i];
-		let m_hash_poseidon = Poseidon::<_, 5, Params5x5Bn254>::new(inputs).permute()[0];
+		let m_hash_poseidon = Poseidon::<_, 5, Params>::new(inputs).permute()[0];
 		// let m_hash_poseidon = Fr::one();
 
 		let prover = match MockProver::<Fr>::run(k, &eigen_trust, vec![vec![m_hash_poseidon]]) {
@@ -337,15 +344,15 @@ mod test {
 		let bootstrap_pubkeys = [(); NUM_BOOTSTRAP].map(|_| Fr::random(&mut rng));
 		let bootstrap_score = Fr::from(MAX_SCORE);
 
-		let eigen_trust = EigenTrustCircuit::<Fr, SIZE, NUM_BOOTSTRAP, Params5x5Bn254>::new(
+		let eigen_trust = EigenTrustCircuit::<Fr, SIZE, NUM_BOOTSTRAP, Params>::new(
 			pubkey_v, epoch, iter, sk, op_ji, c_v, bootstrap_pubkeys, bootstrap_score,
 		);
 
 		let inputs_sk = [Fr::zero(), sk[0], sk[1], sk[2], sk[3]];
-		let pubkey_i = Poseidon::<_, 5, Params5x5Bn254>::new(inputs_sk).permute()[0];
+		let pubkey_i = Poseidon::<_, 5, Params>::new(inputs_sk).permute()[0];
 		let opv = Fr::from(256);
 		let inputs = [epoch, iter, opv, pubkey_v, pubkey_i];
-		let m_hash_poseidon = Poseidon::<_, 5, Params5x5Bn254>::new(inputs).permute()[0];
+		let m_hash_poseidon = Poseidon::<_, 5, Params>::new(inputs).permute()[0];
 
 		let params = generate_params(k);
 		let res =

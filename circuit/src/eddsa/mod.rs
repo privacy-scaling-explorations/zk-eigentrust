@@ -18,7 +18,8 @@ use crate::{
 		is_equal::{IsEqualChip, IsEqualConfig},
 		lt_eq::{LessEqualChip, LessEqualConfig},
 	},
-	poseidon::{params::bn254_5x5::Params5x5Bn254, PoseidonChip, PoseidonConfig},
+	params::poseidon_bn254_5x5::Params,
+	poseidon::{PoseidonChip, PoseidonConfig},
 };
 use halo2wrong::{
 	curves::bn256::Fr,
@@ -105,7 +106,7 @@ impl EddsaChip {
 		let lt_eq = LessEqualChip::configure(meta);
 		let point_add = PointAddChip::configure(meta);
 		let into_affine = IntoAffineChip::configure(meta);
-		let poseidon = PoseidonChip::<_, 5, Params5x5Bn254>::configure(meta);
+		let poseidon = PoseidonChip::<_, 5, Params>::configure(meta);
 		let is_eq = IsEqualChip::configure(meta);
 		let and = AndChip::configure(meta);
 		let temp = meta.advice_column();
@@ -165,7 +166,7 @@ impl EddsaChip {
 			self.pk_y.clone(),
 			self.m.clone(),
 		];
-		let hasher = PoseidonChip::<_, 5, Params5x5Bn254>::new(m_hash_input);
+		let hasher = PoseidonChip::<_, 5, Params>::new(m_hash_input);
 		let m_hash_res = hasher.synthesize(config.poseidon, layouter.namespace(|| "m_hash"))?;
 
 		// H(R || PK || M) * PK
@@ -255,7 +256,7 @@ mod test {
 		},
 	};
 	use rand::thread_rng;
-	type Hasher = Poseidon<Fr, 5, Params5x5Bn254>;
+	type Hasher = Poseidon<Fr, 5, Params>;
 
 	#[derive(Clone)]
 	struct TestConfig {
@@ -343,7 +344,7 @@ mod test {
 			let diff = self.s + Fr::from_bytes(&N_SHIFTED).unwrap() - SUBORDER;
 			let diff_bits = to_bits(diff.to_bytes()).map(Fr::from);
 			let h_inputs = [self.big_r_x, self.big_r_y, self.pk_x, self.pk_y, self.m];
-			let res = Poseidon::<_, 5, Params5x5Bn254>::new(h_inputs).permute()[0];
+			let res = Poseidon::<_, 5, Params>::new(h_inputs).permute()[0];
 			let m_hash_bits = to_bits(res.to_bytes()).map(Fr::from);
 			let eddsa = EddsaChip::new(
 				big_r_x, big_r_y, s, pk_x, pk_y, m, s_bits, suborder_bits, diff_bits, m_hash_bits,

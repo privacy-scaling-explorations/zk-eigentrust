@@ -1,18 +1,15 @@
 /// Native version of Poseidon
 pub mod native;
-/// A module for defining round parameters and MDS matrix for Poseidon
-/// permutation
-pub mod params;
 /// Implementation of a Poseidon sponge
 pub mod sponge;
 
+use crate::params::RoundParams;
 use halo2wrong::halo2::{
 	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region, Value},
 	plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector, VirtualCells},
 	poly::Rotation,
 };
-use params::RoundParams;
 use std::marker::PhantomData;
 
 #[derive(Clone, Debug)]
@@ -364,11 +361,11 @@ where
 
 #[cfg(test)]
 mod test {
-	use super::{
-		params::{bn254_5x5::Params5x5Bn254, hex_to_field},
+	use crate::{
+		params::{hex_to_field, poseidon_bn254_5x5::Params},
+		utils::{generate_params, prove_and_verify},
 		*,
 	};
-	use crate::utils::{generate_params, prove_and_verify};
 	use halo2wrong::{
 		curves::bn256::{Bn256, Fr},
 		halo2::{
@@ -378,7 +375,7 @@ mod test {
 		},
 	};
 
-	type TestPoseidonChip = PoseidonChip<Fr, 5, Params5x5Bn254>;
+	type TestPoseidonChip = PoseidonChip<Fr, 5, Params>;
 
 	#[derive(Clone)]
 	struct PoseidonTesterConfig {

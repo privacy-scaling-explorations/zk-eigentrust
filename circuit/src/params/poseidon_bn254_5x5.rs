@@ -3,9 +3,9 @@ use halo2wrong::curves::bn256::Fr;
 
 #[derive(Clone)]
 /// Configures a structure.
-pub struct Params5x5Bn254;
+pub struct Params;
 
-impl Sbox for Params5x5Bn254 {
+impl Sbox for Params {
 	fn sbox_expr<F: FieldExt>(exp: Expression<F>) -> Expression<F> {
 		let exp2 = exp.clone() * exp.clone();
 		let exp4 = exp2.clone() * exp2;
@@ -17,9 +17,16 @@ impl Sbox for Params5x5Bn254 {
 		let f4 = f2 * f2;
 		f4 * f
 	}
+
+	fn sbox_inv_f<F: FieldExt>(f: F) -> F {
+		// Pow by inverse of 5
+		f.pow(&[
+			14981214993055009997, 6006880321387387405, 10624953561019755799, 2789598613442376532,
+		])
+	}
 }
 
-impl RoundParams<Fr, 5> for Params5x5Bn254 {
+impl RoundParams<Fr, 5> for Params {
 	fn partial_rounds() -> usize {
 		60
 	}
