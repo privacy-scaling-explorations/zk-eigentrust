@@ -2,6 +2,8 @@
 pub mod and;
 /// Convert bits to number
 pub mod bits2num;
+/// Common gadget for the optimization
+pub mod common;
 /// Check if a number is a boolean
 pub mod is_boolean;
 /// Check equality between two numbers
