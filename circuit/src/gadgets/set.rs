@@ -1,4 +1,4 @@
-use super::is_zero::{IsZeroChip, IsZeroConfig};
+use super::common::{CommonChip, CommonConfig};
 use halo2wrong::halo2::{
 	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region, Value},
@@ -10,7 +10,7 @@ use halo2wrong::halo2::{
 /// Configuration elements for the circuit defined here.
 pub struct FixedSetConfig {
 	/// Constructs is_zero circuit elements.
-	is_zero: IsZeroConfig,
+	is_zero: CommonConfig,
 	/// Configures a column for the target.
 	target: Column<Advice>,
 	/// Configures a fixed column for the items.
@@ -39,7 +39,7 @@ impl<F: FieldExt, const N: usize> FixedSetChip<F, N> {
 
 	/// Make the circuit config.
 	pub fn configure(meta: &mut ConstraintSystem<F>) -> FixedSetConfig {
-		let is_zero = IsZeroChip::configure(meta);
+		let is_zero = CommonChip::configure_gadgets(meta);
 		let target = meta.advice_column();
 		let items = meta.fixed_column();
 		let diffs = meta.advice_column();
@@ -72,8 +72,8 @@ impl<F: FieldExt, const N: usize> FixedSetChip<F, N> {
 				// That makes next_product_exp = 0
 				// => (1 * 0) - 0 == 0
 				s_exp.clone() * (product_exp * diff_exp.clone() - next_product_exp),
-				//TODO: uncomment this line when the bug is fixed.
-				//s_exp * (target_exp - (diff_exp + item_exp)),
+				// TODO: uncomment this line when the bug is fixed.
+				// s_exp * (target_exp - (diff_exp + item_exp)),
 			]
 		});
 
@@ -131,9 +131,8 @@ impl<F: FieldExt, const N: usize> FixedSetChip<F, N> {
 			},
 		)?;
 
-		let is_zero_chip = IsZeroChip::new(product);
 		let is_zero =
-			is_zero_chip.synthesize(config.is_zero, layouter.namespace(|| "is_member"))?;
+			CommonChip::is_zero(product, config.is_zero, layouter.namespace(|| "is_member"))?;
 
 		Ok(is_zero)
 	}
