@@ -246,15 +246,15 @@ impl<F: FieldExt> CommonChip<F> {
 			let r_y_exp = v_cells.query_advice(eddsa_advice[1], Rotation::cur());
 			let r_z_exp = v_cells.query_advice(eddsa_advice[2], Rotation::cur());
 
-			let r_x_affine_exp = v_cells.query_advice(eddsa_advice[0], Rotation::next());
-			let r_y_affine_exp = v_cells.query_advice(eddsa_advice[1], Rotation::next());
-			let r_z_invert_exp = v_cells.query_advice(eddsa_advice[2], Rotation::next());
+			let r_x_affine_exp = v_cells.query_advice(eddsa_advice[3], Rotation::cur());
+			let r_y_affine_exp = v_cells.query_advice(eddsa_advice[4], Rotation::cur());
+			let r_z_invert_exp = v_cells.query_advice(eddsa_advice[5], Rotation::cur());
 
 			let affine_x = r_x_exp * r_z_invert_exp.clone();
 			let affine_y = r_y_exp * r_z_invert_exp.clone();
 
 			vec![
-				// Ensure the affine calculation properly calculated.
+				// Ensure the affine representation is properly calculated.
 				s_exp.clone() * (r_x_affine_exp - affine_x),
 				s_exp.clone() * (r_y_affine_exp - affine_y),
 				s_exp * (r_z_exp * r_z_invert_exp - one),
@@ -590,20 +590,20 @@ impl<F: FieldExt> CommonChip<F> {
 
 				let x = region.assign_advice(
 					|| "r_x_affine",
-					config.eddsa_advice[0],
-					1,
+					config.eddsa_advice[3],
+					0,
 					|| r_x_affine.evaluate(),
 				)?;
 				let y = region.assign_advice(
 					|| "r_y_affine",
-					config.eddsa_advice[1],
-					1,
+					config.eddsa_advice[4],
+					0,
 					|| r_y_affine.evaluate(),
 				)?;
 				region.assign_advice(
 					|| "r_z_invert",
-					config.eddsa_advice[2],
-					1,
+					config.eddsa_advice[5],
+					0,
 					|| z_invert.evaluate(),
 				)?;
 
