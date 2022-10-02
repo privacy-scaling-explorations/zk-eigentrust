@@ -141,7 +141,7 @@ impl<F: FieldExt, const S: usize, const B: usize, P: RoundParams<F, 5>> Circuit<
 	/// Make the circuit config.
 	fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
 		let set = FixedSetChip::<_, B>::configure(meta);
-		let common = CommonChip::configure_gadgets(meta);
+		let common = CommonChip::configure(meta);
 		let poseidon = PoseidonChip::<_, 5, P>::configure(meta);
 		let sum = SumChip::<_, S>::configure(meta);
 

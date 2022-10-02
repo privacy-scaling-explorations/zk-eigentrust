@@ -65,7 +65,7 @@ impl<F: FieldExt> LessEqualChip<F> {
 		let diff_b2n = Bits2NumChip::<_, DIFF_BITS>::configure(meta);
 		let x_b2n = Bits2NumChip::<_, NUM_BITS>::configure(meta);
 		let y_b2n = Bits2NumChip::<_, NUM_BITS>::configure(meta);
-		let is_zero = CommonChip::configure_gadgets(meta);
+		let is_zero = CommonChip::configure(meta);
 		let x = meta.advice_column();
 		let y = meta.advice_column();
 		let s = meta.selector();

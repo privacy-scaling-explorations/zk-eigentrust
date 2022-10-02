@@ -39,7 +39,7 @@ impl<F: FieldExt, const N: usize> FixedSetChip<F, N> {
 
 	/// Make the circuit config.
 	pub fn configure(meta: &mut ConstraintSystem<F>) -> FixedSetConfig {
-		let is_zero = CommonChip::configure_gadgets(meta);
+		let is_zero = CommonChip::configure(meta);
 		let target = meta.advice_column();
 		let items = meta.fixed_column();
 		let diffs = meta.advice_column();

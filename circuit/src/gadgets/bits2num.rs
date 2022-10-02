@@ -15,7 +15,7 @@ pub fn to_bits<const B: usize>(num: [u8; 32]) -> [bool; B] {
 }
 
 /// Configuration elements for the circuit defined here.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct Bits2NumConfig {
 	/// Configures a column for the bits.
 	pub bits: Column<Advice>,

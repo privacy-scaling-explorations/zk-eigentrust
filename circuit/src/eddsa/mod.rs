@@ -1,9 +1,12 @@
+/// Implementation for the EDDSA circuit gadgets.
+pub mod eddsa_gadgets;
 /// Native implementation of EDDSA signature scheme
 pub mod native;
 
 use crate::{
+	eddsa::eddsa_gadgets::{EddsaGadgetsChip, EddsaGadgetsConfig},
 	gadgets::{
-		common::{CommonChip, CommonConfig, CommonEddsaConfig},
+		common::{CommonChip, CommonConfig},
 		lt_eq::{LessEqualChip, LessEqualConfig},
 	},
 	params::poseidon_bn254_5x5::Params,
@@ -23,7 +26,7 @@ use native::ed_on_bn254::{B8, SUBORDER};
 /// Configuration elements for the circuit are defined here.
 struct EddsaConfig {
 	/// Constructs common eddsa circuit elements.
-	common_eddsa: CommonEddsaConfig,
+	eddsa_gadgets: EddsaGadgetsConfig,
 	/// Constructs common circuit elements.
 	common: CommonConfig,
 	/// Constructs lt_eq circuit elements.
@@ -82,15 +85,15 @@ impl EddsaChip {
 
 	/// Make the circuit config.
 	pub fn configure(meta: &mut ConstraintSystem<Fr>) -> EddsaConfig {
-		let common = CommonChip::configure_gadgets(meta);
-		let common_eddsa = CommonChip::<Fr>::configure_eddsa(meta);
+		let common = CommonChip::configure(meta);
+		let eddsa_gadgets = EddsaGadgetsChip::configure(meta);
 		let lt_eq = LessEqualChip::configure(meta);
 		let poseidon = PoseidonChip::<_, 5, Params>::configure(meta);
 		let temp = meta.advice_column();
 
 		meta.enable_equality(temp);
 
-		EddsaConfig { common_eddsa, common, lt_eq, poseidon, temp }
+		EddsaConfig { eddsa_gadgets, common, lt_eq, poseidon, temp }
 	}
 
 	/// Synthesize the circuit.
@@ -121,13 +124,13 @@ impl EddsaChip {
 		let is_lt_eq = lt_eq.synthesize(config.lt_eq, layouter.namespace(|| "s_lt_eq_suborder"))?;
 
 		// Cl = s * G
-		let cl = CommonChip::<Fr>::scalar_mul::<252>(
+		let cl = EddsaGadgetsChip::scalar_mul::<252>(
 			b8_x,
 			b8_y,
 			one.clone(),
 			self.s.clone(),
 			self.s_bits,
-			config.common_eddsa,
+			config.eddsa_gadgets.clone(),
 			layouter.namespace(|| "b_8 * s"),
 		)?;
 
@@ -145,41 +148,41 @@ impl EddsaChip {
 
 		// H(R || PK || M) * PK
 		// Scalar multiplication for the public key and hash.
-		let pk_h = CommonChip::<Fr>::scalar_mul::<256>(
+		let pk_h = EddsaGadgetsChip::scalar_mul::<256>(
 			self.pk_x.clone(),
 			self.pk_y.clone(),
 			one.clone(),
 			m_hash_res[0].clone(),
 			self.m_hash_bits,
-			config.common_eddsa,
+			config.eddsa_gadgets.clone(),
 			layouter.namespace(|| "pk * m_hash"),
 		)?;
 
 		// Cr = R + H(R || PK || M) * PK
-		let cr = CommonChip::<Fr>::add_point(
+		let cr = EddsaGadgetsChip::add_point(
 			self.big_r_x.clone(),
 			self.big_r_y.clone(),
 			one,
 			pk_h.0,
 			pk_h.1,
 			pk_h.2,
-			config.common_eddsa,
+			config.eddsa_gadgets.clone(),
 			layouter.namespace(|| "big_r + pk_h"),
 		)?;
 
 		// Converts two projective space points to their affine representation.
-		let cl_affine = CommonChip::<Fr>::into_affine(
+		let cl_affine = EddsaGadgetsChip::into_affine(
 			cl.0,
 			cl.1,
 			cl.2,
-			config.common_eddsa.clone(),
+			config.eddsa_gadgets.clone(),
 			layouter.namespace(|| "cl_affine"),
 		)?;
-		let cr_affine = CommonChip::<Fr>::into_affine(
+		let cr_affine = EddsaGadgetsChip::into_affine(
 			cr.0,
 			cr.1,
 			cr.2,
-			config.common_eddsa,
+			config.eddsa_gadgets,
 			layouter.namespace(|| "cr_affine"),
 		)?;
 
@@ -225,11 +228,7 @@ impl EddsaChip {
 mod test {
 	use super::*;
 	use crate::{
-		eddsa::native::{
-			ed_on_bn254::{B8, G},
-			ops::add,
-			sign, SecretKey,
-		},
+		eddsa::native::{ed_on_bn254::B8, sign, SecretKey},
 		gadgets::{bits2num::to_bits, lt_eq::N_SHIFTED},
 		poseidon::native::Poseidon,
 		utils::{generate_params, prove_and_verify},
@@ -242,41 +241,35 @@ mod test {
 		halo2::{
 			circuit::{SimpleFloorPlanner, Value},
 			dev::MockProver,
-			plonk::{Circuit, Instance},
+			plonk::Circuit,
 		},
 	};
 	use rand::thread_rng;
 	type Hasher = Poseidon<Fr, 5, Params>;
 
 	#[derive(Clone)]
-	enum Gadgets {
-		Eddsa,
-		AddPoint,
-		IntoAffine,
-		ScalarMul,
-	}
-
-	#[derive(Clone)]
 	struct TestConfig {
 		eddsa: EddsaConfig,
-		common_eddsa: CommonEddsaConfig,
-		pub_ins: Column<Instance>,
 		temp: Column<Advice>,
 	}
 
 	#[derive(Clone)]
-	struct TestCircuit<const N: usize> {
-		inputs: [Fr; N],
-		gadget: Gadgets,
+	struct TestCircuit {
+		big_r_x: Fr,
+		big_r_y: Fr,
+		s: Fr,
+		pk_x: Fr,
+		pk_y: Fr,
+		m: Fr,
 	}
 
-	impl<const N: usize> TestCircuit<N> {
-		fn new(inputs: [Fr; N], gadget: Gadgets) -> Self {
-			Self { inputs, gadget }
+	impl TestCircuit {
+		fn new(big_r_x: Fr, big_r_y: Fr, s: Fr, pk_x: Fr, pk_y: Fr, m: Fr) -> Self {
+			Self { big_r_x, big_r_y, s, pk_x, pk_y, m }
 		}
 	}
 
-	impl<const N: usize> Circuit<Fr> for TestCircuit<N> {
+	impl Circuit<Fr> for TestCircuit {
 		type Config = TestConfig;
 		type FloorPlanner = SimpleFloorPlanner;
 
@@ -286,109 +279,70 @@ mod test {
 
 		fn configure(meta: &mut ConstraintSystem<Fr>) -> TestConfig {
 			let eddsa = EddsaChip::configure(meta);
-			let common_eddsa = CommonChip::<Fr>::configure_eddsa(meta);
-			let pub_ins = meta.instance_column();
 			let temp = meta.advice_column();
 
-			meta.enable_equality(pub_ins);
 			meta.enable_equality(temp);
 
-			TestConfig { eddsa, common_eddsa, pub_ins, temp }
+			TestConfig { eddsa, temp }
 		}
 
 		fn synthesize(
 			&self, config: TestConfig, mut layouter: impl Layouter<Fr>,
 		) -> Result<(), Error> {
-			let mut items = Vec::new();
-			for i in 0..N {
-				items.push(layouter.assign_region(
-					|| "temp",
-					|mut region: Region<'_, Fr>| {
-						let x = region.assign_advice(
-							|| "temp_inputs",
-							config.temp,
-							i,
-							|| Value::known(self.inputs[i]),
-						)?;
-						Ok(x)
-					},
-				)?);
-			}
-			match self.gadget {
-				Gadgets::Eddsa => {
-					let s_bits = to_bits(self.inputs[2].to_bytes()).map(Fr::from);
-					let suborder_bits = to_bits(SUBORDER.to_bytes()).map(Fr::from);
-					let diff = self.inputs[2] + Fr::from_bytes(&N_SHIFTED).unwrap() - SUBORDER;
-					let diff_bits = to_bits(diff.to_bytes()).map(Fr::from);
-					let h_inputs = [
-						self.inputs[0], self.inputs[1], self.inputs[3], self.inputs[4],
-						self.inputs[5],
-					];
-					let res = Poseidon::<_, 5, Params>::new(h_inputs).permute()[0];
-					let m_hash_bits = to_bits(res.to_bytes()).map(Fr::from);
-					let eddsa = EddsaChip::new(
-						items[0].clone(),
-						items[1].clone(),
-						items[2].clone(),
-						items[3].clone(),
-						items[4].clone(),
-						items[5].clone(),
-						s_bits,
-						suborder_bits,
-						diff_bits,
-						m_hash_bits,
-					);
-					eddsa.synthesize(config.eddsa, layouter.namespace(|| "eddsa"))?;
-				},
-				Gadgets::AddPoint => {
-					let (x, y, z) = CommonChip::<Fr>::add_point(
-						items[0].clone(),
-						items[1].clone(),
-						items[2].clone(),
-						items[3].clone(),
-						items[4].clone(),
-						items[5].clone(),
-						config.common_eddsa,
-						layouter.namespace(|| "add"),
+			let (big_r_x, big_r_y, s, pk_x, pk_y, m) = layouter.assign_region(
+				|| "temp",
+				|mut region: Region<'_, Fr>| {
+					let big_r_x_assigned = region.assign_advice(
+						|| "big_r_x",
+						config.temp,
+						0,
+						|| Value::known(self.big_r_x),
 					)?;
-					layouter.constrain_instance(x.cell(), config.pub_ins, 0)?;
-					layouter.constrain_instance(y.cell(), config.pub_ins, 1)?;
-					layouter.constrain_instance(z.cell(), config.pub_ins, 2)?;
-				},
-				Gadgets::IntoAffine => {
-					let (x, y) = CommonChip::<Fr>::into_affine(
-						items[0].clone(),
-						items[1].clone(),
-						items[2].clone(),
-						config.common_eddsa,
-						layouter.namespace(|| "into_affine"),
+					let big_r_y_assigned = region.assign_advice(
+						|| "big_r_y",
+						config.temp,
+						1,
+						|| Value::known(self.big_r_y),
 					)?;
-					layouter.constrain_instance(x.cell(), config.pub_ins, 0)?;
-					layouter.constrain_instance(y.cell(), config.pub_ins, 1)?;
-				},
-				Gadgets::ScalarMul => {
-					let value_bits = to_bits::<256>(self.inputs[3].to_bytes()).map(Fr::from);
-					let (x, y, z) = CommonChip::<Fr>::scalar_mul(
-						items[0].clone(),
-						items[1].clone(),
-						items[2].clone(),
-						items[3].clone(),
-						value_bits,
-						config.common_eddsa,
-						layouter.namespace(|| "scalar_mul"),
+					let s_assigned =
+						region.assign_advice(|| "s", config.temp, 2, || Value::known(self.s))?;
+					let pk_x_assigned = region.assign_advice(
+						|| "pk_x",
+						config.temp,
+						3,
+						|| Value::known(self.pk_x),
 					)?;
-					layouter.constrain_instance(x.cell(), config.pub_ins, 0)?;
-					layouter.constrain_instance(y.cell(), config.pub_ins, 1)?;
-					layouter.constrain_instance(z.cell(), config.pub_ins, 2)?;
+					let pk_y_assigned = region.assign_advice(
+						|| "pk_y",
+						config.temp,
+						4,
+						|| Value::known(self.pk_y),
+					)?;
+					let m_assigned =
+						region.assign_advice(|| "m", config.temp, 5, || Value::known(self.m))?;
+
+					Ok((
+						big_r_x_assigned, big_r_y_assigned, s_assigned, pk_x_assigned,
+						pk_y_assigned, m_assigned,
+					))
 				},
-			}
+			)?;
+
+			let s_bits = to_bits(self.s.to_bytes()).map(Fr::from);
+			let suborder_bits = to_bits(SUBORDER.to_bytes()).map(Fr::from);
+			let diff = self.s + Fr::from_bytes(&N_SHIFTED).unwrap() - SUBORDER;
+			let diff_bits = to_bits(diff.to_bytes()).map(Fr::from);
+			let h_inputs = [self.big_r_x, self.big_r_y, self.pk_x, self.pk_y, self.m];
+			let res = Poseidon::<_, 5, Params>::new(h_inputs).permute()[0];
+			let m_hash_bits = to_bits(res.to_bytes()).map(Fr::from);
+			let eddsa = EddsaChip::new(
+				big_r_x, big_r_y, s, pk_x, pk_y, m, s_bits, suborder_bits, diff_bits, m_hash_bits,
+			);
+			eddsa.synthesize(config.eddsa, layouter.namespace(|| "eddsa"))?;
 			Ok(())
 		}
 	}
 
-	// TEST CASES FOR THE EDDSA CIRCUIT
-	// In Eddsa test cases sending a dummy instance doesn't
-	// affect the circuit output because it is not constrained.
 	#[test]
 	fn test_eddsa() {
 		// Testing a valid case.
@@ -399,14 +353,10 @@ mod test {
 
 		let m = Fr::from_str_vartime("123456789012345678901234567890").unwrap();
 		let sig = sign(&sk, &pk, m);
-		let circuit = TestCircuit::new(
-			[sig.big_r.x, sig.big_r.y, sig.s, pk.0.x, pk.0.y, m],
-			Gadgets::Eddsa,
-		);
+		let circuit = TestCircuit::new(sig.big_r.x, sig.big_r.y, sig.s, pk.0.x, pk.0.y, m);
 
 		let k = 10;
-		let dummy_instance = vec![Fr::zero()];
-		let prover = MockProver::run(k, &circuit, vec![dummy_instance]).unwrap();
+		let prover = MockProver::run(k, &circuit, vec![]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
 	}
 
@@ -424,14 +374,10 @@ mod test {
 		let m = Fr::from_str_vartime("123456789012345678901234567890").unwrap();
 		let mut sig = sign(&sk, &pk, m);
 		sig.big_r = B8.mul_scalar(&different_r.to_bytes()).affine();
-		let circuit = TestCircuit::new(
-			[sig.big_r.x, sig.big_r.y, sig.s, pk.0.x, pk.0.y, m],
-			Gadgets::Eddsa,
-		);
+		let circuit = TestCircuit::new(sig.big_r.x, sig.big_r.y, sig.s, pk.0.x, pk.0.y, m);
 
 		let k = 10;
-		let dummy_instance = vec![Fr::zero()];
-		let prover = MockProver::run(k, &circuit, vec![dummy_instance]).unwrap();
+		let prover = MockProver::run(k, &circuit, vec![]).unwrap();
 		assert!(prover.verify().is_err());
 	}
 
@@ -446,14 +392,10 @@ mod test {
 		let m = Fr::from_str_vartime("123456789012345678901234567890").unwrap();
 		let mut sig = sign(&sk, &pk, m);
 		sig.s = sig.s.add(&Fr::from(1));
-		let circuit = TestCircuit::new(
-			[sig.big_r.x, sig.big_r.y, sig.s, pk.0.x, pk.0.y, m],
-			Gadgets::Eddsa,
-		);
+		let circuit = TestCircuit::new(sig.big_r.x, sig.big_r.y, sig.s, pk.0.x, pk.0.y, m);
 
 		let k = 10;
-		let dummy_instance = vec![Fr::zero()];
-		let prover = MockProver::run(k, &circuit, vec![dummy_instance]).unwrap();
+		let prover = MockProver::run(k, &circuit, vec![]).unwrap();
 		assert!(prover.verify().is_err());
 	}
 
@@ -470,13 +412,9 @@ mod test {
 
 		let m = Fr::from_str_vartime("123456789012345678901234567890").unwrap();
 		let sig = sign(&sk1, &pk1, m);
-		let circuit = TestCircuit::new(
-			[sig.big_r.x, sig.big_r.y, sig.s, pk2.0.x, pk2.0.y, m],
-			Gadgets::Eddsa,
-		);
+		let circuit = TestCircuit::new(sig.big_r.x, sig.big_r.y, sig.s, pk2.0.x, pk2.0.y, m);
 		let k = 10;
-		let dummy_instance = vec![Fr::zero()];
-		let prover = MockProver::run(k, &circuit, vec![dummy_instance]).unwrap();
+		let prover = MockProver::run(k, &circuit, vec![]).unwrap();
 		assert!(prover.verify().is_err());
 	}
 
@@ -492,14 +430,10 @@ mod test {
 		let m2 = Fr::from_str_vartime("123456789012345678901234567890123123").unwrap();
 
 		let sig = sign(&sk, &pk, m1);
-		let circuit = TestCircuit::new(
-			[sig.big_r.x, sig.big_r.y, sig.s, pk.0.x, pk.0.y, m2],
-			Gadgets::Eddsa,
-		);
+		let circuit = TestCircuit::new(sig.big_r.x, sig.big_r.y, sig.s, pk.0.x, pk.0.y, m2);
 
 		let k = 10;
-		let dummy_instance = vec![Fr::zero()];
-		let prover = MockProver::run(k, &circuit, vec![dummy_instance]).unwrap();
+		let prover = MockProver::run(k, &circuit, vec![]).unwrap();
 
 		assert!(prover.verify().is_err());
 	}
@@ -513,136 +447,12 @@ mod test {
 
 		let m = Fr::from_str_vartime("123456789012345678901234567890").unwrap();
 		let sig = sign(&sk, &pk, m);
-		let circuit = TestCircuit::new(
-			[sig.big_r.x, sig.big_r.y, sig.s, pk.0.x, pk.0.y, m],
-			Gadgets::Eddsa,
-		);
+		let circuit = TestCircuit::new(sig.big_r.x, sig.big_r.y, sig.s, pk.0.x, pk.0.y, m);
 
 		let k = 10;
 		let rng = &mut rand::thread_rng();
 		let params = generate_params(k);
-		let dummy_instance = vec![Fr::zero()];
-		let res =
-			prove_and_verify::<Bn256, _, _>(params, circuit, &[&dummy_instance], rng).unwrap();
-
-		assert!(res);
-	}
-
-	// TEST CASES FOR THE ADD_POINT CIRCUIT
-	#[test]
-	fn should_add_point() {
-		// Testing a valid case.
-		let r = B8.projective();
-		let e = G.projective();
-		let (x_res, y_res, z_res) = add(r.x, r.y, r.z, e.x, e.y, e.z);
-		let circuit = TestCircuit::new([r.x, r.y, r.z, e.x, e.y, e.z], Gadgets::AddPoint);
-
-		let k = 7;
-		let pub_ins = vec![x_res, y_res, z_res];
-		let prover = MockProver::run(k, &circuit, vec![pub_ins]).unwrap();
-		assert_eq!(prover.verify(), Ok(()));
-	}
-
-	#[test]
-	fn should_add_point_production() {
-		let r = B8.projective();
-		let e = G.projective();
-		let (x_res, y_res, z_res) = add(r.x, r.y, r.z, e.x, e.y, e.z);
-		let circuit = TestCircuit::new([r.x, r.y, r.z, e.x, e.y, e.z], Gadgets::AddPoint);
-
-		let k = 9;
-		let rng = &mut rand::thread_rng();
-		let params = generate_params(k);
-		let pub_ins = [x_res, y_res, z_res];
-		let res = prove_and_verify::<Bn256, _, _>(params, circuit, &[&pub_ins], rng).unwrap();
-
-		assert!(res);
-	}
-
-	// TEST CASES FOR THE INTO_AFFINE CIRCUIT
-	#[test]
-	fn should_into_affine_point() {
-		// Testing a valid case.
-		let r = B8.projective();
-		let r_affine = r.affine();
-		let circuit = TestCircuit::new([r.x, r.y, r.z], Gadgets::IntoAffine);
-
-		let k = 7;
-		let pub_ins = vec![r_affine.x, r_affine.y];
-		let prover = MockProver::run(k, &circuit, vec![pub_ins]).unwrap();
-		assert_eq!(prover.verify(), Ok(()));
-	}
-
-	#[test]
-	fn should_into_affine_point_production() {
-		let r = B8.projective();
-		let r_affine = r.affine();
-		let circuit = TestCircuit::new([r.x, r.y, r.z], Gadgets::IntoAffine);
-
-		let k = 9;
-		let rng = &mut rand::thread_rng();
-		let params = generate_params(k);
-		let pub_ins = vec![r_affine.x, r_affine.y];
-		let res = prove_and_verify::<Bn256, _, _>(params, circuit, &[&pub_ins], rng).unwrap();
-
-		assert!(res);
-	}
-
-	//TEST CASES FOR THE SCALAR_MUL CIRCUIT
-	#[test]
-	fn should_mul_point_with_scalar() {
-		// Testing scalar as value 8.
-		let scalar = Fr::from(8);
-		let r = B8.projective();
-		let res = B8.mul_scalar(&scalar.to_bytes());
-		let circuit = TestCircuit::new([r.x, r.y, r.z, scalar], Gadgets::ScalarMul);
-
-		let k = 9;
-		let pub_ins = vec![res.x, res.y, res.z];
-		let prover = MockProver::run(k, &circuit, vec![pub_ins]).unwrap();
-		assert_eq!(prover.verify(), Ok(()));
-	}
-
-	#[test]
-	fn test_scalar_mul_zero() {
-		// Testing scalar as value 0.
-		let scalar = Fr::from(0);
-		let r = B8.projective();
-		let res = B8.mul_scalar(&scalar.to_bytes());
-		let circuit = TestCircuit::new([r.x, r.y, r.z, scalar], Gadgets::ScalarMul);
-
-		let k = 9;
-		let pub_ins = vec![res.x, res.y, res.z];
-		let prover = MockProver::run(k, &circuit, vec![pub_ins]).unwrap();
-		assert_eq!(prover.verify(), Ok(()));
-	}
-
-	#[test]
-	fn test_scalar_mul_one() {
-		// Testing scalar as value 1.
-		let scalar = Fr::from(1);
-		let r = B8.projective();
-		let res = B8.mul_scalar(&scalar.to_bytes());
-		let circuit = TestCircuit::new([r.x, r.y, r.z, scalar], Gadgets::ScalarMul);
-
-		let k = 9;
-		let pub_ins = vec![res.x, res.y, res.z];
-		let prover = MockProver::run(k, &circuit, vec![pub_ins]).unwrap();
-		assert_eq!(prover.verify(), Ok(()));
-	}
-
-	#[test]
-	fn should_mul_point_with_scalar_production() {
-		let scalar = Fr::from(8);
-		let r = B8.projective();
-		let res = B8.mul_scalar(&scalar.to_bytes());
-		let circuit = TestCircuit::new([r.x, r.y, r.z, scalar], Gadgets::ScalarMul);
-
-		let k = 9;
-		let rng = &mut rand::thread_rng();
-		let params = generate_params(k);
-		let pub_ins = [res.x, res.y, res.z];
-		let res = prove_and_verify::<Bn256, _, _>(params, circuit, &[&pub_ins], rng).unwrap();
+		let res = prove_and_verify::<Bn256, _, _>(params, circuit, &[], rng).unwrap();
 
 		assert!(res);
 	}
