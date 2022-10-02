@@ -15,14 +15,14 @@ pub struct CommonConfig {
 	selectors: [Selector; 6],
 }
 
-/// Structure for the chip.
+/// Structure for the common chip.
 pub struct CommonChip<F: FieldExt> {
 	/// Constructs a phantom data for the FieldExt.
 	_phantom: PhantomData<F>,
 }
 
 impl<F: FieldExt> CommonChip<F> {
-	/// Make the circuit config.
+	/// Make the circuit configs.
 	pub fn configure(meta: &mut ConstraintSystem<F>) -> CommonConfig {
 		let advice = [meta.advice_column(), meta.advice_column(), meta.advice_column()];
 		let selectors = [

@@ -25,7 +25,7 @@ use native::ed_on_bn254::{B8, SUBORDER};
 #[derive(Clone)]
 /// Configuration elements for the circuit are defined here.
 struct EddsaConfig {
-	/// Constructs common eddsa circuit elements.
+	/// Constructs eddsa gadgets circuit elements.
 	eddsa_gadgets: EddsaGadgetsConfig,
 	/// Constructs common circuit elements.
 	common: CommonConfig,

@@ -20,11 +20,11 @@ pub struct EddsaGadgetsConfig {
 	selectors: [Selector; 3],
 }
 
-/// Structure for the chip.
+/// Structure for the eddsa gadgets chip.
 pub struct EddsaGadgetsChip;
 
 impl EddsaGadgetsChip {
-	/// Configuration for the common eddsa circuits.
+	/// Make the circuit configs.
 	pub fn configure(meta: &mut ConstraintSystem<Fr>) -> EddsaGadgetsConfig {
 		let bits2num = Bits2NumChip::<_, 256>::configure(meta);
 		let eddsa_advice = [
