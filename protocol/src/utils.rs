@@ -87,7 +87,7 @@ pub fn to_wide_bytes(p: &[u8]) -> [u8; 64] {
 
 /// Schedule `num` intervals with a duration of `interval` that starts at
 /// `start`.
-pub fn create_iter<'a>(start: Instant, interval: Duration, num: usize) -> Fuse<BoxStream<'a, u32>> {
+pub fn create_iter<'a>(start: Instant, interval: Duration, num: usize) -> Fuse<BoxStream<'a, u64>> {
 	let mut inner_interval = time::interval_at(start, interval);
 	inner_interval.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
 	stream::unfold((inner_interval, 0), |(mut interval, count)| async move {

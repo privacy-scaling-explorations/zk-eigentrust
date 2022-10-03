@@ -43,16 +43,14 @@ impl From<IdentifyEvent> for EigenEvent {
 
 impl EigenTrustBehaviour {
 	/// Constructs a new `EigenTrustBehaviour`.
-	pub fn new(
-		connection_duration: Duration, interval_duration: Duration, local_public_key: PublicKey,
-	) -> Self {
+	pub fn new(connection_duration: Duration, local_public_key: PublicKey) -> Self {
 		// Setting up the request/response protocol.
 		let protocols = once((EigenTrustProtocol::new(), ProtocolSupport::Full));
 		let mut cfg = RequestResponseConfig::default();
 		// Keep the connection alive in request/response protocol
 		cfg.set_connection_keep_alive(connection_duration);
 		// If we failed to get response during the interval duration, cancel it.
-		cfg.set_request_timeout(interval_duration);
+		cfg.set_request_timeout(Duration::from_secs(20));
 		let req_proto = RequestResponse::new(EigenTrustCodec, protocols, cfg);
 
 		// Setting up the identify protocol

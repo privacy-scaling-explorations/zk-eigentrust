@@ -1,7 +1,10 @@
 //! The module for defining the request-response protocol.
 
 use crate::{
-	peer::{opinion::Opinion, pubkey::Pubkey},
+	peer::{
+		opinion::{self, Opinion},
+		pubkey::Pubkey,
+	},
 	EigenError, Epoch,
 };
 use async_trait::async_trait;
@@ -41,7 +44,7 @@ pub struct EigenTrustCodec;
 /// The EigenTrust protocol request struct.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Request {
-	Opinion(Epoch, u32),
+	Opinion(Opinion),
 	Identify(Pubkey),
 }
 
@@ -49,7 +52,7 @@ impl Request {
 	/// Get the iter of the request.
 	pub fn get_iter(&self) -> Option<u32> {
 		match self {
-			Self::Opinion(_, iter) => Some(*iter),
+			Self::Opinion(op) => Some(op.iter),
 			_ => None,
 		}
 	}
@@ -59,7 +62,7 @@ impl Request {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Response {
 	/// Successful response with an opinion.
-	Opinion(Opinion),
+	OpinionSuccess,
 	/// Successful response with a public key.
 	Identify(Pubkey),
 	/// Failed response, because of invalid request.
@@ -98,12 +101,19 @@ impl RequestResponseCodec for EigenTrustCodec {
 					0 => {
 						let mut epoch_buf = [0; 8];
 						let mut k_buf = [0; 4];
+						let mut op_bytes = [0; 8];
+						let mut proof_bytes = Vec::new();
 						io.read_exact(&mut epoch_buf).await?;
 						io.read_exact(&mut k_buf).await?;
+						io.read_exact(&mut op_bytes).await?;
+						io.read_to_end(&mut proof_bytes).await?;
 
 						let epoch = Epoch::from_be_bytes(epoch_buf);
 						let iter = u32::from_be_bytes(k_buf);
-						Ok(Request::Opinion(epoch, iter))
+						let op = f64::from_be_bytes(op_bytes);
+						let opinion = Opinion::new(epoch, iter, op, proof_bytes);
+
+						Ok(Request::Opinion(opinion))
 					},
 					1 => {
 						let mut pk_buf = [0; 32];
@@ -130,24 +140,8 @@ impl RequestResponseCodec for EigenTrustCodec {
 				io.read_exact(&mut buf).await?;
 				let response = match buf[0] {
 					0 => {
-						// Opinion
-						let mut epoch_bytes = [0; 8];
-						let mut k_bytes = [0; 4];
-						let mut op_bytes = [0; 8];
-						let mut proof_bytes = Vec::new();
-
-						io.read_exact(&mut epoch_bytes).await?;
-						io.read_exact(&mut k_bytes).await?;
-						io.read_exact(&mut op_bytes).await?;
-						io.read_to_end(&mut proof_bytes).await?;
-
-						let op = f64::from_be_bytes(op_bytes);
-						let epoch = Epoch::from_be_bytes(epoch_bytes);
-						let iter = u32::from_be_bytes(k_bytes);
-
-						let opinion = Opinion::new(epoch, iter, op, proof_bytes);
-
-						Ok(Response::Opinion(opinion))
+						// Opinion success
+						Ok(Response::OpinionSuccess)
 					},
 					1 => {
 						// Identify
@@ -180,10 +174,12 @@ impl RequestResponseCodec for EigenTrustCodec {
 		match protocol.version {
 			EigenTrustProtocolVersion::V1 => {
 				match req {
-					Request::Opinion(epoch, k) => {
+					Request::Opinion(opinion) => {
 						let mut bytes = vec![0];
-						bytes.extend_from_slice(&epoch.to_be_bytes());
-						bytes.extend_from_slice(&k.to_be_bytes());
+						bytes.extend_from_slice(&opinion.epoch.to_be_bytes());
+						bytes.extend_from_slice(&opinion.iter.to_be_bytes());
+						bytes.extend_from_slice(&opinion.op.to_be_bytes());
+						bytes.extend_from_slice(&opinion.proof_bytes);
 						io.write_all(&bytes).await?;
 					},
 					Request::Identify(pub_key) => {
@@ -208,14 +204,8 @@ impl RequestResponseCodec for EigenTrustCodec {
 			EigenTrustProtocolVersion::V1 => {
 				let mut bytes = Vec::new();
 				match res {
-					Response::Opinion(opinion) => {
+					Response::OpinionSuccess => {
 						bytes.push(0);
-
-						// Opinion
-						bytes.extend(opinion.epoch.to_be_bytes());
-						bytes.extend(opinion.iter.to_be_bytes());
-						bytes.extend(opinion.op.to_be_bytes());
-						bytes.extend(opinion.proof_bytes);
 					},
 					Response::Identify(pub_key) => {
 						bytes.push(1);
@@ -263,12 +253,16 @@ mod tests {
 		let mut buf = vec![];
 		let epoch = Epoch(1);
 		let iter = 1;
-		let req = Request::Opinion(epoch, iter);
+		let opinion = Opinion::new(epoch, iter, 1.0, vec![1]);
+		let req = Request::Opinion(opinion);
 		codec.write_request(&EigenTrustProtocol::default(), &mut buf, req).await.unwrap();
 
 		let mut bytes = vec![0];
-		bytes.extend_from_slice(&epoch.to_be_bytes());
-		bytes.extend_from_slice(&iter.to_be_bytes());
+		bytes.extend_from_slice(&opinion.epoch.to_be_bytes());
+		bytes.extend_from_slice(&opinion.iter.to_be_bytes());
+		bytes.extend_from_slice(&opinion.op.to_be_bytes());
+		bytes.extend_from_slice(&opinion.proof_bytes);
+
 		assert_eq!(buf, bytes);
 
 		let req =
@@ -278,13 +272,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn should_correctly_write_read_success_response() {
-		let rng = &mut thread_rng();
-		let params = ParamsKZG::<Bn256>::new(9);
-		let random_circuit =
-			random_circuit::<Bn256, _, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, Params>(rng);
-		let pk = keygen(&params, &random_circuit).unwrap();
-		let mut opinion = Opinion::empty(&params, &pk).unwrap();
-		let good_res = Response::Opinion(opinion.clone());
+		let good_res = Response::OpinionSuccess;
 
 		let mut buf = vec![];
 		let mut codec = EigenTrustCodec::default();
@@ -292,12 +280,6 @@ mod tests {
 
 		let mut bytes = vec![];
 		bytes.push(0);
-		bytes.extend(opinion.epoch.to_be_bytes());
-		bytes.extend(opinion.iter.to_be_bytes());
-		bytes.extend(opinion.op.to_be_bytes());
-		bytes.extend(&opinion.proof_bytes[..]);
-
-		opinion.m_hash = [0; 32];
 
 		// compare the written bytes with the expected bytes
 		assert_eq!(buf, bytes);

@@ -30,13 +30,25 @@ pub type Posedion5x5 = Poseidon<Bn256Scalar, 5, Params>;
 pub type ETCircuit = EigenTrustCircuit<Bn256Scalar, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, Params>;
 pub const SCALE: f64 = 100000000.;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct Opinion {
 	pub(crate) epoch: Epoch,
 	pub(crate) iter: u32,
 	pub(crate) op: f64,
 	pub(crate) proof_bytes: Vec<u8>,
 	pub(crate) m_hash: [u8; 32],
+}
+
+impl Eq for Opinion {}
+
+impl PartialEq for Opinion {
+	fn eq(&self, other: &Self) -> bool {
+		self.epoch.eq(&other.epoch)
+			&& self.iter.eq(&other.iter)
+			&& self.op.to_be_bytes().eq(&other.op.to_be_bytes())
+			&& self.proof_bytes.eq(&other.proof_bytes)
+			&& self.m_hash.eq(&other.m_hash)
+	}
 }
 
 impl Opinion {

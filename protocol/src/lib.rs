@@ -98,6 +98,8 @@ pub enum EigenError {
 	PubkeyNotFound,
 	/// Neighbour not found,
 	NeighbourNotFound,
+	/// Invalid opinon
+	InvalidOpinion,
 	/// Unknown error.
 	Unknown,
 }
@@ -124,6 +126,7 @@ impl From<EigenError> for u8 {
 			EigenError::OpinionNotFound => 16,
 			EigenError::PubkeyNotFound => 17,
 			EigenError::NeighbourNotFound => 18,
+			EigenError::InvalidOpinion => 19,
 			EigenError::Unknown => 255,
 		}
 	}
@@ -151,6 +154,7 @@ impl From<u8> for EigenError {
 			16 => EigenError::OpinionNotFound,
 			17 => EigenError::PubkeyNotFound,
 			18 => EigenError::NeighbourNotFound,
+			19 => EigenError::InvalidOpinion,
 			_ => EigenError::Unknown,
 		}
 	}

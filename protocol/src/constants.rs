@@ -20,8 +20,6 @@ mod consts {
 	pub const NUM_ITERATIONS: u32 = 10;
 	/// Epoch duration in seconds
 	pub const EPOCH_INTERVAL: u64 = 60 * 60; // One hour
-	/// Iteration duration in seconds
-	pub const ITER_INTERVAL: u64 = 20;
 }
 
 #[cfg(not(feature = "prod"))]

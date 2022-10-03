@@ -92,6 +92,13 @@ impl Peer {
 		self.neighbor_scores.insert(peer_id, score);
 	}
 
+	/// Checks whether we received the proofs from all neighbours
+	pub fn has_all_neighbour_proofs_at(&self, epoch: Epoch, k: u32) -> bool {
+		self.neighbors()
+			.iter()
+			.all(|&x| self.cached_neighbor_opinion.contains_key(&(x, epoch, k)))
+	}
+
 	/// Calculate the local trust score toward one neighbour in the specified
 	/// epoch and generate zk proof of it.
 	pub fn calculate_local_opinion(
@@ -116,11 +123,17 @@ impl Peer {
 		// Get the pubkey and generate the opinion proof
 		let pubkey = self.get_pub_key(peer_id).ok_or(EigenError::InvalidPubkey)?;
 		let opinion = Opinion::generate(
-			&self.keypair, &pubkey, epoch, k, scores, normalized_score, &self.params,
+			&self.keypair,
+			&pubkey,
+			epoch,
+			k + 1,
+			scores,
+			normalized_score,
+			&self.params,
 			&self.proving_key,
 		)?;
 		// Cache the opinion and return it
-		self.cached_local_opinion.insert((peer_id, epoch, opinion.iter), opinion.clone());
+		self.cached_local_opinion.insert((peer_id, opinion.epoch, opinion.iter), opinion.clone());
 		Ok(opinion)
 	}
 
@@ -141,7 +154,7 @@ impl Peer {
 				let peer_id = peer_id_opt.unwrap();
 				let opinion = self
 					.cached_neighbor_opinion
-					.get(&(peer_id, epoch, k - 1))
+					.get(&(peer_id, epoch, k))
 					.ok_or(EigenError::OpinionNotFound)?;
 				scores[i] = opinion.op;
 			}
@@ -155,13 +168,14 @@ impl Peer {
 	) -> Result<(), EigenError> {
 		let vk = self.proving_key.get_vk();
 		let pubkey_p = self.get_pub_key(key.0).ok_or(EigenError::PubkeyNotFound)?;
-		// We add it only if its a valid proof
 		let res = opinion.verify(&pubkey_p, &self.keypair, &self.params, vk)?;
-		if res {
-			self.cached_neighbor_opinion.insert(key, opinion);
-		} else {
+		// Return an error if the proof is invalid
+		if !res {
 			log::debug!("Neighbour opinion is not valid {:?}", key);
+			return Err(EigenError::InvalidOpinion);
 		}
+		// We add it only if its a valid proof
+		self.cached_neighbor_opinion.insert(key, opinion);
 		Ok(())
 	}
 
