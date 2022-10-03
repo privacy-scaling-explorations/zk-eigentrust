@@ -25,11 +25,7 @@ pub mod rescue_prime;
 pub mod utils;
 
 use gadgets::{
-	and::{AndChip, AndConfig},
-	is_equal::{IsEqualChip, IsEqualConfig},
-	is_zero::{IsZeroChip, IsZeroConfig},
-	mul::{MulChip, MulConfig},
-	select::{SelectChip, SelectConfig},
+	common::{CommonChip, CommonConfig},
 	set::{FixedSetChip, FixedSetConfig},
 	sum::{SumChip, SumConfig},
 };
@@ -48,13 +44,9 @@ use std::marker::PhantomData;
 pub struct EigenTrustConfig {
 	// Gadgets
 	set: FixedSetConfig,
-	is_equal: IsEqualConfig,
-	and: AndConfig,
-	select: SelectConfig,
+	common: CommonConfig,
 	poseidon: PoseidonConfig<5>,
 	sum: SumConfig,
-	mul: MulConfig,
-	is_zero: IsZeroConfig,
 	// EigenTrust columns
 	temp: Column<Advice>,
 	pub_ins: Column<Instance>,
@@ -149,13 +141,9 @@ impl<F: FieldExt, const S: usize, const B: usize, P: RoundParams<F, 5>> Circuit<
 	/// Make the circuit config.
 	fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
 		let set = FixedSetChip::<_, B>::configure(meta);
-		let is_equal = IsEqualChip::configure(meta);
-		let and = AndChip::configure(meta);
-		let select = SelectChip::configure(meta);
+		let common = CommonChip::configure(meta);
 		let poseidon = PoseidonChip::<_, 5, P>::configure(meta);
 		let sum = SumChip::<_, S>::configure(meta);
-		let mul = MulChip::configure(meta);
-		let is_zero = IsZeroChip::configure(meta);
 
 		let temp = meta.advice_column();
 		let fixed = meta.fixed_column();
@@ -165,7 +153,7 @@ impl<F: FieldExt, const S: usize, const B: usize, P: RoundParams<F, 5>> Circuit<
 		meta.enable_constant(fixed);
 		meta.enable_equality(pub_ins);
 
-		EigenTrustConfig { set, is_equal, and, select, poseidon, sum, mul, is_zero, temp, pub_ins }
+		EigenTrustConfig { set, common, poseidon, sum, temp, pub_ins }
 	}
 
 	/// Synthesize the circuit.
@@ -240,19 +228,29 @@ impl<F: FieldExt, const S: usize, const B: usize, P: RoundParams<F, 5>> Circuit<
 		let is_bootstrap =
 			set_membership.synthesize(config.set, layouter.namespace(|| "set_membership"))?;
 		// Is the iteration equal to 0?
-		let is_eq_chip = IsEqualChip::new(iteration.clone(), zero);
-		let is_genesis = is_eq_chip.synthesize(config.is_equal, layouter.namespace(|| "is_eq"))?;
+		let is_genesis = CommonChip::is_equal(
+			iteration.clone(),
+			zero,
+			config.common,
+			layouter.namespace(|| "is_eq"),
+		)?;
 		// Is this the bootstrap peer at genesis epoch?
-		let and_chip = AndChip::new(is_bootstrap, is_genesis);
-		let is_bootstrap_and_genesis =
-			and_chip.synthesize(config.and, layouter.namespace(|| "and"))?;
+		let is_bootstrap_and_genesis = CommonChip::and(
+			is_bootstrap,
+			is_genesis,
+			config.common,
+			layouter.namespace(|| "and"),
+		)?;
 		// Select the appropriate score, depending on the conditions
-		let select_chip = SelectChip::new(is_bootstrap_and_genesis, bootstrap_score, t_i);
-		let t_i_select =
-			select_chip.synthesize(config.select.clone(), layouter.namespace(|| "select"))?;
+		let t_i_select = CommonChip::select(
+			is_bootstrap_and_genesis,
+			bootstrap_score,
+			t_i,
+			config.common,
+			layouter.namespace(|| "select"),
+		)?;
 
-		let mul_chip = MulChip::new(t_i_select, c_v);
-		let op_v = mul_chip.synthesize(config.mul, layouter.namespace(|| "mul"))?;
+		let op_v = CommonChip::mul(t_i_select, c_v, config.common, layouter.namespace(|| "mul"))?;
 
 		let m_hash_input = [epoch, iteration, op_v.clone(), pubkey_v, pubkey_i];
 		let poseidon_m_hash = PoseidonChip::<_, 5, P>::new(m_hash_input);
@@ -260,13 +258,19 @@ impl<F: FieldExt, const S: usize, const B: usize, P: RoundParams<F, 5>> Circuit<
 			.synthesize(config.poseidon, layouter.namespace(|| "poseidon_m_hash"))?;
 		let m_hash = res[0].clone();
 
-		let is_zero_chip = IsZeroChip::new(op_v);
-		let is_zero_opinion =
-			is_zero_chip.synthesize(config.is_zero, layouter.namespace(|| "is_zero_opinion"))?;
+		let is_zero_opinion = CommonChip::is_zero(
+			op_v,
+			config.common,
+			layouter.namespace(|| "is_zero_opinion"),
+		)?;
 
-		let m_hash_select = SelectChip::new(is_zero_opinion, out_m_hash, m_hash);
-		let final_m_hash =
-			m_hash_select.synthesize(config.select, layouter.namespace(|| "m_hash_select"))?;
+		let final_m_hash = CommonChip::select(
+			is_zero_opinion,
+			out_m_hash,
+			m_hash,
+			config.common,
+			layouter.namespace(|| "m_hash_select"),
+		)?;
 
 		layouter.constrain_instance(final_m_hash.cell(), config.pub_ins, 0)?;
 
