@@ -92,14 +92,14 @@ pub enum EigenError {
 	KeygenFailed,
 	/// Invalid bootstrap public key.
 	InvalidBootstrapPubkey,
-	/// Opinion not found
-	OpinionNotFound,
+	/// Ivp not found
+	IvpNotFound,
 	/// Public key not found
 	PubkeyNotFound,
 	/// Neighbour not found,
 	NeighbourNotFound,
 	/// Invalid opinon
-	InvalidOpinion,
+	InvalidIvp,
 	/// Unknown error.
 	Unknown,
 }
@@ -123,10 +123,10 @@ impl From<EigenError> for u8 {
 			EigenError::VerificationError => 13,
 			EigenError::KeygenFailed => 14,
 			EigenError::InvalidBootstrapPubkey => 15,
-			EigenError::OpinionNotFound => 16,
+			EigenError::IvpNotFound => 16,
 			EigenError::PubkeyNotFound => 17,
 			EigenError::NeighbourNotFound => 18,
-			EigenError::InvalidOpinion => 19,
+			EigenError::InvalidIvp => 19,
 			EigenError::Unknown => 255,
 		}
 	}
@@ -151,10 +151,10 @@ impl From<u8> for EigenError {
 			13 => EigenError::VerificationError,
 			14 => EigenError::KeygenFailed,
 			15 => EigenError::InvalidBootstrapPubkey,
-			16 => EigenError::OpinionNotFound,
+			16 => EigenError::IvpNotFound,
 			17 => EigenError::PubkeyNotFound,
 			18 => EigenError::NeighbourNotFound,
-			19 => EigenError::InvalidOpinion,
+			19 => EigenError::InvalidIvp,
 			_ => EigenError::Unknown,
 		}
 	}

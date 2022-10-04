@@ -2,7 +2,7 @@
 
 use crate::{
 	peer::{
-		opinion::{self, Opinion},
+		ivp::{self, Ivp},
 		pubkey::Pubkey,
 	},
 	EigenError, Epoch,
@@ -44,7 +44,7 @@ pub struct EigenTrustCodec;
 /// The EigenTrust protocol request struct.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Request {
-	Opinion(Opinion),
+	Ivp(Ivp),
 	Identify(Pubkey),
 }
 
@@ -52,7 +52,7 @@ impl Request {
 	/// Get the iter of the request.
 	pub fn get_iter(&self) -> Option<u32> {
 		match self {
-			Self::Opinion(op) => Some(op.iter),
+			Self::Ivp(op) => Some(op.iter),
 			_ => None,
 		}
 	}
@@ -61,8 +61,8 @@ impl Request {
 /// The EigenTrust protocol response struct.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Response {
-	/// Successful response with an opinion.
-	OpinionSuccess,
+	/// Successful response with an ivp.
+	IvpSuccess,
 	/// Successful response with a public key.
 	Identify(Pubkey),
 	/// Failed response, because of invalid request.
@@ -111,9 +111,9 @@ impl RequestResponseCodec for EigenTrustCodec {
 						let epoch = Epoch::from_be_bytes(epoch_buf);
 						let iter = u32::from_be_bytes(k_buf);
 						let op = f64::from_be_bytes(op_bytes);
-						let opinion = Opinion::new(epoch, iter, op, proof_bytes);
+						let ivp = Ivp::new(epoch, iter, op, proof_bytes);
 
-						Ok(Request::Opinion(opinion))
+						Ok(Request::Ivp(ivp))
 					},
 					1 => {
 						let mut pk_buf = [0; 32];
@@ -140,8 +140,8 @@ impl RequestResponseCodec for EigenTrustCodec {
 				io.read_exact(&mut buf).await?;
 				let response = match buf[0] {
 					0 => {
-						// Opinion success
-						Ok(Response::OpinionSuccess)
+						// Ivp success
+						Ok(Response::IvpSuccess)
 					},
 					1 => {
 						// Identify
@@ -174,12 +174,12 @@ impl RequestResponseCodec for EigenTrustCodec {
 		match protocol.version {
 			EigenTrustProtocolVersion::V1 => {
 				match req {
-					Request::Opinion(opinion) => {
+					Request::Ivp(ivp) => {
 						let mut bytes = vec![0];
-						bytes.extend_from_slice(&opinion.epoch.to_be_bytes());
-						bytes.extend_from_slice(&opinion.iter.to_be_bytes());
-						bytes.extend_from_slice(&opinion.op.to_be_bytes());
-						bytes.extend_from_slice(&opinion.proof_bytes);
+						bytes.extend_from_slice(&ivp.epoch.to_be_bytes());
+						bytes.extend_from_slice(&ivp.iter.to_be_bytes());
+						bytes.extend_from_slice(&ivp.op.to_be_bytes());
+						bytes.extend_from_slice(&ivp.proof_bytes);
 						io.write_all(&bytes).await?;
 					},
 					Request::Identify(pub_key) => {
@@ -204,7 +204,7 @@ impl RequestResponseCodec for EigenTrustCodec {
 			EigenTrustProtocolVersion::V1 => {
 				let mut bytes = Vec::new();
 				match res {
-					Response::OpinionSuccess => {
+					Response::IvpSuccess => {
 						bytes.push(0);
 					},
 					Response::Identify(pub_key) => {
@@ -238,30 +238,21 @@ mod tests {
 	};
 	use rand::thread_rng;
 
-	impl Response {
-		pub fn success(self) -> Opinion {
-			match self {
-				Response::Opinion(opinion) => opinion,
-				_ => panic!("Response::success called on invalid response"),
-			}
-		}
-	}
-
 	#[tokio::test]
 	async fn should_correctly_write_read_request() {
 		let mut codec = EigenTrustCodec::default();
 		let mut buf = vec![];
 		let epoch = Epoch(1);
 		let iter = 1;
-		let opinion = Opinion::new(epoch, iter, 1.0, vec![1]);
-		let req = Request::Opinion(opinion);
+		let ivp = Ivp::new(epoch, iter, 1.0, vec![1]);
+		let req = Request::Ivp(ivp.clone());
 		codec.write_request(&EigenTrustProtocol::default(), &mut buf, req).await.unwrap();
 
 		let mut bytes = vec![0];
-		bytes.extend_from_slice(&opinion.epoch.to_be_bytes());
-		bytes.extend_from_slice(&opinion.iter.to_be_bytes());
-		bytes.extend_from_slice(&opinion.op.to_be_bytes());
-		bytes.extend_from_slice(&opinion.proof_bytes);
+		bytes.extend_from_slice(&ivp.epoch.to_be_bytes());
+		bytes.extend_from_slice(&ivp.iter.to_be_bytes());
+		bytes.extend_from_slice(&ivp.op.to_be_bytes());
+		bytes.extend_from_slice(&ivp.proof_bytes);
 
 		assert_eq!(buf, bytes);
 
@@ -272,11 +263,14 @@ mod tests {
 
 	#[tokio::test]
 	async fn should_correctly_write_read_success_response() {
-		let good_res = Response::OpinionSuccess;
+		let good_res = Response::IvpSuccess;
 
 		let mut buf = vec![];
 		let mut codec = EigenTrustCodec::default();
-		codec.write_response(&EigenTrustProtocol::default(), &mut buf, good_res).await.unwrap();
+		codec
+			.write_response(&EigenTrustProtocol::default(), &mut buf, good_res.clone())
+			.await
+			.unwrap();
 
 		let mut bytes = vec![];
 		bytes.push(0);
@@ -286,7 +280,7 @@ mod tests {
 
 		let read_res =
 			codec.read_response(&EigenTrustProtocol::default(), &mut &bytes[..]).await.unwrap();
-		assert_eq!(read_res.success(), opinion);
+		assert_eq!(read_res, good_res);
 	}
 
 	#[tokio::test]

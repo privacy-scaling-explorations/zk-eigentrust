@@ -1,4 +1,4 @@
-use crate::{peer::opinion::Posedion5x5, EigenError};
+use crate::{peer::ivp::Posedion5x5, EigenError};
 use eigen_trust_circuit::halo2wrong::{
 	curves::{bn256::Fr as Bn256Scalar, secp256k1::Fq as Secp256k1Scalar, FieldExt},
 	utils::decompose,

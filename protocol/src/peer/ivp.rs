@@ -31,7 +31,7 @@ pub type ETCircuit = EigenTrustCircuit<Bn256Scalar, MAX_NEIGHBORS, NUM_BOOTSTRAP
 pub const SCALE: f64 = 100000000.;
 
 #[derive(Clone, Debug)]
-pub struct Opinion {
+pub struct Ivp {
 	pub(crate) epoch: Epoch,
 	pub(crate) iter: u32,
 	pub(crate) op: f64,
@@ -39,9 +39,9 @@ pub struct Opinion {
 	pub(crate) m_hash: [u8; 32],
 }
 
-impl Eq for Opinion {}
+impl Eq for Ivp {}
 
-impl PartialEq for Opinion {
+impl PartialEq for Ivp {
 	fn eq(&self, other: &Self) -> bool {
 		self.epoch.eq(&other.epoch)
 			&& self.iter.eq(&other.iter)
@@ -51,12 +51,12 @@ impl PartialEq for Opinion {
 	}
 }
 
-impl Opinion {
+impl Ivp {
 	pub fn new(epoch: Epoch, iter: u32, op: f64, proof_bytes: Vec<u8>) -> Self {
 		Self { epoch, iter, op, proof_bytes, m_hash: [0; 32] }
 	}
 
-	/// Creates a new opinion.
+	/// Creates a new ivp.
 	pub fn generate(
 		kp: &IdentityKeypair, pubkey_v: &Pubkey, epoch: Epoch, k: u32, op_ji: [f64; MAX_NEIGHBORS],
 		c_v: f64, params: &ParamsKZG<Bn256>, pk: &ProvingKey<G1Affine>,
@@ -176,7 +176,7 @@ mod test {
 	};
 
 	#[test]
-	fn should_verify_empty_opinion() {
+	fn should_verify_empty_ivp() {
 		let rng = &mut thread_rng();
 		let local_keypair = IdentityKeypair::generate_secp256k1();
 		let local_pubkey = Pubkey::from_keypair(&local_keypair).unwrap();
@@ -188,7 +188,7 @@ mod test {
 			random_circuit::<Bn256, _, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, Params>(rng);
 		let pk = keygen(&params, &random_circuit).unwrap();
 
-		let op = Opinion::empty(&params, &pk).unwrap();
+		let op = Ivp::empty(&params, &pk).unwrap();
 		let res = op.verify(&local_pubkey, &keypair_v, &params, &pk.get_vk()).unwrap();
 		assert!(res);
 	}
@@ -211,7 +211,7 @@ mod test {
 		let random_circuit =
 			random_circuit::<Bn256, _, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, Params>(rng);
 		let pk = keygen(&params, &random_circuit).unwrap();
-		let proof = Opinion::generate(
+		let proof = Ivp::generate(
 			&local_keypair, &pubkey_v, epoch, iter, op_ji, c_v, &params, &pk,
 		)
 		.unwrap();
@@ -239,13 +239,13 @@ mod test {
 		let random_circuit =
 			random_circuit::<Bn256, _, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, Params>(rng);
 		let pk = keygen(&params, &random_circuit).unwrap();
-		let opinion = Opinion::generate(
+		let ivp = Ivp::generate(
 			&local_keypair, &pubkey_v, epoch, iter, op_ji, c_v, &params, &pk,
 		)
 		.unwrap();
 
-		assert_eq!(opinion.op, BOOTSTRAP_SCORE * c_v);
+		assert_eq!(ivp.op, BOOTSTRAP_SCORE * c_v);
 
-		assert!(opinion.verify(&local_pubkey, &keypair_v, &params, pk.get_vk()).unwrap());
+		assert!(ivp.verify(&local_pubkey, &keypair_v, &params, pk.get_vk()).unwrap());
 	}
 }

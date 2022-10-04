@@ -6,7 +6,7 @@ use crate::{
 		req_res::{Request, Response},
 		EigenEvent, EigenTrustBehaviour,
 	},
-	constants::{EPOCH_INTERVAL, NUM_ITERATIONS},
+	constants::{EPOCH_INTERVAL, ITER_INTERVAL, NUM_ITERATIONS},
 	epoch::Epoch,
 	peer::Peer,
 	utils::create_iter,
@@ -74,30 +74,23 @@ impl Node {
 		use RequestResponseEvent::*;
 		use RequestResponseMessage::{Request as Req, Response as Res};
 		match event {
-			Message { peer, message: Req { request: Request::Opinion(opinion), channel, .. } } => {
-				// Cache neighbours opinion
-				let opinion_res = self
-					.peer
-					.cache_neighbor_opinion((peer, opinion.epoch, opinion.iter), opinion.clone());
-				// If we collected the opinions from all the neighbours
-				// We create the opinion for the next iteration and distribute it
-				if self.peer.has_all_neighbour_proofs_at(opinion.epoch, opinion.iter)
-					&& opinion.iter <= NUM_ITERATIONS
-				{
-					self.send_epoch_requests(opinion.epoch, opinion.iter);
-				}
-				let response = match opinion_res {
+			Message { peer, message: Req { request: Request::Ivp(ivp), channel, .. } } => {
+				println!("{:?}", (peer, ivp.epoch, ivp.iter));
+				// Cache neighbours Ivp
+				let ivp_res =
+					self.peer.cache_neighbor_ivp((peer, ivp.epoch, ivp.iter), ivp.clone());
+				let response = match ivp_res {
 					Err(err) => Response::InternalError(err),
-					Ok(()) => Response::OpinionSuccess,
+					Ok(()) => Response::IvpSuccess,
 				};
 				let res = self.swarm.behaviour_mut().send_response(channel, response);
 				if let Err(e) = res {
 					log::error!("Failed to send the response {:?}", e);
 				}
 			},
-			Message { peer, message: Res { response: Response::OpinionSuccess, .. } } => {
-				// Our opinion proof was valid
-				log::debug!("Opinion request successfuly recieved by: {:?}.", peer);
+			Message { peer, message: Res { response: Response::IvpSuccess, .. } } => {
+				// Our Ivp proof was valid
+				log::debug!("Ivp request successfuly recieved by: {:?}.", peer);
 			},
 			Message { peer, message: Req { request: Request::Identify(pub_key), channel, .. } } => {
 				self.peer.identify_neighbor(peer, pub_key);
@@ -181,7 +174,9 @@ impl Node {
 			SwarmEvent::Dialing(peer_id) => {
 				log::info!("Dialing {:?}", peer_id);
 			},
-			e => log::debug!("{:?}", e),
+			e => {
+				log::debug!("{:?}", e);
+			},
 		}
 	}
 
@@ -191,18 +186,30 @@ impl Node {
 		log::debug!("swarm.dial {:?}", res);
 	}
 
-	/// Send the request for an opinion to all neighbors, in the passed epoch.
+	/// Send the request for an Ivp to all neighbors, in the passed epoch and
+	/// iteration.
 	pub fn send_epoch_requests(&mut self, epoch: Epoch, k: u32) {
 		for peer_id in self.peer.neighbors() {
-			let opinion = self.peer.calculate_local_opinion(peer_id, epoch, k).unwrap();
-			assert_eq!(opinion.iter, k + 1);
-			let request = Request::Opinion(opinion);
+			let ivp = self.peer.calculate_local_ivp(peer_id, epoch, k).unwrap();
+			assert_eq!(ivp.iter, k + 1);
+			let request = Request::Ivp(ivp);
+			self.swarm.behaviour_mut().send_request(&peer_id, request);
+		}
+	}
+
+	/// Send the request for an Ivp to all neighbors, in the passed epoch and
+	/// iteration.
+	pub fn send_initial_epoch_requests(&mut self, epoch: Epoch) {
+		for peer_id in self.peer.neighbors() {
+			let ivp = self.peer.calculate_initial_ivp(peer_id, epoch).unwrap();
+			assert_eq!(ivp.iter, 0);
+			let request = Request::Ivp(ivp);
 			self.swarm.behaviour_mut().send_request(&peer_id, request);
 		}
 	}
 
 	/// Start the main loop of the program. This function has two main tasks:
-	/// - To start an interval timer for sending the request for opinions.
+	/// - To start an interval timer for sending the request for Ivps.
 	/// - To handle the swarm + request/response events.
 	/// The amount of intervals/epochs is determined by the `interval_limit`
 	/// parameter.
@@ -210,20 +217,40 @@ impl Node {
 		let now = Instant::now();
 		// Set up epoch interval
 		let epoch_interval = Duration::from_secs(EPOCH_INTERVAL);
+		let iter_interval = Duration::from_secs(ITER_INTERVAL);
 		let secs_until_next_epoch = Epoch::secs_until_next_epoch(epoch_interval.as_secs());
 		log::info!("Epoch starts in: {} seconds", secs_until_next_epoch);
 		// Figure out when the next epoch will start.
 		let start = now + Duration::from_secs(secs_until_next_epoch);
 		// Setup the epoch interval timer.
 		let mut outer_interval = create_iter(start, epoch_interval, interval_limit);
+		let mut inner_interval = create_iter(Instant::now(), iter_interval, usize::MAX);
 
 		loop {
 			select_biased! {
 				// The interval timer tick. This is where we create new iteration interval
 				epoch = outer_interval.select_next_some() => {
 					log::info!("Epoch({}) has started", epoch);
-					self.send_epoch_requests(Epoch(epoch), 0);
+					self.send_initial_epoch_requests(Epoch(epoch));
 				},
+				tick = inner_interval.select_next_some() => {
+					let epoch = Epoch::current_epoch(EPOCH_INTERVAL);
+					// If we collected the Ivps from all the neighbours in one iteration
+					// We create the Ivp for the next iteration and distribute it
+
+					for iter in 0..NUM_ITERATIONS {
+						if !self.peer.has_all_neighbour_proofs_at(epoch, iter) {
+							continue;
+						}
+
+						for peer_id in self.peer.neighbors() {
+							let ivp = self.peer.calculate_local_ivp(peer_id, epoch, iter).unwrap();
+							assert_eq!(ivp.iter, iter + 1);
+							let request = Request::Ivp(ivp);
+							// self.swarm.behaviour_mut().send_request(&peer_id, request);
+						}
+					}
+				}
 				// The swarm event.
 				event = self.swarm.select_next_some() => {
 					self.handle_swarm_events(event);
@@ -231,8 +258,6 @@ impl Node {
 				complete => break,
 			}
 		}
-
-		log::info!("Breaking out of a loop");
 	}
 }
 
@@ -241,7 +266,7 @@ mod tests {
 	use super::*;
 	use crate::{
 		constants::{MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS},
-		peer::{opinion::Opinion, pubkey::Pubkey},
+		peer::{ivp::Ivp, pubkey::Pubkey},
 		utils::keypair_from_sk_bytes,
 	};
 	use eigen_trust_circuit::{
@@ -252,19 +277,38 @@ mod tests {
 		params::poseidon_bn254_5x5::Params,
 		utils::{keygen, random_circuit},
 	};
-	use futures::channel::oneshot;
+	use futures::{channel::oneshot, select};
 	use libp2p::{
-		core::{ConnectedPoint, Endpoint},
+		core::{connection::ConnectionId, ConnectedPoint, Endpoint},
 		identify::{IdentifyEvent, IdentifyInfo},
-		request_response::{RequestResponseEvent, RequestResponseMessage},
+		request_response::{
+			handler::RequestResponseHandlerEvent, RequestResponseEvent, RequestResponseMessage,
+		},
 	};
 	use rand::thread_rng;
 	use std::{num::NonZeroU32, str::FromStr};
+	use tokio::time::sleep;
 
 	const ADDR_1: &str = "/ip4/127.0.0.1/tcp/56706";
 	const ADDR_2: &str = "/ip4/127.0.0.1/tcp/58601";
 	const SK_1: &str = "AF4yAqwCPzpBcit4FtTrHso4BBR9onk7qS9Q1SWSLSaV";
 	const SK_2: &str = "7VoQFngkSo36s5yzZtnjtZ5SLe1VGukCZdb5Uc9tSDNC";
+
+	async fn await_swarm_events(node1: &mut Node, node2: &mut Node, i: usize) {
+		for _ in 0..i {
+			select_biased! {
+				ev1 = node1.swarm.select_next_some() => {
+					println!("{:?}", ev1);
+					node1.handle_swarm_events(ev1);
+				},
+				ev2 = node2.swarm.select_next_some() => {
+					println!("{:?}", ev2);
+					node2.handle_swarm_events(ev2);
+				},
+				complete => break,
+			}
+		}
+	}
 
 	#[test]
 	fn should_add_neighbour_on_connection() {
@@ -378,8 +422,8 @@ mod tests {
 		assert_eq!(pubkey2, pubkey2);
 	}
 
-	#[test]
-	fn should_handle_request_for_opinion() {
+	#[tokio::test]
+	async fn should_handle_request_for_ivp() {
 		let sk_bytes1 = bs58::decode(SK_1).into_vec().unwrap();
 		let sk_bytes2 = bs58::decode(SK_2).into_vec().unwrap();
 
@@ -400,19 +444,12 @@ mod tests {
 		let random_circuit =
 			random_circuit::<Bn256, _, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, Params>(rng);
 		let pk = keygen(&params, &random_circuit).unwrap();
-		let empty_opinion = Opinion::new(Epoch(0), 0, 0.0, Vec::new());
 
 		let peer1 = Peer::new(local_key1.clone(), params.clone(), pk.clone()).unwrap();
 		let peer2 = Peer::new(local_key2.clone(), params, pk).unwrap();
 
-		let mut node1 = Node::new(local_key1, local_address1, peer1).unwrap();
+		let mut node1 = Node::new(local_key1, local_address1.clone(), peer1).unwrap();
 		let mut node2 = Node::new(local_key2, local_address2.clone(), peer2).unwrap();
-
-		node1.peer.add_neighbor(peer_id2).unwrap();
-		node2.peer.add_neighbor(peer_id1).unwrap();
-
-		node1.peer.identify_neighbor(peer_id2, pubkey2);
-		node2.peer.identify_neighbor(peer_id1, pubkey1);
 
 		node1.peer.set_score(peer_id2, 5);
 		node2.peer.set_score(peer_id1, 5);
@@ -420,45 +457,25 @@ mod tests {
 		let epoch = Epoch(3);
 		let iter = 0;
 
-		node1.peer.calculate_local_opinion(peer_id2, epoch, iter).unwrap();
-		node2.peer.calculate_local_opinion(peer_id1, epoch, iter).unwrap();
+		node1.dial_neighbor(local_address2);
 
-		let opinion1 =
-			node1.peer.cached_local_opinion.get(&(peer_id2, epoch, iter)).cloned().unwrap();
-		let opinion2 =
-			node2.peer.cached_local_opinion.get(&(peer_id1, epoch, iter)).cloned().unwrap();
+		await_swarm_events(&mut node1, &mut node2, 9).await;
 
-		// Mock sending the request to obtain request id
-		let req_id1 = node1
-			.swarm
-			.behaviour_mut()
-			.send_request(&peer_id2, Request::Opinion(empty_opinion.clone()));
-		let req_id2 =
-			node1.swarm.behaviour_mut().send_request(&peer_id2, Request::Opinion(empty_opinion));
+		node1.send_initial_epoch_requests(epoch);
+		node2.send_initial_epoch_requests(epoch);
 
-		let message1 = RequestResponseMessage::Request {
-			request_id: req_id1,
-			request: Request::Opinion(opinion1),
-			channel: sender1,
-		};
-		let message2 = RequestResponseMessage::Request {
-			request_id: req_id2,
-			request: Request::Opinion(opinion2),
-			channel: sender2,
-		};
+		sleep(Duration::from_secs(2)).await;
+		await_swarm_events(&mut node1, &mut node2, 12).await;
 
-		node1.handle_req_res_events(response2);
-		node2.handle_req_res_events(response1);
+		let peer1_neighbor_ivp =
+			node1.peer.cached_neighbor_ivp.get(&(peer_id2, epoch, iter)).unwrap();
+		let peer2_neighbor_ivp =
+			node2.peer.cached_neighbor_ivp.get(&(peer_id1, epoch, iter)).unwrap();
 
-		let peer1_neighbor_opinion =
-			node1.peer.cached_neighbor_opinion.get(&(peer_id2, epoch, iter)).unwrap();
-		let peer2_neighbor_opinion =
-			node2.peer.cached_neighbor_opinion.get(&(peer_id1, epoch, iter)).unwrap();
+		assert_eq!(peer1_neighbor_ivp.epoch, Epoch(3));
+		assert_eq!(peer1_neighbor_ivp.op, 0.5);
 
-		assert_eq!(peer1_neighbor_opinion.epoch, Epoch(3));
-		assert_eq!(peer1_neighbor_opinion.op, 0.5);
-
-		assert_eq!(peer2_neighbor_opinion.epoch, Epoch(3));
-		assert_eq!(peer2_neighbor_opinion.op, 0.5);
+		assert_eq!(peer2_neighbor_ivp.epoch, Epoch(3));
+		assert_eq!(peer2_neighbor_ivp.op, 0.5);
 	}
 }

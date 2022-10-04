@@ -1,12 +1,13 @@
 pub mod req_res;
 
 use libp2p::{
-	core::PublicKey,
+	core::{connection::ConnectionId, PublicKey},
 	identify::{Identify, IdentifyConfig, IdentifyEvent},
 	request_response::{
-		ProtocolSupport, RequestId, RequestResponse, RequestResponseConfig, RequestResponseEvent,
-		ResponseChannel,
+		handler::RequestResponseHandlerEvent, ProtocolSupport, RequestId, RequestResponse,
+		RequestResponseCodec, RequestResponseConfig, RequestResponseEvent, ResponseChannel,
 	},
+	swarm::{NetworkBehaviour, NetworkBehaviourAction},
 	NetworkBehaviour, PeerId,
 };
 use req_res::{EigenTrustCodec, EigenTrustProtocol, Request, Response};
@@ -71,5 +72,14 @@ impl EigenTrustBehaviour {
 	/// Send a request in the request/response protocol.
 	pub fn send_request(&mut self, peer_id: &PeerId, request: Request) -> RequestId {
 		self.req_res.send_request(peer_id, request)
+	}
+
+	/// Inject event used for testing
+	#[cfg(test)]
+	pub fn inject_req_res_event(
+		&mut self, peer_id: PeerId, conn_id: ConnectionId,
+		event: RequestResponseHandlerEvent<EigenTrustCodec>,
+	) {
+		self.req_res.inject_event(peer_id, conn_id, event)
 	}
 }
