@@ -18,13 +18,13 @@ use libp2p::{
 	identify::IdentifyEvent,
 	identity::Keypair,
 	noise::{Keypair as NoiseKeypair, NoiseConfig, X25519Spec},
-	request_response::{RequestResponseEvent, RequestResponseMessage},
+	request_response::{RequestId, RequestResponseEvent, RequestResponseMessage},
 	swarm::{ConnectionHandlerUpgrErr, Swarm, SwarmBuilder, SwarmEvent},
 	tcp::TcpConfig,
 	yamux::YamuxConfig,
 	Multiaddr, PeerId, Transport,
 };
-use std::io::Error as IoError;
+use std::{collections::HashSet, hash::Hash, io::Error as IoError};
 use tokio::time::{Duration, Instant};
 
 /// The Node struct.
@@ -32,6 +32,8 @@ pub struct Node {
 	/// Swarm object.
 	pub(crate) swarm: Swarm<EigenTrustBehaviour>,
 	pub(crate) peer: Peer,
+	pub(crate) pending_outgoing_requests: HashSet<(PeerId, RequestId)>,
+	pub(crate) completed_outgoind_requests: HashSet<(PeerId, RequestId)>,
 }
 
 impl Node {
@@ -66,7 +68,12 @@ impl Node {
 			EigenError::ListenFailed
 		})?;
 
-		Ok(Self { swarm, peer })
+		Ok(Self {
+			swarm,
+			peer,
+			pending_outgoing_requests: HashSet::new(),
+			completed_outgoind_requests: HashSet::new(),
+		})
 	}
 
 	/// Handle the request response event.
@@ -88,8 +95,10 @@ impl Node {
 					log::error!("Failed to send the response {:?}", e);
 				}
 			},
-			Message { peer, message: Res { response: Response::IvpSuccess, .. } } => {
+			Message { peer, message: Res { response: Response::IvpSuccess, request_id } } => {
 				// Our Ivp proof was valid
+				self.pending_outgoing_requests.remove(&(peer, request_id));
+				self.completed_outgoind_requests.insert((peer, request_id));
 				log::debug!("Ivp request successfuly recieved by: {:?}.", peer);
 			},
 			Message { peer, message: Req { request: Request::Identify(pub_key), channel, .. } } => {
@@ -103,18 +112,11 @@ impl Node {
 			Message { peer, message: Res { response: Response::Identify(pub_key), .. } } => {
 				self.peer.identify_neighbor(peer, pub_key);
 			},
-			Message { message: Res { response, .. }, .. } => {
-				log::error!("Received error response {:?}", response)
-			},
 			OutboundFailure { peer, request_id, error } => {
+				self.pending_outgoing_requests.remove(&(peer, request_id));
 				log::error!("Outbound failure {:?} from {:?}: {:?}", request_id, peer, error);
 			},
-			InboundFailure { peer, request_id, error } => {
-				log::error!("Inbound failure {:?} from {:?}: {:?}", request_id, peer, error);
-			},
-			ResponseSent { peer, request_id } => {
-				log::debug!("Response sent {:?} to {:?}", request_id, peer);
-			},
+			e => log::debug!("Other event {:?}", e),
 		};
 	}
 
@@ -237,8 +239,22 @@ impl Node {
 					let epoch = Epoch::current_epoch(EPOCH_INTERVAL);
 					// If we collected the Ivps from all the neighbours in one iteration
 					// We create the Ivp for the next iteration and distribute it
-
 					for iter in 0..NUM_ITERATIONS {
+						// TODO: In every iteration check:
+						// - If we have local proof cached
+						// - If we have all the neighbours proof from previous iteration
+						// needed to make local proof
+						//
+						// TODO: Make proofs in every iteration that has
+						// - all the neighbours proofs available
+						// - does not have local proof already created
+						//
+						// TODO: send the local proofs to:
+						// - All neighbours
+						// - All peers that provided their proof but are not in the neighbours list
+						// under conditions that:
+						// - Peer is not in pending requests
+						// - Peer is not in completed requests
 						if !self.peer.has_all_neighbour_proofs_at(epoch, iter) {
 							continue;
 						}
@@ -247,7 +263,8 @@ impl Node {
 							let ivp = self.peer.calculate_local_ivp(peer_id, epoch, iter).unwrap();
 							assert_eq!(ivp.iter, iter + 1);
 							let request = Request::Ivp(ivp);
-							// self.swarm.behaviour_mut().send_request(&peer_id, request);
+							let request_id = self.swarm.behaviour_mut().send_request(&peer_id, request);
+							self.pending_outgoing_requests.insert((peer_id, request_id));
 						}
 					}
 				}
@@ -423,6 +440,7 @@ mod tests {
 	}
 
 	#[tokio::test]
+	#[ignore = "Unpredictable, requires networking to work - move to integration tests"]
 	async fn should_handle_request_for_ivp() {
 		let sk_bytes1 = bs58::decode(SK_1).into_vec().unwrap();
 		let sk_bytes2 = bs58::decode(SK_2).into_vec().unwrap();

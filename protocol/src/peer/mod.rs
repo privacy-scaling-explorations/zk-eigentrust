@@ -186,6 +186,9 @@ impl Peer {
 	pub fn cache_neighbor_ivp(
 		&mut self, key: (PeerId, Epoch, u32), ivp: Ivp,
 	) -> Result<(), EigenError> {
+		if self.cached_neighbor_ivp.contains_key(&key) {
+			return Ok(());
+		}
 		let vk = self.proving_key.get_vk();
 		let pubkey_p = self.get_pub_key(key.0).ok_or(EigenError::PubkeyNotFound)?;
 		let res = ivp.verify(&pubkey_p, &self.keypair, &self.params, vk)?;
