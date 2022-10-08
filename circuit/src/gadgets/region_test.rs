@@ -10,7 +10,7 @@ use std::marker::PhantomData;
 /// Configuration elements for the circuit are defined here.
 pub struct TestRegionConfig {
 	/// Configures columns for the advice.
-	advice: [Column<Advice>; 2],
+	advice: [Column<Advice>; 4],
 	/// Configures fixed boolean values for each row of the circuit.
 	selectors: [Selector; 2],
 }
@@ -24,7 +24,7 @@ pub struct TestRegionChip<F: FieldExt> {
 impl<F: FieldExt> TestRegionChip<F> {
 	/// Make the circuit config.
 	pub fn configure(meta: &mut ConstraintSystem<F>) -> TestRegionConfig {
-		let advice = [meta.advice_column(), meta.advice_column()];
+		let advice = [meta.advice_column(), meta.advice_column(), meta.advice_column(), meta.advice_column()];
 		let selectors = [meta.selector(), meta.selector()];
 		advice.map(|c| meta.enable_equality(c));
 
@@ -48,9 +48,9 @@ impl<F: FieldExt> TestRegionChip<F> {
 
 		// Gate for the mul circuit.
 		meta.create_gate("mul", |v_cells| {
-			let x_exp = v_cells.query_advice(advice[0], Rotation::cur());
-			let y_exp = v_cells.query_advice(advice[1], Rotation::cur());
-			let z_exp = v_cells.query_advice(advice[0], Rotation::next());
+			let x_exp = v_cells.query_advice(advice[2], Rotation::cur());
+			let y_exp = v_cells.query_advice(advice[3], Rotation::cur());
+			let z_exp = v_cells.query_advice(advice[2], Rotation::next());
 			let s_exp = v_cells.query_selector(selectors[1]);
 
 			vec![
@@ -65,7 +65,7 @@ impl<F: FieldExt> TestRegionChip<F> {
 				s_exp * ((x_exp * y_exp) - z_exp),
 			]
 		});
-		println!("{:#?}", meta);
+		//println!("{:#?}", meta);
 		TestRegionConfig { advice, selectors }
 	}
 
@@ -101,12 +101,12 @@ impl<F: FieldExt> TestRegionChip<F> {
 			|| "mul",
 			|mut region: Region<'_, F>| {
 				config.selectors[1].enable(&mut region, 0)?;
-				let assigned_x = x.copy_advice(|| "x", &mut region, config.advice[0], 0)?;
-				let assigned_y = y.copy_advice(|| "y", &mut region, config.advice[1], 0)?;
+				let assigned_x = x.copy_advice(|| "x", &mut region, config.advice[2], 0)?;
+				let assigned_y = y.copy_advice(|| "y", &mut region, config.advice[3], 0)?;
 
 				let out = assigned_x.value().cloned() * assigned_y.value();
 
-				let out_assigned = region.assign_advice(|| "out", config.advice[0], 1, || out)?;
+				let out_assigned = region.assign_advice(|| "out", config.advice[2], 1, || out)?;
 
 				Ok(out_assigned)
 			},
