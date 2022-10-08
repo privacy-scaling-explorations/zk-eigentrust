@@ -65,7 +65,7 @@ impl<F: FieldExt> TestRegionChip<F> {
 				s_exp * ((x_exp * y_exp) - z_exp),
 			]
 		});
-
+		println!("{:#?}", meta);
 		TestRegionConfig { advice, selectors }
 	}
 
@@ -130,6 +130,7 @@ mod test {
 	enum Gadgets {
 		Sum,
 		Mul,
+		SuMul
 	}
 
 	#[derive(Clone)]
@@ -161,7 +162,6 @@ mod test {
 
 		fn configure(meta: &mut ConstraintSystem<F>) -> TestConfig {
 			let test_region = TestRegionChip::configure(meta);
-			println!("{:#?}", test_region);
 			let temp = meta.advice_column();
 			let pub_ins = meta.instance_column();
 			meta.enable_equality(temp);
@@ -198,6 +198,7 @@ mod test {
 						layouter.namespace(|| "mul"),
 					)?;
 					layouter.constrain_instance(mul.cell(), config.pub_ins, 0)?;
+
 				},
 				Gadgets::Sum => {
 					let acc = TestRegionChip::sum(
@@ -208,23 +209,63 @@ mod test {
 					)?;
 					layouter.constrain_instance(acc.cell(), config.pub_ins, 0)?;
 				},
-			}
 
+				Gadgets::SuMul => {
+					let mul = TestRegionChip::mul(
+						items[0].clone(),
+						items[1].clone(),
+						config.test_region,
+						layouter.namespace(|| "mul"),
+					)?;
+					layouter.constrain_instance(mul.cell(), config.pub_ins, 0)?;
+
+					let acc = TestRegionChip::sum(
+						items[2].clone(),
+						items[3].clone(),
+						config.test_region,
+						layouter.namespace(|| "sum"),
+					)?;
+					layouter.constrain_instance(acc.cell(), config.pub_ins, 0)?;
+
+				},
+
+			}
+		    println!("{:#?}", config.test_region);
 			Ok(())
 		}
 	}
 
 	#[test]
 	fn test_mul_sum() {
-		// Testing x = 5 and y = 2.
-		let test_chip_mul = TestCircuit::new([Fr::from(5), Fr::from(2)], Gadgets::Mul);
-		// Testing three 2's representation on the field as an input.
-		let test_chip_sum = TestCircuit::new([Fr::from(8), Fr::from(2)], Gadgets::Sum);
+		// Testing x = 2 and y = 2 for Mul and x = 2 and y = 2 for the Sum.
+		let test_chip_sumul = TestCircuit::new([Fr::from(2), Fr::from(2), Fr::from(2), Fr::from(2)], Gadgets::SuMul);
 
 		let k = 4;
-		let pub_ins = vec![Fr::from(10)];
-		let prover_mul = MockProver::run(k, &test_chip_mul, vec![pub_ins.clone()]).unwrap();
-		let prover_sum = MockProver::run(k, &test_chip_sum, vec![pub_ins]).unwrap();
-		assert_eq!(prover_mul.verify(), prover_sum.verify());
+		let pub_ins = vec![Fr::from(4)];
+		let prover_sumul = MockProver::run(k, &test_chip_sumul, vec![pub_ins.clone()]).unwrap();
+		assert_eq!(prover_sumul.verify(), Ok(()));
 	}
+	/*
+	#[test]
+	fn test_mul() {
+		// Testing x = 2 and y = 2 for Mul.
+		let test_chip_sumul = TestCircuit::new([Fr::from(2), Fr::from(2)], Gadgets::Mul);
+
+		let k = 4;
+		let pub_ins = vec![Fr::from(4)];
+		let prover_sumul = MockProver::run(k, &test_chip_sumul, vec![pub_ins.clone()]).unwrap();
+		assert_eq!(prover_sumul.verify(), Ok(()));
+	}
+
+	#[test]
+	fn test_sum() {
+		// Testing x = 2 and y = 2 for Sum.
+		let test_chip_sumul = TestCircuit::new([Fr::from(2), Fr::from(2)], Gadgets::Sum);
+
+		let k = 4;
+		let pub_ins = vec![Fr::from(4)];
+		let prover_sumul = MockProver::run(k, &test_chip_sumul, vec![pub_ins.clone()]).unwrap();
+		assert_eq!(prover_sumul.verify(), Ok(()));
+	}
+	*/
 }
