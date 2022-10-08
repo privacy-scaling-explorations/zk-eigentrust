@@ -26,7 +26,7 @@ impl<F: FieldExt> TestRegionChip<F> {
 	pub fn configure(meta: &mut ConstraintSystem<F>) -> TestRegionConfig {
 		let advice = [meta.advice_column(), meta.advice_column()];
 		let selectors = [meta.selector(), meta.selector()];
-	    advice.map(|c| meta.enable_equality(c));
+		advice.map(|c| meta.enable_equality(c));
 
 		meta.create_gate("sum", |v_cells| {
 			let sum_exp = v_cells.query_advice(advice[0], Rotation::cur());
@@ -46,55 +46,49 @@ impl<F: FieldExt> TestRegionChip<F> {
 			vec![s * (sum_exp + item_exp - sum_next)]
 		});
 
-        // Gate for the mul circuit.
-        meta.create_gate("mul", |v_cells| {
-            let x_exp = v_cells.query_advice(advice[0], Rotation::cur());
-            let y_exp = v_cells.query_advice(advice[1], Rotation::cur());
-            let z_exp = v_cells.query_advice(advice[0], Rotation::next());
-            let s_exp = v_cells.query_selector(selectors[1]);
+		// Gate for the mul circuit.
+		meta.create_gate("mul", |v_cells| {
+			let x_exp = v_cells.query_advice(advice[0], Rotation::cur());
+			let y_exp = v_cells.query_advice(advice[1], Rotation::cur());
+			let z_exp = v_cells.query_advice(advice[0], Rotation::next());
+			let s_exp = v_cells.query_selector(selectors[1]);
 
-            vec![
-            // (x * y) - z == 0
-            // Example:
-            // let x = 3;
-            // let y = 2;
-            // let z = (x * y);
-            // z;
-            //
-            // z = (3 * 2) = 6 => Checking the constraint (3 * 2) - 6 == 0
-            s_exp * ((x_exp * y_exp) - z_exp),
-            ]
-        });
+			vec![
+				// (x * y) - z == 0
+				// Example:
+				// let x = 3;
+				// let y = 2;
+				// let z = (x * y);
+				// z;
+				//
+				// z = (3 * 2) = 6 => Checking the constraint (3 * 2) - 6 == 0
+				s_exp * ((x_exp * y_exp) - z_exp),
+			]
+		});
 
 		TestRegionConfig { advice, selectors }
 	}
 
 	/// Synthesize the sum circuit.
 	pub fn sum(
-		x: AssignedCell<F, F>,
-        y: AssignedCell<F, F>,
-        config: TestRegionConfig, mut layouter: impl Layouter<F>,
+		x: AssignedCell<F, F>, y: AssignedCell<F, F>, config: TestRegionConfig,
+		mut layouter: impl Layouter<F>,
 	) -> Result<AssignedCell<F, F>, Error> {
 		layouter.assign_region(
 			|| "sum",
 			|mut region: Region<'_, F>| {
-					config.selectors[0].enable(&mut region, 0)?;
-                    let mut sum = y.copy_advice(
-                        || "initial_sum",
-                        &mut region,
-                        config.advice[0],
-                        0,
-                    )?;
-					let item = x.copy_advice(|| "item", &mut region, config.advice[1], 0)?;
-					let val = sum.value().cloned() + item.value();
-					sum = region.assign_advice(|| "sum", config.advice[0], 1, || val)?;
+				config.selectors[0].enable(&mut region, 0)?;
+				let mut sum = y.copy_advice(|| "initial_sum", &mut region, config.advice[0], 0)?;
+				let item = x.copy_advice(|| "item", &mut region, config.advice[1], 0)?;
+				let val = sum.value().cloned() + item.value();
+				sum = region.assign_advice(|| "sum", config.advice[0], 1, || val)?;
 
 				Ok(sum)
 			},
 		)
 	}
 
-    /// Synthesize the mul circuit.
+	/// Synthesize the mul circuit.
 	pub fn mul(
 		// Assigns a cell for the x.
 		x: AssignedCell<F, F>,
@@ -118,7 +112,6 @@ impl<F: FieldExt> TestRegionChip<F> {
 			},
 		)
 	}
-
 }
 
 #[cfg(test)]
@@ -135,8 +128,8 @@ mod test {
 
 	#[derive(Clone)]
 	enum Gadgets {
-        Sum,
-		Mul
+		Sum,
+		Mul,
 	}
 
 	#[derive(Clone)]
@@ -168,7 +161,7 @@ mod test {
 
 		fn configure(meta: &mut ConstraintSystem<F>) -> TestConfig {
 			let test_region = TestRegionChip::configure(meta);
-            println!("{:#?}", test_region);
+			println!("{:#?}", test_region);
 			let temp = meta.advice_column();
 			let pub_ins = meta.instance_column();
 			meta.enable_equality(temp);
@@ -207,8 +200,13 @@ mod test {
 					layouter.constrain_instance(mul.cell(), config.pub_ins, 0)?;
 				},
 				Gadgets::Sum => {
-			        let acc = TestRegionChip::sum(items[0].clone(), items[1].clone(), config.test_region, layouter.namespace(|| "sum"))?;
-			        layouter.constrain_instance(acc.cell(), config.pub_ins, 0)?;
+					let acc = TestRegionChip::sum(
+						items[0].clone(),
+						items[1].clone(),
+						config.test_region,
+						layouter.namespace(|| "sum"),
+					)?;
+					layouter.constrain_instance(acc.cell(), config.pub_ins, 0)?;
 				},
 			}
 
@@ -220,7 +218,7 @@ mod test {
 	fn test_mul_sum() {
 		// Testing x = 5 and y = 2.
 		let test_chip_mul = TestCircuit::new([Fr::from(5), Fr::from(2)], Gadgets::Mul);
-        // Testing three 2's representation on the field as an input.
+		// Testing three 2's representation on the field as an input.
 		let test_chip_sum = TestCircuit::new([Fr::from(8), Fr::from(2)], Gadgets::Sum);
 
 		let k = 4;
@@ -229,5 +227,4 @@ mod test {
 		let prover_sum = MockProver::run(k, &test_chip_sum, vec![pub_ins]).unwrap();
 		assert_eq!(prover_mul.verify(), prover_sum.verify());
 	}
-
 }
