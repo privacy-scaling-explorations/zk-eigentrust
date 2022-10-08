@@ -65,7 +65,7 @@ impl<F: FieldExt> TestRegionChip<F> {
 				s_exp * ((x_exp * y_exp) - z_exp),
 			]
 		});
-		//println!("{:#?}", meta);
+		println!("{:#?}", meta);
 		TestRegionConfig { advice, selectors }
 	}
 
