@@ -65,7 +65,7 @@ impl<F: FieldExt> TestRegionChip<F> {
 				s_exp * ((x_exp * y_exp) - z_exp),
 			]
 		});
-		println!("{:#?}", meta);
+		//println!("{:#?}", meta);
 		TestRegionConfig { advice, selectors }
 	}
 
@@ -82,6 +82,7 @@ impl<F: FieldExt> TestRegionChip<F> {
 				let item = x.copy_advice(|| "item", &mut region, config.advice[1], 0)?;
 				let val = sum.value().cloned() + item.value();
 				sum = region.assign_advice(|| "sum", config.advice[0], 1, || val)?;
+				println!("aa{:#?}", region);
 
 				Ok(sum)
 			},
@@ -107,11 +108,13 @@ impl<F: FieldExt> TestRegionChip<F> {
 				let out = assigned_x.value().cloned() * assigned_y.value();
 
 				let out_assigned = region.assign_advice(|| "out", config.advice[2], 1, || out)?;
+				println!("{:#?}", region);
 
 				Ok(out_assigned)
 			},
 		)
 	}
+
 }
 
 #[cfg(test)]
@@ -211,14 +214,6 @@ mod test {
 				},
 
 				Gadgets::SuMul => {
-					let mul = TestRegionChip::mul(
-						items[0].clone(),
-						items[1].clone(),
-						config.test_region,
-						layouter.namespace(|| "mul"),
-					)?;
-					layouter.constrain_instance(mul.cell(), config.pub_ins, 0)?;
-
 					let acc = TestRegionChip::sum(
 						items[2].clone(),
 						items[3].clone(),
@@ -227,10 +222,17 @@ mod test {
 					)?;
 					layouter.constrain_instance(acc.cell(), config.pub_ins, 0)?;
 
+					let mul = TestRegionChip::mul(
+						items[0].clone(),
+						items[1].clone(),
+						config.test_region,
+						layouter.namespace(|| "mul"),
+					)?;
+					layouter.constrain_instance(mul.cell(), config.pub_ins, 0)?;
 				},
 
 			}
-		    println!("{:#?}", config.test_region);
+		    //println!("{:#?}", config.test_region);
 			Ok(())
 		}
 	}
