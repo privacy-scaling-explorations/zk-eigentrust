@@ -16,8 +16,6 @@ use halo2wrong::halo2::{
 struct PoseidonSpongeConfig<const WIDTH: usize> {
 	/// Constructs poseidon circuit elements.
 	poseidon_config: PoseidonConfig<WIDTH>,
-	/// Configures columns for the state.
-	state: [Column<Advice>; WIDTH],
 	/// Configures a fixed boolean value for each row of the circuit.
 	absorb_selector: Selector,
 }
@@ -45,11 +43,6 @@ where
 	/// Make the circuit config.
 	fn configure(meta: &mut ConstraintSystem<F>) -> PoseidonSpongeConfig<WIDTH> {
 		let poseidon_config = PoseidonChip::<_, WIDTH, P>::configure(meta);
-		let state = [(); WIDTH].map(|_| {
-			let column = meta.advice_column();
-			meta.enable_equality(column);
-			column
-		});
 		let absorb_selector = meta.selector();
 
 		meta.create_gate("absorb", |v_cells| {
@@ -57,9 +50,10 @@ where
 
 			let s = v_cells.query_selector(absorb_selector);
 			for i in 0..WIDTH {
-				let poseidon_exp = v_cells.query_advice(poseidon_config.state[i], Rotation::cur());
-				let sponge_exp = v_cells.query_advice(state[i], Rotation::cur());
-				let next_sponge_exp = v_cells.query_advice(state[i], Rotation::next());
+				let poseidon_exp = v_cells.query_advice(poseidon_config.state[i], Rotation::prev());
+				let sponge_exp = v_cells.query_advice(poseidon_config.state[i], Rotation::cur());
+				let next_sponge_exp =
+					v_cells.query_advice(poseidon_config.state[i], Rotation::next());
 				let diff = next_sponge_exp - (sponge_exp + poseidon_exp);
 				exprs[i] = s.clone() * diff;
 			}
@@ -67,7 +61,7 @@ where
 			exprs
 		});
 
-		PoseidonSpongeConfig { poseidon_config, state, absorb_selector }
+		PoseidonSpongeConfig { poseidon_config, absorb_selector }
 	}
 
 	/// Absorb the data in and split it into
@@ -106,28 +100,36 @@ where
 
 		let mut state = layouter.assign_region(
 			|| "load_chunks",
-			|mut region: Region<'_, F>| Self::load_state(config.state, &mut region, 0, &[]),
+			|mut region: Region<'_, F>| {
+				Self::load_state(config.poseidon_config.state, &mut region, 1, &[])
+			},
 		)?;
 
 		for (i, chunk) in self.inputs.chunks(WIDTH).enumerate() {
 			let inputs = layouter.assign_region(
 				|| format!("absorb_{}", i),
 				|mut region: Region<'_, F>| {
-					let round = 0;
+					let round = 1;
 					config.absorb_selector.enable(&mut region, round)?;
 
-					let loaded_chunk = Self::load_state(config.state, &mut region, round, chunk)?;
-					let loaded_state =
-						Self::load_state(config.poseidon_config.state, &mut region, round, &state)?;
+					let loaded_chunk =
+						Self::load_state(config.poseidon_config.state, &mut region, round, chunk)?;
+					let loaded_state = Self::load_state(
+						config.poseidon_config.state,
+						&mut region,
+						round - 1,
+						&state,
+					)?;
 
-					let next_state = loaded_chunk.zip(loaded_state).zip(config.state).try_map(
-						|((prev_state, pos_state), column)| {
+					let next_state = loaded_chunk
+						.zip(loaded_state)
+						.zip(config.poseidon_config.state)
+						.try_map(|((prev_state, pos_state), column)| {
 							let sum = prev_state
 								.value()
 								.and_then(|&s| pos_state.value().map(|&ps| s + ps));
 							region.assign_advice(|| "sum", column, round + 1, || sum)
-						},
-					)?;
+						})?;
 
 					Ok(next_state)
 				},
@@ -190,7 +192,7 @@ mod test {
 			for i in 0..5 {
 				state[i] = Some(region.assign_advice(
 					|| "state",
-					config.state[i],
+					config.poseidon_config.state[i],
 					round,
 					|| init_state[i],
 				)?);
