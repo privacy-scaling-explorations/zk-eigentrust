@@ -9,7 +9,10 @@ pub mod ivp;
 
 use crate::{constants::MAX_NEIGHBORS, epoch::Epoch, error::EigenError};
 use eigen_trust_circuit::halo2wrong::{
-	curves::bn256::{Bn256, Fr as Bn256Scalar, G1Affine},
+	curves::{
+		bn256::{Bn256, Fr as Bn256Scalar, G1Affine},
+		group::ff::PrimeField,
+	},
 	halo2::{plonk::ProvingKey, poly::kzg::commitment::ParamsKZG},
 };
 use ivp::IVP;
@@ -17,7 +20,7 @@ use libp2p::{core::PublicKey, PeerId};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SignatureData {
 	sk: [u8; 32],
 	pk: [u8; 32],
@@ -30,6 +33,23 @@ pub struct Signature {
 	pk: Bn256Scalar,
 	neighbours: [Option<Bn256Scalar>; MAX_NEIGHBORS],
 	scores: [f64; MAX_NEIGHBORS],
+}
+
+impl From<SignatureData> for Signature {
+	fn from(sig: SignatureData) -> Self {
+		let sk = Bn256Scalar::from_repr(sig.sk).unwrap();
+		let pk = Bn256Scalar::from_repr(sig.pk).unwrap();
+		let mut neighbours = [None; MAX_NEIGHBORS];
+		let mut scores = [0.; MAX_NEIGHBORS];
+		for (i, n) in sig.neighbours.iter().enumerate().take(MAX_NEIGHBORS) {
+			neighbours[i] = Some(Bn256Scalar::from_repr(*n).unwrap());
+		}
+		for (i, n) in sig.scores.iter().enumerate().take(MAX_NEIGHBORS) {
+			scores[i] = *n;
+		}
+
+		Signature { sk, pk, neighbours, scores }
+	}
 }
 
 /// The peer struct.

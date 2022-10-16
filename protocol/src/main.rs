@@ -45,7 +45,7 @@ pub mod manager;
 /// Common utility functions used across the crate
 pub mod utils;
 
-use constants::{MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS};
+use constants::{EPOCH_INTERVAL, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, NUM_ITERATIONS};
 use eigen_trust_circuit::{
 	halo2wrong::{
 		curves::bn256::Bn256,
@@ -54,14 +54,16 @@ use eigen_trust_circuit::{
 	params::poseidon_bn254_5x5::Params,
 	utils::{keygen, random_circuit},
 };
+use epoch::Epoch;
 use error::EigenError;
 use hyper::{
 	body::{aggregate, Buf},
-	server::conn::Http,
-	service::service_fn,
+	server::conn::{AddrStream, Http},
+	service::{make_service_fn, service_fn},
 	Body, Method, Request, Response,
 };
 use manager::{Manager, SignatureData};
+use once_cell::sync::Lazy;
 use rand::thread_rng;
 use serde::{ser::StdError, Deserialize, Serialize};
 use serde_json::from_reader;
@@ -77,11 +79,31 @@ use tokio::{
 	time::{self, Duration},
 };
 
+use crate::manager::Signature;
+
+static MANAGER_STORE: Lazy<Mutex<Manager>> = Lazy::new(|| {
+	let mut rng = thread_rng();
+	let params = ParamsKZG::new(9);
+	let random_circuit =
+		random_circuit::<Bn256, _, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, Params>(&mut rng);
+	let pk = keygen(&params, &random_circuit).unwrap();
+
+	Mutex::new(Manager::new(params, pk))
+});
+
 async fn handle_request(req: Request<Body>) -> Result<Response<String>, EigenError> {
 	match (req.method(), req.uri().path()) {
 		(&Method::GET, "/score") => {
 			let q = req.uri().query();
 			let query_string = q.ok_or(EigenError::InvalidQuery)?;
+			let manager = MANAGER_STORE.lock();
+			if manager.is_err() {
+				let e = manager.err();
+				println!("error: {:?}", e);
+				return Ok(Response::new(String::from("Lock error")));
+			}
+			let m = manager.unwrap();
+			// let ops = m.ge
 			println!("required pubkey score {:?}", query_string);
 		},
 		(&Method::POST, "/signature") => {
@@ -90,6 +112,15 @@ async fn handle_request(req: Request<Body>) -> Result<Response<String>, EigenErr
 			// Decode as JSON...
 			let data: SignatureData =
 				from_reader(whole_body.reader()).map_err(|_| EigenError::ParseError)?;
+			let manager = MANAGER_STORE.lock();
+			if manager.is_err() {
+				let e = manager.err();
+				println!("error: {:?}", e);
+				return Ok(Response::new(String::from("Lock error")));
+			}
+			let mut m = manager.unwrap();
+			let sig: Signature = data.clone().into();
+			m.add_signature(sig);
 			println!("posted signature {:?}", data);
 		},
 		_ => return Err(EigenError::InvalidRequest),
@@ -105,12 +136,32 @@ async fn handle_connection<I: AsyncRead + AsyncWrite + Unpin + 'static>(
 
 	let service_function = service_fn(
 		async move |req: Request<Body>| -> Result<Response<String>, EigenError> {
-			handle_request(req).await
+			handle_request(req).await;
+			Ok(Response::new(String::from("Hello World!")))
 		},
 	);
 	let res = https.serve_connection(stream, service_function).await;
 	if let Err(err) = res {
 		println!("Error serving connection: {:?}", err);
+	}
+}
+
+fn handle_epoch_convergence() {
+	let manager = MANAGER_STORE.lock();
+
+	if manager.is_err() {
+		let e = manager.err();
+		println!("error: {:?}", e);
+		return;
+	}
+
+	let mut m = manager.unwrap();
+
+	let epoch = Epoch::current_epoch(EPOCH_INTERVAL);
+	m.calculate_initial_ivps(epoch);
+
+	for i in 0..NUM_ITERATIONS {
+		m.calculate_ivps(epoch, i);
 	}
 }
 
@@ -121,16 +172,7 @@ pub async fn main() -> Result<(), EigenError> {
 	let listener = TcpListener::bind(addr).await.map_err(|_| EigenError::ListenError)?;
 	println!("Listening on https://{}", addr);
 
-	let mut rng = thread_rng();
-	let params = ParamsKZG::new(9);
-	let random_circuit =
-		random_circuit::<Bn256, _, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, Params>(&mut rng);
-	let pk = keygen(&params, &random_circuit).unwrap();
-
-	let manager = Arc::new(Mutex::new(Manager::new(params, pk)));
-	let res = manager.lock();
-
-	let interval = Duration::from_secs(2);
+	let interval = Duration::from_secs(EPOCH_INTERVAL);
 	let mut inner_interval = time::interval(interval);
 	inner_interval.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
 
@@ -141,7 +183,7 @@ pub async fn main() -> Result<(), EigenError> {
 				handle_connection(stream, addr).await;
 			}
 			res = inner_interval.tick() => {
-				println!("{:?}", res);
+				handle_epoch_convergence();
 			}
 		};
 	}
