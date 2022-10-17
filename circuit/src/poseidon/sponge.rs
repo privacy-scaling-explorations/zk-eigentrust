@@ -99,9 +99,9 @@ where
 		assert!(!self.inputs.is_empty());
 
 		let mut state = layouter.assign_region(
-			|| "load_chunks",
+			|| "load_initial_state",
 			|mut region: Region<'_, F>| {
-				Self::load_state(config.poseidon_config.state, &mut region, 1, &[])
+				Self::load_state(config.poseidon_config.state, &mut region, 0, &[])
 			},
 		)?;
 
@@ -112,8 +112,7 @@ where
 					let round = 1;
 					config.absorb_selector.enable(&mut region, round)?;
 
-					let loaded_chunk =
-						Self::load_state(config.poseidon_config.state, &mut region, round, chunk)?;
+					// Load previous Poseidon state
 					let loaded_state = Self::load_state(
 						config.poseidon_config.state,
 						&mut region,
@@ -121,11 +120,16 @@ where
 						&state,
 					)?;
 
+					// Load next chunk
+					let loaded_chunk =
+						Self::load_state(config.poseidon_config.state, &mut region, round, chunk)?;
+
+					// Calculate the next state to permute
 					let next_state = loaded_chunk
 						.zip(loaded_state)
 						.zip(config.poseidon_config.state)
-						.try_map(|((prev_state, pos_state), column)| {
-							let sum = prev_state
+						.try_map(|((chunk_state, pos_state), column)| {
+							let sum = chunk_state
 								.value()
 								.and_then(|&s| pos_state.value().map(|&ps| s + ps));
 							region.assign_advice(|| "sum", column, round + 1, || sum)
