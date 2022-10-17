@@ -19,8 +19,6 @@ pub struct PoseidonConfig<const WIDTH: usize> {
 	state: [Column<Advice>; WIDTH],
 	/// Configures columns for the round constants.
 	round_constants: [Column<Fixed>; WIDTH],
-	/// Configures columns for the MDS matrix.
-	mds: [[Column<Fixed>; WIDTH]; WIDTH],
 	/// Configures a fixed boolean value for each row of the circuit.
 	full_round_selector: Selector,
 	/// Configures a fixed boolean value for each row of the circuit.
@@ -78,22 +76,6 @@ where
 		Ok(round_values)
 	}
 
-	/// Assign MDS variables to the circuit.
-	fn load_mds(
-		config: &PoseidonConfig<WIDTH>, region: &mut Region<'_, F>, round: usize,
-		mds: &[[F; WIDTH]; WIDTH],
-	) -> Result<[[Value<F>; WIDTH]; WIDTH], Error> {
-		let mut mds_values: [[Value<F>; WIDTH]; WIDTH] =
-			[[(); WIDTH]; WIDTH].map(|vec| vec.map(|_| Value::unknown()));
-		for i in 0..WIDTH {
-			for j in 0..WIDTH {
-				mds_values[i][j] = Value::known(mds[i][j]);
-				region.assign_fixed(|| "mds", config.mds[i][j], round, || mds_values[i][j])?;
-			}
-		}
-		Ok(mds_values)
-	}
-
 	/// Add round constants to the state values
 	/// for the AddRoundConstants operation.
 	fn apply_round_constants(
@@ -110,13 +92,12 @@ where
 	}
 
 	/// Compute MDS matrix for MixLayer operation.
-	fn apply_mds(
-		next_state: &[Value<F>; WIDTH], mds_values: &[[Value<F>; WIDTH]; WIDTH],
-	) -> [Value<F>; WIDTH] {
+	fn apply_mds(next_state: &[Value<F>; WIDTH]) -> [Value<F>; WIDTH] {
 		let mut new_state = [Value::known(F::zero()); WIDTH];
+		let mds = P::mds();
 		for i in 0..WIDTH {
 			for j in 0..WIDTH {
-				let mds_ij = &mds_values[i][j];
+				let mds_ij = &Value::known(mds[i][j]);
 				let m_product = next_state[j] * mds_ij;
 				new_state[i] = new_state[i] + m_product;
 			}
@@ -140,16 +121,13 @@ where
 	}
 
 	/// Compute MDS matrix for MixLayer operation in the circuit.
-	fn apply_mds_expr(
-		v_cells: &mut VirtualCells<F>, exprs: &[Expression<F>; WIDTH],
-		mds: &[[Column<Fixed>; WIDTH]; WIDTH],
-	) -> [Expression<F>; WIDTH] {
+	fn apply_mds_expr(exprs: &[Expression<F>; WIDTH]) -> [Expression<F>; WIDTH] {
 		let mut new_exprs = [(); WIDTH].map(|_| Expression::Constant(F::zero()));
+		let mds = P::mds();
 		// Mat mul with MDS
 		for i in 0..WIDTH {
 			for j in 0..WIDTH {
-				let mds_ij = v_cells.query_fixed(mds[i][j], Rotation::cur());
-				new_exprs[i] = new_exprs[i].clone() + (exprs[j].clone() * mds_ij);
+				new_exprs[i] = new_exprs[i].clone() + (exprs[j].clone() * mds[i][j]);
 			}
 		}
 		new_exprs
@@ -158,7 +136,7 @@ where
 	/// Configures full_round.
 	fn full_round(
 		config: &PoseidonConfig<WIDTH>, region: &mut Region<'_, F>, num_rounds: usize,
-		round_constants: &[F], mds: &[[F; WIDTH]; WIDTH], prev_state: &[AssignedCell<F, F>; WIDTH],
+		round_constants: &[F], prev_state: &[AssignedCell<F, F>; WIDTH],
 	) -> Result<[AssignedCell<F, F>; WIDTH], Error> {
 		// Assign initial state
 		let mut state_cells = Self::copy_state(config, region, 0, prev_state)?;
@@ -168,8 +146,6 @@ where
 			// Assign round constants
 			let round_const_values =
 				Self::load_round_constants(config, region, round, round_constants)?;
-			// Assign mds matrix
-			let mds_values = Self::load_mds(config, region, round, mds)?;
 
 			// 1. step for the TRF.
 			// AddRoundConstants step.
@@ -182,7 +158,7 @@ where
 
 			// 3. step for the TRF.
 			// MixLayer step.
-			next_state = Self::apply_mds(&next_state, &mds_values);
+			next_state = Self::apply_mds(&next_state);
 
 			// Assign next state
 			for i in 0..WIDTH {
@@ -200,7 +176,7 @@ where
 	/// Configures partial_round.
 	fn partial_round(
 		config: &PoseidonConfig<WIDTH>, region: &mut Region<'_, F>, num_rounds: usize,
-		round_constants: &[F], mds: &[[F; WIDTH]; WIDTH], prev_state: &[AssignedCell<F, F>; WIDTH],
+		round_constants: &[F], prev_state: &[AssignedCell<F, F>; WIDTH],
 	) -> Result<[AssignedCell<F, F>; WIDTH], Error> {
 		let mut state_cells = Self::copy_state(config, region, 0, prev_state)?;
 		for round in 0..num_rounds {
@@ -209,8 +185,6 @@ where
 			// Assign round constants
 			let round_const_cells =
 				Self::load_round_constants(config, region, round, round_constants)?;
-			// Assign mds matrix
-			let mds_cells = Self::load_mds(config, region, round, mds)?;
 
 			// 1. step for the TRF.
 			// AddRoundConstants step.
@@ -221,7 +195,7 @@ where
 
 			// 3. step for the TRF.
 			// MixLayer step.
-			next_state = Self::apply_mds(&next_state, &mds_cells);
+			next_state = Self::apply_mds(&next_state);
 
 			// Assign next state
 			for i in 0..WIDTH {
@@ -245,13 +219,11 @@ where
 	pub fn configure(meta: &mut ConstraintSystem<F>) -> PoseidonConfig<WIDTH> {
 		let state = [(); WIDTH].map(|_| meta.advice_column());
 		let round_constants = [(); WIDTH].map(|_| meta.fixed_column());
-		let mds = [[(); WIDTH]; WIDTH].map(|vec| vec.map(|_| meta.fixed_column()));
 		let full_round_selector = meta.selector();
 		let partial_round_selector = meta.selector();
 
 		state.map(|c| meta.enable_equality(c));
 		round_constants.map(|c| meta.enable_equality(c));
-		mds.map(|vec| vec.map(|c| meta.enable_equality(c)));
 
 		meta.create_gate("full_round", |v_cells| {
 			// 1. step for the TRF.
@@ -265,7 +237,7 @@ where
 			}
 			// 3. step for the TRF.
 			// MixLayer step.
-			exprs = Self::apply_mds_expr(v_cells, &exprs, &mds);
+			exprs = Self::apply_mds_expr(&exprs);
 
 			let s_cells = v_cells.query_selector(full_round_selector);
 			// It should be equal to the state in next row
@@ -287,7 +259,7 @@ where
 
 			// 3. step for the TRF.
 			// MixLayer step.
-			exprs = Self::apply_mds_expr(v_cells, &exprs, &mds);
+			exprs = Self::apply_mds_expr(&exprs);
 
 			let s_cells = v_cells.query_selector(partial_round_selector);
 			// It should be equal to the state in next row
@@ -299,7 +271,7 @@ where
 			exprs
 		});
 
-		PoseidonConfig { state, round_constants, mds, full_round_selector, partial_round_selector }
+		PoseidonConfig { state, round_constants, full_round_selector, partial_round_selector }
 	}
 
 	/// Synthesize the circuit.
@@ -309,7 +281,6 @@ where
 		let full_rounds = P::full_rounds();
 		let half_full_rounds = full_rounds / 2;
 		let partial_rounds = P::partial_rounds();
-		let mds = P::mds();
 		let round_constants = P::round_constants();
 		let total_count = P::round_constants_count();
 
@@ -331,8 +302,7 @@ where
 			|| "full_rounds_1",
 			|mut region: Region<'_, F>| {
 				Self::full_round(
-					&config, &mut region, half_full_rounds, first_round_constants, &mds,
-					&self.inputs,
+					&config, &mut region, half_full_rounds, first_round_constants, &self.inputs,
 				)
 			},
 		)?;
@@ -341,7 +311,7 @@ where
 			|| "partial_rounds",
 			|mut region: Region<'_, F>| {
 				Self::partial_round(
-					&config, &mut region, partial_rounds, second_round_constants, &mds, &state1,
+					&config, &mut region, partial_rounds, second_round_constants, &state1,
 				)
 			},
 		)?;
@@ -350,7 +320,7 @@ where
 			|| "full_rounds_2",
 			|mut region: Region<'_, F>| {
 				Self::full_round(
-					&config, &mut region, half_full_rounds, third_round_constants, &mds, &state2,
+					&config, &mut region, half_full_rounds, third_round_constants, &state2,
 				)
 			},
 		)?;
