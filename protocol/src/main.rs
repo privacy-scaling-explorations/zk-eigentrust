@@ -19,7 +19,6 @@
 //! The library is implemented according to the original [Eigen Trust paper](http://ilpubs.stanford.edu:8090/562/1/2002-56.pdf).
 //! It is developed under the Ethereum Foundation grant.
 
-#![feature(async_closure)]
 #![feature(array_zip, array_try_map)]
 #![allow(clippy::tabs_in_doc_comments)]
 #![deny(
@@ -45,10 +44,14 @@ pub mod manager;
 /// Common utility functions used across the crate
 pub mod utils;
 
+use crate::manager::Signature;
 use constants::{EPOCH_INTERVAL, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, NUM_ITERATIONS};
 use eigen_trust_circuit::{
 	halo2wrong::{
-		curves::bn256::Bn256,
+		curves::{
+			bn256::{Bn256, Fr as Bn265Scalar},
+			group::ff::PrimeField,
+		},
 		halo2::poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
 	},
 	params::poseidon_bn254_5x5::Params,
@@ -60,13 +63,13 @@ use hyper::{
 	body::{aggregate, Buf},
 	server::conn::{AddrStream, Http},
 	service::{make_service_fn, service_fn},
-	Body, Method, Request, Response,
+	Body, Method, Request, Response, StatusCode,
 };
 use manager::{Manager, SignatureData};
 use once_cell::sync::Lazy;
 use rand::thread_rng;
 use serde::{ser::StdError, Deserialize, Serialize};
-use serde_json::from_reader;
+use serde_json::{from_reader, Error as SerdeError, Result as SerdeResult};
 use std::{
 	fmt::{Display, Formatter, Result as FmtResult},
 	net::SocketAddr,
@@ -79,7 +82,30 @@ use tokio::{
 	time::{self, Duration},
 };
 
-use crate::manager::Signature;
+const BAD_REQUEST: u16 = 400;
+const NOT_FOUND: u16 = 404;
+const INTERNAL_SERVER_ERROR: u16 = 500;
+
+#[derive(Debug)]
+enum ResponseBody {
+	SignatureAddSuccess,
+	Score(f64),
+	LockError,
+	InvalidQuery,
+	InvalidRequest,
+}
+
+impl ToString for ResponseBody {
+	fn to_string(&self) -> String {
+		match self {
+			ResponseBody::SignatureAddSuccess => "SignatureAddSuccess".to_string(),
+			ResponseBody::Score(s) => s.to_string(),
+			ResponseBody::LockError => "LockError".to_string(),
+			ResponseBody::InvalidQuery => "InvalidQuery".to_string(),
+			ResponseBody::InvalidRequest => "InvalidRequest".to_string(),
+		}
+	}
+}
 
 static MANAGER_STORE: Lazy<Mutex<Manager>> = Lazy::new(|| {
 	let mut rng = thread_rng();
@@ -95,37 +121,83 @@ async fn handle_request(req: Request<Body>) -> Result<Response<String>, EigenErr
 	match (req.method(), req.uri().path()) {
 		(&Method::GET, "/score") => {
 			let q = req.uri().query();
-			let query_string = q.ok_or(EigenError::InvalidQuery)?;
+			if q.is_none() {
+				let res = Response::builder()
+					.status(BAD_REQUEST)
+					.body(ResponseBody::InvalidQuery.to_string())
+					.unwrap();
+				return Ok(res);
+			}
+			let query_string = q.unwrap();
 			let manager = MANAGER_STORE.lock();
 			if manager.is_err() {
 				let e = manager.err();
-				println!("error: {:?}", e);
-				return Ok(Response::new(String::from("Lock error")));
+				let res = Response::builder()
+					.status(INTERNAL_SERVER_ERROR)
+					.body(ResponseBody::LockError.to_string())
+					.unwrap();
+				return Ok(res);
 			}
 			let m = manager.unwrap();
-			// let ops = m.ge
-			println!("required pubkey score {:?}", query_string);
+			let pk = Bn265Scalar::from_str_vartime(query_string);
+			if pk.is_none() {
+				let res = Response::builder()
+					.status(BAD_REQUEST)
+					.body(ResponseBody::InvalidQuery.to_string())
+					.unwrap();
+				return Ok(res);
+			}
+			let pk = pk.unwrap();
+			let sig = m.get_signature(&pk);
+			let last_epoch = Epoch::current_epoch(EPOCH_INTERVAL).previous();
+			let ops = m.get_op_jis(sig, last_epoch, 10);
+			let ops_sum: f64 = ops.iter().sum();
+			let res = Response::new(ResponseBody::Score(ops_sum).to_string());
+			return Ok(res);
 		},
 		(&Method::POST, "/signature") => {
 			// Aggregate the body...
-			let whole_body = aggregate(req).await.map_err(|_| EigenError::AggregateBodyError)?;
+			let whole_body = aggregate(req).await;
+			if whole_body.is_err() {
+				let res = Response::builder()
+					.status(BAD_REQUEST)
+					.body(ResponseBody::InvalidQuery.to_string())
+					.unwrap();
+				return Ok(res);
+			}
+			let whole_body = whole_body.unwrap();
 			// Decode as JSON...
-			let data: SignatureData =
-				from_reader(whole_body.reader()).map_err(|_| EigenError::ParseError)?;
+			let data: SerdeResult<SignatureData> = from_reader(whole_body.reader());
+			if data.is_err() {
+				let res = Response::builder()
+					.status(BAD_REQUEST)
+					.body(ResponseBody::InvalidQuery.to_string())
+					.unwrap();
+				return Ok(res);
+			}
+			let data = data.unwrap();
 			let manager = MANAGER_STORE.lock();
 			if manager.is_err() {
 				let e = manager.err();
-				println!("error: {:?}", e);
-				return Ok(Response::new(String::from("Lock error")));
+				let res = Response::builder()
+					.status(INTERNAL_SERVER_ERROR)
+					.body(ResponseBody::LockError.to_string())
+					.unwrap();
+				return Ok(res);
 			}
 			let mut m = manager.unwrap();
 			let sig: Signature = data.clone().into();
 			m.add_signature(sig);
-			println!("posted signature {:?}", data);
+			let res = ResponseBody::SignatureAddSuccess;
+			return Ok(Response::new(res.to_string()));
 		},
-		_ => return Err(EigenError::InvalidRequest),
+		_ => {
+			return Ok(Response::builder()
+				.status(NOT_FOUND)
+				.body(ResponseBody::InvalidRequest.to_string())
+				.unwrap())
+		},
 	}
-	Ok(Response::new(String::from("Hello World!")))
 }
 
 async fn handle_connection<I: AsyncRead + AsyncWrite + Unpin + 'static>(
@@ -134,12 +206,7 @@ async fn handle_connection<I: AsyncRead + AsyncWrite + Unpin + 'static>(
 	let mut https = Http::new();
 	https.http1_keep_alive(false);
 
-	let service_function = service_fn(
-		async move |req: Request<Body>| -> Result<Response<String>, EigenError> {
-			handle_request(req).await;
-			Ok(Response::new(String::from("Hello World!")))
-		},
-	);
+	let service_function = service_fn(handle_request);
 	let res = https.serve_connection(stream, service_function).await;
 	if let Err(err) = res {
 		println!("Error serving connection: {:?}", err);
