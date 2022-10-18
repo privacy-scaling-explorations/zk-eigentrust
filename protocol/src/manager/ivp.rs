@@ -1,11 +1,7 @@
 use std::vec;
 
 use super::Signature;
-use crate::{
-	constants::*,
-	utils::to_wide_bytes,
-	error::EigenError, epoch::Epoch,
-};
+use crate::{constants::*, epoch::Epoch, error::EigenError, utils::to_wide_bytes};
 use bs58::decode::Error as Bs58Error;
 use eigen_trust_circuit::{
 	halo2wrong::{
@@ -56,7 +52,7 @@ impl IVP {
 			Bn256Scalar::zero(),
 			Bn256Scalar::zero(),
 			Bn256Scalar::zero(),
-			sig.sk
+			sig.sk,
 		];
 		let pos = Posedion5x5::new(input);
 		let pk_p = pos.permute()[0];
@@ -122,7 +118,7 @@ impl IVP {
 			Bn256Scalar::zero(),
 			Bn256Scalar::zero(),
 			Bn256Scalar::zero(),
-			sk_p
+			sk_p,
 		];
 		let pos = Posedion5x5::new(input);
 		let pk_v = pos.permute()[0];

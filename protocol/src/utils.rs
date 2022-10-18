@@ -1,7 +1,8 @@
-use crate::{manager::ivp::Posedion5x5, error::EigenError};
+use crate::{error::EigenError, manager::ivp::Posedion5x5};
 use eigen_trust_circuit::halo2wrong::{
 	curves::{bn256::Fr as Bn256Scalar, secp256k1::Fq as Secp256k1Scalar, FieldExt},
-	utils::decompose, halo2::arithmetic::Field,
+	halo2::arithmetic::Field,
+	utils::decompose,
 };
 use futures::{
 	stream::{self, BoxStream, Fuse},
@@ -15,13 +16,8 @@ use rand::RngCore;
 use tokio::time::{self, Duration, Instant};
 
 pub fn generate_keypair_from_sk(sk: Bn256Scalar) -> Result<Bn256Scalar, EigenError> {
-	let input = [
-		Bn256Scalar::zero(),
-		Bn256Scalar::zero(),
-		Bn256Scalar::zero(),
-		Bn256Scalar::zero(),
-		sk,
-	];
+	let input =
+		[Bn256Scalar::zero(), Bn256Scalar::zero(), Bn256Scalar::zero(), Bn256Scalar::zero(), sk];
 	let pos = Posedion5x5::new(input);
 	let out = pos.permute()[0];
 
