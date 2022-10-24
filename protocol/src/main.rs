@@ -19,6 +19,7 @@
 //! The library is implemented according to the original [Eigen Trust paper](http://ilpubs.stanford.edu:8090/562/1/2002-56.pdf).
 //! It is developed under the Ethereum Foundation grant.
 
+#![feature(async_closure)]
 #![feature(array_zip, array_try_map)]
 #![allow(clippy::tabs_in_doc_comments)]
 #![deny(
@@ -75,7 +76,7 @@ use serde_json::{from_reader, Error as SerdeError, Result as SerdeResult};
 use std::{
 	fmt::{Display, Formatter, Result as FmtResult},
 	net::SocketAddr,
-	sync::{Arc, Mutex},
+	sync::{Arc, Mutex, MutexGuard, PoisonError},
 };
 use tokio::{
 	io::{AsyncRead, AsyncWrite},
@@ -110,17 +111,19 @@ impl ToString for ResponseBody {
 	}
 }
 
-static MANAGER_STORE: Lazy<Mutex<Manager>> = Lazy::new(|| {
+static MANAGER_STORE: Lazy<Arc<Mutex<Manager>>> = Lazy::new(|| {
 	let mut rng = thread_rng();
 	let params = ParamsKZG::new(9);
 	let random_circuit =
 		random_circuit::<Bn256, _, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, Params>(&mut rng);
 	let proving_key = keygen(&params, &random_circuit).unwrap();
 
-	Mutex::new(Manager::new(params, proving_key))
+	Arc::new(Mutex::new(Manager::new(params, proving_key)))
 });
 
-async fn handle_request(req: Request<Body>) -> Result<Response<String>, EigenError> {
+async fn handle_request(
+	req: Request<Body>, arc_manager: Arc<Mutex<Manager>>,
+) -> Result<Response<String>, EigenError> {
 	match (req.method(), req.uri().path()) {
 		(&Method::GET, "/score") => {
 			let q = req.uri().query();
@@ -132,16 +135,6 @@ async fn handle_request(req: Request<Body>) -> Result<Response<String>, EigenErr
 				return Ok(res);
 			}
 			let query_string = q.unwrap();
-			let manager = MANAGER_STORE.lock();
-			if manager.is_err() {
-				let e = manager.err();
-				let res = Response::builder()
-					.status(INTERNAL_SERVER_ERROR)
-					.body(ResponseBody::LockError.to_string())
-					.unwrap();
-				return Ok(res);
-			}
-			let m = manager.unwrap();
 			let pk = Bn265Scalar::from_str_vartime(query_string);
 			if pk.is_none() {
 				let res = Response::builder()
@@ -150,10 +143,20 @@ async fn handle_request(req: Request<Body>) -> Result<Response<String>, EigenErr
 					.unwrap();
 				return Ok(res);
 			}
+			let manager = arc_manager.lock();
+			if manager.is_err() {
+				let e = manager.err();
+				let res = Response::builder()
+					.status(INTERNAL_SERVER_ERROR)
+					.body(ResponseBody::LockError.to_string())
+					.unwrap();
+				return Ok(res);
+			}
+			let mut m = manager.unwrap();
 			let pk = pk.unwrap();
 			let sig = m.get_signature(&pk);
 			let last_epoch = Epoch::current_epoch(EPOCH_INTERVAL).previous();
-			let ops = m.get_op_jis(sig, last_epoch, 10);
+			let ops = m.get_op_jis(sig, last_epoch, NUM_ITERATIONS);
 			let ops_sum: f64 = ops.iter().sum();
 			let res = Response::new(ResponseBody::Score(ops_sum).to_string());
 			return Ok(res);
@@ -178,8 +181,7 @@ async fn handle_request(req: Request<Body>) -> Result<Response<String>, EigenErr
 					.unwrap();
 				return Ok(res);
 			}
-			let data = data.unwrap();
-			let manager = MANAGER_STORE.lock();
+			let manager = arc_manager.lock();
 			if manager.is_err() {
 				let e = manager.err();
 				let res = Response::builder()
@@ -189,6 +191,7 @@ async fn handle_request(req: Request<Body>) -> Result<Response<String>, EigenErr
 				return Ok(res);
 			}
 			let mut m = manager.unwrap();
+			let data = data.unwrap();
 			let sig: Signature = data.clone().into();
 			m.add_signature(sig);
 			let res = ResponseBody::SignatureAddSuccess;
@@ -209,29 +212,32 @@ async fn handle_connection<I: AsyncRead + AsyncWrite + Unpin + 'static>(
 	let mut https = Http::new();
 	https.http1_keep_alive(false);
 
-	let service_function = service_fn(handle_request);
+	let service_function = service_fn(async move |req| {
+		let mng_store = Arc::clone(&MANAGER_STORE);
+		handle_request(req, mng_store).await
+	});
 	let res = https.serve_connection(stream, service_function).await;
 	if let Err(err) = res {
 		println!("Error serving connection: {:?}", err);
 	}
 }
 
-fn handle_epoch_convergence() {
-	let manager = MANAGER_STORE.lock();
-
+fn handle_epoch_convergence(
+	manager: Result<MutexGuard<Manager>, PoisonError<MutexGuard<Manager>>>,
+) {
 	if manager.is_err() {
 		let e = manager.err();
 		println!("error: {:?}", e);
 		return;
 	}
 
-	let mut m = manager.unwrap();
+	let mut manager = manager.unwrap();
 
 	let epoch = Epoch::current_epoch(EPOCH_INTERVAL);
-	m.calculate_initial_ivps(epoch);
+	manager.calculate_initial_ivps(epoch);
 
 	for i in 0..NUM_ITERATIONS {
-		m.calculate_ivps(epoch, i);
+		manager.calculate_ivps(epoch, i);
 	}
 }
 
@@ -253,29 +259,9 @@ pub async fn main() -> Result<(), EigenError> {
 				handle_connection(stream, addr).await;
 			}
 			res = inner_interval.tick() => {
-				handle_epoch_convergence();
+				let manager = MANAGER_STORE.lock();
+				handle_epoch_convergence(manager);
 			}
 		};
 	}
 }
-
-// fn main() {
-// 	let arr = [
-// 		"AF4yAqwCPzpBcit4FtTrHso4BBR9onk7qS9Q1SWSLSaV",
-// 		"7VoQFngkSo36s5yzZtnjtZ5SLe1VGukCZdb5Uc9tSDNC",
-// 		"3wEvtEFktXUBHZHPPmLkDh7oqFLnjTPep1EJ2eBqLtcX",
-// 		"AccKg5pXVG5o968qj5QtgPZpgC8Y8NLG9woUZNuZRYdG",
-// 		"8hz2emqxU7CfxWv8cJLFGR1nE4B5QDsfNE4LykE6ihKB",
-// 		"9SKr55sYCC8dUb4A9HDAqP5BFq18gkxCMJsix445M4xM",
-// 		"98Q6yXQgSxEH6U1zjsDjMq4Dk7ezKSoaWMPGvkLumzBQ",
-// 		"4X15pV53oiYPDxKxDc7XRyenKoyvhKA4nboSZcbX7Eos",
-// 		"2CMv6in24uARH3bf6oh4NAuJSE3NKVL97QUeVvG5Pvai",
-// 		"4TaF7JykL5gTubgGR1xuepMgPvzHtmTuuNxiaZda7YKT",
-// 		"2pAhDFpGLeHPLzKGsRXFkYQWPoVV9YziruXtHnng4KW6",
-// 		"CjoowxyktdwUePyvkmLiCLFUacLs2cAwoquAAjgDDxgS",
-// 	];
-// 	let arr_bn = arr.map(|a| scalar_from_bs58(a));
-// 	let arr_pk = arr_bn.map(|a| generate_pk_from_sk(a));
-// 	let arr_bs: [String; 12] = arr_pk.map(|a|
-// bs58::encode(a.to_bytes()).into_string()); 	println!("{:?}", arr_bs);
-// }
