@@ -44,7 +44,6 @@ pub mod manager;
 /// Common utility functions used across the crate
 pub mod utils;
 
-use crate::manager::Signature;
 use constants::{EPOCH_INTERVAL, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, NUM_ITERATIONS};
 use eigen_trust_circuit::{
 	halo2wrong::{
@@ -65,7 +64,10 @@ use hyper::{
 	service::{make_service_fn, service_fn},
 	Body, Method, Request, Response, StatusCode,
 };
-use manager::{Manager, SignatureData};
+use manager::{
+	sig::{Signature, SignatureData},
+	Manager,
+};
 use once_cell::sync::Lazy;
 use rand::thread_rng;
 use serde::{ser::StdError, Deserialize, Serialize};
@@ -112,9 +114,9 @@ static MANAGER_STORE: Lazy<Mutex<Manager>> = Lazy::new(|| {
 	let params = ParamsKZG::new(9);
 	let random_circuit =
 		random_circuit::<Bn256, _, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, Params>(&mut rng);
-	let pk = keygen(&params, &random_circuit).unwrap();
+	let proving_key = keygen(&params, &random_circuit).unwrap();
 
-	Mutex::new(Manager::new(params, pk))
+	Mutex::new(Manager::new(params, proving_key))
 });
 
 async fn handle_request(req: Request<Body>) -> Result<Response<String>, EigenError> {

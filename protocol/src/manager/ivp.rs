@@ -1,7 +1,12 @@
 use std::vec;
 
 use super::Signature;
-use crate::{constants::*, epoch::Epoch, error::EigenError, utils::to_wide_bytes};
+use crate::{
+	constants::*,
+	epoch::Epoch,
+	error::EigenError,
+	utils::{generate_pk_from_sk, to_wide_bytes},
+};
 use bs58::decode::Error as Bs58Error;
 use eigen_trust_circuit::{
 	halo2wrong::{
@@ -47,15 +52,7 @@ impl IVP {
 	) -> Result<Self, EigenError> {
 		let mut rng = thread_rng();
 
-		let input = [
-			Bn256Scalar::zero(),
-			Bn256Scalar::zero(),
-			Bn256Scalar::zero(),
-			Bn256Scalar::zero(),
-			sig.sk,
-		];
-		let pos = Posedion5x5::new(input);
-		let pk_p = pos.permute()[0];
+		let pk_p = generate_pk_from_sk(sig.sk);
 
 		let bootstrap_pubkeys = BOOTSTRAP_PEERS
 			.try_map(|key| {
@@ -108,21 +105,22 @@ impl IVP {
 		Ok(Self { epoch, iter: k, op: op_v_unscaled, proof_bytes, m_hash: m_hash.to_bytes() })
 	}
 
+	pub fn empty(params: &ParamsKZG<Bn256>, pk: &ProvingKey<G1Affine>) -> Result<Self, EigenError> {
+		let sig = Signature::empty();
+		let pubkey_v = Bn256Scalar::zero();
+		let op_ji: [f64; MAX_NEIGHBORS] = [0.; MAX_NEIGHBORS];
+		let c_v: f64 = 0.;
+		let k = 0;
+		let epoch = Epoch(0);
+
+		Self::generate(&sig, pubkey_v, epoch, k, op_ji, c_v, params, pk)
+	}
+
 	/// Verifies the proof.
 	pub fn verify(
-		&self, sk_p: Bn256Scalar, pubkey_p: Bn256Scalar, params: &ParamsKZG<Bn256>,
+		&self, pk_v: Bn256Scalar, pubkey_p: Bn256Scalar, params: &ParamsKZG<Bn256>,
 		vk: &VerifyingKey<G1Affine>,
 	) -> Result<bool, EigenError> {
-		let input = [
-			Bn256Scalar::zero(),
-			Bn256Scalar::zero(),
-			Bn256Scalar::zero(),
-			Bn256Scalar::zero(),
-			sk_p,
-		];
-		let pos = Posedion5x5::new(input);
-		let pk_v = pos.permute()[0];
-
 		let op_v_scaled = (self.op * SCALE * SCALE).round() as u128;
 		let epoch_f = Bn256Scalar::from_u128(u128::from(self.epoch.0));
 		let iter_f = Bn256Scalar::from_u128(u128::from(self.iter));
@@ -142,5 +140,69 @@ impl IVP {
 		})?;
 
 		Ok(proof_res)
+	}
+}
+
+#[cfg(test)]
+mod test {
+	use crate::utils::generate_pk_from_sk;
+
+	use super::*;
+	use eigen_trust_circuit::{
+		halo2wrong::{
+			curves::bn256::Bn256,
+			halo2::{
+				arithmetic::Field,
+				poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
+			},
+		},
+		utils::{keygen, random_circuit},
+	};
+
+	#[test]
+	fn ivp_should_create_empty() {
+		let mut rng = thread_rng();
+		let params = ParamsKZG::<Bn256>::new(9);
+		let random_circuit =
+			random_circuit::<Bn256, _, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, Params>(&mut rng);
+		let proving_key = keygen(&params, &random_circuit).unwrap();
+
+		let ivp = IVP::empty(&params, &proving_key).unwrap();
+
+		let sk_p = Bn256Scalar::zero();
+		let pubkey_p = Bn256Scalar::zero();
+		assert!(ivp.verify(sk_p, pubkey_p, &params, proving_key.get_vk()).unwrap());
+	}
+
+	#[test]
+	fn ivp_should_verify() {
+		let mut rng = thread_rng();
+		let params = ParamsKZG::<Bn256>::new(9);
+		let random_circuit =
+			random_circuit::<Bn256, _, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, Params>(&mut rng);
+		let proving_key = keygen(&params, &random_circuit).unwrap();
+
+		let sk_i = Bn256Scalar::random(rng.clone());
+		let pk_i = generate_pk_from_sk(sk_i);
+
+		let sk_v = Bn256Scalar::random(rng.clone());
+		let pk_v = generate_pk_from_sk(sk_v);
+
+		let mut neighbours = [None; MAX_NEIGHBORS];
+		neighbours[0] = Some(pk_v);
+
+		let mut scores = [0.; MAX_NEIGHBORS];
+		scores[0] = 0.4;
+
+		let sig = Signature::new(sk_i, pk_i, neighbours, scores);
+
+		let mut op_ji = [0.; MAX_NEIGHBORS];
+		op_ji[0] = 0.2;
+
+		let c_v = 0.6;
+
+		let ivp =
+			IVP::generate(&sig, pk_v, Epoch(0), 0, op_ji, c_v, &params, &proving_key).unwrap();
+		assert!(ivp.verify(pk_v, pk_i, &params, proving_key.get_vk()).unwrap());
 	}
 }

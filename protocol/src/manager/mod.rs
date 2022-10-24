@@ -6,6 +6,8 @@
 
 /// Wrapper around the circuit API
 pub mod ivp;
+/// Signature implementation
+pub mod sig;
 
 use crate::{constants::MAX_NEIGHBORS, epoch::Epoch, error::EigenError};
 use eigen_trust_circuit::halo2wrong::{
@@ -16,46 +18,15 @@ use eigen_trust_circuit::halo2wrong::{
 	halo2::{plonk::ProvingKey, poly::kzg::commitment::ParamsKZG},
 };
 use ivp::IVP;
-use libp2p::{core::PublicKey, PeerId};
 use serde::{Deserialize, Serialize};
+use sig::Signature;
 use std::collections::HashMap;
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct SignatureData {
-	sk: [u8; 32],
-	pk: [u8; 32],
-	neighbours: Vec<[u8; 32]>,
-	scores: Vec<f64>,
-}
-
-pub struct Signature {
-	sk: Bn256Scalar,
-	pk: Bn256Scalar,
-	neighbours: [Option<Bn256Scalar>; MAX_NEIGHBORS],
-	scores: [f64; MAX_NEIGHBORS],
-}
-
-impl From<SignatureData> for Signature {
-	fn from(sig: SignatureData) -> Self {
-		let sk = Bn256Scalar::from_repr(sig.sk).unwrap();
-		let pk = Bn256Scalar::from_repr(sig.pk).unwrap();
-		let mut neighbours = [None; MAX_NEIGHBORS];
-		let mut scores = [0.; MAX_NEIGHBORS];
-		for (i, n) in sig.neighbours.iter().enumerate().take(MAX_NEIGHBORS) {
-			neighbours[i] = Some(Bn256Scalar::from_repr(*n).unwrap());
-		}
-		for (i, n) in sig.scores.iter().enumerate().take(MAX_NEIGHBORS) {
-			scores[i] = *n;
-		}
-
-		Signature { sk, pk, neighbours, scores }
-	}
-}
 
 /// The peer struct.
 pub struct Manager {
 	pub(crate) cached_ivps: HashMap<(Bn256Scalar, Bn256Scalar, Epoch, u32), IVP>,
 	pub(crate) signatures: HashMap<Bn256Scalar, Signature>,
+	empty_ivp: IVP,
 	params: ParamsKZG<Bn256>,
 	proving_key: ProvingKey<G1Affine>,
 }
@@ -63,7 +34,14 @@ pub struct Manager {
 impl Manager {
 	/// Creates a new peer.
 	pub fn new(params: ParamsKZG<Bn256>, pk: ProvingKey<G1Affine>) -> Self {
-		Self { cached_ivps: HashMap::new(), signatures: HashMap::new(), params, proving_key: pk }
+		let empty = IVP::empty(&params, &pk).unwrap();
+		Self {
+			cached_ivps: HashMap::new(),
+			signatures: HashMap::new(),
+			empty_ivp: empty,
+			params,
+			proving_key: pk,
+		}
 	}
 
 	pub fn add_signature(&mut self, sig: Signature) {
@@ -128,7 +106,8 @@ impl Manager {
 				continue;
 			}
 			let neighbour = neighbour.unwrap();
-			let last_ivp = self.cached_ivps.get(&(neighbour, sig.pk, epoch, iter)).unwrap();
+			let last_ivp =
+				self.cached_ivps.get(&(neighbour, sig.pk, epoch, iter)).unwrap_or(&self.empty_ivp);
 			op_ji[i] = last_ivp.op;
 		}
 		op_ji

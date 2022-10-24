@@ -14,16 +14,6 @@ pub enum EigenError {
 	ConnectionError,
 	/// Failed to listen to requests
 	ListenError,
-	/// Failed to aggregate request body
-	AggregateBodyError,
-	/// Failed to parse the body
-	ParseError,
-	/// Invalid query from client
-	InvalidQuery,
-	/// Invalid request from client
-	InvalidRequest,
-	/// Value locked in memory
-	LockError,
 	/// Unknown error.
 	Unknown,
 }
@@ -36,11 +26,6 @@ impl From<EigenError> for u8 {
 			EigenError::VerificationError => 2,
 			EigenError::ConnectionError => 3,
 			EigenError::ListenError => 4,
-			EigenError::AggregateBodyError => 5,
-			EigenError::ParseError => 6,
-			EigenError::InvalidQuery => 7,
-			EigenError::InvalidRequest => 8,
-			EigenError::LockError => 9,
 			EigenError::Unknown => 255,
 		}
 	}
@@ -54,11 +39,6 @@ impl From<u8> for EigenError {
 			2 => EigenError::VerificationError,
 			3 => EigenError::ConnectionError,
 			4 => EigenError::ListenError,
-			5 => EigenError::AggregateBodyError,
-			6 => EigenError::ParseError,
-			7 => EigenError::InvalidQuery,
-			8 => EigenError::InvalidRequest,
-			9 => EigenError::LockError,
 			_ => EigenError::Unknown,
 		}
 	}

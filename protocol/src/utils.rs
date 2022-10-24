@@ -1,6 +1,6 @@
 use crate::{error::EigenError, manager::ivp::Posedion5x5};
 use eigen_trust_circuit::halo2wrong::{
-	curves::{bn256::Fr as Bn256Scalar, secp256k1::Fq as Secp256k1Scalar, FieldExt},
+	curves::{bn256::Fr as Bn256Scalar, FieldExt},
 	halo2::arithmetic::Field,
 	utils::decompose,
 };
@@ -8,27 +8,23 @@ use futures::{
 	stream::{self, BoxStream, Fuse},
 	StreamExt,
 };
-use libp2p::core::identity::{
-	secp256k1::{Keypair as Secp256k1Keypair, SecretKey},
-	Keypair as IdentityKeypair,
-};
 use rand::RngCore;
 use tokio::time::{self, Duration, Instant};
 
-pub fn generate_keypair_from_sk(sk: Bn256Scalar) -> Result<Bn256Scalar, EigenError> {
+pub fn generate_pk_from_sk(sk: Bn256Scalar) -> Bn256Scalar {
 	let input =
 		[Bn256Scalar::zero(), Bn256Scalar::zero(), Bn256Scalar::zero(), Bn256Scalar::zero(), sk];
 	let pos = Posedion5x5::new(input);
 	let out = pos.permute()[0];
 
-	Ok(out)
+	out
 }
 
 /// Hash the secret key limbs with Poseidon.
-pub fn generate_keypair<R: RngCore>(rng: &mut R) -> Result<Bn256Scalar, EigenError> {
+pub fn generate_pk<R: RngCore>(rng: &mut R) -> Bn256Scalar {
 	let sk = Bn256Scalar::random(rng);
 
-	generate_keypair_from_sk(sk)
+	generate_pk_from_sk(sk)
 }
 
 /// Write an array of 32 elements into an array of 64 elements.
