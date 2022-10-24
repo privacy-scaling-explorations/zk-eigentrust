@@ -185,7 +185,9 @@ impl<F: FieldExt, const S: usize, const B: usize, P: RoundParams<F, 5>> Circuit<
 						F::zero(),
 					)?;
 
-					let sk = Self::assign_temp(config.temp, "op", &mut region, &mut offset, self.secret_i)?;
+					let sk = Self::assign_temp(
+						config.temp, "op", &mut region, &mut offset, self.secret_i,
+					)?;
 
 					let epoch = Self::assign_temp(
 						config.temp, "epoch", &mut region, &mut offset, self.epoch,
