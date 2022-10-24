@@ -41,6 +41,11 @@ pub fn to_wide_bytes(p: &[u8]) -> [u8; 64] {
 	res
 }
 
+pub fn scalar_from_bs58(key: &str) -> Bn256Scalar {
+	let bytes = &bs58::decode(key).into_vec().unwrap();
+	Bn256Scalar::from_bytes_wide(&to_wide_bytes(bytes))
+}
+
 /// Schedule `num` intervals with a duration of `interval` that starts at
 /// `start`.
 pub fn create_iter<'a>(start: Instant, interval: Duration, num: usize) -> Fuse<BoxStream<'a, u32>> {

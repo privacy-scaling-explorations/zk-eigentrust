@@ -11,6 +11,7 @@ pub struct SignatureData {
 	pub(crate) scores: Vec<f64>,
 }
 
+#[derive(Clone)]
 pub struct Signature {
 	pub(crate) sk: Bn256Scalar,
 	pub(crate) pk: Bn256Scalar,

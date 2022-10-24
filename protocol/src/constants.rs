@@ -6,11 +6,11 @@ mod consts {
 	pub const MAX_NEIGHBORS: usize = 256;
 	/// List of predetermened bootstrap peers.
 	pub const BOOTSTRAP_PEERS: [&str; NUM_BOOTSTRAP_PEERS] = [
-		"2745hHPZtf8prEv4TUSkLVhZN2tPW6KiYwRfC5yixfU9",
-		"C1w5WRwb2G7Whykit4XSng7JMjKvpGudjH2qBUMYFYwu",
-		"3kiiXA7hgMUmFh9TcmYXqJWU3WVUnjY4rFzQhNXyqt9H",
-		"2XEDBFy8gh32c4F5TVGNRVKMo9NM7eYkXH7iJzf68Vs1",
-		"FCKVrmoaXpoyPv9H8EiveWhUf8Greh3mSmkU81QXhRts",
+		"52RwQpZ9kUDsNi9R8f5FMD27pqyTPB39hQKYeH7fH99P",
+		"HhfwhxzwKvS8UGVvfnyJUiA1uL1VhXXfqFWh4BtEM9zx",
+		"5vnn3M32KhDE9qsvWGbSy8H59y6Kf64TKmqLeRxKwn6t",
+		"3BGPsex45AHQHuJfkfWkMfKHcwNjYcXhC3foH77kurPX",
+		"2hfQezShegBrascTTkbCjPzbLZSq6KADnkZbBjQ2uaih",
 	];
 	/// The number of bootstrap peers.
 	pub const NUM_BOOTSTRAP_PEERS: usize = 5;
@@ -29,11 +29,11 @@ mod consts {
 mod consts {
 	pub const MAX_NEIGHBORS: usize = 12;
 	pub const BOOTSTRAP_PEERS: [&str; NUM_BOOTSTRAP_PEERS] = [
-		"2745hHPZtf8prEv4TUSkLVhZN2tPW6KiYwRfC5yixfU9",
-		"C1w5WRwb2G7Whykit4XSng7JMjKvpGudjH2qBUMYFYwu",
-		"3kiiXA7hgMUmFh9TcmYXqJWU3WVUnjY4rFzQhNXyqt9H",
-		"2XEDBFy8gh32c4F5TVGNRVKMo9NM7eYkXH7iJzf68Vs1",
-		"FCKVrmoaXpoyPv9H8EiveWhUf8Greh3mSmkU81QXhRts",
+		"52RwQpZ9kUDsNi9R8f5FMD27pqyTPB39hQKYeH7fH99P",
+		"HhfwhxzwKvS8UGVvfnyJUiA1uL1VhXXfqFWh4BtEM9zx",
+		"5vnn3M32KhDE9qsvWGbSy8H59y6Kf64TKmqLeRxKwn6t",
+		"3BGPsex45AHQHuJfkfWkMfKHcwNjYcXhC3foH77kurPX",
+		"2hfQezShegBrascTTkbCjPzbLZSq6KADnkZbBjQ2uaih",
 	];
 	pub const NUM_BOOTSTRAP_PEERS: usize = 5;
 	pub const BOOTSTRAP_SCORE: f64 = 0.5;

@@ -5,7 +5,7 @@ use crate::{
 	constants::*,
 	epoch::Epoch,
 	error::EigenError,
-	utils::{generate_pk_from_sk, to_wide_bytes},
+	utils::{generate_pk_from_sk, scalar_from_bs58, to_wide_bytes},
 };
 use bs58::decode::Error as Bs58Error;
 use eigen_trust_circuit::{
@@ -54,12 +54,7 @@ impl IVP {
 
 		let pk_p = generate_pk_from_sk(sig.sk);
 
-		let bootstrap_pubkeys = BOOTSTRAP_PEERS
-			.try_map(|key| {
-				let bytes = &bs58::decode(key).into_vec()?;
-				Ok(Bn256Scalar::from_bytes_wide(&to_wide_bytes(bytes)))
-			})
-			.map_err(|_: Bs58Error| EigenError::InvalidBootstrapPubkey)?;
+		let bootstrap_pubkeys = BOOTSTRAP_PEERS.map(|x| scalar_from_bs58(x));
 		let bootstrap_score_scaled = (BOOTSTRAP_SCORE * SCALE).round() as u128;
 		// Turn into scaled values and round the to avoid rounding errors.
 		let op_ji_scaled = op_ji.map(|op| (op * SCALE).round() as u128);

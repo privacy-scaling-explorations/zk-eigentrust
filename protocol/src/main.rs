@@ -83,6 +83,7 @@ use tokio::{
 	select,
 	time::{self, Duration},
 };
+use utils::{generate_pk_from_sk, scalar_from_bs58};
 
 const BAD_REQUEST: u16 = 400;
 const NOT_FOUND: u16 = 404;
@@ -257,3 +258,24 @@ pub async fn main() -> Result<(), EigenError> {
 		};
 	}
 }
+
+// fn main() {
+// 	let arr = [
+// 		"AF4yAqwCPzpBcit4FtTrHso4BBR9onk7qS9Q1SWSLSaV",
+// 		"7VoQFngkSo36s5yzZtnjtZ5SLe1VGukCZdb5Uc9tSDNC",
+// 		"3wEvtEFktXUBHZHPPmLkDh7oqFLnjTPep1EJ2eBqLtcX",
+// 		"AccKg5pXVG5o968qj5QtgPZpgC8Y8NLG9woUZNuZRYdG",
+// 		"8hz2emqxU7CfxWv8cJLFGR1nE4B5QDsfNE4LykE6ihKB",
+// 		"9SKr55sYCC8dUb4A9HDAqP5BFq18gkxCMJsix445M4xM",
+// 		"98Q6yXQgSxEH6U1zjsDjMq4Dk7ezKSoaWMPGvkLumzBQ",
+// 		"4X15pV53oiYPDxKxDc7XRyenKoyvhKA4nboSZcbX7Eos",
+// 		"2CMv6in24uARH3bf6oh4NAuJSE3NKVL97QUeVvG5Pvai",
+// 		"4TaF7JykL5gTubgGR1xuepMgPvzHtmTuuNxiaZda7YKT",
+// 		"2pAhDFpGLeHPLzKGsRXFkYQWPoVV9YziruXtHnng4KW6",
+// 		"CjoowxyktdwUePyvkmLiCLFUacLs2cAwoquAAjgDDxgS",
+// 	];
+// 	let arr_bn = arr.map(|a| scalar_from_bs58(a));
+// 	let arr_pk = arr_bn.map(|a| generate_pk_from_sk(a));
+// 	let arr_bs: [String; 12] = arr_pk.map(|a|
+// bs58::encode(a.to_bytes()).into_string()); 	println!("{:?}", arr_bs);
+// }
