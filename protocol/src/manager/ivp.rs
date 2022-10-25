@@ -186,8 +186,8 @@ mod test {
 		let mut neighbours = [None; MAX_NEIGHBORS];
 		neighbours[0] = Some(pk_v);
 
-		let mut scores = [0.; MAX_NEIGHBORS];
-		scores[0] = 0.4;
+		let mut scores = [None; MAX_NEIGHBORS];
+		scores[0] = Some(0.4);
 
 		let sig = Signature::new(sk_i, pk_i, neighbours, scores);
 

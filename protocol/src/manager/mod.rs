@@ -56,13 +56,13 @@ impl Manager {
 	pub fn calculate_initial_ivps(&mut self, epoch: Epoch) {
 		for sig in self.signatures.values() {
 			let op_ji = [0.0; MAX_NEIGHBORS];
-			let sum: f64 = sig.scores.iter().sum();
+			let sum: f64 = sig.scores.iter().map(|x| x.unwrap_or(0.)).sum();
 			for (i, neighbour) in sig.neighbours.iter().enumerate() {
 				if neighbour.is_none() {
 					continue;
 				}
 				let neighbour = neighbour.unwrap();
-				let normalized_score = sig.scores[i] / sum;
+				let normalized_score = sig.scores[i].unwrap() / sum;
 				let proof = IVP::generate(
 					sig, neighbour, epoch, 0, op_ji, normalized_score, &self.params,
 					&self.proving_key,
@@ -76,13 +76,13 @@ impl Manager {
 	pub fn calculate_ivps(&mut self, epoch: Epoch, iter: u32) {
 		for sig in self.signatures.values() {
 			let op_ji = self.get_op_jis(sig, epoch, iter);
-			let sum: f64 = sig.scores.iter().sum();
+			let sum: f64 = sig.scores.iter().map(|x| x.unwrap_or(0.)).sum();
 			for (i, neighbour) in sig.neighbours.iter().enumerate() {
 				if neighbour.is_none() {
 					continue;
 				}
 				let neighbour = neighbour.unwrap();
-				let normalized_score = sig.scores[i] / sum;
+				let normalized_score = sig.scores[i].unwrap() / sum;
 				let ivp = IVP::generate(
 					sig,
 					neighbour,
@@ -170,15 +170,15 @@ mod test {
 		neighbours3[0] = Some(pk1);
 		neighbours3[1] = Some(pk2);
 
-		let mut scores1 = [0.; MAX_NEIGHBORS];
-		scores1[0] = 10.;
-		scores1[1] = 20.;
-		let mut scores2 = [0.; MAX_NEIGHBORS];
-		scores2[0] = 10.;
-		scores2[1] = 20.;
-		let mut scores3 = [0.; MAX_NEIGHBORS];
-		scores3[0] = 10.;
-		scores3[1] = 20.;
+		let mut scores1 = [None; MAX_NEIGHBORS];
+		scores1[0] = Some(10.);
+		scores1[1] = Some(20.);
+		let mut scores2 = [None; MAX_NEIGHBORS];
+		scores2[0] = Some(10.);
+		scores2[1] = Some(20.);
+		let mut scores3 = [None; MAX_NEIGHBORS];
+		scores3[0] = Some(10.);
+		scores3[1] = Some(20.);
 
 		let sig1 = Signature::new(sk1, pk1, neighbours1, scores1);
 		let sig2 = Signature::new(sk2, pk2, neighbours2, scores2);
@@ -241,15 +241,15 @@ mod test {
 		neighbours3[0] = Some(pk1);
 		neighbours3[1] = Some(pk2);
 
-		let mut scores1 = [0.; MAX_NEIGHBORS];
-		scores1[0] = 10.;
-		scores1[1] = 20.;
-		let mut scores2 = [0.; MAX_NEIGHBORS];
-		scores2[0] = 10.;
-		scores2[1] = 20.;
-		let mut scores3 = [0.; MAX_NEIGHBORS];
-		scores3[0] = 10.;
-		scores3[1] = 20.;
+		let mut scores1 = [None; MAX_NEIGHBORS];
+		scores1[0] = Some(10.);
+		scores1[1] = Some(20.);
+		let mut scores2 = [None; MAX_NEIGHBORS];
+		scores2[0] = Some(10.);
+		scores2[1] = Some(20.);
+		let mut scores3 = [None; MAX_NEIGHBORS];
+		scores3[0] = Some(10.);
+		scores3[1] = Some(20.);
 
 		let sig1 = Signature::new(sk1, pk1, neighbours1, scores1);
 		let sig2 = Signature::new(sk2, pk2, neighbours2, scores2);
