@@ -10,7 +10,7 @@ use halo2wrong::halo2::{
 
 use super::{
 	bits2num::{Bits2NumChip, Bits2NumConfig},
-	is_zero::{IsZeroChip, IsZeroConfig},
+	common::{CommonChip, CommonConfig},
 };
 
 /// 1 << 252
@@ -30,7 +30,7 @@ pub struct LessEqualConfig {
 	y_b2n: Bits2NumConfig,
 	diff_b2n: Bits2NumConfig,
 	/// Constructs is_zero circuit elements.
-	is_zero: IsZeroConfig,
+	is_zero: CommonConfig,
 	/// Configures a column for the x.
 	x: Column<Advice>,
 	/// Configures a column for the y.
@@ -65,7 +65,7 @@ impl<F: FieldExt> LessEqualChip<F> {
 		let diff_b2n = Bits2NumChip::<_, DIFF_BITS>::configure(meta);
 		let x_b2n = Bits2NumChip::<_, NUM_BITS>::configure(meta);
 		let y_b2n = Bits2NumChip::<_, NUM_BITS>::configure(meta);
-		let is_zero = IsZeroChip::configure(meta);
+		let is_zero = CommonChip::configure(meta);
 		let x = meta.advice_column();
 		let y = meta.advice_column();
 		let s = meta.selector();
@@ -139,8 +139,11 @@ impl<F: FieldExt> LessEqualChip<F> {
 		// This means y is bigger than x and is_zero will return 1.
 		// If both are equal last bit still will be 1 and the number will be exactly 253
 		// bits. In that case, is_zero will return 0 as well.
-		let is_zero = IsZeroChip::new(bits[DIFF_BITS - 1].clone());
-		let res = is_zero.synthesize(config.is_zero, layouter.namespace(|| "is_zero"))?;
+		let res = CommonChip::is_zero(
+			bits[DIFF_BITS - 1].clone(),
+			config.is_zero,
+			layouter.namespace(|| "is_zero"),
+		)?;
 		Ok(res)
 	}
 }

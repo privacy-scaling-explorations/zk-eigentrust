@@ -1,21 +1,12 @@
-/// Gadget for adding two points on an elliptic curve
-pub mod add;
-/// Gadget for converting a point into affine representation
-pub mod into_affine;
+/// Implementation for the EDDSA circuit gadgets.
+pub mod eddsa_gadgets;
 /// Native implementation of EDDSA signature scheme
 pub mod native;
-/// Gadget for multiplying an elliptic curve point with a scalar
-pub mod scalar_mul;
 
-use self::{
-	add::{PointAddChip, PointAddConfig},
-	into_affine::{IntoAffineChip, IntoAffineConfig},
-	scalar_mul::{ScalarMulChip, ScalarMulConfig},
-};
 use crate::{
+	eddsa::eddsa_gadgets::{EddsaGadgetsChip, EddsaGadgetsConfig},
 	gadgets::{
-		and::{AndChip, AndConfig},
-		is_equal::{IsEqualChip, IsEqualConfig},
+		common::{CommonChip, CommonConfig},
 		lt_eq::{LessEqualChip, LessEqualConfig},
 	},
 	params::poseidon_bn254_5x5::Params,
@@ -34,21 +25,14 @@ use native::ed_on_bn254::{B8, SUBORDER};
 #[derive(Clone)]
 /// Configuration elements for the circuit are defined here.
 struct EddsaConfig {
-	/// Constructs scalar mul circuit elements.
-	scalar_mul_s: ScalarMulConfig,
-	scalar_mul_mh: ScalarMulConfig,
+	/// Constructs eddsa gadgets circuit elements.
+	eddsa_gadgets: EddsaGadgetsConfig,
+	/// Constructs common circuit elements.
+	common: CommonConfig,
 	/// Constructs lt_eq circuit elements.
 	lt_eq: LessEqualConfig,
-	/// Constructs point add circuit elements.
-	point_add: PointAddConfig,
-	/// Constructs into_affine circuit elements.
-	into_affine: IntoAffineConfig,
 	/// Constructs poseidon circuit elements.
 	poseidon: PoseidonConfig<5>,
-	/// Constructs is_eq circuit elements.
-	is_eq: IsEqualConfig,
-	/// Constructs and circuit elements.
-	and: AndConfig,
 	/// Configures a column for the temp.
 	temp: Column<Advice>,
 }
@@ -101,29 +85,15 @@ impl EddsaChip {
 
 	/// Make the circuit config.
 	pub fn configure(meta: &mut ConstraintSystem<Fr>) -> EddsaConfig {
-		let scalar_mul_s = ScalarMulChip::<252>::configure(meta);
-		let scalar_mul_mh = ScalarMulChip::<256>::configure(meta);
+		let common = CommonChip::configure(meta);
+		let eddsa_gadgets = EddsaGadgetsChip::configure(meta);
 		let lt_eq = LessEqualChip::configure(meta);
-		let point_add = PointAddChip::configure(meta);
-		let into_affine = IntoAffineChip::configure(meta);
 		let poseidon = PoseidonChip::<_, 5, Params>::configure(meta);
-		let is_eq = IsEqualChip::configure(meta);
-		let and = AndChip::configure(meta);
 		let temp = meta.advice_column();
 
 		meta.enable_equality(temp);
 
-		EddsaConfig {
-			scalar_mul_s,
-			scalar_mul_mh,
-			lt_eq,
-			point_add,
-			into_affine,
-			poseidon,
-			is_eq,
-			and,
-			temp,
-		}
+		EddsaConfig { eddsa_gadgets, common, lt_eq, poseidon, temp }
 	}
 
 	/// Synthesize the circuit.
@@ -154,8 +124,15 @@ impl EddsaChip {
 		let is_lt_eq = lt_eq.synthesize(config.lt_eq, layouter.namespace(|| "s_lt_eq_suborder"))?;
 
 		// Cl = s * G
-		let scalar_mul1 = ScalarMulChip::new(b8_x, b8_y, one.clone(), self.s.clone(), self.s_bits);
-		let cl = scalar_mul1.synthesize(config.scalar_mul_s, layouter.namespace(|| "b_8 * s"))?;
+		let cl = EddsaGadgetsChip::scalar_mul::<252>(
+			b8_x,
+			b8_y,
+			one.clone(),
+			self.s.clone(),
+			self.s_bits,
+			config.eddsa_gadgets.clone(),
+			layouter.namespace(|| "b_8 * s"),
+		)?;
 
 		// H(R || PK || M)
 		// Hashing R, public key and message composition.
@@ -171,50 +148,62 @@ impl EddsaChip {
 
 		// H(R || PK || M) * PK
 		// Scalar multiplication for the public key and hash.
-		let scalar_mul2 = ScalarMulChip::new(
+		let pk_h = EddsaGadgetsChip::scalar_mul::<256>(
 			self.pk_x.clone(),
 			self.pk_y.clone(),
 			one.clone(),
 			m_hash_res[0].clone(),
 			self.m_hash_bits,
-		);
-		let pk_h =
-			scalar_mul2.synthesize(config.scalar_mul_mh, layouter.namespace(|| "pk * m_hash"))?;
+			config.eddsa_gadgets.clone(),
+			layouter.namespace(|| "pk * m_hash"),
+		)?;
 
 		// Cr = R + H(R || PK || M) * PK
-		let point_add = PointAddChip::new(
+		let cr = EddsaGadgetsChip::add_point(
 			self.big_r_x.clone(),
 			self.big_r_y.clone(),
 			one,
 			pk_h.0,
 			pk_h.1,
 			pk_h.2,
-		);
-		let cr = point_add.synthesize(config.point_add, layouter.namespace(|| "big_r + pk_h"))?;
+			config.eddsa_gadgets.clone(),
+			layouter.namespace(|| "big_r + pk_h"),
+		)?;
 
 		// Converts two projective space points to their affine representation.
-		let into_affine1 = IntoAffineChip::new(cl.0, cl.1, cl.2);
-		let into_affine2 = IntoAffineChip::new(cr.0, cr.1, cr.2);
-
-		let cl_affine = into_affine1.synthesize(
-			config.into_affine.clone(),
+		let cl_affine = EddsaGadgetsChip::into_affine(
+			cl.0,
+			cl.1,
+			cl.2,
+			config.eddsa_gadgets.clone(),
 			layouter.namespace(|| "cl_affine"),
 		)?;
-		let cr_affine =
-			into_affine2.synthesize(config.into_affine, layouter.namespace(|| "cr_affine"))?;
+		let cr_affine = EddsaGadgetsChip::into_affine(
+			cr.0,
+			cr.1,
+			cr.2,
+			config.eddsa_gadgets,
+			layouter.namespace(|| "cr_affine"),
+		)?;
 
 		// Check if Clx == Crx and Cly == Cry.
-		let is_eq1 = IsEqualChip::new(cl_affine.0, cr_affine.0);
-		let is_eq2 = IsEqualChip::new(cl_affine.1, cr_affine.1);
-
-		let x_eq =
-			is_eq1.synthesize(config.is_eq.clone(), layouter.namespace(|| "point_x_equal"))?;
-		let y_eq = is_eq2.synthesize(config.is_eq, layouter.namespace(|| "point_y_equal"))?;
+		let x_eq = CommonChip::is_equal(
+			cl_affine.0,
+			cr_affine.0,
+			config.common.clone(),
+			layouter.namespace(|| "point_x_equal"),
+		)?;
+		let y_eq = CommonChip::is_equal(
+			cl_affine.1,
+			cr_affine.1,
+			config.common,
+			layouter.namespace(|| "point_y_equal"),
+		)?;
 
 		// Use And gate between x and y equality.
 		// If equal returns 1, else 0.
-		let and = AndChip::new(x_eq, y_eq);
-		let point_eq = and.synthesize(config.and, layouter.namespace(|| "point_eq"))?;
+		let point_eq =
+			CommonChip::and(x_eq, y_eq, config.common, layouter.namespace(|| "point_eq"))?;
 
 		// Enforce equality.
 		// If either one of them returns 0, the circuit will give an error.
@@ -252,7 +241,7 @@ mod test {
 		halo2::{
 			circuit::{SimpleFloorPlanner, Value},
 			dev::MockProver,
-			plonk::{Circuit, Instance},
+			plonk::Circuit,
 		},
 	};
 	use rand::thread_rng;
@@ -366,7 +355,7 @@ mod test {
 		let sig = sign(&sk, &pk, m);
 		let circuit = TestCircuit::new(sig.big_r.x, sig.big_r.y, sig.s, pk.0.x, pk.0.y, m);
 
-		let k = 9;
+		let k = 10;
 		let prover = MockProver::run(k, &circuit, vec![]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
 	}
@@ -387,7 +376,7 @@ mod test {
 		sig.big_r = B8.mul_scalar(&different_r.to_bytes()).affine();
 		let circuit = TestCircuit::new(sig.big_r.x, sig.big_r.y, sig.s, pk.0.x, pk.0.y, m);
 
-		let k = 9;
+		let k = 10;
 		let prover = MockProver::run(k, &circuit, vec![]).unwrap();
 		assert!(prover.verify().is_err());
 	}
@@ -405,7 +394,7 @@ mod test {
 		sig.s = sig.s.add(&Fr::from(1));
 		let circuit = TestCircuit::new(sig.big_r.x, sig.big_r.y, sig.s, pk.0.x, pk.0.y, m);
 
-		let k = 9;
+		let k = 10;
 		let prover = MockProver::run(k, &circuit, vec![]).unwrap();
 		assert!(prover.verify().is_err());
 	}
@@ -424,7 +413,7 @@ mod test {
 		let m = Fr::from_str_vartime("123456789012345678901234567890").unwrap();
 		let sig = sign(&sk1, &pk1, m);
 		let circuit = TestCircuit::new(sig.big_r.x, sig.big_r.y, sig.s, pk2.0.x, pk2.0.y, m);
-		let k = 9;
+		let k = 10;
 		let prover = MockProver::run(k, &circuit, vec![]).unwrap();
 		assert!(prover.verify().is_err());
 	}
@@ -443,7 +432,7 @@ mod test {
 		let sig = sign(&sk, &pk, m1);
 		let circuit = TestCircuit::new(sig.big_r.x, sig.big_r.y, sig.s, pk.0.x, pk.0.y, m2);
 
-		let k = 9;
+		let k = 10;
 		let prover = MockProver::run(k, &circuit, vec![]).unwrap();
 
 		assert!(prover.verify().is_err());
@@ -460,7 +449,7 @@ mod test {
 		let sig = sign(&sk, &pk, m);
 		let circuit = TestCircuit::new(sig.big_r.x, sig.big_r.y, sig.s, pk.0.x, pk.0.y, m);
 
-		let k = 9;
+		let k = 10;
 		let rng = &mut rand::thread_rng();
 		let params = generate_params(k);
 		let res = prove_and_verify::<Bn256, _, _>(params, circuit, &[], rng).unwrap();
