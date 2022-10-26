@@ -15,14 +15,14 @@ pub struct CommonConfig {
 	selectors: [Selector; 6],
 }
 
-/// Structure for the chip.
+/// Structure for the common chip.
 pub struct CommonChip<F: FieldExt> {
 	/// Constructs a phantom data for the FieldExt.
 	_phantom: PhantomData<F>,
 }
 
 impl<F: FieldExt> CommonChip<F> {
-	/// Make the circuit config.
+	/// Make the circuit configs.
 	pub fn configure(meta: &mut ConstraintSystem<F>) -> CommonConfig {
 		let advice = [meta.advice_column(), meta.advice_column(), meta.advice_column()];
 		let selectors = [
@@ -488,7 +488,7 @@ mod test {
 		}
 	}
 
-	// AND CIRCUIT TESTS
+	// TEST CASES FOR THE AND CIRCUIT
 	#[test]
 	fn test_and_x1_y1() {
 		// Testing x = 1 and y = 1.
@@ -546,7 +546,9 @@ mod test {
 		assert!(res);
 	}
 
-	// IS_BOOL CIRCUIT TESTS
+	// TEST CASES FOR THE IS_BOOL CIRCUIT
+	// In a IsBool test case sending a dummy instance doesn't
+	// affect the circuit output because it is not constrained.
 	#[test]
 	fn test_is_bool_value_zero() {
 		// Testing input zero as value.
@@ -594,7 +596,7 @@ mod test {
 		assert!(res);
 	}
 
-	// IS_EQUAL CIRCUIT TESTS
+	// TEST CASES FOR THE IS_EQUAL CIRCUIT
 	#[test]
 	fn test_is_equal() {
 		// Testing equal values.
@@ -629,7 +631,7 @@ mod test {
 		assert!(res);
 	}
 
-	// IS_ZERO CIRCUIT TESTS
+	// TEST CASES FOR THE IS_ZERO CIRCUIT
 	#[test]
 	fn test_is_zero() {
 		// Testing zero as value.
@@ -664,7 +666,7 @@ mod test {
 		assert!(res);
 	}
 
-	// MUL CIRCUIT TESTS
+	// TEST CASES FOR THE MUL CIRCUIT
 	#[test]
 	fn test_mul() {
 		// Testing x = 5 and y = 2.
@@ -711,7 +713,7 @@ mod test {
 		assert!(res);
 	}
 
-	// SELECT CIRCUIT TESTS
+	// TEST CASES FOR THE SELECT CIRCUIT
 	#[test]
 	fn test_select() {
 		// Testing bit = 0.
