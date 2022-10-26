@@ -48,8 +48,8 @@ impl Manager {
 		self.signatures.insert(sig.pk, sig);
 	}
 
-	pub fn get_signature(&self, pk: &Bn256Scalar) -> &Signature {
-		self.signatures.get(pk).unwrap()
+	pub fn get_signature(&self, pk: &Bn256Scalar) -> Result<&Signature, EigenError> {
+		self.signatures.get(pk).ok_or(EigenError::SignatureNotFound)
 	}
 
 	/// Calculate the Ivp in the iteration 0

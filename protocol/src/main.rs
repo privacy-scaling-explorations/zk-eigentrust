@@ -190,15 +190,22 @@ async fn handle_request(
 			let query = query.unwrap();
 			let manager = arc_manager.lock();
 			if manager.is_err() {
-				let e = manager.err();
 				let res = Response::builder()
 					.status(INTERNAL_SERVER_ERROR)
 					.body(ResponseBody::LockError.to_string())
 					.unwrap();
 				return Ok(res);
 			}
-			let mut m = manager.unwrap();
-			let sig = m.get_signature(&query.pk);
+			let m = manager.unwrap();
+			let sig_res = m.get_signature(&query.pk);
+			if sig_res.is_err() {
+				let res = Response::builder()
+					.status(BAD_REQUEST)
+					.body(ResponseBody::InvalidQuery.to_string())
+					.unwrap();
+				return Ok(res);
+			}
+			let sig = sig_res.unwrap();
 			let ops = m.get_op_jis(sig, query.epoch, NUM_ITERATIONS);
 			let ops_sum: f64 = ops.iter().sum();
 			let res = Response::new(ResponseBody::Score(ops_sum).to_string());
@@ -226,7 +233,6 @@ async fn handle_request(
 			}
 			let manager = arc_manager.lock();
 			if manager.is_err() {
-				let e = manager.err();
 				let res = Response::builder()
 					.status(INTERNAL_SERVER_ERROR)
 					.body(ResponseBody::LockError.to_string())
@@ -299,7 +305,7 @@ pub async fn main() -> Result<(), EigenError> {
 				let (stream, addr) = res.map_err(|_| EigenError::ConnectionError)?;
 				handle_connection(stream, addr).await;
 			}
-			res = inner_interval.tick() => {
+			_res = inner_interval.tick() => {
 				let mng_store = Arc::clone(&MANAGER_STORE);
 				let epoch = Epoch::current_epoch(EPOCH_INTERVAL);
 				handle_epoch_convergence(mng_store, epoch);
@@ -343,8 +349,7 @@ mod test {
 			random_circuit::<Bn256, _, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, Params>(&mut rng);
 		let proving_key = keygen(&params, &random_circuit).unwrap();
 
-		let epoch = Epoch(123);
-		let mut manager = Manager::new(params, proving_key);
+		let manager = Manager::new(params, proving_key);
 
 		let req = Request::get(Uri::from_static("http://localhost:3000/score"))
 			.body(Body::default())
@@ -364,7 +369,7 @@ mod test {
 			random_circuit::<Bn256, _, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, Params>(&mut rng);
 		let proving_key = keygen(&params, &random_circuit).unwrap();
 
-		let mut manager = Manager::new(params, proving_key);
+		let manager = Manager::new(params, proving_key);
 
 		let req = Request::get(Uri::from_static(
 			"http://localhost:3000/score?pk=abcd__123&epoch=123",
@@ -386,7 +391,7 @@ mod test {
 			random_circuit::<Bn256, _, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, Params>(&mut rng);
 		let proving_key = keygen(&params, &random_circuit).unwrap();
 
-		let mut manager = Manager::new(params, proving_key);
+		let manager = Manager::new(params, proving_key);
 
 		let req = Request::get(Uri::from_static(
 			"http://localhost:3000/score?pk=abcd123&epoch=abc",
@@ -408,7 +413,7 @@ mod test {
 			random_circuit::<Bn256, _, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, Params>(&mut rng);
 		let proving_key = keygen(&params, &random_circuit).unwrap();
 
-		let mut manager = Manager::new(params, proving_key);
+		let manager = Manager::new(params, proving_key);
 
 		let req = Request::get(Uri::from_static("http://localhost:3000/score?pk=abcd123"))
 			.body(Body::default())
@@ -496,12 +501,12 @@ mod test {
 			random_circuit::<Bn256, _, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, Params>(&mut rng);
 		let proving_key = keygen(&params, &random_circuit).unwrap();
 
-		let mut manager = Manager::new(params, proving_key);
+		let manager = Manager::new(params, proving_key);
 
 		let sk = scalar_from_bs58(SK_KEY1);
 		let pk = generate_pk_from_sk(sk);
-		let mut neighbours = [None; MAX_NEIGHBORS];
-		let mut scores = [None; MAX_NEIGHBORS];
+		let neighbours = [None; MAX_NEIGHBORS];
+		let scores = [None; MAX_NEIGHBORS];
 		let signature = Signature::new(sk, pk, neighbours, scores);
 		let signature_data: SignatureData = signature.into();
 		let mut signature_bytes = to_vec(&signature_data).unwrap();
@@ -526,15 +531,15 @@ mod test {
 			random_circuit::<Bn256, _, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, Params>(&mut rng);
 		let proving_key = keygen(&params, &random_circuit).unwrap();
 
-		let mut manager = Manager::new(params, proving_key);
+		let manager = Manager::new(params, proving_key);
 
 		let sk = scalar_from_bs58(SK_KEY1);
 		let pk = generate_pk_from_sk(sk);
-		let mut neighbours = [None; MAX_NEIGHBORS];
-		let mut scores = [None; MAX_NEIGHBORS];
+		let neighbours = [None; MAX_NEIGHBORS];
+		let scores = [None; MAX_NEIGHBORS];
 		let signature = Signature::new(sk, pk, neighbours, scores);
 		let signature_data: SignatureData = signature.into();
-		let mut signature_bytes = to_vec(&signature_data).unwrap();
+		let signature_bytes = to_vec(&signature_data).unwrap();
 
 		let req = Request::post(Uri::from_static("http://localhost:3000/signature"))
 			.body(Body::from(signature_bytes))
@@ -554,8 +559,7 @@ mod test {
 			random_circuit::<Bn256, _, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, Params>(&mut rng);
 		let proving_key = keygen(&params, &random_circuit).unwrap();
 
-		let epoch = Epoch(123);
-		let mut manager = Manager::new(params, proving_key);
+		let manager = Manager::new(params, proving_key);
 
 		let req = Request::get(Uri::from_static("http://localhost:3000/non_existing_route"))
 			.body(Body::default())
@@ -635,7 +639,7 @@ mod test {
 		let proving_key = keygen(&params, &random_circuit).unwrap();
 
 		let epoch = Epoch(123);
-		let mut manager = Manager::new(params, proving_key);
+		let manager = Manager::new(params, proving_key);
 
 		let sk1 = scalar_from_bs58(SK_KEY1);
 		let pk1 = generate_pk_from_sk(sk1);
@@ -709,5 +713,60 @@ mod test {
 
 		let res4 = handle_request(req4, Arc::clone(&arc_manager)).await.unwrap();
 		assert_eq!(*res4.body(), "0.3749428495839048");
+	}
+
+	#[tokio::test]
+	async fn non_existing_neighbours() {
+		let mut rng = thread_rng();
+		let params = ParamsKZG::<Bn256>::new(9);
+		let random_circuit =
+			random_circuit::<Bn256, _, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, Params>(&mut rng);
+		let proving_key = keygen(&params, &random_circuit).unwrap();
+
+		let epoch = Epoch(123);
+		let manager = Manager::new(params, proving_key);
+
+		let sk1 = scalar_from_bs58(SK_KEY1);
+		let pk1 = generate_pk_from_sk(sk1);
+
+		let sk2 = scalar_from_bs58(SK_KEY2);
+		let pk2 = generate_pk_from_sk(sk2);
+
+		let sk3 = scalar_from_bs58(SK_KEY3);
+		let pk3 = generate_pk_from_sk(sk3);
+
+		let mut neighbours1 = [None; MAX_NEIGHBORS];
+		neighbours1[0] = Some(pk2);
+		neighbours1[1] = Some(pk3);
+
+		let mut scores1 = [None; MAX_NEIGHBORS];
+		scores1[0] = Some(10.);
+		scores1[1] = Some(20.);
+
+		let sig1 = Signature::new(sk1, pk1, neighbours1, scores1);
+
+		let sig_data1: SignatureData = sig1.into();
+
+		let sig_bytes1 = to_vec(&sig_data1).unwrap();
+
+		let req1 = Request::post(Uri::from_static("http://localhost:3000/signature"))
+			.body(Body::from(sig_bytes1))
+			.unwrap();
+
+		let arc_manager = Arc::new(Mutex::new(manager));
+		let res1 = handle_request(req1, Arc::clone(&arc_manager)).await.unwrap();
+
+		assert_eq!(*res1.body(), ResponseBody::SignatureAddSuccess.to_string());
+
+		handle_epoch_convergence(Arc::clone(&arc_manager), epoch);
+
+		let req4 = Request::get(Uri::from_static(
+			"http://localhost:3000/score?pk=HhfwhxzwKvS8UGVvfnyJUiA1uL1VhXXfqFWh4BtEM9zx&epoch=123",
+		))
+		.body(Body::default())
+		.unwrap();
+
+		let res4 = handle_request(req4, Arc::clone(&arc_manager)).await.unwrap();
+		assert_eq!(*res4.body(), ResponseBody::InvalidQuery.to_string());
 	}
 }

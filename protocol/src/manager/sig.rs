@@ -17,10 +17,9 @@ impl From<Signature> for SignatureData {
 		let pk_bytes = sig.pk.to_bytes();
 
 		let mut neighbours_bytes = Vec::new();
-		let neighbours =
-			sig.neighbours.map(|x_op| x_op.map(|x| neighbours_bytes.push(x.to_bytes())));
+		sig.neighbours.map(|x_op| x_op.map(|x| neighbours_bytes.push(x.to_bytes())));
 		let mut scores_bytes = Vec::new();
-		let scores = sig.scores.map(|x_op| x_op.map(|x| scores_bytes.push(x.to_be_bytes())));
+		sig.scores.map(|x_op| x_op.map(|x| scores_bytes.push(x.to_be_bytes())));
 
 		SignatureData {
 			sk: sk_bytes,
