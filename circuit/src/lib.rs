@@ -272,3 +272,91 @@ impl<F: FieldExt, const S: usize, const B: usize, P: RoundParams<F, 5>> Circuit<
 		Ok(())
 	}
 }
+
+#[cfg(test)]
+mod test {
+	use super::*;
+	use halo2wrong::{
+		curves::bn256::{Bn256, Fr},
+		halo2::{arithmetic::Field, dev::MockProver},
+	};
+	use params::poseidon_bn254_5x5::Params;
+	use poseidon::native::Poseidon;
+	use rand::thread_rng;
+	use utils::{generate_params, prove_and_verify};
+
+	const SIZE: usize = 256;
+	const NUM_BOOTSTRAP: usize = 12;
+	const MAX_SCORE: u64 = 100000000;
+
+	#[test]
+	fn test_eigen_trust_verify() {
+		let k = 9;
+
+		let mut rng = thread_rng();
+		let pubkey_v = Fr::random(&mut rng);
+
+		let epoch = Fr::one();
+		let iter = Fr::one();
+		let sk = Fr::random(&mut rng);
+
+		// Data from neighbors of i
+		let op_ji = [(); SIZE].map(|_| Fr::from_u128(1));
+		let c_v = Fr::from_u128(1);
+
+		let bootstrap_pubkeys = [(); NUM_BOOTSTRAP].map(|_| Fr::random(&mut rng));
+		let bootstrap_score = Fr::from(MAX_SCORE);
+
+		let eigen_trust = EigenTrustCircuit::<Fr, SIZE, NUM_BOOTSTRAP, Params>::new(
+			pubkey_v, epoch, iter, sk, op_ji, c_v, bootstrap_pubkeys, bootstrap_score,
+		);
+
+		let inputs_sk = [Fr::zero(), Fr::zero(), Fr::zero(), Fr::zero(), sk];
+		let pubkey_i = Poseidon::<_, 5, Params>::new(inputs_sk).permute()[0];
+		let opv = Fr::from(256);
+		let inputs = [epoch, iter, opv, pubkey_v, pubkey_i];
+		let m_hash_poseidon = Poseidon::<_, 5, Params>::new(inputs).permute()[0];
+		// let m_hash_poseidon = Fr::one();
+
+		let prover = match MockProver::<Fr>::run(k, &eigen_trust, vec![vec![m_hash_poseidon]]) {
+			Ok(prover) => prover,
+			Err(e) => panic!("{}", e),
+		};
+
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[test]
+	fn test_eigen_trust_production_prove_verify() {
+		let k = 9;
+
+		let mut rng = thread_rng();
+		let pubkey_v = Fr::random(&mut rng);
+
+		let epoch = Fr::one();
+		let iter = Fr::one();
+		let sk = Fr::random(&mut rng);
+		// Data from neighbors of i
+		let op_ji = [(); SIZE].map(|_| Fr::from_u128(1));
+		let c_v = Fr::from_u128(1);
+
+		let bootstrap_pubkeys = [(); NUM_BOOTSTRAP].map(|_| Fr::random(&mut rng));
+		let bootstrap_score = Fr::from(MAX_SCORE);
+
+		let eigen_trust = EigenTrustCircuit::<Fr, SIZE, NUM_BOOTSTRAP, Params>::new(
+			pubkey_v, epoch, iter, sk, op_ji, c_v, bootstrap_pubkeys, bootstrap_score,
+		);
+
+		let inputs_sk = [Fr::zero(), Fr::zero(), Fr::zero(), Fr::zero(), sk];
+		let pubkey_i = Poseidon::<_, 5, Params>::new(inputs_sk).permute()[0];
+		let opv = Fr::from(256);
+		let inputs = [epoch, iter, opv, pubkey_v, pubkey_i];
+		let m_hash_poseidon = Poseidon::<_, 5, Params>::new(inputs).permute()[0];
+
+		let params = generate_params(k);
+		let res =
+			prove_and_verify::<Bn256, _, _>(params, eigen_trust, &[&[m_hash_poseidon]], &mut rng)
+				.unwrap();
+		assert!(res);
+	}
+}
