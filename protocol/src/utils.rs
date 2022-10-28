@@ -1,74 +1,30 @@
-use crate::{peer::opinion::Posedion5x5, EigenError};
+use crate::{error::EigenError, manager::ivp::Posedion5x5};
 use eigen_trust_circuit::halo2wrong::{
-	curves::{bn256::Fr as Bn256Scalar, secp256k1::Fq as Secp256k1Scalar, FieldExt},
+	curves::{bn256::Fr as Bn256Scalar, FieldExt},
+	halo2::arithmetic::Field,
 	utils::decompose,
 };
 use futures::{
 	stream::{self, BoxStream, Fuse},
 	StreamExt,
 };
-use libp2p::core::identity::{
-	secp256k1::{Keypair as Secp256k1Keypair, SecretKey},
-	Keypair as IdentityKeypair,
-};
+use rand::RngCore;
 use tokio::time::{self, Duration, Instant};
 
-/// Make a new keypair from a secret key.
-pub fn keypair_from_sk_bytes(mut bytes: Vec<u8>) -> Result<IdentityKeypair, EigenError> {
-	bytes.reverse();
-	let sk = SecretKey::from_bytes(&mut bytes).map_err(|_| EigenError::InvalidKeypair)?;
-	let secp256kp = Secp256k1Keypair::from(sk);
-	let kp = IdentityKeypair::Secp256k1(secp256kp);
-	Ok(kp)
-}
-
-/// Extract raw bytes from a secret key.
-pub fn extract_sk_bytes(kp: &IdentityKeypair) -> Result<Vec<u8>, EigenError> {
-	match kp {
-		IdentityKeypair::Secp256k1(secp_kp) => {
-			let mut sk_bytes = secp_kp.secret().to_bytes();
-			sk_bytes.reverse();
-			Ok(sk_bytes.to_vec())
-		},
-		_ => Err(EigenError::InvalidKeypair),
-	}
-}
-
-/// Get the secret key for the keypair and return it as a bn254 scalar limbs.
-pub fn extract_sk_limbs(kp: &IdentityKeypair) -> Result<[Bn256Scalar; 4], EigenError> {
-	match kp {
-		IdentityKeypair::Secp256k1(secp_kp) => {
-			let mut sk_bytes = secp_kp.secret().to_bytes();
-			sk_bytes.reverse();
-
-			let sk_op: Option<Secp256k1Scalar> = Secp256k1Scalar::from_bytes(&sk_bytes).into();
-			let sk = sk_op.ok_or(EigenError::InvalidKeypair)?;
-
-			let limbs: Vec<Bn256Scalar> = decompose(sk, 4, 254)
-				.iter()
-				.map(|item| {
-					let bytes = item.to_bytes();
-					Bn256Scalar::from_bytes_wide(&to_wide(bytes))
-				})
-				.collect();
-
-			assert!(limbs.len() == 4);
-
-			Ok([limbs[0], limbs[1], limbs[2], limbs[3]])
-		},
-		_ => Err(EigenError::InvalidKeypair),
-	}
-}
-
-/// Hash the secret key limbs with Poseidon.
-pub fn extract_pub_key(kp: &IdentityKeypair) -> Result<Bn256Scalar, EigenError> {
-	let limbs = extract_sk_limbs(kp)?;
-
-	let input = [Bn256Scalar::zero(), limbs[0], limbs[1], limbs[2], limbs[3]];
+pub fn generate_pk_from_sk(sk: Bn256Scalar) -> Bn256Scalar {
+	let input =
+		[Bn256Scalar::zero(), Bn256Scalar::zero(), Bn256Scalar::zero(), Bn256Scalar::zero(), sk];
 	let pos = Posedion5x5::new(input);
 	let out = pos.permute()[0];
 
-	Ok(out)
+	out
+}
+
+/// Hash the secret key limbs with Poseidon.
+pub fn generate_pk<R: RngCore>(rng: &mut R) -> Bn256Scalar {
+	let sk = Bn256Scalar::random(rng);
+
+	generate_pk_from_sk(sk)
 }
 
 /// Write an array of 32 elements into an array of 64 elements.
@@ -85,6 +41,11 @@ pub fn to_wide_bytes(p: &[u8]) -> [u8; 64] {
 	res
 }
 
+pub fn scalar_from_bs58(key: &str) -> Bn256Scalar {
+	let bytes = &bs58::decode(key).into_vec().unwrap();
+	Bn256Scalar::from_bytes_wide(&to_wide_bytes(bytes))
+}
+
 /// Schedule `num` intervals with a duration of `interval` that starts at
 /// `start`.
 pub fn create_iter<'a>(start: Instant, interval: Duration, num: usize) -> Fuse<BoxStream<'a, u32>> {
@@ -97,4 +58,25 @@ pub fn create_iter<'a>(start: Instant, interval: Duration, num: usize) -> Fuse<B
 	.take(num)
 	.boxed()
 	.fuse()
+}
+
+fn generate_bootstrap_keys() {
+	let arr = [
+		"AF4yAqwCPzpBcit4FtTrHso4BBR9onk7qS9Q1SWSLSaV",
+		"7VoQFngkSo36s5yzZtnjtZ5SLe1VGukCZdb5Uc9tSDNC",
+		"3wEvtEFktXUBHZHPPmLkDh7oqFLnjTPep1EJ2eBqLtcX",
+		"AccKg5pXVG5o968qj5QtgPZpgC8Y8NLG9woUZNuZRYdG",
+		"8hz2emqxU7CfxWv8cJLFGR1nE4B5QDsfNE4LykE6ihKB",
+		"9SKr55sYCC8dUb4A9HDAqP5BFq18gkxCMJsix445M4xM",
+		"98Q6yXQgSxEH6U1zjsDjMq4Dk7ezKSoaWMPGvkLumzBQ",
+		"4X15pV53oiYPDxKxDc7XRyenKoyvhKA4nboSZcbX7Eos",
+		"2CMv6in24uARH3bf6oh4NAuJSE3NKVL97QUeVvG5Pvai",
+		"4TaF7JykL5gTubgGR1xuepMgPvzHtmTuuNxiaZda7YKT",
+		"2pAhDFpGLeHPLzKGsRXFkYQWPoVV9YziruXtHnng4KW6",
+		"CjoowxyktdwUePyvkmLiCLFUacLs2cAwoquAAjgDDxgS",
+	];
+	let arr_bn = arr.map(|a| scalar_from_bs58(a));
+	let arr_pk = arr_bn.map(|a| generate_pk_from_sk(a));
+	let arr_bs: [String; 12] = arr_pk.map(|a| bs58::encode(a.to_bytes()).into_string());
+	println!("{:?}", arr_bs);
 }
