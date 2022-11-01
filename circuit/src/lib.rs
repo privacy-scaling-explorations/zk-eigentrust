@@ -23,6 +23,8 @@ pub mod poseidon;
 pub mod rescue_prime;
 /// Utilities for proving and verifying
 pub mod utils;
+/// Wrong field arithmetic
+pub mod wrong;
 
 use gadgets::{
 	common::{CommonChip, CommonConfig},
@@ -35,9 +37,10 @@ use halo2wrong::halo2::{
 	circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner, Value},
 	plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Instance},
 };
+use num_bigint::BigUint;
 use params::RoundParams;
 use poseidon::{PoseidonChip, PoseidonConfig};
-use std::marker::PhantomData;
+use std::{marker::PhantomData, str::FromStr};
 
 /// The halo2 columns config for the main circuit.
 #[derive(Clone, Debug)]
