@@ -190,6 +190,7 @@ mod test {
 			let (t_lo, t_hi) = (t[i], t[i + 1]);
 			let (r_lo, r_hi) = (result[i], result[i + 1]);
 
+			// CONSTRAINT
 			let res = t_lo + t_hi * lsh_one - r_lo - r_hi * lsh_one - residues[i / 2] * lsh_two + v;
 			v = residues[i / 2];
 			println!("res {:?}", res);
@@ -234,15 +235,14 @@ mod test {
 
 		let residues = residues(&result, &t);
 
-		// a = 4
-		// b = 2
-		// q = 1
-		// p = 5
-		// result = 1
-		// a * b - q * p - result = 4 * 2 - 1 * 5 - 1 = 6 - 5 - 1 = 0
-		// let res_real = a_bn * b_bn - quotient * wrong_mod_bn - result_bn;
-		// let res = to_native(a, q) * to_native(b, q) - to_native(q, q);
-		// println!("res {:?}", res);
+		// a = 8
+		// b = 3
+		// p = 13
+		// n = 5
+
+		// a_native = a % 5
+		// b_native = b % 5
+		// p_native = p % 5
 
 		let mut new_t: Vec<Fr> = vec![];
 		for (i, inter) in t.iter().enumerate() {
@@ -253,9 +253,6 @@ mod test {
 				let prev_inter = inter;
 				let next_inter = inter - (a[j] * b[k] + q[k] * p_prime[j]);
 
-				if j == i {
-					println!("{:?} {:?}", next_inter, prev_inter);
-				}
 				if j == 0 {
 					new_t.push(prev_inter);
 				}
@@ -269,7 +266,25 @@ mod test {
 			}
 		}
 
-		println!("{:?}", new_t);
 		constrain_residues(new_t.try_into().unwrap(), result, residues);
+
+		let a_native = Fr::from_str_vartime(
+			"91888242871839275222246405745257275088548364400416034343698204186575808495807",
+		)
+		.unwrap();
+		let b_native = Fr::from_str_vartime("123134").unwrap();
+		let wrong_mod_native = Fr::from_str_vartime(
+			"21888242871839275222246405745257275088696311157297823662689037894645226208583",
+		)
+		.unwrap();
+		let res_native = Fr::from_str_vartime(
+			"8839498411810231587881575137642804062353405807773865066449658236690677140446",
+		)
+		.unwrap();
+		let q_native = Fr::from_str_vartime("516924").unwrap();
+
+		// CONSTRAINT
+		let resa = a_native * b_native - q_native * wrong_mod_native - res_native;
+		println!("native {:?}", resa);
 	}
 }
