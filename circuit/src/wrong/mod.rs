@@ -287,4 +287,29 @@ mod test {
 		let resa = a_native * b_native - q_native * wrong_mod_native - res_native;
 		println!("native {:?}", resa);
 	}
+
+	fn reduce() {
+		let native_mod_bn = Bn256_4_68::native_modulus();
+		let wrong_mod_bn = Bn256_4_68::wrong_modulus();
+		let p_prime = Bn256_4_68::negative_wrong_modulus_decomposed();
+
+		let val = BigUint::from_str(
+			"91888242871839275222246405745257275088548364400416034343698204186575808495807",
+		)
+		.unwrap();
+		let (quotient, result_bn) = val.div_rem(&wrong_mod_bn);
+		assert!(quotient < BigUint::from_u8(1).unwrap() << 68u8.into());
+
+		let q_native = big_to_fe::<Fr>(quotient);
+		let result_limbs = decompose_big::<Fr, 4, 68>(result_bn);
+		let val_limbs = decompose_big::<Fr, 4, 68>(val);
+
+		let mut t = [Fr::zero(); 4];
+		for i in 0..4 {
+			let res = val_limbs[i] + p_prime[i] * q_native;
+			t[i] = res;
+		}
+
+		let residues = residues(&result_limbs, &t);
+	}
 }
