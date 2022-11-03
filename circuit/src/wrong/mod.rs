@@ -181,6 +181,21 @@ mod test {
 		res
 	}
 
+	fn constrain_residues(t: [Fr; 4], result: [Fr; 4], residues: Vec<Fr>) {
+		let lsh_one = Bn256_4_68::left_shifters()[1];
+		let lsh_two = Bn256_4_68::left_shifters()[2];
+
+		let mut v = Fr::zero();
+		for i in (0..4).step_by(2) {
+			let (t_lo, t_hi) = (t[i], t[i + 1]);
+			let (r_lo, r_hi) = (result[i], result[i + 1]);
+
+			let res = t_lo + t_hi * lsh_one - r_lo - r_hi * lsh_one - residues[i / 2] * lsh_two + v;
+			v = residues[i / 2];
+			println!("res {:?}", res);
+		}
+	}
+
 	fn to_native(x: [Fr; 4], q: [Fr; 4]) -> Fr {
 		let mut x_sum = Fr::zero();
 		for i in 0..4 {
@@ -255,5 +270,6 @@ mod test {
 		}
 
 		println!("{:?}", new_t);
+		constrain_residues(new_t.try_into().unwrap(), result, residues);
 	}
 }
