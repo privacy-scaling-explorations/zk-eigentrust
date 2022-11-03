@@ -76,6 +76,7 @@ use num_traits::{FromPrimitive, Num};
 use std::ops::Shl;
 
 trait RnsParams<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize> {
+	fn native_modulus() -> BigUint;
 	fn wrong_modulus() -> BigUint;
 	fn negative_wrong_modulus_decomposed() -> [N; NUM_LIMBS];
 	fn right_shifters() -> [N; NUM_LIMBS];
@@ -93,9 +94,8 @@ pub fn big_to_fe<F: FieldExt>(e: BigUint) -> F {
 }
 
 pub fn decompose_big<F: FieldExt, const NUM_LIMBS: usize, const BIT_LEN: usize>(
-	e: BigUint,
+	mut e: BigUint,
 ) -> [F; NUM_LIMBS] {
-	let mut e = e;
 	let mask = BigUint::from(1usize).shl(BIT_LEN) - 1usize;
 	let mut limbs = [F::zero(); NUM_LIMBS];
 	for i in 0..NUM_LIMBS {
@@ -110,6 +110,13 @@ pub fn decompose_big<F: FieldExt, const NUM_LIMBS: usize, const BIT_LEN: usize>(
 struct Bn256_4_68;
 
 impl RnsParams<Fq, Fr, 4, 68> for Bn256_4_68 {
+	fn native_modulus() -> BigUint {
+		BigUint::from_str(
+			"21888242871839275222246405745257275088548364400416034343698204186575808495617",
+		)
+		.unwrap()
+	}
+
 	fn wrong_modulus() -> BigUint {
 		BigUint::from_str(
 			"21888242871839275222246405745257275088696311157297823662689037894645226208583",
@@ -158,67 +165,95 @@ mod test {
 	use super::*;
 
 	fn residues(n: &[Fr; 4], t: &[Fr; 4]) -> Vec<Fr> {
-		let is_odd = 4 & 1 == 1;
-		let u_len = (4 + 1) / 2;
 		let lsh1 = Bn256_4_68::left_shifters()[1];
-		let (rsh1, rsh2) = (
-			Bn256_4_68::right_shifters()[1],
-			Bn256_4_68::right_shifters()[2],
-		);
+		let rsh2 = Bn256_4_68::right_shifters()[2];
 
 		let mut res = Vec::new();
 		let mut carry = Fr::zero();
-		for i in 0..u_len {
-			let j = 2 * i;
-			let v = if (i == u_len - 1) && is_odd {
-				let r = n[j];
-				let u = t[j] - r;
-				u * rsh1
-			} else {
-				let (r_0, r_1) = (n[j], n[j + 1]);
-				let (t_0, t_1) = (t[j], t[j + 1]);
-				let u = t_0 + (t_1 * lsh1) - r_0 - (lsh1 * r_1) + carry;
-				u * rsh2
-			};
+		for i in (0..4).step_by(2) {
+			let (t_0, t_1) = (t[i], t[i + 1]);
+			let (r_0, r_1) = (n[i], n[i + 1]);
+			let u = t_0 + (t_1 * lsh1) - r_0 - (lsh1 * r_1) + carry;
+			let v = u * rsh2;
 			carry = v;
 			res.push(v)
 		}
 		res
 	}
 
+	fn to_native(x: [Fr; 4], q: [Fr; 4]) -> Fr {
+		let mut x_sum = Fr::zero();
+		for i in 0..4 {
+			x_sum += x[i] * q[i];
+		}
+		x_sum
+	}
+
 	#[test]
 	pub fn wrong_mul() {
+		let native_mod_bn = Bn256_4_68::native_modulus();
 		let wrong_mod_bn = Bn256_4_68::wrong_modulus();
-		let negative_wrong_modulus_decomposed = Bn256_4_68::negative_wrong_modulus_decomposed();
+		let p_prime = Bn256_4_68::negative_wrong_modulus_decomposed();
 
-		let a = BigUint::from_str(
-			"21888242871839275222246405745257275088548364400416034343698204186575808495607",
+		let a_bn = BigUint::from_str(
+			"91888242871839275222246405745257275088548364400416034343698204186575808495807",
 		)
 		.unwrap();
-		let b = BigUint::from_u64(134894).unwrap();
-		let a_limbs = decompose_big::<Fr, 4, 68>(a.clone());
-		let b_limbs = decompose_big::<Fr, 4, 68>(b.clone());
+		let b_bn = BigUint::from_u64(123134).unwrap();
+		let (quotient, result_bn) = (a_bn.clone() * b_bn.clone()).div_rem(&wrong_mod_bn);
 
-		let (quotient, result) = (a * b).div_rem(&wrong_mod_bn);
-		let quotient_limbs = decompose_big::<Fr, 4, 68>(quotient);
-		let result = decompose_big::<Fr, 4, 68>(result);
-		let wrong_limbs = decompose_big::<Fr, 4, 68>(wrong_mod_bn);
+		let a = decompose_big::<Fr, 4, 68>(a_bn.clone());
+		let b = decompose_big::<Fr, 4, 68>(b_bn.clone());
+		let q = decompose_big::<Fr, 4, 68>(quotient.clone());
+		let result = decompose_big::<Fr, 4, 68>(result_bn.clone());
+		let p = decompose_big::<Fr, 4, 68>(wrong_mod_bn.clone());
 
 		let mut t: [Fr; 4] = [Fr::zero(); 4];
+
 		for k in 0..4 {
 			for i in 0..=k {
 				let j = k - i;
-				t[i + j] = t[i + j]
-					+ a_limbs[i] * b_limbs[j]
-					+ negative_wrong_modulus_decomposed[i] * quotient_limbs[j];
+				t[i + j] = t[i + j] + a[i] * b[j] + p_prime[i] * q[j];
 			}
 		}
 
 		let residues = residues(&result, &t);
 
-		for i in 0..4 {
-			let res = t[i] - wrong_limbs[i] * quotient_limbs[i] - result[i];
-			println!("res: {:?}", res);
+		// a = 4
+		// b = 2
+		// q = 1
+		// p = 5
+		// result = 1
+		// a * b - q * p - result = 4 * 2 - 1 * 5 - 1 = 6 - 5 - 1 = 0
+		// let res_real = a_bn * b_bn - quotient * wrong_mod_bn - result_bn;
+		// let res = to_native(a, q) * to_native(b, q) - to_native(q, q);
+		// println!("res {:?}", res);
+
+		let mut new_t: Vec<Fr> = vec![];
+		for (i, inter) in t.iter().enumerate() {
+			let mut inter = *inter;
+			for j in 0..=i {
+				let k = i - j;
+
+				let prev_inter = inter;
+				let next_inter = inter - (a[j] * b[k] + q[k] * p_prime[j]);
+
+				if j == i {
+					println!("{:?} {:?}", next_inter, prev_inter);
+				}
+				if j == 0 {
+					new_t.push(prev_inter);
+				}
+				// CONSTRAINT
+				println!(
+					"{:?}",
+					a[j] * b[k] + q[k] * p_prime[j] - prev_inter + next_inter
+				);
+
+				inter = next_inter;
+			}
 		}
+
+		println!("{:?}", new_t);
 	}
 }
