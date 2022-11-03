@@ -193,7 +193,7 @@ mod test {
 			// CONSTRAINT
 			let res = t_lo + t_hi * lsh_one - r_lo - r_hi * lsh_one - residues[i / 2] * lsh_two + v;
 			v = residues[i / 2];
-			println!("res {:?}", res);
+			println!("Binary part constraint {:?}", res);
 		}
 	}
 
@@ -288,6 +288,7 @@ mod test {
 		println!("native {:?}", resa);
 	}
 
+	#[test]
 	fn reduce() {
 		let native_mod_bn = Bn256_4_68::native_modulus();
 		let wrong_mod_bn = Bn256_4_68::wrong_modulus();
@@ -301,7 +302,7 @@ mod test {
 		assert!(quotient < BigUint::from_u8(1).unwrap() << 68u8.into());
 
 		let q_native = big_to_fe::<Fr>(quotient);
-		let result_limbs = decompose_big::<Fr, 4, 68>(result_bn);
+		let result_limbs = decompose_big::<Fr, 4, 68>(result_bn.clone());
 		let val_limbs = decompose_big::<Fr, 4, 68>(val);
 
 		let mut t = [Fr::zero(); 4];
@@ -311,5 +312,19 @@ mod test {
 		}
 
 		let residues = residues(&result_limbs, &t);
+
+		// Binary Constraint
+		constrain_residues(t.try_into().unwrap(), result_limbs, residues);
+
+		let val_native = Fr::from_str_vartime("91888242871839275222246405745257275088548364400416034343698204186575808495807").unwrap();
+		let quotient_native = Fr::from_str_vartime("4").unwrap();
+		let wrong_mod_native = Fr::from_str_vartime(
+			"21888242871839275222246405745257275088696311157297823662689037894645226208583",
+		).unwrap();
+		let result_native = big_to_fe::<Fr>(result_bn.clone());
+		// Native Constraint
+		let reduce_result = quotient_native * wrong_mod_native - val_native + result_native;
+		println!("reduced result = {:?}", reduce_result);
+
 	}
 }
