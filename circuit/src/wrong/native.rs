@@ -83,12 +83,25 @@ mod test {
 	fn should_mul_two_numbers() {}
 
 	#[test]
-	fn should_accumulate_array_of_small_numbers() {
+	fn should_mul_accumulate_array_of_small_numbers() {
 		// [1, 2, 3, 4, 5, 6, 7, 8]
 	}
 
 	#[test]
-	fn should_accumulate_array_of_big_numbers() {
+	fn should_mul_accumulate_array_of_big_numbers() {
+		// [2^247, 2^248, 2^249, 2^250, 2^251, 2^252, 2^253, 2^254]
+	}
+
+	#[test]
+	fn should_add_two_numbers() {}
+
+	#[test]
+	fn should_add_accumulate_array_of_small_numbers() {
+		// [1, 2, 3, 4, 5, 6, 7, 8]
+	}
+
+	#[test]
+	fn should_add_accumulate_array_of_big_numbers() {
 		// [2^247, 2^248, 2^249, 2^250, 2^251, 2^252, 2^253, 2^254]
 	}
 }
