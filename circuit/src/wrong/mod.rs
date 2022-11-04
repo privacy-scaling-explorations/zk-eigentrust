@@ -72,7 +72,7 @@ use halo2wrong::{
 };
 use num_bigint::BigUint;
 use num_integer::Integer;
-use num_traits::{FromPrimitive, Num};
+use num_traits::{FromPrimitive, Num, Zero};
 use std::ops::Shl;
 
 trait RnsParams<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize> {
@@ -81,6 +81,9 @@ trait RnsParams<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS
 	fn negative_wrong_modulus_decomposed() -> [N; NUM_LIMBS];
 	fn right_shifters() -> [N; NUM_LIMBS];
 	fn left_shifters() -> [N; NUM_LIMBS];
+	fn max_reduced_limb() -> BigUint;
+	fn max_unreduced_limb() -> BigUint;
+	fn max_remainder() -> BigUint;
 }
 
 pub fn modulus<F: FieldExt>() -> BigUint {
@@ -91,6 +94,10 @@ pub fn big_to_fe<F: FieldExt>(e: BigUint) -> F {
 	let modulus = modulus::<F>();
 	let e = e % modulus;
 	F::from_str_vartime(&e.to_str_radix(10)[..]).unwrap()
+}
+
+pub fn fe_to_big<F: FieldExt>(fe: F) -> BigUint {
+    BigUint::from_bytes_le(fe.to_repr().as_ref())
 }
 
 pub fn decompose_big<F: FieldExt, const NUM_LIMBS: usize, const BIT_LEN: usize>(
@@ -157,6 +164,27 @@ impl RnsParams<Fq, Fr, 4, 68> for Bn256_4_68 {
 			Fr::from_str_vartime("25711008708143844408671393477458601640355247900524685364822016")
 				.unwrap();
 		[limb0, limb1, limb2, limb3]
+	}
+
+	fn max_reduced_limb() -> BigUint {
+		BigUint::from_str(
+			"295147905179352825855",
+		)
+		.unwrap()
+	}
+
+	fn max_unreduced_limb() -> BigUint {
+		BigUint::from_str(
+			"5070602400912917605986812821503",
+		)
+		.unwrap()
+	}
+
+	fn max_remainder() -> BigUint {
+		BigUint::from_str(
+			"28948022309329048855892746252171976963317496166410141009864396001978282409983",
+		)
+		.unwrap()
 	}
 }
 
@@ -326,5 +354,33 @@ mod test {
 		let reduce_result = quotient_native * wrong_mod_native - val_native + result_native;
 		println!("reduced result = {:?}", reduce_result);
 
+	}
+
+	fn max_val_compose(input: Vec<BigUint>) -> BigUint  {
+		input
+        .iter()
+        .rev()
+        .fold(BigUint::zero(), |acc, val| (acc << 68) + val)
+	}
+
+	fn reduce_if_limb_values_exceeds_unreduced(limbs: [Fr; 4]){
+		let mut exceeds_max_limb_value: bool = false;
+		for i in 0..4{
+		exceeds_max_limb_value = max_val_compose(vec![fe_to_big(limbs[i])]) > Bn256_4_68::max_reduced_limb();
+		println!("testing_max_val_compose = {:?}", exceeds_max_limb_value);
+		println!("max reduced = {:?}", Bn256_4_68::max_reduced_limb());
+		}
+
+		{
+            let max_reduction_quotient = Bn256_4_68::max_reduced_limb();
+            let max_reducible_value = max_reduction_quotient * &Bn256_4_68::wrong_modulus() + &Bn256_4_68::max_remainder();
+
+            //assert!(a.max_val() < max_reducible_value);
+        }
+
+		if exceeds_max_limb_value {
+            
+        }
+		
 	}
 }
