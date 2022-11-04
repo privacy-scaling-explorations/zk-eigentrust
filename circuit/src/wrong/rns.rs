@@ -85,8 +85,9 @@ pub trait RnsParams<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_
 	fn max_unreduced_limb() -> N;
 	fn max_remainder() -> BigUint;
 	fn residues(n: &[N; NUM_LIMBS], t: &[N; NUM_LIMBS]) -> Vec<N>;
-	fn get_qr(a_bn: BigUint, b_bn: BigUint) -> ([N; NUM_LIMBS], [N; NUM_LIMBS]);
-	fn constrain_residues(t: [N; 4], result: [N; 4], residues: Vec<N>) -> bool;
+	fn construct_mul_qr(a_bn: BigUint, b_bn: BigUint) -> ([N; NUM_LIMBS], [N; NUM_LIMBS]);
+	fn construct_add_qr(a_bn: BigUint, b_bn: BigUint) -> (N, [N; NUM_LIMBS]);
+	fn constrain_binary_crt(t: [N; 4], result: [N; 4], residues: Vec<N>) -> bool;
 }
 
 pub fn modulus<F: FieldExt>() -> BigUint {
@@ -128,7 +129,7 @@ pub fn compose<const NUM_LIMBS: usize, const NUM_BITS: usize>(
 	res
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Bn256_4_68;
 
 impl RnsParams<Fq, Fr, 4, 68> for Bn256_4_68 {
@@ -208,7 +209,7 @@ impl RnsParams<Fq, Fr, 4, 68> for Bn256_4_68 {
 		res
 	}
 
-	fn get_qr(a_bn: BigUint, b_bn: BigUint) -> ([Fr; 4], [Fr; 4]) {
+	fn construct_mul_qr(a_bn: BigUint, b_bn: BigUint) -> ([Fr; 4], [Fr; 4]) {
 		let wrong_mod_bn = Self::wrong_modulus();
 		let (quotient, result_bn) = (a_bn * b_bn).div_rem(&wrong_mod_bn);
 		let q = decompose_big::<Fr, 4, 68>(quotient);
@@ -216,8 +217,17 @@ impl RnsParams<Fq, Fr, 4, 68> for Bn256_4_68 {
 		(q, result)
 	}
 
+	fn construct_add_qr(a_bn: BigUint, b_bn: BigUint) -> (Fr, [Fr; 4]) {
+		let wrong_mod_bn = Self::wrong_modulus();
+		let (quotient, result_bn) = (a_bn + b_bn).div_rem(&wrong_mod_bn);
+		assert!(quotient <= BigUint::from_u8(1).unwrap());
+		let q = big_to_fe(quotient);
+		let result = decompose_big::<Fr, 4, 68>(result_bn);
+		(q, result)
+	}
+
 	// USED FOR TESTING PURPOSES
-	fn constrain_residues(t: [Fr; 4], result: [Fr; 4], residues: Vec<Fr>) -> bool {
+	fn constrain_binary_crt(t: [Fr; 4], result: [Fr; 4], residues: Vec<Fr>) -> bool {
 		let lsh_one = Self::left_shifters()[1];
 		let lsh_two = Self::left_shifters()[2];
 
@@ -327,10 +337,10 @@ mod test {
 					new_t.push(prev_inter);
 				}
 				// CONSTRAINT
-				//println!(
-				//	"{:?}",
-				//	a[j] * b[k] + q[k] * p_prime[j] - prev_inter + next_inter
-				//);
+				println!(
+					"{:?}",
+					a[j] * b[k] + q[k] * p_prime[j] - prev_inter + next_inter
+				);
 
 				inter = next_inter;
 			}
@@ -414,14 +424,8 @@ mod test {
 	fn wrong_add() {
 		let max_unreduced = Bn256_4_68::max_unreduced_limb();
 		//println!("{:?}", max_unreduced);
-		let a_bn = BigUint::from_str(
-			"7961293874321",
-		)
-		.unwrap();
-		let b_bn = BigUint::from_str(
-			"187419823",
-		)
-		.unwrap();
+		let a_bn = BigUint::from_str("7961293874321").unwrap();
+		let b_bn = BigUint::from_str("187419823").unwrap();
 
 		let a = decompose_big::<Fr, 4, 68>(a_bn.clone());
 		let b = decompose_big::<Fr, 4, 68>(b_bn.clone());
