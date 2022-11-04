@@ -111,7 +111,7 @@ pub fn decompose_big<F: FieldExt, const NUM_LIMBS: usize, const BIT_LEN: usize>(
 	for i in 0..NUM_LIMBS {
 		let limb = mask.clone() & e.clone();
 		e = e.clone() >> BIT_LEN;
-		println!("{}", limb.to_str_radix(16));
+		//println!("{}", limb.to_str_radix(16));
 		limbs[i] = big_to_fe(limb);
 	}
 
@@ -128,7 +128,8 @@ pub fn compose<const NUM_LIMBS: usize, const NUM_BITS: usize>(
 	res
 }
 
-struct Bn256_4_68;
+#[derive(Debug)]
+pub struct Bn256_4_68;
 
 impl RnsParams<Fq, Fr, 4, 68> for Bn256_4_68 {
 	fn native_modulus() -> BigUint {
@@ -270,7 +271,7 @@ mod test {
 			// CONSTRAINT
 			let res = t_lo + t_hi * lsh_one - r_lo - r_hi * lsh_one - residues[i / 2] * lsh_two + v;
 			v = residues[i / 2];
-			println!("Binary part constraint {:?}", res);
+			//println!("Binary part constraint {:?}", res);
 		}
 	}
 
@@ -326,10 +327,10 @@ mod test {
 					new_t.push(prev_inter);
 				}
 				// CONSTRAINT
-				println!(
-					"{:?}",
-					a[j] * b[k] + q[k] * p_prime[j] - prev_inter + next_inter
-				);
+				//println!(
+				//	"{:?}",
+				//	a[j] * b[k] + q[k] * p_prime[j] - prev_inter + next_inter
+				//);
 
 				inter = next_inter;
 			}
@@ -354,7 +355,7 @@ mod test {
 
 		// CONSTRAINT
 		let resa = a_native * b_native - q_native * wrong_mod_native - res_native;
-		println!("native {:?}", resa);
+		//println!("native {:?}", resa);
 	}
 
 	#[test]
@@ -397,7 +398,7 @@ mod test {
 		let result_native = big_to_fe::<Fr>(result_bn.clone());
 		// Native Constraint
 		let reduce_result = quotient_native * wrong_mod_native - val_native + result_native;
-		println!("reduced result = {:?}", reduce_result);
+		//println!("reduced result = {:?}", reduce_result);
 	}
 
 	fn reduce_if_limb_values_exceeds() {
@@ -412,13 +413,13 @@ mod test {
 	#[test]
 	fn wrong_add() {
 		let max_unreduced = Bn256_4_68::max_unreduced_limb();
-		println!("{:?}", max_unreduced);
+		//println!("{:?}", max_unreduced);
 		let a_bn = BigUint::from_str(
-			"91888242871839275222246405745257275088548364400416034343698204186575808495807",
+			"7961293874321",
 		)
 		.unwrap();
 		let b_bn = BigUint::from_str(
-			"91888242871839275222246405745257275088548364400416034343698204186575808495807",
+			"187419823",
 		)
 		.unwrap();
 
@@ -428,9 +429,9 @@ mod test {
 		let mut res: [Fr; 4] = [Fr::zero(); 4];
 		for i in 0..4 {
 			res[i] = a[i] + b[i];
-			println!("a {}", fe_to_big(a[i]));
-			println!("b {}", fe_to_big(b[i]));
-			println!("res {}", fe_to_big(res[i]));
+			//println!("a {}", fe_to_big(a[i]));
+			//println!("b {}", fe_to_big(b[i]));
+			//println!("res {:#?}", fe_to_big(res[i]));
 		}
 	}
 

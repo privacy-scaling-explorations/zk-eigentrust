@@ -14,7 +14,7 @@ where
 	intermediate: [N; NUM_LIMBS],
 	residues: Vec<N>,
 }
-
+#[derive(Debug)]
 struct Integer<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
 where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
@@ -77,7 +77,11 @@ where
 
 #[cfg(test)]
 mod test {
+	use halo2wrong::curves::bn256::{Fq, Fr};
+use num_traits::Zero;
 	use super::*;
+	use std::str::FromStr;
+	use crate::wrong::rns::Bn256_4_68;
 
 	#[test]
 	fn should_mul_two_numbers() {}
@@ -93,11 +97,28 @@ mod test {
 	}
 
 	#[test]
-	fn should_add_two_numbers() {}
+	fn should_add_two_numbers() {
+		let a_big = BigUint::from_str("79187419823874321").unwrap();
+		let b_big = BigUint::from_str("187187437437437491874198238791874198238791874198238791874198238791874198238791874198238737419821874193419818741982323").unwrap();
+		let big_answer = a_big.clone() + b_big.clone();
+		let a = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_big);
+		let b = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(b_big);
+		let c = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::add(&a, &b);
+		assert_eq!(c.value(), big_answer);
+	}
 
 	#[test]
 	fn should_add_accumulate_array_of_small_numbers() {
 		// [1, 2, 3, 4, 5, 6, 7, 8]
+		let a_big = [(); 8].map(|_| BigUint::from_str("7961293874321").unwrap());
+		let mut acc = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(BigUint::zero());
+		let mut big_answer = BigUint::zero();
+		for i in 0..8{
+		big_answer += a_big[i].clone();
+		let a = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_big[i].clone());
+		acc = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::add(&acc, &a);
+		}
+		assert_eq!(acc.value(), big_answer);
 	}
 
 	#[test]
