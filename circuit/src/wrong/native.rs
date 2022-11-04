@@ -103,5 +103,7 @@ mod test {
 	#[test]
 	fn should_add_accumulate_array_of_big_numbers() {
 		// [2^247, 2^248, 2^249, 2^250, 2^251, 2^252, 2^253, 2^254]
+		// Accumulate with BigUint
+		// Accumulate with Integer - compose and compare
 	}
 }
