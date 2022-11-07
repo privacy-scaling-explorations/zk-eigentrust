@@ -24,7 +24,7 @@ where
 	pub fn add(self) -> N {
 		match self {
 			Quotient::Add(res) => res,
-			_ => panic!("Not add Quotient"),
+			_ => Option::<N>::None.unwrap(),
 		}
 	}
 
@@ -32,7 +32,7 @@ where
 	pub fn mul(self) -> Integer<W, N, NUM_LIMBS, NUM_BITS, P> {
 		match self {
 			Quotient::Mul(res) => res,
-			_ => panic!("Not mul Quotient"),
+			_ => Option::<Integer<W, N, NUM_LIMBS, NUM_BITS, P>>::None.unwrap(),
 		}
 	}
 }
@@ -209,11 +209,11 @@ mod test {
 			big_answer *= a_big_array[i].clone();
 			let a = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_big_array[i].clone());
 			acc = acc.result.mul(&a);
+			assert!(Bn256_4_68::constrain_binary_crt(
+				acc.intermediate, acc.result.limbs, acc.residues
+			));
 		}
 
-		assert!(Bn256_4_68::constrain_binary_crt(
-			acc.intermediate, acc.result.limbs, acc.residues
-		));
 		assert_eq!(
 			acc.result.value(),
 			big_answer.mod_floor(&Bn256_4_68::wrong_modulus())
@@ -244,11 +244,11 @@ mod test {
 			big_answer *= a_big_array[i].clone();
 			let a = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_big_array[i].clone());
 			acc = acc.result.mul(&a);
+			assert!(Bn256_4_68::constrain_binary_crt(
+				acc.intermediate, acc.result.limbs, acc.residues
+			));
 		}
 
-		assert!(Bn256_4_68::constrain_binary_crt(
-			acc.intermediate, acc.result.limbs, acc.residues
-		));
 		assert_eq!(
 			acc.result.value(),
 			big_answer.mod_floor(&Bn256_4_68::wrong_modulus())
@@ -323,11 +323,11 @@ mod test {
 			big_answer += a_big_array[i].clone();
 			let a = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_big_array[i].clone());
 			acc = acc.result.add(&a);
+			assert!(Bn256_4_68::constrain_binary_crt(
+				acc.intermediate, acc.result.limbs, acc.residues
+			));
 		}
 
-		assert!(Bn256_4_68::constrain_binary_crt(
-			acc.intermediate, acc.result.limbs, acc.residues
-		));
 		assert_eq!(
 			acc.result.value(),
 			big_answer.mod_floor(&Bn256_4_68::wrong_modulus())
@@ -358,11 +358,11 @@ mod test {
 			big_answer += a_big_array[i].clone();
 			let a = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_big_array[i].clone());
 			acc = acc.result.add(&a);
+			assert!(Bn256_4_68::constrain_binary_crt(
+				acc.intermediate, acc.result.limbs, acc.residues
+			));
 		}
 
-		assert!(Bn256_4_68::constrain_binary_crt(
-			acc.intermediate, acc.result.limbs, acc.residues
-		));
 		assert_eq!(
 			acc.result.value(),
 			big_answer.mod_floor(&Bn256_4_68::wrong_modulus())
