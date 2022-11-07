@@ -66,7 +66,7 @@ pub struct EigenTrustCircuit<
 	pubkey_v: Value<F>,
 	epoch: Value<F>,
 	iteration: Value<F>,
-	secret_i: [Value<F>; 4],
+	secret_i: Value<F>,
 	/// Opinions of peers j to the peer i (the prover).
 	op_ji: [Value<F>; SIZE],
 	/// Opinon from peer i (the prover) to the peer v (the verifyer).
@@ -82,14 +82,14 @@ impl<F: FieldExt, const S: usize, const B: usize, P: RoundParams<F, 5>>
 {
 	/// Create a new EigenTrustCircuit.
 	pub fn new(
-		pubkey_v: F, epoch: F, iteration: F, secret_i: [F; 4], op_ji: [F; S], c_v: F,
+		pubkey_v: F, epoch: F, iteration: F, secret_i: F, op_ji: [F; S], c_v: F,
 		bootstrap_pubkeys: [F; B], boostrap_score: F,
 	) -> Self {
 		Self {
 			pubkey_v: Value::known(pubkey_v),
 			epoch: Value::known(epoch),
 			iteration: Value::known(iteration),
-			secret_i: secret_i.map(|val| Value::known(val)),
+			secret_i: Value::known(secret_i),
 			op_ji: op_ji.map(|c| Value::known(c)),
 			c_v: Value::known(c_v),
 			bootstrap_pubkeys,
@@ -132,7 +132,7 @@ impl<F: FieldExt, const S: usize, const B: usize, P: RoundParams<F, 5>> Circuit<
 			pubkey_v: Value::unknown(),
 			epoch: Value::unknown(),
 			iteration: Value::unknown(),
-			secret_i: [Value::unknown(); 4],
+			secret_i: Value::unknown(),
 			op_ji: [Value::unknown(); S],
 			c_v: Value::unknown(),
 			bootstrap_pubkeys: self.bootstrap_pubkeys,
@@ -176,10 +176,9 @@ impl<F: FieldExt, const S: usize, const B: usize, P: RoundParams<F, 5>> Circuit<
 						F::zero(),
 					)?;
 
-					let sk =
-						self.secret_i.try_map::<_, Result<AssignedCell<F, F>, Error>>(|v| {
-							Self::assign_temp(config.temp, "op", &mut region, &mut offset, v)
-						})?;
+					let sk = Self::assign_temp(
+						config.temp, "op", &mut region, &mut offset, self.secret_i,
+					)?;
 
 					let epoch = Self::assign_temp(
 						config.temp, "epoch", &mut region, &mut offset, self.epoch,
@@ -219,7 +218,7 @@ impl<F: FieldExt, const S: usize, const B: usize, P: RoundParams<F, 5>> Circuit<
 		let t_i = sum_chip.synthesize(config.sum, layouter.namespace(|| "sum"))?;
 
 		// Recreate the pubkey_i
-		let inputs = [zero.clone(), sk[0].clone(), sk[1].clone(), sk[2].clone(), sk[3].clone()];
+		let inputs = [zero.clone(), zero.clone(), zero.clone(), zero.clone(), sk];
 		let poseidon_pk = PoseidonChip::<_, 5, P>::new(inputs);
 		let res = poseidon_pk.synthesize(
 			config.poseidon.clone(),
@@ -306,7 +305,7 @@ mod test {
 
 		let epoch = Fr::one();
 		let iter = Fr::one();
-		let sk = [(); 4].map(|_| Fr::random(&mut rng));
+		let sk = Fr::random(&mut rng);
 
 		// Data from neighbors of i
 		let op_ji = [(); SIZE].map(|_| Fr::from_u128(1));
@@ -319,7 +318,7 @@ mod test {
 			pubkey_v, epoch, iter, sk, op_ji, c_v, bootstrap_pubkeys, bootstrap_score,
 		);
 
-		let inputs_sk = [Fr::zero(), sk[0], sk[1], sk[2], sk[3]];
+		let inputs_sk = [Fr::zero(), Fr::zero(), Fr::zero(), Fr::zero(), sk];
 		let pubkey_i = Poseidon::<_, 5, Params>::new(inputs_sk).permute()[0];
 		let opv = Fr::from(256);
 		let inputs = [epoch, iter, opv, pubkey_v, pubkey_i];
@@ -343,7 +342,7 @@ mod test {
 
 		let epoch = Fr::one();
 		let iter = Fr::one();
-		let sk = [(); 4].map(|_| Fr::random(&mut rng));
+		let sk = Fr::random(&mut rng);
 		// Data from neighbors of i
 		let op_ji = [(); SIZE].map(|_| Fr::from_u128(1));
 		let c_v = Fr::from_u128(1);
@@ -355,7 +354,7 @@ mod test {
 			pubkey_v, epoch, iter, sk, op_ji, c_v, bootstrap_pubkeys, bootstrap_score,
 		);
 
-		let inputs_sk = [Fr::zero(), sk[0], sk[1], sk[2], sk[3]];
+		let inputs_sk = [Fr::zero(), Fr::zero(), Fr::zero(), Fr::zero(), sk];
 		let pubkey_i = Poseidon::<_, 5, Params>::new(inputs_sk).permute()[0];
 		let opv = Fr::from(256);
 		let inputs = [epoch, iter, opv, pubkey_v, pubkey_i];

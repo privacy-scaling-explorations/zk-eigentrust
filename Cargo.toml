@@ -1,6 +1,5 @@
 [workspace]
 members = [
 	"protocol",
-	"bench",
 	"circuit",
 ]

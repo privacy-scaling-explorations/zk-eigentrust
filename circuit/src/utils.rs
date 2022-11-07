@@ -67,7 +67,7 @@ pub fn random_circuit<
 	let pubkey_v = E::Scalar::random(rng.clone());
 	let epoch = E::Scalar::random(rng.clone());
 	let iter = E::Scalar::random(rng.clone());
-	let secret_i = [(); 4].map(|_| E::Scalar::random(rng.clone()));
+	let secret_i = E::Scalar::random(rng.clone());
 	// Data from neighbors of i
 	let op_ji = [(); SIZE].map(|_| E::Scalar::random(rng.clone()));
 	let c_v = E::Scalar::random(rng.clone());
