@@ -209,15 +209,15 @@ mod test {
 			big_answer *= a_big_array[i].clone();
 			let a = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_big_array[i].clone());
 			acc = acc.result.mul(&a);
+
 			assert!(Bn256_4_68::constrain_binary_crt(
 				acc.intermediate, acc.result.limbs, acc.residues
 			));
+			assert_eq!(
+				acc.result.value(),
+				big_answer.mod_floor(&Bn256_4_68::wrong_modulus())
+			);
 		}
-
-		assert_eq!(
-			acc.result.value(),
-			big_answer.mod_floor(&Bn256_4_68::wrong_modulus())
-		);
 	}
 
 	#[test]
@@ -244,15 +244,15 @@ mod test {
 			big_answer *= a_big_array[i].clone();
 			let a = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_big_array[i].clone());
 			acc = acc.result.mul(&a);
+
 			assert!(Bn256_4_68::constrain_binary_crt(
 				acc.intermediate, acc.result.limbs, acc.residues
 			));
+			assert_eq!(
+				acc.result.value(),
+				big_answer.mod_floor(&Bn256_4_68::wrong_modulus())
+			);
 		}
-
-		assert_eq!(
-			acc.result.value(),
-			big_answer.mod_floor(&Bn256_4_68::wrong_modulus())
-		);
 	}
 
 	#[test]
@@ -323,15 +323,15 @@ mod test {
 			big_answer += a_big_array[i].clone();
 			let a = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_big_array[i].clone());
 			acc = acc.result.add(&a);
+
 			assert!(Bn256_4_68::constrain_binary_crt(
 				acc.intermediate, acc.result.limbs, acc.residues
 			));
+			assert_eq!(
+				acc.result.value(),
+				big_answer.mod_floor(&Bn256_4_68::wrong_modulus())
+			);
 		}
-
-		assert_eq!(
-			acc.result.value(),
-			big_answer.mod_floor(&Bn256_4_68::wrong_modulus())
-		);
 	}
 
 	#[test]
@@ -358,14 +358,14 @@ mod test {
 			big_answer += a_big_array[i].clone();
 			let a = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_big_array[i].clone());
 			acc = acc.result.add(&a);
+
 			assert!(Bn256_4_68::constrain_binary_crt(
 				acc.intermediate, acc.result.limbs, acc.residues
 			));
+			assert_eq!(
+				acc.result.value(),
+				big_answer.mod_floor(&Bn256_4_68::wrong_modulus())
+			);
 		}
-
-		assert_eq!(
-			acc.result.value(),
-			big_answer.mod_floor(&Bn256_4_68::wrong_modulus())
-		);
 	}
 }
