@@ -129,6 +129,20 @@ pub fn compose<const NUM_LIMBS: usize, const NUM_BITS: usize>(
 	res
 }
 
+pub fn terms_compose(input: Vec<Fr>, quotient: Fr) -> Fr{
+	let input: Vec<Fr> = input.iter().filter(|e| !bool::from(e.is_zero())).cloned().collect();
+	let mut result = Fr::zero();
+	for i in 0..input.len(){
+		if quotient == Fr::zero() {
+			result = result + input[i];
+		}
+		else {
+		result = result + (input[i] * quotient);
+		}		
+	}
+	result
+}
+
 #[derive(Debug, Clone)]
 pub struct Bn256_4_68;
 
