@@ -21,18 +21,18 @@ where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 {
 	/// Returns Quotient type for the addition.
-	pub fn add(self) -> N {
+	pub fn add(self) -> Option<N> {
 		match self {
-			Quotient::Add(res) => res,
-			_ => Option::<N>::None.unwrap(),
+			Quotient::Add(res) => Some(res),
+			_ => None,
 		}
 	}
 
 	/// Returns Quotient type for the multiplication.
-	pub fn mul(self) -> Integer<W, N, NUM_LIMBS, NUM_BITS, P> {
+	pub fn mul(self) -> Option<Integer<W, N, NUM_LIMBS, NUM_BITS, P>> {
 		match self {
-			Quotient::Mul(res) => res,
-			_ => Option::<Integer<W, N, NUM_LIMBS, NUM_BITS, P>>::None.unwrap(),
+			Quotient::Mul(res) => Some(res),
+			_ => None,
 		}
 	}
 }
