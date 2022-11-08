@@ -55,21 +55,14 @@ where
 			let x_limb_exps = x_limbs.map(|x| v_cells.query_advice(x, Rotation::cur()));
 			let y_limb_exps = y_limbs.map(|y| v_cells.query_advice(y, Rotation::cur()));
 			let add_q_exp = v_cells.query_advice(quotient[0], Rotation::cur());
-			// let t_exp = intermediate.map(|x| v_cells.query_advice(x, Rotation::c))
+			let t_exp = intermediate.map(|x| v_cells.query_advice(x, Rotation::cur()));
 			let result_exps = x_limbs.map(|x| v_cells.query_advice(x, Rotation::next()));
 			let residues_exps: Vec<Expression<N>> =
 				residues.iter().map(|x| v_cells.query_advice(*x, Rotation::cur())).collect();
 
-			let mut t = [(); NUM_LIMBS].map(|_| Expression::Constant(N::zero()));
-			for i in 0..NUM_LIMBS {
-				t[i] = x_limb_exps[i].clone()
-					+ y_limb_exps[i].clone()
-					+ add_q_exp.clone() * p_prime[i];
-			}
-
 			// REDUCTION CONSTRAINTS
 			let mut constraints =
-				P::constrain_binary_crt_exp(t, result_exps.clone(), residues_exps);
+				P::constrain_binary_crt_exp(t_exp, result_exps.clone(), residues_exps);
 
 			let native_constraint = P::compose_exp(x_limb_exps) + P::compose_exp(y_limb_exps)
 				- P::compose_exp(result_exps);
@@ -83,23 +76,14 @@ where
 			let x_limb_exps = x_limbs.map(|x| v_cells.query_advice(x, Rotation::cur()));
 			let y_limb_exps = y_limbs.map(|y| v_cells.query_advice(y, Rotation::cur()));
 			let mul_q_exp = quotient.map(|x| v_cells.query_advice(x, Rotation::cur()));
+			let t_exp = intermediate.map(|x| v_cells.query_advice(x, Rotation::cur()));
 			let result_exps = x_limbs.map(|x| v_cells.query_advice(x, Rotation::next()));
 			let residues_exps: Vec<Expression<N>> =
 				residues.iter().map(|x| v_cells.query_advice(*x, Rotation::cur())).collect();
 
-			let mut t = [(); NUM_LIMBS].map(|_| Expression::Constant(N::zero()));
-			for k in 0..NUM_LIMBS {
-				for i in 0..=k {
-					let j = k - i;
-					t[i + j] = t[i + j].clone()
-						+ x_limb_exps[i].clone() * y_limb_exps[j].clone()
-						+ mul_q_exp[j].clone() * p_prime[i];
-				}
-			}
-
 			// REDUCTION CONSTRAINTS
 			let mut constraints =
-				P::constrain_binary_crt_exp(t, result_exps.clone(), residues_exps);
+				P::constrain_binary_crt_exp(t_exp, result_exps.clone(), residues_exps);
 
 			let native_constraints = P::compose_exp(x_limb_exps) * P::compose_exp(y_limb_exps)
 				- P::compose_exp(mul_q_exp) * p_in_n
@@ -129,55 +113,145 @@ where
 		layouter.assign_region(
 			|| "add_operation",
 			|mut region: Region<'_, N>| {
-				config.add_selector.enable(&mut region, 0);
+				config.add_selector.enable(&mut region, 0)?;
 
-				let mut assigned_x_limbs: [Option<AssignedCell<N, N>>; NUM_LIMBS] =
-					[None; NUM_LIMBS];
-				let mut assigned_y_limbs: [Option<AssignedCell<N, N>>; NUM_LIMBS] =
-					[None; NUM_LIMBS];
-				let mut assigned_intermediate: [Option<AssignedCell<N, N>>; NUM_LIMBS] =
-					[None; NUM_LIMBS];
+				region.assign_advice(
+					|| "quotient",
+					config.quotient[0],
+					0,
+					|| Value::known(rw.quotient.clone().add().unwrap()),
+				)?;
 
 				for i in 0..NUM_LIMBS {
-					assigned_x_limbs = Some(x_limbs[i].copy_advice(
+					x_limbs[i].copy_advice(
 						|| format!("x_limb_{}", i),
 						&mut region,
 						config.x_limbs[i],
 						0,
-					)?);
+					)?;
 
-					assigned_y_limbs = Some(y_limbs[i].copy_advice(
+					y_limbs[i].copy_advice(
 						|| format!("y_limb_{}", i),
 						&mut region,
 						config.y_limbs[i],
 						0,
-					)?);
+					)?;
 
-					assigned_intermediate = Some(region.assign_advice(
+					region.assign_advice(
 						|| format!("intermediate_{}", i),
-						&mut region,
 						config.intermediate[i],
 						0,
-						rw.
-					)?)
+						|| Value::known(rw.intermediate[i]),
+					)?;
 				}
 
-				let mut assigned_residues = Vec::new();
-				for i in 0..residues.len() {
-					assigned_residues.push(residues[i].copy_advice(
+				for i in 0..rw.residues.len() {
+					region.assign_advice(
 						|| format!("residues_{}", i),
-						&mut region,
 						config.residues[i],
 						0,
+						|| Value::known(rw.residues[i]),
+					)?;
+				}
+
+				let mut assigned_result: [Option<AssignedCell<N, N>>; NUM_LIMBS] =
+					[(); NUM_LIMBS].map(|_| None);
+				for i in 0..NUM_LIMBS {
+					assigned_result[i] = Some(region.assign_advice(
+						|| format!("result_{}", i),
+						config.x_limbs[i],
+						1,
+						|| Value::known(rw.result.limbs[i]),
 					)?)
 				}
 
-				let assigned_x_limbs = assigned_x_limbs.map(|x| x.unwrap());
-				let assigned_y_limbs = assigned_y_limbs.map(|y| y.unwrap());
-				let assigned_quotient =
-					quotient.copy_advice(|| "quotient", &mut region, config.quotient[0], 0)?;
-				let assigned_intermediate = assigned_intermediate.map(|x| x.unwrap());
+				let assigned_result = assigned_result.map(|x| x.unwrap());
+
+				Ok(assigned_result)
 			},
 		)
 	}
+
+	/// Assign cells for mul operation.
+	pub fn mul(
+		&self, x_limbs: [AssignedCell<N, N>; NUM_LIMBS], y_limbs: [AssignedCell<N, N>; NUM_LIMBS],
+		rw: ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>, config: IntegerConfig<NUM_LIMBS>,
+		mut layouter: impl Layouter<N>,
+	) -> Result<[AssignedCell<N, N>; NUM_LIMBS], Error> {
+		layouter.assign_region(
+			|| "mul_operation",
+			|mut region: Region<'_, N>| {
+				config.mul_selector.enable(&mut region, 0)?;
+
+				for i in 0..NUM_LIMBS {
+					x_limbs[i].copy_advice(
+						|| format!("x_limb_{}", i),
+						&mut region,
+						config.x_limbs[i],
+						0,
+					)?;
+
+					y_limbs[i].copy_advice(
+						|| format!("y_limb_{}", i),
+						&mut region,
+						config.y_limbs[i],
+						0,
+					)?;
+
+					region.assign_advice(
+						|| format!("quotient_{}", i),
+						config.quotient[i],
+						0,
+						|| Value::known(rw.quotient.clone().mul().unwrap().limbs[i]),
+					)?;
+
+					region.assign_advice(
+						|| format!("intermediate_{}", i),
+						config.intermediate[i],
+						0,
+						|| Value::known(rw.intermediate[i]),
+					)?;
+				}
+
+				for i in 0..rw.residues.len() {
+					region.assign_advice(
+						|| format!("residues_{}", i),
+						config.residues[i],
+						0,
+						|| Value::known(rw.residues[i]),
+					)?;
+				}
+
+				let mut assigned_result: [Option<AssignedCell<N, N>>; NUM_LIMBS] =
+					[(); NUM_LIMBS].map(|_| None);
+				for i in 0..NUM_LIMBS {
+					assigned_result[i] = Some(region.assign_advice(
+						|| format!("result_{}", i),
+						config.x_limbs[i],
+						1,
+						|| Value::known(rw.result.limbs[i]),
+					)?);
+				}
+
+				let assigned_result = assigned_result.map(|x| x.unwrap());
+
+				Ok(assigned_result)
+			},
+		)
+	}
+}
+
+#[cfg(test)]
+mod test {
+	#[test]
+	fn should_add_two_numbers() {}
+
+	#[test]
+	fn should_accumulate_array_of_numbers() {}
+
+	#[test]
+	fn should_mul_two_numbers() {}
+
+	#[test]
+	fn should_accumulate_array_of_numbers() {}
 }
