@@ -62,7 +62,10 @@
 
 use halo2wrong::{
 	curves::bn256::{Fq, Fr},
-	halo2::arithmetic::{Field, FieldExt},
+	halo2::{
+		arithmetic::{Field, FieldExt},
+		plonk::Expression,
+	},
 };
 use num_bigint::BigUint;
 use num_integer::Integer;
@@ -89,6 +92,9 @@ pub trait RnsParams<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_
 	fn construct_add_qr(a_bn: BigUint, b_bn: BigUint) -> (N, [N; NUM_LIMBS]);
 	/// Constraint for the binary part of `Chinese Remainder Theorem`.
 	fn constrain_binary_crt(t: [N; 4], result: [N; 4], residues: Vec<N>) -> bool;
+	fn constrain_binary_crt_exp(
+		t: [Expression<Fr>; 4], result: [Expression<Fr>; 4], residues: Vec<Expression<Fr>>,
+	) -> Vec<Expression<Fr>>;
 }
 
 /// Returns modulus of the [`FieldExt`] as [`BigUint`].
@@ -234,5 +240,22 @@ impl RnsParams<Fq, Fr, 4, 68> for Bn256_4_68 {
 			is_satisfied = is_satisfied | res_is_zero;
 		}
 		is_satisfied
+	}
+
+	fn constrain_binary_crt_exp(
+		t: [Expression<Fr>; 4], result: [Expression<Fr>; 4], residues: Vec<Expression<Fr>>,
+	) -> Vec<Expression<Fr>> {
+		let mut v = Expression::Constant(N::zero());
+		let mut constraints = Vec::new();
+		for i in (0..NUM_LIMBS).step_by(2) {
+			let (t_lo, t_hi) = (t[i], t[i + 1]);
+			let (r_lo, r_hi) = (result[i], result[i + 1]);
+			let res =
+				t_lo + t_hi * lsh_one - r_lo - r_hi * lsh_one - residues_exps[i / 2] * lsh_two + v;
+			v = residues[i / 2];
+			constraints.push(res);
+		}
+
+		constraints
 	}
 }
