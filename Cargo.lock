@@ -508,6 +508,8 @@ dependencies = [
  "halo2wrong",
  "hex",
  "num-bigint 0.2.6",
+ "num-integer",
+ "num-traits",
  "plotters",
  "rand 0.8.5",
 ]
