@@ -59,6 +59,9 @@ where
 		let add_selector = meta.selector();
 		let mul_selector = meta.selector();
 
+		x_limbs.map(|x| meta.enable_equality(x));
+		y_limbs.map(|y| meta.enable_equality(y));
+
 		let p_prime = P::negative_wrong_modulus_decomposed();
 		let p_in_n = P::wrong_modulus_in_native_modulus();
 
@@ -255,7 +258,6 @@ where
 
 #[cfg(test)]
 mod test {
-	use std::str::FromStr;
 	use super::{native::Integer, rns::Bn256_4_68, *};
 	use crate::utils::{generate_params, prove_and_verify};
 	use halo2wrong::{
@@ -267,7 +269,8 @@ mod test {
 		},
 	};
 	use num_bigint::BigUint;
-	use num_traits::{Zero, One};
+	use num_traits::{One, Zero};
+	use std::str::FromStr;
 
 	#[derive(Clone)]
 	enum Gadgets {
@@ -329,40 +332,35 @@ mod test {
 		fn synthesize(
 			&self, config: TestConfig<NUM_LIMBS>, mut layouter: impl Layouter<N>,
 		) -> Result<(), Error> {
-
-			let mut x_limbs: [Option<AssignedCell<N, N>>; NUM_LIMBS] =
-				[(); NUM_LIMBS].map(|_| None);
-			let mut y_limbs: [Option<AssignedCell<N, N>>; NUM_LIMBS] =
-				[(); NUM_LIMBS].map(|_| None);
-			for i in 0..NUM_LIMBS {
-				x_limbs[i] = Some(layouter.assign_region(
-					|| "temp",
-					|mut region: Region<'_, N>| {
+			let (x_limbs_assigned, y_limbs_assigned) = layouter.assign_region(
+				|| "temp",
+				|mut region: Region<'_, N>| {
+					let mut x_limbs: [Option<AssignedCell<N, N>>; NUM_LIMBS] =
+						[(); NUM_LIMBS].map(|_| None);
+					let mut y_limbs: [Option<AssignedCell<N, N>>; NUM_LIMBS] =
+						[(); NUM_LIMBS].map(|_| None);
+					for i in 0..NUM_LIMBS {
 						let x = region.assign_advice(
 							|| "temp_x",
 							config.temp,
 							i,
 							|| Value::known(self.x_limbs[i]),
 						)?;
-						Ok(x)
-					},
-				)?);
-				y_limbs[i] = Some(layouter.assign_region(
-					|| "temp",
-					|mut region: Region<'_, N>| {
 						let y = region.assign_advice(
 							|| "temp_y",
 							config.temp,
 							i + NUM_LIMBS,
 							|| Value::known(self.y_limbs[i]),
 						)?;
-						Ok(y)
-					},
-				)?);
-			}
-			let x_limbs_assigned = x_limbs.map(|x| x.unwrap());
-			let y_limbs_assigned = y_limbs.map(|y| y.unwrap());
-			
+
+						x_limbs[i] = Some(x);
+						y_limbs[i] = Some(y);
+					}
+
+					Ok((x_limbs.map(|x| x.unwrap()), y_limbs.map(|y| y.unwrap())))
+				},
+			)?;
+
 			match self.gadget {
 				Gadgets::Add => {
 					let _ = IntegerChip::add(
@@ -423,15 +421,19 @@ mod test {
 		];
 		let carry = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(BigUint::zero());
 		let mut acc = carry.add(&carry);
-		for i in 0..a_big_array.len(){
-		let a = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_big_array[i].clone());
-		let b = acc.result;
-		acc = a.add(&b);
-		let test_chip =
-			TestCircuit::<Fq, Fr, 4, 68, Bn256_4_68>::new(a.limbs, b.limbs, acc.clone(), Gadgets::Add);
-		let k = 10;
-		let prover = MockProver::run(k, &test_chip, vec![]).unwrap();
-		assert_eq!(prover.verify(), Ok(()));
+		for i in 0..a_big_array.len() {
+			let a = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_big_array[i].clone());
+			let b = acc.result;
+			acc = a.add(&b);
+			let test_chip = TestCircuit::<Fq, Fr, 4, 68, Bn256_4_68>::new(
+				a.limbs,
+				b.limbs,
+				acc.clone(),
+				Gadgets::Add,
+			);
+			let k = 10;
+			let prover = MockProver::run(k, &test_chip, vec![]).unwrap();
+			assert_eq!(prover.verify(), Ok(()));
 		}
 	}
 
@@ -446,8 +448,12 @@ mod test {
 		let a = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_big);
 		let b = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(b_big);
 		let c = a.mul(&b);
-		let test_chip =
-			TestCircuit::<Fq, Fr, 4, 68, Bn256_4_68>::new(a.limbs, b.limbs, c.clone(), Gadgets::Mul);
+		let test_chip = TestCircuit::<Fq, Fr, 4, 68, Bn256_4_68>::new(
+			a.limbs,
+			b.limbs,
+			c.clone(),
+			Gadgets::Mul,
+		);
 		let k = 10;
 		let prover = MockProver::run(k, &test_chip, vec![]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
@@ -469,15 +475,19 @@ mod test {
 		];
 		let carry = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(BigUint::one());
 		let mut acc = carry.add(&carry);
-		for i in 0..a_big_array.len(){
-		let a = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_big_array[i].clone());
-		let b = acc.result;
-		acc = a.mul(&b);
-		let test_chip =
-			TestCircuit::<Fq, Fr, 4, 68, Bn256_4_68>::new(a.limbs, b.limbs, acc.clone(), Gadgets::Mul);
-		let k = 10;
-		let prover = MockProver::run(k, &test_chip, vec![]).unwrap();
-		assert_eq!(prover.verify(), Ok(()));
+		for i in 0..a_big_array.len() {
+			let a = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_big_array[i].clone());
+			let b = acc.result;
+			acc = a.mul(&b);
+			let test_chip = TestCircuit::<Fq, Fr, 4, 68, Bn256_4_68>::new(
+				a.limbs,
+				b.limbs,
+				acc.clone(),
+				Gadgets::Mul,
+			);
+			let k = 10;
+			let prover = MockProver::run(k, &test_chip, vec![]).unwrap();
+			assert_eq!(prover.verify(), Ok(()));
 		}
 	}
 }
