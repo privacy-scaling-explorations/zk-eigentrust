@@ -1,6 +1,7 @@
 use super::rns::{compose_big, decompose_big, fe_to_big, RnsParams};
-use halo2wrong::halo2::arithmetic::FieldExt;
+use halo2wrong::halo2::arithmetic::{Field, FieldExt};
 use num_bigint::BigUint;
+use num_traits::Zero;
 use std::marker::PhantomData;
 
 /// Enum for the two different type of Quotient.
@@ -143,6 +144,30 @@ where
 		let result_int = Integer::from_limbs(res);
 		let quotient_int = Quotient::Mul(Integer::from_limbs(q));
 		ReductionWitness { result: result_int, quotient: quotient_int, intermediate: t, residues }
+	}
+
+	/// Non-native subtraction for given two [`Integer`].
+	pub fn sub(
+		&self, other: &Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
+	) -> ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P> {
+		ReductionWitness {
+			result: Integer::new(BigUint::zero()),
+			quotient: Quotient::Add(N::zero()),
+			intermediate: [N::zero(); NUM_LIMBS],
+			residues: Vec::new(),
+		}
+	}
+
+	/// Non-native division for given two [`Integer`].
+	pub fn div(
+		&self, other: &Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
+	) -> ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P> {
+		ReductionWitness {
+			result: Integer::new(BigUint::zero()),
+			quotient: Quotient::Add(N::zero()),
+			intermediate: [N::zero(); NUM_LIMBS],
+			residues: Vec::new(),
+		}
 	}
 }
 

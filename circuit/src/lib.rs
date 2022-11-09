@@ -11,10 +11,14 @@
 #![warn(trivial_casts)]
 #![forbid(unsafe_code)]
 
+/// Ecc arithemtic on wrong field
+pub mod ecc;
 /// EDDSA signature scheme gadgets + native version
 pub mod eddsa;
 /// Common gadgets used across circuits
 pub mod gadgets;
+/// Integer type - Wrong field arithmetic
+pub mod integer;
 /// A module for defining round parameters and MDS matrix for hash
 /// permutations
 pub mod params;
@@ -24,8 +28,6 @@ pub mod poseidon;
 pub mod rescue_prime;
 /// Utilities for proving and verifying
 pub mod utils;
-/// Wrong field arithmetic
-pub mod wrong;
 
 use gadgets::{
 	common::{CommonChip, CommonConfig},
