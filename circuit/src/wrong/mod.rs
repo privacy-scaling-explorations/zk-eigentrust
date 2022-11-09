@@ -6,27 +6,38 @@ pub mod rns;
 use halo2wrong::halo2::{
 	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region, Value},
-	plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector, VirtualCells},
+	plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
 	poly::Rotation,
 };
 use native::ReductionWitness;
 use rns::RnsParams;
 use std::marker::PhantomData;
 
+/// Configuration elements for the circuit are defined here.
+#[derive(Debug, Clone)]
 struct IntegerConfig<const NUM_LIMBS: usize> {
+	/// Configures columns for the x limbs.
 	x_limbs: [Column<Advice>; NUM_LIMBS],
+	/// Configures columns for the y limbs.
 	y_limbs: [Column<Advice>; NUM_LIMBS],
+	/// Configures columns for the quotient value(s).
 	quotient: [Column<Advice>; NUM_LIMBS],
+	/// Configures columns for the intermediate values.
 	intermediate: [Column<Advice>; NUM_LIMBS],
+	/// Configures columns for the residues.
 	residues: Vec<Column<Advice>>,
+	/// Configures a fixed boolean value for each row of the circuit.
 	add_selector: Selector,
+	/// Configures a fixed boolean value for each row of the circuit.
 	mul_selector: Selector,
 }
 
+/// Constructs a chip for the circuit.
 struct IntegerChip<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
 where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 {
+	/// Constructs phantom datas for the variables.
 	_native: PhantomData<N>,
 	_wrong: PhantomData<W>,
 	_rns: PhantomData<P>,
@@ -37,6 +48,7 @@ impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
 where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 {
+	/// Make the circuit config.
 	pub fn configure(meta: &mut ConstraintSystem<N>) -> IntegerConfig<NUM_LIMBS> {
 		let x_limbs = [(); NUM_LIMBS].map(|_| meta.advice_column());
 		let y_limbs = [(); NUM_LIMBS].map(|_| meta.advice_column());
@@ -63,7 +75,7 @@ where
 			// REDUCTION CONSTRAINTS
 			let mut constraints =
 				P::constrain_binary_crt_exp(t_exp, result_exps.clone(), residues_exps);
-
+			// NATIVE CONSTRAINTS
 			let native_constraint = P::compose_exp(x_limb_exps) + P::compose_exp(y_limb_exps)
 				- P::compose_exp(result_exps);
 			constraints.push(native_constraint);
@@ -84,7 +96,7 @@ where
 			// REDUCTION CONSTRAINTS
 			let mut constraints =
 				P::constrain_binary_crt_exp(t_exp, result_exps.clone(), residues_exps);
-
+			// NATIVE CONSTRAINTS
 			let native_constraints = P::compose_exp(x_limb_exps) * P::compose_exp(y_limb_exps)
 				- P::compose_exp(mul_q_exp) * p_in_n
 				- P::compose_exp(result_exps);
@@ -106,7 +118,7 @@ where
 
 	/// Assign cells for add operation.
 	pub fn add(
-		&self, x_limbs: [AssignedCell<N, N>; NUM_LIMBS], y_limbs: [AssignedCell<N, N>; NUM_LIMBS],
+		x_limbs: [AssignedCell<N, N>; NUM_LIMBS], y_limbs: [AssignedCell<N, N>; NUM_LIMBS],
 		rw: ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>, config: IntegerConfig<NUM_LIMBS>,
 		mut layouter: impl Layouter<N>,
 	) -> Result<[AssignedCell<N, N>; NUM_LIMBS], Error> {
@@ -174,7 +186,7 @@ where
 
 	/// Assign cells for mul operation.
 	pub fn mul(
-		&self, x_limbs: [AssignedCell<N, N>; NUM_LIMBS], y_limbs: [AssignedCell<N, N>; NUM_LIMBS],
+		x_limbs: [AssignedCell<N, N>; NUM_LIMBS], y_limbs: [AssignedCell<N, N>; NUM_LIMBS],
 		rw: ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>, config: IntegerConfig<NUM_LIMBS>,
 		mut layouter: impl Layouter<N>,
 	) -> Result<[AssignedCell<N, N>; NUM_LIMBS], Error> {
@@ -243,15 +255,229 @@ where
 
 #[cfg(test)]
 mod test {
-	#[test]
-	fn should_add_two_numbers() {}
+	use std::str::FromStr;
+	use super::{native::Integer, rns::Bn256_4_68, *};
+	use crate::utils::{generate_params, prove_and_verify};
+	use halo2wrong::{
+		curves::bn256::{Fq, Fr},
+		halo2::{
+			circuit::{SimpleFloorPlanner, Value},
+			dev::MockProver,
+			plonk::Circuit,
+		},
+	};
+	use num_bigint::BigUint;
+	use num_traits::{Zero, One};
+
+	#[derive(Clone)]
+	enum Gadgets {
+		Add,
+		Mul,
+	}
+
+	#[derive(Clone, Debug)]
+	struct TestConfig<const NUM_LIMBS: usize> {
+		integer: IntegerConfig<NUM_LIMBS>,
+		temp: Column<Advice>,
+	}
+
+	#[derive(Clone)]
+	struct TestCircuit<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
+	where
+		P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
+	{
+		x_limbs: [N; NUM_LIMBS],
+		y_limbs: [N; NUM_LIMBS],
+		rw: ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>,
+		gadget: Gadgets,
+	}
+
+	impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
+		TestCircuit<W, N, NUM_LIMBS, NUM_BITS, P>
+	where
+		P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
+	{
+		fn new(
+			x_limbs: [N; NUM_LIMBS], y_limbs: [N; NUM_LIMBS],
+			rw: ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>, gadget: Gadgets,
+		) -> Self {
+			Self { x_limbs, y_limbs, rw, gadget }
+		}
+	}
+
+	impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P> Circuit<N>
+		for TestCircuit<W, N, NUM_LIMBS, NUM_BITS, P>
+	where
+		P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
+	{
+		type Config = TestConfig<NUM_LIMBS>;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			self.clone()
+		}
+
+		fn configure(meta: &mut ConstraintSystem<N>) -> TestConfig<NUM_LIMBS> {
+			let integer = IntegerChip::<W, N, NUM_LIMBS, NUM_BITS, P>::configure(meta);
+			let temp = meta.advice_column();
+
+			meta.enable_equality(temp);
+
+			TestConfig { integer, temp }
+		}
+
+		fn synthesize(
+			&self, config: TestConfig<NUM_LIMBS>, mut layouter: impl Layouter<N>,
+		) -> Result<(), Error> {
+
+			let mut x_limbs: [Option<AssignedCell<N, N>>; NUM_LIMBS] =
+				[(); NUM_LIMBS].map(|_| None);
+			let mut y_limbs: [Option<AssignedCell<N, N>>; NUM_LIMBS] =
+				[(); NUM_LIMBS].map(|_| None);
+			for i in 0..NUM_LIMBS {
+				x_limbs[i] = Some(layouter.assign_region(
+					|| "temp",
+					|mut region: Region<'_, N>| {
+						let x = region.assign_advice(
+							|| "temp_x",
+							config.temp,
+							i,
+							|| Value::known(self.x_limbs[i]),
+						)?;
+						Ok(x)
+					},
+				)?);
+				y_limbs[i] = Some(layouter.assign_region(
+					|| "temp",
+					|mut region: Region<'_, N>| {
+						let y = region.assign_advice(
+							|| "temp_y",
+							config.temp,
+							i + NUM_LIMBS,
+							|| Value::known(self.y_limbs[i]),
+						)?;
+						Ok(y)
+					},
+				)?);
+			}
+			let x_limbs_assigned = x_limbs.map(|x| x.unwrap());
+			let y_limbs_assigned = y_limbs.map(|y| y.unwrap());
+			
+			match self.gadget {
+				Gadgets::Add => {
+					let _ = IntegerChip::add(
+						x_limbs_assigned,
+						y_limbs_assigned,
+						self.rw.clone(),
+						config.integer,
+						layouter.namespace(|| "add"),
+					)?;
+				},
+				Gadgets::Mul => {
+					let _ = IntegerChip::mul(
+						x_limbs_assigned,
+						y_limbs_assigned,
+						self.rw.clone(),
+						config.integer,
+						layouter.namespace(|| "mul"),
+					)?;
+				},
+			}
+
+			Ok(())
+		}
+	}
 
 	#[test]
-	fn should_accumulate_array_of_numbers() {}
+	fn should_add_two_numbers() {
+		// Testing add with two elements.
+		let a_big = BigUint::from_str(
+			"2188824287183927522224640574525727508869631115729782366268903789426208582",
+		)
+		.unwrap();
+		let b_big = BigUint::from_str("3534512312312312314235346475676435").unwrap();
+		let a = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_big);
+		let b = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(b_big);
+		let c = a.add(&b);
+		let test_chip =
+			TestCircuit::<Fq, Fr, 4, 68, Bn256_4_68>::new(a.limbs, b.limbs, c, Gadgets::Add);
+
+		let k = 10;
+		let prover = MockProver::run(k, &test_chip, vec![]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
 
 	#[test]
-	fn should_mul_two_numbers() {}
+	fn should_add_accumulate_array_of_numbers() {
+		// Testing add with array of 8 elements.
+		let a_big = BigUint::from_str("4057452572750886963137894").unwrap();
+		let a_big_array = [
+			a_big.clone(),
+			a_big.clone(),
+			a_big.clone(),
+			a_big.clone(),
+			a_big.clone(),
+			a_big.clone(),
+			a_big.clone(),
+			a_big.clone(),
+		];
+		let carry = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(BigUint::zero());
+		let mut acc = carry.add(&carry);
+		for i in 0..a_big_array.len(){
+		let a = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_big_array[i].clone());
+		let b = acc.result;
+		acc = a.add(&b);
+		let test_chip =
+			TestCircuit::<Fq, Fr, 4, 68, Bn256_4_68>::new(a.limbs, b.limbs, acc.clone(), Gadgets::Add);
+		let k = 10;
+		let prover = MockProver::run(k, &test_chip, vec![]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+		}
+	}
 
 	#[test]
-	fn should_accumulate_array_of_numbers() {}
+	fn should_mul_two_numbers() {
+		// Testing mul with two elements.
+		let a_big = BigUint::from_str(
+			"2188824287183927522224640574525727508869631115729782366268903789426208582",
+		)
+		.unwrap();
+		let b_big = BigUint::from_str("121231231231231231231231231233").unwrap();
+		let a = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_big);
+		let b = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(b_big);
+		let c = a.mul(&b);
+		let test_chip =
+			TestCircuit::<Fq, Fr, 4, 68, Bn256_4_68>::new(a.limbs, b.limbs, c.clone(), Gadgets::Mul);
+		let k = 10;
+		let prover = MockProver::run(k, &test_chip, vec![]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[test]
+	fn should_mul_accumulate_array_of_numbers() {
+		// Testing mul with array of 8 elements.
+		let a_big = BigUint::from_str("4057452572750886963137894").unwrap();
+		let a_big_array = [
+			a_big.clone(),
+			a_big.clone(),
+			a_big.clone(),
+			a_big.clone(),
+			a_big.clone(),
+			a_big.clone(),
+			a_big.clone(),
+			a_big.clone(),
+		];
+		let carry = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(BigUint::one());
+		let mut acc = carry.add(&carry);
+		for i in 0..a_big_array.len(){
+		let a = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_big_array[i].clone());
+		let b = acc.result;
+		acc = a.mul(&b);
+		let test_chip =
+			TestCircuit::<Fq, Fr, 4, 68, Bn256_4_68>::new(a.limbs, b.limbs, acc.clone(), Gadgets::Mul);
+		let k = 10;
+		let prover = MockProver::run(k, &test_chip, vec![]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+		}
+	}
 }

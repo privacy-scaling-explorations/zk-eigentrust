@@ -38,7 +38,7 @@ where
 }
 
 /// Structure for the ReductionWitness.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ReductionWitness<
 	W: FieldExt,
 	N: FieldExt,
