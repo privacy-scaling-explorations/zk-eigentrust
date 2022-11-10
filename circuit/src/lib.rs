@@ -1,5 +1,6 @@
 //! The module for the main EigenTrust circuit.
 
+#![feature(generic_const_exprs)]
 #![feature(array_zip, array_try_map)]
 #![allow(clippy::tabs_in_doc_comments)]
 #![deny(

@@ -1,11 +1,11 @@
-use super::rns::{compose, decompose_big, fe_to_big, RnsParams};
+use super::rns::{compose_big, decompose_big, fe_to_big, RnsParams};
 use halo2wrong::halo2::arithmetic::FieldExt;
 use num_bigint::BigUint;
 use std::marker::PhantomData;
 
 /// Enum for the two different type of Quotient.
 #[derive(Clone, Debug)]
-enum Quotient<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
+pub enum Quotient<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
 where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 {
@@ -38,24 +38,29 @@ where
 }
 
 /// Structure for the ReductionWitness.
-#[derive(Debug)]
-struct ReductionWitness<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
-where
+#[derive(Debug, Clone)]
+pub struct ReductionWitness<
+	W: FieldExt,
+	N: FieldExt,
+	const NUM_LIMBS: usize,
+	const NUM_BITS: usize,
+	P,
+> where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 {
 	/// Result from the operation.
-	result: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
+	pub(crate) result: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
 	/// Quotient from the operation.
-	quotient: Quotient<W, N, NUM_LIMBS, NUM_BITS, P>,
+	pub(crate) quotient: Quotient<W, N, NUM_LIMBS, NUM_BITS, P>,
 	/// Intermediate values from the operation.
-	intermediate: [N; NUM_LIMBS],
+	pub(crate) intermediate: [N; NUM_LIMBS],
 	/// Residue values from the operation.
-	residues: Vec<N>,
+	pub(crate) residues: Vec<N>,
 }
 
 /// Structure for the Integer.
 #[derive(Debug, Clone)]
-struct Integer<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
+pub struct Integer<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
 where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 {
@@ -86,7 +91,7 @@ where
 	/// Returns [`BigUint`] representation from the given `limbs`.
 	pub fn value(&self) -> BigUint {
 		let limb_values = self.limbs.map(|limb| fe_to_big(limb));
-		compose::<NUM_LIMBS, NUM_BITS>(limb_values)
+		compose_big::<NUM_LIMBS, NUM_BITS>(limb_values)
 	}
 
 	/// Non-native addition for given two [`Integer`].

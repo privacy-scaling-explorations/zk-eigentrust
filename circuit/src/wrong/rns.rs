@@ -62,7 +62,10 @@
 
 use halo2wrong::{
 	curves::bn256::{Fq, Fr},
-	halo2::arithmetic::{Field, FieldExt},
+	halo2::{
+		arithmetic::{Field, FieldExt},
+		plonk::Expression,
+	},
 };
 use num_bigint::BigUint;
 use num_integer::Integer;
@@ -70,11 +73,15 @@ use num_traits::{FromPrimitive, Num, Zero};
 use std::{ops::Shl, str::FromStr};
 
 /// This trait is for the dealing with RNS operations.
-pub trait RnsParams<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize> {
+pub trait RnsParams<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize>:
+	Clone
+{
 	/// Returns Scalar (Native) Field modulus [`Fr`] from Bn256.
 	fn native_modulus() -> BigUint;
 	/// Returns Base (Wrong) Field modulus [`Fq`] from Bn256.
 	fn wrong_modulus() -> BigUint;
+	/// Returns wrong modulus in native modulus.
+	fn wrong_modulus_in_native_modulus() -> N;
 	/// Returns negative Base (Wrong) Field as decomposed.
 	fn negative_wrong_modulus_decomposed() -> [N; NUM_LIMBS];
 	/// Returns right shifters.
@@ -88,7 +95,17 @@ pub trait RnsParams<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_
 	/// Returns `quotient` and `remainder` for the add operation.
 	fn construct_add_qr(a_bn: BigUint, b_bn: BigUint) -> (N, [N; NUM_LIMBS]);
 	/// Constraint for the binary part of `Chinese Remainder Theorem`.
-	fn constrain_binary_crt(t: [N; 4], result: [N; 4], residues: Vec<N>) -> bool;
+	fn constrain_binary_crt(t: [N; NUM_LIMBS], result: [N; NUM_LIMBS], residues: Vec<N>) -> bool;
+	/// Constraint for the binary part of `Chinese Remainder Theorem` using
+	/// Expressions.
+	fn constrain_binary_crt_exp(
+		t: [Expression<N>; NUM_LIMBS], result: [Expression<N>; NUM_LIMBS],
+		residues: Vec<Expression<N>>,
+	) -> Vec<Expression<N>>;
+	/// Composes integer limbs into single [`FieldExt`] value.
+	fn compose(input: [N; NUM_LIMBS]) -> N;
+	/// Composes integer limbs as Expressions into single Expression value.
+	fn compose_exp(input: [Expression<N>; NUM_LIMBS]) -> Expression<N>;
 }
 
 /// Returns modulus of the [`FieldExt`] as [`BigUint`].
@@ -123,7 +140,7 @@ pub fn decompose_big<F: FieldExt, const NUM_LIMBS: usize, const BIT_LEN: usize>(
 }
 
 /// Returns [`BigUint`] by composing `limbs`.
-pub fn compose<const NUM_LIMBS: usize, const NUM_BITS: usize>(
+pub fn compose_big<const NUM_LIMBS: usize, const NUM_BITS: usize>(
 	input: [BigUint; NUM_LIMBS],
 ) -> BigUint {
 	let mut res = BigUint::zero();
@@ -150,6 +167,10 @@ impl RnsParams<Fq, Fr, 4, 68> for Bn256_4_68 {
 			"21888242871839275222246405745257275088696311157297823662689037894645226208583",
 		)
 		.unwrap()
+	}
+
+	fn wrong_modulus_in_native_modulus() -> Fr {
+		Fr::from_u128(147946756881789318990833708069417712966)
 	}
 
 	fn negative_wrong_modulus_decomposed() -> [Fr; 4] {
@@ -234,5 +255,45 @@ impl RnsParams<Fq, Fr, 4, 68> for Bn256_4_68 {
 			is_satisfied = is_satisfied | res_is_zero;
 		}
 		is_satisfied
+	}
+
+	fn constrain_binary_crt_exp(
+		t: [Expression<Fr>; 4], result: [Expression<Fr>; 4], residues: Vec<Expression<Fr>>,
+	) -> Vec<Expression<Fr>> {
+		let lsh_one = Self::left_shifters()[1];
+		let lsh_two = Self::left_shifters()[2];
+
+		let mut v = Expression::Constant(Fr::zero());
+		let mut constraints = Vec::new();
+		for i in (0..4).step_by(2) {
+			let (t_lo, t_hi) = (t[i].clone(), t[i + 1].clone());
+			let (r_lo, r_hi) = (result[i].clone(), result[i + 1].clone());
+			let res =
+				t_lo + t_hi * lsh_one - r_lo - r_hi * lsh_one - residues[i / 2].clone() * lsh_two
+					+ v;
+			v = residues[i / 2].clone();
+			constraints.push(res);
+		}
+
+		constraints
+	}
+
+	/// Composes integer limbs into single [`FieldExt`] value.
+	fn compose(input: [Fr; 4]) -> Fr {
+		let left_shifters = Self::left_shifters();
+		let mut sum = Fr::zero();
+		for i in 0..4 {
+			sum += input[i] * left_shifters[i];
+		}
+		sum
+	}
+
+	fn compose_exp(input: [Expression<Fr>; 4]) -> Expression<Fr> {
+		let left_shifters = Self::left_shifters();
+		let mut sum = Expression::Constant(Fr::zero());
+		for i in 0..4 {
+			sum = sum + input[i].clone() * left_shifters[i];
+		}
+		sum
 	}
 }
