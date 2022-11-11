@@ -15,7 +15,7 @@ use std::marker::PhantomData;
 
 /// Configuration elements for the circuit are defined here.
 #[derive(Debug, Clone)]
-struct IntegerConfig<const NUM_LIMBS: usize> {
+pub struct IntegerConfig<const NUM_LIMBS: usize> {
 	/// Configures columns for the x limbs.
 	x_limbs: [Column<Advice>; NUM_LIMBS],
 	/// Configures columns for the y limbs.
@@ -33,7 +33,7 @@ struct IntegerConfig<const NUM_LIMBS: usize> {
 }
 
 /// Constructs a chip for the circuit.
-struct IntegerChip<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
+pub struct IntegerChip<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
 where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 {
@@ -107,6 +107,9 @@ where
 
 			constraints.iter().map(|x| mul_s.clone() * x.clone()).collect::<Vec<Expression<N>>>()
 		});
+
+		// TODO modify add to add one more member: x + y + z -- this could be done
+		// inside 1 gate
 
 		IntegerConfig {
 			x_limbs,

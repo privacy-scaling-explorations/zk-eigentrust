@@ -1,143 +1,161 @@
-// ADD:
-// m = (p_y - q_y) / (p_x - q_x)
-// r_x = m^2 - p_x - q_x
-// r_y = m * (r_x - p_x) - p_y
-// DOUBLE:
-// m = (3 * p_x^2) / 2 * p_y
-// r_x = m * m - 2 * p_x
-// r_y = m * (p_x - r_x) - p_y
-// LADDER:
-// m_0 = (q_y - p_y) / (q_x - p_x)
-// f = m_0 * m_0 - p_x - q_x
-// m_1 = m_0 + 2 * p_y / (f - p_x)
-// r_x = m_1 * m_1 - p_x - f
-// r_y = m_1 * (r_x - p_x) - p_y
+/// Native version of the chip
+pub mod native;
 
-use crate::integer::{
-	native::{Integer, ReductionWitness},
-	rns::RnsParams,
+use std::marker::PhantomData;
+
+use crate::{
+	gadgets::bits2num::{Bits2NumChip, Bits2NumConfig},
+	integer::{native::ReductionWitness, rns::RnsParams, IntegerChip, IntegerConfig},
 };
-use halo2wrong::halo2::arithmetic::{Field, FieldExt};
-use num_bigint::BigUint;
-use num_traits::{FromPrimitive, Zero};
+use halo2wrong::halo2::{
+	arithmetic::FieldExt,
+	circuit::{AssignedCell, Layouter, Region, Value},
+	plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
+	poly::Rotation,
+};
 
-#[derive(Clone)]
-struct EcPoint<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
+struct EccConfig<const NUM_LIMBS: usize> {
+	bits2num: Bits2NumConfig,
+	integer: IntegerConfig<NUM_LIMBS>,
+}
+
+struct EccChip<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
 where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 {
-	x: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
-	y: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
-	reduction_witnesses: Vec<ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>>,
+	/// Constructs phantom datas for the variables.
+	_native: PhantomData<N>,
+	_wrong: PhantomData<W>,
+	_rns: PhantomData<P>,
 }
 
 impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
-	EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>
+	EccChip<W, N, NUM_LIMBS, NUM_BITS, P>
 where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 {
-	pub fn new(
-		x: Integer<W, N, NUM_LIMBS, NUM_BITS, P>, y: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
-	) -> Self {
-		Self { x, y, reduction_witnesses: Vec::new() }
+	/// Make the circuit config.
+	pub fn configure(meta: &mut ConstraintSystem<N>) -> EccConfig<NUM_LIMBS> {
+		const BITS: usize = 256;
+		let bits2num = Bits2NumChip::<N, BITS>::configure(meta);
+		let integer = IntegerChip::<W, N, NUM_LIMBS, NUM_BITS, P>::configure(meta);
+
+		EccConfig { bits2num, integer }
 	}
 
-	pub fn zero() -> Self {
-		Self::new(Integer::zero(), Integer::one())
+	pub fn add(
+		// Assigns a cell for the r_x.
+		r_x: [AssignedCell<N, N>; NUM_LIMBS],
+		// Assigns a cell for the r_y.
+		r_y: [AssignedCell<N, N>; NUM_LIMBS],
+		// Reduction witness for r -- make sure r is in the W field before being passed
+		r_rw: ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>,
+		// Assigns a cell for the e_x.
+		e_x: [AssignedCell<N, N>; NUM_LIMBS],
+		// Assigns a cell for the e_y.
+		e_y: [AssignedCell<N, N>; NUM_LIMBS],
+		// Reduction witness for `e` -- make sure `e` is in the W field before being passed
+		e_rw: ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>,
+		// Reduction witnesses for add operation
+		reduction_witnesess: Vec<ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>>,
+		// Ecc config columns
+		config: EccConfig<NUM_LIMBS>,
+		// Layouter
+		mut layouter: impl Layouter<N>,
+	) -> Result<
+		(
+			[AssignedCell<N, N>; NUM_LIMBS],
+			[AssignedCell<N, N>; NUM_LIMBS],
+		),
+		Error,
+	> {
+		// Assign a region where we use columns from Integer chip
+		// sub selector - row 0
+		// sub selector - row 1
+		// div selector - row 2
+		// mul selector - row 3
+		// sub selector - row 4
+		// sub selector - row 5
+		// sub selector - row 6
+		// mul selector - row 7
+		// sub selector - row 8
+		Err(Error::Synthesis)
 	}
 
-	pub fn add(&self, other: &Self) -> Self {
-		// m = (p_y - q_y) / (p_x - q_x)
-		let numerator = self.y.sub(&other.y);
-		let denominator = self.x.sub(&other.x);
-		let m = numerator.result.div(&denominator.result);
-		// r_x = m^2 - p_x - q_x
-		let m_squared = m.result.mul(&m.result);
-		let m_squared_minus_p_x = m_squared.result.sub(&self.x);
-		let r_x = m_squared_minus_p_x.result.sub(&other.x);
-		// r_y = m * (r_x - p_x) - p_y
-		let r_x_minus_p_x = r_x.result.sub(&self.x);
-		let m_times_r_x_minus_p_x = m.result.mul(&r_x_minus_p_x.result);
-		let r_y = m_times_r_x_minus_p_x.result.sub(&self.y);
-
-		let reduction_witnesses = vec![
-			numerator,
-			denominator,
-			m,
-			m_squared,
-			m_squared_minus_p_x,
-			r_x.clone(),
-			r_x_minus_p_x,
-			m_times_r_x_minus_p_x,
-			r_y.clone(),
-		];
-
-		Self { x: r_x.result, y: r_y.result, reduction_witnesses }
+	pub fn double(
+		// Assigns a cell for the r_x.
+		r_x: [AssignedCell<N, N>; NUM_LIMBS],
+		// Assigns a cell for the r_y.
+		r_y: [AssignedCell<N, N>; NUM_LIMBS],
+		// Reduction witness for r -- make sure r is in the W field before being passed
+		r_rw: ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>,
+		// Ecc Config
+		config: EccConfig<NUM_LIMBS>,
+		// Layouter
+		mut layouter: impl Layouter<N>,
+	) -> Result<
+		(
+			[AssignedCell<N, N>; NUM_LIMBS],
+			[AssignedCell<N, N>; NUM_LIMBS],
+		),
+		Error,
+	> {
+		// add selector - row 0
+		// mul selector - row 1
+		// mul3 selector - row 2
+		// div selector - row 3
+		// add selector - row 4
+		// mul selector - row 5
+		// sub selector - row 6
+		// sub selector - row 7
+		// mul selector - row 8
+		// sub selector - row 9
+		Err(Error::Synthesis)
 	}
 
-	pub fn double(&self) -> Self {
-		// m = (3 * p_x^2) / 2 * p_y
-		let three = Integer::new(BigUint::from_u8(3).unwrap())
-			.mul(&Integer::new(BigUint::from_u8(1).unwrap()));
-		let double_p_y = self.y.add(&self.y);
-		let p_x_square = self.x.mul(&self.x);
-		let p_x_square_times_three = three.result.mul(&p_x_square.result);
-		let m = p_x_square_times_three.result.div(&double_p_y.result);
-
-		// r_x = m * m - 2 * p_x
-		let double_p_x = self.x.add(&self.x);
-		let m_squared = m.result.mul(&m.result);
-		let r_x = m_squared.result.sub(&double_p_x.result);
-
-		// r_y = m * (p_x - r_x) - p_y
-		let p_x_minus_r_x = self.x.sub(&r_x.result);
-		let m_times_p_x_minus_r_x = m.result.mul(&p_x_minus_r_x.result);
-		let r_y = m_times_p_x_minus_r_x.result.sub(&self.y);
-
-		let reduction_witnesses = vec![
-			three,
-			double_p_y,
-			p_x_square,
-			p_x_square_times_three,
-			m,
-			double_p_x,
-			m_squared,
-			r_x.clone(),
-			p_x_minus_r_x,
-			m_times_p_x_minus_r_x,
-			r_y.clone(),
-		];
-
-		Self { x: r_x.result, y: r_y.result, reduction_witnesses }
+	pub fn mul_scalar(
+		// Assigns a cell for the r_x.
+		r_x: [AssignedCell<N, N>; NUM_LIMBS],
+		// Assigns a cell for the r_y.
+		r_y: [AssignedCell<N, N>; NUM_LIMBS],
+		// Reduction witness for r -- make sure r is in the W field before being passed
+		r_rw: ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>,
+		// Assigns a cell for the value.
+		value: AssignedCell<N, N>,
+		// Constructs an array for the value bits.
+		value_bits: Vec<N>,
+		// Reduction witnesses for mul scalar operation
+		reduction_witnesess: Vec<ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>>,
+		// Ecc Config
+		config: EccConfig<NUM_LIMBS>,
+		// Layouter
+		mut layouter: impl Layouter<N>,
+	) -> Result<
+		(
+			[AssignedCell<N, N>; NUM_LIMBS],
+			[AssignedCell<N, N>; NUM_LIMBS],
+		),
+		Error,
+	> {
+		// Check that `value_bits` are decomposed from `value`
+		// for i in 0..value_bits.len() {
+		//    if value_bits[i] == 1 {
+		//        add selector - row i
+		//    }
+		//    double selector - row i
+		// }
+		Err(Error::Synthesis)
 	}
-
-	pub fn mul_scalar(&self, val: &Integer<W, N, NUM_LIMBS, NUM_BITS, P>) -> Self {
-		let val_bn = val.value();
-		let bytes = val_bn.to_bytes_be();
-
-		let mut r = Self::zero();
-		let mut exp: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P> = self.clone();
-		for i in 0..val_bn.bits() {
-			if test_bit(&bytes, i) {
-				r = r.add(&exp);
-			}
-			exp = exp.double();
-		}
-		r
-	}
-}
-
-/// Performs bitwise AND to test bits.
-pub fn test_bit(b: &[u8], i: usize) -> bool {
-	b[i / 8] & (1 << (i % 8)) != 0
 }
 
 #[cfg(test)]
 mod test {
-	use halo2wrong::curves::bn256::Bn256;
 	#[test]
 	fn should_add_two_points() {}
 
 	#[test]
-	fn should_double_point() {}
+	fn should_double_a_point() {}
+
+	#[test]
+	fn should_mul_with_scalar() {}
 }
