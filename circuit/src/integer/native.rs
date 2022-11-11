@@ -2,7 +2,7 @@ use super::rns::{compose_big, decompose_big, fe_to_big, RnsParams};
 use halo2wrong::halo2::arithmetic::{Field, FieldExt};
 use num_bigint::BigUint;
 use num_integer::Integer as BigI;
-use num_traits::{Zero, One};
+use num_traits::{One, Zero};
 use std::{marker::PhantomData, ops::Neg};
 
 /// Enum for the two different type of Quotient.
@@ -120,35 +120,30 @@ where
 		ReductionWitness { result: result_int, quotient: quotient_n, intermediate: t, residues }
 	}
 
-		/// Non-native subtraction for given two [`Integer`].
-		pub fn sub(
-			&self, other: &Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
-		) -> ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P> {
-			let p_prime = P::negative_wrong_modulus_decomposed();
-			let a = self.value();
-			let b = other.value();
-			let (q, res) = P::construct_sub_qr(a, b);
-	
-			// Calculate the intermediate values for the ReductionWitness.
-			let mut t = [N::zero(); NUM_LIMBS];
-			for i in 0..NUM_LIMBS {
-				t[i] = self.limbs[i] - other.limbs[i] + p_prime[i] * q;
-			}
-	
-			// Calculate the residue values for the ReductionWitness.
-			let residues = P::residues(&res, &t);
-	
-			// Construct correct type for the ReductionWitness
-			let result_int = Integer::from_limbs(res);
-			let quotient_n = Quotient::Add(q);
+	/// Non-native subtraction for given two [`Integer`].
+	pub fn sub(
+		&self, other: &Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
+	) -> ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P> {
+		let p_prime = P::negative_wrong_modulus_decomposed();
+		let a = self.value();
+		let b = other.value();
+		let (q, res) = P::construct_sub_qr(a, b);
 
-			ReductionWitness {
-				result: result_int,
-				quotient: quotient_n,
-				intermediate: t,
-				residues,
-			}
+		// Calculate the intermediate values for the ReductionWitness.
+		let mut t = [N::zero(); NUM_LIMBS];
+		for i in 0..NUM_LIMBS {
+			t[i] = self.limbs[i] - other.limbs[i] + p_prime[i] * q;
 		}
+
+		// Calculate the residue values for the ReductionWitness.
+		let residues = P::residues(&res, &t);
+
+		// Construct correct type for the ReductionWitness
+		let result_int = Integer::from_limbs(res);
+		let quotient_n = Quotient::Add(q);
+
+		ReductionWitness { result: result_int, quotient: quotient_n, intermediate: t, residues }
+	}
 
 	/// Non-native multiplication for given two [`Integer`].
 	pub fn mul(
@@ -188,36 +183,31 @@ where
 		let result = b_invert.value() * a.clone() % P::wrong_modulus();
 		let (quotient, reduced_self) = (result.clone() * b).div_rem(&P::wrong_modulus());
 		let (k, must_be_zero) = P::construct_mul_qr((a - reduced_self), BigUint::one());
-        assert_eq!(must_be_zero, [N::zero(); NUM_LIMBS]);
+		assert_eq!(must_be_zero, [N::zero(); NUM_LIMBS]);
 		let mut q = [N::zero(); NUM_LIMBS];
 		let quotient = decompose_big::<N, NUM_BITS, NUM_LIMBS>(quotient);
-		for i in 0..NUM_LIMBS{
-		q[i] = quotient[i] - k[i];
+		for i in 0..NUM_LIMBS {
+			q[i] = quotient[i] - k[i];
 		}
 		let res = decompose_big::<N, NUM_LIMBS, NUM_BITS>(result);
 
-			// Calculate the intermediate values for the ReductionWitness.
-			let mut t: [N; NUM_LIMBS] = [N::zero(); NUM_LIMBS];
-			for k in 0..NUM_LIMBS {
-				for i in 0..=k {
-					let j = k - i;
-					t[i + j] = t[i + j] + res[i] * other.limbs[j] + p_prime[i] * q[j];
-				}
+		// Calculate the intermediate values for the ReductionWitness.
+		let mut t: [N; NUM_LIMBS] = [N::zero(); NUM_LIMBS];
+		for k in 0..NUM_LIMBS {
+			for i in 0..=k {
+				let j = k - i;
+				t[i + j] = t[i + j] + res[i] * other.limbs[j] + p_prime[i] * q[j];
 			}
+		}
 
-			// Calculate the residue values for the ReductionWitness.
+		// Calculate the residue values for the ReductionWitness.
 		let residues = P::residues(&res, &t);
 
 		// Construct correct type for the ReductionWitness.
 		let result_int = Integer::from_limbs(res);
 		let quotient_int = Quotient::Mul(Integer::from_limbs(q));
 
-		ReductionWitness {
-			result: result_int,
-			quotient: quotient_int,
-			intermediate: t,
-			residues,
-		}
+		ReductionWitness { result: result_int, quotient: quotient_int, intermediate: t, residues }
 	}
 }
 
@@ -452,14 +442,9 @@ mod test {
 	#[test]
 	fn should_sub_two_numbers_positive() {
 		// Testing sub with two elements bigger - smaller.
-		let a_big = BigUint::from_str(
-			"2904853095839045839045839045738478394657834658737465873645",
-		)
-		.unwrap();
-		let b_big = BigUint::from_str(
-			"1345345345345",
-		)
-		.unwrap();
+		let a_big = BigUint::from_str("2904853095839045839045839045738478394657834658737465873645")
+			.unwrap();
+		let b_big = BigUint::from_str("1345345345345").unwrap();
 		let a = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_big.clone());
 		let b = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(b_big.clone());
 		let c = a.sub(&b);
@@ -468,8 +453,7 @@ mod test {
 			c.intermediate, c.result.limbs, c.residues
 		));
 		assert_eq!(
-			(c.result.value() + b_big)
-			.mod_floor(&Bn256_4_68::wrong_modulus()),
+			(c.result.value() + b_big).mod_floor(&Bn256_4_68::wrong_modulus()),
 			a_big.clone()
 		);
 	}
@@ -477,14 +461,9 @@ mod test {
 	#[test]
 	fn should_sub_two_numbers_negative() {
 		// Testing sub with two elements smaller - bigger.
-		let a_big = BigUint::from_str(
-			"1345345345345",
-		)
-		.unwrap();
-		let b_big = BigUint::from_str(
-			"2904853095839045839045839045738478394657834658737465873645",
-		)
-		.unwrap();
+		let a_big = BigUint::from_str("1345345345345").unwrap();
+		let b_big = BigUint::from_str("2904853095839045839045839045738478394657834658737465873645")
+			.unwrap();
 		let a = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_big.clone());
 		let b = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(b_big.clone());
 		let c = a.sub(&b);
@@ -493,8 +472,7 @@ mod test {
 			c.intermediate, c.result.limbs, c.residues
 		));
 		assert_eq!(
-			(c.result.value() + b_big)
-			.mod_floor(&Bn256_4_68::wrong_modulus()),
+			(c.result.value() + b_big).mod_floor(&Bn256_4_68::wrong_modulus()),
 			a_big.clone()
 		);
 	}
@@ -502,7 +480,10 @@ mod test {
 	#[test]
 	fn should_div_two_numbers() {
 		// Testing div with two elements.
-		let a_big = BigUint::from_str("21888242871839275222246405745257275088696311157297823662689037894645226208582").unwrap();
+		let a_big = BigUint::from_str(
+			"21888242871839275222246405745257275088696311157297823662689037894645226208582",
+		)
+		.unwrap();
 		let b_big = BigUint::from_str("2").unwrap();
 		let big_answer = a_big.clone() / b_big.clone();
 		let a = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_big);
@@ -521,7 +502,10 @@ mod test {
 	fn should_div_two_numbers_zero() {
 		// Testing div with dividing 0 to a another value.
 		let a_big = BigUint::from_str("0").unwrap();
-		let b_big = BigUint::from_str("21888242871839275222246405745257275088696311157297823662689037894645226208582").unwrap();
+		let b_big = BigUint::from_str(
+			"21888242871839275222246405745257275088696311157297823662689037894645226208582",
+		)
+		.unwrap();
 		let big_answer = a_big.clone() / b_big.clone();
 		let a = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_big);
 		let b = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(b_big);
