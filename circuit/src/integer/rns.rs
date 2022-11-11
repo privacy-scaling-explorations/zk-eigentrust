@@ -68,9 +68,10 @@ use halo2wrong::{
 	},
 };
 use num_bigint::BigUint;
-use num_integer::Integer;
+use num_integer::Integer as BigInteger;
 use num_traits::{FromPrimitive, Num, Zero};
 use std::{ops::Shl, str::FromStr};
+use super::native::Integer;
 
 /// This trait is for the dealing with RNS operations.
 pub trait RnsParams<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize>:
@@ -94,6 +95,8 @@ pub trait RnsParams<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_
 	fn construct_mul_qr(a_bn: BigUint, b_bn: BigUint) -> ([N; NUM_LIMBS], [N; NUM_LIMBS]);
 	/// Returns `quotient` and `remainder` for the add operation.
 	fn construct_add_qr(a_bn: BigUint, b_bn: BigUint) -> (N, [N; NUM_LIMBS]);
+	/// Returns `quotient` and `remainder` for the sub operation.
+	fn construct_sub_qr(a_bn: BigUint, b_bn: BigUint) -> (N, [N; NUM_LIMBS]);
 	/// Constraint for the binary part of `Chinese Remainder Theorem`.
 	fn constrain_binary_crt(t: [N; NUM_LIMBS], result: [N; NUM_LIMBS], residues: Vec<N>) -> bool;
 	/// Constraint for the binary part of `Chinese Remainder Theorem` using
@@ -106,6 +109,8 @@ pub trait RnsParams<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_
 	fn compose(input: [N; NUM_LIMBS]) -> N;
 	/// Composes integer limbs as Expressions into single Expression value.
 	fn compose_exp(input: [Expression<N>; NUM_LIMBS]) -> Expression<N>;
+	/// Inverts given Integer.
+	fn invert(input: Integer<W, N, NUM_LIMBS, NUM_BITS, Self>) -> Option<Integer<W, N, NUM_LIMBS, NUM_BITS, Self>>;
 }
 
 /// Returns modulus of the [`FieldExt`] as [`BigUint`].
@@ -239,6 +244,24 @@ impl RnsParams<Fq, Fr, 4, 68> for Bn256_4_68 {
 		(q, result)
 	}
 
+	fn construct_sub_qr(a_bn: BigUint, b_bn: BigUint) -> (Fr, [Fr; 4]) {
+		let wrong_mod_bn = Self::wrong_modulus();
+		let mut quotient = BigUint::zero();
+		let mut result_bn = BigUint::zero();
+		if b_bn > a_bn {
+			let negative_result = big_to_fe::<Fq>(a_bn) - big_to_fe::<Fq>(b_bn);
+			(quotient, result_bn) = (fe_to_big(negative_result)).div_rem(&wrong_mod_bn);
+		}else{
+			(quotient, result_bn) = (a_bn - b_bn).div_rem(&wrong_mod_bn);
+		}
+		// This check assures that the subtraction operation can only wrap the wrong field
+		// one time.
+		assert!(quotient <= BigUint::from_u8(1).unwrap());
+		let q = big_to_fe(quotient);
+		let result = decompose_big::<Fr, 4, 68>(result_bn);
+		(q, result)
+	}
+
 	fn constrain_binary_crt(t: [Fr; 4], result: [Fr; 4], residues: Vec<Fr>) -> bool {
 		let lsh_one = Self::left_shifters()[1];
 		let lsh_two = Self::left_shifters()[2];
@@ -296,4 +319,15 @@ impl RnsParams<Fq, Fr, 4, 68> for Bn256_4_68 {
 		}
 		sum
 	}
+
+	/// Computes the inverse of the [`Integer`] as an element of the Wrong
+    /// field. Returns `None` if the value cannot be inverted.
+    fn invert(input: Integer<Fq, Fr, 4, 68, Bn256_4_68>) -> Option<Integer<Fq, Fr, 4, 68, Bn256_4_68>> {
+        let a_biguint = input.value();
+        let a_w = big_to_fe::<Fq>(a_biguint);
+        let inv_w = a_w.invert();
+        inv_w
+            .map(|inv| Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(fe_to_big(inv)))
+            .into()
+    }
 }
