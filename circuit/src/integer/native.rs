@@ -85,9 +85,19 @@ where
 		Self::from_limbs(limbs)
 	}
 
-	/// Returns `limbs` from the object.
+	/// Construct an Integer from given `limbs`.
 	pub fn from_limbs(limbs: [N; NUM_LIMBS]) -> Self {
 		Self { limbs, _wrong_field: PhantomData, _rns: PhantomData }
+	}
+
+	/// Returns integer with value zero
+	pub fn zero() -> Self {
+		Self::new(BigUint::zero())
+	}
+
+	/// Returns integer with value one
+	pub fn one() -> Self {
+		Self::new(BigUint::one())
 	}
 
 	/// Returns [`BigUint`] representation from the given `limbs`.

@@ -21,6 +21,7 @@ use halo2wrong::halo2::arithmetic::{Field, FieldExt};
 use num_bigint::BigUint;
 use num_traits::{FromPrimitive, Zero};
 
+#[derive(Clone)]
 struct EcPoint<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
 where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
@@ -35,6 +36,16 @@ impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
 where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 {
+	pub fn new(
+		x: Integer<W, N, NUM_LIMBS, NUM_BITS, P>, y: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
+	) -> Self {
+		Self { x, y, reduction_witnesses: Vec::new() }
+	}
+
+	pub fn zero() -> Self {
+		Self::new(Integer::zero(), Integer::one())
+	}
+
 	pub fn add(&self, other: &Self) -> Self {
 		// m = (p_y - q_y) / (p_x - q_x)
 		let numerator = self.y.sub(&other.y);
@@ -99,10 +110,31 @@ where
 
 		Self { x: r_x.result, y: r_y.result, reduction_witnesses }
 	}
+
+	pub fn mul_scalar(&self, val: &Integer<W, N, NUM_LIMBS, NUM_BITS, P>) -> Self {
+		let val_bn = val.value();
+		let bytes = val_bn.to_bytes_be();
+
+		let mut r = Self::zero();
+		let mut exp: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P> = self.clone();
+		for i in 0..val_bn.bits() {
+			if test_bit(&bytes, i) {
+				r = r.add(&exp);
+			}
+			exp = exp.double();
+		}
+		r
+	}
+}
+
+/// Performs bitwise AND to test bits.
+pub fn test_bit(b: &[u8], i: usize) -> bool {
+	b[i / 8] & (1 << (i % 8)) != 0
 }
 
 #[cfg(test)]
 mod test {
+	use halo2wrong::curves::bn256::Bn256;
 	#[test]
 	fn should_add_two_points() {}
 
