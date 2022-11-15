@@ -17,15 +17,15 @@ use std::marker::PhantomData;
 #[derive(Debug, Clone)]
 pub struct IntegerConfig<const NUM_LIMBS: usize> {
 	/// Configures columns for the x limbs.
-	x_limbs: [Column<Advice>; NUM_LIMBS],
+	pub x_limbs: [Column<Advice>; NUM_LIMBS],
 	/// Configures columns for the y limbs.
-	y_limbs: [Column<Advice>; NUM_LIMBS],
+	pub y_limbs: [Column<Advice>; NUM_LIMBS],
 	/// Configures columns for the quotient value(s).
-	quotient: [Column<Advice>; NUM_LIMBS],
+	pub quotient: [Column<Advice>; NUM_LIMBS],
 	/// Configures columns for the intermediate values.
-	intermediate: [Column<Advice>; NUM_LIMBS],
+	pub intermediate: [Column<Advice>; NUM_LIMBS],
 	/// Configures columns for the residues.
-	residues: Vec<Column<Advice>>,
+	pub residues: Vec<Column<Advice>>,
 	/// Configures a fixed boolean value for each row of the circuit.
 	add_selector: Selector,
 	/// Configures a fixed boolean value for each row of the circuit.

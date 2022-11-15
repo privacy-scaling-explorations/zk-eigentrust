@@ -21,14 +21,18 @@ use halo2wrong::halo2::arithmetic::{Field, FieldExt};
 use num_bigint::BigUint;
 use num_traits::{FromPrimitive, Zero};
 
-#[derive(Clone)]
-struct EcPoint<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
+/// Structure for the EcPoint
+#[derive(Clone, Debug)]
+pub struct EcPoint<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
 where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 {
-	x: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
-	y: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
-	reduction_witnesses: Vec<ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>>,
+	/// X coordinate of the EcPoint
+	pub x: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
+	/// Y coordinate of the EcPoint
+	pub y: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
+	/// Reduction Witnesses for the EcPoint operations
+	pub reduction_witnesses: Vec<ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>>,
 }
 
 impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
@@ -36,16 +40,19 @@ impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
 where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 {
+	/// Create a new object
 	pub fn new(
 		x: Integer<W, N, NUM_LIMBS, NUM_BITS, P>, y: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
 	) -> Self {
 		Self { x, y, reduction_witnesses: Vec::new() }
 	}
 
+	/// Create a new object with x = 0 and y = 0
 	pub fn zero() -> Self {
 		Self::new(Integer::zero(), Integer::one())
 	}
 
+	/// Add one point to another
 	pub fn add(&self, other: &Self) -> Self {
 		// m = (p_y - q_y) / (p_x - q_x)
 		let numerator = self.y.sub(&other.y);
@@ -75,13 +82,13 @@ where
 		Self { x: r_x.result, y: r_y.result, reduction_witnesses }
 	}
 
+	/// Double the given point
 	pub fn double(&self) -> Self {
 		// m = (3 * p_x^2) / 2 * p_y
-		let three = Integer::new(BigUint::from_u8(3).unwrap())
-			.mul(&Integer::new(BigUint::from_u8(1).unwrap()));
 		let double_p_y = self.y.add(&self.y);
 		let p_x_square = self.x.mul(&self.x);
-		let p_x_square_times_three = three.result.mul(&p_x_square.result);
+		let p_x_square_times_two = p_x_square.result.add(&p_x_square.result);
+		let p_x_square_times_three = p_x_square.result.mul(&p_x_square_times_two.result);
 		let m = p_x_square_times_three.result.div(&double_p_y.result);
 
 		// r_x = m * m - 2 * p_x
@@ -95,9 +102,9 @@ where
 		let r_y = m_times_p_x_minus_r_x.result.sub(&self.y);
 
 		let reduction_witnesses = vec![
-			three,
 			double_p_y,
 			p_x_square,
+			p_x_square_times_two,
 			p_x_square_times_three,
 			m,
 			double_p_x,
@@ -111,6 +118,7 @@ where
 		Self { x: r_x.result, y: r_y.result, reduction_witnesses }
 	}
 
+	/// Scalar multiplication for given point
 	pub fn mul_scalar(&self, val: &BigUint) -> Self {
 		let bytes = val.to_bytes_be();
 

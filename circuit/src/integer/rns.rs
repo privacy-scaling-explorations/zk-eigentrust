@@ -60,6 +60,7 @@
 // mul_v_bit_len: 71,
 // red_v_bit_len: 69,
 
+use super::native::Integer;
 use halo2wrong::{
 	curves::bn256::{Fq, Fr},
 	halo2::{
@@ -71,7 +72,6 @@ use num_bigint::BigUint;
 use num_integer::Integer as BigInteger;
 use num_traits::{FromPrimitive, Num, Zero};
 use std::{ops::Shl, str::FromStr};
-use super::native::Integer;
 
 /// This trait is for the dealing with RNS operations.
 pub trait RnsParams<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize>:
@@ -110,7 +110,9 @@ pub trait RnsParams<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_
 	/// Composes integer limbs as Expressions into single Expression value.
 	fn compose_exp(input: [Expression<N>; NUM_LIMBS]) -> Expression<N>;
 	/// Inverts given Integer.
-	fn invert(input: Integer<W, N, NUM_LIMBS, NUM_BITS, Self>) -> Option<Integer<W, N, NUM_LIMBS, NUM_BITS, Self>>;
+	fn invert(
+		input: Integer<W, N, NUM_LIMBS, NUM_BITS, Self>,
+	) -> Option<Integer<W, N, NUM_LIMBS, NUM_BITS, Self>>;
 }
 
 /// Returns modulus of the [`FieldExt`] as [`BigUint`].
@@ -251,11 +253,11 @@ impl RnsParams<Fq, Fr, 4, 68> for Bn256_4_68 {
 		if b_bn > a_bn {
 			let negative_result = big_to_fe::<Fq>(a_bn) - big_to_fe::<Fq>(b_bn);
 			(quotient, result_bn) = (fe_to_big(negative_result)).div_rem(&wrong_mod_bn);
-		}else{
+		} else {
 			(quotient, result_bn) = (a_bn - b_bn).div_rem(&wrong_mod_bn);
 		}
-		// This check assures that the subtraction operation can only wrap the wrong field
-		// one time.
+		// This check assures that the subtraction operation can only wrap the wrong
+		// field one time.
 		assert!(quotient <= BigUint::from_u8(1).unwrap());
 		let q = big_to_fe(quotient);
 		let result = decompose_big::<Fr, 4, 68>(result_bn);
@@ -321,13 +323,13 @@ impl RnsParams<Fq, Fr, 4, 68> for Bn256_4_68 {
 	}
 
 	/// Computes the inverse of the [`Integer`] as an element of the Wrong
-    /// field. Returns `None` if the value cannot be inverted.
-    fn invert(input: Integer<Fq, Fr, 4, 68, Bn256_4_68>) -> Option<Integer<Fq, Fr, 4, 68, Bn256_4_68>> {
-        let a_biguint = input.value();
-        let a_w = big_to_fe::<Fq>(a_biguint);
-        let inv_w = a_w.invert();
-        inv_w
-            .map(|inv| Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(fe_to_big(inv)))
-            .into()
-    }
+	/// field. Returns `None` if the value cannot be inverted.
+	fn invert(
+		input: Integer<Fq, Fr, 4, 68, Bn256_4_68>,
+	) -> Option<Integer<Fq, Fr, 4, 68, Bn256_4_68>> {
+		let a_biguint = input.value();
+		let a_w = big_to_fe::<Fq>(a_biguint);
+		let inv_w = a_w.invert();
+		inv_w.map(|inv| Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(fe_to_big(inv))).into()
+	}
 }
