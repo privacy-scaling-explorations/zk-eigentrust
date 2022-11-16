@@ -29,7 +29,11 @@ pub struct IntegerConfig<const NUM_LIMBS: usize> {
 	/// Configures a fixed boolean value for each row of the circuit.
 	pub(crate) add_selector: Selector,
 	/// Configures a fixed boolean value for each row of the circuit.
+	pub(crate) sub_selector: Selector,
+	/// Configures a fixed boolean value for each row of the circuit.
 	pub(crate) mul_selector: Selector,
+	/// Configures a fixed boolean value for each row of the circuit.
+	pub(crate) div_selector: Selector,
 }
 
 /// Constructs a chip for the circuit.
@@ -57,7 +61,9 @@ where
 		let residues: Vec<Column<Advice>> =
 			vec![(); NUM_LIMBS / 2].iter().map(|_| meta.advice_column()).collect();
 		let add_selector = meta.selector();
+		let sub_selector = meta.selector();
 		let mul_selector = meta.selector();
+		let div_selector = meta.selector();
 
 		x_limbs.map(|x| meta.enable_equality(x));
 		y_limbs.map(|y| meta.enable_equality(y));
@@ -86,6 +92,28 @@ where
 			constraints.iter().map(|x| add_s.clone() * x.clone()).collect::<Vec<Expression<N>>>()
 		});
 
+		meta.create_gate("sub", |v_cells| {
+			let sub_s = v_cells.query_selector(sub_selector);
+			let x_limb_exps = x_limbs.map(|x| v_cells.query_advice(x, Rotation::cur()));
+			let y_limb_exps = y_limbs.map(|y| v_cells.query_advice(y, Rotation::cur()));
+			let sub_q_exp = v_cells.query_advice(quotient[0], Rotation::cur());
+			let t_exp = intermediate.map(|x| v_cells.query_advice(x, Rotation::cur()));
+			let result_exps = x_limbs.map(|x| v_cells.query_advice(x, Rotation::next()));
+			let residues_exps: Vec<Expression<N>> =
+				residues.iter().map(|x| v_cells.query_advice(*x, Rotation::cur())).collect();
+
+			// REDUCTION CONSTRAINTS
+			let mut constraints =
+				P::constrain_binary_crt_exp(t_exp, result_exps.clone(), residues_exps);
+			// NATIVE CONSTRAINTS
+			let native_constraint = P::compose_exp(x_limb_exps) - P::compose_exp(y_limb_exps)
+				+ sub_q_exp * p_in_n
+				- P::compose_exp(result_exps);
+			constraints.push(native_constraint);
+
+			constraints.iter().map(|x| sub_s.clone() * x.clone()).collect::<Vec<Expression<N>>>()
+		});
+
 		meta.create_gate("mul", |v_cells| {
 			let mul_s = v_cells.query_selector(mul_selector);
 			let x_limb_exps = x_limbs.map(|x| v_cells.query_advice(x, Rotation::cur()));
@@ -108,6 +136,28 @@ where
 			constraints.iter().map(|x| mul_s.clone() * x.clone()).collect::<Vec<Expression<N>>>()
 		});
 
+		meta.create_gate("div", |v_cells| {
+			let div_s = v_cells.query_selector(div_selector);
+			let x_limb_exps = x_limbs.map(|x| v_cells.query_advice(x, Rotation::cur()));
+			let y_limb_exps = y_limbs.map(|y| v_cells.query_advice(y, Rotation::cur()));
+			let div_q_exp = quotient.map(|x| v_cells.query_advice(x, Rotation::cur()));
+			let t_exp = intermediate.map(|x| v_cells.query_advice(x, Rotation::cur()));
+			let result_exps = x_limbs.map(|x| v_cells.query_advice(x, Rotation::next()));
+			let residues_exps: Vec<Expression<N>> =
+				residues.iter().map(|x| v_cells.query_advice(*x, Rotation::cur())).collect();
+
+			// REDUCTION CONSTRAINTS
+			let mut constraints =
+				P::constrain_binary_crt_exp(t_exp, result_exps.clone(), residues_exps);
+			//NATIVE CONSTRAINTS
+			let native_constraints = P::compose_exp(y_limb_exps) * P::compose_exp(result_exps)
+				- P::compose_exp(x_limb_exps)
+				- P::compose_exp(div_q_exp) * p_in_n;
+			constraints.push(native_constraints);
+
+			constraints.iter().map(|x| div_s.clone() * x.clone()).collect::<Vec<Expression<N>>>()
+		});
+
 		// TODO modify add to add one more member: x + y + z -- this could be done
 		// inside 1 gate
 
@@ -118,7 +168,9 @@ where
 			intermediate,
 			residues,
 			add_selector,
+			sub_selector,
 			mul_selector,
+			div_selector,
 		}
 	}
 
@@ -137,7 +189,7 @@ where
 					|| "quotient",
 					config.quotient[0],
 					0,
-					|| Value::known(rw.quotient.clone().add().unwrap()),
+					|| Value::known(rw.quotient.clone().add_sub().unwrap()),
 				)?;
 
 				for i in 0..NUM_LIMBS {
@@ -220,7 +272,7 @@ where
 						|| format!("quotient_{}", i),
 						config.quotient[i],
 						0,
-						|| Value::known(rw.quotient.clone().mul().unwrap().limbs[i]),
+						|| Value::known(rw.quotient.clone().mul_div().unwrap().limbs[i]),
 					)?;
 
 					region.assign_advice(

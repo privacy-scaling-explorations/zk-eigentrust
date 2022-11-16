@@ -252,7 +252,9 @@ impl RnsParams<Fq, Fr, 4, 68> for Bn256_4_68 {
 		let mut result_bn = BigUint::zero();
 		if b_bn > a_bn {
 			let negative_result = big_to_fe::<Fq>(a_bn) - big_to_fe::<Fq>(b_bn);
-			(quotient, result_bn) = (fe_to_big(negative_result)).div_rem(&wrong_mod_bn);
+			(_, result_bn) = (fe_to_big(negative_result)).div_rem(&wrong_mod_bn);
+			// This quotient is considered as -1 in calculations.
+			quotient = BigUint::from_i8(1).unwrap();
 		} else {
 			(quotient, result_bn) = (a_bn - b_bn).div_rem(&wrong_mod_bn);
 		}

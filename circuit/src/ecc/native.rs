@@ -141,7 +141,7 @@ pub fn test_bit(b: &[u8], i: usize) -> bool {
 
 #[cfg(test)]
 mod test {
-	use halo2wrong::curves::bn256::Bn256;
+
 	#[test]
 	fn should_add_two_points() {}
 

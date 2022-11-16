@@ -11,10 +11,10 @@ pub enum Quotient<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BI
 where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 {
-	/// Quotient type for the addition.
-	Add(N),
-	/// Quotient type for the multiplication.
-	Mul(Integer<W, N, NUM_LIMBS, NUM_BITS, P>),
+	/// Quotient type for the addition and subtraction.
+	Short(N),
+	/// Quotient type for the multiplication and division.
+	Long(Integer<W, N, NUM_LIMBS, NUM_BITS, P>),
 }
 
 impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
@@ -22,18 +22,18 @@ impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
 where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 {
-	/// Returns Quotient type for the addition.
-	pub fn add(self) -> Option<N> {
+	/// Returns Quotient type for the addition or the subtraction.
+	pub fn add_sub(self) -> Option<N> {
 		match self {
-			Quotient::Add(res) => Some(res),
+			Quotient::Short(res) => Some(res),
 			_ => None,
 		}
 	}
 
-	/// Returns Quotient type for the multiplication.
-	pub fn mul(self) -> Option<Integer<W, N, NUM_LIMBS, NUM_BITS, P>> {
+	/// Returns Quotient type for the multiplication or the division.
+	pub fn mul_div(self) -> Option<Integer<W, N, NUM_LIMBS, NUM_BITS, P>> {
 		match self {
-			Quotient::Mul(res) => Some(res),
+			Quotient::Long(res) => Some(res),
 			_ => None,
 		}
 	}
@@ -126,7 +126,7 @@ where
 
 		// Construct correct type for the ReductionWitness
 		let result_int = Integer::from_limbs(res);
-		let quotient_n = Quotient::Add(q);
+		let quotient_n = Quotient::Short(q);
 		ReductionWitness { result: result_int, quotient: quotient_n, intermediate: t, residues }
 	}
 
@@ -150,7 +150,7 @@ where
 
 		// Construct correct type for the ReductionWitness
 		let result_int = Integer::from_limbs(res);
-		let quotient_n = Quotient::Add(q);
+		let quotient_n = Quotient::Short(q);
 
 		ReductionWitness { result: result_int, quotient: quotient_n, intermediate: t, residues }
 	}
@@ -178,7 +178,7 @@ where
 
 		// Construct correct type for the ReductionWitness.
 		let result_int = Integer::from_limbs(res);
-		let quotient_int = Quotient::Mul(Integer::from_limbs(q));
+		let quotient_int = Quotient::Long(Integer::from_limbs(q));
 		ReductionWitness { result: result_int, quotient: quotient_int, intermediate: t, residues }
 	}
 
@@ -192,13 +192,10 @@ where
 		let b_invert = P::invert(other.clone()).unwrap();
 		let result = b_invert.value() * a.clone() % P::wrong_modulus();
 		let (quotient, reduced_self) = (result.clone() * b).div_rem(&P::wrong_modulus());
-		let (k, must_be_zero) = P::construct_mul_qr((a - reduced_self), BigUint::one());
-		assert_eq!(must_be_zero, [N::zero(); NUM_LIMBS]);
-		let mut q = [N::zero(); NUM_LIMBS];
-		let quotient = decompose_big::<N, NUM_BITS, NUM_LIMBS>(quotient);
-		for i in 0..NUM_LIMBS {
-			q[i] = quotient[i] - k[i];
-		}
+		let (k, must_be_zero) = (a - reduced_self).div_rem(&P::wrong_modulus());
+		assert_eq!(must_be_zero, BigUint::zero());
+		let q = decompose_big::<N, NUM_LIMBS, NUM_BITS>(quotient - k);
+
 		let res = decompose_big::<N, NUM_LIMBS, NUM_BITS>(result);
 
 		// Calculate the intermediate values for the ReductionWitness.
@@ -215,7 +212,7 @@ where
 
 		// Construct correct type for the ReductionWitness.
 		let result_int = Integer::from_limbs(res);
-		let quotient_int = Quotient::Mul(Integer::from_limbs(q));
+		let quotient_int = Quotient::Long(Integer::from_limbs(q));
 
 		ReductionWitness { result: result_int, quotient: quotient_int, intermediate: t, residues }
 	}
@@ -224,8 +221,11 @@ where
 #[cfg(test)]
 mod test {
 	use super::*;
-	use crate::integer::rns::Bn256_4_68;
-	use halo2wrong::curves::bn256::{Fq, Fr};
+	use crate::integer::rns::{big_to_fe, Bn256_4_68};
+	use halo2wrong::curves::{
+		bn256::{Fq, Fr},
+		group::ff::PrimeField,
+	};
 	use num_integer::Integer as NumInteger;
 	use num_traits::{FromPrimitive, One, Zero};
 	use std::str::FromStr;
