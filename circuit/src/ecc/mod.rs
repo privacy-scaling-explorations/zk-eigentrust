@@ -304,7 +304,6 @@ where
 				.unwrap();
 
 				Ok((r_x, r_y))
-				//Ok((numerator, denominator))
 			},
 		)
 	}
@@ -380,7 +379,7 @@ where
 				.unwrap();
 
 				// p_x_square = self.x.mul(&self.x)
-				let _p_x_square = Self::assign(
+				let p_x_square = Self::assign(
 					"mul",
 					Some(&p_x),
 					&p_x,
@@ -392,20 +391,19 @@ where
 				.unwrap();
 
 				// p_x_square_times_three = three.result.mul(&p_x_square.result)
-
 				let _p_x_square_times_two = Self::assign(
-					"add", None, &p_x, &reduction_witnesses[2], &config, &mut region, 7,
+					"add", None, &p_x_square, &reduction_witnesses[2], &config, &mut region, 7,
 				)
 				.unwrap();
 
 				let _p_x_square_times_three = Self::assign(
-					"add", None, &p_x, &reduction_witnesses[3], &config, &mut region, 8,
+					"add", None, &p_x_square, &reduction_witnesses[3], &config, &mut region, 8,
 				)
 				.unwrap();
 
 				// m = p_x_square_times_three.result.div(&double_p_y.result)
 				let m = Self::assign(
-					"mul", None, &double_p_y, &reduction_witnesses[4], &config, &mut region, 9,
+					"div", None, &double_p_y, &reduction_witnesses[4], &config, &mut region, 9,
 				)
 				.unwrap();
 
@@ -473,14 +471,18 @@ where
 		r_x: [AssignedCell<N, N>; NUM_LIMBS],
 		// Assigns a cell for the r_y.
 		r_y: [AssignedCell<N, N>; NUM_LIMBS],
-		// Reduction witness for r -- make sure r is in the W field before being passed
-		r_rw: ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>,
+		// Reduction witness for r_x -- make sure r_x is in the W field before being passed
+		r_x_rw: ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>,
+		// Reduction witness for r_y -- make sure r_y is in the W field before being passed
+		r_y_rw: ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>,
 		// Assigns a cell for the value.
 		value: AssignedCell<N, N>,
 		// Constructs an array for the value bits.
 		value_bits: [N; 256],
 		// Reduction witnesses for mul scalar operation
 		reduction_witnesses: Vec<ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>>,
+		// A cell constrained to equal 0
+		zero: AssignedCell<N, N>,
 		// Ecc Config
 		config: EccConfig<NUM_LIMBS>,
 		// Layouter
@@ -499,63 +501,27 @@ where
 		//    }
 		//    double selector - row i
 		// }
-		// let bits2num = Bits2NumChip::new(value.clone(), value_bits);
-		// let bits = bits2num.synthesize(config.bits2num, layouter.namespace(||
-		// "bits2num"))?; let exp = EcPoint::<W, N, NUM_LIMBS, NUM_BITS,
-		// P>::zero(); layouter.assign_region(
-		// 	|| "mul_scalar",
-		// 	|mut region: Region<'_, N>| {
-		// 		let mut exp_x: [Option<AssignedCell<N, N>>; NUM_LIMBS] =
-		// 			[(); NUM_LIMBS].map(|_| None);
-		// 		let mut exp_y: [Option<AssignedCell<N, N>>; NUM_LIMBS] =
-		// 			[(); NUM_LIMBS].map(|_| None);
-		// 		for i in 0..NUM_LIMBS {
-		// 			exp_x[i] = Some(region.assign_advice_from_constant(
-		// 				|| "exp_x",
-		// 				config.integer.x_limbs[i],
-		// 				0,
-		// 				N::zero(),
-		// 			)?);
-
-		// 			exp_y[i] = Some(region.assign_advice_from_constant(
-		// 				|| "exp_y",
-		// 				config.integer.y_limbs[i],
-		// 				0,
-		// 				N::zero(),
-		// 			)?);
-		// 		}
-		// 		let mut exp_x = exp_x.map(|x| x.unwrap());
-		// 		let mut exp_y = exp_y.map(|x| x.unwrap());
-
-		// 		for i in 0..value_bits.len() {
-		// 			/*
-		// 			if value_bits[i] == N::one() {
-
-		// 				(exp_x, exp_y) = Self::add(
-		// 					r_x.clone(),
-		// 					r_y.clone(),
-		// 					exp_x.clone(),
-		// 					exp_y.clone(),
-		// 					reduction_witnesses.clone(),
-		// 					config.clone(),
-		// 					layouter.clone(),
-		// 				)
-		// 				.unwrap();
-		// 			}
-		// 			(exp_x, exp_y) = Self::double(
-		// 				exp_x.clone(),
-		// 				exp_y.clone(),
-		// 				exp.reduction_witnesses.clone(),
-		// 				config.clone(),
-		// 				layouter.clone(),
-		// 			)
-		// 			.unwrap();
-		// 			*/
-		// 		}
-
-		// 		Ok((r_x.clone(), r_y.clone()))
-		// 	},
-		// )
+		let bits2num = Bits2NumChip::new(value.clone(), value_bits);
+		let bits = bits2num.synthesize(config.bits2num, layouter.namespace(|| "bits2num"))?;
+		for i in 0..value_bits.len() {
+			if value_bits[i] == N::one() {
+				//Self::add(
+				//	p_x, p_y, p_x_rw, p_y_rw, q_x, q_y, q_x_rw, q_y_rw,
+				// reduction_witnesses, zero, 	config, layouter,
+				//);
+			}
+			let (exp_x, exp_y) = Self::double(
+				r_x.clone(),
+				r_y.clone(),
+				r_x_rw.clone(),
+				r_y_rw.clone(),
+				reduction_witnesses.clone(),
+				zero.clone(),
+				config.clone(),
+				layouter.namespace(|| "doubling"),
+			)
+			.unwrap();
+		}
 		Err(Error::Synthesis)
 	}
 }
@@ -809,7 +775,6 @@ mod test {
 	#[test]
 	fn should_double_a_point() {
 		// Testing double.
-		/*
 		let zero = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::zero();
 		let a_big = BigUint::from_str("2").unwrap();
 		let b_big = BigUint::from_str("3").unwrap();
@@ -842,7 +807,6 @@ mod test {
 		p_ins.extend(res.y.limbs);
 		let prover = MockProver::run(k, &test_chip, vec![p_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
-		*/
 	}
 
 	#[test]
