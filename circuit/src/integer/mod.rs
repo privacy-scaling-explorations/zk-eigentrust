@@ -158,9 +158,6 @@ where
 			constraints.iter().map(|x| div_s.clone() * x.clone()).collect::<Vec<Expression<N>>>()
 		});
 
-		// TODO modify add to add one more member: x + y + z -- this could be done
-		// inside 1 gate
-
 		IntegerConfig {
 			x_limbs,
 			y_limbs,

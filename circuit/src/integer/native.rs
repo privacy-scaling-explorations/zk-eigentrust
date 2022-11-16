@@ -61,6 +61,8 @@ pub struct ReductionWitness<
 }
 
 /// Structure for the Integer.
+// TODO: Add ReductionWitness as a part of Integer
+// TODO: Add `add_add`, `mul2`, `mul3`, `sub_sub`
 #[derive(Debug, Clone)]
 pub struct Integer<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
 where
@@ -189,6 +191,7 @@ where
 		let p_prime = P::negative_wrong_modulus_decomposed();
 		let a = self.value();
 		let b = other.value();
+		// TODO: do inside P::construct_div_qr
 		let b_invert = P::invert(other.clone()).unwrap();
 		let result = b_invert.value() * a.clone() % P::wrong_modulus();
 		let (quotient, reduced_self) = (result.clone() * b).div_rem(&P::wrong_modulus());

@@ -5,7 +5,10 @@ use std::marker::PhantomData;
 
 use self::native::EcPoint;
 use crate::{
-	gadgets::bits2num::{Bits2NumChip, Bits2NumConfig},
+	gadgets::{
+		bits2num::{Bits2NumChip, Bits2NumConfig},
+		common::{CommonChip, CommonConfig},
+	},
 	integer::{
 		native::{Quotient, ReductionWitness},
 		rns::RnsParams,
@@ -23,6 +26,7 @@ use halo2wrong::halo2::{
 struct EccConfig<const NUM_LIMBS: usize> {
 	bits2num: Bits2NumConfig,
 	integer: IntegerConfig<NUM_LIMBS>,
+	common: CommonConfig,
 }
 
 struct EccChip<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
@@ -131,10 +135,133 @@ where
 		const BITS: usize = 256;
 		let bits2num = Bits2NumChip::<N, BITS>::configure(meta);
 		let integer = IntegerChip::<W, N, NUM_LIMBS, NUM_BITS, P>::configure(meta);
+		let common = CommonChip::configure(meta);
 
-		EccConfig { bits2num, integer }
+		EccConfig { bits2num, integer, common }
 	}
 
+	pub fn add_unreduced(
+		// Assigns a cell for the p_x.
+		p_x: [AssignedCell<N, N>; NUM_LIMBS],
+		// Assigns a cell for the p_y.
+		p_y: [AssignedCell<N, N>; NUM_LIMBS],
+		// Assigns a cell for the q_x.
+		q_x: [AssignedCell<N, N>; NUM_LIMBS],
+		// Assigns a cell for the q_y.
+		q_y: [AssignedCell<N, N>; NUM_LIMBS],
+		// Reduction witnesses for add operation
+		reduction_witnesses: Vec<ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>>,
+		// A cell constrained to equal 0
+		zero: AssignedCell<N, N>,
+		// Ecc config columns
+		config: EccConfig<NUM_LIMBS>,
+		// Layouter
+		mut layouter: impl Layouter<N>,
+	) -> Result<
+		(
+			[AssignedCell<N, N>; NUM_LIMBS],
+			[AssignedCell<N, N>; NUM_LIMBS],
+		),
+		Error,
+	> {
+		// TODO: Before doing addition, we check if p_x, p_y, q_x, q_y are multiplied by
+		// one or added by zero. Example:
+		//
+		// Self::assign(
+		//    p_x, [zero, zero, zero, zero], r_w, config, region, row
+		// );
+
+		// Assign a region where we use columns from Integer chip
+		// sub selector - row 0
+		// sub selector - row 2
+		// div selector - row 4
+		// mul selector - row 5
+		// sub selector - row 6
+		// sub selector - row 7
+		// sub selector - row 8
+		// mul selector - row 9
+		// sub selector - row 10
+		layouter.assign_region(
+			|| "elliptic_add_operation",
+			|mut region: Region<'_, N>| {
+				// numerator = self.y.sub(&other.y)
+				let numerator = Self::assign(
+					"sub",
+					Some(&p_y),
+					&q_y,
+					&reduction_witnesses[0],
+					&config,
+					&mut region,
+					0,
+				)
+				.unwrap();
+
+				// denominator = self.x.sub(&other.x)
+				let denominator = Self::assign(
+					"sub",
+					Some(&p_x),
+					&q_x,
+					&reduction_witnesses[1],
+					&config,
+					&mut region,
+					2,
+				)
+				.unwrap();
+
+				// m = numerator.result.div(&denominator.result)
+				let m = Self::assign(
+					"div",
+					Some(&numerator),
+					&denominator,
+					&reduction_witnesses[2],
+					&config,
+					&mut region,
+					4,
+				)
+				.unwrap();
+
+				//m_squared = m.result.mul(&m.result)
+				let _m_squared = Self::assign(
+					"mul", None, &m, &reduction_witnesses[3], &config, &mut region, 5,
+				)
+				.unwrap();
+
+				//m_squared_minus_p_x = m_squared.result.sub(&self.x)
+				let _m_squared_minus_p_x = Self::assign(
+					"sub", None, &p_x, &reduction_witnesses[4], &config, &mut region, 6,
+				)
+				.unwrap();
+
+				//r_x = m_squared_minus_p_x.result.sub(&other.x)
+				let r_x = Self::assign(
+					"sub", None, &q_x, &reduction_witnesses[5], &config, &mut region, 7,
+				)
+				.unwrap();
+
+				//r_x_minus_p_x = r_x.result.sub(&self.x)
+				let _r_x_minus_p_x = Self::assign(
+					"sub", None, &p_x, &reduction_witnesses[6], &config, &mut region, 8,
+				)
+				.unwrap();
+
+				//let m_times_r_x_minus_p_x = m.result.mul(&r_x_minus_p_x.result);
+				let _m_times_r_x_minus_p_x = Self::assign(
+					"mul", None, &m, &reduction_witnesses[7], &config, &mut region, 9,
+				)
+				.unwrap();
+
+				//r_y = m_times_r_x_minus_p_x.result.sub(&self.y)
+				let r_y = Self::assign(
+					"sub", None, &p_y, &reduction_witnesses[8], &config, &mut region, 10,
+				)
+				.unwrap();
+
+				Ok((r_x, r_y))
+			},
+		)
+	}
+
+	// TODO: Remove and add `reduce` function to check if initial point is reduced
 	pub fn add(
 		// Assigns a cell for the p_x.
 		p_x: [AssignedCell<N, N>; NUM_LIMBS],
@@ -308,6 +435,140 @@ where
 		)
 	}
 
+	pub fn double_unreduced(
+		// Assigns a cell for the p_x.
+		p_x: [AssignedCell<N, N>; NUM_LIMBS],
+		// Assigns a cell for the p_y.
+		p_y: [AssignedCell<N, N>; NUM_LIMBS],
+		// Reduction witnesses for double operation
+		reduction_witnesses: Vec<ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>>,
+		// A cell constrained to equal 0
+		zero: AssignedCell<N, N>,
+		// Ecc Config
+		config: EccConfig<NUM_LIMBS>,
+		// Layouter
+		mut layouter: impl Layouter<N>,
+	) -> Result<
+		(
+			[AssignedCell<N, N>; NUM_LIMBS],
+			[AssignedCell<N, N>; NUM_LIMBS],
+		),
+		Error,
+	> {
+		// add selector - row 0
+		// mul selector - row 1
+		// mul3 selector - row 2
+		// div selector - row 3
+		// add selector - row 4
+		// mul selector - row 5
+		// sub selector - row 6
+		// sub selector - row 7
+		// mul selector - row 8
+		// sub selector - row 9
+		layouter.assign_region(
+			|| "elliptic_double_operation",
+			|mut region: Region<'_, N>| {
+				// double_p_y = self.y.add(&self.y)
+				let double_p_y = Self::assign(
+					"add",
+					Some(&p_y),
+					&p_y,
+					&reduction_witnesses[0],
+					&config,
+					&mut region,
+					0,
+				)
+				.unwrap();
+
+				// p_x_square = self.x.mul(&self.x)
+				let p_x_square = Self::assign(
+					"mul",
+					Some(&p_x),
+					&p_x,
+					&reduction_witnesses[1],
+					&config,
+					&mut region,
+					2,
+				)
+				.unwrap();
+
+				// p_x_square_times_three = three.result.mul(&p_x_square.result)
+				let _p_x_square_times_two = Self::assign(
+					"add", None, &p_x_square, &reduction_witnesses[2], &config, &mut region, 3,
+				)
+				.unwrap();
+
+				let _p_x_square_times_three = Self::assign(
+					"add", None, &p_x_square, &reduction_witnesses[3], &config, &mut region, 4,
+				)
+				.unwrap();
+
+				// m = p_x_square_times_three.result.div(&double_p_y.result)
+				let m = Self::assign(
+					"div", None, &double_p_y, &reduction_witnesses[4], &config, &mut region, 5,
+				)
+				.unwrap();
+
+				// double_p_x = self.x.add(&self.x)
+				let double_p_x = Self::assign(
+					"add",
+					Some(&p_x),
+					&p_x,
+					&reduction_witnesses[5],
+					&config,
+					&mut region,
+					7,
+				)
+				.unwrap();
+
+				// m_squared = m.result.mul(&m.result)
+				let _m_squared = Self::assign(
+					"mul",
+					Some(&m),
+					&m,
+					&reduction_witnesses[6],
+					&config,
+					&mut region,
+					9,
+				)
+				.unwrap();
+
+				// r_x = m_squared.result.sub(&double_p_x.result)
+				let r_x = Self::assign(
+					"sub", None, &double_p_x, &reduction_witnesses[7], &config, &mut region, 10,
+				)
+				.unwrap();
+
+				// p_x_minus_r_x = self.x.sub(&r_x.result)
+				let _p_x_minus_r_x = Self::assign(
+					"sub",
+					Some(&p_x),
+					&r_x,
+					&reduction_witnesses[8],
+					&config,
+					&mut region,
+					12,
+				)
+				.unwrap();
+
+				// m_times_p_x_minus_r_x = m.result.mul(&p_x_minus_r_x.result)
+				let _m_times_p_x_minus_r_x = Self::assign(
+					"mul", None, &m, &reduction_witnesses[9], &config, &mut region, 13,
+				)
+				.unwrap();
+
+				// r_y = m_times_p_x_minus_r_x.result.sub(&self.y)
+				let r_y = Self::assign(
+					"sub", None, &p_y, &reduction_witnesses[10], &config, &mut region, 14,
+				)
+				.unwrap();
+
+				Ok((r_x, r_y))
+			},
+		)
+	}
+
+	// TODO: Remove and add `reduce` function to check if initial point is reduced
 	pub fn double(
 		// Assigns a cell for the p_x.
 		p_x: [AssignedCell<N, N>; NUM_LIMBS],
@@ -468,19 +729,25 @@ where
 
 	pub fn mul_scalar(
 		// Assigns a cell for the r_x.
-		r_x: [AssignedCell<N, N>; NUM_LIMBS],
+		mut exp_x: [AssignedCell<N, N>; NUM_LIMBS],
 		// Assigns a cell for the r_y.
-		r_y: [AssignedCell<N, N>; NUM_LIMBS],
+		mut exp_y: [AssignedCell<N, N>; NUM_LIMBS],
 		// Reduction witness for r_x -- make sure r_x is in the W field before being passed
-		r_x_rw: ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>,
+		exp_x_rw: ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>,
 		// Reduction witness for r_y -- make sure r_y is in the W field before being passed
-		r_y_rw: ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>,
+		exp_y_rw: ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>,
 		// Assigns a cell for the value.
 		value: AssignedCell<N, N>,
 		// Constructs an array for the value bits.
 		value_bits: [N; 256],
-		// Reduction witnesses for mul scalar operation
-		reduction_witnesses: Vec<ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>>,
+		// Reduction witnesses for mul scalar add operation
+		reduction_witnesses_add: [Vec<ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>>; 256],
+		// Reduction witnesses for mul scalar double operation
+		reduction_witnesses_mul: [Vec<ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>>; 256],
+		// Limbs with value zero
+		zero_limbs: [AssignedCell<N, N>; NUM_LIMBS],
+		// Limbs with value one
+		one_limbs: [AssignedCell<N, N>; NUM_LIMBS],
 		// A cell constrained to equal 0
 		zero: AssignedCell<N, N>,
 		// Ecc Config
@@ -501,28 +768,50 @@ where
 		//    }
 		//    double selector - row i
 		// }
+		let mut r_x = zero_limbs.clone();
+		let mut r_y = one_limbs.clone();
 		let bits2num = Bits2NumChip::new(value.clone(), value_bits);
 		let bits = bits2num.synthesize(config.bits2num, layouter.namespace(|| "bits2num"))?;
-		for i in 0..value_bits.len() {
-			if value_bits[i] == N::one() {
-				//Self::add(
-				//	p_x, p_y, p_x_rw, p_y_rw, q_x, q_y, q_x_rw, q_y_rw,
-				// reduction_witnesses, zero, 	config, layouter,
-				//);
-			}
-			let (exp_x, exp_y) = Self::double(
+		for i in 0..bits.len() {
+			let (new_r_x, new_r_y) = Self::add_unreduced(
 				r_x.clone(),
 				r_y.clone(),
-				r_x_rw.clone(),
-				r_y_rw.clone(),
-				reduction_witnesses.clone(),
+				exp_x.clone(),
+				exp_y.clone(),
+				reduction_witnesses_add[i].clone(),
+				zero.clone(),
+				config.clone(),
+				layouter.namespace(|| "add"),
+			)?;
+			for j in 0..NUM_LIMBS {
+				// r_x
+				r_x[j] = CommonChip::select(
+					bits[i].clone(),
+					new_r_x[j].clone(),
+					r_x[j].clone(),
+					config.common,
+					layouter.namespace(|| format!("select_r_x_{}", j)),
+				)?;
+
+				// r_y
+				r_y[j] = CommonChip::select(
+					bits[i].clone(),
+					new_r_y[j].clone(),
+					r_y[j].clone(),
+					config.common,
+					layouter.namespace(|| format!("select_r_y_{}", j)),
+				)?;
+			}
+			(exp_x, exp_y) = Self::double_unreduced(
+				exp_x.clone(),
+				exp_y.clone(),
+				reduction_witnesses_mul[i].clone(),
 				zero.clone(),
 				config.clone(),
 				layouter.namespace(|| "doubling"),
-			)
-			.unwrap();
+			)?;
 		}
-		Err(Error::Synthesis)
+		Ok((r_x, r_y))
 	}
 }
 
@@ -776,9 +1065,9 @@ mod test {
 	fn should_double_a_point() {
 		// Testing double.
 		let zero = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::zero();
-		let a_big = BigUint::from_str("2").unwrap();
-		let b_big = BigUint::from_str("3").unwrap();
-		let c_big = BigUint::from_str("1").unwrap();
+		let a_big = BigUint::from_str("23423423525345345").unwrap();
+		let b_big = BigUint::from_str("65464575675").unwrap();
+		let c_big = BigUint::from_str("23423423423425345647567567568").unwrap();
 		let a = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_big);
 		let b = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(b_big);
 		let c = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(c_big);

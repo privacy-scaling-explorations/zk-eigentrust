@@ -324,6 +324,7 @@ impl RnsParams<Fq, Fr, 4, 68> for Bn256_4_68 {
 		sum
 	}
 
+	// TODO: Move outside Rns -- Use just BigUint as input and output
 	/// Computes the inverse of the [`Integer`] as an element of the Wrong
 	/// field. Returns `None` if the value cannot be inverted.
 	fn invert(

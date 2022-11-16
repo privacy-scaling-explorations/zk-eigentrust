@@ -47,7 +47,7 @@ where
 		Self { x, y, reduction_witnesses: Vec::new() }
 	}
 
-	/// Create a new object with x = 0 and y = 0
+	/// Create a new object with x = 0 and y = 1
 	pub fn zero() -> Self {
 		Self::new(Integer::zero(), Integer::one())
 	}
