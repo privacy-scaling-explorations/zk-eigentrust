@@ -54,16 +54,16 @@ where
 
 	/// Add one point to another
 	pub fn add(&self, other: &Self) -> Self {
-		// m = (p_y - q_y) / (p_x - q_x)
-		let numerator = self.y.sub(&other.y);
-		let denominator = self.x.sub(&other.x);
+		// m = (q_y - p_y) / (q_x - p_x)
+		let numerator = other.y.sub(&self.y);
+		let denominator = other.x.sub(&self.x);
 		let m = numerator.result.div(&denominator.result);
 		// r_x = m^2 - p_x - q_x
 		let m_squared = m.result.mul(&m.result);
 		let m_squared_minus_p_x = m_squared.result.sub(&self.x);
 		let r_x = m_squared_minus_p_x.result.sub(&other.x);
-		// r_y = m * (r_x - p_x) - p_y
-		let r_x_minus_p_x = r_x.result.sub(&self.x);
+		// r_y = m * (p_x - r_x) - p_y
+		let r_x_minus_p_x = self.x.sub(&r_x.result);
 		let m_times_r_x_minus_p_x = m.result.mul(&r_x_minus_p_x.result);
 		let r_y = m_times_r_x_minus_p_x.result.sub(&self.y);
 
@@ -88,7 +88,7 @@ where
 		let double_p_y = self.y.add(&self.y);
 		let p_x_square = self.x.mul(&self.x);
 		let p_x_square_times_two = p_x_square.result.add(&p_x_square.result);
-		let p_x_square_times_three = p_x_square.result.mul(&p_x_square_times_two.result);
+		let p_x_square_times_three = p_x_square.result.add(&p_x_square_times_two.result);
 		let m = p_x_square_times_three.result.div(&double_p_y.result);
 
 		// r_x = m * m - 2 * p_x
@@ -141,10 +141,65 @@ pub fn test_bit(b: &[u8], i: usize) -> bool {
 
 #[cfg(test)]
 mod test {
+	use halo2wrong::curves::{
+		bn256::{Bn256, Fq, Fr, G1Affine},
+		group::{ff::PrimeField, Curve},
+		CurveAffine,
+	};
+	use num_bigint::BigUint;
+	use num_traits::FromPrimitive;
+	use rand::thread_rng;
+
+	use crate::integer::{
+		native::Integer,
+		rns::{big_to_fe, compose_big, fe_to_big, Bn256_4_68, RnsParams},
+	};
+
+	use super::EcPoint;
 
 	#[test]
-	fn should_add_two_points() {}
+	fn should_add_two_points() {
+		let rng = &mut thread_rng();
+
+		let a = G1Affine::random(rng.clone());
+		let b = G1Affine::random(rng.clone());
+		let c = (a + b).to_affine();
+
+		let a_x_bn = fe_to_big(a.x);
+		let a_y_bn = fe_to_big(a.y);
+		let b_x_bn = fe_to_big(b.x);
+		let b_y_bn = fe_to_big(b.y);
+
+		let a_x_w = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_x_bn);
+		let a_y_w = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_y_bn);
+		let b_x_w = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(b_x_bn);
+		let b_y_w = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(b_y_bn);
+
+		let a_w = EcPoint::new(a_x_w, a_y_w);
+		let b_w = EcPoint::new(b_x_w, b_y_w);
+		let c_w = a_w.add(&b_w);
+
+		assert_eq!(c.x, big_to_fe(c_w.x.value()));
+		assert_eq!(c.y, big_to_fe(c_w.y.value()));
+	}
 
 	#[test]
-	fn should_double_point() {}
+	fn should_double_point() {
+		let rng = &mut thread_rng();
+
+		let a = G1Affine::random(rng.clone());
+		let c = (a + a).to_affine();
+
+		let a_x_bn = fe_to_big(a.x);
+		let a_y_bn = fe_to_big(a.y);
+
+		let a_x_w = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_x_bn);
+		let a_y_w = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_y_bn);
+
+		let a_w = EcPoint::new(a_x_w, a_y_w);
+		let c_w = a_w.double();
+
+		assert_eq!(c.x, big_to_fe(c_w.x.value()));
+		assert_eq!(c.y, big_to_fe(c_w.y.value()));
+	}
 }
