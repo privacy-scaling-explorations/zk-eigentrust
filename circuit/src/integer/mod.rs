@@ -9,7 +9,7 @@ use halo2wrong::halo2::{
 	plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
 	poly::Rotation,
 };
-use native::ReductionWitness;
+use native::{Quotient, ReductionWitness};
 use rns::RnsParams;
 use std::marker::PhantomData;
 
@@ -171,6 +171,71 @@ where
 		}
 	}
 
+	/// Assigns given values and their reduction witnesses
+	fn assign(
+		x_opt: Option<&[AssignedCell<N, N>; NUM_LIMBS]>, y: &[AssignedCell<N, N>; NUM_LIMBS],
+		reduction_witness: &ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>,
+		config: &IntegerConfig<NUM_LIMBS>, region: &mut Region<'_, N>, row: usize,
+	) -> Result<[AssignedCell<N, N>; NUM_LIMBS], Error> {
+		match &reduction_witness.quotient {
+			Quotient::Short(n) => {
+				region.assign_advice(
+					|| "quotient",
+					config.quotient[0],
+					row,
+					|| Value::known(*n),
+				)?;
+			},
+			Quotient::Long(n) => {
+				for i in 0..NUM_LIMBS {
+					region.assign_advice(
+						|| format!("quotient_{}", i),
+						config.quotient[i],
+						row,
+						|| Value::known(n.limbs[i]),
+					)?;
+				}
+			},
+		}
+
+		for i in 0..NUM_LIMBS {
+			if x_opt.is_some() {
+				let x = x_opt.unwrap();
+				x[i].copy_advice(|| format!("limb_x_{}", i), region, config.x_limbs[i], row)?;
+			}
+			y[i].copy_advice(|| format!("limb_y_{}", i), region, config.y_limbs[i], row)?;
+
+			region.assign_advice(
+				|| format!("intermediates_{}", i),
+				config.intermediate[i],
+				row,
+				|| Value::known(reduction_witness.intermediate[i]),
+			)?;
+		}
+
+		for i in 0..reduction_witness.residues.len() {
+			region.assign_advice(
+				|| format!("residues_{}", i),
+				config.residues[i],
+				row,
+				|| Value::known(reduction_witness.residues[i]),
+			)?;
+		}
+
+		let mut assigned_result: [Option<AssignedCell<N, N>>; NUM_LIMBS] =
+			[(); NUM_LIMBS].map(|_| None);
+		for i in 0..NUM_LIMBS {
+			assigned_result[i] = Some(region.assign_advice(
+				|| format!("result_{}", i),
+				config.x_limbs[i],
+				row + 1,
+				|| Value::known(reduction_witness.result.limbs[i]),
+			)?)
+		}
+		let assigned_result = assigned_result.map(|x| x.unwrap());
+		Ok(assigned_result)
+	}
+
 	/// Assign cells for add operation.
 	pub fn add(
 		x_limbs: [AssignedCell<N, N>; NUM_LIMBS], y_limbs: [AssignedCell<N, N>; NUM_LIMBS],
@@ -181,60 +246,7 @@ where
 			|| "add_operation",
 			|mut region: Region<'_, N>| {
 				config.add_selector.enable(&mut region, 0)?;
-
-				region.assign_advice(
-					|| "quotient",
-					config.quotient[0],
-					0,
-					|| Value::known(rw.quotient.clone().add_sub().unwrap()),
-				)?;
-
-				for i in 0..NUM_LIMBS {
-					x_limbs[i].copy_advice(
-						|| format!("x_limb_{}", i),
-						&mut region,
-						config.x_limbs[i],
-						0,
-					)?;
-
-					y_limbs[i].copy_advice(
-						|| format!("y_limb_{}", i),
-						&mut region,
-						config.y_limbs[i],
-						0,
-					)?;
-
-					region.assign_advice(
-						|| format!("intermediate_{}", i),
-						config.intermediate[i],
-						0,
-						|| Value::known(rw.intermediate[i]),
-					)?;
-				}
-
-				for i in 0..rw.residues.len() {
-					region.assign_advice(
-						|| format!("residues_{}", i),
-						config.residues[i],
-						0,
-						|| Value::known(rw.residues[i]),
-					)?;
-				}
-
-				let mut assigned_result: [Option<AssignedCell<N, N>>; NUM_LIMBS] =
-					[(); NUM_LIMBS].map(|_| None);
-				for i in 0..NUM_LIMBS {
-					assigned_result[i] = Some(region.assign_advice(
-						|| format!("result_{}", i),
-						config.x_limbs[i],
-						1,
-						|| Value::known(rw.result.limbs[i]),
-					)?)
-				}
-
-				let assigned_result = assigned_result.map(|x| x.unwrap());
-
-				Ok(assigned_result)
+				Self::assign(Some(&x_limbs), &y_limbs, &rw, &config, &mut region, 0)
 			},
 		)
 	}
@@ -249,60 +261,37 @@ where
 			|| "mul_operation",
 			|mut region: Region<'_, N>| {
 				config.mul_selector.enable(&mut region, 0)?;
+				Self::assign(Some(&x_limbs), &y_limbs, &rw, &config, &mut region, 0)
+			},
+		)
+	}
 
-				for i in 0..NUM_LIMBS {
-					x_limbs[i].copy_advice(
-						|| format!("x_limb_{}", i),
-						&mut region,
-						config.x_limbs[i],
-						0,
-					)?;
+	/// Assign cells for sub operation.
+	pub fn sub(
+		x_limbs: [AssignedCell<N, N>; NUM_LIMBS], y_limbs: [AssignedCell<N, N>; NUM_LIMBS],
+		rw: ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>, config: IntegerConfig<NUM_LIMBS>,
+		mut layouter: impl Layouter<N>,
+	) -> Result<[AssignedCell<N, N>; NUM_LIMBS], Error> {
+		layouter.assign_region(
+			|| "sub_operation",
+			|mut region: Region<'_, N>| {
+				config.sub_selector.enable(&mut region, 0)?;
+				Self::assign(Some(&x_limbs), &y_limbs, &rw, &config, &mut region, 0)
+			},
+		)
+	}
 
-					y_limbs[i].copy_advice(
-						|| format!("y_limb_{}", i),
-						&mut region,
-						config.y_limbs[i],
-						0,
-					)?;
-
-					region.assign_advice(
-						|| format!("quotient_{}", i),
-						config.quotient[i],
-						0,
-						|| Value::known(rw.quotient.clone().mul_div().unwrap().limbs[i]),
-					)?;
-
-					region.assign_advice(
-						|| format!("intermediate_{}", i),
-						config.intermediate[i],
-						0,
-						|| Value::known(rw.intermediate[i]),
-					)?;
-				}
-
-				for i in 0..rw.residues.len() {
-					region.assign_advice(
-						|| format!("residues_{}", i),
-						config.residues[i],
-						0,
-						|| Value::known(rw.residues[i]),
-					)?;
-				}
-
-				let mut assigned_result: [Option<AssignedCell<N, N>>; NUM_LIMBS] =
-					[(); NUM_LIMBS].map(|_| None);
-				for i in 0..NUM_LIMBS {
-					assigned_result[i] = Some(region.assign_advice(
-						|| format!("result_{}", i),
-						config.x_limbs[i],
-						1,
-						|| Value::known(rw.result.limbs[i]),
-					)?);
-				}
-
-				let assigned_result = assigned_result.map(|x| x.unwrap());
-
-				Ok(assigned_result)
+	/// Assign cells for div operation.
+	pub fn div(
+		x_limbs: [AssignedCell<N, N>; NUM_LIMBS], y_limbs: [AssignedCell<N, N>; NUM_LIMBS],
+		rw: ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>, config: IntegerConfig<NUM_LIMBS>,
+		mut layouter: impl Layouter<N>,
+	) -> Result<[AssignedCell<N, N>; NUM_LIMBS], Error> {
+		layouter.assign_region(
+			|| "div_operation",
+			|mut region: Region<'_, N>| {
+				config.div_selector.enable(&mut region, 0)?;
+				Self::assign(Some(&x_limbs), &y_limbs, &rw, &config, &mut region, 0)
 			},
 		)
 	}
@@ -328,6 +317,8 @@ mod test {
 	enum Gadgets {
 		Add,
 		Mul,
+		Sub,
+		Div,
 	}
 
 	#[derive(Clone, Debug)]
@@ -432,6 +423,20 @@ mod test {
 					config.integer.clone(),
 					layouter.namespace(|| "mul"),
 				)?,
+				Gadgets::Sub => IntegerChip::sub(
+					x_limbs_assigned,
+					y_limbs_assigned,
+					self.rw.clone(),
+					config.integer.clone(),
+					layouter.namespace(|| "sub"),
+				)?,
+				Gadgets::Div => IntegerChip::div(
+					x_limbs_assigned,
+					y_limbs_assigned,
+					self.rw.clone(),
+					config.integer.clone(),
+					layouter.namespace(|| "div"),
+				)?,
 			};
 
 			for i in 0..NUM_LIMBS {
@@ -505,5 +510,43 @@ mod test {
 		let res =
 			prove_and_verify::<Bn256, _, _>(params, test_chip_mul, &[&pub_ins_mul], rng).unwrap();
 		assert!(res);
+	}
+
+	#[test]
+	fn should_sub_two_numbers() {
+		// Testing sub with two elements.
+		let a_big = BigUint::from_str(
+			"2188824287183927522224640574525727508869631115729782366268903789426208582",
+		)
+		.unwrap();
+		let b_big = BigUint::from_str("121231231231231231231231231233").unwrap();
+		let a = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_big);
+		let b = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(b_big);
+		let res = a.sub(&b);
+		let test_chip =
+			TestCircuit::<Fq, Fr, 4, 68, Bn256_4_68>::new(a, b, res.clone(), Gadgets::Sub);
+		let k = 4;
+		let pub_ins = res.result.limbs.to_vec();
+		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[test]
+	fn should_div_two_numbers() {
+		// Testing div with two elements.
+		let a_big = BigUint::from_str(
+			"2188824287183927522224640574525727508869631115729782366268903789426208582",
+		)
+		.unwrap();
+		let b_big = BigUint::from_str("2").unwrap();
+		let a = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_big);
+		let b = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(b_big);
+		let res = a.div(&b);
+		let test_chip =
+			TestCircuit::<Fq, Fr, 4, 68, Bn256_4_68>::new(a, b, res.clone(), Gadgets::Div);
+		let k = 4;
+		let pub_ins = res.result.limbs.to_vec();
+		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
 	}
 }

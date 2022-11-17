@@ -23,7 +23,7 @@ where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 {
 	/// Returns Quotient type for the addition or the subtraction.
-	pub fn add_sub(self) -> Option<N> {
+	pub fn short(self) -> Option<N> {
 		match self {
 			Quotient::Short(res) => Some(res),
 			_ => None,
@@ -31,7 +31,7 @@ where
 	}
 
 	/// Returns Quotient type for the multiplication or the division.
-	pub fn mul_div(self) -> Option<Integer<W, N, NUM_LIMBS, NUM_BITS, P>> {
+	pub fn long(self) -> Option<Integer<W, N, NUM_LIMBS, NUM_BITS, P>> {
 		match self {
 			Quotient::Long(res) => Some(res),
 			_ => None,
