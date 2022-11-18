@@ -1,9 +1,9 @@
 use super::rns::{compose_big, decompose_big, fe_to_big, RnsParams};
-use halo2wrong::halo2::arithmetic::{Field, FieldExt};
+use halo2wrong::halo2::arithmetic::FieldExt;
 use num_bigint::BigUint;
 use num_integer::Integer as BigI;
 use num_traits::{One, Zero};
-use std::{marker::PhantomData, ops::Neg};
+use std::marker::PhantomData;
 
 /// Enum for the two different type of Quotient.
 #[derive(Clone, Debug)]
@@ -106,6 +106,27 @@ where
 	pub fn value(&self) -> BigUint {
 		let limb_values = self.limbs.map(|limb| fe_to_big(limb));
 		compose_big::<NUM_LIMBS, NUM_BITS>(limb_values)
+	}
+
+	/// Reduce function for the [`Integer`].
+	pub fn reduce(&self) -> ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P> {
+		let p_prime = P::negative_wrong_modulus_decomposed();
+		let a = self.value();
+		let (q, res) = P::construct_reduce_qr(a);
+
+		// Calculate the intermediate values for the ReductionWitness.
+		let mut t = [N::zero(); NUM_LIMBS];
+		for i in 0..NUM_LIMBS {
+			t[i] = self.limbs[i] + p_prime[i] * q;
+		}
+
+		// Calculate the residue values for the ReductionWitness.
+		let residues = P::residues(&res, &t);
+
+		// Construct correct type for the ReductionWitness
+		let result_int = Integer::from_limbs(res);
+		let quotient_n = Quotient::Short(q);
+		ReductionWitness { result: result_int, quotient: quotient_n, intermediate: t, residues }
 	}
 
 	/// Non-native addition for given two [`Integer`].
@@ -224,11 +245,8 @@ where
 #[cfg(test)]
 mod test {
 	use super::*;
-	use crate::integer::rns::{big_to_fe, Bn256_4_68};
-	use halo2wrong::curves::{
-		bn256::{Fq, Fr},
-		group::ff::PrimeField,
-	};
+	use crate::integer::rns::Bn256_4_68;
+	use halo2wrong::curves::bn256::{Fq, Fr};
 	use num_integer::Integer as NumInteger;
 	use num_traits::{FromPrimitive, One, Zero};
 	use std::str::FromStr;

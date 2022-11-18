@@ -27,6 +27,8 @@ pub struct IntegerConfig<const NUM_LIMBS: usize> {
 	/// Configures columns for the residues.
 	pub(crate) residues: Vec<Column<Advice>>,
 	/// Configures a fixed boolean value for each row of the circuit.
+	pub(crate) reduce_selector: Selector,
+	/// Configures a fixed boolean value for each row of the circuit.
 	pub(crate) add_selector: Selector,
 	/// Configures a fixed boolean value for each row of the circuit.
 	pub(crate) sub_selector: Selector,
@@ -60,6 +62,7 @@ where
 		let intermediate = [(); NUM_LIMBS].map(|_| meta.advice_column());
 		let residues: Vec<Column<Advice>> =
 			vec![(); NUM_LIMBS / 2].iter().map(|_| meta.advice_column()).collect();
+		let reduce_selector = meta.selector();
 		let add_selector = meta.selector();
 		let sub_selector = meta.selector();
 		let mul_selector = meta.selector();
@@ -68,14 +71,32 @@ where
 		x_limbs.map(|x| meta.enable_equality(x));
 		y_limbs.map(|y| meta.enable_equality(y));
 
-		let p_prime = P::negative_wrong_modulus_decomposed();
 		let p_in_n = P::wrong_modulus_in_native_modulus();
+
+		meta.create_gate("reduce", |v_cells| {
+			let reduce_s = v_cells.query_selector(reduce_selector);
+			let x_limb_exps = x_limbs.map(|x| v_cells.query_advice(x, Rotation::cur()));
+			let reduce_q_exp = v_cells.query_advice(quotient[0], Rotation::cur());
+			let t_exp = intermediate.map(|x| v_cells.query_advice(x, Rotation::cur()));
+			let result_exps = x_limbs.map(|x| v_cells.query_advice(x, Rotation::next()));
+			let residues_exps: Vec<Expression<N>> =
+				residues.iter().map(|x| v_cells.query_advice(*x, Rotation::cur())).collect();
+
+			// REDUCTION CONSTRAINTS
+			let mut constraints =
+				P::constrain_binary_crt_exp(t_exp, result_exps.clone(), residues_exps);
+			// NATIVE CONSTRAINTS
+			let native_constraint =
+				P::compose_exp(x_limb_exps) - reduce_q_exp * p_in_n - P::compose_exp(result_exps);
+			constraints.push(native_constraint);
+
+			constraints.iter().map(|x| reduce_s.clone() * x.clone()).collect::<Vec<Expression<N>>>()
+		});
 
 		meta.create_gate("add", |v_cells| {
 			let add_s = v_cells.query_selector(add_selector);
 			let x_limb_exps = x_limbs.map(|x| v_cells.query_advice(x, Rotation::cur()));
 			let y_limb_exps = y_limbs.map(|y| v_cells.query_advice(y, Rotation::cur()));
-			let add_q_exp = v_cells.query_advice(quotient[0], Rotation::cur());
 			let t_exp = intermediate.map(|x| v_cells.query_advice(x, Rotation::cur()));
 			let result_exps = x_limbs.map(|x| v_cells.query_advice(x, Rotation::next()));
 			let residues_exps: Vec<Expression<N>> =
@@ -164,6 +185,7 @@ where
 			quotient,
 			intermediate,
 			residues,
+			reduce_selector,
 			add_selector,
 			sub_selector,
 			mul_selector,
@@ -173,7 +195,7 @@ where
 
 	/// Assigns given values and their reduction witnesses
 	fn assign(
-		x_opt: Option<&[AssignedCell<N, N>; NUM_LIMBS]>, y: &[AssignedCell<N, N>; NUM_LIMBS],
+		x: &[AssignedCell<N, N>; NUM_LIMBS], y_opt: Option<&[AssignedCell<N, N>; NUM_LIMBS]>,
 		reduction_witness: &ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>,
 		config: &IntegerConfig<NUM_LIMBS>, region: &mut Region<'_, N>, row: usize,
 	) -> Result<[AssignedCell<N, N>; NUM_LIMBS], Error> {
@@ -199,11 +221,12 @@ where
 		}
 
 		for i in 0..NUM_LIMBS {
-			if x_opt.is_some() {
-				let x = x_opt.unwrap();
-				x[i].copy_advice(|| format!("limb_x_{}", i), region, config.x_limbs[i], row)?;
+			x[i].copy_advice(|| format!("limb_x_{}", i), region, config.x_limbs[i], row)?;
+
+			if y_opt.is_some() {
+				let y = y_opt.unwrap();
+				y[i].copy_advice(|| format!("limb_y_{}", i), region, config.y_limbs[i], row)?;
 			}
-			y[i].copy_advice(|| format!("limb_y_{}", i), region, config.y_limbs[i], row)?;
 
 			region.assign_advice(
 				|| format!("intermediates_{}", i),
@@ -236,6 +259,21 @@ where
 		Ok(assigned_result)
 	}
 
+	/// Assign cells for reduce operation.
+	pub fn reduce(
+		x_limbs: [AssignedCell<N, N>; NUM_LIMBS],
+		rw: ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>, config: IntegerConfig<NUM_LIMBS>,
+		mut layouter: impl Layouter<N>,
+	) -> Result<[AssignedCell<N, N>; NUM_LIMBS], Error> {
+		layouter.assign_region(
+			|| "reduce_operation",
+			|mut region: Region<'_, N>| {
+				config.reduce_selector.enable(&mut region, 0)?;
+				Self::assign(&x_limbs, None, &rw, &config, &mut region, 0)
+			},
+		)
+	}
+
 	/// Assign cells for add operation.
 	pub fn add(
 		x_limbs: [AssignedCell<N, N>; NUM_LIMBS], y_limbs: [AssignedCell<N, N>; NUM_LIMBS],
@@ -246,7 +284,7 @@ where
 			|| "add_operation",
 			|mut region: Region<'_, N>| {
 				config.add_selector.enable(&mut region, 0)?;
-				Self::assign(Some(&x_limbs), &y_limbs, &rw, &config, &mut region, 0)
+				Self::assign(&x_limbs, Some(&y_limbs), &rw, &config, &mut region, 0)
 			},
 		)
 	}
@@ -261,7 +299,7 @@ where
 			|| "mul_operation",
 			|mut region: Region<'_, N>| {
 				config.mul_selector.enable(&mut region, 0)?;
-				Self::assign(Some(&x_limbs), &y_limbs, &rw, &config, &mut region, 0)
+				Self::assign(&x_limbs, Some(&y_limbs), &rw, &config, &mut region, 0)
 			},
 		)
 	}
@@ -276,7 +314,7 @@ where
 			|| "sub_operation",
 			|mut region: Region<'_, N>| {
 				config.sub_selector.enable(&mut region, 0)?;
-				Self::assign(Some(&x_limbs), &y_limbs, &rw, &config, &mut region, 0)
+				Self::assign(&x_limbs, Some(&y_limbs), &rw, &config, &mut region, 0)
 			},
 		)
 	}
@@ -291,7 +329,7 @@ where
 			|| "div_operation",
 			|mut region: Region<'_, N>| {
 				config.div_selector.enable(&mut region, 0)?;
-				Self::assign(Some(&x_limbs), &y_limbs, &rw, &config, &mut region, 0)
+				Self::assign(&x_limbs, Some(&y_limbs), &rw, &config, &mut region, 0)
 			},
 		)
 	}
@@ -310,11 +348,11 @@ mod test {
 		},
 	};
 	use num_bigint::BigUint;
-	use num_traits::{One, Zero};
 	use std::str::FromStr;
 
 	#[derive(Clone)]
 	enum Gadgets {
+		Reduce,
 		Add,
 		Mul,
 		Sub,
@@ -334,7 +372,7 @@ mod test {
 		P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 	{
 		x: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
-		y: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
+		y: Option<Integer<W, N, NUM_LIMBS, NUM_BITS, P>>,
 		rw: ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>,
 		gadget: Gadgets,
 	}
@@ -345,7 +383,8 @@ mod test {
 		P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 	{
 		fn new(
-			x: Integer<W, N, NUM_LIMBS, NUM_BITS, P>, y: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
+			x: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
+			y: Option<Integer<W, N, NUM_LIMBS, NUM_BITS, P>>,
 			rw: ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>, gadget: Gadgets,
 		) -> Self {
 			Self { x, y, rw, gadget }
@@ -392,47 +431,55 @@ mod test {
 							i,
 							|| Value::known(self.x.limbs[i]),
 						)?;
-
-						let y = region.assign_advice(
-							|| "temp_y",
-							config.temp,
-							i + NUM_LIMBS,
-							|| Value::known(self.y.limbs[i]),
-						)?;
-
 						x_limbs[i] = Some(x);
-						y_limbs[i] = Some(y);
-					}
 
-					Ok((x_limbs.map(|x| x.unwrap()), y_limbs.map(|y| y.unwrap())))
+						if self.y.is_some() {
+							let y_unwrapped = self.y.clone().unwrap();
+							let y = region.assign_advice(
+								|| "temp_y",
+								config.temp,
+								i + NUM_LIMBS,
+								|| Value::known(y_unwrapped.limbs[i]),
+							)?;
+							y_limbs[i] = Some(y);
+						}
+					}
+					Ok((x_limbs, y_limbs))
 				},
 			)?;
 
 			let res = match self.gadget {
+				Gadgets::Reduce => IntegerChip::reduce(
+					x_limbs_assigned.map(|x| x.unwrap()),
+					self.rw.clone(),
+					config.integer.clone(),
+					layouter.namespace(|| "reduce"),
+				)?,
+
 				Gadgets::Add => IntegerChip::add(
-					x_limbs_assigned,
-					y_limbs_assigned,
+					x_limbs_assigned.map(|x| x.unwrap()),
+					y_limbs_assigned.map(|y| y.unwrap()),
 					self.rw.clone(),
 					config.integer.clone(),
 					layouter.namespace(|| "add"),
 				)?,
 				Gadgets::Mul => IntegerChip::mul(
-					x_limbs_assigned,
-					y_limbs_assigned,
+					x_limbs_assigned.map(|x| x.unwrap()),
+					y_limbs_assigned.map(|y| y.unwrap()),
 					self.rw.clone(),
 					config.integer.clone(),
 					layouter.namespace(|| "mul"),
 				)?,
 				Gadgets::Sub => IntegerChip::sub(
-					x_limbs_assigned,
-					y_limbs_assigned,
+					x_limbs_assigned.map(|x| x.unwrap()),
+					y_limbs_assigned.map(|y| y.unwrap()),
 					self.rw.clone(),
 					config.integer.clone(),
 					layouter.namespace(|| "sub"),
 				)?,
 				Gadgets::Div => IntegerChip::div(
-					x_limbs_assigned,
-					y_limbs_assigned,
+					x_limbs_assigned.map(|x| x.unwrap()),
+					y_limbs_assigned.map(|y| y.unwrap()),
 					self.rw.clone(),
 					config.integer.clone(),
 					layouter.namespace(|| "div"),
@@ -448,6 +495,50 @@ mod test {
 	}
 
 	#[test]
+	fn should_reduce_smaller() {
+		// Testing reduce with input smaller than wrong modulus.
+		let a_big = BigUint::from_str(
+			"2188824287183927522224640574525727508869631115729782366268903789426208582",
+		)
+		.unwrap();
+		let a = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_big);
+		let res = a.reduce();
+		let test_chip = TestCircuit::<Fq, Fr, 4, 68, Bn256_4_68>::new(
+			a.clone(),
+			None,
+			res.clone(),
+			Gadgets::Reduce,
+		);
+
+		let k = 4;
+		let p_ins = res.result.limbs.to_vec();
+		let prover = MockProver::run(k, &test_chip, vec![p_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[test]
+	fn should_reduce_bigger() {
+		// Testing reduce with input bigger than wrong modulus.
+		let a_big = BigUint::from_str(
+			"2188824287183927522224640574525727508869631115729782366268903789426208584192938236132395034328372853987091237643",
+		)
+		.unwrap();
+		let a = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_big);
+		let res = a.reduce();
+		let test_chip = TestCircuit::<Fq, Fr, 4, 68, Bn256_4_68>::new(
+			a.clone(),
+			None,
+			res.clone(),
+			Gadgets::Reduce,
+		);
+
+		let k = 4;
+		let p_ins = res.result.limbs.to_vec();
+		let prover = MockProver::run(k, &test_chip, vec![p_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[test]
 	fn should_add_two_numbers() {
 		// Testing add with two elements.
 		let a_big = BigUint::from_str(
@@ -459,7 +550,7 @@ mod test {
 		let b = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(b_big);
 		let res = a.add(&b);
 		let test_chip =
-			TestCircuit::<Fq, Fr, 4, 68, Bn256_4_68>::new(a, b, res.clone(), Gadgets::Add);
+			TestCircuit::<Fq, Fr, 4, 68, Bn256_4_68>::new(a, Some(b), res.clone(), Gadgets::Add);
 
 		let k = 4;
 		let p_ins = res.result.limbs.to_vec();
@@ -479,7 +570,7 @@ mod test {
 		let b = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(b_big);
 		let res = a.mul(&b);
 		let test_chip =
-			TestCircuit::<Fq, Fr, 4, 68, Bn256_4_68>::new(a, b, res.clone(), Gadgets::Mul);
+			TestCircuit::<Fq, Fr, 4, 68, Bn256_4_68>::new(a, Some(b), res.clone(), Gadgets::Mul);
 		let k = 4;
 		let pub_ins = res.result.limbs.to_vec();
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
@@ -495,8 +586,9 @@ mod test {
 		let b = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(b_big);
 		let res_add = a.add(&b);
 		let res_mul = a.mul(&b);
-		let test_chip_add = TestCircuit::new(a.clone(), b.clone(), res_add.clone(), Gadgets::Add);
-		let test_chip_mul = TestCircuit::new(a, b, res_mul.clone(), Gadgets::Mul);
+		let test_chip_add =
+			TestCircuit::new(a.clone(), Some(b.clone()), res_add.clone(), Gadgets::Add);
+		let test_chip_mul = TestCircuit::new(a, Some(b), res_mul.clone(), Gadgets::Mul);
 
 		let k = 4;
 		let rng = &mut rand::thread_rng();
@@ -524,7 +616,7 @@ mod test {
 		let b = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(b_big);
 		let res = a.sub(&b);
 		let test_chip =
-			TestCircuit::<Fq, Fr, 4, 68, Bn256_4_68>::new(a, b, res.clone(), Gadgets::Sub);
+			TestCircuit::<Fq, Fr, 4, 68, Bn256_4_68>::new(a, Some(b), res.clone(), Gadgets::Sub);
 		let k = 4;
 		let pub_ins = res.result.limbs.to_vec();
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
@@ -543,7 +635,7 @@ mod test {
 		let b = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(b_big);
 		let res = a.div(&b);
 		let test_chip =
-			TestCircuit::<Fq, Fr, 4, 68, Bn256_4_68>::new(a, b, res.clone(), Gadgets::Div);
+			TestCircuit::<Fq, Fr, 4, 68, Bn256_4_68>::new(a, Some(b), res.clone(), Gadgets::Div);
 		let k = 4;
 		let pub_ins = res.result.limbs.to_vec();
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();

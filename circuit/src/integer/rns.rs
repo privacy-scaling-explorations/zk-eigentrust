@@ -91,6 +91,8 @@ pub trait RnsParams<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_
 	fn left_shifters() -> [N; NUM_LIMBS];
 	/// Returns residue value from given inputs.
 	fn residues(n: &[N; NUM_LIMBS], t: &[N; NUM_LIMBS]) -> Vec<N>;
+	/// Returns `quotient` and `remainder` for the reduce operation.
+	fn construct_reduce_qr(a_bn: BigUint) -> (N, [N; NUM_LIMBS]);
 	/// Returns `quotient` and `remainder` for the mul operation.
 	fn construct_mul_qr(a_bn: BigUint, b_bn: BigUint) -> ([N; NUM_LIMBS], [N; NUM_LIMBS]);
 	/// Returns `quotient` and `remainder` for the add operation.
@@ -225,6 +227,14 @@ impl RnsParams<Fq, Fr, 4, 68> for Bn256_4_68 {
 			res.push(v)
 		}
 		res
+	}
+
+	fn construct_reduce_qr(a_bn: BigUint) -> (Fr, [Fr; 4]) {
+		let wrong_mod_bn = Self::wrong_modulus();
+		let (quotient, result_bn) = a_bn.div_rem(&wrong_mod_bn);
+		let q = big_to_fe(quotient);
+		let result = decompose_big::<Fr, 4, 68>(result_bn);
+		(q, result)
 	}
 
 	fn construct_mul_qr(a_bn: BigUint, b_bn: BigUint) -> ([Fr; 4], [Fr; 4]) {
