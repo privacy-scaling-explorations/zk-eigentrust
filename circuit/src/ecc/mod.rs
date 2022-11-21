@@ -3,14 +3,13 @@ pub mod native;
 
 use std::marker::PhantomData;
 
-use self::native::EcPoint;
 use crate::{
 	gadgets::{
 		bits2num::{Bits2NumChip, Bits2NumConfig},
 		common::{CommonChip, CommonConfig},
 	},
 	integer::{
-		native::{Quotient, ReductionWitness},
+		native::{Integer, Quotient, ReductionWitness},
 		rns::RnsParams,
 		IntegerChip, IntegerConfig,
 	},
@@ -18,8 +17,7 @@ use crate::{
 use halo2wrong::halo2::{
 	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region, Value},
-	plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
-	poly::Rotation,
+	plonk::{ConstraintSystem, Error},
 };
 
 #[derive(Debug, Clone)]
@@ -164,13 +162,6 @@ where
 		),
 		Error,
 	> {
-		// TODO: Before doing addition, we check if p_x, p_y, q_x, q_y are multiplied by
-		// one or added by zero. Example:
-		//
-		// Self::assign(
-		//    p_x, [zero, zero, zero, zero], r_w, config, region, row
-		// );
-
 		// Assign a region where we use columns from Integer chip
 		// sub selector - row 0
 		// sub selector - row 2
@@ -409,12 +400,12 @@ where
 
 	pub fn mul_scalar(
 		// Assigns a cell for the r_x.
-		mut exp_x: [AssignedCell<N, N>; NUM_LIMBS],
+		exp_x: [AssignedCell<N, N>; NUM_LIMBS],
 		// Assigns a cell for the r_y.
-		mut exp_y: [AssignedCell<N, N>; NUM_LIMBS],
-		// Reduction witness for r_x -- make sure r_x is in the W field before being passed
+		exp_y: [AssignedCell<N, N>; NUM_LIMBS],
+		// Reduction witness for exp_x -- make sure exp_x is in the W field before being passed
 		exp_x_rw: ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>,
-		// Reduction witness for r_y -- make sure r_y is in the W field before being passed
+		// Reduction witness for exp_y -- make sure exp_y is in the W field before being passed
 		exp_y_rw: ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>,
 		// Assigns a cell for the value.
 		value: AssignedCell<N, N>,
@@ -452,6 +443,18 @@ where
 		let mut r_y = one_limbs.clone();
 		let bits2num = Bits2NumChip::new(value.clone(), value_bits);
 		let bits = bits2num.synthesize(config.bits2num, layouter.namespace(|| "bits2num"))?;
+		let mut exp_x = IntegerChip::reduce(
+			exp_x,
+			exp_x_rw,
+			config.integer.clone(),
+			layouter.namespace(|| "reduce_exp_x"),
+		)?;
+		let mut exp_y = IntegerChip::reduce(
+			exp_y,
+			exp_y_rw,
+			config.integer.clone(),
+			layouter.namespace(|| "reduce_exp_y"),
+		)?;
 		for i in 0..bits.len() {
 			let (new_r_x, new_r_y) = Self::add_unreduced(
 				r_x.clone(),
@@ -506,7 +509,6 @@ mod test {
 			rns::{Bn256_4_68, RnsParams},
 		},
 	};
-	// use bellman_ce::{bn256::G1, CurveProjective};
 	use halo2wrong::{
 		curves::{
 			bn256::{Fq, Fr},
