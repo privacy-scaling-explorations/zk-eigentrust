@@ -11,6 +11,8 @@
 #![warn(trivial_casts)]
 #![forbid(unsafe_code)]
 
+/// Proof aggregator
+pub mod aggregator;
 /// Ecc arithemtic on wrong field
 pub mod ecc;
 /// EDDSA signature scheme gadgets + native version
