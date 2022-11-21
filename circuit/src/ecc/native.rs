@@ -52,6 +52,11 @@ where
 		Self::new(Integer::zero(), Integer::one())
 	}
 
+	/// Create a new object with x = 0 and y = 0
+	pub fn identity() -> Self {
+		Self::new(Integer::zero(), Integer::zero())
+	}
+
 	/// Add one point to another
 	pub fn add(&self, other: &Self) -> Self {
 		// m = (q_y - p_y) / (q_x - p_x)
@@ -119,16 +124,28 @@ where
 	}
 
 	/// Scalar multiplication for given point
-	pub fn mul_scalar(&self, val: &BigUint) -> Self {
-		let bytes = val.to_bytes_be();
-
+	pub fn mul_scalar(&self, le_bytes: [u8; 32]) -> Self {
+		// TODO: try ::identity()
 		let mut r = Self::zero();
-		let mut exp: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P> = self.clone();
-		for i in 0..val.bits() {
-			if test_bit(&bytes, i) {
-				r = r.add(&exp);
+		// let exp: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P> = self.clone();
+
+		// Big Endian vs Little Endian
+		let mut bytes = le_bytes.clone();
+		bytes.reverse();
+		let bits = bytes.map(|byte| {
+			let mut byte_bits = [false; 8];
+			for i in (0..8).rev() {
+				byte_bits[i] = (byte >> i) & 1u8 != 0
 			}
-			exp = exp.double();
+			byte_bits
+		});
+
+		// Double and Add operation
+		for bit in bits.flatten() {
+			r = r.double();
+			if *bit {
+				r = r.add(&self.clone());
+			}
 		}
 		r
 	}
@@ -141,10 +158,16 @@ pub fn test_bit(b: &[u8], i: usize) -> bool {
 
 #[cfg(test)]
 mod test {
-	use halo2wrong::curves::{
-		bn256::{Bn256, Fq, Fr, G1Affine},
-		group::{ff::PrimeField, Curve},
-		CurveAffine,
+	use halo2wrong::{
+		curves::{
+			bn256::{Bn256, Fq, Fr, G1Affine},
+			group::{
+				ff::{BitViewSized, PrimeField},
+				Curve,
+			},
+			CurveAffine,
+		},
+		halo2::arithmetic::Field,
 	};
 	use num_bigint::BigUint;
 	use num_traits::FromPrimitive;
@@ -201,5 +224,27 @@ mod test {
 
 		assert_eq!(c.x, big_to_fe(c_w.x.value()));
 		assert_eq!(c.y, big_to_fe(c_w.y.value()));
+	}
+
+	#[test]
+	fn should_mul_scalar() {
+		let rng = &mut thread_rng();
+
+		let a = G1Affine::random(rng.clone());
+		let scalar = Fr::one();
+		let c = (a * scalar).to_affine();
+
+		let a_x_bn = fe_to_big(a.x);
+		let a_y_bn = fe_to_big(a.y);
+
+		let a_x_w = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_x_bn);
+		let a_y_w = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_y_bn);
+
+		let a_w = EcPoint::new(a_x_w, a_y_w);
+		let c_w = a_w.mul_scalar(scalar.to_bytes());
+
+		println!("{:?} {:?}", c.x, big_to_fe::<Fq>(c_w.x.value()));
+		// assert_eq!(c.x, big_to_fe(c_w.x.value()));
+		// assert_eq!(c.y, big_to_fe(c_w.y.value()));
 	}
 }
