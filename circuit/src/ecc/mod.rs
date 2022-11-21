@@ -44,18 +44,12 @@ where
 {
 	/// Assigns given values and their reduction witnesses
 	fn assign(
-		op: &str, x_opt: Option<&[AssignedCell<N, N>; NUM_LIMBS]>,
-		y: &[AssignedCell<N, N>; NUM_LIMBS],
+		x_opt: Option<&[AssignedCell<N, N>; NUM_LIMBS]>, y: &[AssignedCell<N, N>; NUM_LIMBS],
 		reduction_witness: &ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>,
 		config: &EccConfig<NUM_LIMBS>, region: &mut Region<'_, N>, row: usize,
 	) -> Result<[AssignedCell<N, N>; NUM_LIMBS], Error> {
 		match &reduction_witness.quotient {
 			Quotient::Short(n) => {
-				if op == "sub" {
-					config.integer.sub_selector.enable(region, row)?;
-				} else {
-					config.integer.add_selector.enable(region, row)?;
-				}
 				region.assign_advice(
 					|| "quotient",
 					config.integer.quotient[0],
@@ -64,11 +58,6 @@ where
 				)?;
 			},
 			Quotient::Long(n) => {
-				if op == "div" {
-					config.integer.div_selector.enable(region, row)?;
-				} else {
-					config.integer.mul_selector.enable(region, row)?;
-				}
 				for i in 0..NUM_LIMBS {
 					region.assign_advice(
 						|| format!("quotient_{}", i),
@@ -176,8 +165,8 @@ where
 			|| "elliptic_add_operation",
 			|mut region: Region<'_, N>| {
 				// numerator = other.y.sub(&self.y);
+				config.integer.sub_selector.enable(&mut region, 0)?;
 				let numerator = Self::assign(
-					"sub",
 					Some(&q_y),
 					&p_y,
 					&reduction_witnesses[0],
@@ -188,8 +177,8 @@ where
 				.unwrap();
 
 				// denominator = other.x.sub(&self.x);
+				config.integer.sub_selector.enable(&mut region, 2)?;
 				let denominator = Self::assign(
-					"sub",
 					Some(&q_x),
 					&p_x,
 					&reduction_witnesses[1],
@@ -200,8 +189,8 @@ where
 				.unwrap();
 
 				// m = numerator.result.div(&denominator.result)
+				config.integer.div_selector.enable(&mut region, 4)?;
 				let m = Self::assign(
-					"div",
 					Some(&numerator),
 					&denominator,
 					&reduction_witnesses[2],
@@ -212,26 +201,26 @@ where
 				.unwrap();
 
 				// m_squared = m.result.mul(&m.result)
-				let _m_squared = Self::assign(
-					"mul", None, &m, &reduction_witnesses[3], &config, &mut region, 5,
-				)
-				.unwrap();
+				config.integer.mul_selector.enable(&mut region, 5)?;
+				let _m_squared =
+					Self::assign(None, &m, &reduction_witnesses[3], &config, &mut region, 5)
+						.unwrap();
 
 				// m_squared_minus_p_x = m_squared.result.sub(&self.x)
-				let _m_squared_minus_p_x = Self::assign(
-					"sub", None, &p_x, &reduction_witnesses[4], &config, &mut region, 6,
-				)
-				.unwrap();
+				config.integer.sub_selector.enable(&mut region, 6)?;
+				let _m_squared_minus_p_x =
+					Self::assign(None, &p_x, &reduction_witnesses[4], &config, &mut region, 6)
+						.unwrap();
 
 				// r_x = m_squared_minus_p_x.result.sub(&other.x)
-				let r_x = Self::assign(
-					"sub", None, &q_x, &reduction_witnesses[5], &config, &mut region, 7,
-				)
-				.unwrap();
+				config.integer.sub_selector.enable(&mut region, 7)?;
+				let r_x =
+					Self::assign(None, &q_x, &reduction_witnesses[5], &config, &mut region, 7)
+						.unwrap();
 
 				// r_x_minus_p_x = self.x.sub(&r_x.result);
+				config.integer.sub_selector.enable(&mut region, 9)?;
 				let r_x_minus_p_x = Self::assign(
-					"sub",
 					Some(&p_x),
 					&r_x,
 					&reduction_witnesses[6],
@@ -242,8 +231,8 @@ where
 				.unwrap();
 
 				// m_times_r_x_minus_p_x = m.result.mul(&r_x_minus_p_x.result);
+				config.integer.mul_selector.enable(&mut region, 11)?;
 				let m_times_r_x_minus_p_x = Self::assign(
-					"mul",
 					Some(&m),
 					&r_x_minus_p_x,
 					&reduction_witnesses[7],
@@ -254,8 +243,9 @@ where
 				.unwrap();
 
 				// r_y = m_times_r_x_minus_p_x.result.sub(&self.y)
+				config.integer.sub_selector.enable(&mut region, 12)?;
 				let r_y = Self::assign(
-					"sub", None, &p_y, &reduction_witnesses[8], &config, &mut region, 12,
+					None, &p_y, &reduction_witnesses[8], &config, &mut region, 12,
 				)
 				.unwrap();
 
@@ -298,8 +288,8 @@ where
 			|| "elliptic_double_operation",
 			|mut region: Region<'_, N>| {
 				// double_p_y = self.y.add(&self.y)
+				config.integer.add_selector.enable(&mut region, 0)?;
 				let double_p_y = Self::assign(
-					"add",
 					Some(&p_y),
 					&p_y,
 					&reduction_witnesses[0],
@@ -310,8 +300,8 @@ where
 				.unwrap();
 
 				// p_x_square = self.x.mul(&self.x)
+				config.integer.mul_selector.enable(&mut region, 2)?;
 				let p_x_square = Self::assign(
-					"mul",
 					Some(&p_x),
 					&p_x,
 					&reduction_witnesses[1],
@@ -322,26 +312,29 @@ where
 				.unwrap();
 
 				// p_x_square_times_two = p_x_square.result.add(&p_x_square.result);
+				config.integer.add_selector.enable(&mut region, 3)?;
 				let _p_x_square_times_two = Self::assign(
-					"add", None, &p_x_square, &reduction_witnesses[2], &config, &mut region, 3,
+					None, &p_x_square, &reduction_witnesses[2], &config, &mut region, 3,
 				)
 				.unwrap();
 
 				// p_x_square_times_three = p_x_square.result.add(&p_x_square_times_two.result);
+				config.integer.add_selector.enable(&mut region, 4)?;
 				let _p_x_square_times_three = Self::assign(
-					"add", None, &p_x_square, &reduction_witnesses[3], &config, &mut region, 4,
+					None, &p_x_square, &reduction_witnesses[3], &config, &mut region, 4,
 				)
 				.unwrap();
 
 				// m = p_x_square_times_three.result.div(&double_p_y.result)
+				config.integer.div_selector.enable(&mut region, 5)?;
 				let m = Self::assign(
-					"div", None, &double_p_y, &reduction_witnesses[4], &config, &mut region, 5,
+					None, &double_p_y, &reduction_witnesses[4], &config, &mut region, 5,
 				)
 				.unwrap();
 
 				// double_p_x = self.x.add(&self.x)
+				config.integer.add_selector.enable(&mut region, 7)?;
 				let double_p_x = Self::assign(
-					"add",
 					Some(&p_x),
 					&p_x,
 					&reduction_witnesses[5],
@@ -352,8 +345,8 @@ where
 				.unwrap();
 
 				// m_squared = m.result.mul(&m.result)
+				config.integer.mul_selector.enable(&mut region, 9)?;
 				let _m_squared = Self::assign(
-					"mul",
 					Some(&m),
 					&m,
 					&reduction_witnesses[6],
@@ -364,14 +357,15 @@ where
 				.unwrap();
 
 				// r_x = m_squared.result.sub(&double_p_x.result)
+				config.integer.sub_selector.enable(&mut region, 10)?;
 				let r_x = Self::assign(
-					"sub", None, &double_p_x, &reduction_witnesses[7], &config, &mut region, 10,
+					None, &double_p_x, &reduction_witnesses[7], &config, &mut region, 10,
 				)
 				.unwrap();
 
 				// p_x_minus_r_x = self.x.sub(&r_x.result)
+				config.integer.sub_selector.enable(&mut region, 12)?;
 				let _p_x_minus_r_x = Self::assign(
-					"sub",
 					Some(&p_x),
 					&r_x,
 					&reduction_witnesses[8],
@@ -382,14 +376,15 @@ where
 				.unwrap();
 
 				// m_times_p_x_minus_r_x = m.result.mul(&p_x_minus_r_x.result)
-				let _m_times_p_x_minus_r_x = Self::assign(
-					"mul", None, &m, &reduction_witnesses[9], &config, &mut region, 13,
-				)
-				.unwrap();
+				config.integer.mul_selector.enable(&mut region, 13)?;
+				let _m_times_p_x_minus_r_x =
+					Self::assign(None, &m, &reduction_witnesses[9], &config, &mut region, 13)
+						.unwrap();
 
 				// r_y = m_times_p_x_minus_r_x.result.sub(&self.y)
+				config.integer.sub_selector.enable(&mut region, 14)?;
 				let r_y = Self::assign(
-					"sub", None, &p_y, &reduction_witnesses[10], &config, &mut region, 14,
+					None, &p_y, &reduction_witnesses[10], &config, &mut region, 14,
 				)
 				.unwrap();
 
