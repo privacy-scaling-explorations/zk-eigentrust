@@ -90,26 +90,14 @@ checksum = "bef38d45163c2f1dde094a7dfd33ccf595c92905c8f8f4fdc18d06fb1037718a"
 
 [[package]]
 name = "bitvec"
-version = "0.22.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5237f00a8c86130a0cc317830e558b966dd7850d48a953d998c813f01a41b527"
-dependencies = [
- "funty 1.2.0",
- "radium 0.6.2",
- "tap",
- "wyz 0.4.0",
-]
-
-[[package]]
-name = "bitvec"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1bc2832c24239b0141d5674bb9174f9d68a8b5b3f2753311927c172ca46f7e9c"
 dependencies = [
- "funty 2.0.0",
- "radium 0.7.0",
+ "funty",
+ "radium",
  "tap",
- "wyz 0.5.0",
+ "wyz",
 ]
 
 [[package]]
@@ -503,7 +491,6 @@ name = "eigen-trust-circuit"
 version = "0.1.0"
 dependencies = [
  "blake",
- "ff 0.11.1",
  "group 0.11.0",
  "halo2wrong",
  "hex",
@@ -553,7 +540,6 @@ version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "131655483be284720a17d74ff97592b8e76576dc25563148601df2d7c9080924"
 dependencies = [
- "bitvec 0.22.3",
  "rand_core 0.6.4",
  "subtle",
 ]
@@ -564,7 +550,7 @@ version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "df689201f395c6b90dfe87127685f8dbfc083a5e779e613575d8bd7314300c3e"
 dependencies = [
- "bitvec 1.0.1",
+ "bitvec",
  "rand_core 0.6.4",
  "subtle",
 ]
@@ -672,12 +658,6 @@ name = "fuchsia-cprng"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a06f77d526c1a601b7c4cdd98f54b5eaabffc14d5f2f0296febdc7f357c6d3ba"
-
-[[package]]
-name = "funty"
-version = "1.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1847abb9cb65d566acd5942e94aea9c8f547ad02c98e1649326fc0e8910b8b1e"
 
 [[package]]
 name = "funty"
@@ -1772,12 +1752,6 @@ dependencies = [
 
 [[package]]
 name = "radium"
-version = "0.6.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "643f8f41a8ebc4c5dc4515c82bb8abd397b527fc20fd681b7c011c2aee5d44fb"
-
-[[package]]
-name = "radium"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dc33ff2d4973d518d823d61aa239014831e521c75da58e3df4840d3f47749d09"
@@ -2602,15 +2576,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5d129932f4644ac2396cb456385cbf9e63b5b30c6e8dc4820bdca4eb082037a5"
 dependencies = [
  "winapi",
-]
-
-[[package]]
-name = "wyz"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "129e027ad65ce1453680623c3fb5163cbf7107bfe1aa32257e7d0e63f9ced188"
-dependencies = [
- "tap",
 ]
 
 [[package]]
