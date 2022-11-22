@@ -72,6 +72,14 @@ where
 		self.hasher.update(&[native_x, native_y]);
 		Ok(point)
 	}
+
+	fn read_n_scalars(&mut self, n: usize) -> Result<Vec<C::ScalarExt>, Error> {
+		(0..n).map(|_| self.read_scalar()).collect()
+	}
+
+	fn read_n_points(&mut self, n: usize) -> Result<Vec<C>, Error> {
+		(0..n).map(|_| self.read_point()).collect()
+	}
 }
 
 #[cfg(test)]
