@@ -48,6 +48,10 @@ where
 		let native_y = R::compose(point.x.limbs);
 		self.hasher.update(&[native_x, native_y]);
 	}
+
+	fn squeeze_challange(&mut self) -> N {
+		self.hasher.squeeze()
+	}
 }
 
 #[cfg(test)]
