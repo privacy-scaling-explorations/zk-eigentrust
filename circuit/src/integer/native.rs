@@ -87,6 +87,12 @@ where
 		Self::from_limbs(limbs)
 	}
 
+	/// Creates and new Integer from wrong field
+	pub fn from_w(num: W) -> Self {
+		let num_bn = fe_to_big(num);
+		Self::new(num_bn)
+	}
+
 	/// Construct an Integer from given `limbs`.
 	pub fn from_limbs(limbs: [N; NUM_LIMBS]) -> Self {
 		Self { limbs, _wrong_field: PhantomData, _rns: PhantomData }

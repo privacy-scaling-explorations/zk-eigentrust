@@ -7,7 +7,6 @@ edition = "2021"
 
 [dependencies]
 plotters = { version = "0.3.0" }
-ff = "0.11"
 rand = "0.8"
 group = "0.11"
 hex = { version = "0.4", default-features = false, features = ["alloc"] }
