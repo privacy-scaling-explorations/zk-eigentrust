@@ -8,7 +8,8 @@ use std::{
 	ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
 
-struct MSM<C: Curve> {
+#[derive(Clone, Debug)]
+pub struct MSM<C: Curve> {
 	scalar: Option<C::Scalar>,
 	bases: Vec<C>,
 	scalars: Vec<C::Scalar>,
