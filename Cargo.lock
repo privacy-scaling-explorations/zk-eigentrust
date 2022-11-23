@@ -491,7 +491,6 @@ name = "eigen-trust-circuit"
 version = "0.1.0"
 dependencies = [
  "blake",
- "group 0.11.0",
  "halo2wrong",
  "hex",
  "num-bigint 0.2.6",
@@ -532,16 +531,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a7a407cfaa3385c4ae6b23e84623d48c2798d06e3e6a1878f7f59f17b3f86499"
 dependencies = [
  "instant",
-]
-
-[[package]]
-name = "ff"
-version = "0.11.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "131655483be284720a17d74ff97592b8e76576dc25563148601df2d7c9080924"
-dependencies = [
- "rand_core 0.6.4",
- "subtle",
 ]
 
 [[package]]
@@ -805,24 +794,12 @@ dependencies = [
 
 [[package]]
 name = "group"
-version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bc5ac374b108929de78460075f3dc439fa66df9d8fc77e8f12caa5165fcf0c89"
-dependencies = [
- "byteorder",
- "ff 0.11.1",
- "rand_core 0.6.4",
- "subtle",
-]
-
-[[package]]
-name = "group"
 version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7391856def869c1c81063a03457c676fbcd419709c3dfb33d8d319de484b154d"
 dependencies = [
  "byteorder",
- "ff 0.12.0",
+ "ff",
  "rand_core 0.6.4",
  "subtle",
 ]
@@ -852,8 +829,8 @@ version = "0.2.0"
 source = "git+https://github.com/privacy-scaling-explorations/halo2?tag=v2022_09_10#a9e99a72a65d7c98e8a4258c2c94269c834d1c10"
 dependencies = [
  "blake2b_simd",
- "ff 0.12.0",
- "group 0.12.0",
+ "ff",
+ "group",
  "halo2curves",
  "rand_core 0.6.4",
  "rayon",
@@ -865,8 +842,8 @@ name = "halo2curves"
 version = "0.2.1"
 source = "git+https://github.com/privacy-scaling-explorations/halo2curves?tag=0.2.1#f75ed26c961179186e9cec02cc3f841ca9e3fec1"
 dependencies = [
- "ff 0.12.0",
- "group 0.12.0",
+ "ff",
+ "group",
  "lazy_static",
  "num-bigint 0.4.3",
  "num-traits",
@@ -882,7 +859,7 @@ name = "halo2wrong"
 version = "0.1.0"
 source = "git+https://github.com/privacy-scaling-explorations/halo2wrong.git?branch=master#ed953b054b906b64787dc9a8cbefc0db4be9f8fa"
 dependencies = [
- "group 0.12.0",
+ "group",
  "halo2_proofs",
  "num-bigint 0.4.3",
  "num-integer",
@@ -1469,8 +1446,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "369d7785168ad7ff0cbe467d968ca3e19a927d8536b11ef9c21b4e454b15ba42"
 dependencies = [
  "blake2b_simd",
- "ff 0.12.0",
- "group 0.12.0",
+ "ff",
+ "group",
  "lazy_static",
  "rand 0.8.5",
  "static_assertions",
