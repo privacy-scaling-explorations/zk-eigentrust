@@ -124,30 +124,39 @@ where
 	}
 
 	/// Scalar multiplication for given point
-	pub fn mul_scalar(&self, le_bytes: [u8; 32]) -> Self {
+	pub fn mul_scalar(&self, le_bytes: &[u8]) -> Self {
 		// TODO: try ::identity()
 		let mut r = Self::zero();
 		// let exp: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P> = self.clone();
 
 		// Big Endian vs Little Endian
-		let mut bytes = le_bytes.clone();
-		bytes.reverse();
-		let bits = bytes.map(|byte| {
-			let mut byte_bits = [false; 8];
-			for i in (0..8).rev() {
-				byte_bits[i] = (byte >> i) & 1u8 != 0
-			}
-			byte_bits
-		});
+		let bytes = le_bytes.clone();
+		let bits: Vec<bool> = bytes
+			.iter()
+			.rev()
+			.map(|byte| {
+				let mut byte_bits = [false; 8];
+				for i in (0..8).rev() {
+					byte_bits[i] = (byte >> i) & 1u8 != 0
+				}
+				byte_bits
+			})
+			.flatten()
+			.collect();
 
 		// Double and Add operation
-		for bit in bits.flatten() {
+		for bit in bits {
 			r = r.double();
-			if *bit {
+			if bit {
 				r = r.add(&self.clone());
 			}
 		}
 		r
+	}
+
+	/// Check if two points are equal
+	pub fn is_eq(&self, other: &Self) -> bool {
+		self.x.is_eq(&other.x) && self.y.is_eq(&other.y)
 	}
 }
 
@@ -241,7 +250,7 @@ mod test {
 		let a_y_w = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_y_bn);
 
 		let a_w = EcPoint::new(a_x_w, a_y_w);
-		let c_w = a_w.mul_scalar(scalar.to_bytes());
+		let c_w = a_w.mul_scalar(&scalar.to_bytes());
 
 		println!("{:?} {:?}", c.x, big_to_fe::<Fq>(c_w.x.value()));
 		// assert_eq!(c.x, big_to_fe(c_w.x.value()));

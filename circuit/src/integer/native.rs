@@ -246,6 +246,13 @@ where
 
 		ReductionWitness { result: result_int, quotient: quotient_int, intermediate: t, residues }
 	}
+
+	/// Check if two integers are equal
+	pub fn is_eq(&self, other: &Self) -> bool {
+		let self_native = P::compose(self.limbs);
+		let other_native = P::compose(other.limbs);
+		self_native == other_native
+	}
 }
 
 #[cfg(test)]
