@@ -14,7 +14,7 @@ const WIDTH: usize = 5;
 const NUM_LIMBS: usize = 4;
 const NUM_BITS: usize = 68;
 
-struct Transcript<C: CurveAffine, I: Read, P, R>
+pub struct Transcript<C: CurveAffine, I: Read, P, R>
 where
 	P: RoundParams<C::ScalarExt, WIDTH>,
 	R: RnsParams<C::Base, C::ScalarExt, NUM_LIMBS, NUM_BITS>,
@@ -30,26 +30,28 @@ where
 	P: RoundParams<C::ScalarExt, WIDTH>,
 	R: RnsParams<C::Base, C::ScalarExt, NUM_LIMBS, NUM_BITS>,
 {
-	fn new(buffer: I) -> Self {
+	pub fn new(buffer: I) -> Self {
 		Self { hasher: PoseidonSponge::new(), buffer, _params: PhantomData, _rns: PhantomData }
 	}
 
-	fn common_scalar(&mut self, scalar: Integer<C::Base, C::ScalarExt, NUM_LIMBS, NUM_BITS, R>) {
+	pub fn common_scalar(
+		&mut self, scalar: Integer<C::Base, C::ScalarExt, NUM_LIMBS, NUM_BITS, R>,
+	) {
 		let native_scalar = R::compose(scalar.limbs);
 		self.hasher.update(&[native_scalar]);
 	}
 
-	fn common_point(&mut self, point: EcPoint<C::Base, C::ScalarExt, NUM_LIMBS, NUM_BITS, R>) {
+	pub fn common_point(&mut self, point: EcPoint<C::Base, C::ScalarExt, NUM_LIMBS, NUM_BITS, R>) {
 		let native_x = R::compose(point.x.limbs);
 		let native_y = R::compose(point.x.limbs);
 		self.hasher.update(&[native_x, native_y]);
 	}
 
-	fn squeeze_challange(&mut self) -> C::ScalarExt {
+	pub fn squeeze_challange(&mut self) -> C::ScalarExt {
 		self.hasher.squeeze()
 	}
 
-	fn read_scalar(&mut self) -> Result<C::ScalarExt, Error> {
+	pub fn read_scalar(&mut self) -> Result<C::ScalarExt, Error> {
 		let mut data = <C::Scalar as PrimeField>::Repr::default();
 		self.buffer.read_exact(data.as_mut())?;
 		let scalar_opt: Option<C::ScalarExt> = C::Scalar::from_repr(data).into();
@@ -58,7 +60,7 @@ where
 		Ok(scalar)
 	}
 
-	fn read_point(&mut self) -> Result<C, Error> {
+	pub fn read_point(&mut self) -> Result<C, Error> {
 		let mut data = C::Repr::default();
 		self.buffer.read_exact(data.as_mut())?;
 		let point_opt: Option<C> = C::from_bytes(&data).into();
@@ -73,12 +75,16 @@ where
 		Ok(point)
 	}
 
-	fn read_n_scalars(&mut self, n: usize) -> Result<Vec<C::ScalarExt>, Error> {
+	pub fn read_n_scalars(&mut self, n: usize) -> Result<Vec<C::ScalarExt>, Error> {
 		(0..n).map(|_| self.read_scalar()).collect()
 	}
 
-	fn read_n_points(&mut self, n: usize) -> Result<Vec<C>, Error> {
+	pub fn read_n_points(&mut self, n: usize) -> Result<Vec<C>, Error> {
 		(0..n).map(|_| self.read_point()).collect()
+	}
+
+	pub fn squeeze_n_challenges(&mut self, n: usize) -> Vec<C::ScalarExt> {
+		(0..n).map(|_| self.squeeze_challange()).collect()
 	}
 }
 
