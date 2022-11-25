@@ -98,6 +98,13 @@ where
 		Self { limbs, _wrong_field: PhantomData, _rns: PhantomData }
 	}
 
+	/// Construct an Integer from given `limbs` vector.
+	pub fn from_slice(limbs_vec: &[N]) -> Self {
+		assert_eq!(limbs_vec.len(), NUM_LIMBS);
+		let limbs: [N; NUM_LIMBS] = limbs_vec.try_into().unwrap();
+		Self::from_limbs(limbs)
+	}
+
 	/// Returns integer with value zero
 	pub fn zero() -> Self {
 		Self::new(BigUint::zero())
