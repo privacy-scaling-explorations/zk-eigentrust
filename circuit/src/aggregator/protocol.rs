@@ -1,4 +1,5 @@
 /*
+
 Domain {
 	k: 4,
 	n: 16,
@@ -6,134 +7,32 @@ Domain {
 	gen: 0x21082ca216cbbf4e1c6e4f4594dd508c996dfbe1174efb98b11509c6e306460b,
 	gen_inv: 0x02e40daf409556c02bfc85eb303402b774954d30aeb0337eb85a71e6373428de,
 }
-
 Preprocessed = [
 	(0x20a43e7c9b0bfed89242523c32d315f2f730b71e1fdc2ffae0d41960c74a9bb9, 0x1f031b066e41eb70f097b18b47ce89b9cde78886fd22df24a3f2b7f42c94a7e5),
 ]
-
-num_instance = [
-	1,
-	1,
-]
-
-num_witness = [
-	6,
-	0,
-	7,
-]
-
-num_challenge = [
-	1,
-	2,
-	1,
-]
-
+num_instance = [ 1, 1, ]
+num_witness = [ 6, 0, 7, ]
+num_challenge = [ 1, 2, 1, ]
 Evaluations = [
-	Query {
-		poly: 3,
-		rotation: Rotation(
-			0,
-		),
-	},
-	Query {
-		poly: 4,
-		rotation: Rotation(
-			0,
-		),
-	},
-	Query {
-		poly: 3,
-		rotation: Rotation(
-			1,
-		),
-	},
-	Query {
-		poly: 5,
-		rotation: Rotation(
-			0,
-		),
-	},
-	Query {
-		poly: 6,
-		rotation: Rotation(
-			0,
-		),
-	},
-	Query {
-		poly: 5,
-		rotation: Rotation(
-			1,
-		),
-	},
-	Query {
-		poly: 0,
-		rotation: Rotation(
-			0,
-		),
-	},
-	Query {
-		poly: 7,
-		rotation: Rotation(
-			0,
-		),
-	},
+	Query { poly: 3, rotation: Rotation(0,) },
+	Query { poly: 4, rotation: Rotation(0) },
+	Query { poly: 3, rotation: Rotation(1) },
+	Query { poly: 5, rotation: Rotation(0) },
+	Query { poly: 6, rotation: Rotation(0) },
+	Query { poly: 5, rotation: Rotation(1) },
+	Query {poly: 0, rotation: Rotation(0) },
+	Query {poly: 7, rotation: Rotation(0) },
 ]
-
 Queries = [
-	Query {
-		poly: 3,
-		rotation: Rotation(
-			0,
-		),
-	},
-	Query {
-		poly: 4,
-		rotation: Rotation(
-			0,
-		),
-	},
-	Query {
-		poly: 3,
-		rotation: Rotation(
-			1,
-		),
-	},
-	Query {
-		poly: 5,
-		rotation: Rotation(
-			0,
-		),
-	},
-	Query {
-		poly: 6,
-		rotation: Rotation(
-			0,
-		),
-	},
-	Query {
-		poly: 5,
-		rotation: Rotation(
-			1,
-		),
-	},
-	Query {
-		poly: 0,
-		rotation: Rotation(
-			0,
-		),
-	},
-	Query {
-		poly: 8,
-		rotation: Rotation(
-			0,
-		),
-	},
-	Query {
-		poly: 7,
-		rotation: Rotation(
-			0,
-		),
-	},
+	Query { poly: 3, rotation: Rotation(0) },
+	Query { poly: 4, rotation: Rotation(0) },
+	Query {poly: 3, rotation: Rotation(1) },
+	Query { poly: 5, rotation: Rotation(0) },
+	Query { poly: 6, rotation: Rotation(0) },
+	Query { poly: 5, rotation: Rotation(1) },
+	Query { poly: 0, rotation: Rotation(0) },
+	Query { poly: 8, rotation: Rotation(0) },
+	Query {poly: 7 rotation: Rotation(0) },
 ]
 
 Quotient = QuotientPolynomial {
@@ -141,83 +40,23 @@ Quotient = QuotientPolynomial {
 	numerator: DistributePowers(
 		[
 			Product(
-				Polynomial(
-					Query {
-						poly: 0,
-						rotation: Rotation(
-							0,
-						),
-					},
-				),
+				Polynomial(Query { poly: 0, rotation: Rotation(0) }),
 				Sum(
 					Product(
-						Polynomial(
-							Query {
-								poly: 3,
-								rotation: Rotation(
-									0,
-								),
-							},
-						),
-						Polynomial(
-							Query {
-								poly: 4,
-								rotation: Rotation(
-									0,
-								),
-							},
-						),
+						Polynomial(Query { poly: 3, rotation: Rotation(0) }),
+						Polynomial(Query { poly: 4, rotation: Rotation(0) }),
 					),
-					Negated(
-						Polynomial(
-							Query {
-								poly: 3,
-								rotation: Rotation(
-									1,
-								),
-							},
-						),
-					),
+					Negated(Polynomial(Query {poly: 3, rotation: Rotation(1) })),
 				),
 			),
 			Product(
-				Polynomial(
-					Query {
-						poly: 0,
-						rotation: Rotation(
-							0,
-						),
-					},
-				),
+				Polynomial(Query { poly: 0, rotation: Rotation(0) }),
 				Sum(
 					Product(
-						Polynomial(
-							Query {
-								poly: 5,
-								rotation: Rotation(
-									0,
-								),
-							},
-						),
-						Polynomial(
-							Query {
-								poly: 6,
-								rotation: Rotation(
-									0,
-								),
-							},
-						),
+						Polynomial(Query { poly: 5, rotation: Rotation(0) }),
+						Polynomial(Query { poly: 6, rotation: Rotation(0) }),
 					),
-					Negated(
-						Polynomial(
-							Query {
-								poly: 5,
-								rotation: Rotation(
-									1,
-								),
-							},
-						),
-					),
+					Negated(Polynomial(Query { poly: 5, rotation: Rotation(1) })),
 				),
 			),
 		],
@@ -226,11 +65,9 @@ Quotient = QuotientPolynomial {
 		),
 	),
 }
-
 transcript_initial_state = Some(
 	0x021fc4f2493918b9764ac35a03ec3b92ae1daf3ea4ab4590b17329bfb1419ff1,
 )
-
 instance_committing_key = Some(
 	InstanceCommittingKey {
 		bases: [
@@ -242,8 +79,8 @@ instance_committing_key = Some(
 	},
 )
 linearization = None
-
 accumulator_indices = [[(0, 0), (0, 1), (0, 2), (0, 3)], [(1, 0), (1, 1), (1, 2), (1, 3)]]
+
 */
 
 use crate::aggregator::protocol::Expression::{
