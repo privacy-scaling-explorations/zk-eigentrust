@@ -14,3 +14,4 @@ blake = "2.0.2"
 num-bigint = {version = "0.2.2", features = ["rand"]}
 num-integer = "0.1.45"
 num-traits = "0.2"
+itertools = "0.10.3"

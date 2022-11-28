@@ -83,15 +83,14 @@ accumulator_indices = [[(0, 0), (0, 1), (0, 2), (0, 3)], [(1, 0), (1, 1), (1, 2)
 
 */
 
-use crate::aggregator::protocol::Expression::{
-	Challenge, DistributePowers, Negated, Polynomial, Product, Sum,
-};
+use crate::aggregator::protocol::Expression::{Challenge, Negated, Polynomial, Product, Sum};
 
 use halo2wrong::curves::{
 	bn256::{Fq, Fr, G1Affine},
 	group::ff::PrimeField,
 	CurveAffine, FieldExt,
 };
+use std::cmp::max;
 
 #[derive(Debug)]
 pub struct Domain<F: PrimeField> {
@@ -116,7 +115,19 @@ pub enum Expression<F> {
 	Negated(Box<Expression<F>>),
 	Sum(Box<Expression<F>>, Box<Expression<F>>),
 	Product(Box<Expression<F>>, Box<Expression<F>>),
-	DistributePowers(Vec<Expression<F>>, Box<Expression<F>>),
+}
+
+impl<F: Clone> Expression<F> {
+	pub fn degree(&self) -> usize {
+		match self {
+			Expression::Constant(_) => 0,
+			Expression::Polynomial { .. } => 1,
+			Expression::Challenge { .. } => 0,
+			Expression::Negated(a) => a.degree(),
+			Expression::Sum(a, b) => max(a.degree(), b.degree()),
+			Expression::Product(a, b) => a.degree() + b.degree(),
+		}
+	}
 }
 
 #[derive(Clone, Debug)]
@@ -139,7 +150,7 @@ pub trait Protocol<F: FieldExt, G: CurveAffine> {
 	fn preprocessed() -> [G; 1];
 	fn evaluations() -> Vec<Query>;
 	fn queries() -> Vec<Query>;
-	fn quotient() -> QuotientPolynomial<G::Scalar>;
+	fn relations() -> Vec<Expression<G::Scalar>>;
 	fn num_instance() -> Vec<usize>;
 	fn num_witness() -> Vec<usize>;
 	fn num_challenge() -> Vec<usize>;
@@ -212,41 +223,35 @@ impl Protocol<Fr, G1Affine> for FixedProtocol {
 		]
 	}
 
-	fn quotient() -> QuotientPolynomial<Fr> {
-		QuotientPolynomial {
-			chunk_degree: 1,
-			numerator: DistributePowers(
-				vec![
-					Product(
-						Box::new(Polynomial(Query { poly: 0, rotation: Rotation(0) })),
-						Box::new(Sum(
-							Box::new(Product(
-								Box::new(Polynomial(Query { poly: 3, rotation: Rotation(0) })),
-								Box::new(Polynomial(Query { poly: 4, rotation: Rotation(0) })),
-							)),
-							Box::new(Negated(Box::new(Polynomial(Query {
-								poly: 3,
-								rotation: Rotation(1),
-							})))),
-						)),
-					),
-					Product(
-						Box::new(Polynomial(Query { poly: 0, rotation: Rotation(0) })),
-						Box::new(Sum(
-							Box::new(Product(
-								Box::new(Polynomial(Query { poly: 5, rotation: Rotation(0) })),
-								Box::new(Polynomial(Query { poly: 6, rotation: Rotation(0) })),
-							)),
-							Box::new(Negated(Box::new(Polynomial(Query {
-								poly: 5,
-								rotation: Rotation(1),
-							})))),
-						)),
-					),
-				],
-				Box::new(Challenge(3)),
+	fn relations() -> Vec<Expression<Fr>> {
+		vec![
+			Product(
+				Box::new(Polynomial(Query { poly: 0, rotation: Rotation(0) })),
+				Box::new(Sum(
+					Box::new(Product(
+						Box::new(Polynomial(Query { poly: 3, rotation: Rotation(0) })),
+						Box::new(Polynomial(Query { poly: 4, rotation: Rotation(0) })),
+					)),
+					Box::new(Negated(Box::new(Polynomial(Query {
+						poly: 3,
+						rotation: Rotation(1),
+					})))),
+				)),
 			),
-		}
+			Product(
+				Box::new(Polynomial(Query { poly: 0, rotation: Rotation(0) })),
+				Box::new(Sum(
+					Box::new(Product(
+						Box::new(Polynomial(Query { poly: 5, rotation: Rotation(0) })),
+						Box::new(Polynomial(Query { poly: 6, rotation: Rotation(0) })),
+					)),
+					Box::new(Negated(Box::new(Polynomial(Query {
+						poly: 5,
+						rotation: Rotation(1),
+					})))),
+				)),
+			),
+		]
 	}
 
 	fn num_instance() -> Vec<usize> {

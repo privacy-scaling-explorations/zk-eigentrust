@@ -10,9 +10,7 @@ use halo2wrong::{
 };
 use std::{io::Read, marker::PhantomData};
 
-const WIDTH: usize = 5;
-const NUM_LIMBS: usize = 4;
-const NUM_BITS: usize = 68;
+use super::{NUM_BITS, NUM_LIMBS, WIDTH};
 
 pub struct Transcript<C: CurveAffine, I: Read, P, R>
 where
@@ -34,11 +32,8 @@ where
 		Self { hasher: PoseidonSponge::new(), buffer, _params: PhantomData, _rns: PhantomData }
 	}
 
-	pub fn common_scalar(
-		&mut self, scalar: Integer<C::Base, C::ScalarExt, NUM_LIMBS, NUM_BITS, R>,
-	) {
-		let native_scalar = R::compose(scalar.limbs);
-		self.hasher.update(&[native_scalar]);
+	pub fn common_scalar(&mut self, scalar: C::ScalarExt) {
+		self.hasher.update(&[scalar]);
 	}
 
 	pub fn common_point(&mut self, point: EcPoint<C::Base, C::ScalarExt, NUM_LIMBS, NUM_BITS, R>) {
@@ -47,7 +42,7 @@ where
 		self.hasher.update(&[native_x, native_y]);
 	}
 
-	pub fn squeeze_challange(&mut self) -> C::ScalarExt {
+	pub fn squeeze_challenge(&mut self) -> C::ScalarExt {
 		self.hasher.squeeze()
 	}
 
@@ -60,7 +55,9 @@ where
 		Ok(scalar)
 	}
 
-	pub fn read_point(&mut self) -> Result<C, Error> {
+	pub fn read_point(
+		&mut self,
+	) -> Result<EcPoint<C::Base, C::ScalarExt, NUM_LIMBS, NUM_BITS, R>, Error> {
 		let mut data = C::Repr::default();
 		self.buffer.read_exact(data.as_mut())?;
 		let point_opt: Option<C> = C::from_bytes(&data).into();
@@ -69,22 +66,25 @@ where
 		let coord = coord_opt.ok_or(Error::Synthesis)?;
 		let x = Integer::<C::Base, C::ScalarExt, NUM_LIMBS, NUM_BITS, R>::from_w(*coord.x());
 		let y = Integer::<C::Base, C::ScalarExt, NUM_LIMBS, NUM_BITS, R>::from_w(*coord.y());
+		let ec_point = EcPoint::new(x.clone(), y.clone());
 		let native_x = R::compose(x.limbs);
 		let native_y = R::compose(y.limbs);
 		self.hasher.update(&[native_x, native_y]);
-		Ok(point)
+		Ok(ec_point)
 	}
 
 	pub fn read_n_scalars(&mut self, n: usize) -> Result<Vec<C::ScalarExt>, Error> {
 		(0..n).map(|_| self.read_scalar()).collect()
 	}
 
-	pub fn read_n_points(&mut self, n: usize) -> Result<Vec<C>, Error> {
+	pub fn read_n_points(
+		&mut self, n: usize,
+	) -> Result<Vec<EcPoint<C::Base, C::ScalarExt, NUM_LIMBS, NUM_BITS, R>>, Error> {
 		(0..n).map(|_| self.read_point()).collect()
 	}
 
 	pub fn squeeze_n_challenges(&mut self, n: usize) -> Vec<C::ScalarExt> {
-		(0..n).map(|_| self.squeeze_challange()).collect()
+		(0..n).map(|_| self.squeeze_challenge()).collect()
 	}
 }
 
