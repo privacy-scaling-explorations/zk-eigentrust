@@ -493,6 +493,7 @@ dependencies = [
  "blake",
  "halo2wrong",
  "hex",
+ "itertools",
  "num-bigint 0.2.6",
  "num-integer",
  "num-traits",
