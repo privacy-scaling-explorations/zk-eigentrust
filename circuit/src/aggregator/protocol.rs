@@ -145,6 +145,20 @@ pub struct Query {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Rotation(pub i32);
 
+impl Rotation {
+	pub fn cur() -> Self {
+		Rotation(0)
+	}
+
+	pub fn prev() -> Self {
+		Rotation(-1)
+	}
+
+	pub fn next() -> Self {
+		Rotation(1)
+	}
+}
+
 pub trait Protocol<F: FieldExt, G: CurveAffine> {
 	fn domain() -> Domain<G::Scalar>;
 	fn preprocessed() -> [G; 1];
