@@ -50,7 +50,7 @@ where
 		Self::new(Integer::zero(), Integer::one())
 	}
 
-	/// Create a new object with x = 0 and y = 1
+	/// Create a new object with x = 1 and y = 1
 	pub fn one() -> Self {
 		Self::new(Integer::one(), Integer::one())
 	}
@@ -122,9 +122,17 @@ where
 	}
 
 	/// Scalar multiplication for given point
-	pub fn mul_scalar(&self, le_bytes: [u8; 32]) -> Self {
+	pub fn mul_scalar(
+		&self, le_bytes: [u8; 32],
+	) -> (
+		Self,
+		[Vec<ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>>; 256],
+		[Vec<ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>>; 256],
+	) {
 		let mut r = Self::zero();
 		let mut exp: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P> = self.clone();
+		let mut reduction_add = [(); 256].map(|_| r.reduction_witnesses.clone());
+		let mut reduction_mul = [(); 256].map(|_| r.reduction_witnesses.clone());
 
 		// Big Endian vs Little Endian
 		let bits = le_bytes.map(|byte| {
@@ -135,6 +143,7 @@ where
 			byte_bits
 		});
 		let mut flag = true;
+		let mut i = 0;
 		// Double and Add operation
 		for bit in bits.flatten() {
 			if *bit {
@@ -150,9 +159,12 @@ where
 					r = r.add(&exp.clone());
 				}
 			}
+			reduction_add[i] = r.reduction_witnesses.clone();
 			exp = exp.double();
+			reduction_mul[i] = exp.reduction_witnesses.clone();
+			i += 1;
 		}
-		r
+		(r, reduction_add, reduction_mul)
 	}
 }
 
@@ -237,7 +249,7 @@ mod test {
 		let a_w = EcPoint::new(a_x_w, a_y_w);
 		let c_w = a_w.mul_scalar(scalar.to_bytes());
 
-		assert_eq!(c.x, big_to_fe(c_w.x.value()));
-		assert_eq!(c.y, big_to_fe(c_w.y.value()));
+		assert_eq!(c.x, big_to_fe(c_w.0.x.value()));
+		assert_eq!(c.y, big_to_fe(c_w.0.y.value()));
 	}
 }
