@@ -1,4 +1,6 @@
 use super::{
+	common_poly::CommonPolynomialEvaluation,
+	msm::MSM,
 	protocol::{Expression, Protocol},
 	transcript::Transcript,
 };
@@ -12,7 +14,7 @@ use halo2wrong::{
 	curves::{group::ff::PrimeField, Coordinates, CurveAffine, FieldExt},
 	halo2::plonk::Error,
 };
-use std::{io::Read, marker::PhantomData};
+use std::{collections::HashMap, io::Read, iter, marker::PhantomData};
 
 use super::{NUM_BITS, NUM_LIMBS, WIDTH};
 
@@ -79,10 +81,8 @@ where
 		};
 
 		let alpha = transcript.squeeze_challenge();
-		let quotients = {
-			let max_degree = PR::relations().iter().map(Expression::degree).max().unwrap();
-			transcript.read_n_points(max_degree - 1)?
-		};
+		let max_degree = PR::relations().iter().map(Expression::degree).max().unwrap();
+		let quotients = transcript.read_n_points(max_degree - 1)?;
 
 		let z = transcript.squeeze_challenge();
 		let evaluations = transcript.read_n_scalars(PR::evaluations().len())?;
@@ -110,4 +110,47 @@ where
 			_protocol: PhantomData,
 		})
 	}
+
+	fn commitments(
+		&self, common_poly_eval: &CommonPolynomialEvaluation<C::ScalarExt>,
+	) -> HashMap<usize, MSM<C::Base, C::ScalarExt, NUM_LIMBS, NUM_BITS, RNS>> {
+		let prep = PR::preprocessed();
+		let mut comms = Vec::new();
+		for (i, value) in prep.iter().enumerate() {
+			let coord_opt: Option<Coordinates<C>> = value.coordinates().into();
+			let coord = coord_opt.unwrap();
+			let x = coord.x();
+			let y = coord.y();
+			let int_x = Integer::from_w(x.clone());
+			let int_y = Integer::from_w(y.clone());
+			let ec_point = EcPoint::new(int_x, int_y);
+			comms.push((i, MSM::base(ec_point)));
+		}
+
+		let auxiliary_offset = PR::preprocessed().len() + PR::num_instance().len();
+		for (i, aux) in self.auxiliaries.iter().cloned().enumerate() {
+			comms.push((auxiliary_offset + i, MSM::base(aux)));
+		}
+
+		let pws = powers(common_poly_eval.zn(), self.quotients.len());
+
+		let mut sum = MSM::default();
+		for (i, pw) in pws.iter().enumerate() {
+			let mut quo_base = MSM::base(self.quotients[i].clone());
+			quo_base.scale(pw);
+			sum.extend(quo_base);
+		}
+
+		comms.push((PR::vanishing_poly(), sum));
+		comms.into_iter().collect()
+	}
+}
+
+fn powers<F: FieldExt>(scalar: F, n: usize) -> Vec<F> {
+	iter::once(F::one())
+		.chain(
+			iter::successors(Some(scalar.clone()), |power| Some(power.clone() * scalar))
+				.take(n - 1),
+		)
+		.collect()
 }

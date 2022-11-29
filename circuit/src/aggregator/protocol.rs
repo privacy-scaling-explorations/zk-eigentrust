@@ -158,6 +158,7 @@ pub trait Protocol<F: FieldExt, G: CurveAffine> {
 	fn instance_committing_key() -> Option<InstanceCommittingKey<G>>;
 	fn linearization() -> Option<F>;
 	fn accumulator_indices() -> Vec<Vec<(usize, usize)>>;
+	fn vanishing_poly() -> usize;
 }
 
 pub struct FixedProtocol;
@@ -303,6 +304,12 @@ impl Protocol<Fr, G1Affine> for FixedProtocol {
 
 	fn accumulator_indices() -> Vec<Vec<(usize, usize)>> {
 		vec![vec![(0, 0), (0, 1), (0, 2), (0, 3)], vec![(1, 0), (1, 1), (1, 2), (1, 3)]]
+	}
+
+	fn vanishing_poly() -> usize {
+		Self::preprocessed().len()
+			+ Self::num_instance().len()
+			+ Self::num_witness().iter().sum::<usize>()
 	}
 }
 
