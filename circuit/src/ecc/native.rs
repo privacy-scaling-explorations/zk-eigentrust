@@ -17,9 +17,7 @@ use crate::integer::{
 	native::{Integer, ReductionWitness},
 	rns::RnsParams,
 };
-use halo2wrong::halo2::arithmetic::{Field, FieldExt};
-use num_bigint::BigUint;
-use num_traits::{FromPrimitive, Zero};
+use halo2wrong::halo2::arithmetic::FieldExt;
 
 /// Structure for the EcPoint
 #[derive(Clone, Debug)]
@@ -52,9 +50,9 @@ where
 		Self::new(Integer::zero(), Integer::one())
 	}
 
-	/// Create a new object with x = 0 and y = 0
-	pub fn identity() -> Self {
-		Self::new(Integer::zero(), Integer::zero())
+	/// Create a new object with x = 1 and y = 1
+	pub fn one() -> Self {
+		Self::new(Integer::one(), Integer::one())
 	}
 
 	/// Add one point to another
@@ -124,58 +122,67 @@ where
 	}
 
 	/// Scalar multiplication for given point
-	pub fn mul_scalar(&self, le_bytes: [u8; 32]) -> Self {
-		// TODO: try ::identity()
+	pub fn mul_scalar(
+		&self, le_bytes: [u8; 32],
+	) -> (
+		Self,
+		[Vec<ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>>; 256],
+		[Vec<ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>>; 256],
+	) {
 		let mut r = Self::zero();
-		// let exp: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P> = self.clone();
+		let mut exp: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P> = self.clone();
+		let mut reduction_add = [(); 256].map(|_| r.reduction_witnesses.clone());
+		let mut reduction_double = [(); 256].map(|_| r.reduction_witnesses.clone());
 
 		// Big Endian vs Little Endian
-		let mut bytes = le_bytes.clone();
-		bytes.reverse();
-		let bits = bytes.map(|byte| {
+		let bits = le_bytes.map(|byte| {
 			let mut byte_bits = [false; 8];
 			for i in (0..8).rev() {
 				byte_bits[i] = (byte >> i) & 1u8 != 0
 			}
 			byte_bits
 		});
-
+		let mut flag = true;
+		let mut i = 0;
 		// Double and Add operation
 		for bit in bits.flatten() {
-			r = r.double();
 			if *bit {
-				r = r.add(&self.clone());
+				// Addition operation with zero is not working for the add() function because
+				// zero + random value breaks
+				// the algorithm. (Two operands must be distinct and neither of them can be
+				// point at infinity. Otherwise the function returns an erroneous point.) So,
+				// just for the first iteration value assigned manually.
+				if flag {
+					r = exp.clone();
+					flag = false;
+				} else {
+					r = r.add(&exp.clone());
+				}
 			}
+			reduction_add[i] = r.reduction_witnesses.clone();
+			exp = exp.double();
+			reduction_double[i] = exp.reduction_witnesses.clone();
+			i += 1;
 		}
-		r
+		(r, reduction_add, reduction_double)
 	}
-}
-
-/// Performs bitwise AND to test bits.
-pub fn test_bit(b: &[u8], i: usize) -> bool {
-	b[i / 8] & (1 << (i % 8)) != 0
 }
 
 #[cfg(test)]
 mod test {
 	use halo2wrong::{
 		curves::{
-			bn256::{Bn256, Fq, Fr, G1Affine},
-			group::{
-				ff::{BitViewSized, PrimeField},
-				Curve,
-			},
-			CurveAffine,
+			bn256::{Fq, Fr, G1Affine},
+			group::Curve,
 		},
 		halo2::arithmetic::Field,
 	};
-	use num_bigint::BigUint;
-	use num_traits::FromPrimitive;
+
 	use rand::thread_rng;
 
 	use crate::integer::{
 		native::Integer,
-		rns::{big_to_fe, compose_big, fe_to_big, Bn256_4_68, RnsParams},
+		rns::{big_to_fe, fe_to_big, Bn256_4_68},
 	};
 
 	use super::EcPoint;
@@ -229,9 +236,8 @@ mod test {
 	#[test]
 	fn should_mul_scalar() {
 		let rng = &mut thread_rng();
-
 		let a = G1Affine::random(rng.clone());
-		let scalar = Fr::one();
+		let scalar = Fr::random(rng);
 		let c = (a * scalar).to_affine();
 
 		let a_x_bn = fe_to_big(a.x);
@@ -243,8 +249,7 @@ mod test {
 		let a_w = EcPoint::new(a_x_w, a_y_w);
 		let c_w = a_w.mul_scalar(scalar.to_bytes());
 
-		println!("{:?} {:?}", c.x, big_to_fe::<Fq>(c_w.x.value()));
-		// assert_eq!(c.x, big_to_fe(c_w.x.value()));
-		// assert_eq!(c.y, big_to_fe(c_w.y.value()));
+		assert_eq!(c.x, big_to_fe(c_w.0.x.value()));
+		assert_eq!(c.y, big_to_fe(c_w.0.y.value()));
 	}
 }

@@ -9,7 +9,7 @@ use crate::{
 		common::{CommonChip, CommonConfig},
 	},
 	integer::{
-		native::{Integer, Quotient, ReductionWitness},
+		native::{Quotient, ReductionWitness},
 		rns::RnsParams,
 		IntegerChip, IntegerConfig,
 	},
@@ -127,6 +127,73 @@ where
 		EccConfig { bits2num, integer, common }
 	}
 
+	pub fn add_reduced(
+		// Assigns a cell for the p_x.
+		p_x: [AssignedCell<N, N>; NUM_LIMBS],
+		// Assigns a cell for the p_y.
+		p_y: [AssignedCell<N, N>; NUM_LIMBS],
+		// Reduction witness for p_x -- make sure p_x is in the W field before being passed
+		p_x_rw: ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>,
+		// Reduction witness for p_y -- make sure p_y is in the W field before being passed
+		p_y_rw: ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>,
+		// Assigns a cell for the q_x.
+		q_x: [AssignedCell<N, N>; NUM_LIMBS],
+		// Assigns a cell for the q_y.
+		q_y: [AssignedCell<N, N>; NUM_LIMBS],
+		// Reduction witness for q_x -- make sure q_x is in the W field before being passed
+		q_x_rw: ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>,
+		// Reduction witness for q_y -- make sure q_y is in the W field before being passed
+		q_y_rw: ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>,
+		// Reduction witnesses for add operation
+		reduction_witnesses: Vec<ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>>,
+		// Ecc config columns
+		config: EccConfig<NUM_LIMBS>,
+		// Layouter
+		mut layouter: impl Layouter<N>,
+	) -> Result<
+		(
+			[AssignedCell<N, N>; NUM_LIMBS],
+			[AssignedCell<N, N>; NUM_LIMBS],
+		),
+		Error,
+	> {
+		let p_x = IntegerChip::reduce(
+			p_x,
+			p_x_rw,
+			config.integer.clone(),
+			layouter.namespace(|| "reduce_p_x"),
+		)?;
+		let p_y = IntegerChip::reduce(
+			p_y,
+			p_y_rw,
+			config.integer.clone(),
+			layouter.namespace(|| "reduce_p_y"),
+		)?;
+		let q_x = IntegerChip::reduce(
+			q_x,
+			q_x_rw,
+			config.integer.clone(),
+			layouter.namespace(|| "reduce_q_x"),
+		)?;
+		let q_y = IntegerChip::reduce(
+			q_y,
+			q_y_rw,
+			config.integer.clone(),
+			layouter.namespace(|| "reduce_q_y"),
+		)?;
+
+		let (x, y) = Self::add_unreduced(
+			p_x,
+			p_y,
+			q_x,
+			q_y,
+			reduction_witnesses,
+			config,
+			layouter.namespace(|| "reduce_add"),
+		)?;
+		Ok((x, y))
+	}
+
 	pub fn add_unreduced(
 		// Assigns a cell for the p_x.
 		p_x: [AssignedCell<N, N>; NUM_LIMBS],
@@ -138,8 +205,6 @@ where
 		q_y: [AssignedCell<N, N>; NUM_LIMBS],
 		// Reduction witnesses for add operation
 		reduction_witnesses: Vec<ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>>,
-		// A cell constrained to equal 0
-		zero: AssignedCell<N, N>,
 		// Ecc config columns
 		config: EccConfig<NUM_LIMBS>,
 		// Layouter
@@ -232,7 +297,7 @@ where
 
 				// m_times_r_x_minus_p_x = m.result.mul(&r_x_minus_p_x.result);
 				config.integer.mul_selector.enable(&mut region, 11)?;
-				let m_times_r_x_minus_p_x = Self::assign(
+				let _m_times_r_x_minus_p_x = Self::assign(
 					Some(&m),
 					&r_x_minus_p_x,
 					&reduction_witnesses[7],
@@ -254,6 +319,51 @@ where
 		)
 	}
 
+	pub fn double_reduced(
+		// Assigns a cell for the p_x.
+		p_x: [AssignedCell<N, N>; NUM_LIMBS],
+		// Assigns a cell for the p_y.
+		p_y: [AssignedCell<N, N>; NUM_LIMBS],
+		// Reduction witness for p_x -- make sure p_x is in the W field before being passed
+		p_x_rw: ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>,
+		// Reduction witness for p_y -- make sure p_y is in the W field before being passed
+		p_y_rw: ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>,
+		// Reduction witnesses for add operation
+		reduction_witnesses: Vec<ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>>,
+		// Ecc config columns
+		config: EccConfig<NUM_LIMBS>,
+		// Layouter
+		mut layouter: impl Layouter<N>,
+	) -> Result<
+		(
+			[AssignedCell<N, N>; NUM_LIMBS],
+			[AssignedCell<N, N>; NUM_LIMBS],
+		),
+		Error,
+	> {
+		let p_x = IntegerChip::reduce(
+			p_x,
+			p_x_rw,
+			config.integer.clone(),
+			layouter.namespace(|| "reduce_p_x"),
+		)?;
+		let p_y = IntegerChip::reduce(
+			p_y,
+			p_y_rw,
+			config.integer.clone(),
+			layouter.namespace(|| "reduce_p_y"),
+		)?;
+
+		let (x, y) = Self::double_unreduced(
+			p_x,
+			p_y,
+			reduction_witnesses,
+			config,
+			layouter.namespace(|| "reduce_double"),
+		)?;
+		Ok((x, y))
+	}
+
 	pub fn double_unreduced(
 		// Assigns a cell for the p_x.
 		p_x: [AssignedCell<N, N>; NUM_LIMBS],
@@ -261,8 +371,6 @@ where
 		p_y: [AssignedCell<N, N>; NUM_LIMBS],
 		// Reduction witnesses for double operation
 		reduction_witnesses: Vec<ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>>,
-		// A cell constrained to equal 0
-		zero: AssignedCell<N, N>,
 		// Ecc Config
 		config: EccConfig<NUM_LIMBS>,
 		// Layouter
@@ -409,13 +517,11 @@ where
 		// Reduction witnesses for mul scalar add operation
 		reduction_witnesses_add: [Vec<ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>>; 256],
 		// Reduction witnesses for mul scalar double operation
-		reduction_witnesses_mul: [Vec<ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>>; 256],
+		reduction_witnesses_double: [Vec<ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>>; 256],
 		// Limbs with value zero
 		zero_limbs: [AssignedCell<N, N>; NUM_LIMBS],
 		// Limbs with value one
 		one_limbs: [AssignedCell<N, N>; NUM_LIMBS],
-		// A cell constrained to equal 0
-		zero: AssignedCell<N, N>,
 		// Ecc Config
 		config: EccConfig<NUM_LIMBS>,
 		// Layouter
@@ -450,14 +556,29 @@ where
 			config.integer.clone(),
 			layouter.namespace(|| "reduce_exp_y"),
 		)?;
+		let mut exps = Vec::new();
 		for i in 0..bits.len() {
+			(exp_x, exp_y) = Self::double_unreduced(
+				exp_x.clone(),
+				exp_y.clone(),
+				reduction_witnesses_double[i].clone(),
+				config.clone(),
+				layouter.namespace(|| "doubling"),
+			)?;
+			exps.push((exp_x.clone(), exp_y.clone()));
+		}
+		// Find first positive bit
+		let first_bit = Self::find_first_positive_bit(value_bits);
+		let mut r_x = exps[first_bit].0.clone();
+		let mut r_y = exps[first_bit].1.clone();
+
+		for i in (first_bit + 1)..bits.len() {
 			let (new_r_x, new_r_y) = Self::add_unreduced(
 				r_x.clone(),
 				r_y.clone(),
-				exp_x.clone(),
-				exp_y.clone(),
+				exps[i].0.clone(),
+				exps[i].1.clone(),
 				reduction_witnesses_add[i].clone(),
-				zero.clone(),
 				config.clone(),
 				layouter.namespace(|| "add"),
 			)?;
@@ -480,16 +601,19 @@ where
 					layouter.namespace(|| format!("select_r_y_{}", j)),
 				)?;
 			}
-			(exp_x, exp_y) = Self::double_unreduced(
-				exp_x.clone(),
-				exp_y.clone(),
-				reduction_witnesses_mul[i].clone(),
-				zero.clone(),
-				config.clone(),
-				layouter.namespace(|| "doubling"),
-			)?;
 		}
 		Ok((r_x, r_y))
+	}
+
+	fn find_first_positive_bit(input: [N; 256]) -> usize {
+		let mut counter = 0;
+		for i in 0..256 {
+			if input[i] == N::one() {
+				break;
+			}
+			counter += 1;
+		}
+		counter
 	}
 }
 
@@ -498,7 +622,7 @@ mod test {
 	use std::str::FromStr;
 
 	use crate::{
-		ecc::native::EcPoint,
+		ecc::{native::EcPoint, test},
 		integer::{
 			native::{Integer, ReductionWitness},
 			rns::{Bn256_4_68, RnsParams},
@@ -510,12 +634,14 @@ mod test {
 			FieldExt,
 		},
 		halo2::{
+			arithmetic::Field,
 			circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner, Value},
 			dev::MockProver,
 			plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Instance},
 		},
 	};
 	use num_bigint::BigUint;
+	use rand::thread_rng;
 
 	use super::{EccChip, EccConfig};
 
@@ -523,6 +649,7 @@ mod test {
 	enum Gadgets {
 		Add,
 		Double,
+		Mul,
 	}
 
 	#[derive(Clone, Debug)]
@@ -540,10 +667,15 @@ mod test {
 		p: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
 		p_x_rw: ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>,
 		p_y_rw: ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>,
-		q: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
-		q_x_rw: ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>,
-		q_y_rw: ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>,
-		reduction_witnesses: Vec<ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>>,
+		q: Option<EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>>,
+		q_x_rw: Option<ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>>,
+		q_y_rw: Option<ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>>,
+		reduction_witnesses: Option<Vec<ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>>>,
+		reduction_witnesses_add: Option<[Vec<ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>>; 256]>,
+		reduction_witnesses_double:
+			Option<[Vec<ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>>; 256]>,
+		value: Option<N>,
+		value_bits: Option<[N; 256]>,
 		gadget: Gadgets,
 	}
 
@@ -556,13 +688,32 @@ mod test {
 			p: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
 			p_x_rw: ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>,
 			p_y_rw: ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>,
-			q: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
-			q_x_rw: ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>,
-			q_y_rw: ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>,
-			reduction_witnesses: Vec<ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>>,
-			gadget: Gadgets,
+			q: Option<EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>>,
+			q_x_rw: Option<ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>>,
+			q_y_rw: Option<ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>>,
+			reduction_witnesses: Option<Vec<ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>>>,
+			reduction_witnesses_add: Option<
+				[Vec<ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>>; 256],
+			>,
+			reduction_witnesses_double: Option<
+				[Vec<ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>>; 256],
+			>,
+			value: Option<N>, value_bits: Option<[N; 256]>, gadget: Gadgets,
 		) -> Self {
-			Self { p, p_x_rw, p_y_rw, q, q_x_rw, q_y_rw, reduction_witnesses, gadget }
+			Self {
+				p,
+				p_x_rw,
+				p_y_rw,
+				q,
+				q_x_rw,
+				q_y_rw,
+				reduction_witnesses,
+				reduction_witnesses_add,
+				reduction_witnesses_double,
+				value,
+				value_bits,
+				gadget,
+			}
 		}
 	}
 
@@ -592,17 +743,44 @@ mod test {
 		fn synthesize(
 			&self, config: TestConfig<NUM_LIMBS>, mut layouter: impl Layouter<N>,
 		) -> Result<(), Error> {
-			let zero_assigned = layouter.assign_region(
-				|| "zero_temp",
+			let (value, zero_limbs_assigned, one_limbs_assigned) = layouter.assign_region(
+				|| "scalar_mul_values",
 				|mut region: Region<'_, N>| {
-					let zero = region.assign_advice(
-						|| "zero",
+					let mut zero_limbs: [Option<AssignedCell<N, N>>; NUM_LIMBS] =
+						[(); NUM_LIMBS].map(|_| None);
+					let mut one_limbs: [Option<AssignedCell<N, N>>; NUM_LIMBS] =
+						[(); NUM_LIMBS].map(|_| None);
+					let value = region.assign_advice(
+						|| "value",
 						config.temp,
 						0,
-						|| Value::known(N::zero()),
+						|| Value::known(self.value.unwrap_or(N::zero())),
 					)?;
 
-					Ok(zero)
+					for i in 0..NUM_LIMBS {
+						let zero = region.assign_advice(
+							|| "zero",
+							config.temp,
+							i + 1,
+							|| Value::known(N::zero()),
+						)?;
+
+						let one = region.assign_advice(
+							|| "one",
+							config.temp,
+							i + 1 + NUM_LIMBS,
+							|| Value::known(N::one()),
+						)?;
+
+						zero_limbs[i] = Some(zero);
+						one_limbs[i] = Some(one);
+					}
+
+					Ok((
+						value,
+						zero_limbs.map(|x| x.unwrap()),
+						one_limbs.map(|x| x.unwrap()),
+					))
 				},
 			)?;
 
@@ -648,42 +826,67 @@ mod test {
 							|| "temp_x",
 							config.temp,
 							i,
-							|| Value::known(self.q.x.limbs[i]),
+							|| {
+								Value::known(
+									self.q.clone().map(|p| p.x.limbs[i]).unwrap_or(N::zero()),
+								)
+							},
 						)?;
-
 						let y = region.assign_advice(
 							|| "temp_y",
 							config.temp,
 							i + NUM_LIMBS,
-							|| Value::known(self.q.y.limbs[i]),
+							|| {
+								Value::known(
+									self.q.clone().map(|p| p.y.limbs[i]).unwrap_or(N::zero()),
+								)
+							},
 						)?;
 
 						x_limbs[i] = Some(x);
 						y_limbs[i] = Some(y);
 					}
 
-					Ok((x_limbs.map(|x| x.unwrap()), y_limbs.map(|y| y.unwrap())))
+					Ok((x_limbs.map(|x| x.unwrap()), y_limbs.map(|x| x.unwrap())))
 				},
 			)?;
 
 			let (x, y) = match self.gadget {
-				Gadgets::Double => EccChip::double_unreduced(
+				Gadgets::Double => EccChip::double_reduced(
 					p_x_limbs_assigned,
 					p_y_limbs_assigned,
-					self.reduction_witnesses.clone(),
-					zero_assigned,
+					self.p_x_rw.clone(),
+					self.p_y_rw.clone(),
+					self.reduction_witnesses.clone().unwrap(),
 					config.ecc.clone(),
 					layouter.namespace(|| "double"),
 				)?,
-				Gadgets::Add => EccChip::add_unreduced(
+				Gadgets::Add => EccChip::add_reduced(
 					p_x_limbs_assigned,
 					p_y_limbs_assigned,
+					self.p_x_rw.clone(),
+					self.p_y_rw.clone(),
 					q_x_limbs_assigned,
 					q_y_limbs_assigned,
-					self.reduction_witnesses.clone(),
-					zero_assigned,
+					self.q_x_rw.clone().unwrap(),
+					self.q_y_rw.clone().unwrap(),
+					self.reduction_witnesses.clone().unwrap(),
 					config.ecc.clone(),
 					layouter.namespace(|| "add"),
+				)?,
+				Gadgets::Mul => EccChip::mul_scalar(
+					p_x_limbs_assigned,
+					p_y_limbs_assigned,
+					self.p_x_rw.clone(),
+					self.p_y_rw.clone(),
+					value,
+					self.value_bits.unwrap(),
+					self.reduction_witnesses_add.clone().unwrap(),
+					self.reduction_witnesses_double.clone().unwrap(),
+					zero_limbs_assigned,
+					one_limbs_assigned,
+					config.ecc.clone(),
+					layouter.namespace(|| "scalar_mul"),
 				)?,
 			};
 
@@ -717,10 +920,14 @@ mod test {
 			p_point,
 			rw_p_x.clone(),
 			rw_p_y.clone(),
-			q_point,
-			rw_q_x.clone(),
-			rw_q_y.clone(),
-			res.reduction_witnesses,
+			Some(q_point),
+			Some(rw_q_x.clone()),
+			Some(rw_q_y.clone()),
+			Some(res.reduction_witnesses),
+			None,
+			None,
+			None,
+			None,
 			Gadgets::Add,
 		);
 
@@ -738,26 +945,25 @@ mod test {
 		let zero = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::zero();
 		let a_big = BigUint::from_str("23423423525345345").unwrap();
 		let b_big = BigUint::from_str("65464575675").unwrap();
-		let c_big = BigUint::from_str("23423423423425345647567567568").unwrap();
 		let a = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_big);
 		let b = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(b_big);
-		let c = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(c_big);
 		let p_point = EcPoint::<Fq, Fr, 4, 68, Bn256_4_68>::new(a.clone(), b.clone());
-		let q_point = EcPoint::<Fq, Fr, 4, 68, Bn256_4_68>::new(b.clone(), c.clone());
 		let rw_p_x = a.add(&zero);
 		let rw_p_y = b.add(&zero);
-		let rw_q_x = b.add(&zero);
-		let rw_q_y = c.add(&zero);
 
 		let res = p_point.double();
 		let test_chip = TestCircuit::<Fq, Fr, 4, 68, Bn256_4_68>::new(
 			p_point,
 			rw_p_x.clone(),
 			rw_p_y.clone(),
-			q_point,
-			rw_q_x.clone(),
-			rw_q_y.clone(),
-			res.reduction_witnesses,
+			None,
+			None,
+			None,
+			Some(res.reduction_witnesses),
+			None,
+			None,
+			None,
+			None,
 			Gadgets::Double,
 		);
 
@@ -770,5 +976,57 @@ mod test {
 	}
 
 	#[test]
-	fn should_mul_with_scalar() {}
+	#[ignore = "Mul scalar broken"]
+	fn should_mul_with_scalar() {
+		// Testing scalar multiplication.
+		let rng = &mut thread_rng();
+		let scalar = Fr::from_u128(63);
+		let zero = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::zero();
+		let a_big = BigUint::from_str("23423423525345345").unwrap();
+		let b_big = BigUint::from_str("65464575675").unwrap();
+		let a = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_big);
+		let b = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(b_big);
+		let p_point = EcPoint::<Fq, Fr, 4, 68, Bn256_4_68>::new(a.clone(), b.clone());
+		let p_point = p_point.double();
+		let rw_p_x = p_point.x.add(&zero);
+		let rw_p_y = p_point.y.add(&zero);
+
+		let bits = scalar.to_bytes().map(|byte| {
+			let mut byte_bits = [false; 8];
+			for i in (0..8).rev() {
+				byte_bits[i] = (byte >> i) & 1u8 != 0
+			}
+			byte_bits
+		});
+		let mut bits_fr = [Fr::zero(); 256];
+		for i in 0..256 {
+			bits_fr[i] = Fr::from_u128(bits.flatten()[i].into())
+		}
+
+		let res = p_point.mul_scalar(scalar.to_bytes());
+		let test_chip = TestCircuit::<Fq, Fr, 4, 68, Bn256_4_68>::new(
+			p_point,
+			rw_p_x.clone(),
+			rw_p_y.clone(),
+			None,
+			None,
+			None,
+			None,
+			Some(res.1.clone()),
+			Some(res.2.clone()),
+			Some(scalar.clone()),
+			Some(bits_fr),
+			Gadgets::Mul,
+		);
+		let k = 13;
+		let mut p_ins = Vec::new();
+		p_ins.extend(res.0.x.limbs);
+		p_ins.extend(res.0.y.limbs);
+		let prover = MockProver::run(k, &test_chip, vec![p_ins]).unwrap();
+		let errs = prover.verify().err().unwrap();
+		for err in errs {
+			println!("{:?}", err);
+		}
+		assert_eq!(prover.verify(), Ok(()));
+	}
 }
