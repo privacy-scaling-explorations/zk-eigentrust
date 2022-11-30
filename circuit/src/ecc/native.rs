@@ -132,7 +132,7 @@ where
 		let mut r = Self::zero();
 		let mut exp: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P> = self.clone();
 		let mut reduction_add = [(); 256].map(|_| r.reduction_witnesses.clone());
-		let mut reduction_mul = [(); 256].map(|_| r.reduction_witnesses.clone());
+		let mut reduction_double = [(); 256].map(|_| r.reduction_witnesses.clone());
 
 		// Big Endian vs Little Endian
 		let bits = le_bytes.map(|byte| {
@@ -161,10 +161,10 @@ where
 			}
 			reduction_add[i] = r.reduction_witnesses.clone();
 			exp = exp.double();
-			reduction_mul[i] = exp.reduction_witnesses.clone();
+			reduction_double[i] = exp.reduction_witnesses.clone();
 			i += 1;
 		}
-		(r, reduction_add, reduction_mul)
+		(r, reduction_add, reduction_double)
 	}
 }
 
