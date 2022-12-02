@@ -174,6 +174,30 @@ where
 		}
 		msm
 	}
+
+	fn denoms(&mut self) -> impl IntoIterator<Item = &'_ mut C::ScalarExt> {
+		if self.evaluation_coeffs.first().unwrap().denom().is_some() {
+			self.evaluation_coeffs
+				.iter_mut()
+				.chain(self.commitment_coeff.as_mut())
+				.filter_map(Fraction::denom_mut)
+				.collect_vec()
+		} else if self.remainder_coeff.is_none() {
+			let barycentric_weights: Vec<C::ScalarExt> =
+				self.evaluation_coeffs.iter().map(Fraction::evaluate).collect();
+			let mut barycentric_weights_sum = C::ScalarExt::zero();
+			for w in barycentric_weights {
+				barycentric_weights_sum += w;
+			}
+			self.remainder_coeff = Some(match self.commitment_coeff.clone() {
+				Some(coeff) => Fraction::new(coeff.evaluate(), barycentric_weights_sum),
+				None => Fraction::one_over(barycentric_weights_sum),
+			});
+			vec![self.remainder_coeff.as_mut().unwrap().denom_mut().unwrap()]
+		} else {
+			unreachable!()
+		}
+	}
 }
 
 fn intermediate_sets<
