@@ -83,8 +83,8 @@ accumulator_indices = [[(0, 0), (0, 1), (0, 2), (0, 3)], [(1, 0), (1, 1), (1, 2)
 
 */
 
+use super::common_poly::CommonPolynomial;
 use crate::aggregator::protocol::Expression::{Challenge, Negated, Polynomial, Product, Sum};
-
 use halo2wrong::curves::{
 	bn256::{Fq, Fr, G1Affine},
 	group::ff::PrimeField,
@@ -111,21 +111,68 @@ pub struct InstanceCommittingKey<C> {
 pub enum Expression<F> {
 	Constant(F),
 	Polynomial(Query),
+	CommonPolynomial(CommonPolynomial),
 	Challenge(usize),
 	Negated(Box<Expression<F>>),
 	Sum(Box<Expression<F>>, Box<Expression<F>>),
 	Product(Box<Expression<F>>, Box<Expression<F>>),
+	Scaled(Box<Expression<F>>, F),
 }
 
 impl<F: Clone> Expression<F> {
+	pub fn evaluate<T>(
+		&self, constant: &impl Fn(F) -> T, common_poly: &impl Fn(CommonPolynomial) -> T,
+		poly: &impl Fn(Query) -> T, challenge: &impl Fn(usize) -> T, negated: &impl Fn(T) -> T,
+		sum: &impl Fn(T, T) -> T, product: &impl Fn(T, T) -> T, scaled: &impl Fn(T, F) -> T,
+	) -> T {
+		match self {
+			Expression::Constant(scalar) => constant(scalar.clone()),
+			Expression::CommonPolynomial(poly) => common_poly(*poly),
+			Expression::Polynomial(query) => poly(query.clone()),
+			Expression::Challenge(index) => challenge(*index),
+			Expression::Negated(a) => {
+				let a = a.evaluate(
+					constant, common_poly, poly, challenge, negated, sum, product, scaled,
+				);
+				negated(a)
+			},
+			Expression::Sum(a, b) => {
+				let a = a.evaluate(
+					constant, common_poly, poly, challenge, negated, sum, product, scaled,
+				);
+				let b = b.evaluate(
+					constant, common_poly, poly, challenge, negated, sum, product, scaled,
+				);
+				sum(a, b)
+			},
+			Expression::Product(a, b) => {
+				let a = a.evaluate(
+					constant, common_poly, poly, challenge, negated, sum, product, scaled,
+				);
+				let b = b.evaluate(
+					constant, common_poly, poly, challenge, negated, sum, product, scaled,
+				);
+				product(a, b)
+			},
+			Expression::Scaled(a, scalar) => {
+				let a = a.evaluate(
+					constant, common_poly, poly, challenge, negated, sum, product, scaled,
+				);
+				scaled(a, scalar.clone())
+			},
+		}
+	}
+
 	pub fn degree(&self) -> usize {
 		match self {
 			Expression::Constant(_) => 0,
+			Expression::CommonPolynomial(_) => 1,
 			Expression::Polynomial { .. } => 1,
 			Expression::Challenge { .. } => 0,
 			Expression::Negated(a) => a.degree(),
 			Expression::Sum(a, b) => max(a.degree(), b.degree()),
 			Expression::Product(a, b) => a.degree() + b.degree(),
+			Expression::Scaled(a, _) => a.degree(),
 		}
 	}
 }
@@ -136,7 +183,7 @@ pub struct QuotientPolynomial<F: Clone> {
 	pub numerator: Expression<F>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Query {
 	pub poly: usize,
 	pub rotation: Rotation,

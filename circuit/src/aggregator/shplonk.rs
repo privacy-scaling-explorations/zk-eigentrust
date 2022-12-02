@@ -147,7 +147,7 @@ where
 
 	fn evaluations(
 		&self, common_poly_eval: &CommonPolynomialEvaluation<C::ScalarExt>,
-	) -> Result<(), Error> {
+	) -> Result<HashMap<Query, C::ScalarExt>, Error> {
 		let mut instance_evaluations = Vec::new();
 		for insts in &self.instances {
 			let mut sum = C::ScalarExt::zero();
@@ -156,53 +156,44 @@ where
 			}
 			instance_evaluations.push(sum);
 		}
-		let mut evaluations = Vec::new();
+
+		let mut evaluations: HashMap<Query, C::ScalarExt> = HashMap::new();
 		for (i, evaluation) in instance_evaluations.iter().enumerate() {
-			evaluations.push((
+			evaluations.insert(
 				Query { poly: PR::preprocessed().len() + i, rotation: Rotation::cur() },
-				evaluation,
-			))
+				*evaluation,
+			);
 		}
 		for (i, eval) in self.evaluations.iter().enumerate() {
-			evaluations.push((PR::evaluations()[i].clone(), eval));
+			evaluations.insert(PR::evaluations()[i].clone(), *eval);
 		}
 
 		let powers_of_alpha = powers(self.alpha, PR::relations().len());
-		// let quotient_evaluation = L::LoadedScalar::sum(
-		// 	&powers_of_alpha
-		// 		.into_iter()
-		// 		.rev()
-		// 		.zip(protocol.relations.iter())
-		// 		.map(|(power_of_alpha, relation)| {
-		// 			relation
-		// 				.evaluate(
-		// 					&|scalar| Ok(loader.load_const(&scalar)),
-		// 					&|poly| Ok(common_poly_eval.get(poly)),
-		// 					&|index| {
-		// 						evaluations.get(&index).cloned().ok_or(Error::MissingQuery(index))
-		// 					},
-		// 					&|index| {
-		// 						self.challenges
-		// 							.get(index)
-		// 							.cloned()
-		// 							.ok_or(Error::MissingChallenge(index))
-		// 					},
-		// 					&|a| a.map(|a| -a),
-		// 					&|a, b| a.and_then(|a| Ok(a + b?)),
-		// 					&|a, b| a.and_then(|a| Ok(a * b?)),
-		// 					&|a, scalar| a.map(|a| a * loader.load_const(&scalar)),
-		// 				)
-		// 				.map(|evaluation| power_of_alpha * evaluation)
-		// 		})
-		// 		.collect::<Result<Vec<_>, Error>>()?,
-		// ) * &common_poly_eval.zn_minus_one_inv();
+		let mut quotient_evaluation = C::ScalarExt::zero();
+		for (i, pw_alpha) in powers_of_alpha.iter().enumerate() {
+			let relation = PR::relations();
+			let eval_res = relation[i]
+				.evaluate(
+					&|scalar| Ok(scalar),
+					&|poly| Ok(common_poly_eval.get(poly)),
+					&|index| evaluations.get(&index).cloned().ok_or(Error::Synthesis),
+					&|index| self.challenges.get(index).cloned().ok_or(Error::Synthesis),
+					&|a| a.map(|a| -a),
+					&|a, b| a.and_then(|a| Ok(a + b?)),
+					&|a, b| a.and_then(|a| Ok(a * b?)),
+					&|a, scalar| a.map(|a| a * scalar),
+				)
+				.map(|eval| powers_of_alpha[i] * eval)?;
+			quotient_evaluation += eval_res;
+		}
+		quotient_evaluation = quotient_evaluation * &common_poly_eval.zn_minus_one_inv();
 
-		// evaluations.insert(
-		// 	Query { poly: protocol.vanishing_poly(), rotation: Rotation::cur() },
-		// 	quotient_evaluation,
-		// );
+		evaluations.insert(
+			Query { poly: PR::vanishing_poly(), rotation: Rotation::cur() },
+			quotient_evaluation,
+		);
 
-		Ok(())
+		Ok(evaluations)
 	}
 }
 
