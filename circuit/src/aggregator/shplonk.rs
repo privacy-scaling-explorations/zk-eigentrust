@@ -14,14 +14,14 @@ use halo2wrong::{
 	curves::{group::ff::PrimeField, Coordinates, CurveAffine, FieldExt},
 	halo2::{arithmetic::Field, plonk::Error},
 };
-use std::{collections::HashMap, io::Read, iter, marker::PhantomData};
+use std::{collections::HashMap, io::Read, iter, iter::Sum, marker::PhantomData};
 
 use super::{NUM_BITS, NUM_LIMBS, WIDTH};
 
 pub struct ShplonkProof<C: CurveAffine, P, PR, RNS>
 where
 	RNS: RnsParams<C::Base, C::ScalarExt, NUM_LIMBS, NUM_BITS>,
-	PR: Protocol<C::ScalarExt, C>,
+	PR: Protocol<C>,
 	P: RoundParams<C::ScalarExt, 5>,
 {
 	instances: Vec<Vec<C::ScalarExt>>,
@@ -43,7 +43,7 @@ where
 impl<C: CurveAffine, P, PR, RNS> ShplonkProof<C, P, PR, RNS>
 where
 	RNS: RnsParams<C::Base, C::ScalarExt, NUM_LIMBS, NUM_BITS>,
-	PR: Protocol<C::ScalarExt, C>,
+	PR: Protocol<C>,
 	P: RoundParams<C::ScalarExt, WIDTH>,
 {
 	fn read<I: Read>(
@@ -204,4 +204,14 @@ fn powers<F: FieldExt>(scalar: F, n: usize) -> Vec<F> {
 				.take(n - 1),
 		)
 		.collect()
+}
+
+pub fn langranges<C: CurveAffine, PR: Protocol<C>>(
+	statements: &[Vec<C::ScalarExt>],
+) -> impl IntoIterator<Item = i32> {
+	let max_statement =
+		statements.iter().map(|statement| statement.len()).max().unwrap_or_default() as i32;
+	let relations_sum = PR::relations().into_iter().sum::<Expression<_>>();
+	let used_langrange = relations_sum.used_langrange();
+	used_langrange.into_iter().chain(0..max_statement)
 }

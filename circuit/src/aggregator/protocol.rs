@@ -84,13 +84,12 @@ accumulator_indices = [[(0, 0), (0, 1), (0, 2), (0, 3)], [(1, 0), (1, 1), (1, 2)
 */
 
 use super::common_poly::CommonPolynomial;
-use crate::aggregator::protocol::Expression::{Challenge, Negated, Polynomial, Product, Sum};
 use halo2wrong::curves::{
 	bn256::{Fq, Fr, G1Affine},
 	group::ff::PrimeField,
 	CurveAffine, FieldExt,
 };
-use std::cmp::max;
+use std::{cmp::max, collections::BTreeSet, iter::Sum};
 
 #[derive(Debug)]
 pub struct Domain<F: PrimeField> {
@@ -175,6 +174,41 @@ impl<F: Clone> Expression<F> {
 			Expression::Scaled(a, _) => a.degree(),
 		}
 	}
+
+	pub fn used_langrange(&self) -> BTreeSet<i32> {
+		self.evaluate(
+			&|_| None,
+			&|poly| match poly {
+				CommonPolynomial::Lagrange(i) => Some(BTreeSet::from_iter([i])),
+				_ => None,
+			},
+			&|_| None,
+			&|_| None,
+			&|a| a,
+			&merge_left_right,
+			&merge_left_right,
+			&|a, _| a,
+		)
+		.unwrap_or_default()
+	}
+}
+
+fn merge_left_right<T: Ord>(a: Option<BTreeSet<T>>, b: Option<BTreeSet<T>>) -> Option<BTreeSet<T>> {
+	match (a, b) {
+		(Some(a), None) | (None, Some(a)) => Some(a),
+		(Some(mut a), Some(b)) => {
+			a.extend(b);
+			Some(a)
+		},
+		_ => None,
+	}
+}
+
+impl<F: Clone + Default> Sum for Expression<F> {
+	fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
+		iter.reduce(|acc, item| Expression::Sum(acc.into(), item.into()))
+			.unwrap_or_else(|| Expression::Constant(F::default()))
+	}
 }
 
 #[derive(Clone, Debug)]
@@ -206,25 +240,25 @@ impl Rotation {
 	}
 }
 
-pub trait Protocol<F: FieldExt, G: CurveAffine> {
-	fn domain() -> Domain<G::Scalar>;
-	fn preprocessed() -> [G; 1];
+pub trait Protocol<C: CurveAffine> {
+	fn domain() -> Domain<C::ScalarExt>;
+	fn preprocessed() -> [C; 1];
 	fn evaluations() -> Vec<Query>;
 	fn queries() -> Vec<Query>;
-	fn relations() -> Vec<Expression<G::Scalar>>;
+	fn relations() -> Vec<Expression<C::ScalarExt>>;
 	fn num_instance() -> Vec<usize>;
 	fn num_witness() -> Vec<usize>;
 	fn num_challenge() -> Vec<usize>;
-	fn transcript_initial_state() -> Option<F>;
-	fn instance_committing_key() -> Option<InstanceCommittingKey<G>>;
-	fn linearization() -> Option<F>;
+	fn transcript_initial_state() -> Option<C::ScalarExt>;
+	fn instance_committing_key() -> Option<InstanceCommittingKey<C>>;
+	fn linearization() -> Option<C::ScalarExt>;
 	fn accumulator_indices() -> Vec<Vec<(usize, usize)>>;
 	fn vanishing_poly() -> usize;
 }
 
 pub struct FixedProtocol;
 
-impl Protocol<Fr, G1Affine> for FixedProtocol {
+impl Protocol<G1Affine> for FixedProtocol {
 	fn domain() -> Domain<Fr> {
 		Domain {
 			k: 4,
@@ -286,6 +320,7 @@ impl Protocol<Fr, G1Affine> for FixedProtocol {
 	}
 
 	fn relations() -> Vec<Expression<Fr>> {
+		use Expression::{Challenge, Negated, Polynomial, Product, Sum};
 		vec![
 			Product(
 				Box::new(Polynomial(Query { poly: 0, rotation: Rotation(0) })),
