@@ -255,3 +255,9 @@ fn sum_products_with_coeff_and_constant<F: FieldExt>(values: &[(F, F, F)], const
 		.reduce(|acc, term| acc.clone() + term.clone())
 		.unwrap()
 }
+
+fn batch_invert<'a, F: FieldExt>(values: impl IntoIterator<Item = &'a mut F>) {
+	values
+		.into_iter()
+		.for_each(|value| *value = value.invert().unwrap_or_else(|| value.clone()))
+}
