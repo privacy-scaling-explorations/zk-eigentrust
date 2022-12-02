@@ -1,10 +1,12 @@
+use crate::{ecc::native::EcPoint, integer::rns::RnsParams};
 use halo2wrong::{
 	curves::{group::Curve, CurveAffine, FieldExt},
 	halo2::arithmetic::Field,
 };
-use std::iter;
-
-use crate::{ecc::native::EcPoint, integer::rns::RnsParams};
+use std::{
+	iter::{self, Sum},
+	ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
+};
 
 #[derive(Clone, Debug)]
 pub struct MSM<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, R>
@@ -80,5 +82,100 @@ where
 		for (scalar, base) in other.scalars.into_iter().zip(other.bases) {
 			self.push(scalar, base);
 		}
+	}
+}
+
+impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, R>
+	Add<MSM<W, N, NUM_LIMBS, NUM_BITS, R>> for MSM<W, N, NUM_LIMBS, NUM_BITS, R>
+where
+	R: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
+{
+	type Output = MSM<W, N, NUM_LIMBS, NUM_BITS, R>;
+
+	fn add(mut self, rhs: MSM<W, N, NUM_LIMBS, NUM_BITS, R>) -> Self::Output {
+		self.extend(rhs);
+		self
+	}
+}
+
+impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, R>
+	AddAssign<MSM<W, N, NUM_LIMBS, NUM_BITS, R>> for MSM<W, N, NUM_LIMBS, NUM_BITS, R>
+where
+	R: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
+{
+	fn add_assign(&mut self, rhs: MSM<W, N, NUM_LIMBS, NUM_BITS, R>) {
+		self.extend(rhs);
+	}
+}
+
+impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, R>
+	Sub<MSM<W, N, NUM_LIMBS, NUM_BITS, R>> for MSM<W, N, NUM_LIMBS, NUM_BITS, R>
+where
+	R: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
+{
+	type Output = MSM<W, N, NUM_LIMBS, NUM_BITS, R>;
+
+	fn sub(mut self, rhs: MSM<W, N, NUM_LIMBS, NUM_BITS, R>) -> Self::Output {
+		self.extend(-rhs);
+		self
+	}
+}
+
+impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, R>
+	SubAssign<MSM<W, N, NUM_LIMBS, NUM_BITS, R>> for MSM<W, N, NUM_LIMBS, NUM_BITS, R>
+where
+	R: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
+{
+	fn sub_assign(&mut self, rhs: MSM<W, N, NUM_LIMBS, NUM_BITS, R>) {
+		self.extend(-rhs);
+	}
+}
+
+impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, R> Mul<&N>
+	for MSM<W, N, NUM_LIMBS, NUM_BITS, R>
+where
+	R: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
+{
+	type Output = MSM<W, N, NUM_LIMBS, NUM_BITS, R>;
+
+	fn mul(mut self, rhs: &N) -> Self::Output {
+		self.scale(rhs);
+		self
+	}
+}
+
+impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, R> MulAssign<&N>
+	for MSM<W, N, NUM_LIMBS, NUM_BITS, R>
+where
+	R: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
+{
+	fn mul_assign(&mut self, rhs: &N) {
+		self.scale(rhs);
+	}
+}
+
+impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, R> Neg
+	for MSM<W, N, NUM_LIMBS, NUM_BITS, R>
+where
+	R: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
+{
+	type Output = MSM<W, N, NUM_LIMBS, NUM_BITS, R>;
+
+	fn neg(mut self) -> MSM<W, N, NUM_LIMBS, NUM_BITS, R> {
+		self.scalar = self.scalar.map(|scalar| -scalar);
+		for scalar in self.scalars.iter_mut() {
+			*scalar = -scalar.clone();
+		}
+		self
+	}
+}
+
+impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, R> Sum
+	for MSM<W, N, NUM_LIMBS, NUM_BITS, R>
+where
+	R: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
+{
+	fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
+		iter.reduce(|acc, item| acc + item).unwrap_or_default()
 	}
 }

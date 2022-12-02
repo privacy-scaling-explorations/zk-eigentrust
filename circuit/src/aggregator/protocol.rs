@@ -83,22 +83,13 @@ accumulator_indices = [[(0, 0), (0, 1), (0, 2), (0, 3)], [(1, 0), (1, 1), (1, 2)
 
 */
 
-use super::common_poly::CommonPolynomial;
+use super::common_poly::{CommonPolynomial, Domain};
 use halo2wrong::curves::{
 	bn256::{Fq, Fr, G1Affine},
 	group::ff::PrimeField,
 	CurveAffine, FieldExt,
 };
 use std::{cmp::max, collections::BTreeSet, iter::Sum};
-
-#[derive(Debug)]
-pub struct Domain<F: PrimeField> {
-	k: usize,
-	n: usize,
-	n_inv: F,
-	gen: F,
-	gen_inv: F,
-}
 
 #[derive(Debug)]
 pub struct InstanceCommittingKey<C> {
@@ -221,6 +212,12 @@ pub struct QuotientPolynomial<F: Clone> {
 pub struct Query {
 	pub poly: usize,
 	pub rotation: Rotation,
+}
+
+impl Query {
+	pub fn new(poly: usize, rotation: Rotation) -> Self {
+		Self { poly, rotation }
+	}
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]

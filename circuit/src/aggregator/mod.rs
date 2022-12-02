@@ -3,6 +3,7 @@ mod accumulation;
 mod common_poly;
 mod msm;
 mod protocol;
+mod sets;
 mod shplonk;
 mod transcript;
 
