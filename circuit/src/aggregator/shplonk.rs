@@ -14,7 +14,13 @@ use halo2wrong::{
 	curves::{group::ff::PrimeField, Coordinates, CurveAffine, FieldExt},
 	halo2::{arithmetic::Field, plonk::Error},
 };
-use std::{collections::HashMap, io::Read, iter, iter::Sum, marker::PhantomData};
+use std::{
+	collections::{BTreeSet, HashMap},
+	io::Read,
+	iter,
+	iter::Sum,
+	marker::PhantomData,
+};
 
 use super::{NUM_BITS, NUM_LIMBS, WIDTH};
 
@@ -214,4 +220,41 @@ pub fn langranges<C: CurveAffine, PR: Protocol<C>>(
 	let relations_sum = PR::relations().into_iter().sum::<Expression<_>>();
 	let used_langrange = relations_sum.used_langrange();
 	used_langrange.into_iter().chain(0..max_statement)
+}
+
+struct RotationsSet {
+	rotations: Vec<Rotation>,
+	polys: Vec<usize>,
+}
+
+fn rotations_sets(queries: &[Query]) -> Vec<RotationsSet> {
+	let mut poly_rotations = Vec::<(usize, Vec<Rotation>)>::new();
+	for query in queries {
+		let pos_opt = poly_rotations.iter().position(|(poly, _)| *poly == query.poly);
+		if let Some(pos) = pos_opt {
+			let (_, rotations) = &mut poly_rotations[pos];
+			if !rotations.contains(&query.rotation) {
+				rotations.push(query.rotation);
+			}
+		} else {
+			poly_rotations.push((query.poly, vec![query.rotation]));
+		}
+	}
+
+	let mut sets = Vec::<RotationsSet>::new();
+	for (poly, rotations) in poly_rotations {
+		let pos_opt = sets.iter().position(|set| {
+			BTreeSet::from_iter(set.rotations.iter()) == BTreeSet::from_iter(rotations.iter())
+		});
+		if let Some(pos) = pos_opt {
+			let set = &mut sets[pos];
+			if !set.polys.contains(&poly) {
+				set.polys.push(poly);
+			}
+		} else {
+			let set = RotationsSet { rotations, polys: vec![poly] };
+			sets.push(set);
+		}
+	}
+	sets
 }
