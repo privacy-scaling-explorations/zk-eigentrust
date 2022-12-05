@@ -405,19 +405,3 @@ impl Protocol<G1Affine> for FixedProtocol {
 			+ Self::num_witness().iter().sum::<usize>()
 	}
 }
-
-#[test]
-fn test_output() {
-	println!("{:#?}", FixedProtocol::domain());
-	println!("{:#?}", FixedProtocol::preprocessed());
-	println!("{:#?}", FixedProtocol::evaluations());
-	println!("{:#?}", FixedProtocol::queries());
-	println!("{:#?}", FixedProtocol::quotient());
-	println!("{:#?}", FixedProtocol::num_challenge());
-	println!("{:#?}", FixedProtocol::num_instance());
-	println!("{:#?}", FixedProtocol::num_witness());
-	println!("{:#?}", FixedProtocol::accumulator_indices());
-	println!("{:#?}", FixedProtocol::linearization());
-	println!("{:#?}", FixedProtocol::instance_committing_key());
-	println!("{:#?}", FixedProtocol::transcript_initial_state());
-}

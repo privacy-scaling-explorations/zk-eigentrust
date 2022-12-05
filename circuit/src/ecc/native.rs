@@ -252,7 +252,7 @@ mod test {
 		let a_y_w = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_y_bn);
 
 		let a_w = EcPoint::new(a_x_w, a_y_w);
-		let c_w = a_w.mul_scalar(&scalar.to_bytes());
+		let c_w = a_w.mul_scalar(scalar.to_bytes());
 
 		assert_eq!(c.x, big_to_fe(c_w.0.x.value()));
 		assert_eq!(c.y, big_to_fe(c_w.0.y.value()));
