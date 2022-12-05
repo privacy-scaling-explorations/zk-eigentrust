@@ -63,16 +63,16 @@ pub fn rotations_sets(queries: &[Query]) -> Vec<RotationsSet> {
 	sets
 }
 
-struct IntermediateSet<C: CurveAffine, R>
+pub struct IntermediateSet<C: CurveAffine, R>
 where
 	R: RnsParams<C::Base, C::ScalarExt, NUM_LIMBS, NUM_BITS>,
 {
-	rotations: Vec<Rotation>,
-	polys: Vec<usize>,
-	z_s: C::ScalarExt,
-	evaluation_coeffs: Vec<Fraction<C::ScalarExt>>,
-	commitment_coeff: Option<Fraction<C::ScalarExt>>,
-	remainder_coeff: Option<Fraction<C::ScalarExt>>,
+	pub(crate) rotations: Vec<Rotation>,
+	pub(crate) polys: Vec<usize>,
+	pub(crate) z_s: C::ScalarExt,
+	pub(crate) evaluation_coeffs: Vec<Fraction<C::ScalarExt>>,
+	pub(crate) commitment_coeff: Option<Fraction<C::ScalarExt>>,
+	pub(crate) remainder_coeff: Option<Fraction<C::ScalarExt>>,
 	_rns: PhantomData<R>,
 }
 
@@ -80,7 +80,7 @@ impl<C: CurveAffine, R> IntermediateSet<C, R>
 where
 	R: RnsParams<C::Base, C::ScalarExt, NUM_LIMBS, NUM_BITS>,
 {
-	fn new(
+	pub fn new(
 		domain: &Domain<C::ScalarExt>, rotations: Vec<Rotation>, powers_of_z: &[C::ScalarExt],
 		z_prime: &C::ScalarExt, z_prime_minus_z_omega_i: &HashMap<Rotation, C::ScalarExt>,
 		z_s_1: &Option<C::ScalarExt>,
@@ -145,7 +145,7 @@ where
 		}
 	}
 
-	fn msm(
+	pub fn msm(
 		&self, commitments: &HashMap<usize, MSM<C::Base, C::ScalarExt, NUM_LIMBS, NUM_BITS, R>>,
 		evaluations: &HashMap<Query, C::ScalarExt>, powers_of_mu: &[C::ScalarExt],
 	) -> MSM<C::Base, C::ScalarExt, NUM_LIMBS, NUM_BITS, R> {
@@ -175,7 +175,7 @@ where
 		msm
 	}
 
-	fn denoms(&mut self) -> impl IntoIterator<Item = &'_ mut C::ScalarExt> {
+	pub fn denoms(&mut self) -> impl IntoIterator<Item = &'_ mut C::ScalarExt> {
 		if self.evaluation_coeffs.first().unwrap().denom().is_some() {
 			self.evaluation_coeffs
 				.iter_mut()
@@ -200,7 +200,7 @@ where
 	}
 }
 
-fn intermediate_sets<
+pub fn intermediate_sets<
 	C: CurveAffine,
 	PR: Protocol<C>,
 	R: RnsParams<C::Base, C::ScalarExt, NUM_LIMBS, NUM_BITS>,
@@ -256,7 +256,7 @@ fn sum_products_with_coeff_and_constant<F: FieldExt>(values: &[(F, F, F)], const
 		.unwrap()
 }
 
-fn batch_invert<'a, F: FieldExt>(values: impl IntoIterator<Item = &'a mut F>) {
+pub fn batch_invert<'a, F: FieldExt>(values: impl IntoIterator<Item = &'a mut F>) {
 	values
 		.into_iter()
 		.for_each(|value| *value = value.invert().unwrap_or_else(|| value.clone()))

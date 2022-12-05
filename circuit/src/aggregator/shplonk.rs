@@ -1,8 +1,9 @@
 use super::{
+	accumulation::Accumulator,
 	common_poly::{CommonPolynomial, CommonPolynomialEvaluation},
 	msm::MSM,
 	protocol::{Expression, Protocol, Query, Rotation},
-	sets::{rotations_sets, RotationsSet},
+	sets::{batch_invert, intermediate_sets, rotations_sets, IntermediateSet, RotationsSet},
 	transcript::Transcript,
 };
 use crate::{
@@ -53,6 +54,49 @@ where
 	PR: Protocol<C>,
 	P: RoundParams<C::ScalarExt, WIDTH>,
 {
+	fn accumulate(
+		&self,
+		old_accumulator: Option<Accumulator<C::Base, C::ScalarExt, NUM_LIMBS, NUM_BITS, RNS>>,
+	) -> Result<Accumulator<C::Base, C::ScalarExt, NUM_LIMBS, NUM_BITS, RNS>, Error> {
+		let mut common_poly_eval = CommonPolynomialEvaluation::new(
+			&PR::domain(),
+			langranges::<C, PR>(&self.instances),
+			self.z,
+		);
+		let mut sets = intermediate_sets::<C, PR, RNS>(&self.z, &self.z_prime);
+
+		batch_invert(
+			iter::empty()
+				.chain(common_poly_eval.denoms())
+				.chain(sets.iter_mut().flat_map(IntermediateSet::denoms)),
+		);
+		batch_invert(sets.iter_mut().flat_map(IntermediateSet::denoms));
+
+		let commitments = self.commitments(&common_poly_eval);
+		let evaluations = self.evaluations(&common_poly_eval)?;
+
+		let set_max = sets.iter().map(|set| set.polys.len()).max().unwrap();
+		let powers_of_mu = powers(self.mu, set_max);
+		let msms = sets.iter().map(|set| set.msm(&commitments, &evaluations, &powers_of_mu));
+
+		let gamma_powers = powers(self.gamma, sets.len());
+		let f = msms
+			.zip(gamma_powers.into_iter())
+			.map(|(msm, power_of_gamma)| msm * &power_of_gamma)
+			.sum::<MSM<C::Base, C::ScalarExt, NUM_LIMBS, NUM_BITS, RNS>>()
+			- MSM::base(self.w.clone()) * &sets[0].z_s;
+
+		let rhs = MSM::base(self.w_prime.clone());
+		let lhs = f + rhs.clone() * &self.z_prime;
+
+		let mut accumulator = Accumulator::new(lhs, rhs);
+		if let Some(old_accumulator) = old_accumulator {
+			accumulator.extend(old_accumulator);
+		}
+
+		Ok(accumulator)
+	}
+
 	fn read<I: Read>(
 		instances: Vec<Vec<C::ScalarExt>>, transcript: &mut Transcript<C, I, P, RNS>,
 	) -> Result<Self, Error> {
