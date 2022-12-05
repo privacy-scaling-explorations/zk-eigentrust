@@ -1,6 +1,10 @@
+use super::{NUM_BITS, NUM_LIMBS};
 use crate::{ecc::native::EcPoint, integer::rns::RnsParams};
 use halo2wrong::{
-	curves::{group::Curve, CurveAffine, FieldExt},
+	curves::{
+		group::{ff::PrimeField, Curve},
+		CurveAffine, FieldExt,
+	},
 	halo2::arithmetic::Field,
 };
 use std::{
@@ -9,40 +13,38 @@ use std::{
 };
 
 #[derive(Clone, Debug)]
-pub struct MSM<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, R>
+pub struct MSM<C: CurveAffine, R>
 where
-	R: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
+	R: RnsParams<C::Base, C::ScalarExt, NUM_LIMBS, NUM_BITS>,
 {
-	scalar: Option<N>,
-	bases: Vec<EcPoint<W, N, NUM_LIMBS, NUM_BITS, R>>,
-	scalars: Vec<N>,
+	scalar: Option<C::ScalarExt>,
+	bases: Vec<EcPoint<C::Base, C::ScalarExt, NUM_LIMBS, NUM_BITS, R>>,
+	scalars: Vec<C::ScalarExt>,
 }
 
-impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, R> Default
-	for MSM<W, N, NUM_LIMBS, NUM_BITS, R>
+impl<C: CurveAffine, R> Default for MSM<C, R>
 where
-	R: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
+	R: RnsParams<C::Base, C::ScalarExt, NUM_LIMBS, NUM_BITS>,
 {
 	fn default() -> Self {
 		Self { scalar: None, scalars: Vec::new(), bases: Vec::new() }
 	}
 }
 
-impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, R>
-	MSM<W, N, NUM_LIMBS, NUM_BITS, R>
+impl<C: CurveAffine, R> MSM<C, R>
 where
-	R: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
+	R: RnsParams<C::Base, C::ScalarExt, NUM_LIMBS, NUM_BITS>,
 {
-	pub fn scalar(scalar: N) -> Self {
+	pub fn scalar(scalar: C::ScalarExt) -> Self {
 		Self { scalar: Some(scalar), ..Default::default() }
 	}
 
-	pub fn base(base: EcPoint<W, N, NUM_LIMBS, NUM_BITS, R>) -> Self {
-		let one = N::one();
+	pub fn base(base: EcPoint<C::Base, C::ScalarExt, NUM_LIMBS, NUM_BITS, R>) -> Self {
+		let one = C::ScalarExt::one();
 		MSM { scalars: vec![one], bases: vec![base], ..Default::default() }
 	}
 
-	pub fn scale(&mut self, factor: &N) {
+	pub fn scale(&mut self, factor: &C::ScalarExt) {
 		if let Some(scalar) = self.scalar.as_mut() {
 			*scalar *= factor;
 		}
@@ -52,19 +54,24 @@ where
 	}
 
 	pub fn evaluate(
-		self, gen: EcPoint<W, N, NUM_LIMBS, NUM_BITS, R>,
-	) -> EcPoint<W, N, NUM_LIMBS, NUM_BITS, R> {
+		self, gen: EcPoint<C::Base, C::ScalarExt, NUM_LIMBS, NUM_BITS, R>,
+	) -> EcPoint<C::Base, C::ScalarExt, NUM_LIMBS, NUM_BITS, R> {
 		let pairs = iter::empty()
 			.chain(self.scalar.map(|scalar| (scalar, gen)))
 			.chain(self.scalars.into_iter().zip(self.bases.into_iter()));
 		pairs
 			.into_iter()
-			.map(|(scalar, base)| base.mul_scalar(scalar.to_repr().as_ref()))
+			.map(|(scalar, base)| {
+				base.mul_scalar(<C::ScalarExt as PrimeField>::to_repr(&scalar).as_ref())
+			})
 			.reduce(|acc, value| acc.add(&value))
 			.unwrap()
 	}
 
-	pub fn push(&mut self, scalar: N, base: EcPoint<W, N, NUM_LIMBS, NUM_BITS, R>) {
+	pub fn push(
+		&mut self, scalar: C::ScalarExt,
+		base: EcPoint<C::Base, C::ScalarExt, NUM_LIMBS, NUM_BITS, R>,
+	) {
 		if let Some(pos) = self.bases.iter().position(|exist| exist.is_eq(&base)) {
 			self.scalars[pos] += scalar;
 		} else {
@@ -85,83 +92,76 @@ where
 	}
 }
 
-impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, R>
-	Add<MSM<W, N, NUM_LIMBS, NUM_BITS, R>> for MSM<W, N, NUM_LIMBS, NUM_BITS, R>
+impl<C: CurveAffine, R> Add<MSM<C, R>> for MSM<C, R>
 where
-	R: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
+	R: RnsParams<C::Base, C::ScalarExt, NUM_LIMBS, NUM_BITS>,
 {
-	type Output = MSM<W, N, NUM_LIMBS, NUM_BITS, R>;
+	type Output = MSM<C, R>;
 
-	fn add(mut self, rhs: MSM<W, N, NUM_LIMBS, NUM_BITS, R>) -> Self::Output {
+	fn add(mut self, rhs: MSM<C, R>) -> Self::Output {
 		self.extend(rhs);
 		self
 	}
 }
 
-impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, R>
-	AddAssign<MSM<W, N, NUM_LIMBS, NUM_BITS, R>> for MSM<W, N, NUM_LIMBS, NUM_BITS, R>
+impl<C: CurveAffine, R> AddAssign<MSM<C, R>> for MSM<C, R>
 where
-	R: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
+	R: RnsParams<C::Base, C::ScalarExt, NUM_LIMBS, NUM_BITS>,
 {
-	fn add_assign(&mut self, rhs: MSM<W, N, NUM_LIMBS, NUM_BITS, R>) {
+	fn add_assign(&mut self, rhs: MSM<C, R>) {
 		self.extend(rhs);
 	}
 }
 
-impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, R>
-	Sub<MSM<W, N, NUM_LIMBS, NUM_BITS, R>> for MSM<W, N, NUM_LIMBS, NUM_BITS, R>
+impl<C: CurveAffine, R> Sub<MSM<C, R>> for MSM<C, R>
 where
-	R: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
+	R: RnsParams<C::Base, C::ScalarExt, NUM_LIMBS, NUM_BITS>,
 {
-	type Output = MSM<W, N, NUM_LIMBS, NUM_BITS, R>;
+	type Output = MSM<C, R>;
 
-	fn sub(mut self, rhs: MSM<W, N, NUM_LIMBS, NUM_BITS, R>) -> Self::Output {
+	fn sub(mut self, rhs: MSM<C, R>) -> Self::Output {
 		self.extend(-rhs);
 		self
 	}
 }
 
-impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, R>
-	SubAssign<MSM<W, N, NUM_LIMBS, NUM_BITS, R>> for MSM<W, N, NUM_LIMBS, NUM_BITS, R>
+impl<C: CurveAffine, R> SubAssign<MSM<C, R>> for MSM<C, R>
 where
-	R: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
+	R: RnsParams<C::Base, C::ScalarExt, NUM_LIMBS, NUM_BITS>,
 {
-	fn sub_assign(&mut self, rhs: MSM<W, N, NUM_LIMBS, NUM_BITS, R>) {
+	fn sub_assign(&mut self, rhs: MSM<C, R>) {
 		self.extend(-rhs);
 	}
 }
 
-impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, R> Mul<&N>
-	for MSM<W, N, NUM_LIMBS, NUM_BITS, R>
+impl<C: CurveAffine, R> Mul<&C::ScalarExt> for MSM<C, R>
 where
-	R: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
+	R: RnsParams<C::Base, C::ScalarExt, NUM_LIMBS, NUM_BITS>,
 {
-	type Output = MSM<W, N, NUM_LIMBS, NUM_BITS, R>;
+	type Output = MSM<C, R>;
 
-	fn mul(mut self, rhs: &N) -> Self::Output {
+	fn mul(mut self, rhs: &C::ScalarExt) -> Self::Output {
 		self.scale(rhs);
 		self
 	}
 }
 
-impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, R> MulAssign<&N>
-	for MSM<W, N, NUM_LIMBS, NUM_BITS, R>
+impl<C: CurveAffine, R> MulAssign<&C::ScalarExt> for MSM<C, R>
 where
-	R: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
+	R: RnsParams<C::Base, C::ScalarExt, NUM_LIMBS, NUM_BITS>,
 {
-	fn mul_assign(&mut self, rhs: &N) {
+	fn mul_assign(&mut self, rhs: &C::ScalarExt) {
 		self.scale(rhs);
 	}
 }
 
-impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, R> Neg
-	for MSM<W, N, NUM_LIMBS, NUM_BITS, R>
+impl<C: CurveAffine, R> Neg for MSM<C, R>
 where
-	R: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
+	R: RnsParams<C::Base, C::ScalarExt, NUM_LIMBS, NUM_BITS>,
 {
-	type Output = MSM<W, N, NUM_LIMBS, NUM_BITS, R>;
+	type Output = MSM<C, R>;
 
-	fn neg(mut self) -> MSM<W, N, NUM_LIMBS, NUM_BITS, R> {
+	fn neg(mut self) -> MSM<C, R> {
 		self.scalar = self.scalar.map(|scalar| -scalar);
 		for scalar in self.scalars.iter_mut() {
 			*scalar = -scalar.clone();
@@ -170,10 +170,9 @@ where
 	}
 }
 
-impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, R> Sum
-	for MSM<W, N, NUM_LIMBS, NUM_BITS, R>
+impl<C: CurveAffine, R> Sum for MSM<C, R>
 where
-	R: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
+	R: RnsParams<C::Base, C::ScalarExt, NUM_LIMBS, NUM_BITS>,
 {
 	fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
 		iter.reduce(|acc, item| acc + item).unwrap_or_default()

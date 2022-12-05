@@ -146,9 +146,9 @@ where
 	}
 
 	pub fn msm(
-		&self, commitments: &HashMap<usize, MSM<C::Base, C::ScalarExt, NUM_LIMBS, NUM_BITS, R>>,
-		evaluations: &HashMap<Query, C::ScalarExt>, powers_of_mu: &[C::ScalarExt],
-	) -> MSM<C::Base, C::ScalarExt, NUM_LIMBS, NUM_BITS, R> {
+		&self, commitments: &HashMap<usize, MSM<C, R>>, evaluations: &HashMap<Query, C::ScalarExt>,
+		powers_of_mu: &[C::ScalarExt],
+	) -> MSM<C, R> {
 		let mut msm = MSM::default();
 		for (poly, power_of_mu) in self.polys.iter().zip(powers_of_mu.iter()) {
 			let mut commitment = self

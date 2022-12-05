@@ -55,9 +55,8 @@ where
 	P: RoundParams<C::ScalarExt, WIDTH>,
 {
 	fn accumulate(
-		&self,
-		old_accumulator: Option<Accumulator<C::Base, C::ScalarExt, NUM_LIMBS, NUM_BITS, RNS>>,
-	) -> Result<Accumulator<C::Base, C::ScalarExt, NUM_LIMBS, NUM_BITS, RNS>, Error> {
+		&self, old_accumulator: Option<Accumulator<C, RNS>>,
+	) -> Result<Accumulator<C, RNS>, Error> {
 		let mut common_poly_eval = CommonPolynomialEvaluation::new(
 			&PR::domain(),
 			langranges::<C, PR>(&self.instances),
@@ -83,7 +82,7 @@ where
 		let f = msms
 			.zip(gamma_powers.into_iter())
 			.map(|(msm, power_of_gamma)| msm * &power_of_gamma)
-			.sum::<MSM<C::Base, C::ScalarExt, NUM_LIMBS, NUM_BITS, RNS>>()
+			.sum::<MSM<C, RNS>>()
 			- MSM::base(self.w.clone()) * &sets[0].z_s;
 
 		let rhs = MSM::base(self.w_prime.clone());
@@ -164,7 +163,7 @@ where
 
 	fn commitments(
 		&self, common_poly_eval: &CommonPolynomialEvaluation<C::ScalarExt>,
-	) -> HashMap<usize, MSM<C::Base, C::ScalarExt, NUM_LIMBS, NUM_BITS, RNS>> {
+	) -> HashMap<usize, MSM<C, RNS>> {
 		let prep = PR::preprocessed();
 		let mut comms = Vec::new();
 		for (i, value) in prep.iter().enumerate() {
