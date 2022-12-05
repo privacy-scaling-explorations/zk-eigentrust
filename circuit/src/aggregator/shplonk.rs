@@ -201,8 +201,10 @@ where
 		let mut instance_evaluations = Vec::new();
 		for insts in &self.instances {
 			let mut sum = C::ScalarExt::zero();
-			for (i, inst) in insts.iter().enumerate() {
-				sum += *inst * common_poly_eval.get(CommonPolynomial::Lagrange(i as i32));
+			let mut i = 0;
+			for inst in insts.iter() {
+				sum += *inst * common_poly_eval.get(CommonPolynomial::Lagrange(i));
+				i += 1;
 			}
 			instance_evaluations.push(sum);
 		}
@@ -260,8 +262,9 @@ pub fn langranges<C: CurveAffine, PR: Protocol<C>>(
 	statements: &[Vec<C::ScalarExt>],
 ) -> impl IntoIterator<Item = i32> {
 	let max_statement =
-		statements.iter().map(|statement| statement.len()).max().unwrap_or_default() as i32;
+		statements.iter().map(|statement| statement.len()).max().unwrap_or_default();
 	let relations_sum = PR::relations().into_iter().sum::<Expression<_>>();
 	let used_langrange = relations_sum.used_langrange();
-	used_langrange.into_iter().chain(0..max_statement)
+	let max_st_i32 = max_statement.try_into().unwrap();
+	used_langrange.into_iter().chain(0..max_st_i32)
 }
