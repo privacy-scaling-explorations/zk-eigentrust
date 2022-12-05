@@ -1,5 +1,5 @@
 use super::{NUM_BITS, NUM_LIMBS};
-use crate::{ecc::native::EcPoint, integer::rns::RnsParams};
+use crate::{ecc::native::EcPoint, integer::rns::RnsParams, utils::to_short};
 use halo2wrong::{
 	curves::{
 		group::{ff::PrimeField, Curve},
@@ -62,7 +62,9 @@ where
 		pairs
 			.into_iter()
 			.map(|(scalar, base)| {
-				base.mul_scalar(<C::ScalarExt as PrimeField>::to_repr(&scalar).as_ref())
+				let scalar_bytes =
+					to_short(<C::ScalarExt as PrimeField>::to_repr(&scalar).as_ref());
+				base.mul_scalar(scalar_bytes).0
 			})
 			.reduce(|acc, value| acc.add(&value))
 			.unwrap()
