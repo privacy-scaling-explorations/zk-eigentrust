@@ -11,6 +11,8 @@
 #![warn(trivial_casts)]
 #![forbid(unsafe_code)]
 
+/// Closed graph circuit
+pub mod circuit;
 /// Ecc arithemtic on wrong field
 pub mod ecc;
 /// EDDSA signature scheme gadgets + native version

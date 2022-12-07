@@ -1,6 +1,5 @@
-use super::ed_on_bn254::{A, D};
 use halo2wrong::{
-	curves::bn256::Fr,
+	curves::FieldExt,
 	halo2::{
 		circuit::Value,
 		plonk::{Assigned, Expression},
@@ -9,7 +8,9 @@ use halo2wrong::{
 
 /// ADD operation between points `r` and `e`
 // add-2008-bbjlp https://hyperelliptic.org/EFD/g1p/auto-twisted-projective.html#addition-add-2008-bbjlp
-pub fn add(r_x: Fr, r_y: Fr, r_z: Fr, e_x: Fr, e_y: Fr, e_z: Fr) -> (Fr, Fr, Fr) {
+pub fn add<F: FieldExt>(
+	r_x: F, r_y: F, r_z: F, e_x: F, e_y: F, e_z: F, const_d: F, const_a: F,
+) -> (F, F, F) {
 	// A = Z1*Z2
 	let a = r_z.mul(&e_z);
 	// B = A^2
@@ -19,7 +20,7 @@ pub fn add(r_x: Fr, r_y: Fr, r_z: Fr, e_x: Fr, e_y: Fr, e_z: Fr) -> (Fr, Fr, Fr)
 	// D = Y1*Y2
 	let d = r_y.mul(&e_y);
 	// E = d*C*D
-	let e = D.mul(&c).mul(&d);
+	let e = const_d.mul(&c).mul(&d);
 	// F = B-E
 	let f = b.sub(&e);
 	// G = B+E
@@ -27,7 +28,7 @@ pub fn add(r_x: Fr, r_y: Fr, r_z: Fr, e_x: Fr, e_y: Fr, e_z: Fr) -> (Fr, Fr, Fr)
 	// X3 = A*F*((X1+Y1)*(X2+Y2)-C-D)
 	let x3 = a.mul(&f).mul(&r_x.add(&r_y).mul(&e_x.add(&e_y)).sub(&c).sub(&d));
 	// Y3 = A*G*(D-a*C)
-	let y3 = a.mul(&g).mul(&d.sub(&A.mul(&c)));
+	let y3 = a.mul(&g).mul(&d.sub(&const_a.mul(&c)));
 	// Z3 = F*G
 	let z3 = f.mul(&g);
 
@@ -35,12 +36,10 @@ pub fn add(r_x: Fr, r_y: Fr, r_z: Fr, e_x: Fr, e_y: Fr, e_z: Fr) -> (Fr, Fr, Fr)
 }
 
 /// ADD operation between expressions `r` and `e`
-pub fn add_exp(
-	r_x: Expression<Fr>, r_y: Expression<Fr>, r_z: Expression<Fr>, e_x: Expression<Fr>,
-	e_y: Expression<Fr>, e_z: Expression<Fr>,
-) -> (Expression<Fr>, Expression<Fr>, Expression<Fr>) {
-	let const_d = Expression::Constant(D);
-	let const_a = Expression::Constant(A);
+pub fn add_exp<F: FieldExt>(
+	r_x: Expression<F>, r_y: Expression<F>, r_z: Expression<F>, e_x: Expression<F>,
+	e_y: Expression<F>, e_z: Expression<F>, const_d: F, const_a: F,
+) -> (Expression<F>, Expression<F>, Expression<F>) {
 	// A = Z1*Z2
 	let r_a = r_z.clone() * e_z.clone();
 	// B = A^2
@@ -50,7 +49,7 @@ pub fn add_exp(
 	// D = Y1*Y2
 	let r_d = r_y.clone() * e_y.clone();
 	// E = d*C*D
-	let r_e = const_d * r_c.clone() * r_d.clone();
+	let r_e = r_c.clone() * r_d.clone() * const_d;
 	// F = B-E
 	let r_f = r_b.clone() - r_e.clone();
 	// G = B+E
@@ -60,28 +59,22 @@ pub fn add_exp(
 		* r_f.clone()
 		* ((r_x.clone() + r_y.clone()) * (e_x.clone() + e_y.clone()) - r_c.clone() - r_d.clone());
 	// Y3 = A*G*(D-a*C)
-	let r_y3 = r_a * r_g.clone() * (r_d - const_a.clone() * r_c);
+	let r_y3 = r_a * r_g.clone() * (r_d - r_c * const_a.clone());
 	// Z3 = F*G
 	let r_z3 = r_f * r_g;
 	(r_x3, r_y3, r_z3)
 }
 
 /// ADD operation between assigned values `r` and `e`
-pub fn add_value(
-	r_x: Value<Assigned<Fr>>, r_y: Value<Assigned<Fr>>, r_z: Value<Assigned<Fr>>,
-	e_x: Value<Assigned<Fr>>, e_y: Value<Assigned<Fr>>, e_z: Value<Assigned<Fr>>,
-) -> (
-	Value<Assigned<Fr>>,
-	Value<Assigned<Fr>>,
-	Value<Assigned<Fr>>,
-) {
-	let const_a = Value::known(Assigned::from(A));
-	let const_d = Value::known(Assigned::from(D));
+pub fn add_value<F: FieldExt>(
+	r_x: Value<F>, r_y: Value<F>, r_z: Value<F>, e_x: Value<F>, e_y: Value<F>, e_z: Value<F>,
+	const_a: Value<F>, const_d: Value<F>,
+) -> (Value<F>, Value<F>, Value<F>) {
 	// Add `r` and `e`
 	// A = Z1*Z2
 	let r_a = r_z * e_z;
 	// B = A^2
-	let r_b = r_a.to_field().square();
+	let r_b = r_a * r_a;
 	// C = X1*X2
 	let r_c = r_x * e_x;
 	// D = Y1*Y2
@@ -104,7 +97,7 @@ pub fn add_value(
 
 /// DOUBLE operation of point `e`
 // dbl-2008-bbjlp https://hyperelliptic.org/EFD/g1p/auto-twisted-projective.html#doubling-dbl-2008-bbjlp
-pub fn double(e_x: Fr, e_y: Fr, e_z: Fr) -> (Fr, Fr, Fr) {
+pub fn double<F: FieldExt>(e_x: F, e_y: F, e_z: F, a: F) -> (F, F, F) {
 	// B = (X1+Y1)^2
 	let b = e_x.add(&e_y).square();
 	// C = X1^2
@@ -112,7 +105,7 @@ pub fn double(e_x: Fr, e_y: Fr, e_z: Fr) -> (Fr, Fr, Fr) {
 	// D = Y1^2
 	let d = e_y.square();
 	// E = a*C
-	let e = A.mul(&c);
+	let e = a.mul(&c);
 	// F = E+D
 	let f = e.add(&d);
 	// H = Z1^2
@@ -130,10 +123,9 @@ pub fn double(e_x: Fr, e_y: Fr, e_z: Fr) -> (Fr, Fr, Fr) {
 }
 
 /// DOUBLE operation of expression `e`
-pub fn double_exp(
-	e_x: Expression<Fr>, e_y: Expression<Fr>, e_z: Expression<Fr>,
-) -> (Expression<Fr>, Expression<Fr>, Expression<Fr>) {
-	let const_a = Expression::Constant(A);
+pub fn double_exp<F: FieldExt>(
+	e_x: Expression<F>, e_y: Expression<F>, e_z: Expression<F>, const_a: F,
+) -> (Expression<F>, Expression<F>, Expression<F>) {
 	// B = (X1+Y1)^2
 	let e_b = (e_x.clone() + e_y.clone()).square();
 	// C = X1^2
@@ -141,7 +133,7 @@ pub fn double_exp(
 	// D = Y1^2
 	let e_d = e_y.square();
 	// E = a*C
-	let e_e = const_a * e_c.clone();
+	let e_e = e_c.clone() * const_a;
 	// F = E+D
 	let e_f = e_e.clone() + e_d.clone();
 	// H = Z1^2
@@ -159,26 +151,22 @@ pub fn double_exp(
 }
 
 /// DOUBLE operation of assigned value `e`
-pub fn double_value(
-	e_x: Value<Assigned<Fr>>, e_y: Value<Assigned<Fr>>, e_z: Value<Assigned<Fr>>,
-) -> (
-	Value<Assigned<Fr>>,
-	Value<Assigned<Fr>>,
-	Value<Assigned<Fr>>,
-) {
-	let const_a = Value::known(Assigned::from(A));
+pub fn double_value<F: FieldExt>(
+	e_x: Value<F>, e_y: Value<F>, e_z: Value<F>, const_a: Value<F>,
+) -> (Value<F>, Value<F>, Value<F>) {
 	// B = (X1+Y1)^2
-	let e_b = (e_x + e_y).square();
+	let e_b = e_x + e_y;
+	let e_b = e_b * e_b;
 	// C = X1^2
-	let e_c = e_x.square();
+	let e_c = e_x * e_x;
 	// D = Y1^2
-	let e_d = e_y.square();
+	let e_d = e_y * e_y;
 	// E = a*C
 	let e_e = const_a * e_c;
 	// F = E+D
 	let e_f = e_e + e_d;
 	// H = Z1^2
-	let e_h = e_z.square();
+	let e_h = e_z * e_z;
 	// J = F-2*H
 	let e_j = e_f - (e_h + e_h);
 	// X3 = (B-C-D)*J

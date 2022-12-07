@@ -1,5 +1,5 @@
 use super::ops::{add, double};
-use halo2wrong::curves::{bn256::Fr, group::ff::Field};
+use halo2wrong::curves::{bn256::Fr, group::ff::Field, FieldExt};
 
 /// D = 168696
 pub const D: Fr = Fr::from_raw([0x292F8, 0x00, 0x00, 0x00]);
@@ -63,7 +63,7 @@ impl PointProjective {
 	/// DOUBLE operation of point `self`
 	pub fn double(&self) -> Self {
 		// dbl-2008-bbjlp https://hyperelliptic.org/EFD/g1p/auto-twisted-projective.html#doubling-dbl-2008-bbjlp
-		let (x3, y3, z3) = double(self.x, self.y, self.z);
+		let (x3, y3, z3) = double(self.x, self.y, self.z, A);
 
 		PointProjective { x: x3, y: y3, z: z3 }
 	}
@@ -71,7 +71,7 @@ impl PointProjective {
 	/// ADD operation between points `self` and `q`
 	pub fn add(&self, q: &Self) -> Self {
 		// add-2008-bbjlp https://hyperelliptic.org/EFD/g1p/auto-twisted-projective.html#addition-add-2008-bbjlp
-		let (x3, y3, z3) = add(self.x, self.y, self.z, q.x, q.y, q.z);
+		let (x3, y3, z3) = add(self.x, self.y, self.z, q.x, q.y, q.z, D, A);
 
 		PointProjective { x: x3, y: y3, z: z3 }
 	}
@@ -116,6 +116,35 @@ impl Point {
 /// Performs bitwise AND to test bits.
 pub fn test_bit(b: &[u8], i: usize) -> bool {
 	b[i / 8] & (1 << (i % 8)) != 0
+}
+
+/// Trait for defining point A and D for Edward curves
+pub trait EdwardsCurveParams<F: FieldExt> {
+	/// Point A
+	const A: F;
+	/// Point D
+	const D: F;
+
+	/// Returns B8 point
+	fn b8() -> (F, F);
+	/// Return the suborder
+	fn suborder() -> F;
+}
+
+/// Struct for defining BabyJubJub A and D points
+pub struct BabyJubJub;
+
+impl EdwardsCurveParams<Fr> for BabyJubJub {
+	const A: Fr = A;
+	const D: Fr = D;
+
+	fn b8() -> (Fr, Fr) {
+		(B8_X, B8_Y)
+	}
+
+	fn suborder() -> Fr {
+		SUBORDER
+	}
 }
 
 #[cfg(test)]
