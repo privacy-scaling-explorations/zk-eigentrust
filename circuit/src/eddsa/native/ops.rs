@@ -68,7 +68,7 @@ pub fn add_exp<F: FieldExt>(
 /// ADD operation between assigned values `r` and `e`
 pub fn add_value<F: FieldExt>(
 	r_x: Value<F>, r_y: Value<F>, r_z: Value<F>, e_x: Value<F>, e_y: Value<F>, e_z: Value<F>,
-	const_a: Value<F>, const_d: Value<F>,
+	const_d: Value<F>, const_a: Value<F>,
 ) -> (Value<F>, Value<F>, Value<F>) {
 	// Add `r` and `e`
 	// A = Z1*Z2
