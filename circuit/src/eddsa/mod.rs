@@ -1,12 +1,8 @@
-/// Implementation for the EDDSA circuit gadgets.
-pub mod eddsa_gadgets;
 /// Native implementation of EDDSA signature scheme
 pub mod native;
 
-use std::marker::PhantomData;
-
 use crate::{
-	eddsa::eddsa_gadgets::{EddsaGadgetsChip, EddsaGadgetsConfig},
+	edwards::{params::EdwardsParams, AssignedPoint, EdwardsChip, EdwardsConfig},
 	gadgets::{
 		common::{CommonChip, CommonConfig},
 		lt_eq::{LessEqualChip, LessEqualConfig},
@@ -23,15 +19,13 @@ use halo2wrong::{
 		poly::Rotation,
 	},
 };
-use native::ed_on_bn254::{B8, SUBORDER};
-
-use self::{eddsa_gadgets::AssignedPoint, native::ed_on_bn254::EdwardsCurveParams};
+use std::marker::PhantomData;
 
 #[derive(Clone)]
 /// Configuration elements for the circuit are defined here.
 struct EddsaConfig {
 	/// Constructs eddsa gadgets circuit elements.
-	eddsa_gadgets: EddsaGadgetsConfig,
+	edwards: EdwardsConfig,
 	/// Constructs common circuit elements.
 	common: CommonConfig,
 	/// Constructs lt_eq circuit elements.
@@ -43,7 +37,7 @@ struct EddsaConfig {
 }
 
 /// Constructs individual cells for the configuration elements.
-struct EddsaChip<F: FieldExt, P: EdwardsCurveParams<F>, R>
+struct EddsaChip<F: FieldExt, P: EdwardsParams<F>, R>
 where
 	R: RoundParams<F, 5>,
 {
@@ -71,7 +65,7 @@ where
 	_r: PhantomData<R>,
 }
 
-impl<F: FieldExt, P: EdwardsCurveParams<F>, R> EddsaChip<F, P, R>
+impl<F: FieldExt, P: EdwardsParams<F>, R> EddsaChip<F, P, R>
 where
 	R: RoundParams<F, 5>,
 {
@@ -101,14 +95,14 @@ where
 	/// Make the circuit config.
 	pub fn configure(meta: &mut ConstraintSystem<F>) -> EddsaConfig {
 		let common = CommonChip::configure(meta);
-		let eddsa_gadgets = EddsaGadgetsChip::<F, P>::configure(meta);
+		let edwards = EdwardsChip::<F, P>::configure(meta);
 		let lt_eq = LessEqualChip::configure(meta);
 		let poseidon = PoseidonChip::<_, 5, R>::configure(meta);
 		let temp = meta.advice_column();
 
 		meta.enable_equality(temp);
 
-		EddsaConfig { eddsa_gadgets, common, lt_eq, poseidon, temp }
+		EddsaConfig { edwards, common, lt_eq, poseidon, temp }
 	}
 
 	/// Synthesize the circuit.
@@ -145,11 +139,11 @@ where
 
 		// Cl = s * G
 		let e = AssignedPoint::new(b8_x, b8_y, one.clone());
-		let cl = EddsaGadgetsChip::<F, P>::scalar_mul::<252>(
+		let cl = EdwardsChip::<F, P>::scalar_mul::<252>(
 			e,
 			self.s.clone(),
 			self.s_bits,
-			config.eddsa_gadgets.clone(),
+			config.edwards.clone(),
 			layouter.namespace(|| "b_8 * s"),
 		)?;
 
@@ -168,32 +162,32 @@ where
 		// H(R || PK || M) * PK
 		// Scalar multiplication for the public key and hash.
 		let e = AssignedPoint::new(self.pk_x.clone(), self.pk_y.clone(), one.clone());
-		let pk_h = EddsaGadgetsChip::<F, P>::scalar_mul::<256>(
+		let pk_h = EdwardsChip::<F, P>::scalar_mul::<256>(
 			e,
 			m_hash_res[0].clone(),
 			self.m_hash_bits,
-			config.eddsa_gadgets.clone(),
+			config.edwards.clone(),
 			layouter.namespace(|| "pk * m_hash"),
 		)?;
 
 		// Cr = R + H(R || PK || M) * PK
 		let big_r_point = AssignedPoint::new(self.big_r_x.clone(), self.big_r_y.clone(), one);
-		let cr = EddsaGadgetsChip::<F, P>::add_point(
+		let cr = EdwardsChip::<F, P>::add_point(
 			big_r_point,
 			pk_h,
-			config.eddsa_gadgets.clone(),
+			config.edwards.clone(),
 			layouter.namespace(|| "big_r + pk_h"),
 		)?;
 
 		// Converts two projective space points to their affine representation.
-		let cl_affine = EddsaGadgetsChip::<F, P>::into_affine(
+		let cl_affine = EdwardsChip::<F, P>::into_affine(
 			cl,
-			config.eddsa_gadgets.clone(),
+			config.edwards.clone(),
 			layouter.namespace(|| "cl_affine"),
 		)?;
-		let cr_affine = EddsaGadgetsChip::<F, P>::into_affine(
+		let cr_affine = EdwardsChip::<F, P>::into_affine(
 			cr,
-			config.eddsa_gadgets,
+			config.edwards,
 			layouter.namespace(|| "cr_affine"),
 		)?;
 
@@ -237,9 +231,13 @@ where
 
 #[cfg(test)]
 mod test {
-	use super::{native::ed_on_bn254::BabyJubJub, *};
+	use super::{EddsaChip, EddsaConfig};
 	use crate::{
-		eddsa::native::{ed_on_bn254::B8, sign, SecretKey},
+		eddsa::native::{sign, SecretKey},
+		edwards::{
+			native::Point,
+			params::{BabyJubJub, EdwardsParams},
+		},
 		gadgets::{bits2num::to_bits, lt_eq::N_SHIFTED},
 		params::poseidon_bn254_5x5::Params,
 		poseidon::native::Poseidon,
@@ -251,12 +249,13 @@ mod test {
 			group::ff::PrimeField,
 		},
 		halo2::{
-			circuit::{SimpleFloorPlanner, Value},
+			circuit::{Layouter, Region, SimpleFloorPlanner, Value},
 			dev::MockProver,
-			plonk::Circuit,
+			plonk::{Advice, Circuit, Column, ConstraintSystem, Error},
 		},
 	};
 	use rand::thread_rng;
+
 	type Hasher = Poseidon<Fr, 5, Params>;
 
 	#[derive(Clone)]
@@ -341,8 +340,9 @@ mod test {
 			)?;
 
 			let s_bits = to_bits(self.s.to_bytes()).map(Fr::from);
-			let suborder_bits = to_bits(SUBORDER.to_bytes()).map(Fr::from);
-			let diff = self.s + Fr::from_bytes(&N_SHIFTED).unwrap() - SUBORDER;
+			let suborder = BabyJubJub::suborder();
+			let suborder_bits = to_bits(suborder.to_bytes()).map(Fr::from);
+			let diff = self.s + Fr::from_bytes(&N_SHIFTED).unwrap() - suborder;
 			let diff_bits = to_bits(diff.to_bytes()).map(Fr::from);
 			let h_inputs = [self.big_r_x, self.big_r_y, self.pk_x, self.pk_y, self.m];
 			let res = Hasher::new(h_inputs).permute()[0];
@@ -385,7 +385,9 @@ mod test {
 
 		let m = Fr::from_str_vartime("123456789012345678901234567890").unwrap();
 		let mut sig = sign(&sk, &pk, m);
-		sig.big_r = B8.mul_scalar(&different_r.to_bytes()).affine();
+		let (b8_x, b8_y) = BabyJubJub::b8();
+		let b8 = Point::new(b8_x, b8_y);
+		sig.big_r = b8.mul_scalar(&different_r.to_bytes()).affine();
 		let circuit = TestCircuit::new(sig.big_r.x, sig.big_r.y, sig.s, pk.0.x, pk.0.y, m);
 
 		let k = 10;

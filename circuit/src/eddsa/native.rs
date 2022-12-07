@@ -1,10 +1,12 @@
-/// Implementation of Edwards on Bn254 curve AKA BabyJubJub
-pub mod ed_on_bn254;
-/// Helper functions for point arithmetic
-pub mod ops;
-
-use crate::{params::poseidon_bn254_5x5::Params, poseidon::native::Poseidon, utils::to_wide};
-use ed_on_bn254::{Point, B8, SUBORDER};
+use crate::{
+	edwards::{
+		native::Point,
+		params::{BabyJubJub, EdwardsParams},
+	},
+	params::poseidon_bn254_5x5::Params,
+	poseidon::native::Poseidon,
+	utils::to_wide,
+};
 use halo2wrong::{
 	curves::{bn256::Fr, FieldExt},
 	halo2::arithmetic::Field,
@@ -39,19 +41,21 @@ impl SecretKey {
 
 	/// Returns a public key from the secret key.
 	pub fn public(&self) -> PublicKey {
-		let a = B8.mul_scalar(&self.0.to_bytes_le());
+		let (b8_x, b8_y) = BabyJubJub::b8();
+		let b8_point = Point::new(b8_x, b8_y);
+		let a = b8_point.mul_scalar(&self.0.to_bytes_le());
 		PublicKey(a.affine())
 	}
 }
 
 /// Configures a structure for the public key.
-pub struct PublicKey(pub Point);
+pub struct PublicKey(pub Point<Fr, BabyJubJub>);
 
 #[derive(Clone)]
 /// Configures signature objects.
 pub struct Signature {
 	/// Constructs a point for the R.
-	pub big_r: Point,
+	pub big_r: Point<Fr, BabyJubJub>,
 	/// Constructs a field element for the s.
 	pub s: Fr,
 }
@@ -63,14 +67,17 @@ pub fn sign(sk: &SecretKey, pk: &PublicKey, m: Fr) -> Signature {
 	let r_bn = BigUint::from_bytes_le(&r.to_bytes());
 
 	// R = B8 * r
-	let big_r = B8.mul_scalar(&r.to_bytes()).affine();
+	let (b8_x, b8_y) = BabyJubJub::b8();
+	let b8_point = Point::new(b8_x, b8_y);
+	let big_r = b8_point.mul_scalar(&r.to_bytes()).affine();
 	// H(R || PK || M)
 	let m_hash_input = [big_r.x, big_r.y, pk.0.x, pk.0.y, m];
 	let m_hash = Hasher::new(m_hash_input).permute()[0];
 	let m_hash_bn = BigUint::from_bytes_le(&m_hash.to_bytes());
 	// S = r + H(R || PK || M) * sk0   (mod n)
 	let s = r_bn + &sk.0 * m_hash_bn;
-	let s = s % BigUint::from_bytes_le(&SUBORDER.to_bytes());
+	let suborder = BabyJubJub::suborder();
+	let s = s % BigUint::from_bytes_le(&suborder.to_bytes());
 	let s = Fr::from_bytes_wide(&to_wide(&s.to_bytes_le()));
 
 	Signature { big_r, s }
@@ -78,12 +85,15 @@ pub fn sign(sk: &SecretKey, pk: &PublicKey, m: Fr) -> Signature {
 
 /// Checks if the signature holds with the given PK and message.
 pub fn verify(sig: &Signature, pk: &PublicKey, m: Fr) -> bool {
-	if sig.s > SUBORDER {
+	let suborder = BabyJubJub::suborder();
+	if sig.s > suborder {
 		// S can't be higher than SUBORDER
 		return false;
 	}
 	// Cl = s * G
-	let cl = B8.mul_scalar(&sig.s.to_bytes());
+	let (b8_x, b8_y) = BabyJubJub::b8();
+	let b8_point = Point::new(b8_x, b8_y);
+	let cl = b8_point.mul_scalar(&sig.s.to_bytes());
 	// H(R || PK || M)
 	let m_hash_input = [sig.big_r.x, sig.big_r.y, pk.0.x, pk.0.y, m];
 	let m_hash = Hasher::new(m_hash_input).permute()[0];
@@ -128,7 +138,9 @@ mod test {
 		let m = Fr::from_str_vartime("123456789012345678901234567890").unwrap();
 		let mut sig = sign(&sk, &pk, m);
 
-		sig.big_r = B8.mul_scalar(&different_r.to_bytes()).affine();
+		let (b8_x, b8_y) = BabyJubJub::b8();
+		let b8_point = Point::new(b8_x, b8_y);
+		sig.big_r = b8_point.mul_scalar(&different_r.to_bytes()).affine();
 		let res = verify(&sig, &pk, m);
 
 		assert_eq!(res, false);

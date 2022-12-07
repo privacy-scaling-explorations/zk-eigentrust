@@ -1,9 +1,8 @@
-use std::marker::PhantomData;
+/// Native implementation of edward curve operations
+pub mod native;
+/// Edward curve params
+pub mod params;
 
-use super::native::{
-	ed_on_bn254::EdwardsCurveParams,
-	ops::{add_exp, add_value, double_exp, double_value},
-};
 use crate::gadgets::bits2num::{Bits2NumChip, Bits2NumConfig};
 use halo2wrong::{
 	curves::FieldExt,
@@ -14,6 +13,8 @@ use halo2wrong::{
 		poly::Rotation,
 	},
 };
+use params::EdwardsParams;
+use std::marker::PhantomData;
 
 /// Assigned point from the circuit
 pub struct AssignedPoint<F: FieldExt> {
@@ -44,7 +45,7 @@ impl<F: FieldExt> AssignedPoint<F> {
 
 #[derive(Clone)]
 /// Configuration elements for the circuit are defined here.
-pub struct EddsaGadgetsConfig {
+pub struct EdwardsConfig {
 	/// Constructs bits2num circuit elements.
 	bits2num: Bits2NumConfig,
 	/// Configures columns for the eddsa advice.
@@ -54,14 +55,14 @@ pub struct EddsaGadgetsConfig {
 }
 
 /// Structure for the eddsa gadgets chip.
-pub struct EddsaGadgetsChip<F: FieldExt, P: EdwardsCurveParams<F>> {
+pub struct EdwardsChip<F: FieldExt, P: EdwardsParams<F>> {
 	_f: PhantomData<F>,
 	_p: PhantomData<P>,
 }
 
-impl<F: FieldExt, P: EdwardsCurveParams<F>> EddsaGadgetsChip<F, P> {
+impl<F: FieldExt, P: EdwardsParams<F>> EdwardsChip<F, P> {
 	/// Make the circuit configs.
-	pub fn configure(meta: &mut ConstraintSystem<F>) -> EddsaGadgetsConfig {
+	pub fn configure(meta: &mut ConstraintSystem<F>) -> EdwardsConfig {
 		let bits2num = Bits2NumChip::<F, 256>::configure(meta);
 		let eddsa_advice = [
 			meta.advice_column(),
@@ -91,15 +92,13 @@ impl<F: FieldExt, P: EdwardsCurveParams<F>> EddsaGadgetsChip<F, P> {
 			let r_y_next_exp = v_cells.query_advice(eddsa_advice[1], Rotation::next());
 			let r_z_next_exp = v_cells.query_advice(eddsa_advice[2], Rotation::next());
 
-			let (r_x3, r_y3, r_z3) = add_exp(
+			let (r_x3, r_y3, r_z3) = P::add_exp(
 				r_x_exp.clone(),
 				r_y_exp.clone(),
 				r_z_exp.clone(),
 				e_x_exp.clone(),
 				e_y_exp.clone(),
 				e_z_exp.clone(),
-				P::D,
-				P::A,
 			);
 
 			vec![
@@ -153,18 +152,16 @@ impl<F: FieldExt, P: EdwardsCurveParams<F>> EddsaGadgetsChip<F, P> {
 			let e_y_next_exp = v_cells.query_advice(eddsa_advice[5], Rotation::next());
 			let e_z_next_exp = v_cells.query_advice(eddsa_advice[6], Rotation::next());
 
-			let (r_x3, r_y3, r_z3) = add_exp(
+			let (r_x3, r_y3, r_z3) = P::add_exp(
 				r_x_exp.clone(),
 				r_y_exp.clone(),
 				r_z_exp.clone(),
 				e_x_exp.clone(),
 				e_y_exp.clone(),
 				e_z_exp.clone(),
-				P::D,
-				P::A,
 			);
 
-			let (e_x3, e_y3, e_z3) = double_exp(e_x_exp, e_y_exp, e_z_exp, P::A);
+			let (e_x3, e_y3, e_z3) = P::double_exp(e_x_exp, e_y_exp, e_z_exp);
 
 			// Select the next value based on a `bit` -- see `select` gadget.
 			let selected_r_x =
@@ -186,12 +183,12 @@ impl<F: FieldExt, P: EdwardsCurveParams<F>> EddsaGadgetsChip<F, P> {
 			]
 		});
 
-		EddsaGadgetsConfig { bits2num, eddsa_advice, selectors }
+		EdwardsConfig { bits2num, eddsa_advice, selectors }
 	}
 
 	/// Synthesize the add_point circuit.
 	pub fn add_point(
-		r: AssignedPoint<F>, e: AssignedPoint<F>, config: EddsaGadgetsConfig,
+		r: AssignedPoint<F>, e: AssignedPoint<F>, config: EdwardsConfig,
 		mut layouter: impl Layouter<F>,
 	) -> Result<AssignedPoint<F>, Error> {
 		layouter.assign_region(
@@ -207,15 +204,13 @@ impl<F: FieldExt, P: EdwardsCurveParams<F>> EddsaGadgetsChip<F, P> {
 				let e_z = e.z.copy_advice(|| "e_z", &mut region, config.eddsa_advice[5], 0)?;
 
 				// Add `r` and `e`.
-				let (r_x3, r_y3, r_z3) = add_value(
+				let (r_x3, r_y3, r_z3) = P::add_value(
 					r_x.value().cloned(),
 					r_y.value().cloned(),
 					r_z.value().cloned(),
 					e_x.value().cloned(),
 					e_y.value().cloned(),
 					e_z.value().cloned(),
-					Value::known(P::D),
-					Value::known(P::A),
 				);
 
 				let r_x_res = region.assign_advice(|| "r_x", config.eddsa_advice[0], 1, || r_x3)?;
@@ -231,7 +226,7 @@ impl<F: FieldExt, P: EdwardsCurveParams<F>> EddsaGadgetsChip<F, P> {
 
 	/// Synthesize the into_affine circuit.
 	pub fn into_affine(
-		r: AssignedPoint<F>, config: EddsaGadgetsConfig, mut layouter: impl Layouter<F>,
+		r: AssignedPoint<F>, config: EdwardsConfig, mut layouter: impl Layouter<F>,
 	) -> Result<(AssignedCell<F, F>, AssignedCell<F, F>), Error> {
 		layouter.assign_region(
 			|| "into_affine",
@@ -281,7 +276,7 @@ impl<F: FieldExt, P: EdwardsCurveParams<F>> EddsaGadgetsChip<F, P> {
 		value: AssignedCell<F, F>,
 		// Constructs an array for the value bits.
 		value_bits: [F; B],
-		config: EddsaGadgetsConfig,
+		config: EdwardsConfig,
 		mut layouter: impl Layouter<F>,
 	) -> Result<AssignedPoint<F>, Error> {
 		let bits2num = Bits2NumChip::new(value.clone(), value_bits);
@@ -322,23 +317,20 @@ impl<F: FieldExt, P: EdwardsCurveParams<F>> EddsaGadgetsChip<F, P> {
 					config.selectors[2].enable(&mut region, i)?;
 
 					// Add `r` and `e`.
-					let (r_x3, r_y3, r_z3) = add_value(
+					let (r_x3, r_y3, r_z3) = P::add_value(
 						r_x.value().cloned(),
 						r_y.value().cloned(),
 						r_z.value().cloned(),
 						e_x.value().cloned(),
 						e_y.value().cloned(),
 						e_z.value().cloned(),
-						Value::known(P::D),
-						Value::known(P::A),
 					);
 
 					// Double `e`.
-					let (e_x3, e_y3, e_z3) = double_value(
+					let (e_x3, e_y3, e_z3) = P::double_value(
 						e_x.value().cloned(),
 						e_y.value().cloned(),
 						e_z.value().cloned(),
-						Value::known(P::A),
 					);
 
 					let (r_x_next, r_y_next, r_z_next) = if value_bits[i] == F::one() {
@@ -387,10 +379,7 @@ impl<F: FieldExt, P: EdwardsCurveParams<F>> EddsaGadgetsChip<F, P> {
 mod test {
 	use super::*;
 	use crate::{
-		eddsa::native::{
-			ed_on_bn254::{BabyJubJub, A, B8, D, G},
-			ops::add,
-		},
+		edwards::{native::Point, params::BabyJubJub},
 		gadgets::bits2num::to_bits,
 		utils::{generate_params, prove_and_verify},
 	};
@@ -412,7 +401,7 @@ mod test {
 
 	#[derive(Clone)]
 	struct TestConfig {
-		eddsa_gadgets: EddsaGadgetsConfig,
+		edwards: EdwardsConfig,
 		pub_ins: Column<Instance>,
 		temp: Column<Advice>,
 	}
@@ -438,14 +427,14 @@ mod test {
 		}
 
 		fn configure(meta: &mut ConstraintSystem<Fr>) -> TestConfig {
-			let eddsa_gadgets = EddsaGadgetsChip::<Fr, BabyJubJub>::configure(meta);
+			let edwards = EdwardsChip::<Fr, BabyJubJub>::configure(meta);
 			let pub_ins = meta.instance_column();
 			let temp = meta.advice_column();
 
 			meta.enable_equality(pub_ins);
 			meta.enable_equality(temp);
 
-			TestConfig { eddsa_gadgets, pub_ins, temp }
+			TestConfig { edwards, pub_ins, temp }
 		}
 
 		fn synthesize(
@@ -472,10 +461,10 @@ mod test {
 						AssignedPoint::new(items[0].clone(), items[1].clone(), items[2].clone());
 					let e =
 						AssignedPoint::new(items[3].clone(), items[4].clone(), items[5].clone());
-					let res = EddsaGadgetsChip::<_, BabyJubJub>::add_point(
+					let res = EdwardsChip::<_, BabyJubJub>::add_point(
 						r,
 						e,
-						config.eddsa_gadgets,
+						config.edwards,
 						layouter.namespace(|| "add"),
 					)?;
 					layouter.constrain_instance(res.x.cell(), config.pub_ins, 0)?;
@@ -485,9 +474,9 @@ mod test {
 				Gadgets::IntoAffine => {
 					let p =
 						AssignedPoint::new(items[0].clone(), items[1].clone(), items[2].clone());
-					let (x, y) = EddsaGadgetsChip::<_, BabyJubJub>::into_affine(
+					let (x, y) = EdwardsChip::<_, BabyJubJub>::into_affine(
 						p,
-						config.eddsa_gadgets,
+						config.edwards,
 						layouter.namespace(|| "into_affine"),
 					)?;
 					layouter.constrain_instance(x.cell(), config.pub_ins, 0)?;
@@ -497,11 +486,11 @@ mod test {
 					let e =
 						AssignedPoint::new(items[0].clone(), items[1].clone(), items[2].clone());
 					let value_bits = to_bits::<256>(self.inputs[3].to_bytes()).map(Fr::from);
-					let res = EddsaGadgetsChip::<_, BabyJubJub>::scalar_mul(
+					let res = EdwardsChip::<_, BabyJubJub>::scalar_mul(
 						e,
 						items[3].clone(),
 						value_bits,
-						config.eddsa_gadgets,
+						config.edwards,
 						layouter.namespace(|| "scalar_mul"),
 					)?;
 					layouter.constrain_instance(res.x.cell(), config.pub_ins, 0)?;
@@ -517,9 +506,11 @@ mod test {
 	#[test]
 	fn should_add_point() {
 		// Testing a valid case.
-		let r = B8.projective();
-		let e = G.projective();
-		let (x_res, y_res, z_res) = add(r.x, r.y, r.z, e.x, e.y, e.z, D, A);
+		let (r_x, r_y) = BabyJubJub::b8();
+		let r = Point::<Fr, BabyJubJub>::new(r_x, r_y).projective();
+		let (e_x, e_y) = BabyJubJub::g();
+		let e = Point::<Fr, BabyJubJub>::new(e_x, e_y).projective();
+		let (x_res, y_res, z_res) = BabyJubJub::add(r.x, r.y, r.z, e.x, e.y, e.z);
 		let circuit = TestCircuit::new([r.x, r.y, r.z, e.x, e.y, e.z], Gadgets::AddPoint);
 
 		let k = 7;
@@ -530,9 +521,11 @@ mod test {
 
 	#[test]
 	fn should_add_point_production() {
-		let r = B8.projective();
-		let e = G.projective();
-		let (x_res, y_res, z_res) = add(r.x, r.y, r.z, e.x, e.y, e.z, D, A);
+		let (r_x, r_y) = BabyJubJub::b8();
+		let r = Point::<Fr, BabyJubJub>::new(r_x, r_y).projective();
+		let (e_x, e_y) = BabyJubJub::g();
+		let e = Point::<Fr, BabyJubJub>::new(e_x, e_y).projective();
+		let (x_res, y_res, z_res) = BabyJubJub::add(r.x, r.y, r.z, e.x, e.y, e.z);
 		let circuit = TestCircuit::new([r.x, r.y, r.z, e.x, e.y, e.z], Gadgets::AddPoint);
 
 		let k = 9;
@@ -548,7 +541,8 @@ mod test {
 	#[test]
 	fn should_into_affine_point() {
 		// Testing a valid case.
-		let r = B8.projective();
+		let (r_x, r_y) = BabyJubJub::b8();
+		let r = Point::<Fr, BabyJubJub>::new(r_x, r_y).projective();
 		let r_affine = r.affine();
 		let circuit = TestCircuit::new([r.x, r.y, r.z], Gadgets::IntoAffine);
 
@@ -560,7 +554,8 @@ mod test {
 
 	#[test]
 	fn should_into_affine_point_production() {
-		let r = B8.projective();
+		let (r_x, r_y) = BabyJubJub::b8();
+		let r = Point::<Fr, BabyJubJub>::new(r_x, r_y).projective();
 		let r_affine = r.affine();
 		let circuit = TestCircuit::new([r.x, r.y, r.z], Gadgets::IntoAffine);
 
@@ -578,8 +573,10 @@ mod test {
 	fn should_mul_point_with_scalar() {
 		// Testing scalar as value 8.
 		let scalar = Fr::from(8);
-		let r = B8.projective();
-		let res = B8.mul_scalar(&scalar.to_bytes());
+		let (r_x, r_y) = BabyJubJub::b8();
+		let r_point = Point::<Fr, BabyJubJub>::new(r_x, r_y);
+		let r = r_point.projective();
+		let res = r_point.mul_scalar(&scalar.to_bytes());
 		let circuit = TestCircuit::new([r.x, r.y, r.z, scalar], Gadgets::ScalarMul);
 
 		let k = 9;
@@ -592,8 +589,10 @@ mod test {
 	fn test_scalar_mul_zero() {
 		// Testing scalar as value 0.
 		let scalar = Fr::from(0);
-		let r = B8.projective();
-		let res = B8.mul_scalar(&scalar.to_bytes());
+		let (r_x, r_y) = BabyJubJub::b8();
+		let r_point = Point::<Fr, BabyJubJub>::new(r_x, r_y);
+		let r = r_point.projective();
+		let res = r_point.mul_scalar(&scalar.to_bytes());
 		let circuit = TestCircuit::new([r.x, r.y, r.z, scalar], Gadgets::ScalarMul);
 
 		let k = 9;
@@ -606,8 +605,10 @@ mod test {
 	fn test_scalar_mul_one() {
 		// Testing scalar as value 1.
 		let scalar = Fr::from(1);
-		let r = B8.projective();
-		let res = B8.mul_scalar(&scalar.to_bytes());
+		let (r_x, r_y) = BabyJubJub::b8();
+		let r_point = Point::<Fr, BabyJubJub>::new(r_x, r_y);
+		let r = r_point.projective();
+		let res = r_point.mul_scalar(&scalar.to_bytes());
 		let circuit = TestCircuit::new([r.x, r.y, r.z, scalar], Gadgets::ScalarMul);
 
 		let k = 9;
@@ -619,8 +620,10 @@ mod test {
 	#[test]
 	fn should_mul_point_with_scalar_production() {
 		let scalar = Fr::from(8);
-		let r = B8.projective();
-		let res = B8.mul_scalar(&scalar.to_bytes());
+		let (r_x, r_y) = BabyJubJub::b8();
+		let r_point = Point::<Fr, BabyJubJub>::new(r_x, r_y);
+		let r = r_point.projective();
+		let res = r_point.mul_scalar(&scalar.to_bytes());
 		let circuit = TestCircuit::new([r.x, r.y, r.z, scalar], Gadgets::ScalarMul);
 
 		let k = 9;

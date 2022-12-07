@@ -17,6 +17,8 @@ pub mod circuit;
 pub mod ecc;
 /// EDDSA signature scheme gadgets + native version
 pub mod eddsa;
+/// Edwards curve operations
+pub mod edwards;
 /// Common gadgets used across circuits
 pub mod gadgets;
 /// Integer type - Wrong field arithmetic
