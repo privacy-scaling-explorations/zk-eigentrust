@@ -1,10 +1,13 @@
 use crate::{
-	eddsa::{native::Signature, EddsaChip, EddsaConfig},
-	edwards::params::BabyJubJub,
-	gadgets::bits2num::to_bits,
+	eddsa::{
+		native::{PublicKey, Signature},
+		EddsaChip, EddsaConfig,
+	},
+	edwards::params::{BabyJubJub, EdwardsParams},
+	gadgets::{bits2num::to_bits, lt_eq::N_SHIFTED},
 	params::{poseidon_bn254_5x5::Params, RoundParams},
 	poseidon::{
-		native::sponge::PoseidonSponge,
+		native::{sponge::PoseidonSponge, Poseidon},
 		sponge::{PoseidonSpongeChip, PoseidonSpongeConfig},
 		PoseidonChip,
 	},
@@ -25,6 +28,7 @@ const NUM_ITER: usize = 20;
 const NUM_NEIGHBOURS: usize = 5;
 const INITIAL_SCORE: f32 = 1000.;
 
+type PoseidonNativeHasher = Poseidon<Scalar, 5, Params>;
 type PoseidonHasher = PoseidonChip<Scalar, 5, Params>;
 type SpongeHasher = PoseidonSpongeChip<Scalar, 5, Params>;
 
@@ -54,6 +58,54 @@ struct EigenTrust {
 	suborder_bits: [Scalar; 252],
 	s_suborder_diff_bits: [[Scalar; 253]; NUM_NEIGHBOURS],
 	m_hash_bits: [[Scalar; 256]; NUM_NEIGHBOURS],
+}
+
+impl EigenTrust {
+	pub fn new(
+		pks: [PublicKey; NUM_NEIGHBOURS], signatures: [Signature; NUM_NEIGHBOURS],
+		ops: [[Scalar; NUM_NEIGHBOURS]; NUM_NEIGHBOURS], messages: [Scalar; NUM_NEIGHBOURS],
+	) -> Self {
+		// Pubkey values
+		let pk_x = pks.clone().map(|pk| Value::known(pk.0.x));
+		let pk_y = pks.clone().map(|pk| Value::known(pk.0.y));
+
+		// Signature values
+		let big_r_x = signatures.clone().map(|sig| Value::known(sig.big_r.x));
+		let big_r_y = signatures.clone().map(|sig| Value::known(sig.big_r.y));
+		let s = signatures.clone().map(|sig| Value::known(sig.s));
+
+		// Opinions
+		let ops = ops.map(|vals| vals.map(|x| Value::known(x)));
+
+		let s_bits =
+			signatures.clone().map(|sig| sig.s.to_bytes()).map(|s| to_bits(s).map(Scalar::from));
+		let suborder = BabyJubJub::suborder();
+		let suborder_bits = to_bits(suborder.to_bytes()).map(Scalar::from);
+		let diffs = signatures
+			.clone()
+			.map(|sig| sig.s + Scalar::from_bytes(&N_SHIFTED).unwrap() - suborder);
+		let diff_bits = diffs.map(|diff| to_bits(diff.to_bytes()).map(Scalar::from));
+
+		let m_hash_bits = pks.zip(signatures).zip(messages).map(|((pk, sig), msg)| {
+			let h_inputs = [sig.big_r.x, sig.big_r.y, pk.0.x, pk.0.y, msg];
+			let res = PoseidonNativeHasher::new(h_inputs).permute()[0];
+			let m_hash_bits = to_bits(res.to_bytes()).map(Scalar::from);
+			m_hash_bits
+		});
+
+		Self {
+			pk_x,
+			pk_y,
+			big_r_x,
+			big_r_y,
+			s,
+			ops,
+			s_bits,
+			suborder_bits,
+			s_suborder_diff_bits: diff_bits,
+			m_hash_bits,
+		}
+	}
 }
 
 impl Circuit<Scalar> for EigenTrust {
