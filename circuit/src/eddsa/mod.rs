@@ -21,9 +21,9 @@ use halo2wrong::{
 };
 use std::marker::PhantomData;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 /// Configuration elements for the circuit are defined here.
-struct EddsaConfig {
+pub struct EddsaConfig {
 	/// Constructs eddsa gadgets circuit elements.
 	edwards: EdwardsConfig,
 	/// Constructs common circuit elements.
@@ -37,7 +37,7 @@ struct EddsaConfig {
 }
 
 /// Constructs individual cells for the configuration elements.
-struct EddsaChip<F: FieldExt, P: EdwardsParams<F>, R>
+pub struct EddsaChip<F: FieldExt, P: EdwardsParams<F>, R>
 where
 	R: RoundParams<F, 5>,
 {
@@ -70,7 +70,7 @@ where
 	R: RoundParams<F, 5>,
 {
 	/// Create a new chip.
-	fn new(
+	pub fn new(
 		big_r_x: AssignedCell<F, F>, big_r_y: AssignedCell<F, F>, s: AssignedCell<F, F>,
 		pk_x: AssignedCell<F, F>, pk_y: AssignedCell<F, F>, m: AssignedCell<F, F>,
 		s_bits: [F; 252], suborder_bits: [F; 252], s_suborder_diff_bits: [F; 253],
@@ -107,7 +107,7 @@ where
 
 	/// Synthesize the circuit.
 	pub fn synthesize(
-		&self, config: EddsaConfig, mut layouter: impl Layouter<F>,
+		&self, config: &EddsaConfig, mut layouter: impl Layouter<F>,
 	) -> Result<(), Error> {
 		let (b8_x, b8_y, one, suborder) = layouter.assign_region(
 			|| "assign_values",
@@ -135,7 +135,8 @@ where
 			self.suborder_bits,
 			self.s_suborder_diff_bits,
 		);
-		let is_lt_eq = lt_eq.synthesize(config.lt_eq, layouter.namespace(|| "s_lt_eq_suborder"))?;
+		let is_lt_eq =
+			lt_eq.synthesize(&config.lt_eq, layouter.namespace(|| "s_lt_eq_suborder"))?;
 
 		// Cl = s * G
 		let e = AssignedPoint::new(b8_x, b8_y, one.clone());
@@ -143,7 +144,7 @@ where
 			e,
 			self.s.clone(),
 			self.s_bits,
-			config.edwards.clone(),
+			&config.edwards,
 			layouter.namespace(|| "b_8 * s"),
 		)?;
 
@@ -157,7 +158,7 @@ where
 			self.m.clone(),
 		];
 		let hasher = PoseidonChip::<F, 5, R>::new(m_hash_input);
-		let m_hash_res = hasher.synthesize(config.poseidon, layouter.namespace(|| "m_hash"))?;
+		let m_hash_res = hasher.synthesize(&config.poseidon, layouter.namespace(|| "m_hash"))?;
 
 		// H(R || PK || M) * PK
 		// Scalar multiplication for the public key and hash.
@@ -166,7 +167,7 @@ where
 			e,
 			m_hash_res[0].clone(),
 			self.m_hash_bits,
-			config.edwards.clone(),
+			&config.edwards,
 			layouter.namespace(|| "pk * m_hash"),
 		)?;
 
@@ -175,19 +176,19 @@ where
 		let cr = EdwardsChip::<F, P>::add_point(
 			big_r_point,
 			pk_h,
-			config.edwards.clone(),
+			&config.edwards,
 			layouter.namespace(|| "big_r + pk_h"),
 		)?;
 
 		// Converts two projective space points to their affine representation.
 		let cl_affine = EdwardsChip::<F, P>::into_affine(
 			cl,
-			config.edwards.clone(),
+			&config.edwards,
 			layouter.namespace(|| "cl_affine"),
 		)?;
 		let cr_affine = EdwardsChip::<F, P>::into_affine(
 			cr,
-			config.edwards,
+			&config.edwards,
 			layouter.namespace(|| "cr_affine"),
 		)?;
 
@@ -195,20 +196,24 @@ where
 		let x_eq = CommonChip::is_equal(
 			cl_affine.0,
 			cr_affine.0,
-			config.common.clone(),
+			&config.common,
 			layouter.namespace(|| "point_x_equal"),
 		)?;
 		let y_eq = CommonChip::is_equal(
 			cl_affine.1,
 			cr_affine.1,
-			config.common,
+			&config.common,
 			layouter.namespace(|| "point_y_equal"),
 		)?;
 
 		// Use And gate between x and y equality.
 		// If equal returns 1, else 0.
-		let point_eq =
-			CommonChip::and(x_eq, y_eq, config.common, layouter.namespace(|| "point_eq"))?;
+		let point_eq = CommonChip::and(
+			x_eq,
+			y_eq,
+			&config.common,
+			layouter.namespace(|| "point_eq"),
+		)?;
 
 		// Enforce equality.
 		// If either one of them returns 0, the circuit will give an error.
@@ -350,7 +355,7 @@ mod test {
 			let eddsa = EddsaChip::<Fr, BabyJubJub, Params>::new(
 				big_r_x, big_r_y, s, pk_x, pk_y, m, s_bits, suborder_bits, diff_bits, m_hash_bits,
 			);
-			eddsa.synthesize(config.eddsa, layouter.namespace(|| "eddsa"))?;
+			eddsa.synthesize(&config.eddsa, layouter.namespace(|| "eddsa"))?;
 			Ok(())
 		}
 	}

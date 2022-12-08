@@ -132,7 +132,7 @@ impl<F: FieldExt, const N: usize> FixedSetChip<F, N> {
 		)?;
 
 		let is_zero =
-			CommonChip::is_zero(product, config.is_zero, layouter.namespace(|| "is_member"))?;
+			CommonChip::is_zero(product, &config.is_zero, layouter.namespace(|| "is_member"))?;
 
 		Ok(is_zero)
 	}

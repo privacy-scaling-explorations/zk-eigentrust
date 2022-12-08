@@ -11,17 +11,17 @@ use halo2wrong::halo2::{
 	poly::Rotation,
 };
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 /// Configuration elements for the circuit are defined here.
-struct PoseidonSpongeConfig<const WIDTH: usize> {
+pub struct PoseidonSpongeConfig<const WIDTH: usize> {
 	/// Constructs poseidon circuit elements.
-	poseidon_config: PoseidonConfig<WIDTH>,
+	pub poseidon_config: PoseidonConfig<WIDTH>,
 	/// Configures a fixed boolean value for each row of the circuit.
 	absorb_selector: Selector,
 }
 
 /// Constructs a chip structure for the circuit.
-struct PoseidonSpongeChip<F: FieldExt, const WIDTH: usize, P>
+pub struct PoseidonSpongeChip<F: FieldExt, const WIDTH: usize, P>
 where
 	P: RoundParams<F, WIDTH>,
 {
@@ -36,12 +36,12 @@ where
 	P: RoundParams<F, WIDTH>,
 {
 	/// Create a new chip.
-	fn new() -> Self {
+	pub fn new() -> Self {
 		Self { inputs: Vec::new(), _params: PhantomData }
 	}
 
 	/// Make the circuit config.
-	fn configure(meta: &mut ConstraintSystem<F>) -> PoseidonSpongeConfig<WIDTH> {
+	pub fn configure(meta: &mut ConstraintSystem<F>) -> PoseidonSpongeConfig<WIDTH> {
 		let poseidon_config = PoseidonChip::<_, WIDTH, P>::configure(meta);
 		let absorb_selector = meta.selector();
 
@@ -87,7 +87,7 @@ where
 	}
 
 	/// Clones and appends all elements from a slice to the vec.
-	fn update(&mut self, inputs: &[AssignedCell<F, F>]) {
+	pub fn update(&mut self, inputs: &[AssignedCell<F, F>]) {
 		self.inputs.extend_from_slice(inputs);
 	}
 
@@ -141,7 +141,7 @@ where
 
 			let pos = PoseidonChip::<_, WIDTH, P>::new(inputs);
 			state = pos.synthesize(
-				config.poseidon_config.clone(),
+				&config.poseidon_config,
 				layouter.namespace(|| format!("absorb_{}", i)),
 			)?;
 		}

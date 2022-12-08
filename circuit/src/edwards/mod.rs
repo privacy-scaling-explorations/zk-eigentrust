@@ -43,7 +43,7 @@ impl<F: FieldExt> AssignedPoint<F> {
 	}
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 /// Configuration elements for the circuit are defined here.
 pub struct EdwardsConfig {
 	/// Constructs bits2num circuit elements.
@@ -188,7 +188,7 @@ impl<F: FieldExt, P: EdwardsParams<F>> EdwardsChip<F, P> {
 
 	/// Synthesize the add_point circuit.
 	pub fn add_point(
-		r: AssignedPoint<F>, e: AssignedPoint<F>, config: EdwardsConfig,
+		r: AssignedPoint<F>, e: AssignedPoint<F>, config: &EdwardsConfig,
 		mut layouter: impl Layouter<F>,
 	) -> Result<AssignedPoint<F>, Error> {
 		layouter.assign_region(
@@ -226,7 +226,7 @@ impl<F: FieldExt, P: EdwardsParams<F>> EdwardsChip<F, P> {
 
 	/// Synthesize the into_affine circuit.
 	pub fn into_affine(
-		r: AssignedPoint<F>, config: EdwardsConfig, mut layouter: impl Layouter<F>,
+		r: AssignedPoint<F>, config: &EdwardsConfig, mut layouter: impl Layouter<F>,
 	) -> Result<(AssignedCell<F, F>, AssignedCell<F, F>), Error> {
 		layouter.assign_region(
 			|| "into_affine",
@@ -276,11 +276,11 @@ impl<F: FieldExt, P: EdwardsParams<F>> EdwardsChip<F, P> {
 		value: AssignedCell<F, F>,
 		// Constructs an array for the value bits.
 		value_bits: [F; B],
-		config: EdwardsConfig,
+		config: &EdwardsConfig,
 		mut layouter: impl Layouter<F>,
 	) -> Result<AssignedPoint<F>, Error> {
 		let bits2num = Bits2NumChip::new(value.clone(), value_bits);
-		let bits = bits2num.synthesize(config.bits2num, layouter.namespace(|| "bits2num"))?;
+		let bits = bits2num.synthesize(&config.bits2num, layouter.namespace(|| "bits2num"))?;
 
 		layouter.assign_region(
 			|| "scalar_mul",
@@ -464,7 +464,7 @@ mod test {
 					let res = EdwardsChip::<_, BabyJubJub>::add_point(
 						r,
 						e,
-						config.edwards,
+						&config.edwards,
 						layouter.namespace(|| "add"),
 					)?;
 					layouter.constrain_instance(res.x.cell(), config.pub_ins, 0)?;
@@ -476,7 +476,7 @@ mod test {
 						AssignedPoint::new(items[0].clone(), items[1].clone(), items[2].clone());
 					let (x, y) = EdwardsChip::<_, BabyJubJub>::into_affine(
 						p,
-						config.edwards,
+						&config.edwards,
 						layouter.namespace(|| "into_affine"),
 					)?;
 					layouter.constrain_instance(x.cell(), config.pub_ins, 0)?;
@@ -490,7 +490,7 @@ mod test {
 						e,
 						items[3].clone(),
 						value_bits,
-						config.edwards,
+						&config.edwards,
 						layouter.namespace(|| "scalar_mul"),
 					)?;
 					layouter.constrain_instance(res.x.cell(), config.pub_ins, 0)?;

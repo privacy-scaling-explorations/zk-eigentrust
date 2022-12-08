@@ -543,7 +543,7 @@ where
 		let mut r_x = zero_limbs.clone();
 		let mut r_y = one_limbs.clone();
 		let bits2num = Bits2NumChip::new(value.clone(), value_bits);
-		let bits = bits2num.synthesize(config.bits2num, layouter.namespace(|| "bits2num"))?;
+		let bits = bits2num.synthesize(&config.bits2num, layouter.namespace(|| "bits2num"))?;
 		let mut exp_x = IntegerChip::reduce(
 			exp_x,
 			exp_x_rw,
@@ -588,7 +588,7 @@ where
 					bits[i].clone(),
 					new_r_x[j].clone(),
 					r_x[j].clone(),
-					config.common,
+					&config.common,
 					layouter.namespace(|| format!("select_r_x_{}", j)),
 				)?;
 
@@ -597,7 +597,7 @@ where
 					bits[i].clone(),
 					new_r_y[j].clone(),
 					r_y[j].clone(),
-					config.common,
+					&config.common,
 					layouter.namespace(|| format!("select_r_y_{}", j)),
 				)?;
 			}
