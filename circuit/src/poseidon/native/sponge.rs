@@ -9,6 +9,8 @@ where
 {
 	/// Constructs a vector for the inputs.
 	inputs: Vec<F>,
+	/// Internal state
+	state: [F; WIDTH],
 	/// Constructs a phantom data for the parameters.
 	_params: PhantomData<P>,
 }
@@ -19,7 +21,7 @@ where
 {
 	/// Create objects.
 	pub fn new() -> Self {
-		Self { inputs: Vec::new(), _params: PhantomData }
+		Self { inputs: Vec::new(), state: [F::zero(); WIDTH], _params: PhantomData }
 	}
 
 	/// Clones and appends all elements from a slice to the vec.
@@ -41,16 +43,16 @@ where
 	pub fn squeeze(&mut self) -> F {
 		assert!(!self.inputs.is_empty());
 
-		let mut state = [F::zero(); WIDTH];
-
 		for chunk in self.inputs.chunks(WIDTH) {
 			let loaded_state = Self::load_state(chunk);
-			let input = loaded_state.zip(state).map(|(lhs, rhs)| lhs + rhs);
+			let input = loaded_state.zip(self.state).map(|(lhs, rhs)| lhs + rhs);
 
 			let pos = Poseidon::<_, WIDTH, P>::new(input);
-			state = pos.permute();
+			self.state = pos.permute();
 		}
 
-		state[0]
+		// Clear the inputs, and return the result
+		self.inputs.clear();
+		self.state[0]
 	}
 }

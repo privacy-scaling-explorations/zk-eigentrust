@@ -166,6 +166,11 @@ where
 		}
 		(r, reduction_add, reduction_double)
 	}
+
+	/// Check if two points are equal
+	pub fn is_eq(&self, other: &Self) -> bool {
+		self.x.is_eq(&other.x) && self.y.is_eq(&other.y)
+	}
 }
 
 #[cfg(test)]
