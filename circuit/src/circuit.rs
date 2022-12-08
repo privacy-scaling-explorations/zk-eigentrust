@@ -42,7 +42,6 @@ pub struct EigenTrustConfig {
 	sponge: PoseidonSpongeConfig<5>,
 	temp: Column<Advice>,
 	fixed: Column<Fixed>,
-	pub_ins: Column<Instance>,
 }
 
 struct EigenTrust {
@@ -135,9 +134,11 @@ impl Circuit<Scalar> for EigenTrust {
 		let sponge = SpongeHasher::configure(meta);
 		let temp = meta.advice_column();
 		let fixed = meta.fixed_column();
-		let pub_ins = meta.instance_column();
 
-		EigenTrustConfig { maingate, eddsa, sponge, temp, fixed, pub_ins }
+		meta.enable_equality(temp);
+		meta.enable_equality(fixed);
+
+		EigenTrustConfig { maingate, eddsa, sponge, temp, fixed }
 	}
 
 	fn synthesize(
@@ -225,6 +226,7 @@ impl Circuit<Scalar> for EigenTrust {
 mod test {
 	use super::*;
 	use crate::eddsa::native::{sign, SecretKey};
+	use halo2wrong::halo2::dev::MockProver;
 	use rand::thread_rng;
 
 	type PoseidonNativeSponge = PoseidonSponge<Scalar, 5, Params>;
@@ -300,6 +302,14 @@ mod test {
 			.zip(messages)
 			.map(|((sk, pk), msg)| sign(&sk, &pk, msg));
 
+		let k = 13;
 		let et = EigenTrust::new(pub_keys, signatures, ops_scaled, messages);
+
+		let prover = match MockProver::<Scalar>::run(k, &et, vec![vec![]]) {
+			Ok(prover) => prover,
+			Err(e) => panic!("{}", e),
+		};
+
+		// assert_eq!(prover.verify(), Ok(()));
 	}
 }
