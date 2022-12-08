@@ -27,10 +27,12 @@ use std::marker::PhantomData;
 const NUM_ITER: usize = 20;
 const NUM_NEIGHBOURS: usize = 5;
 const INITIAL_SCORE: f32 = 1000.;
+const SCALE: f32 = 100000000.;
 
 type PoseidonNativeHasher = Poseidon<Scalar, 5, Params>;
 type PoseidonHasher = PoseidonChip<Scalar, 5, Params>;
 type SpongeHasher = PoseidonSpongeChip<Scalar, 5, Params>;
+type Eddsa = EddsaChip<Scalar, BabyJubJub, Params>;
 
 /// The columns config for the main circuit.
 #[derive(Clone, Debug)]
@@ -129,7 +131,7 @@ impl Circuit<Scalar> for EigenTrust {
 
 	fn configure(meta: &mut ConstraintSystem<Scalar>) -> EigenTrustConfig {
 		let maingate = MainGate::configure(meta);
-		let eddsa = EddsaChip::<Scalar, BabyJubJub, Params>::configure(meta);
+		let eddsa = Eddsa::configure(meta);
 		let sponge = SpongeHasher::configure(meta);
 		let temp = meta.advice_column();
 		let fixed = meta.fixed_column();
@@ -201,7 +203,7 @@ impl Circuit<Scalar> for EigenTrust {
 				layouter.namespace(|| "message_hash"),
 			)?;
 
-			let eddsa = EddsaChip::<Scalar, BabyJubJub, Params>::new(
+			let eddsa = Eddsa::new(
 				big_r_x[i].clone(),
 				big_r_y[i].clone(),
 				s[i].clone(),
@@ -222,10 +224,14 @@ impl Circuit<Scalar> for EigenTrust {
 #[cfg(test)]
 mod test {
 	use super::*;
+	use crate::eddsa::native::{sign, SecretKey};
+	use rand::thread_rng;
 
-	fn native(ops: [[f32; NUM_NEIGHBOURS]; NUM_NEIGHBOURS]) {
-		let mut s: [f32; NUM_NEIGHBOURS] = [INITIAL_SCORE; NUM_NEIGHBOURS];
+	type PoseidonNativeSponge = PoseidonSponge<Scalar, 5, Params>;
 
+	fn native(
+		mut s: [f32; NUM_NEIGHBOURS], ops: [[f32; NUM_NEIGHBOURS]; NUM_NEIGHBOURS],
+	) -> [f32; NUM_NEIGHBOURS] {
 		for _ in 0..NUM_ITER {
 			let mut distributions: [[f32; NUM_NEIGHBOURS]; NUM_NEIGHBOURS] =
 				[[0.; NUM_NEIGHBOURS]; NUM_NEIGHBOURS];
@@ -244,10 +250,13 @@ mod test {
 
 			println!("[{}]", s.map(|v| format!("{:>9.4}", v)).join(", "));
 		}
+
+		s
 	}
 
 	#[test]
 	fn test_closed_graph_native() {
+		let s: [f32; NUM_NEIGHBOURS] = [INITIAL_SCORE; NUM_NEIGHBOURS];
 		let ops = [
 			[0.0, 0.2, 0.3, 0.5, 0.0],
 			[0.1, 0.0, 0.1, 0.1, 0.7],
@@ -255,6 +264,42 @@ mod test {
 			[0.1, 0.1, 0.7, 0.0, 0.1],
 			[0.3, 0.1, 0.4, 0.2, 0.0],
 		];
-		native(ops);
+		let res = native(s, ops);
+
+		let rng = &mut thread_rng();
+		let secret_keys = [(); NUM_NEIGHBOURS].map(|_| SecretKey::random(rng));
+		let pub_keys = secret_keys.clone().map(|x| x.public());
+
+		let pk_x = pub_keys.clone().map(|pk| pk.0.x);
+		let pk_y = pub_keys.clone().map(|pk| pk.0.x);
+		let mut sponge = PoseidonNativeSponge::new();
+		sponge.update(&pk_x);
+		sponge.update(&pk_y);
+		let keys_message_hash = sponge.squeeze();
+
+		let ops_scaled = ops.map(|vals| vals.map(|x| Scalar::from((x * SCALE) as u64)));
+		let messages = ops_scaled.map(|scores| {
+			let mut sponge = PoseidonNativeSponge::new();
+			sponge.update(&scores);
+			let scores_message_hash = sponge.squeeze();
+
+			let m_inputs = [
+				keys_message_hash,
+				scores_message_hash,
+				Scalar::zero(),
+				Scalar::zero(),
+				Scalar::zero(),
+			];
+			let poseidon = PoseidonNativeHasher::new(m_inputs);
+			let res = poseidon.permute()[0];
+			res
+		});
+
+		let signatures = secret_keys
+			.zip(pub_keys.clone())
+			.zip(messages)
+			.map(|((sk, pk), msg)| sign(&sk, &pk, msg));
+
+		let et = EigenTrust::new(pub_keys, signatures, ops_scaled, messages);
 	}
 }
