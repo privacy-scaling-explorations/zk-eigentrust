@@ -19,6 +19,8 @@ pub mod eddsa;
 pub mod gadgets;
 /// Integer type - Wrong field arithmetic
 pub mod integer;
+/// MerkleTree
+pub mod merkle_tree;
 /// A module for defining round parameters and MDS matrix for hash
 /// permutations
 pub mod params;
