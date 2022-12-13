@@ -42,7 +42,6 @@ where
 	}
 
 	fn build_tree(self: &mut MerkleTree<F, P>, height: usize) -> &Self {
-		let mut hasher: PoseidonSponge<F, WIDTH, P> = PoseidonSponge::new();
 		if height > 0 {
 			let mut new_tree = MerkleTree::<F, P>::new(height - 1);
 			let mut leaves = 1;
@@ -53,9 +52,12 @@ where
 			let mut step_by_two = 0;
 			let mut hash = Vec::new();
 			for i in 0..leaves - 1 {
+				let mut hasher: PoseidonSponge<F, WIDTH, P> = PoseidonSponge::new();
 				if step_by_two % 2 == 0 {
-					hasher.update(&[self.indexes[leaves + i - 1].unwrap()]);
-					hasher.update(&[self.indexes[leaves + i].unwrap()]);
+					hasher.update(&[
+						self.indexes[leaves + i - 1].unwrap(),
+						self.indexes[leaves + i].unwrap(),
+					]);
 					hash.push(hasher.squeeze());
 				}
 				step_by_two += 1;
@@ -70,7 +72,58 @@ where
 		self
 	}
 
-	fn find_path() {}
+	fn find_path(self: &mut MerkleTree<F, P>, value: Option<F>, index: Option<usize>) -> Vec<F> {
+		let mut leaves = 1;
+		for i in 0..self.height {
+			leaves = 2 * leaves;
+		}
+		let mut is_inside = None;
+		if value.is_some() {
+			for i in (leaves - 1)..self.indexes.len() {
+				if value == self.indexes[i] {
+					is_inside = Some(i);
+					break;
+				}
+			}
+		} else {
+			is_inside = index;
+		}
+		let mut path_vec: Vec<F> = Vec::new();
+		let mut j = is_inside.unwrap();
+		for i in 0..self.height {
+			if j % 2 == 0 {
+				path_vec.push(self.indexes[j - 1].unwrap());
+				path_vec.push(self.indexes[j].unwrap());
+			} else {
+				path_vec.push(self.indexes[j].unwrap());
+				path_vec.push(self.indexes[j + 1].unwrap());
+			}
+			j = ((j + 1) / 2) - 1;
+		}
+		path_vec.push(self.root.unwrap());
+
+		let mut step_by_two = 0;
+		for i in 0..path_vec.len() - 2 {
+			let mut hasher: PoseidonSponge<F, WIDTH, P> = PoseidonSponge::new();
+			if step_by_two % 2 == 0 {
+				hasher.update(&[path_vec[i], path_vec[i + 1]]);
+				assert!(Self::is_inside(&path_vec, hasher.squeeze()));
+			}
+			step_by_two += 1;
+		}
+
+		path_vec
+	}
+
+	fn is_inside(vector: &Vec<F>, value: F) -> bool {
+		let mut answer = false;
+		for i in 0..vector.len() {
+			if value == vector[i] {
+				answer = true;
+			}
+		}
+		answer
+	}
 }
 
 #[cfg(test)]
@@ -82,10 +135,29 @@ mod test {
 
 	#[test]
 	fn should_build_tree() {
-		let mut merkle = MerkleTree::<Fr, Params>::new(5);
+		let mut merkle = MerkleTree::<Fr, Params>::new(2);
 		merkle = merkle
-			.implement_leaves([(); 32].map(|_| <Fr as Field>::random(rand::thread_rng())).to_vec());
+			.implement_leaves([(); 4].map(|_| <Fr as Field>::random(rand::thread_rng())).to_vec());
+
 		merkle.build_tree(merkle.height);
-		//println!("{:#?}", merkle.root);
+		//println!("{:#?}", merkle.indexes);
+	}
+
+	#[test]
+	fn should_find_path() {
+		let mut merkle = MerkleTree::<Fr, Params>::new(3);
+		merkle = merkle.implement_leaves(vec![
+			Fr::one(),
+			Fr::one(),
+			Fr::one(),
+			Fr::one(),
+			Fr::one(),
+			Fr::zero(),
+			Fr::one(),
+			Fr::one(),
+		]);
+		merkle.build_tree(merkle.height);
+		let path = merkle.find_path(Some(Fr::zero()), Some(5));
+		//println!("{:#?}", path);
 	}
 }
