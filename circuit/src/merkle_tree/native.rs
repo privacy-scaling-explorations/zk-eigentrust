@@ -86,7 +86,7 @@ where
 				}
 			}
 		} else {
-			is_inside = index;
+			is_inside = Some((leaves - 1) + index.unwrap());
 		}
 		let mut path_vec: Vec<F> = Vec::new();
 		let mut j = is_inside.unwrap();
@@ -130,6 +130,7 @@ where
 mod test {
 	use crate::params::poseidon_bn254_5x5::Params;
 	use halo2wrong::{curves::bn256::Fr, halo2::arithmetic::Field};
+	use rand::thread_rng;
 
 	use super::MerkleTree;
 
@@ -145,19 +146,47 @@ mod test {
 
 	#[test]
 	fn should_find_path() {
-		let mut merkle = MerkleTree::<Fr, Params>::new(3);
+		let rng = &mut thread_rng();
+		let mut merkle = MerkleTree::<Fr, Params>::new(5);
+		let value = Fr::random(rng.clone());
 		merkle = merkle.implement_leaves(vec![
-			Fr::one(),
-			Fr::one(),
-			Fr::one(),
-			Fr::one(),
-			Fr::one(),
-			Fr::zero(),
-			Fr::one(),
-			Fr::one(),
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
+			value,
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
 		]);
 		merkle.build_tree(merkle.height);
-		let path = merkle.find_path(Some(Fr::zero()), Some(5));
-		//println!("{:#?}", path);
+		let path = merkle.find_path(None, Some(12));
+		println!("{:#?}", merkle.root);
+		println!("{:#?}", value);
+		println!("{:#?}", path);
 	}
 }
