@@ -147,7 +147,7 @@ mod test {
 	#[test]
 	fn should_find_path() {
 		let rng = &mut thread_rng();
-		let mut merkle = MerkleTree::<Fr, Params>::new(5);
+		let mut merkle = MerkleTree::<Fr, Params>::new(3);
 		let value = Fr::random(rng.clone());
 		merkle = merkle.implement_leaves(vec![
 			Fr::random(rng.clone()),
@@ -157,36 +157,12 @@ mod test {
 			Fr::random(rng.clone()),
 			Fr::random(rng.clone()),
 			Fr::random(rng.clone()),
-			Fr::random(rng.clone()),
-			Fr::random(rng.clone()),
-			Fr::random(rng.clone()),
-			Fr::random(rng.clone()),
-			Fr::random(rng.clone()),
 			value,
-			Fr::random(rng.clone()),
-			Fr::random(rng.clone()),
-			Fr::random(rng.clone()),
-			Fr::random(rng.clone()),
-			Fr::random(rng.clone()),
-			Fr::random(rng.clone()),
-			Fr::random(rng.clone()),
-			Fr::random(rng.clone()),
-			Fr::random(rng.clone()),
-			Fr::random(rng.clone()),
-			Fr::random(rng.clone()),
-			Fr::random(rng.clone()),
-			Fr::random(rng.clone()),
-			Fr::random(rng.clone()),
-			Fr::random(rng.clone()),
-			Fr::random(rng.clone()),
-			Fr::random(rng.clone()),
-			Fr::random(rng.clone()),
-			Fr::random(rng.clone()),
 		]);
 		merkle.build_tree(merkle.height);
-		let path = merkle.find_path(None, Some(12));
-		println!("{:#?}", merkle.root);
-		println!("{:#?}", value);
-		println!("{:#?}", path);
+		let path = merkle.find_path(None, Some(5));
+		//println!("{:#?}", merkle.root);
+		//println!("{:#?}", value);
+		//println!("{:#?}", path);
 	}
 }
