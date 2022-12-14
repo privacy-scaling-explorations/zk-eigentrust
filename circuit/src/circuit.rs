@@ -4,7 +4,7 @@ use crate::{
 		EddsaChip, EddsaConfig,
 	},
 	edwards::params::{BabyJubJub, EdwardsParams},
-	gadgets::{bits2num::to_bits, lt_eq::N_SHIFTED},
+	gadgets::{bits2num::to_bits, common::CommonChip, lt_eq::N_SHIFTED},
 	params::{poseidon_bn254_5x5::Params, RoundParams},
 	poseidon::{
 		native::{sponge::PoseidonSponge, Poseidon},
@@ -21,7 +21,7 @@ use halo2wrong::{
 	},
 	RegionCtx,
 };
-use maingate::{MainGate, MainGateConfig};
+use maingate::{MainGate, MainGateConfig, MainGateInstructions};
 use std::marker::PhantomData;
 
 const NUM_ITER: usize = 20;
@@ -42,6 +42,7 @@ pub struct EigenTrustConfig {
 	sponge: PoseidonSpongeConfig<5>,
 	temp: Column<Advice>,
 	fixed: Column<Fixed>,
+	instance: Column<Instance>,
 }
 
 struct EigenTrust {
@@ -59,12 +60,15 @@ struct EigenTrust {
 	suborder_bits: [Scalar; 252],
 	s_suborder_diff_bits: [[Scalar; 253]; NUM_NEIGHBOURS],
 	m_hash_bits: [[Scalar; 256]; NUM_NEIGHBOURS],
+	// Intermediate iteration values
+	iter_s: [[Value<Scalar>; NUM_NEIGHBOURS]; NUM_ITER],
 }
 
 impl EigenTrust {
 	pub fn new(
 		pks: [PublicKey; NUM_NEIGHBOURS], signatures: [Signature; NUM_NEIGHBOURS],
 		ops: [[Scalar; NUM_NEIGHBOURS]; NUM_NEIGHBOURS], messages: [Scalar; NUM_NEIGHBOURS],
+		iter_s: [[Scalar; NUM_NEIGHBOURS]; NUM_ITER],
 	) -> Self {
 		// Pubkey values
 		let pk_x = pks.clone().map(|pk| Value::known(pk.0.x));
@@ -94,6 +98,8 @@ impl EigenTrust {
 			m_hash_bits
 		});
 
+		let iter_s = iter_s.map(|vs| vs.map(|x| Value::known(x)));
+
 		Self {
 			pk_x,
 			pk_y,
@@ -105,6 +111,7 @@ impl EigenTrust {
 			suborder_bits,
 			s_suborder_diff_bits: diff_bits,
 			m_hash_bits,
+			iter_s,
 		}
 	}
 }
@@ -125,6 +132,7 @@ impl Circuit<Scalar> for EigenTrust {
 			suborder_bits: [Scalar::zero(); 252],
 			s_suborder_diff_bits: [[Scalar::zero(); 253]; NUM_NEIGHBOURS],
 			m_hash_bits: [[Scalar::zero(); 256]; NUM_NEIGHBOURS],
+			iter_s: [[Value::unknown(); NUM_NEIGHBOURS]; NUM_ITER],
 		}
 	}
 
@@ -134,17 +142,19 @@ impl Circuit<Scalar> for EigenTrust {
 		let sponge = SpongeHasher::configure(meta);
 		let temp = meta.advice_column();
 		let fixed = meta.fixed_column();
+		let instance = meta.instance_column();
 
 		meta.enable_equality(temp);
 		meta.enable_equality(fixed);
+		meta.enable_equality(instance);
 
-		EigenTrustConfig { maingate, eddsa, sponge, temp, fixed }
+		EigenTrustConfig { maingate, eddsa, sponge, temp, fixed, instance }
 	}
 
 	fn synthesize(
 		&self, config: EigenTrustConfig, mut layouter: impl Layouter<Scalar>,
 	) -> Result<(), Error> {
-		let (zero, pk_x, pk_y, big_r_x, big_r_y, s, ops) = layouter.assign_region(
+		let (zero, pk_x, pk_y, big_r_x, big_r_y, s, scale, ops, iter_s) = layouter.assign_region(
 			|| "temp",
 			|mut region: Region<'_, Scalar>| {
 				let mut ctx = RegionCtx::new(region, 0);
@@ -164,6 +174,9 @@ impl Circuit<Scalar> for EigenTrust {
 				ctx.next();
 				let assigned_s = self.s.try_map(|v| ctx.assign_advice(|| "s", config.temp, v))?;
 				ctx.next();
+				let scale =
+					ctx.assign_fixed(|| "scale", config.fixed, Scalar::from_u128(SCALE as u128))?;
+				ctx.next();
 
 				let assigned_ops = self.ops.try_map(|vs| {
 					vs.try_map(|v| {
@@ -173,9 +186,17 @@ impl Circuit<Scalar> for EigenTrust {
 					})
 				})?;
 
+				let assigned_iter_s = self.iter_s.try_map(|s| {
+					s.try_map(|v| {
+						let val = ctx.assign_advice(|| "intermediate_s", config.temp, v);
+						ctx.next();
+						val
+					})
+				})?;
+
 				Ok((
 					zero, assigned_pk_x, assigned_pk_y, assigned_big_r_x, assigned_big_r_y,
-					assigned_s, assigned_ops,
+					assigned_s, scale, assigned_ops, assigned_iter_s,
 				))
 			},
 		)?;
@@ -218,6 +239,46 @@ impl Circuit<Scalar> for EigenTrust {
 			);
 			eddsa.synthesize(&config.eddsa, layouter.namespace(|| "eddsa"))?;
 		}
+
+		let final_s = layouter.assign_region(
+			|| "eigen_trust_algo",
+			|mut region: Region<'_, Scalar>| {
+				let ctx = &mut RegionCtx::new(region, 0);
+				let maingate = MainGate::new(config.maingate.clone());
+
+				let mut s = s.clone();
+
+				for iter in 0..NUM_ITER {
+					let mut distributions =
+						[[(); NUM_NEIGHBOURS]; NUM_NEIGHBOURS].map(|arr| arr.map(|_| zero.clone()));
+					for j in 0..NUM_NEIGHBOURS {
+						let op_j = ops[j].clone();
+						distributions[j] = op_j.try_map(|v| maingate.mul(ctx, &v, &s[j]))?;
+					}
+
+					let mut new_s = [(); NUM_NEIGHBOURS].map(|_| zero.clone());
+					for i in 0..NUM_NEIGHBOURS {
+						for j in 0..NUM_NEIGHBOURS {
+							new_s[i] = maingate.add(ctx, &new_s[i], &distributions[j][i])?;
+						}
+					}
+
+					for i in 0..NUM_NEIGHBOURS {
+						let passed_s = iter_s[iter][i].clone();
+						let passed_scaled = maingate.mul(ctx, &passed_s, &scale)?;
+						ctx.constrain_equal(passed_scaled.cell(), new_s[i].clone().cell())?;
+						s[i] = passed_s;
+					}
+				}
+
+				Ok(s)
+			},
+		)?;
+
+		for i in 0..NUM_NEIGHBOURS {
+			layouter.constrain_instance(final_s[i].cell(), config.instance, i)?;
+		}
+
 		Ok(())
 	}
 }
@@ -233,8 +294,9 @@ mod test {
 
 	fn native(
 		mut s: [f32; NUM_NEIGHBOURS], ops: [[f32; NUM_NEIGHBOURS]; NUM_NEIGHBOURS],
-	) -> [f32; NUM_NEIGHBOURS] {
-		for _ in 0..NUM_ITER {
+	) -> ([f32; NUM_NEIGHBOURS], [[f32; NUM_NEIGHBOURS]; NUM_ITER]) {
+		let mut trace = [[0.; NUM_NEIGHBOURS]; NUM_ITER];
+		for i in 0..NUM_ITER {
 			let mut distributions: [[f32; NUM_NEIGHBOURS]; NUM_NEIGHBOURS] =
 				[[0.; NUM_NEIGHBOURS]; NUM_NEIGHBOURS];
 			for j in 0..NUM_NEIGHBOURS {
@@ -248,16 +310,17 @@ mod test {
 				}
 			}
 
+			trace[i] = new_s;
 			s = new_s;
 
 			println!("[{}]", s.map(|v| format!("{:>9.4}", v)).join(", "));
 		}
 
-		s
+		(s, trace)
 	}
 
 	#[test]
-	fn test_closed_graph_native() {
+	fn test_closed_graph_circut() {
 		let s: [f32; NUM_NEIGHBOURS] = [INITIAL_SCORE; NUM_NEIGHBOURS];
 		let ops = [
 			[0.0, 0.2, 0.3, 0.5, 0.0],
@@ -266,7 +329,9 @@ mod test {
 			[0.1, 0.1, 0.7, 0.0, 0.1],
 			[0.3, 0.1, 0.4, 0.2, 0.0],
 		];
-		let res = native(s, ops);
+		let (res, trace) = native(s, ops);
+		let iter_s_f = trace.map(|vs| vs.map(|v| Scalar::from_u128(v as u128)));
+		let res_f = res.map(|x| Scalar::from_u128(x as u128));
 
 		let rng = &mut thread_rng();
 		let secret_keys = [(); NUM_NEIGHBOURS].map(|_| SecretKey::random(rng));
@@ -303,13 +368,13 @@ mod test {
 			.map(|((sk, pk), msg)| sign(&sk, &pk, msg));
 
 		let k = 13;
-		let et = EigenTrust::new(pub_keys, signatures, ops_scaled, messages);
+		let et = EigenTrust::new(pub_keys, signatures, ops_scaled, messages, iter_s_f);
 
-		let prover = match MockProver::<Scalar>::run(k, &et, vec![vec![]]) {
+		let prover = match MockProver::<Scalar>::run(k, &et, vec![vec![], res_f.to_vec()]) {
 			Ok(prover) => prover,
 			Err(e) => panic!("{}", e),
 		};
 
-		// assert_eq!(prover.verify(), Ok(()));
+		assert_eq!(prover.verify(), Ok(()));
 	}
 }
