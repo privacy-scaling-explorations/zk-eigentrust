@@ -47,6 +47,7 @@ pub mod utils;
 
 use constants::{EPOCH_INTERVAL, MAX_NEIGHBORS, NUM_BOOTSTRAP_PEERS, NUM_ITERATIONS};
 use eigen_trust_circuit::{
+	eddsa::native::PublicKey,
 	halo2wrong::{
 		curves::{
 			bn256::{Bn256, Fr as Bn265Scalar},
@@ -86,7 +87,7 @@ use tokio::{
 	select,
 	time::{self, Duration},
 };
-use utils::{generate_pk_from_sk, scalar_from_bs58};
+use utils::scalar_from_bs58;
 
 const BAD_REQUEST: u16 = 400;
 const NOT_FOUND: u16 = 404;
@@ -114,7 +115,7 @@ impl ToString for ResponseBody {
 }
 
 struct Query {
-	pk: Bn265Scalar,
+	pk: PublicKey,
 	epoch: Epoch,
 }
 
@@ -144,7 +145,12 @@ impl Query {
 		if pk_bytes.is_err() {
 			return None;
 		}
-		let pk_scalar = Bn265Scalar::from_bytes_wide(&to_wide(&pk_bytes.unwrap()));
+		let pk_bytes = to_wide(&pk_bytes.unwrap());
+		let mut pk0 = [0; 32];
+		pk0.copy_from_slice(&pk_bytes[..32]);
+		let mut pk1 = [0; 32];
+		pk1.copy_from_slice(&pk_bytes[32..]);
+		let pk_scalar = PublicKey::from_raw([pk0, pk1]);
 		let epoch_res: Result<u64, _> = epoch.unwrap().parse();
 		if epoch_res.is_err() {
 			return None;
@@ -206,8 +212,7 @@ async fn handle_request(
 				return Ok(res);
 			}
 			let sig = sig_res.unwrap();
-			let ops = m.get_op_jis(sig, query.epoch, NUM_ITERATIONS);
-			let ops_sum: f64 = ops.iter().sum();
+			let ops_sum: f64 = 0.;
 			let res = Response::new(ResponseBody::Score(ops_sum).to_string());
 			return Ok(res);
 		},
@@ -318,9 +323,10 @@ pub async fn main() -> Result<(), EigenError> {
 mod test {
 	use crate::{
 		constants::{NUM_BOOTSTRAP_PEERS, NUM_ITERATIONS},
-		utils::{generate_pk_from_sk, scalar_from_bs58},
+		utils::scalar_from_bs58,
 	};
 	use eigen_trust_circuit::{
+		eddsa::native::SecretKey,
 		halo2wrong::{
 			curves::bn256::Bn256,
 			halo2::{
@@ -336,10 +342,6 @@ mod test {
 	use serde_json::to_vec;
 
 	use super::*;
-
-	const SK_KEY1: &str = "AF4yAqwCPzpBcit4FtTrHso4BBR9onk7qS9Q1SWSLSaV";
-	const SK_KEY2: &str = "7VoQFngkSo36s5yzZtnjtZ5SLe1VGukCZdb5Uc9tSDNC";
-	const SK_KEY3: &str = "3wEvtEFktXUBHZHPPmLkDh7oqFLnjTPep1EJ2eBqLtcX";
 
 	#[tokio::test]
 	async fn should_fail_without_query() {
@@ -436,14 +438,14 @@ mod test {
 		let epoch = Epoch(123);
 		let mut manager = Manager::new(params, proving_key);
 
-		let sk1 = scalar_from_bs58(SK_KEY1);
-		let pk1 = generate_pk_from_sk(sk1);
+		let sk1 = SecretKey::random(&mut rng);
+		let pk1 = sk1.public();
 
-		let sk2 = scalar_from_bs58(SK_KEY2);
-		let pk2 = generate_pk_from_sk(sk2);
+		let sk2 = SecretKey::random(&mut rng);
+		let pk2 = sk2.public();
 
-		let sk3 = scalar_from_bs58(SK_KEY3);
-		let pk3 = generate_pk_from_sk(sk3);
+		let sk3 = SecretKey::random(&mut rng);
+		let pk3 = sk3.public();
 
 		let mut neighbours1 = [None; MAX_NEIGHBORS];
 		neighbours1[0] = Some(pk2);

@@ -8,7 +8,7 @@ use crate::{
 	utils::to_wide,
 };
 use halo2wrong::{
-	curves::{bn256::Fr, FieldExt},
+	curves::{bn256::Fr, group::ff::PrimeField, FieldExt},
 	halo2::arithmetic::Field,
 };
 use num_bigint::BigUint;
@@ -28,6 +28,20 @@ fn blh(b: &[u8]) -> Vec<u8> {
 pub struct SecretKey(BigUint, Fr);
 
 impl SecretKey {
+	/// Constructs SecretKey from raw values
+	pub fn from_raw(sk_raw: [[u8; 32]; 2]) -> Self {
+		let part0 = BigUint::from_bytes_be(&sk_raw[0]);
+		let part1 = Fr::from_repr(sk_raw[1]).unwrap();
+		Self(part0, part1)
+	}
+
+	/// Convert to raw bytes
+	pub fn to_raw(&self) -> [[u8; 32]; 2] {
+		let part0: [u8; 32] = self.0.to_bytes_be().try_into().unwrap();
+		let part1: [u8; 32] = self.1.to_bytes();
+		[part0, part1]
+	}
+
 	/// Randomly generates a field element and returns
 	/// two hashed values from it.
 	pub fn random<R: RngCore + Clone>(rng: &mut R) -> Self {
@@ -50,8 +64,25 @@ impl SecretKey {
 }
 
 /// Configures a structure for the public key.
-#[derive(Clone)]
+#[derive(Hash, Clone, PartialEq, Eq)]
 pub struct PublicKey(pub Point<Fr, BabyJubJub>);
+
+impl PublicKey {
+	/// Construct PublicKey from raw data
+	pub fn from_raw(pk: [[u8; 32]; 2]) -> Self {
+		let x = Fr::from_repr(pk[0]).unwrap();
+		let y = Fr::from_repr(pk[1]).unwrap();
+		let point = Point::new(x, y);
+		Self(point)
+	}
+
+	/// Convert to raw bytes
+	pub fn to_raw(&self) -> [[u8; 32]; 2] {
+		let x = self.0.x.to_bytes();
+		let y = self.0.y.to_bytes();
+		[x, y]
+	}
+}
 
 #[derive(Clone)]
 /// Configures signature objects.
