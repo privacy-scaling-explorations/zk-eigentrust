@@ -180,12 +180,12 @@ impl<F: FieldExt> CommonChip<F> {
 		x: AssignedCell<F, F>,
 		// Assigns a cell for the y.
 		y: AssignedCell<F, F>,
-		config: CommonConfig,
+		config: &CommonConfig,
 		mut layouter: impl Layouter<F>,
 	) -> Result<AssignedCell<F, F>, Error> {
 		// Here we check our values x and y.
 		// Both of the values have to be boolean.
-		let x_checked = Self::is_bool(x, config.clone(), layouter.namespace(|| "is_bool_x"))?;
+		let x_checked = Self::is_bool(x, config, layouter.namespace(|| "is_bool_x"))?;
 		let y_checked = Self::is_bool(y, config, layouter.namespace(|| "is_bool_y"))?;
 
 		layouter.assign_region(
@@ -209,7 +209,7 @@ impl<F: FieldExt> CommonChip<F> {
 	pub fn is_bool(
 		// Assigns a cell for the x.
 		x: AssignedCell<F, F>,
-		config: CommonConfig,
+		config: &CommonConfig,
 		mut layouter: impl Layouter<F>,
 	) -> Result<AssignedCell<F, F>, Error> {
 		layouter.assign_region(
@@ -229,7 +229,7 @@ impl<F: FieldExt> CommonChip<F> {
 		lhs: AssignedCell<F, F>,
 		// Assigns a cell for the rhs.
 		rhs: AssignedCell<F, F>,
-		config: CommonConfig,
+		config: &CommonConfig,
 		mut layouter: impl Layouter<F>,
 	) -> Result<AssignedCell<F, F>, Error> {
 		let out = layouter.assign_region(
@@ -255,7 +255,7 @@ impl<F: FieldExt> CommonChip<F> {
 	pub fn is_zero(
 		// Assigns a cell for the x.
 		x: AssignedCell<F, F>,
-		config: CommonConfig,
+		config: &CommonConfig,
 		mut layouter: impl Layouter<F>,
 	) -> Result<AssignedCell<F, F>, Error> {
 		let is_zero = layouter.assign_region(
@@ -289,7 +289,7 @@ impl<F: FieldExt> CommonChip<F> {
 		x: AssignedCell<F, F>,
 		// Assigns a cell for the y.
 		y: AssignedCell<F, F>,
-		config: CommonConfig,
+		config: &CommonConfig,
 		mut layouter: impl Layouter<F>,
 	) -> Result<AssignedCell<F, F>, Error> {
 		layouter.assign_region(
@@ -316,7 +316,7 @@ impl<F: FieldExt> CommonChip<F> {
 		x: AssignedCell<F, F>,
 		// Assigns a cell for the y.
 		y: AssignedCell<F, F>,
-		config: CommonConfig,
+		config: &CommonConfig,
 		mut layouter: impl Layouter<F>,
 	) -> Result<AssignedCell<F, F>, Error> {
 		// Checking bit is boolean or not.
@@ -434,7 +434,7 @@ mod test {
 					let and = CommonChip::and(
 						items[0].clone(),
 						items[1].clone(),
-						config.common,
+						&config.common,
 						layouter.namespace(|| "and"),
 					)?;
 					layouter.constrain_instance(and.cell(), config.pub_ins, 0)?;
@@ -442,7 +442,7 @@ mod test {
 				Gadgets::IsBool => {
 					CommonChip::is_bool(
 						items[0].clone(),
-						config.common,
+						&config.common,
 						layouter.namespace(|| "is_bool"),
 					)?;
 				},
@@ -450,7 +450,7 @@ mod test {
 					let is_equal = CommonChip::is_equal(
 						items[0].clone(),
 						items[1].clone(),
-						config.common,
+						&config.common,
 						layouter.namespace(|| "is_zero"),
 					)?;
 					layouter.constrain_instance(is_equal.cell(), config.pub_ins, 0)?;
@@ -458,7 +458,7 @@ mod test {
 				Gadgets::IsZero => {
 					let is_zero = CommonChip::is_zero(
 						items[0].clone(),
-						config.common,
+						&config.common,
 						layouter.namespace(|| "is_zero"),
 					)?;
 					layouter.constrain_instance(is_zero.cell(), config.pub_ins, 0)?;
@@ -467,7 +467,7 @@ mod test {
 					let mul = CommonChip::mul(
 						items[0].clone(),
 						items[1].clone(),
-						config.common,
+						&config.common,
 						layouter.namespace(|| "mul"),
 					)?;
 					layouter.constrain_instance(mul.cell(), config.pub_ins, 0)?;
@@ -477,7 +477,7 @@ mod test {
 						items[0].clone(),
 						items[1].clone(),
 						items[2].clone(),
-						config.common,
+						&config.common,
 						layouter.namespace(|| "select"),
 					)?;
 					layouter.constrain_instance(select.cell(), config.pub_ins, 0)?;

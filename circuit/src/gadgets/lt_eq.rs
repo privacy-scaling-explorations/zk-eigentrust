@@ -22,7 +22,7 @@ const NUM_BITS: usize = 252;
 /// Same number of bits as N_SHIFTED, since NUM + N_SHIFTED is the operation.
 const DIFF_BITS: usize = 253;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 /// Configuration elements for the circuit are defined here.
 pub struct LessEqualConfig {
 	/// Constructs bits2num circuit elements.
@@ -105,13 +105,13 @@ impl<F: FieldExt> LessEqualChip<F> {
 
 	/// Synthesize the circuit.
 	pub fn synthesize(
-		&self, config: LessEqualConfig, mut layouter: impl Layouter<F>,
+		&self, config: &LessEqualConfig, mut layouter: impl Layouter<F>,
 	) -> Result<AssignedCell<F, F>, Error> {
 		let x_b2n = Bits2NumChip::new(self.x.clone(), self.x_bits);
-		let _ = x_b2n.synthesize(config.x_b2n, layouter.namespace(|| "x_b2n"))?;
+		let _ = x_b2n.synthesize(&config.x_b2n, layouter.namespace(|| "x_b2n"))?;
 
 		let y_b2n = Bits2NumChip::new(self.y.clone(), self.y_bits);
-		let _ = y_b2n.synthesize(config.y_b2n, layouter.namespace(|| "y_b2n"))?;
+		let _ = y_b2n.synthesize(&config.y_b2n, layouter.namespace(|| "y_b2n"))?;
 
 		let inp = layouter.assign_region(
 			|| "less_than_equal",
@@ -130,7 +130,7 @@ impl<F: FieldExt> LessEqualChip<F> {
 		)?;
 
 		let diff_b2n = Bits2NumChip::new(inp, self.diff_bits);
-		let bits = diff_b2n.synthesize(config.diff_b2n, layouter.namespace(|| "bits2num"))?;
+		let bits = diff_b2n.synthesize(&config.diff_b2n, layouter.namespace(|| "bits2num"))?;
 
 		// Check the last bit.
 		// If it is 1, that means the result is bigger than 253 bits.
@@ -141,7 +141,7 @@ impl<F: FieldExt> LessEqualChip<F> {
 		// bits. In that case, is_zero will return 0 as well.
 		let res = CommonChip::is_zero(
 			bits[DIFF_BITS - 1].clone(),
-			config.is_zero,
+			&config.is_zero,
 			layouter.namespace(|| "is_zero"),
 		)?;
 		Ok(res)
@@ -230,7 +230,7 @@ mod test {
 			let x_bits = to_bits(self.x.to_bytes()).map(Fr::from);
 			let y_bits = to_bits(self.y.to_bytes()).map(Fr::from);
 			let lt_eq_chip = LessEqualChip::<Fr>::new(x, y, x_bits, y_bits, diff_bits);
-			let res = lt_eq_chip.synthesize(config.lt_eq, layouter.namespace(|| "less_eq"))?;
+			let res = lt_eq_chip.synthesize(&config.lt_eq, layouter.namespace(|| "less_eq"))?;
 
 			layouter.constrain_instance(res.cell(), config.pub_ins, 0)?;
 			Ok(())

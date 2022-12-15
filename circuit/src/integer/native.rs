@@ -87,9 +87,22 @@ where
 		Self::from_limbs(limbs)
 	}
 
+	/// Creates and new Integer from wrong field
+	pub fn from_w(num: W) -> Self {
+		let num_bn = fe_to_big(num);
+		Self::new(num_bn)
+	}
+
 	/// Construct an Integer from given `limbs`.
 	pub fn from_limbs(limbs: [N; NUM_LIMBS]) -> Self {
 		Self { limbs, _wrong_field: PhantomData, _rns: PhantomData }
+	}
+
+	/// Construct an Integer from given `limbs` vector.
+	pub fn from_slice(limbs_vec: &[N]) -> Self {
+		assert_eq!(limbs_vec.len(), NUM_LIMBS);
+		let limbs: [N; NUM_LIMBS] = limbs_vec.try_into().unwrap();
+		Self::from_limbs(limbs)
 	}
 
 	/// Returns integer with value zero
@@ -239,6 +252,13 @@ where
 		let quotient_int = Quotient::Long(Integer::from_limbs(q));
 
 		ReductionWitness { result: result_int, quotient: quotient_int, intermediate: t, residues }
+	}
+
+	/// Check if two integers are equal
+	pub fn is_eq(&self, other: &Self) -> bool {
+		let self_native = P::compose(self.limbs);
+		let other_native = P::compose(other.limbs);
+		self_native == other_native
 	}
 }
 

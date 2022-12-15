@@ -34,6 +34,13 @@ pub fn to_wide(b: &[u8]) -> [u8; 64] {
 	bytes
 }
 
+/// Convert bytes array to a short representation of 32 bytes
+pub fn to_short(b: &[u8]) -> [u8; 32] {
+	let mut bytes = [0u8; 32];
+	bytes[..b.len()].copy_from_slice(b);
+	bytes
+}
+
 /// Generate parameters with polynomial degere = `k`.
 pub fn generate_params<E: MultiMillerLoop + Debug>(k: u32) -> ParamsKZG<E> {
 	ParamsKZG::<E>::new(k)
