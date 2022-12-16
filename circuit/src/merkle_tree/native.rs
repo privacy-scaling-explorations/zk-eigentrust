@@ -3,7 +3,10 @@ use std::marker::PhantomData;
 use halo2wrong::halo2::arithmetic::FieldExt;
 use num_traits::pow;
 
-use crate::{params::RoundParams, poseidon::native::sponge::PoseidonSponge};
+use crate::{
+	params::RoundParams,
+	poseidon::native::{sponge::PoseidonSponge, Poseidon},
+};
 const WIDTH: usize = 5;
 
 #[derive(Clone, Debug)]
@@ -18,7 +21,12 @@ where
 	first_leaf_index: usize,
 }
 
-struct Path<F: FieldExt> {
+#[derive(Clone)]
+struct Path<F: FieldExt, P>
+where
+	P: RoundParams<F, WIDTH>,
+{
+	_params: PhantomData<P>,
 	value: F,
 	path_vec: Vec<F>,
 }
@@ -50,13 +58,17 @@ where
 			let first_leaf_index = (new_tree.first_leaf_index * 2) + 1;
 			let mut hash = Vec::new();
 			for i in 0..first_leaf_index {
-				let mut hasher: PoseidonSponge<F, WIDTH, P> = PoseidonSponge::new();
 				if i % 2 == 0 {
-					hasher.update(&[
+					let hasher: Poseidon<F, WIDTH, P> = Poseidon::new([
 						self.nodes[first_leaf_index + i].unwrap(),
 						self.nodes[first_leaf_index + i + 1].unwrap(),
+						F::zero(),
+						F::zero(),
+						F::zero(),
 					]);
-					hash.push(hasher.squeeze());
+					let hashes = hasher.permute();
+
+					hash.push(hashes[0] + hashes[1]);
 				}
 			}
 			new_tree.add_leaves(hash.clone());
@@ -71,7 +83,7 @@ where
 		self
 	}
 
-	fn find_path(&mut self, value: F) -> Path<F> {
+	fn find_path(&mut self, value: F) -> Path<F, P> {
 		let mut value_index = None;
 		for i in (self.first_leaf_index - 1)..self.nodes.len() {
 			if value == self.nodes[i].unwrap() {
@@ -96,15 +108,30 @@ where
 			}
 		}
 		path_vec.push(self.root.unwrap());
+		Path { path_vec, value, _params: PhantomData }
+	}
+}
 
-		for i in 0..path_vec.len() - 2 {
-			let mut hasher: PoseidonSponge<F, WIDTH, P> = PoseidonSponge::new();
+impl<F: FieldExt, P> Path<F, P>
+where
+	P: RoundParams<F, WIDTH>,
+{
+	fn verify(&self) -> bool {
+		let mut is_satisfied = true;
+		for i in 0..self.path_vec.len() - 2 {
 			if i % 2 == 0 {
-				hasher.update(&[path_vec[i], path_vec[i + 1]]);
-				assert!(path_vec.contains(&hasher.squeeze()));
+				let hasher: Poseidon<F, WIDTH, P> = Poseidon::new([
+					self.path_vec[i],
+					self.path_vec[i + 1],
+					F::zero(),
+					F::zero(),
+					F::zero(),
+				]);
+				let hashes = hasher.permute();
+				is_satisfied = is_satisfied | self.path_vec.contains(&(hashes[0] + hashes[1]));
 			}
 		}
-		Path { path_vec, value }
+		is_satisfied
 	}
 }
 
@@ -133,6 +160,7 @@ mod test {
 		]);
 		merkle.build_tree();
 		let path = merkle.find_path(value);
+		assert!(path.verify());
 		assert_eq!(path.path_vec[6], merkle.root.unwrap());
 	}
 }
