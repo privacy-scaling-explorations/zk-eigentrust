@@ -71,7 +71,7 @@ where
 		self
 	}
 
-	fn find_path(&mut self, value: F) -> Vec<F> {
+	fn find_path(&mut self, value: F) -> Path<F> {
 		let mut value_index = None;
 		for i in (self.first_leaf_index - 1)..self.nodes.len() {
 			if value == self.nodes[i].unwrap() {
@@ -104,7 +104,7 @@ where
 				assert!(path_vec.contains(&hasher.squeeze()));
 			}
 		}
-		path_vec
+		Path { path_vec, value }
 	}
 }
 
@@ -133,6 +133,6 @@ mod test {
 		]);
 		merkle.build_tree();
 		let path = merkle.find_path(value);
-		assert_eq!(path[6], merkle.root.unwrap());
+		assert_eq!(path.path_vec[6], merkle.root.unwrap());
 	}
 }
