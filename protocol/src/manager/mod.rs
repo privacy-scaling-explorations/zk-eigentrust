@@ -58,7 +58,7 @@ mod test {
 	use super::*;
 	use crate::{
 		constants::{NUM_BOOTSTRAP_PEERS, NUM_ITERATIONS},
-		utils::{generate_pk_from_sk, scalar_from_bs58},
+		utils::scalar_from_bs58,
 	};
 	use eigen_trust_circuit::{
 		halo2wrong::{

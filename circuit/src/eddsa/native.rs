@@ -25,19 +25,19 @@ fn blh(b: &[u8]) -> Vec<u8> {
 
 /// Configures a structure for the secret key.
 #[derive(Clone)]
-pub struct SecretKey(BigUint, Fr);
+pub struct SecretKey(Fr, Fr);
 
 impl SecretKey {
 	/// Constructs SecretKey from raw values
 	pub fn from_raw(sk_raw: [[u8; 32]; 2]) -> Self {
-		let part0 = BigUint::from_bytes_be(&sk_raw[0]);
+		let part0 = Fr::from_repr(sk_raw[0]).unwrap();
 		let part1 = Fr::from_repr(sk_raw[1]).unwrap();
 		Self(part0, part1)
 	}
 
 	/// Convert to raw bytes
 	pub fn to_raw(&self) -> [[u8; 32]; 2] {
-		let part0: [u8; 32] = self.0.to_bytes_be().try_into().unwrap();
+		let part0: [u8; 32] = self.0.to_bytes();
 		let part1: [u8; 32] = self.1.to_bytes();
 		[part0, part1]
 	}
@@ -47,7 +47,8 @@ impl SecretKey {
 	pub fn random<R: RngCore + Clone>(rng: &mut R) -> Self {
 		let a = Fr::random(rng);
 		let hash: Vec<u8> = blh(&a.to_bytes());
-		let sk0 = BigUint::from_bytes_le(&hash[..32]);
+		let bytes_wide = to_wide(&hash[..32]);
+		let sk0 = Fr::from_bytes_wide(&bytes_wide);
 
 		let bytes_wide = to_wide(&hash[32..]);
 		let sk1 = Fr::from_bytes_wide(&bytes_wide);
@@ -58,7 +59,7 @@ impl SecretKey {
 	pub fn public(&self) -> PublicKey {
 		let (b8_x, b8_y) = BabyJubJub::b8();
 		let b8_point = Point::new(b8_x, b8_y);
-		let a = b8_point.mul_scalar(&self.0.to_bytes_le());
+		let a = b8_point.mul_scalar(self.0.to_repr().as_ref());
 		PublicKey(a.affine())
 	}
 }
@@ -108,7 +109,8 @@ pub fn sign(sk: &SecretKey, pk: &PublicKey, m: Fr) -> Signature {
 	let m_hash = Hasher::new(m_hash_input).permute()[0];
 	let m_hash_bn = BigUint::from_bytes_le(&m_hash.to_bytes());
 	// S = r + H(R || PK || M) * sk0   (mod n)
-	let s = r_bn + &sk.0 * m_hash_bn;
+	let sk0 = BigUint::from_bytes_le(&sk.0.to_bytes());
+	let s = r_bn + &sk0 * m_hash_bn;
 	let suborder = BabyJubJub::suborder();
 	let s = s % BigUint::from_bytes_le(&suborder.to_bytes());
 	let s = Fr::from_bytes_wide(&to_wide(&s.to_bytes_le()));
