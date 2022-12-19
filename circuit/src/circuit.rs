@@ -357,10 +357,15 @@ pub fn native<F: FieldExt, const N: usize, const I: usize, const S: u128>(
 	}
 
 	for i in 0..N {
+		// a = 10
+		// b = 5
+		// b_inv = 1 / b;
+		// a * b_iv
 		let big_scale = F::from_u128(S.pow(I as u32));
 		let big_scale_inv = big_scale.invert().unwrap();
-		println!("{:?} {:?}", s[i], (s[i] * big_scale_inv) * big_scale);
+		// println!("{:?} {:?}", s[i], (s[i] * big_scale_inv) * big_scale);
 		s[i] = s[i] * big_scale_inv;
+		println!("unscaled: {:?}", s[i]);
 	}
 
 	let mut sum = F::zero();

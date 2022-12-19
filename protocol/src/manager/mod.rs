@@ -32,7 +32,7 @@ pub const SCALE: u128 = 1000;
 
 /// The peer struct.
 pub struct Manager {
-	pub(crate) cached_ivps: HashMap<Epoch, EigenTrustProver>,
+	pub(crate) cached_proofs: HashMap<Epoch, EigenTrustProver>,
 	pub(crate) attestations: HashMap<PublicKey, Attestation>,
 	params: ParamsKZG<Bn256>,
 	proving_key: ProvingKey<G1Affine>,
@@ -42,7 +42,7 @@ impl Manager {
 	/// Creates a new peer.
 	pub fn new(params: ParamsKZG<Bn256>, pk: ProvingKey<G1Affine>) -> Self {
 		Self {
-			cached_ivps: HashMap::new(),
+			cached_proofs: HashMap::new(),
 			attestations: HashMap::new(),
 			params,
 			proving_key: pk,
@@ -57,7 +57,7 @@ impl Manager {
 		self.attestations.get(pk).ok_or(EigenError::AttestationNotFound)
 	}
 
-	pub fn calculate_ivps(&mut self, epoch: Epoch, iter: u32) {}
+	pub fn calculate_proofs(&mut self, epoch: Epoch) {}
 }
 
 #[cfg(test)]
