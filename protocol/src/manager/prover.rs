@@ -1,6 +1,6 @@
 use std::vec;
 
-use super::Attestation;
+use super::{Attestation, INITIAL_SCORE, NUM_ITER, NUM_NEIGHBOURS, SCALE};
 use crate::{
 	epoch::Epoch,
 	error::EigenError,
@@ -9,7 +9,7 @@ use crate::{
 use bs58::decode::Error as Bs58Error;
 use eigen_trust_circuit::{
 	circuit::{native, EigenTrust, PoseidonNativeHasher},
-	eddsa::native::PublicKey,
+	eddsa::native::{PublicKey, Signature},
 	halo2wrong::{
 		curves::{
 			bn256::{Bn256, Fr as Scalar, G1Affine},
@@ -26,7 +26,7 @@ use eigen_trust_circuit::{
 };
 use rand::thread_rng;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct EigenTrustProver {
 	pks: [PublicKey; NUM_NEIGHBOURS],
 	signatures: [Signature; NUM_NEIGHBOURS],
@@ -38,7 +38,7 @@ pub struct EigenTrustProver {
 
 impl EigenTrustProver {
 	pub fn new(
-		pks: [PublicKey; NUM_NEIGHBOURS], signatures: [Signature<NUM_NEIGHBOURS>; NUM_NEIGHBOURS],
+		pks: [PublicKey; NUM_NEIGHBOURS], signatures: [Signature; NUM_NEIGHBOURS],
 		ops: [[Scalar; NUM_NEIGHBOURS]; NUM_NEIGHBOURS], messages: [Scalar; NUM_NEIGHBOURS],
 		pk: ProvingKey<G1Affine>, params: ParamsKZG<Bn256>,
 	) -> Self {
@@ -47,7 +47,12 @@ impl EigenTrustProver {
 
 	/// Creates a new IVP.
 	pub fn generate(&self) -> Result<Vec<u8>, EigenError> {
-		let et = EigenTrust::new(self.pks, self.signatures, self.ops, self.messages);
+		let et = EigenTrust::<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, SCALE>::new(
+			self.pks.clone(),
+			self.signatures.clone(),
+			self.ops,
+			self.messages,
+		);
 		Err(EigenError::ProvingError)
 	}
 

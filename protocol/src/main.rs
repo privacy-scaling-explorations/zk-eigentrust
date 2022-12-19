@@ -67,7 +67,7 @@ use hyper::{
 };
 use manager::{
 	attestation::{Attestation, AttestationData},
-	Manager,
+	Manager, INITIAL_SCORE, NUM_ITER, NUM_NEIGHBOURS, SCALE,
 };
 use once_cell::sync::Lazy;
 use rand::thread_rng;
@@ -162,7 +162,8 @@ impl Query {
 static MANAGER_STORE: Lazy<Arc<Mutex<Manager>>> = Lazy::new(|| {
 	let mut rng = thread_rng();
 	let params = ParamsKZG::new(13);
-	let random_circuit = EigenTrust::random(&mut rng);
+	let random_circuit =
+		EigenTrust::<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, SCALE>::random(&mut rng);
 	let proving_key = keygen(&params, &random_circuit).unwrap();
 
 	Arc::new(Mutex::new(Manager::new(params, proving_key)))
@@ -290,7 +291,7 @@ pub async fn main() -> Result<(), EigenError> {
 	let listener = TcpListener::bind(addr).await.map_err(|_| EigenError::ListenError)?;
 	println!("Listening on https://{}", addr);
 
-	const EPOCH_INTERVAL: usize = 10;
+	const EPOCH_INTERVAL: u64 = 10;
 	let interval = Duration::from_secs(EPOCH_INTERVAL);
 	let mut inner_interval = time::interval(interval);
 	inner_interval.set_missed_tick_behavior(time::MissedTickBehavior::Skip);

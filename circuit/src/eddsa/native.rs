@@ -65,7 +65,7 @@ impl SecretKey {
 }
 
 /// Configures a structure for the public key.
-#[derive(Hash, Clone, PartialEq, Eq, Default)]
+#[derive(Hash, Clone, PartialEq, Eq, Default, Debug)]
 pub struct PublicKey(pub Point<Fr, BabyJubJub>);
 
 impl PublicKey {
@@ -85,7 +85,7 @@ impl PublicKey {
 	}
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 /// Configures signature objects.
 pub struct Signature {
 	/// Constructs a point for the R.
