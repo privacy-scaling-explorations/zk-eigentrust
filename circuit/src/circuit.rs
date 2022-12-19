@@ -1,6 +1,8 @@
+#![allow(missing_docs)]
+
 use crate::{
 	eddsa::{
-		native::{PublicKey, Signature},
+		native::{sign, PublicKey, SecretKey, Signature},
 		EddsaChip, EddsaConfig,
 	},
 	edwards::params::{BabyJubJub, EdwardsParams},
@@ -16,22 +18,19 @@ use crate::{
 use halo2wrong::{
 	curves::{bn256::Fr as Scalar, FieldExt},
 	halo2::{
+		arithmetic::Field,
 		circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner, Value},
 		plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Fixed, Instance},
 	},
 	RegionCtx,
 };
 use maingate::{MainGate, MainGateConfig, MainGateInstructions};
+use rand::Rng;
 use std::marker::PhantomData;
 
-const NUM_ITER: usize = 10;
-const NUM_NEIGHBOURS: usize = 5;
-const INITIAL_SCORE: u128 = 1000;
-const SCALE: u128 = 1000;
-
-type PoseidonNativeHasher = Poseidon<Scalar, 5, Params>;
-type PoseidonHasher = PoseidonChip<Scalar, 5, Params>;
-type SpongeHasher = PoseidonSpongeChip<Scalar, 5, Params>;
+pub type PoseidonNativeHasher = Poseidon<Scalar, 5, Params>;
+pub type PoseidonHasher = PoseidonChip<Scalar, 5, Params>;
+pub type SpongeHasher = PoseidonSpongeChip<Scalar, 5, Params>;
 type Eddsa = EddsaChip<Scalar, BabyJubJub, Params>;
 
 /// The columns config for the main circuit.
@@ -45,7 +44,12 @@ pub struct EigenTrustConfig {
 	instance: Column<Instance>,
 }
 
-struct EigenTrust {
+pub struct EigenTrust<
+	const NUM_NEIGHBOURS: usize,
+	const NUM_ITER: usize,
+	const INITIAL_SCORE: u128,
+	const SCALE: u128,
+> {
 	// Public keys
 	pk_x: [Value<Scalar>; NUM_NEIGHBOURS],
 	pk_y: [Value<Scalar>; NUM_NEIGHBOURS],
@@ -62,7 +66,13 @@ struct EigenTrust {
 	m_hash_bits: [[Scalar; 256]; NUM_NEIGHBOURS],
 }
 
-impl EigenTrust {
+impl<
+		const NUM_NEIGHBOURS: usize,
+		const NUM_ITER: usize,
+		const INITIAL_SCORE: u128,
+		const SCALE: u128,
+	> EigenTrust<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, SCALE>
+{
 	pub fn new(
 		pks: [PublicKey; NUM_NEIGHBOURS], signatures: [Signature; NUM_NEIGHBOURS],
 		ops: [[Scalar; NUM_NEIGHBOURS]; NUM_NEIGHBOURS], messages: [Scalar; NUM_NEIGHBOURS],
@@ -108,9 +118,28 @@ impl EigenTrust {
 			m_hash_bits,
 		}
 	}
+
+	/// Make a new circuit with the inputs being random values.
+	pub fn random<R: Rng + Clone>(rng: &mut R) -> Self {
+		let sks = [(); NUM_NEIGHBOURS].map(|_| SecretKey::random(rng));
+		let pks = sks.clone().map(|x| x.public());
+		let ops = [[(); NUM_NEIGHBOURS]; NUM_NEIGHBOURS]
+			.map(|arr| arr.map(|_| Scalar::random(rng.clone())));
+		let messages = [(); NUM_NEIGHBOURS].map(|_| Scalar::random(rng.clone()));
+		let signatures =
+			sks.zip(pks.clone()).zip(messages).map(|((sk, pk), msg)| sign(&sk, &pk, msg));
+
+		EigenTrust::new(pks, signatures, ops, messages)
+	}
 }
 
-impl Circuit<Scalar> for EigenTrust {
+impl<
+		const NUM_NEIGHBOURS: usize,
+		const NUM_ITER: usize,
+		const INITIAL_SCORE: u128,
+		const SCALE: u128,
+	> Circuit<Scalar> for EigenTrust<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, SCALE>
+{
 	type Config = EigenTrustConfig;
 	type FloorPlanner = SimpleFloorPlanner;
 
@@ -308,7 +337,7 @@ impl Circuit<Scalar> for EigenTrust {
 }
 
 /// Native version of EigenTrust algorithm
-pub fn native<F: FieldExt, const N: usize, const I: usize>(
+pub fn native<F: FieldExt, const N: usize, const I: usize, const S: u128>(
 	mut s: [F; N], ops: [[F; N]; N],
 ) -> [F; N] {
 	for i in 0..I {
@@ -328,7 +357,7 @@ pub fn native<F: FieldExt, const N: usize, const I: usize>(
 	}
 
 	for i in 0..N {
-		let big_scale = F::from_u128(SCALE.pow(I as u32));
+		let big_scale = F::from_u128(S.pow(I as u32));
 		let big_scale_inv = big_scale.invert().unwrap();
 		println!("{:?} {:?}", s[i], (s[i] * big_scale_inv) * big_scale);
 		s[i] = s[i] * big_scale_inv;
@@ -351,7 +380,10 @@ mod test {
 	use halo2wrong::halo2::dev::MockProver;
 	use rand::thread_rng;
 
-	type PoseidonNativeSponge = PoseidonSponge<Scalar, 5, Params>;
+	pub const NUM_ITER: usize = 10;
+	pub const NUM_NEIGHBOURS: usize = 5;
+	pub const INITIAL_SCORE: u128 = 1000;
+	pub const SCALE: u128 = 1000;
 
 	#[test]
 	fn test_closed_graph_circut() {
@@ -400,7 +432,9 @@ mod test {
 			.map(|((sk, pk), msg)| sign(&sk, &pk, msg));
 
 		let k = 13;
-		let et = EigenTrust::new(pub_keys, signatures, ops, messages);
+		let et = EigenTrust::<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, SCALE>::new(
+			pub_keys, signatures, ops, messages,
+		);
 
 		let prover = match MockProver::<Scalar>::run(k, &et, vec![vec![], res.to_vec()]) {
 			Ok(prover) => prover,

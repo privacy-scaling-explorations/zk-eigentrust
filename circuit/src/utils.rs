@@ -1,7 +1,6 @@
 //! Helper functions for generating params, pk/vk pairs, creating and verifying
 //! proofs, etc.
 
-use crate::{params::RoundParams, EigenTrustCircuit};
 use halo2wrong::{
 	curves::pairing::{Engine, MultiMillerLoop},
 	halo2::{
@@ -59,32 +58,6 @@ pub fn read_params<E: MultiMillerLoop + Debug>(path: &str) -> ParamsKZG<E> {
 	let mut file = std::fs::File::open(path).unwrap();
 	file.read_to_end(&mut buffer).unwrap();
 	ParamsKZG::<E>::read(&mut &buffer[..]).unwrap()
-}
-
-/// Make a new circuit with the inputs being random values.
-pub fn random_circuit<
-	E: MultiMillerLoop + Debug,
-	R: Rng + Clone,
-	const SIZE: usize,
-	const NUM_BOOTSTRAP: usize,
-	P: RoundParams<<E as Engine>::Scalar, 5>,
->(
-	rng: &mut R,
-) -> EigenTrustCircuit<<E as Engine>::Scalar, SIZE, NUM_BOOTSTRAP, P> {
-	let pubkey_v = E::Scalar::random(rng.clone());
-	let epoch = E::Scalar::random(rng.clone());
-	let iter = E::Scalar::random(rng.clone());
-	let secret_i = E::Scalar::random(rng.clone());
-	// Data from neighbors of i
-	let op_ji = [(); SIZE].map(|_| E::Scalar::random(rng.clone()));
-	let c_v = E::Scalar::random(rng.clone());
-
-	let bootstrap_pubkeys = [(); NUM_BOOTSTRAP].map(|_| E::Scalar::random(rng.clone()));
-	let bootstrap_score = E::Scalar::random(rng.clone());
-
-	EigenTrustCircuit::<_, SIZE, NUM_BOOTSTRAP, P>::new(
-		pubkey_v, epoch, iter, secret_i, op_ji, c_v, bootstrap_pubkeys, bootstrap_score,
-	)
 }
 
 /// Proving/verifying key generation.

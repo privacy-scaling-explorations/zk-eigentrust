@@ -37,7 +37,7 @@ pub trait EdwardsParams<F: FieldExt> {
 }
 
 /// Struct for defining BabyJubJub A and D points
-#[derive(Hash, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Hash, Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct BabyJubJub;
 
 impl EdwardsParams<Fr> for BabyJubJub {

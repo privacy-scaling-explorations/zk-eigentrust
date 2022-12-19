@@ -65,7 +65,7 @@ impl SecretKey {
 }
 
 /// Configures a structure for the public key.
-#[derive(Hash, Clone, PartialEq, Eq)]
+#[derive(Hash, Clone, PartialEq, Eq, Default)]
 pub struct PublicKey(pub Point<Fr, BabyJubJub>);
 
 impl PublicKey {
@@ -92,6 +92,14 @@ pub struct Signature {
 	pub big_r: Point<Fr, BabyJubJub>,
 	/// Constructs a field element for the s.
 	pub s: Fr,
+}
+
+impl Signature {
+	/// Construct signature from the data
+	pub fn new(r_x: Fr, r_y: Fr, s: Fr) -> Self {
+		let big_r = Point::new(r_x, r_y);
+		Self { big_r, s }
+	}
 }
 
 /// Returns a signature from given keys and message.
