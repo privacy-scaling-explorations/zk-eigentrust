@@ -385,6 +385,8 @@ mod test {
 	pub const INITIAL_SCORE: u128 = 1000;
 	pub const SCALE: u128 = 1000;
 
+	pub type PoseidonNativeSponge = PoseidonSponge<Scalar, 5, Params>;
+
 	#[test]
 	fn test_closed_graph_circut() {
 		let s: [Scalar; NUM_NEIGHBOURS] = [Scalar::from_u128(INITIAL_SCORE); NUM_NEIGHBOURS];
@@ -396,7 +398,7 @@ mod test {
 			[300, 100, 400, 200, 0],
 		]
 		.map(|arr| arr.map(|x| Scalar::from_u128(x)));
-		let res = native::<Scalar, NUM_NEIGHBOURS, NUM_ITER>(s, ops);
+		let res = native::<Scalar, NUM_NEIGHBOURS, NUM_ITER, SCALE>(s, ops);
 
 		let rng = &mut thread_rng();
 		let secret_keys = [(); NUM_NEIGHBOURS].map(|_| SecretKey::random(rng));
