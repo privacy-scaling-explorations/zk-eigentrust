@@ -282,6 +282,9 @@ fn handle_epoch_convergence(arc_manager: Arc<Mutex<Manager>>, epoch: Epoch) {
 		println!("error: {:?}", e);
 		return;
 	}
+
+	let mut manager = manager.unwrap();
+	manager.calculate_proofs(epoch).unwrap();
 }
 
 #[tokio::main]

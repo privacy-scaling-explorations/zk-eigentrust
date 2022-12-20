@@ -29,6 +29,7 @@ use rand::Rng;
 use std::marker::PhantomData;
 
 pub type PoseidonNativeHasher = Poseidon<Scalar, 5, Params>;
+pub type PoseidonNativeSponge = PoseidonSponge<Scalar, 5, Params>;
 pub type PoseidonHasher = PoseidonChip<Scalar, 5, Params>;
 pub type SpongeHasher = PoseidonSpongeChip<Scalar, 5, Params>;
 type Eddsa = EddsaChip<Scalar, BabyJubJub, Params>;
@@ -389,8 +390,6 @@ mod test {
 	pub const NUM_NEIGHBOURS: usize = 5;
 	pub const INITIAL_SCORE: u128 = 1000;
 	pub const SCALE: u128 = 1000;
-
-	pub type PoseidonNativeSponge = PoseidonSponge<Scalar, 5, Params>;
 
 	#[test]
 	fn test_closed_graph_circut() {
