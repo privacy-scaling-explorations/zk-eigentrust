@@ -42,24 +42,24 @@ pub const INITIAL_SCORE: u128 = 1000;
 pub const SCALE: u128 = 1000;
 pub const FIXED_SET: [[&str; 2]; NUM_NEIGHBOURS] = [
 	[
-		"AF4yAqwCPzpBcit4FtTrHso4BBR9onk7qS9Q1SWSLSaV",
-		"52RwQpZ9kUDsNi9R8f5FMD27pqyTPB39hQKYeH7fH99P",
+		"2L9bbXNEayuRMMbrWFynPtgkrXH1iBdfryRH9Soa8M67",
+		"9rBeBVtbN2MkHDTpeAouqkMWNFJC6Bxb6bXH9jUueWaF",
 	],
 	[
-		"7VoQFngkSo36s5yzZtnjtZ5SLe1VGukCZdb5Uc9tSDNC",
-		"HhfwhxzwKvS8UGVvfnyJUiA1uL1VhXXfqFWh4BtEM9zx",
+		"ARVqgNQtnV4JTKqgajGEpuapYEnWz93S5vwRDoRYWNh8",
+		"2u1LC2JmKwkzUccS9hd5yS2DUUGTuYQ8MA7y28A9SgQY",
 	],
 	[
-		"3wEvtEFktXUBHZHPPmLkDh7oqFLnjTPep1EJ2eBqLtcX",
-		"5vnn3M32KhDE9qsvWGbSy8H59y6Kf64TKmqLeRxKwn6t",
+		"phhPpTLWJbC4RM39Ww3e6wWvZnVkk86iNAXyA1tRAHJ",
+		"93aMkAqd7AY4c3m6ij6RuBzw3F9QYhQsAMnkKF2Ck2R8",
 	],
 	[
-		"AccKg5pXVG5o968qj5QtgPZpgC8Y8NLG9woUZNuZRYdG",
-		"3BGPsex45AHQHuJfkfWkMfKHcwNjYcXhC3foH77kurPX",
+		"Bp3FqLd6Man9h7xujkbYDdhyF42F2dX871SJHvo3xsnU",
+		"AUUqgGTvqzPetRMQdTrQ1xHnwz2BHDxPTi85wL4WYQaK",
 	],
 	[
-		"8hz2emqxU7CfxWv8cJLFGR1nE4B5QDsfNE4LykE6ihKB",
-		"2hfQezShegBrascTTkbCjPzbLZSq6KADnkZbBjQ2uaih",
+		"AKo18M6YSE1dQQuXt4HfWNrXA6dKXBVkWVghEi6827u1",
+		"ArT8Kk13Heai2UPbMbrqs3RuVm4XXFN2pVHttUnKpDoV",
 	],
 ];
 
@@ -143,7 +143,7 @@ impl Manager {
 		pk_sponge.update(&pks_y);
 		let pks_hash = pk_sponge.squeeze();
 
-		let score = Scalar::from_u128(INITIAL_SCORE / (NUM_NEIGHBOURS as u128 - 1));
+		let score = Scalar::from_u128(INITIAL_SCORE / NUM_NEIGHBOURS as u128);
 		let scores = [score; NUM_NEIGHBOURS];
 
 		for (sk, pk) in sks.zip(pks.clone()) {
@@ -181,10 +181,6 @@ impl Manager {
 			let pk = sk.public();
 			let pk_hash_inp = [pk.0.x, pk.0.y, Scalar::zero(), Scalar::zero(), Scalar::zero()];
 			let pk_hash = PoseidonNativeHasher::new(pk_hash_inp).permute()[0];
-			println!(
-				"pk_hash: {}",
-				bs58::encode(pk_hash.to_bytes()).into_string()
-			);
 			assert!(self.attestations.contains_key(&pk_hash));
 			pks[i] = Some(pk);
 			pk_hashes[i] = Some(pk_hash);
@@ -229,17 +225,29 @@ impl Manager {
 		let init_score = [(); NUM_NEIGHBOURS].map(|_| Scalar::from_u128(INITIAL_SCORE));
 		let pub_ins = native::<Scalar, NUM_NEIGHBOURS, NUM_ITER, SCALE>(init_score, ops);
 
-		let proof_bytes = prove(&self.params, et, &[&pub_ins], &self.proving_key, &mut rng)
-			.map_err(|_| EigenError::ProvingError)?;
+		let proof_bytes = prove(
+			&self.params,
+			et,
+			&[&[], &pub_ins],
+			&self.proving_key,
+			&mut rng,
+		)
+		.map_err(|e| {
+			println!("{:?}", e);
+			EigenError::ProvingError
+		})?;
 
 		// Sanity check
 		let proof_res = verify(
 			&self.params,
-			&[&pub_ins],
+			&[&[], &pub_ins],
 			&proof_bytes,
 			self.proving_key.get_vk(),
 		)
-		.map_err(|e| EigenError::VerificationError)?;
+		.map_err(|e| {
+			println!("{:?}", e);
+			EigenError::VerificationError
+		})?;
 		assert!(proof_res);
 
 		let proof = Proof { pub_ins, proof: proof_bytes };
@@ -270,9 +278,9 @@ mod test {
 
 		manager.generate_initial_attestations();
 		let epoch = Epoch(0);
-		manager.calculate_proofs(epoch);
+		manager.calculate_proofs(epoch).unwrap();
 		let proof = manager.get_proof(epoch).unwrap();
-		let scores = [Scalar::zero(); NUM_NEIGHBOURS];
+		let scores = [Scalar::from_u128(INITIAL_SCORE); NUM_NEIGHBOURS];
 		assert_eq!(proof.pub_ins, scores);
 	}
 }

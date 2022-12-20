@@ -182,7 +182,11 @@ impl<
 				|| "temp",
 				|mut region: Region<'_, Scalar>| {
 					let mut ctx = RegionCtx::new(region, 0);
-					let zero = ctx.assign_fixed(|| "zero", config.fixed, Scalar::zero())?;
+					let zero_fixed =
+						ctx.assign_fixed(|| "zero_fixed", config.fixed, Scalar::zero())?;
+					let zero =
+						ctx.assign_advice(|| "zero", config.temp, Value::known(Scalar::zero()))?;
+					ctx.constrain_equal(zero_fixed.cell(), zero.cell())?;
 					ctx.next();
 					let assigned_pk_x = self.pk_x.try_map(|v| {
 						let val = ctx.assign_advice(|| "pk_x", config.temp, v);
@@ -209,18 +213,30 @@ impl<
 						ctx.next();
 						val
 					})?;
-					let scale = ctx.assign_fixed(
-						|| "scale",
+					let scale_fixed = ctx.assign_fixed(
+						|| "scale_fixed",
 						config.fixed,
 						Scalar::from_u128(SCALE.pow(NUM_ITER as u32)),
 					)?;
+					let scale = ctx.assign_advice(
+						|| "scale",
+						config.temp,
+						Value::known(Scalar::from_u128(SCALE.pow(NUM_ITER as u32))),
+					)?;
+					ctx.constrain_equal(scale_fixed.cell(), scale.cell())?;
 					ctx.next();
 
-					let assigned_initial_score = ctx.assign_fixed(
+					let initial_score_fixed = ctx.assign_fixed(
 						|| "initial_score",
 						config.fixed,
 						Scalar::from_u128(INITIAL_SCORE),
 					)?;
+					let assigned_initial_score = ctx.assign_advice(
+						|| "initial_score",
+						config.temp,
+						Value::known(Scalar::from_u128(INITIAL_SCORE)),
+					)?;
+					ctx.constrain_equal(initial_score_fixed.cell(), assigned_initial_score.cell())?;
 					ctx.next();
 
 					let assigned_ops = self.ops.try_map(|vs| {
@@ -358,13 +374,8 @@ pub fn native<F: FieldExt, const N: usize, const I: usize, const S: u128>(
 	}
 
 	for i in 0..N {
-		// a = 10
-		// b = 5
-		// b_inv = 1 / b;
-		// a * b_iv
 		let big_scale = F::from_u128(S.pow(I as u32));
 		let big_scale_inv = big_scale.invert().unwrap();
-		// println!("{:?} {:?}", s[i], (s[i] * big_scale_inv) * big_scale);
 		s[i] = s[i] * big_scale_inv;
 		println!("unscaled: {:?}", s[i]);
 	}
@@ -373,7 +384,6 @@ pub fn native<F: FieldExt, const N: usize, const I: usize, const S: u128>(
 	for x in s.iter() {
 		sum += x;
 	}
-
 	println!("sum: {:?}", sum);
 
 	s
@@ -382,8 +392,11 @@ pub fn native<F: FieldExt, const N: usize, const I: usize, const S: u128>(
 #[cfg(test)]
 mod test {
 	use super::*;
-	use crate::eddsa::native::{sign, SecretKey};
-	use halo2wrong::halo2::dev::MockProver;
+	use crate::{
+		eddsa::native::{sign, SecretKey},
+		utils::{generate_params, prove_and_verify},
+	};
+	use halo2wrong::{curves::bn256::Bn256, halo2::dev::MockProver};
 	use rand::thread_rng;
 
 	pub const NUM_ITER: usize = 10;
@@ -448,5 +461,62 @@ mod test {
 		};
 
 		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[test]
+	fn test_closed_graph_circut_prod() {
+		let s: [Scalar; NUM_NEIGHBOURS] = [Scalar::from_u128(INITIAL_SCORE); NUM_NEIGHBOURS];
+		let ops = [
+			[0, 200, 300, 500, 0],
+			[100, 0, 100, 100, 700],
+			[400, 100, 0, 200, 300],
+			[100, 100, 700, 0, 100],
+			[300, 100, 400, 200, 0],
+		]
+		.map(|arr| arr.map(|x| Scalar::from_u128(x)));
+		let res = native::<Scalar, NUM_NEIGHBOURS, NUM_ITER, SCALE>(s, ops);
+
+		let rng = &mut thread_rng();
+		let secret_keys = [(); NUM_NEIGHBOURS].map(|_| SecretKey::random(rng));
+		let pub_keys = secret_keys.clone().map(|x| x.public());
+
+		let pk_x = pub_keys.clone().map(|pk| pk.0.x);
+		let pk_y = pub_keys.clone().map(|pk| pk.0.y);
+		let mut sponge = PoseidonNativeSponge::new();
+		sponge.update(&pk_x);
+		sponge.update(&pk_y);
+		let keys_message_hash = sponge.squeeze();
+
+		let messages = ops.map(|scores| {
+			let mut sponge = PoseidonNativeSponge::new();
+			sponge.update(&scores);
+			let scores_message_hash = sponge.squeeze();
+
+			let m_inputs = [
+				keys_message_hash,
+				scores_message_hash,
+				Scalar::zero(),
+				Scalar::zero(),
+				Scalar::zero(),
+			];
+			let poseidon = PoseidonNativeHasher::new(m_inputs);
+			let res = poseidon.permute()[0];
+			res
+		});
+
+		let signatures = secret_keys
+			.zip(pub_keys.clone())
+			.zip(messages)
+			.map(|((sk, pk), msg)| sign(&sk, &pk, msg));
+
+		let k = 13;
+		let et = EigenTrust::<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, SCALE>::new(
+			pub_keys, signatures, ops, messages,
+		);
+
+		let rng = &mut rand::thread_rng();
+		let params = generate_params(k);
+		let res = prove_and_verify::<Bn256, _, _>(params, et, &[&[], &res], rng).unwrap();
+		assert!(res);
 	}
 }
