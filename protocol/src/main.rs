@@ -67,15 +67,16 @@ use hyper::{
 };
 use manager::{
 	attestation::{Attestation, AttestationData},
-	Manager, INITIAL_SCORE, NUM_ITER, NUM_NEIGHBOURS, SCALE,
+	Manager, Proof, INITIAL_SCORE, NUM_ITER, NUM_NEIGHBOURS, SCALE,
 };
 use once_cell::sync::Lazy;
 use rand::thread_rng;
 use serde::{ser::StdError, Deserialize, Serialize};
-use serde_json::{from_reader, Error as SerdeError, Result as SerdeResult};
+use serde_json::{from_reader, to_string, Error as SerdeError, Result as SerdeResult};
 use std::{
 	collections::HashMap,
 	fmt::{Display, Formatter, Result as FmtResult},
+	mem::drop,
 	net::SocketAddr,
 	sync::{Arc, Mutex, MutexGuard, PoisonError},
 };
@@ -94,7 +95,7 @@ const INTERNAL_SERVER_ERROR: u16 = 500;
 #[derive(Debug)]
 enum ResponseBody {
 	AttestationAddSuccess,
-	Score(f64),
+	Score(Proof),
 	LockError,
 	InvalidQuery,
 	InvalidRequest,
@@ -104,7 +105,7 @@ impl ToString for ResponseBody {
 	fn to_string(&self) -> String {
 		match self {
 			ResponseBody::AttestationAddSuccess => "AttestationAddSuccess".to_string(),
-			ResponseBody::Score(s) => s.to_string(),
+			ResponseBody::Score(proof) => to_string(&proof).unwrap(),
 			ResponseBody::LockError => "LockError".to_string(),
 			ResponseBody::InvalidQuery => "InvalidQuery".to_string(),
 			ResponseBody::InvalidRequest => "InvalidRequest".to_string(),
@@ -201,17 +202,16 @@ async fn handle_request(
 				return Ok(res);
 			}
 			let m = manager.unwrap();
-			let sig_res = m.get_attestation(&query.pk);
-			if sig_res.is_err() {
+			let proof = m.get_proof(query.epoch);
+			if proof.is_err() {
 				let res = Response::builder()
 					.status(BAD_REQUEST)
 					.body(ResponseBody::InvalidQuery.to_string())
 					.unwrap();
 				return Ok(res);
 			}
-			let sig = sig_res.unwrap();
-			let ops_sum: f64 = 0.;
-			let res = Response::new(ResponseBody::Score(ops_sum).to_string());
+			let proof = proof.unwrap();
+			let res = Response::new(ResponseBody::Score(proof).to_string());
 			return Ok(res);
 		},
 		(&Method::POST, "/attestation") => {
@@ -299,6 +299,11 @@ pub async fn main() -> Result<(), EigenError> {
 	let mut inner_interval = time::interval(interval);
 	inner_interval.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
 
+	let mng_store = Arc::clone(&MANAGER_STORE);
+	let mut manager = mng_store.lock().unwrap();
+	manager.generate_initial_attestations();
+	drop(manager);
+
 	loop {
 		select! {
 			res = listener.accept() => {
@@ -306,9 +311,8 @@ pub async fn main() -> Result<(), EigenError> {
 				handle_connection(stream, addr).await;
 			}
 			_res = inner_interval.tick() => {
-				let mng_store = Arc::clone(&MANAGER_STORE);
 				let epoch = Epoch::current_epoch(EPOCH_INTERVAL);
-				handle_epoch_convergence(mng_store, epoch);
+				handle_epoch_convergence(mng_store.clone(), epoch);
 			}
 		};
 	}

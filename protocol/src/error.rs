@@ -16,6 +16,8 @@ pub enum EigenError {
 	ListenError,
 	/// Attestation not found
 	AttestationNotFound,
+	/// Proof not found
+	ProofNotFound,
 	/// Unknown error.
 	Unknown,
 }
@@ -29,6 +31,7 @@ impl From<EigenError> for u8 {
 			EigenError::ConnectionError => 3,
 			EigenError::ListenError => 4,
 			EigenError::AttestationNotFound => 5,
+			EigenError::ProofNotFound => 6,
 			EigenError::Unknown => 255,
 		}
 	}
@@ -43,6 +46,7 @@ impl From<u8> for EigenError {
 			3 => EigenError::ConnectionError,
 			4 => EigenError::ListenError,
 			5 => EigenError::AttestationNotFound,
+			6 => EigenError::ProofNotFound,
 			_ => EigenError::Unknown,
 		}
 	}

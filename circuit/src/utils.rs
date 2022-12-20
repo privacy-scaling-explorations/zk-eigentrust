@@ -2,7 +2,10 @@
 //! proofs, etc.
 
 use halo2wrong::{
-	curves::pairing::{Engine, MultiMillerLoop},
+	curves::{
+		pairing::{Engine, MultiMillerLoop},
+		FieldExt,
+	},
 	halo2::{
 		arithmetic::Field,
 		plonk::{
@@ -23,6 +26,7 @@ use halo2wrong::{
 		},
 	},
 };
+use num_bigint::BigUint;
 use rand::Rng;
 use std::{fmt::Debug, fs::write, io::Read, time::Instant};
 
@@ -38,6 +42,13 @@ pub fn to_short(b: &[u8]) -> [u8; 32] {
 	let mut bytes = [0u8; 32];
 	bytes[..b.len()].copy_from_slice(b);
 	bytes
+}
+
+/// Converts field element to string
+pub fn field_to_string<F: FieldExt>(f: F) -> String {
+	let bytes = f.to_repr();
+	let bn_f = BigUint::from_bytes_le(bytes.as_ref());
+	bn_f.to_string()
 }
 
 /// Generate parameters with polynomial degere = `k`.
