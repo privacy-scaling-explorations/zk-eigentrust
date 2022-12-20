@@ -77,8 +77,8 @@ where
 		}
 		let mut path_vec: Vec<F> = Vec::new();
 		let mut j = value_index;
-		// Childs for a parent node is 2n and 2n - 1.
-		// Reverse is (n / 2) and (n / 2 - 1).
+		// Childs for a parent node is 2n and 2n + 1.
+		// J keeps index of that nodes in reverse order to apply this algorithm.
 
 		for level in 0..self.height {
 			if j % 2 == 1 {
