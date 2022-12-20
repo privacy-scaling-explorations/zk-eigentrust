@@ -25,7 +25,7 @@ impl<F: FieldExt, P> MerkleTree<F, P>
 where
 	P: RoundParams<F, WIDTH>,
 {
-	/// Create a new Merkle Tree with all nodes equal to the zero
+	/// Create a new empty Merkle Tree with given height
 	fn new(height: usize) -> Self {
 		// 0th level is the leaf level and the max level is the root level
 		let mut nodes = HashMap::new();
@@ -79,7 +79,6 @@ where
 		let mut j = value_index;
 		// Childs for a parent node is 2n and 2n + 1.
 		// J keeps index of that nodes in reverse order to apply this algorithm.
-
 		for level in 0..self.height {
 			if j % 2 == 1 {
 				path_vec.push(self.nodes[&level][j - 1]);
@@ -103,7 +102,7 @@ where
 {
 	/// PhantomData for the params
 	_params: PhantomData<P>,
-	/// Based on value for the path
+	/// Value based on for the path
 	value: F,
 	/// Vector that keeps the path
 	path_vec: Vec<F>,
