@@ -10,7 +10,7 @@ pub mod attestation;
 use crate::{
 	epoch::Epoch,
 	error::EigenError,
-	utils::{scalar_from_bs58, to_wide_bytes},
+	utils::{calculate_message_hash, keyset_from_raw, scalar_from_bs58, to_wide_bytes},
 };
 use attestation::Attestation;
 use bs58::decode::Error as Bs58Error;
@@ -114,108 +114,44 @@ impl Manager {
 	}
 
 	pub fn generate_initial_attestations(&mut self) {
-		let mut sks: [Option<SecretKey>; NUM_NEIGHBOURS] = [(); NUM_NEIGHBOURS].map(|_| None);
-		let mut pks: [Option<PublicKey>; NUM_NEIGHBOURS] = [(); NUM_NEIGHBOURS].map(|_| None);
-		for (i, sk_raw) in FIXED_SET.iter().enumerate() {
-			let sk0_raw = bs58::decode(sk_raw[0]).into_vec().unwrap();
-			let sk1_raw = bs58::decode(sk_raw[1]).into_vec().unwrap();
-
-			let mut sk0_bytes: [u8; 32] = [0; 32];
-			sk0_bytes.copy_from_slice(&sk0_raw);
-			let mut sk1_bytes: [u8; 32] = [0; 32];
-			sk1_bytes.copy_from_slice(&sk1_raw);
-
-			let sk = SecretKey::from_raw([sk0_bytes, sk1_bytes]);
-			let pk = sk.public();
-
-			sks[i] = Some(sk);
-			pks[i] = Some(pk);
-		}
-
-		let pks = pks.map(|pk| pk.unwrap());
-		let sks = sks.map(|sk| sk.unwrap());
-
-		let pks_x = pks.clone().map(|pk| pk.0.x);
-		let pks_y = pks.clone().map(|pk| pk.0.y);
-		let mut pk_sponge = PoseidonNativeSponge::new();
-		pk_sponge.update(&pks_x);
-		pk_sponge.update(&pks_y);
-		let pks_hash = pk_sponge.squeeze();
+		let (sks, pks) = keyset_from_raw(FIXED_SET);
 
 		let score = Scalar::from_u128(INITIAL_SCORE / NUM_NEIGHBOURS as u128);
-		let scores = [score; NUM_NEIGHBOURS];
+		let scores = [[score; NUM_NEIGHBOURS]; NUM_NEIGHBOURS];
 
-		for (sk, pk) in sks.zip(pks.clone()) {
-			let mut scores_sponge = PoseidonNativeSponge::new();
-			scores_sponge.update(&scores);
-			let scores_hash = scores_sponge.squeeze();
+		let messages = calculate_message_hash(pks.clone(), scores);
 
-			let final_hash_input =
-				[pks_hash, scores_hash, Scalar::zero(), Scalar::zero(), Scalar::zero()];
-			let final_hash = PoseidonNativeHasher::new(final_hash_input).permute()[0];
-
-			let sig = sign(&sk, &pk, final_hash);
+		for (((sk, pk), msg), scs) in sks.zip(pks.clone()).zip(messages).zip(scores) {
+			let sig = sign(&sk, &pk, msg);
 
 			let pk_hash_inp = [pk.0.x, pk.0.y, Scalar::zero(), Scalar::zero(), Scalar::zero()];
 			let pk_hash = PoseidonNativeHasher::new(pk_hash_inp).permute()[0];
 
-			let att = Attestation::new(sig, pk, pks.clone(), scores);
+			let att = Attestation::new(sig, pk, pks.clone(), scs);
 			self.attestations.insert(pk_hash, att);
 		}
 	}
 
 	pub fn calculate_proofs(&mut self, epoch: Epoch) -> Result<(), EigenError> {
-		let mut pks: [Option<PublicKey>; NUM_NEIGHBOURS] = [(); NUM_NEIGHBOURS].map(|_| None);
-		let mut pk_hashes: [Option<Scalar>; NUM_NEIGHBOURS] = [None; NUM_NEIGHBOURS];
-		for (i, sk_raw) in FIXED_SET.iter().enumerate() {
-			let sk0_raw = bs58::decode(sk_raw[0]).into_vec().unwrap();
-			let sk1_raw = bs58::decode(sk_raw[1]).into_vec().unwrap();
+		let (_, pks) = keyset_from_raw(FIXED_SET);
 
-			let mut sk0_bytes: [u8; 32] = [0; 32];
-			sk0_bytes.copy_from_slice(&sk0_raw);
-			let mut sk1_bytes: [u8; 32] = [0; 32];
-			sk1_bytes.copy_from_slice(&sk1_raw);
-
-			let sk = SecretKey::from_raw([sk0_bytes, sk1_bytes]);
-			let pk = sk.public();
+		let pk_hashes = pks.clone().map(|pk| {
 			let pk_hash_inp = [pk.0.x, pk.0.y, Scalar::zero(), Scalar::zero(), Scalar::zero()];
 			let pk_hash = PoseidonNativeHasher::new(pk_hash_inp).permute()[0];
-			assert!(self.attestations.contains_key(&pk_hash));
-			pks[i] = Some(pk);
-			pk_hashes[i] = Some(pk_hash);
-		}
-
-		let pks = pks.map(|pk| pk.unwrap());
-		let pk_hashes = pk_hashes.map(|pk_h| pk_h.unwrap());
-
-		let pks_x = pks.clone().map(|pk| pk.0.x);
-		let pks_y = pks.clone().map(|pk| pk.0.y);
-		let mut pk_sponge = PoseidonNativeSponge::new();
-		pk_sponge.update(&pks_x);
-		pk_sponge.update(&pks_y);
-		let pks_hash = pk_sponge.squeeze();
+			pk_hash
+		});
 
 		let mut ops = [[Scalar::zero(); NUM_NEIGHBOURS]; NUM_NEIGHBOURS];
 		let mut sigs = [(); NUM_NEIGHBOURS].map(|_| None);
-		let mut messages = [Scalar::zero(); NUM_NEIGHBOURS];
 
 		for (i, pk_hash) in pk_hashes.iter().enumerate() {
 			let att = self.attestations.get(&pk_hash).unwrap();
-
-			let mut scores_sponge = PoseidonNativeSponge::new();
-			scores_sponge.update(&att.scores);
-			let scores_hash = scores_sponge.squeeze();
-
-			let final_hash_input =
-				[pks_hash, scores_hash, Scalar::zero(), Scalar::zero(), Scalar::zero()];
-			let final_hash = PoseidonNativeHasher::new(final_hash_input).permute()[0];
-
 			ops[i] = att.scores;
 			sigs[i] = Some(att.sig.clone());
-			messages[i] = final_hash;
 		}
 
 		let sigs = sigs.map(|s| s.unwrap());
+		let messages = calculate_message_hash(pks.clone(), ops);
 
 		let mut rng = thread_rng();
 		let et = EigenTrust::<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, SCALE>::new(
