@@ -26,21 +26,10 @@ where
 	P: RoundParams<F, WIDTH>,
 {
 	/// Build a MerkleTree from given leaf nodes
-	fn build_tree(mut leaves: Vec<F>) -> Self {
+	fn build_tree(mut leaves: Vec<F>, height: usize) -> Self {
+		assert!(leaves.len() <= pow(2, height));
 		// 0th level is the leaf level and the max level is the root level
 		let mut nodes = HashMap::new();
-		// Calculating height from number of leaves
-		let mut height = leaves.len();
-		for i in 0..height {
-			if height == 1 {
-				height = i;
-				if pow(2, i) < leaves.len() {
-					height += 1;
-				}
-				break;
-			}
-			height /= 2;
-		}
 		// Assign zero to the leaf values if they are empty
 		for i in leaves.len()..pow(2, height) {
 			leaves.push(F::zero());
@@ -155,7 +144,7 @@ mod test {
 			Fr::random(rng.clone()),
 			Fr::random(rng.clone()),
 		];
-		let mut merkle = MerkleTree::<Fr, Params>::build_tree(leaves);
+		let mut merkle = MerkleTree::<Fr, Params>::build_tree(leaves, 4);
 
 		let path = merkle.find_path(value);
 		assert!(path.verify());
@@ -171,7 +160,7 @@ mod test {
 		// Testing build_tree and find_path functions with a small vector
 		let rng = &mut thread_rng();
 		let value = Fr::random(rng.clone());
-		let mut merkle = MerkleTree::<Fr, Params>::build_tree(vec![value]);
+		let mut merkle = MerkleTree::<Fr, Params>::build_tree(vec![value], 0);
 		let path = merkle.find_path(value);
 		assert!(path.verify());
 		// Assert last element of the vector and the root of the tree
