@@ -3,3 +3,4 @@ members = [
 	"protocol",
 	"circuit",
 ]
+default-members = ["protocol"]
