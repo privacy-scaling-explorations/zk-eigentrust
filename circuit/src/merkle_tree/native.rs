@@ -25,35 +25,35 @@ impl<F: FieldExt, P> MerkleTree<F, P>
 where
 	P: RoundParams<F, WIDTH>,
 {
-	/// Create a new empty Merkle Tree with given height
-	fn new(height: usize) -> Self {
+	/// Build a MerkleTree from given leaf nodes
+	fn build_tree(mut leaves: Vec<F>) -> Self {
 		// 0th level is the leaf level and the max level is the root level
 		let mut nodes = HashMap::new();
-		for i in 0..height + 1 {
-			let num_nodes = pow(2, height - i);
-			let nodes_vec = vec![F::zero(); num_nodes];
-			nodes.insert(i, nodes_vec);
+		// Calculating height from number of leaves
+		let mut height = leaves.len();
+		for i in 0..height {
+			if height == 1 {
+				height = i;
+				if pow(2, i) < leaves.len() {
+					height += 1;
+				}
+				break;
+			}
+			height /= 2;
 		}
-		MerkleTree { _params: PhantomData, nodes, height }
-	}
-
-	/// Put values to the given level of the tree
-	fn put_values(&mut self, values: Vec<F>, level: usize) -> &Self {
-		for i in 0..values.len() {
-			self.nodes.get_mut(&level).unwrap()[i] = values[i];
+		// Assign zero to the leaf values if they are empty
+		for i in leaves.len()..pow(2, height) {
+			leaves.push(F::zero());
 		}
-		self
-	}
+		nodes.insert(0, leaves);
 
-	/// Build tree's nodes and the root from given empty tree with only leaves
-	fn build_tree(&mut self) -> &Self {
-		for level in 0..self.height {
+		for level in 0..height {
 			let mut hash = Vec::new();
-			for i in 0..self.nodes[&level].len() {
+			for i in 0..nodes[&level].len() {
 				if i % 2 == 0 {
 					let hasher: Poseidon<F, WIDTH, P> = Poseidon::new([
-						self.nodes[&level][i],
-						self.nodes[&level][i + 1],
+						nodes[&level][i],
+						nodes[&level][i + 1],
 						F::zero(),
 						F::zero(),
 						F::zero(),
@@ -61,22 +61,22 @@ where
 					hash.push(hasher.permute()[0]);
 				}
 			}
-			self.put_values(hash, level + 1);
+			nodes.insert(level + 1, hash);
 		}
-		self
+		MerkleTree { _params: PhantomData, nodes, height }
 	}
 
 	/// Find path for the given value to the root
 	fn find_path(&mut self, value: F) -> Path<F, P> {
-		let mut value_index = 0;
+		let mut value_index = None;
 		for i in 0..self.nodes[&0].len() {
 			if value == self.nodes[&0][i] {
-				value_index = i;
+				value_index = Some(i);
 				break;
 			}
 		}
 		let mut path_vec: Vec<F> = Vec::new();
-		let mut j = value_index;
+		let mut j = value_index.unwrap();
 		// Childs for a parent node is 2n and 2n + 1.
 		// J keeps index of that nodes in reverse order to apply this algorithm.
 		for level in 0..self.height {
@@ -115,7 +115,7 @@ where
 	/// Sanity check for the path vector
 	fn verify(&self) -> bool {
 		let mut is_satisfied = true;
-		for i in 0..self.path_vec.len() - 2 {
+		for i in 0..self.path_vec.len() - 1 {
 			if i % 2 == 0 {
 				let hasher: Poseidon<F, WIDTH, P> = Poseidon::new([
 					self.path_vec[i],
@@ -143,28 +143,38 @@ mod test {
 	fn should_build_tree_and_find_path() {
 		// Testing build_tree and find_path functions
 		let rng = &mut thread_rng();
-		let mut merkle = MerkleTree::<Fr, Params>::new(4);
 		let value = Fr::random(rng.clone());
-		// Test the tree with 9 values while it can take 16
-		merkle.put_values(
-			vec![
-				Fr::random(rng.clone()),
-				Fr::random(rng.clone()),
-				Fr::random(rng.clone()),
-				Fr::random(rng.clone()),
-				Fr::random(rng.clone()),
-				Fr::random(rng.clone()),
-				Fr::random(rng.clone()),
-				Fr::random(rng.clone()),
-				value,
-			],
-			0,
-		);
+		let leaves = vec![
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
+			value,
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
+		];
+		let mut merkle = MerkleTree::<Fr, Params>::build_tree(leaves);
 
-		merkle.build_tree();
 		let path = merkle.find_path(value);
 		assert!(path.verify());
-		// Assert last element of the array and the root of the tree
+		// Assert last element of the vector and the root of the tree
+		assert_eq!(
+			path.path_vec[(2 * merkle.height)],
+			merkle.nodes[&merkle.height][0]
+		);
+	}
+
+	#[test]
+	fn should_build_tree_from_small_vec() {
+		// Testing build_tree and find_path functions with a small vector
+		let rng = &mut thread_rng();
+		let value = Fr::random(rng.clone());
+		let mut merkle = MerkleTree::<Fr, Params>::build_tree(vec![value]);
+		let path = merkle.find_path(value);
+		assert!(path.verify());
+		// Assert last element of the vector and the root of the tree
 		assert_eq!(
 			path.path_vec[(2 * merkle.height)],
 			merkle.nodes[&merkle.height][0]
