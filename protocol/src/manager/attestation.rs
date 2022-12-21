@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use super::NUM_NEIGHBOURS;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+/// Raw data for the attestation
 pub struct AttestationData {
 	sig_r_x: [u8; 32],
 	sig_r_y: [u8; 32],
@@ -30,6 +31,7 @@ impl From<Attestation> for AttestationData {
 }
 
 #[derive(Clone)]
+/// Attestation struct holding the signatures of participants
 pub struct Attestation {
 	pub(crate) sig: Signature,
 	pub(crate) pk: PublicKey,
@@ -38,6 +40,7 @@ pub struct Attestation {
 }
 
 impl Attestation {
+	/// Construct a new attestation for given data
 	pub fn new(
 		sig: Signature, pk: PublicKey, neighbours: [PublicKey; NUM_NEIGHBOURS],
 		scores: [Scalar; NUM_NEIGHBOURS],

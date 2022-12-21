@@ -25,7 +25,7 @@
 #![deny(
 	future_incompatible, nonstandard_style, deprecated, unreachable_code, unreachable_patterns,
 	absolute_paths_not_starting_with_crate, unsafe_code, clippy::panic, clippy::unnecessary_cast,
-	clippy::cast_lossless, clippy::cast_possible_wrap
+	clippy::cast_lossless, clippy::cast_possible_wrap, missing_docs
 )]
 #![warn(trivial_casts)]
 #![forbid(unsafe_code)]
@@ -285,7 +285,7 @@ fn handle_epoch_convergence(arc_manager: Arc<Mutex<Manager>>, epoch: Epoch) {
 }
 
 #[tokio::main]
-pub async fn main() -> Result<(), EigenError> {
+async fn main() -> Result<(), EigenError> {
 	let addr: SocketAddr = ([127, 0, 0, 1], 3000).into();
 
 	let listener = TcpListener::bind(addr).await.map_err(|_| EigenError::ListenError)?;

@@ -36,10 +36,15 @@ use rand::thread_rng;
 use serde::{ser::SerializeStruct, Deserialize, Serialize, Serializer};
 use std::collections::HashMap;
 
+/// Number of iterations to run the eigen trust algorithm
 pub const NUM_ITER: usize = 10;
+/// Numbers of participants
 pub const NUM_NEIGHBOURS: usize = 5;
+/// Initial score for each participant before the algorithms is run
 pub const INITIAL_SCORE: u128 = 1000;
+/// Scale for the scores to be computed inside the ZK circuit
 pub const SCALE: u128 = 1000;
+/// Temporary fixed set of participants
 pub const FIXED_SET: [[&str; 2]; NUM_NEIGHBOURS] = [
 	[
 		"2L9bbXNEayuRMMbrWFynPtgkrXH1iBdfryRH9Soa8M67",
@@ -62,6 +67,7 @@ pub const FIXED_SET: [[&str; 2]; NUM_NEIGHBOURS] = [
 		"ArT8Kk13Heai2UPbMbrqs3RuVm4XXFN2pVHttUnKpDoV",
 	],
 ];
+/// Public key hashes of all participants
 pub const PUBLIC_KEYS: [&str; NUM_NEIGHBOURS] = [
 	"92tZdMN2SjXbT9byaHHt7hDDNXUphjwRt5UB3LDbgSmR",
 	"8uFaYMkkACmnUBRZyA9JbWVjP1KN1BA53wcfKHhGE3kg",
@@ -71,6 +77,7 @@ pub const PUBLIC_KEYS: [&str; NUM_NEIGHBOURS] = [
 ];
 
 #[derive(Debug, Clone)]
+/// Structure for holding the ZK proof and public inputs needed for verification
 pub struct Proof {
 	pub(crate) pub_ins: [Scalar; NUM_NEIGHBOURS],
 	pub(crate) proof: Vec<u8>,
@@ -108,18 +115,23 @@ impl Manager {
 		}
 	}
 
+	/// Add a new attestation into the cache, by first calculating the hash of
+	/// the proving key
 	pub fn add_attestation(&mut self, sig: Attestation) {
 		let pk_hash_inp = [sig.pk.0.x, sig.pk.0.y, Scalar::zero(), Scalar::zero(), Scalar::zero()];
 		let res = PoseidonNativeHasher::new(pk_hash_inp).permute()[0];
 		self.attestations.insert(res, sig);
 	}
 
+	/// Get the attestation cached under the hash of the public key
 	pub fn get_attestation(&self, pk: &PublicKey) -> Result<&Attestation, EigenError> {
 		let pk_hash_inp = [pk.0.x, pk.0.y, Scalar::zero(), Scalar::zero(), Scalar::zero()];
 		let res = PoseidonNativeHasher::new(pk_hash_inp).permute()[0];
 		self.attestations.get(&res).ok_or(EigenError::AttestationNotFound)
 	}
 
+	/// Generate initial attestations, since the circuit requires scores from
+	/// all participants in the fixed set
 	pub fn generate_initial_attestations(&mut self) {
 		let (sks, pks) = keyset_from_raw(FIXED_SET);
 
@@ -139,6 +151,7 @@ impl Manager {
 		}
 	}
 
+	/// Calculate the scores for the given epoch, and cache the ZK proof of them
 	pub fn calculate_proofs(&mut self, epoch: Epoch) -> Result<(), EigenError> {
 		let (_, pks) = keyset_from_raw(FIXED_SET);
 
@@ -198,6 +211,7 @@ impl Manager {
 		Ok(())
 	}
 
+	/// Query the proof for a given epoch
 	pub fn get_proof(&self, epoch: Epoch) -> Result<Proof, EigenError> {
 		self.cached_proofs.get(&epoch).ok_or(EigenError::ProofNotFound).cloned()
 	}

@@ -24,11 +24,13 @@ pub fn to_wide_bytes(p: &[u8]) -> [u8; 64] {
 	res
 }
 
+/// Construct a Scalar value from bs58 string
 pub fn scalar_from_bs58(key: &str) -> Scalar {
 	let bytes = &bs58::decode(key).into_vec().unwrap();
 	Scalar::from_bytes_wide(&to_wide_bytes(bytes))
 }
 
+/// Construct the secret keys and public keys from the given raw data
 pub fn keyset_from_raw<const N: usize>(
 	sks_raw: [[&str; 2]; N],
 ) -> ([SecretKey; N], [PublicKey; N]) {
@@ -56,6 +58,7 @@ pub fn keyset_from_raw<const N: usize>(
 	(sks, pks)
 }
 
+/// Calculate message hashes from given public keys and scores
 pub fn calculate_message_hash<const N: usize, const S: usize>(
 	pks: [PublicKey; N], scores: [[Scalar; N]; S],
 ) -> [Scalar; S] {
