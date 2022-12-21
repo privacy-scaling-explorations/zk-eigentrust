@@ -75,7 +75,6 @@ impl Serialize for Proof {
 		S: Serializer,
 	{
 		let values = self.pub_ins.map(|x| field_to_string(x));
-		// 3 is the number of fields in the struct.
 		let mut state = serializer.serialize_struct("Proof", 2)?;
 		state.serialize_field("pub_ins", &values)?;
 		state.serialize_field("proof", &self.proof)?;
@@ -272,7 +271,7 @@ mod test {
 		let params = ParamsKZG::new(13);
 		let random_circuit =
 			EigenTrust::<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, SCALE>::random(&mut rng);
-		let proving_key = keygen(&params, &random_circuit).unwrap();
+		let proving_key = keygen(&params, random_circuit).unwrap();
 
 		let mut manager = Manager::new(params, proving_key);
 

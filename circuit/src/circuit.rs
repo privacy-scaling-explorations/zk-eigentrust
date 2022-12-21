@@ -45,6 +45,7 @@ pub struct EigenTrustConfig {
 	instance: Column<Instance>,
 }
 
+#[derive(Clone)]
 pub struct EigenTrust<
 	const NUM_NEIGHBOURS: usize,
 	const NUM_ITER: usize,

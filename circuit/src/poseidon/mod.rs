@@ -353,6 +353,7 @@ mod test {
 		results: Column<Instance>,
 	}
 
+	#[derive(Clone)]
 	struct PoseidonTester {
 		inputs: [Value<Fr>; 5],
 	}

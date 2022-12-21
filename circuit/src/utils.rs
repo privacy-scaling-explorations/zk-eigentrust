@@ -73,10 +73,10 @@ pub fn read_params<E: MultiMillerLoop + Debug>(path: &str) -> ParamsKZG<E> {
 
 /// Proving/verifying key generation.
 pub fn keygen<E: MultiMillerLoop + Debug, C: Circuit<E::Scalar>>(
-	params: &ParamsKZG<E>, circuit: &C,
+	params: &ParamsKZG<E>, circuit: C,
 ) -> Result<ProvingKey<<E as Engine>::G1Affine>, Error> {
-	let vk = keygen_vk::<<E as Engine>::G1Affine, ParamsKZG<E>, _>(params, circuit)?;
-	let pk = keygen_pk::<<E as Engine>::G1Affine, ParamsKZG<E>, _>(params, vk, circuit)?;
+	let vk = keygen_vk::<<E as Engine>::G1Affine, ParamsKZG<E>, _>(params, &circuit)?;
+	let pk = keygen_pk::<<E as Engine>::G1Affine, ParamsKZG<E>, _>(params, vk, &circuit)?;
 
 	Ok(pk)
 }
@@ -132,11 +132,15 @@ pub fn verify<E: MultiMillerLoop + Debug>(
 }
 
 /// Helper function for doing proof and verification at the same time.
-pub fn prove_and_verify<E: MultiMillerLoop + Debug, C: Circuit<E::Scalar>, R: Rng + Clone>(
+pub fn prove_and_verify<
+	E: MultiMillerLoop + Debug,
+	C: Circuit<E::Scalar> + Clone,
+	R: Rng + Clone,
+>(
 	params: ParamsKZG<E>, circuit: C,
 	pub_inps: &[&[<KZGCommitmentScheme<E> as CommitmentScheme>::Scalar]], rng: &mut R,
 ) -> Result<bool, Error> {
-	let pk = keygen(&params, &circuit)?;
+	let pk = keygen(&params, circuit.clone())?;
 	let start = Instant::now();
 	let proof = prove(&params, circuit, pub_inps, &pk, rng)?;
 	let end = start.elapsed();
