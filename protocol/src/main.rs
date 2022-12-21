@@ -47,11 +47,15 @@ use eigen_trust_circuit::{
 	circuit::EigenTrust,
 	eddsa::native::PublicKey,
 	halo2wrong::{
-		curves::{bn256::Bn256, group::ff::PrimeField, FieldExt},
+		curves::{
+			bn256::{Bn256, Fr as Scalar},
+			group::ff::PrimeField,
+			FieldExt,
+		},
 		halo2::poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
 	},
 	params::poseidon_bn254_5x5::Params,
-	utils::{keygen, to_wide},
+	utils::{keygen, to_short, to_wide},
 };
 use epoch::Epoch;
 use error::EigenError;
@@ -110,7 +114,7 @@ impl ToString for ResponseBody {
 }
 
 struct Query {
-	pk: PublicKey,
+	pk: Scalar,
 	epoch: Epoch,
 }
 
@@ -140,12 +144,8 @@ impl Query {
 		if pk_bytes.is_err() {
 			return None;
 		}
-		let pk_bytes = to_wide(&pk_bytes.unwrap());
-		let mut pk0 = [0; 32];
-		pk0.copy_from_slice(&pk_bytes[..32]);
-		let mut pk1 = [0; 32];
-		pk1.copy_from_slice(&pk_bytes[32..]);
-		let pk_scalar = PublicKey::from_raw([pk0, pk1]);
+		let pk_bytes = to_short(&pk_bytes.unwrap());
+		let pk_scalar = Scalar::from_repr(pk_bytes).unwrap();
 		let epoch_res: Result<u64, _> = epoch.unwrap().parse();
 		if epoch_res.is_err() {
 			return None;
@@ -200,6 +200,7 @@ async fn handle_request(
 			let m = manager.unwrap();
 			let proof = m.get_proof(query.epoch);
 			if proof.is_err() {
+				println!("{:?}", proof.err().unwrap());
 				let res = Response::builder()
 					.status(BAD_REQUEST)
 					.body(ResponseBody::InvalidQuery.to_string())
@@ -423,7 +424,29 @@ mod test {
 	}
 
 	#[tokio::test]
-	async fn should_query_score() {}
+	async fn should_query_score() {
+		let mut rng = thread_rng();
+		let params = ParamsKZG::new(13);
+		let random_circuit =
+			EigenTrust::<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, SCALE>::random(&mut rng);
+		let proving_key = keygen(&params, random_circuit).unwrap();
+
+		let mut manager = Manager::new(params, proving_key);
+		manager.generate_initial_attestations();
+		let epoch = Epoch(0);
+		manager.calculate_proofs(epoch).unwrap();
+		let real_proof = manager.get_proof(epoch).unwrap();
+		let arc_manager = Arc::new(Mutex::new(manager));
+
+		let req = Request::get(Uri::from_static(
+			"http://localhost:3000/score?pk=92tZdMN2SjXbT9byaHHt7hDDNXUphjwRt5UB3LDbgSmR&epoch=0",
+		))
+		.body(Body::default())
+		.unwrap();
+
+		let res = handle_request(req, arc_manager).await.unwrap();
+		assert_eq!(*res.body(), to_string(&real_proof).unwrap());
+	}
 
 	#[tokio::test]
 	async fn should_fail_attestation_add_with_invalid_data() {

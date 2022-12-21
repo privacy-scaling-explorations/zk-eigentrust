@@ -62,6 +62,13 @@ pub const FIXED_SET: [[&str; 2]; NUM_NEIGHBOURS] = [
 		"ArT8Kk13Heai2UPbMbrqs3RuVm4XXFN2pVHttUnKpDoV",
 	],
 ];
+pub const PUBLIC_KEYS: [&str; NUM_NEIGHBOURS] = [
+	"92tZdMN2SjXbT9byaHHt7hDDNXUphjwRt5UB3LDbgSmR",
+	"8uFaYMkkACmnUBRZyA9JbWVjP1KN1BA53wcfKHhGE3kg",
+	"DqVjJk7pBjnLXGVsCdD8SVQZLF3SZyypCB6SBJobwUMc",
+	"tbXeMMQDSs3XuKUJuzJyU2jTzr66iWtHaMb2eKiqUFM",
+	"Gz4dAnn3ex5Pq2vZQyJ94EqDdxpFaY74GJDFuuALvD6b",
+];
 
 #[derive(Debug, Clone)]
 pub struct Proof {
