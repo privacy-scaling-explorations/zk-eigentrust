@@ -47,11 +47,7 @@ use eigen_trust_circuit::{
 	circuit::EigenTrust,
 	eddsa::native::PublicKey,
 	halo2wrong::{
-		curves::{
-			bn256::{Bn256, Fr as Bn265Scalar},
-			group::ff::PrimeField,
-			FieldExt,
-		},
+		curves::{bn256::Bn256, group::ff::PrimeField, FieldExt},
 		halo2::poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
 	},
 	params::poseidon_bn254_5x5::Params,
@@ -321,7 +317,11 @@ pub async fn main() -> Result<(), EigenError> {
 #[cfg(test)]
 mod test {
 	use super::*;
+	use crate::utils::{calculate_message_hash, keyset_from_raw};
+	use eigen_trust_circuit::{eddsa::native::sign, halo2wrong::curves::bn256::Fr as Scalar};
 	use hyper::Uri;
+	use manager::FIXED_SET;
+	use serde_json::to_vec;
 
 	#[tokio::test]
 	async fn should_fail_without_query() {
@@ -436,26 +436,48 @@ mod test {
 		let manager = Manager::new(params, proving_key);
 		let arc_manager = Arc::new(Mutex::new(manager));
 
-		// let sk = scalar_from_bs58(SK_KEY1);
-		// let pk = generate_pk_from_sk(sk);
-		// let neighbours = [None; MAX_NEIGHBORS];
-		// let scores = [None; MAX_NEIGHBORS];
-		// let attestation = Attestation::new(sk, pk, neighbours, scores);
-		// let attestation_data: AttestationData = attestation.into();
-		// let mut signature_bytes = to_vec(&signature_data).unwrap();
-		// // Remove some bytes
-		// signature_bytes.drain(..10);
+		let (sks, pks) = keyset_from_raw(FIXED_SET);
+		let scores = [Scalar::from_u128(INITIAL_SCORE / NUM_NEIGHBOURS as u128); NUM_NEIGHBOURS];
+		let message_hash = calculate_message_hash(pks.clone(), [scores]);
+		let sig = sign(&sks[0], &pks[0], message_hash[0]);
+		let attestation = Attestation::new(sig, pks[0].clone(), pks, scores);
+		let attestation_data: AttestationData = attestation.into();
+		let mut attestation_bytes = to_vec(&attestation_data).unwrap();
+		// Remove some bytes
+		attestation_bytes.drain(..10);
 
-		// let req = Request::post(Uri::from_static("http://localhost:3000/signature"))
-		// 	.body(Body::from(signature_bytes))
-		// 	.unwrap();
+		let req = Request::post(Uri::from_static("http://localhost:3000/attestation"))
+			.body(Body::from(attestation_bytes))
+			.unwrap();
 
-		// let arc_manager = Arc::new(Mutex::new(manager));
-
-		// let res = handle_request(req, arc_manager).await.unwrap();
-		// assert_eq!(*res.body(), ResponseBody::InvalidRequest.to_string());
+		let res = handle_request(req, arc_manager).await.unwrap();
+		assert_eq!(*res.body(), ResponseBody::InvalidRequest.to_string());
 	}
 
 	#[tokio::test]
-	async fn should_add_attestation() {}
+	async fn should_add_attestation() {
+		let mut rng = thread_rng();
+		let params = ParamsKZG::new(13);
+		let random_circuit =
+			EigenTrust::<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, SCALE>::random(&mut rng);
+		let proving_key = keygen(&params, random_circuit).unwrap();
+
+		let manager = Manager::new(params, proving_key);
+		let arc_manager = Arc::new(Mutex::new(manager));
+
+		let (sks, pks) = keyset_from_raw(FIXED_SET);
+		let scores = [Scalar::from_u128(INITIAL_SCORE / NUM_NEIGHBOURS as u128); NUM_NEIGHBOURS];
+		let message_hash = calculate_message_hash(pks.clone(), [scores]);
+		let sig = sign(&sks[0], &pks[0], message_hash[0]);
+		let attestation = Attestation::new(sig, pks[0].clone(), pks, scores);
+		let attestation_data: AttestationData = attestation.into();
+		let mut attestation_bytes = to_vec(&attestation_data).unwrap();
+
+		let req = Request::post(Uri::from_static("http://localhost:3000/attestation"))
+			.body(Body::from(attestation_bytes))
+			.unwrap();
+
+		let res = handle_request(req, arc_manager).await.unwrap();
+		assert_eq!(*res.body(), ResponseBody::AttestationAddSuccess.to_string());
+	}
 }
