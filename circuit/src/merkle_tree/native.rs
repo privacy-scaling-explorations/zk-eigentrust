@@ -13,19 +13,19 @@ struct MerkleTree<F: FieldExt, P>
 where
 	P: RoundParams<F, WIDTH>,
 {
-	/// PhantomData for the params
-	_params: PhantomData<P>,
-	/// Variables with level and value to represent nodes
+	/// HashMap to keep the level and index of the nodes
 	nodes: HashMap<usize, Vec<F>>,
 	/// Height of the tree
 	height: usize,
+	/// PhantomData for the params
+	_params: PhantomData<P>,
 }
 
 impl<F: FieldExt, P> MerkleTree<F, P>
 where
 	P: RoundParams<F, WIDTH>,
 {
-	/// Build a MerkleTree from given leaf nodes
+	/// Build a MerkleTree from given leaf nodes and height
 	fn build_tree(mut leaves: Vec<F>, height: usize) -> Self {
 		assert!(leaves.len() <= pow(2, height));
 		// 0th level is the leaf level and the max level is the root level
@@ -37,46 +37,40 @@ where
 		nodes.insert(0, leaves);
 
 		for level in 0..height {
-			let mut hash = Vec::new();
+			let mut hashes = Vec::new();
 			for i in 0..nodes[&level].len() {
-				if i % 2 == 0 {
-					let hasher: Poseidon<F, WIDTH, P> = Poseidon::new([
-						nodes[&level][i],
-						nodes[&level][i + 1],
-						F::zero(),
-						F::zero(),
-						F::zero(),
-					]);
-					hash.push(hasher.permute()[0]);
+				if i % 2 != 0 {
+					continue;
 				}
+				let pos_inputs =
+					[nodes[&level][i], nodes[&level][i + 1], F::zero(), F::zero(), F::zero()];
+				let hasher: Poseidon<F, WIDTH, P> = Poseidon::new(pos_inputs);
+				hashes.push(hasher.permute()[0]);
 			}
-			nodes.insert(level + 1, hash);
+			nodes.insert(level + 1, hashes);
 		}
-		MerkleTree { _params: PhantomData, nodes, height }
+		MerkleTree { nodes, height, _params: PhantomData }
 	}
 
 	/// Find path for the given value to the root
 	fn find_path(&mut self, value: F) -> Path<F, P> {
-		let mut value_index = None;
-		for i in 0..self.nodes[&0].len() {
-			if value == self.nodes[&0][i] {
-				value_index = Some(i);
-				break;
-			}
-		}
+		//
+		// TODO: This way of finding index will fail if we have same inputs
+		//
+		let mut value_index = self.nodes[&0].iter().position(|x| x == &value).unwrap();
 		let mut path_vec: Vec<F> = Vec::new();
-		let mut j = value_index.unwrap();
 		// Childs for a parent node is 2n and 2n + 1.
-		// J keeps index of that nodes in reverse order to apply this algorithm.
+		// value_index keeps index of that nodes in reverse order to apply this
+		// algorithm.
 		for level in 0..self.height {
-			if j % 2 == 1 {
-				path_vec.push(self.nodes[&level][j - 1]);
-				path_vec.push(self.nodes[&level][j]);
+			if value_index % 2 == 1 {
+				path_vec.push(self.nodes[&level][value_index - 1]);
+				path_vec.push(self.nodes[&level][value_index]);
 			} else {
-				path_vec.push(self.nodes[&level][j]);
-				path_vec.push(self.nodes[&level][j + 1]);
+				path_vec.push(self.nodes[&level][value_index]);
+				path_vec.push(self.nodes[&level][value_index + 1]);
 			}
-			j = j / 2;
+			value_index = value_index / 2;
 		}
 		path_vec.push(self.nodes[&self.height][0]);
 		Path { path_vec, value, _params: PhantomData }
@@ -89,12 +83,12 @@ struct Path<F: FieldExt, P>
 where
 	P: RoundParams<F, WIDTH>,
 {
-	/// PhantomData for the params
-	_params: PhantomData<P>,
-	/// Value based on for the path
+	/// Value that is based on for construction of the path
 	value: F,
 	/// Vector that keeps the path
 	path_vec: Vec<F>,
+	/// PhantomData for the params
+	_params: PhantomData<P>,
 }
 
 impl<F: FieldExt, P> Path<F, P>
@@ -105,16 +99,13 @@ where
 	fn verify(&self) -> bool {
 		let mut is_satisfied = true;
 		for i in 0..self.path_vec.len() - 1 {
-			if i % 2 == 0 {
-				let hasher: Poseidon<F, WIDTH, P> = Poseidon::new([
-					self.path_vec[i],
-					self.path_vec[i + 1],
-					F::zero(),
-					F::zero(),
-					F::zero(),
-				]);
-				is_satisfied = is_satisfied | self.path_vec.contains(&(hasher.permute()[0]));
+			if i % 2 != 0 {
+				continue;
 			}
+			let pos_inputs =
+				[self.path_vec[i], self.path_vec[i + 1], F::zero(), F::zero(), F::zero()];
+			let hasher: Poseidon<F, WIDTH, P> = Poseidon::new(pos_inputs);
+			is_satisfied = is_satisfied | self.path_vec.contains(&(hasher.permute()[0]));
 		}
 		is_satisfied
 	}
