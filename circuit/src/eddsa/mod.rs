@@ -13,10 +13,8 @@ use crate::{
 use halo2wrong::{
 	curves::FieldExt,
 	halo2::{
-		arithmetic::Field,
-		circuit::{AssignedCell, Layouter, Region, Value},
-		plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
-		poly::Rotation,
+		circuit::{AssignedCell, Layouter, Region},
+		plonk::{Advice, Column, ConstraintSystem, Error},
 	},
 };
 use std::marker::PhantomData;

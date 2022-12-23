@@ -53,9 +53,9 @@ impl<F: FieldExt, const N: usize> FixedSetChip<F, N> {
 		meta.enable_constant(fixed);
 
 		meta.create_gate("fixed_set_membership", |v_cells| {
-			let target_exp = v_cells.query_advice(target, Rotation::cur());
+			let _target_exp = v_cells.query_advice(target, Rotation::cur());
 
-			let item_exp = v_cells.query_fixed(items, Rotation::cur());
+			let _item_exp = v_cells.query_fixed(items, Rotation::cur());
 			let diff_exp = v_cells.query_advice(diffs, Rotation::cur());
 
 			let product_exp = v_cells.query_advice(product, Rotation::cur());

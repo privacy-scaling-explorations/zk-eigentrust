@@ -7,7 +7,6 @@ use halo2wrong::{
 		FieldExt,
 	},
 	halo2::{
-		arithmetic::Field,
 		plonk::{
 			create_proof, keygen_pk, keygen_vk, verify_proof, Circuit, Error, ProvingKey,
 			VerifyingKey,

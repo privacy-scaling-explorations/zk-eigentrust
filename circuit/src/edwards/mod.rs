@@ -7,7 +7,6 @@ use crate::gadgets::bits2num::{Bits2NumChip, Bits2NumConfig};
 use halo2wrong::{
 	curves::FieldExt,
 	halo2::{
-		arithmetic::Field,
 		circuit::{AssignedCell, Layouter, Region, Value},
 		plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
 		poly::Rotation,

@@ -6,8 +6,8 @@ use crate::{
 		EddsaChip, EddsaConfig,
 	},
 	edwards::params::{BabyJubJub, EdwardsParams},
-	gadgets::{bits2num::to_bits, common::CommonChip, lt_eq::N_SHIFTED},
-	params::{poseidon_bn254_5x5::Params, RoundParams},
+	gadgets::{bits2num::to_bits, lt_eq::N_SHIFTED},
+	params::poseidon_bn254_5x5::Params,
 	poseidon::{
 		native::{sponge::PoseidonSponge, Poseidon},
 		sponge::{PoseidonSpongeChip, PoseidonSpongeConfig},
@@ -25,7 +25,6 @@ use halo2wrong::{
 };
 use maingate::{MainGate, MainGateConfig, MainGateInstructions};
 use rand::Rng;
-use std::marker::PhantomData;
 
 pub type PoseidonNativeHasher = Poseidon<Scalar, 5, Params>;
 pub type PoseidonNativeSponge = PoseidonSponge<Scalar, 5, Params>;
@@ -180,7 +179,7 @@ impl<
 		let (zero, pk_x, pk_y, big_r_x, big_r_y, s, scale, ops, init_score) = layouter
 			.assign_region(
 				|| "temp",
-				|mut region: Region<'_, Scalar>| {
+				|region: Region<'_, Scalar>| {
 					let mut ctx = RegionCtx::new(region, 0);
 					let zero_fixed =
 						ctx.assign_fixed(|| "zero_fixed", config.fixed, Scalar::zero())?;
@@ -294,13 +293,13 @@ impl<
 
 		let final_s = layouter.assign_region(
 			|| "eigen_trust_algo",
-			|mut region: Region<'_, Scalar>| {
+			|region: Region<'_, Scalar>| {
 				let ctx = &mut RegionCtx::new(region, 0);
 				let maingate = MainGate::new(config.maingate.clone());
 
 				let mut s = [(); NUM_NEIGHBOURS].map(|_| init_score.clone());
 
-				for iter in 0..NUM_ITER {
+				for _ in 0..NUM_ITER {
 					let mut distributions =
 						[[(); NUM_NEIGHBOURS]; NUM_NEIGHBOURS].map(|arr| arr.map(|_| zero.clone()));
 					for j in 0..NUM_NEIGHBOURS {
@@ -357,7 +356,7 @@ impl<
 pub fn native<F: FieldExt, const N: usize, const I: usize, const S: u128>(
 	mut s: [F; N], ops: [[F; N]; N],
 ) -> [F; N] {
-	for i in 0..I {
+	for _ in 0..I {
 		let mut distributions: [[F; N]; N] = [[F::zero(); N]; N];
 		for j in 0..N {
 			distributions[j] = ops[j].map(|v| v * s[j]);
