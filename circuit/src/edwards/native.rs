@@ -1,7 +1,6 @@
-use std::marker::PhantomData;
-
 use super::params::EdwardsParams;
 use halo2wrong::curves::FieldExt;
+use std::marker::PhantomData;
 
 #[derive(Clone, Copy, Debug)]
 /// Constructs PointProjective objects.

@@ -175,6 +175,11 @@ where
 
 #[cfg(test)]
 mod test {
+	use super::EcPoint;
+	use crate::integer::{
+		native::Integer,
+		rns::{big_to_fe, fe_to_big, Bn256_4_68},
+	};
 	use halo2wrong::{
 		curves::{
 			bn256::{Fq, Fr, G1Affine},
@@ -182,15 +187,7 @@ mod test {
 		},
 		halo2::arithmetic::Field,
 	};
-
 	use rand::thread_rng;
-
-	use crate::integer::{
-		native::Integer,
-		rns::{big_to_fe, fe_to_big, Bn256_4_68},
-	};
-
-	use super::EcPoint;
 
 	#[test]
 	fn should_add_two_points() {

@@ -91,8 +91,6 @@ impl<F: FieldExt, const S: usize> SumChip<F, S> {
 
 #[cfg(test)]
 mod test {
-	use std::usize;
-
 	use super::*;
 	use crate::utils::{generate_params, prove_and_verify};
 	use halo2wrong::{
@@ -104,6 +102,7 @@ mod test {
 			plonk::{Circuit, Instance},
 		},
 	};
+	use std::usize;
 
 	#[derive(Clone)]
 	struct TestConfig {

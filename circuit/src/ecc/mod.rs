@@ -617,8 +617,7 @@ where
 
 #[cfg(test)]
 mod test {
-	use std::str::FromStr;
-
+	use super::{EccChip, EccConfig};
 	use crate::{
 		ecc::native::EcPoint,
 		integer::{
@@ -638,8 +637,7 @@ mod test {
 		},
 	};
 	use num_bigint::BigUint;
-
-	use super::{EccChip, EccConfig};
+	use std::str::FromStr;
 
 	#[derive(Clone)]
 	enum Gadgets {

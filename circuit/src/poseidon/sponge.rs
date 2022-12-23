@@ -1,5 +1,3 @@
-use std::marker::PhantomData;
-
 use crate::{
 	params::RoundParams,
 	poseidon::{PoseidonChip, PoseidonConfig},
@@ -10,6 +8,7 @@ use halo2wrong::halo2::{
 	plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
 	poly::Rotation,
 };
+use std::marker::PhantomData;
 
 #[derive(Clone, Debug)]
 /// Configuration elements for the circuit are defined here.

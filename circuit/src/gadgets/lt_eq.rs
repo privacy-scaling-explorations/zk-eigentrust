@@ -1,5 +1,3 @@
-use std::vec;
-
 use crate::utils::to_wide;
 use halo2wrong::halo2::{
 	arithmetic::FieldExt,
@@ -7,6 +5,7 @@ use halo2wrong::halo2::{
 	plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
 	poly::Rotation,
 };
+use std::vec;
 
 use super::{
 	bits2num::{Bits2NumChip, Bits2NumConfig},
