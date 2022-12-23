@@ -331,10 +331,10 @@ where
 
 #[cfg(test)]
 mod test {
+	use super::*;
 	use crate::{
 		params::{hex_to_field, poseidon_bn254_5x5::Params},
 		utils::{generate_params, prove_and_verify},
-		*,
 	};
 	use halo2wrong::{
 		curves::bn256::{Bn256, Fr},
