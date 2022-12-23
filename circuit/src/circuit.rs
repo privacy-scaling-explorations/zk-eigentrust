@@ -13,7 +13,6 @@ use crate::{
 		sponge::{PoseidonSpongeChip, PoseidonSpongeConfig},
 		PoseidonChip,
 	},
-	CommonConfig, PoseidonConfig,
 };
 use halo2wrong::{
 	curves::{bn256::Fr as Scalar, FieldExt},
