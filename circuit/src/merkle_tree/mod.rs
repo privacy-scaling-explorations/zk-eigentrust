@@ -78,23 +78,23 @@ where
 			]);
 			let hashes =
 				pos.synthesize(&config.poseidon.clone(), layouter.namespace(|| "poseidon"))?;
-			let mut is_inside: Option<FixedSetChip<F, 2>> = None;
+			let mut set: Option<FixedSetChip<F, 2>> = None;
 			// When iteration reaches to the root's children this if will trigger and it
 			// will check path_vec has the root inside the set or not. If yes it
 			// will assign the root value and the function will return it.
 			if i == path_vec.len() - 3 {
-				is_inside = Some(FixedSetChip::<F, 2>::new(
+				set = Some(FixedSetChip::<F, 2>::new(
 					[path_vec[i + 2], F::zero()],
 					hashes[0].clone(),
 				));
 				root = Some(hashes[0].clone());
 			} else {
-				is_inside = Some(FixedSetChip::<F, 2>::new(
+				set = Some(FixedSetChip::<F, 2>::new(
 					[path_vec[i + 2], path_vec[i + 3]],
 					hashes[0].clone(),
 				));
 			}
-			let is_inside_bool = is_inside
+			let is_inside = set
 				.unwrap()
 				.synthesize(config.set.clone(), layouter.namespace(|| "is_inside_set"))?;
 			// Enforce equality.
@@ -103,7 +103,7 @@ where
 				|| "enforce_equality",
 				|mut region: Region<'_, F>| {
 					let is_inside_copied =
-						is_inside_bool.copy_advice(|| "is_inside", &mut region, config.temp, 0)?;
+						is_inside.copy_advice(|| "is_inside", &mut region, config.temp, 0)?;
 					region.constrain_constant(is_inside_copied.cell(), F::one())?;
 					Ok(())
 				},
@@ -257,9 +257,9 @@ mod test {
 			Fr::random(rng.clone()),
 			Fr::random(rng.clone()),
 		];
-		let mut merkle = MerkleTree::<Fr, Params>::build_tree(leaves, 8);
+		let mut merkle = MerkleTree::<Fr, Params>::build_tree(leaves, 5);
 		let path = merkle.find_path(value);
-		let test_chip = TestCircuit::<Fr, 17, Params>::new(path.path_vec);
+		let test_chip = TestCircuit::<Fr, 11, Params>::new(path.path_vec);
 		let k = 10;
 		let pub_ins = vec![merkle.root];
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
