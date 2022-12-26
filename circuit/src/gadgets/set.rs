@@ -1,5 +1,5 @@
 use super::common::{CommonChip, CommonConfig};
-use halo2wrong::halo2::{
+use halo2::{
 	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region, Value},
 	plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Selector},
@@ -142,14 +142,12 @@ impl<F: FieldExt, const N: usize> FixedSetChip<F, N> {
 mod test {
 	use super::*;
 	use crate::utils::{generate_params, prove_and_verify};
-	use halo2wrong::{
-		curves::bn256::{Bn256, Fr},
-		halo2::{
-			arithmetic::Field,
-			circuit::{SimpleFloorPlanner, Value},
-			dev::MockProver,
-			plonk::{Circuit, Instance},
-		},
+	use halo2::{
+		arithmetic::Field,
+		circuit::{SimpleFloorPlanner, Value},
+		dev::MockProver,
+		halo2curves::bn256::{Bn256, Fr},
+		plonk::{Circuit, Instance},
 	};
 
 	#[derive(Clone)]

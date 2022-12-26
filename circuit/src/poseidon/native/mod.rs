@@ -2,7 +2,7 @@
 pub mod sponge;
 
 use crate::params::RoundParams;
-use halo2wrong::halo2::arithmetic::FieldExt;
+use halo2::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 /// Constructs objects.
@@ -102,7 +102,7 @@ where
 mod test {
 	use super::*;
 	use crate::params::{hex_to_field, poseidon_bn254_5x5::Params};
-	use halo2wrong::curves::bn256::Fr;
+	use halo2::halo2curves::bn256::Fr;
 
 	type TestPoseidon = Poseidon<Fr, 5, Params>;
 

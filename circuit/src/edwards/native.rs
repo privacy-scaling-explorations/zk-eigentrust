@@ -1,5 +1,5 @@
 use super::params::EdwardsParams;
-use halo2wrong::curves::FieldExt;
+use halo2::halo2curves::FieldExt;
 use std::marker::PhantomData;
 
 #[derive(Clone, Copy, Debug)]
@@ -98,7 +98,7 @@ pub fn test_bit(b: &[u8], i: usize) -> bool {
 mod tests {
 	use super::*;
 	use crate::edwards::params::BabyJubJub;
-	use halo2wrong::curves::{bn256::Fr, group::ff::PrimeField};
+	use halo2::halo2curves::{bn256::Fr, group::ff::PrimeField};
 
 	#[test]
 	fn test_add_same_point() {

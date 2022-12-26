@@ -1,4 +1,4 @@
-use halo2wrong::halo2::{
+use halo2::{
 	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region},
 	plonk::{Advice, Column, ConstraintSystem, Error, Selector},
@@ -93,14 +93,12 @@ impl<F: FieldExt, const S: usize> SumChip<F, S> {
 mod test {
 	use super::*;
 	use crate::utils::{generate_params, prove_and_verify};
-	use halo2wrong::{
-		curves::bn256::{Bn256, Fr},
-		halo2::{
-			arithmetic::Field,
-			circuit::{SimpleFloorPlanner, Value},
-			dev::MockProver,
-			plonk::{Circuit, Instance},
-		},
+	use halo2::{
+		arithmetic::Field,
+		circuit::{SimpleFloorPlanner, Value},
+		dev::MockProver,
+		halo2curves::bn256::{Bn256, Fr},
+		plonk::{Circuit, Instance},
 	};
 	use std::usize;
 

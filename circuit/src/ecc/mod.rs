@@ -14,7 +14,7 @@ use crate::{
 		IntegerChip, IntegerConfig,
 	},
 };
-use halo2wrong::halo2::{
+use halo2::{
 	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region, Value},
 	plonk::{ConstraintSystem, Error},
@@ -625,16 +625,14 @@ mod test {
 			rns::{Bn256_4_68, RnsParams},
 		},
 	};
-	use halo2wrong::{
-		curves::{
+	use halo2::{
+		circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner, Value},
+		dev::MockProver,
+		halo2curves::{
 			bn256::{Fq, Fr},
 			FieldExt,
 		},
-		halo2::{
-			circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner, Value},
-			dev::MockProver,
-			plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Instance},
-		},
+		plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Instance},
 	};
 	use num_bigint::BigUint;
 	use std::str::FromStr;

@@ -10,12 +10,10 @@ use crate::{
 	params::RoundParams,
 	poseidon::{PoseidonChip, PoseidonConfig},
 };
-use halo2wrong::{
-	curves::FieldExt,
-	halo2::{
-		circuit::{AssignedCell, Layouter, Region},
-		plonk::{Advice, Column, ConstraintSystem, Error},
-	},
+use halo2::{
+	circuit::{AssignedCell, Layouter, Region},
+	halo2curves::FieldExt,
+	plonk::{Advice, Column, ConstraintSystem, Error},
 };
 use std::marker::PhantomData;
 
@@ -246,16 +244,14 @@ mod test {
 		poseidon::native::Poseidon,
 		utils::{generate_params, prove_and_verify},
 	};
-	use halo2wrong::{
-		curves::{
+	use halo2::{
+		circuit::{Layouter, Region, SimpleFloorPlanner, Value},
+		dev::MockProver,
+		halo2curves::{
 			bn256::{Bn256, Fr},
 			group::ff::PrimeField,
 		},
-		halo2::{
-			circuit::{Layouter, Region, SimpleFloorPlanner, Value},
-			dev::MockProver,
-			plonk::{Advice, Circuit, Column, ConstraintSystem, Error},
-		},
+		plonk::{Advice, Circuit, Column, ConstraintSystem, Error},
 	};
 	use rand::thread_rng;
 

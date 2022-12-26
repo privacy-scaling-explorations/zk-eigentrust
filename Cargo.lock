@@ -332,9 +332,8 @@ name = "eigen-trust-circuit"
 version = "0.1.0"
 dependencies = [
  "blake",
- "halo2wrong",
+ "halo2_proofs",
  "hex",
- "maingate",
  "num-bigint 0.2.6",
  "num-integer",
  "num-traits",
@@ -644,18 +643,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "halo2wrong"
-version = "0.1.0"
-source = "git+https://github.com/privacy-scaling-explorations/halo2wrong.git?branch=master#63bde545d934e69c806ef9bc8b18f03f6ec0fe8e"
-dependencies = [
- "group",
- "halo2_proofs",
- "num-bigint 0.4.3",
- "num-integer",
- "num-traits",
-]
-
-[[package]]
 name = "hashbrown"
 version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -825,20 +812,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "maingate"
-version = "0.1.0"
-source = "git+https://github.com/privacy-scaling-explorations/halo2wrong.git?branch=master#63bde545d934e69c806ef9bc8b18f03f6ec0fe8e"
-dependencies = [
- "group",
- "halo2wrong",
- "num-bigint 0.4.3",
- "num-integer",
- "num-traits",
- "rand 0.8.5",
- "subtle",
-]
-
-[[package]]
 name = "memchr"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -895,7 +868,6 @@ dependencies = [
  "autocfg",
  "num-integer",
  "num-traits",
- "rand 0.8.5",
 ]
 
 [[package]]

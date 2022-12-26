@@ -61,12 +61,10 @@
 // red_v_bit_len: 69,
 
 use super::native::Integer;
-use halo2wrong::{
-	curves::bn256::{Fq, Fr},
-	halo2::{
-		arithmetic::{Field, FieldExt},
-		plonk::Expression,
-	},
+use halo2::{
+	arithmetic::{Field, FieldExt},
+	halo2curves::bn256::{Fq, Fr},
+	plonk::Expression,
 };
 use num_bigint::BigUint;
 use num_integer::Integer as BigInteger;
