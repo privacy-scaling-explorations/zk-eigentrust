@@ -1,102 +1,79 @@
-use super::ops::{add, double};
-use halo2wrong::curves::{bn256::Fr, group::ff::Field};
+use std::marker::PhantomData;
 
-/// D = 168696
-pub const D: Fr = Fr::from_raw([0x292F8, 0x00, 0x00, 0x00]);
-
-/// A = 168700
-pub const A: Fr = Fr::from_raw([0x292FC, 0x00, 0x00, 0x00]);
-
-/// SUBORDER =
-/// 2736030358979909402780800718157159386076813972158567259200215660948447373041
-pub const SUBORDER: Fr =
-	Fr::from_raw([0x677297DC392126F1, 0xAB3EEDB83920EE0A, 0x370A08B6D0302B0B, 0x60C89CE5C263405]);
-
-/// B8_X = 5299619240641551281634865583518297030282874472190772894086521144482721001553
-pub const B8_X: Fr =
-	Fr::from_raw([0x2893F3F6BB957051, 0x2AB8D8010534E0B6, 0x4EACB2E09D6277C1, 0xBB77A6AD63E739B]);
-
-/// B8_Y = 16950150798460657717958625567821834550301663161624707787222815936182638968203
-pub const B8_Y: Fr =
-	Fr::from_raw([0x4B3C257A872D7D8B, 0xFCE0051FB9E13377, 0x25572E1CD16BF9ED, 0x25797203F7A0B249]);
-
-/// B8 Point
-pub const B8: Point = Point { x: B8_X, y: B8_Y };
-
-/// G_X = 995203441582195749578291179787384436505546430278305826713579947235728471134
-pub const G_X: Fr =
-	Fr::from_raw([0x40F41A59F4D4B45E, 0xB494B1255B1162BB, 0x38BCBA38F25645AD, 0x23343E3445B673D]);
-
-/// G_Y = 5472060717959818805561601436314318772137091100104008585924551046643952123905
-pub const G_Y: Fr =
-	Fr::from_raw([0x50F87D64FC000001, 0x4A0CFA121E6E5C24, 0x6E14116DA0605617, 0xC19139CB84C680A]);
-
-/// G point
-pub const G: Point = Point { x: G_X, y: G_Y };
+use super::params::{BabyJubJub, EdwardsParams};
+use halo2wrong::curves::FieldExt;
 
 #[derive(Clone, Copy, Debug)]
 /// Constructs PointProjective objects.
-pub struct PointProjective {
+pub struct PointProjective<F: FieldExt, P: EdwardsParams<F>> {
 	/// Constructs a field element for the x.
-	pub x: Fr,
+	pub x: F,
 	/// Constructs a field element for the y.
-	pub y: Fr,
+	pub y: F,
 	/// Constructs a field element for the z.
-	pub z: Fr,
+	pub z: F,
+	_p: PhantomData<P>,
 }
 
-impl PointProjective {
+impl<F: FieldExt, P: EdwardsParams<F>> PointProjective<F, P> {
 	/// Returns affine representation from the given projective space
 	/// representation.
-	pub fn affine(&self) -> Point {
+	pub fn affine(&self) -> Point<F, P> {
 		if bool::from(self.z.is_zero()) {
-			return Point { x: Fr::zero(), y: Fr::zero() };
+			return Point { x: F::zero(), y: F::zero(), _p: PhantomData };
 		}
 
 		let zinv = self.z.invert().unwrap();
 		let x = self.x.mul(&zinv);
 		let y = self.y.mul(&zinv);
 
-		Point { x, y }
+		Point { x, y, _p: PhantomData }
 	}
 
 	/// DOUBLE operation of point `self`
 	pub fn double(&self) -> Self {
 		// dbl-2008-bbjlp https://hyperelliptic.org/EFD/g1p/auto-twisted-projective.html#doubling-dbl-2008-bbjlp
-		let (x3, y3, z3) = double(self.x, self.y, self.z);
+		let (x3, y3, z3) = P::double(self.x, self.y, self.z);
 
-		PointProjective { x: x3, y: y3, z: z3 }
+		PointProjective { x: x3, y: y3, z: z3, _p: PhantomData }
 	}
 
 	/// ADD operation between points `self` and `q`
 	pub fn add(&self, q: &Self) -> Self {
 		// add-2008-bbjlp https://hyperelliptic.org/EFD/g1p/auto-twisted-projective.html#addition-add-2008-bbjlp
-		let (x3, y3, z3) = add(self.x, self.y, self.z, q.x, q.y, q.z);
+		let (x3, y3, z3) = P::add(self.x, self.y, self.z, q.x, q.y, q.z);
 
-		PointProjective { x: x3, y: y3, z: z3 }
+		PointProjective { x: x3, y: y3, z: z3, _p: PhantomData }
 	}
 }
 
-#[derive(Clone, Debug)]
+#[derive(Hash, Clone, Debug, PartialEq, Eq, Default)]
 /// Configures Point objects.
-pub struct Point {
+pub struct Point<F: FieldExt, P: EdwardsParams<F>> {
 	/// Constructs a field element for the x.
-	pub x: Fr,
+	pub x: F,
 	/// Constructs a field element for the y.
-	pub y: Fr,
+	pub y: F,
+	_p: PhantomData<P>,
 }
 
-impl Point {
+impl<F: FieldExt, P: EdwardsParams<F>> Point<F, P> {
+	/// Returns a new Edwards point in affine repr
+	pub fn new(x: F, y: F) -> Self {
+		Self { x, y, _p: PhantomData }
+	}
+
 	/// Returns projective space representation from the given affine
 	/// representation.
-	pub fn projective(&self) -> PointProjective {
-		PointProjective { x: self.x, y: self.y, z: Fr::one() }
+	pub fn projective(&self) -> PointProjective<F, P> {
+		PointProjective { x: self.x, y: self.y, z: F::one(), _p: PhantomData }
 	}
 
 	/// Returns scalar multiplication of the element.
-	pub fn mul_scalar(&self, b: &[u8]) -> PointProjective {
-		let mut r: PointProjective = PointProjective { x: Fr::zero(), y: Fr::one(), z: Fr::one() };
-		let mut exp: PointProjective = self.projective();
+	pub fn mul_scalar(&self, b: &[u8]) -> PointProjective<F, P> {
+		let mut r: PointProjective<F, P> =
+			PointProjective { x: F::zero(), y: F::one(), z: F::one(), _p: PhantomData };
+		let mut exp: PointProjective<F, P> = self.projective();
 		// Double and add operation.
 		for i in 0..b.len() * 8 {
 			if test_bit(b, i) {
@@ -108,7 +85,7 @@ impl Point {
 	}
 
 	/// Returns true if the given point is equal to the element. Else, false.
-	pub fn equals(&self, p: Point) -> bool {
+	pub fn equals(&self, p: Self) -> bool {
 		self.x == p.x && self.y == p.y
 	}
 }
@@ -121,12 +98,12 @@ pub fn test_bit(b: &[u8], i: usize) -> bool {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use halo2wrong::curves::group::ff::PrimeField;
+	use halo2wrong::curves::{bn256::Fr, group::ff::PrimeField};
 
 	#[test]
 	fn test_add_same_point() {
 		// Testing addition operation with identical points.
-		let p: PointProjective = PointProjective {
+		let p: PointProjective<Fr, BabyJubJub> = PointProjective {
 			x: Fr::from_str_vartime(
 				"17777552123799933955779906779655732241715742912184938656739573121738514868268",
 			)
@@ -136,9 +113,10 @@ mod tests {
 			)
 			.unwrap(),
 			z: Fr::one(),
+			_p: PhantomData,
 		};
 
-		let q: PointProjective = PointProjective {
+		let q: PointProjective<Fr, BabyJubJub> = PointProjective {
 			x: Fr::from_str_vartime(
 				"17777552123799933955779906779655732241715742912184938656739573121738514868268",
 			)
@@ -148,6 +126,7 @@ mod tests {
 			)
 			.unwrap(),
 			z: Fr::one(),
+			_p: PhantomData,
 		};
 
 		let res = p.add(&q).affine();
@@ -170,7 +149,7 @@ mod tests {
 	#[test]
 	fn test_add_different_points() {
 		// Testing addition operation with different points.
-		let p: PointProjective = PointProjective {
+		let p: PointProjective<Fr, BabyJubJub> = PointProjective {
 			x: Fr::from_str_vartime(
 				"17777552123799933955779906779655732241715742912184938656739573121738514868268",
 			)
@@ -180,9 +159,10 @@ mod tests {
 			)
 			.unwrap(),
 			z: Fr::one(),
+			_p: PhantomData,
 		};
 
-		let q: PointProjective = PointProjective {
+		let q: PointProjective<Fr, BabyJubJub> = PointProjective {
 			x: Fr::from_str_vartime(
 				"16540640123574156134436876038791482806971768689494387082833631921987005038935",
 			)
@@ -192,6 +172,7 @@ mod tests {
 			)
 			.unwrap(),
 			z: Fr::one(),
+			_p: PhantomData,
 		};
 
 		let res = p.add(&q).affine();
@@ -214,7 +195,7 @@ mod tests {
 	#[test]
 	fn test_mul_scalar() {
 		// Testing scalar multiplication operation.
-		let p: Point = Point {
+		let p: Point<Fr, BabyJubJub> = Point {
 			x: Fr::from_str_vartime(
 				"17777552123799933955779906779655732241715742912184938656739573121738514868268",
 			)
@@ -223,6 +204,7 @@ mod tests {
 				"2626589144620713026669568689430873010625803728049924121243784502389097019475",
 			)
 			.unwrap(),
+			_p: PhantomData,
 		};
 		let res_m = p.mul_scalar(&Fr::from(3).to_bytes()).affine();
 		let res_a = p.projective().add(&p.projective());

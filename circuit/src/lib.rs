@@ -11,10 +11,14 @@
 #![warn(trivial_casts)]
 #![forbid(unsafe_code)]
 
+/// Closed graph circuit
+pub mod circuit;
 /// Ecc arithemtic on wrong field
 pub mod ecc;
 /// EDDSA signature scheme gadgets + native version
 pub mod eddsa;
+/// Edwards curve operations
+pub mod edwards;
 /// Common gadgets used across circuits
 pub mod gadgets;
 /// Integer type - Wrong field arithmetic
@@ -225,10 +229,7 @@ impl<F: FieldExt, const S: usize, const B: usize, P: RoundParams<F, 5>> Circuit<
 		// Recreate the pubkey_i
 		let inputs = [zero.clone(), zero.clone(), zero.clone(), zero.clone(), sk];
 		let poseidon_pk = PoseidonChip::<_, 5, P>::new(inputs);
-		let res = poseidon_pk.synthesize(
-			config.poseidon.clone(),
-			layouter.namespace(|| "poseidon_pk"),
-		)?;
+		let res = poseidon_pk.synthesize(&config.poseidon, layouter.namespace(|| "poseidon_pk"))?;
 		let pubkey_i = res[0].clone();
 		// Check the bootstrap set membership
 		let set_membership = FixedSetChip::new(self.bootstrap_pubkeys, pubkey_i.clone());
@@ -238,14 +239,14 @@ impl<F: FieldExt, const S: usize, const B: usize, P: RoundParams<F, 5>> Circuit<
 		let is_genesis = CommonChip::is_equal(
 			iteration.clone(),
 			zero,
-			config.common,
+			&config.common,
 			layouter.namespace(|| "is_eq"),
 		)?;
 		// Is this the bootstrap peer at genesis epoch?
 		let is_bootstrap_and_genesis = CommonChip::and(
 			is_bootstrap,
 			is_genesis,
-			config.common,
+			&config.common,
 			layouter.namespace(|| "and"),
 		)?;
 		// Select the appropriate score, depending on the conditions
@@ -253,21 +254,26 @@ impl<F: FieldExt, const S: usize, const B: usize, P: RoundParams<F, 5>> Circuit<
 			is_bootstrap_and_genesis,
 			bootstrap_score,
 			t_i,
-			config.common,
+			&config.common,
 			layouter.namespace(|| "select"),
 		)?;
 
-		let op_v = CommonChip::mul(t_i_select, c_v, config.common, layouter.namespace(|| "mul"))?;
+		let op_v = CommonChip::mul(
+			t_i_select,
+			c_v,
+			&config.common,
+			layouter.namespace(|| "mul"),
+		)?;
 
 		let m_hash_input = [epoch, iteration, op_v.clone(), pubkey_v, pubkey_i];
 		let poseidon_m_hash = PoseidonChip::<_, 5, P>::new(m_hash_input);
 		let res = poseidon_m_hash
-			.synthesize(config.poseidon, layouter.namespace(|| "poseidon_m_hash"))?;
+			.synthesize(&config.poseidon, layouter.namespace(|| "poseidon_m_hash"))?;
 		let m_hash = res[0].clone();
 
 		let is_zero_opinion = CommonChip::is_zero(
 			op_v,
-			config.common,
+			&config.common,
 			layouter.namespace(|| "is_zero_opinion"),
 		)?;
 
@@ -275,7 +281,7 @@ impl<F: FieldExt, const S: usize, const B: usize, P: RoundParams<F, 5>> Circuit<
 			is_zero_opinion,
 			out_m_hash,
 			m_hash,
-			config.common,
+			&config.common,
 			layouter.namespace(|| "m_hash_select"),
 		)?;
 

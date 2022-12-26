@@ -276,7 +276,7 @@ where
 
 	/// Synthesize the circuit.
 	pub fn synthesize(
-		&self, config: PoseidonConfig<WIDTH>, mut layouter: impl Layouter<F>,
+		&self, config: &PoseidonConfig<WIDTH>, mut layouter: impl Layouter<F>,
 	) -> Result<[AssignedCell<F, F>; WIDTH], Error> {
 		let full_rounds = P::full_rounds();
 		let half_full_rounds = full_rounds / 2;
@@ -353,6 +353,7 @@ mod test {
 		results: Column<Instance>,
 	}
 
+	#[derive(Clone)]
 	struct PoseidonTester {
 		inputs: [Value<Fr>; 5],
 	}
@@ -408,7 +409,7 @@ mod test {
 
 			let poseidon = TestPoseidonChip::new(init_state);
 			let result_state =
-				poseidon.synthesize(config.poseidon_config, layouter.namespace(|| "poseidon"))?;
+				poseidon.synthesize(&config.poseidon_config, layouter.namespace(|| "poseidon"))?;
 			for i in 0..5 {
 				layouter.constrain_instance(result_state[i].cell(), config.results, i)?;
 			}

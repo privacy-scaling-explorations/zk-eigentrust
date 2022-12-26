@@ -1,9 +1,11 @@
 //! Helper functions for generating params, pk/vk pairs, creating and verifying
 //! proofs, etc.
 
-use crate::{params::RoundParams, EigenTrustCircuit};
 use halo2wrong::{
-	curves::pairing::{Engine, MultiMillerLoop},
+	curves::{
+		pairing::{Engine, MultiMillerLoop},
+		FieldExt,
+	},
 	halo2::{
 		arithmetic::Field,
 		plonk::{
@@ -24,6 +26,7 @@ use halo2wrong::{
 		},
 	},
 };
+use num_bigint::BigUint;
 use rand::Rng;
 use std::{fmt::Debug, fs::write, io::Read, time::Instant};
 
@@ -32,6 +35,20 @@ pub fn to_wide(b: &[u8]) -> [u8; 64] {
 	let mut bytes = [0u8; 64];
 	bytes[..b.len()].copy_from_slice(b);
 	bytes
+}
+
+/// Convert bytes array to a short representation of 32 bytes
+pub fn to_short(b: &[u8]) -> [u8; 32] {
+	let mut bytes = [0u8; 32];
+	bytes[..b.len()].copy_from_slice(b);
+	bytes
+}
+
+/// Converts field element to string
+pub fn field_to_string<F: FieldExt>(f: F) -> String {
+	let bytes = f.to_repr();
+	let bn_f = BigUint::from_bytes_le(bytes.as_ref());
+	bn_f.to_string()
 }
 
 /// Generate parameters with polynomial degere = `k`.
@@ -54,38 +71,12 @@ pub fn read_params<E: MultiMillerLoop + Debug>(path: &str) -> ParamsKZG<E> {
 	ParamsKZG::<E>::read(&mut &buffer[..]).unwrap()
 }
 
-/// Make a new circuit with the inputs being random values.
-pub fn random_circuit<
-	E: MultiMillerLoop + Debug,
-	R: Rng + Clone,
-	const SIZE: usize,
-	const NUM_BOOTSTRAP: usize,
-	P: RoundParams<<E as Engine>::Scalar, 5>,
->(
-	rng: &mut R,
-) -> EigenTrustCircuit<<E as Engine>::Scalar, SIZE, NUM_BOOTSTRAP, P> {
-	let pubkey_v = E::Scalar::random(rng.clone());
-	let epoch = E::Scalar::random(rng.clone());
-	let iter = E::Scalar::random(rng.clone());
-	let secret_i = E::Scalar::random(rng.clone());
-	// Data from neighbors of i
-	let op_ji = [(); SIZE].map(|_| E::Scalar::random(rng.clone()));
-	let c_v = E::Scalar::random(rng.clone());
-
-	let bootstrap_pubkeys = [(); NUM_BOOTSTRAP].map(|_| E::Scalar::random(rng.clone()));
-	let bootstrap_score = E::Scalar::random(rng.clone());
-
-	EigenTrustCircuit::<_, SIZE, NUM_BOOTSTRAP, P>::new(
-		pubkey_v, epoch, iter, secret_i, op_ji, c_v, bootstrap_pubkeys, bootstrap_score,
-	)
-}
-
 /// Proving/verifying key generation.
 pub fn keygen<E: MultiMillerLoop + Debug, C: Circuit<E::Scalar>>(
-	params: &ParamsKZG<E>, circuit: &C,
+	params: &ParamsKZG<E>, circuit: C,
 ) -> Result<ProvingKey<<E as Engine>::G1Affine>, Error> {
-	let vk = keygen_vk::<<E as Engine>::G1Affine, ParamsKZG<E>, _>(params, circuit)?;
-	let pk = keygen_pk::<<E as Engine>::G1Affine, ParamsKZG<E>, _>(params, vk, circuit)?;
+	let vk = keygen_vk::<<E as Engine>::G1Affine, ParamsKZG<E>, _>(params, &circuit)?;
+	let pk = keygen_pk::<<E as Engine>::G1Affine, ParamsKZG<E>, _>(params, vk, &circuit)?;
 
 	Ok(pk)
 }
@@ -141,11 +132,15 @@ pub fn verify<E: MultiMillerLoop + Debug>(
 }
 
 /// Helper function for doing proof and verification at the same time.
-pub fn prove_and_verify<E: MultiMillerLoop + Debug, C: Circuit<E::Scalar>, R: Rng + Clone>(
+pub fn prove_and_verify<
+	E: MultiMillerLoop + Debug,
+	C: Circuit<E::Scalar> + Clone,
+	R: Rng + Clone,
+>(
 	params: ParamsKZG<E>, circuit: C,
 	pub_inps: &[&[<KZGCommitmentScheme<E> as CommitmentScheme>::Scalar]], rng: &mut R,
 ) -> Result<bool, Error> {
-	let pk = keygen(&params, &circuit)?;
+	let pk = keygen(&params, circuit.clone())?;
 	let start = Instant::now();
 	let proof = prove(&params, circuit, pub_inps, &pk, rng)?;
 	let end = start.elapsed();

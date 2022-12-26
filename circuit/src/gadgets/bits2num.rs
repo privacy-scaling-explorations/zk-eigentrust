@@ -94,7 +94,7 @@ impl<F: FieldExt, const B: usize> Bits2NumChip<F, B> {
 
 	/// Synthesize the circuit.
 	pub fn synthesize(
-		&self, config: Bits2NumConfig, mut layouter: impl Layouter<F>,
+		&self, config: &Bits2NumConfig, mut layouter: impl Layouter<F>,
 	) -> Result<[AssignedCell<F, F>; B], Error> {
 		layouter.assign_region(
 			|| "bits2num",
@@ -183,7 +183,7 @@ mod test {
 
 			let bits = to_bits::<B>(self.bytes).map(|b| Fr::from(b));
 			let bits2num = Bits2NumChip::new(numba, bits);
-			let _ = bits2num.synthesize(config.bits2num, layouter.namespace(|| "bits2num"))?;
+			let _ = bits2num.synthesize(&config.bits2num, layouter.namespace(|| "bits2num"))?;
 
 			Ok(())
 		}

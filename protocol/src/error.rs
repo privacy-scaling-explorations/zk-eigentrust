@@ -14,8 +14,10 @@ pub enum EigenError {
 	ConnectionError,
 	/// Failed to listen to requests
 	ListenError,
-	/// Signature not found
-	SignatureNotFound,
+	/// Attestation not found
+	AttestationNotFound,
+	/// Proof not found
+	ProofNotFound,
 	/// Unknown error.
 	Unknown,
 }
@@ -28,7 +30,8 @@ impl From<EigenError> for u8 {
 			EigenError::VerificationError => 2,
 			EigenError::ConnectionError => 3,
 			EigenError::ListenError => 4,
-			EigenError::SignatureNotFound => 5,
+			EigenError::AttestationNotFound => 5,
+			EigenError::ProofNotFound => 6,
 			EigenError::Unknown => 255,
 		}
 	}
@@ -42,7 +45,8 @@ impl From<u8> for EigenError {
 			2 => EigenError::VerificationError,
 			3 => EigenError::ConnectionError,
 			4 => EigenError::ListenError,
-			5 => EigenError::SignatureNotFound,
+			5 => EigenError::AttestationNotFound,
+			6 => EigenError::ProofNotFound,
 			_ => EigenError::Unknown,
 		}
 	}

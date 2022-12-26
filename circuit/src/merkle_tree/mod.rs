@@ -77,7 +77,7 @@ where
 				zero.clone(),
 			]);
 			let hashes =
-				pos.synthesize(config.poseidon.clone(), layouter.namespace(|| "poseidon"))?;
+				pos.synthesize(&config.poseidon.clone(), layouter.namespace(|| "poseidon"))?;
 			let mut is_inside: Option<FixedSetChip<F, 2>> = None;
 			// When iteration reaches to the root's children this if will trigger and it
 			// will check path_vec has the root inside the set or not. If yes it
