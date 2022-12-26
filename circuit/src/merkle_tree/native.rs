@@ -9,14 +9,16 @@ const WIDTH: usize = 5;
 
 #[derive(Clone, Debug)]
 /// MerkleTree structure
-struct MerkleTree<F: FieldExt, P>
+pub struct MerkleTree<F: FieldExt, P>
 where
 	P: RoundParams<F, WIDTH>,
 {
 	/// HashMap to keep the level and index of the nodes
-	nodes: HashMap<usize, Vec<F>>,
+	pub(crate) nodes: HashMap<usize, Vec<F>>,
 	/// Height of the tree
-	height: usize,
+	pub(crate) height: usize,
+	/// Root of the tree
+	pub(crate) root: F,
 	/// PhantomData for the params
 	_params: PhantomData<P>,
 }
@@ -26,12 +28,12 @@ where
 	P: RoundParams<F, WIDTH>,
 {
 	/// Build a MerkleTree from given leaf nodes and height
-	fn build_tree(mut leaves: Vec<F>, height: usize) -> Self {
+	pub fn build_tree(mut leaves: Vec<F>, height: usize) -> Self {
 		assert!(leaves.len() <= pow(2, height));
 		// 0th level is the leaf level and the max level is the root level
 		let mut nodes = HashMap::new();
 		// Assign zero to the leaf values if they are empty
-		for i in leaves.len()..pow(2, height) {
+		for _i in leaves.len()..pow(2, height) {
 			leaves.push(F::zero());
 		}
 		nodes.insert(0, leaves);
@@ -49,11 +51,12 @@ where
 			}
 			nodes.insert(level + 1, hashes);
 		}
-		MerkleTree { nodes, height, _params: PhantomData }
+		let root = nodes[&height][0].clone();
+		MerkleTree { nodes, height, root, _params: PhantomData }
 	}
 
 	/// Find path for the given value to the root
-	fn find_path(&mut self, value: F) -> Path<F, P> {
+	pub fn find_path(&mut self, value: F) -> Path<F, P> {
 		//
 		// TODO: This way of finding index will fail if we have same inputs
 		//
@@ -79,14 +82,14 @@ where
 
 #[derive(Clone)]
 /// Path structure
-struct Path<F: FieldExt, P>
+pub struct Path<F: FieldExt, P>
 where
 	P: RoundParams<F, WIDTH>,
 {
 	/// Value that is based on for construction of the path
-	value: F,
+	pub(crate) value: F,
 	/// Vector that keeps the path
-	path_vec: Vec<F>,
+	pub(crate) path_vec: Vec<F>,
 	/// PhantomData for the params
 	_params: PhantomData<P>,
 }
@@ -96,7 +99,7 @@ where
 	P: RoundParams<F, WIDTH>,
 {
 	/// Sanity check for the path vector
-	fn verify(&self) -> bool {
+	pub fn verify(&self) -> bool {
 		let mut is_satisfied = true;
 		for i in 0..self.path_vec.len() - 1 {
 			if i % 2 != 0 {
@@ -140,10 +143,7 @@ mod test {
 		let path = merkle.find_path(value);
 		assert!(path.verify());
 		// Assert last element of the vector and the root of the tree
-		assert_eq!(
-			path.path_vec[(2 * merkle.height)],
-			merkle.nodes[&merkle.height][0]
-		);
+		assert_eq!(path.path_vec[(2 * merkle.height)], merkle.root);
 	}
 
 	#[test]
@@ -155,9 +155,6 @@ mod test {
 		let path = merkle.find_path(value);
 		assert!(path.verify());
 		// Assert last element of the vector and the root of the tree
-		assert_eq!(
-			path.path_vec[(2 * merkle.height)],
-			merkle.nodes[&merkle.height][0]
-		);
+		assert_eq!(path.path_vec[(2 * merkle.height)], merkle.root);
 	}
 }
