@@ -1,29 +1,25 @@
 //! Helper functions for generating params, pk/vk pairs, creating and verifying
 //! proofs, etc.
 
-use halo2wrong::{
-	curves::{
+use halo2::{
+	halo2curves::{
 		pairing::{Engine, MultiMillerLoop},
 		FieldExt,
 	},
-	halo2::{
-		arithmetic::Field,
-		plonk::{
-			create_proof, keygen_pk, keygen_vk, verify_proof, Circuit, Error, ProvingKey,
-			VerifyingKey,
+	plonk::{
+		create_proof, keygen_pk, keygen_vk, verify_proof, Circuit, Error, ProvingKey, VerifyingKey,
+	},
+	poly::{
+		commitment::{CommitmentScheme, Params, ParamsProver},
+		kzg::{
+			commitment::{KZGCommitmentScheme, ParamsKZG},
+			multiopen::{ProverSHPLONK, VerifierSHPLONK},
+			strategy::AccumulatorStrategy,
 		},
-		poly::{
-			commitment::{CommitmentScheme, Params, ParamsProver},
-			kzg::{
-				commitment::{KZGCommitmentScheme, ParamsKZG},
-				multiopen::{ProverSHPLONK, VerifierSHPLONK},
-				strategy::AccumulatorStrategy,
-			},
-			VerificationStrategy,
-		},
-		transcript::{
-			Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer,
-		},
+		VerificationStrategy,
+	},
+	transcript::{
+		Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer,
 	},
 };
 use num_bigint::BigUint;

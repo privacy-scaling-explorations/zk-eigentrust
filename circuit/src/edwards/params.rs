@@ -1,6 +1,7 @@
-use halo2wrong::{
-	curves::{bn256::Fr, FieldExt},
-	halo2::{circuit::Value, plonk::Expression},
+use halo2::{
+	circuit::Value,
+	halo2curves::{bn256::Fr, FieldExt},
+	plonk::Expression,
 };
 
 /// Trait for defining point A and D for Edward curves

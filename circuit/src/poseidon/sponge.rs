@@ -1,15 +1,14 @@
-use std::marker::PhantomData;
-
 use crate::{
 	params::RoundParams,
 	poseidon::{PoseidonChip, PoseidonConfig},
 };
-use halo2wrong::halo2::{
+use halo2::{
 	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region, Value},
 	plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
 	poly::Rotation,
 };
+use std::marker::PhantomData;
 
 #[derive(Clone, Debug)]
 /// Configuration elements for the circuit are defined here.
@@ -157,13 +156,11 @@ mod test {
 
 	use crate::params::{hex_to_field, poseidon_bn254_5x5::Params};
 
-	use halo2wrong::{
-		curves::bn256::Fr,
-		halo2::{
-			circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner, Value},
-			dev::MockProver,
-			plonk::{Circuit, Column, ConstraintSystem, Error, Instance},
-		},
+	use halo2::{
+		circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner, Value},
+		dev::MockProver,
+		halo2curves::bn256::Fr,
+		plonk::{Circuit, Column, ConstraintSystem, Error, Instance},
 	};
 
 	type TestPoseidonSponge = PoseidonSponge<Fr, 5, Params>;

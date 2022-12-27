@@ -14,7 +14,7 @@ use crate::{
 		IntegerChip, IntegerConfig,
 	},
 };
-use halo2wrong::halo2::{
+use halo2::{
 	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region, Value},
 	plonk::{ConstraintSystem, Error},
@@ -519,9 +519,9 @@ where
 		// Reduction witnesses for mul scalar double operation
 		reduction_witnesses_double: [Vec<ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>>; 256],
 		// Limbs with value zero
-		zero_limbs: [AssignedCell<N, N>; NUM_LIMBS],
+		_zero_limbs: [AssignedCell<N, N>; NUM_LIMBS],
 		// Limbs with value one
-		one_limbs: [AssignedCell<N, N>; NUM_LIMBS],
+		_one_limbs: [AssignedCell<N, N>; NUM_LIMBS],
 		// Ecc Config
 		config: EccConfig<NUM_LIMBS>,
 		// Layouter
@@ -540,8 +540,6 @@ where
 		//    }
 		//    double selector - row i
 		// }
-		let mut r_x = zero_limbs.clone();
-		let mut r_y = one_limbs.clone();
 		let bits2num = Bits2NumChip::new(value.clone(), value_bits);
 		let bits = bits2num.synthesize(&config.bits2num, layouter.namespace(|| "bits2num"))?;
 		let mut exp_x = IntegerChip::reduce(
@@ -619,31 +617,25 @@ where
 
 #[cfg(test)]
 mod test {
-	use std::str::FromStr;
-
+	use super::{EccChip, EccConfig};
 	use crate::{
-		ecc::{native::EcPoint, test},
+		ecc::native::EcPoint,
 		integer::{
 			native::{Integer, ReductionWitness},
 			rns::{Bn256_4_68, RnsParams},
 		},
 	};
-	use halo2wrong::{
-		curves::{
+	use halo2::{
+		circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner, Value},
+		dev::MockProver,
+		halo2curves::{
 			bn256::{Fq, Fr},
 			FieldExt,
 		},
-		halo2::{
-			arithmetic::Field,
-			circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner, Value},
-			dev::MockProver,
-			plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Instance},
-		},
+		plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Instance},
 	};
 	use num_bigint::BigUint;
-	use rand::thread_rng;
-
-	use super::{EccChip, EccConfig};
+	use std::str::FromStr;
 
 	#[derive(Clone)]
 	enum Gadgets {
@@ -979,7 +971,6 @@ mod test {
 	#[ignore = "Mul scalar broken"]
 	fn should_mul_with_scalar() {
 		// Testing scalar multiplication.
-		let rng = &mut thread_rng();
 		let scalar = Fr::from_u128(63);
 		let zero = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::zero();
 		let a_big = BigUint::from_str("23423423525345345").unwrap();

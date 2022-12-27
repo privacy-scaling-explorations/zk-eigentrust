@@ -17,16 +17,14 @@ use bs58::decode::Error as Bs58Error;
 use eigen_trust_circuit::{
 	circuit::{native, EigenTrust, PoseidonNativeHasher, PoseidonNativeSponge},
 	eddsa::native::{sign, PublicKey, SecretKey, Signature},
-	halo2wrong::{
-		curves::{
+	halo2::{
+		halo2curves::{
 			bn256::{Bn256, Fr as Scalar, G1Affine},
 			group::ff::PrimeField,
 			FieldExt,
 		},
-		halo2::{
-			plonk::{ProvingKey, VerifyingKey},
-			poly::kzg::commitment::ParamsKZG,
-		},
+		plonk::{ProvingKey, VerifyingKey},
+		poly::kzg::commitment::ParamsKZG,
 	},
 	params::poseidon_bn254_5x5::Params,
 	poseidon::native::Poseidon,
@@ -180,22 +178,16 @@ impl Manager {
 		let init_score = [(); NUM_NEIGHBOURS].map(|_| Scalar::from_u128(INITIAL_SCORE));
 		let pub_ins = native::<Scalar, NUM_NEIGHBOURS, NUM_ITER, SCALE>(init_score, ops);
 
-		let proof_bytes = prove(
-			&self.params,
-			et,
-			&[&[], &pub_ins],
-			&self.proving_key,
-			&mut rng,
-		)
-		.map_err(|e| {
-			println!("{:?}", e);
-			EigenError::ProvingError
-		})?;
+		let proof_bytes = prove(&self.params, et, &[&pub_ins], &self.proving_key, &mut rng)
+			.map_err(|e| {
+				println!("{:?}", e);
+				EigenError::ProvingError
+			})?;
 
 		// Sanity check
 		let proof_res = verify(
 			&self.params,
-			&[&[], &pub_ins],
+			&[&pub_ins],
 			&proof_bytes,
 			self.proving_key.get_vk(),
 		)
@@ -220,7 +212,7 @@ impl Manager {
 #[cfg(test)]
 mod test {
 	use super::*;
-	use eigen_trust_circuit::{halo2wrong::halo2::poly::commitment::ParamsProver, utils::keygen};
+	use eigen_trust_circuit::{halo2::poly::commitment::ParamsProver, utils::keygen};
 
 	#[test]
 	fn should_calculate_proof() {

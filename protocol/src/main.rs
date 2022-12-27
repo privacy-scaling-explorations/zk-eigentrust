@@ -46,13 +46,13 @@ pub mod utils;
 use eigen_trust_circuit::{
 	circuit::EigenTrust,
 	eddsa::native::PublicKey,
-	halo2wrong::{
-		curves::{
+	halo2::{
+		halo2curves::{
 			bn256::{Bn256, Fr as Scalar},
 			group::ff::PrimeField,
 			FieldExt,
 		},
-		halo2::poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
+		poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
 	},
 	params::poseidon_bn254_5x5::Params,
 	utils::{keygen, to_short, to_wide},
@@ -319,7 +319,7 @@ async fn main() -> Result<(), EigenError> {
 mod test {
 	use super::*;
 	use crate::utils::{calculate_message_hash, keyset_from_raw};
-	use eigen_trust_circuit::{eddsa::native::sign, halo2wrong::curves::bn256::Fr as Scalar};
+	use eigen_trust_circuit::{eddsa::native::sign, halo2::halo2curves::bn256::Fr as Scalar};
 	use hyper::Uri;
 	use manager::FIXED_SET;
 	use serde_json::to_vec;

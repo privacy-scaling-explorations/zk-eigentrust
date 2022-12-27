@@ -5,7 +5,7 @@ pub mod poseidon_bn254_5x5;
 /// Rescue Prime Bn254 with WIDTH = 5 and EXPONENTIATION = 5
 pub mod rescue_prime_bn254_5x5;
 
-use halo2wrong::halo2::{arithmetic::FieldExt, plonk::Expression};
+use halo2::{arithmetic::FieldExt, plonk::Expression};
 
 /// Trait definition of Round parameters of Poseidon
 pub trait RoundParams<F: FieldExt, const WIDTH: usize>: Sbox {

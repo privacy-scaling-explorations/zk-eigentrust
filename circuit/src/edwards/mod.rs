@@ -4,14 +4,11 @@ pub mod native;
 pub mod params;
 
 use crate::gadgets::bits2num::{Bits2NumChip, Bits2NumConfig};
-use halo2wrong::{
-	curves::FieldExt,
-	halo2::{
-		arithmetic::Field,
-		circuit::{AssignedCell, Layouter, Region, Value},
-		plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
-		poly::Rotation,
-	},
+use halo2::{
+	circuit::{AssignedCell, Layouter, Region, Value},
+	halo2curves::FieldExt,
+	plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
+	poly::Rotation,
 };
 use params::EdwardsParams;
 use std::marker::PhantomData;
@@ -383,13 +380,11 @@ mod test {
 		gadgets::bits2num::to_bits,
 		utils::{generate_params, prove_and_verify},
 	};
-	use halo2wrong::{
-		curves::bn256::{Bn256, Fr},
-		halo2::{
-			circuit::{SimpleFloorPlanner, Value},
-			dev::MockProver,
-			plonk::{Circuit, Instance},
-		},
+	use halo2::{
+		circuit::{SimpleFloorPlanner, Value},
+		dev::MockProver,
+		halo2curves::bn256::{Bn256, Fr},
+		plonk::{Circuit, Instance},
 	};
 
 	#[derive(Clone)]

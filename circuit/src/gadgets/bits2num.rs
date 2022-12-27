@@ -1,4 +1,4 @@
-use halo2wrong::halo2::{
+use halo2::{
 	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region, Value},
 	plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
@@ -131,9 +131,11 @@ impl<F: FieldExt, const B: usize> Bits2NumChip<F, B> {
 mod test {
 	use super::*;
 	use crate::utils::{generate_params, prove_and_verify};
-	use halo2wrong::{
-		curves::bn256::{Bn256, Fr},
-		halo2::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit},
+	use halo2::{
+		circuit::SimpleFloorPlanner,
+		dev::MockProver,
+		halo2curves::bn256::{Bn256, Fr},
+		plonk::Circuit,
 	};
 
 	#[derive(Clone)]

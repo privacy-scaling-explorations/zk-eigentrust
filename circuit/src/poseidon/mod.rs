@@ -4,7 +4,7 @@ pub mod native;
 pub mod sponge;
 
 use crate::params::RoundParams;
-use halo2wrong::halo2::{
+use halo2::{
 	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region, Value},
 	plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector, VirtualCells},
@@ -331,18 +331,16 @@ where
 
 #[cfg(test)]
 mod test {
+	use super::*;
 	use crate::{
 		params::{hex_to_field, poseidon_bn254_5x5::Params},
 		utils::{generate_params, prove_and_verify},
-		*,
 	};
-	use halo2wrong::{
-		curves::bn256::{Bn256, Fr},
-		halo2::{
-			circuit::{Layouter, SimpleFloorPlanner},
-			dev::MockProver,
-			plonk::{Circuit, Column, ConstraintSystem, Error, Instance},
-		},
+	use halo2::{
+		circuit::{Layouter, SimpleFloorPlanner},
+		dev::MockProver,
+		halo2curves::bn256::{Bn256, Fr},
+		plonk::{Circuit, Column, ConstraintSystem, Error, Instance},
 	};
 
 	type TestPoseidonChip = PoseidonChip<Fr, 5, Params>;
