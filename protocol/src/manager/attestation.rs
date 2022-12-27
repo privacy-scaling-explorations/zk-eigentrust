@@ -1,6 +1,6 @@
 use eigen_trust_circuit::{
 	eddsa::native::{PublicKey, SecretKey, Signature},
-	halo2wrong::curves::{bn256::Fr as Scalar, group::ff::PrimeField, FieldExt},
+	halo2::halo2curves::{bn256::Fr as Scalar, group::ff::PrimeField, FieldExt},
 };
 use serde::{Deserialize, Serialize};
 

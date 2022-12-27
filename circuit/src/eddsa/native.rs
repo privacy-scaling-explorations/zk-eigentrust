@@ -7,9 +7,9 @@ use crate::{
 	poseidon::native::Poseidon,
 	utils::to_wide,
 };
-use halo2wrong::{
-	curves::{bn256::Fr, group::ff::PrimeField, FieldExt},
-	halo2::arithmetic::Field,
+use halo2::{
+	arithmetic::Field,
+	halo2curves::{bn256::Fr, group::ff::PrimeField, FieldExt},
 };
 use num_bigint::BigUint;
 use rand::RngCore;
@@ -149,7 +149,7 @@ pub fn verify(sig: &Signature, pk: &PublicKey, m: Fr) -> bool {
 #[cfg(test)]
 mod test {
 	use super::*;
-	use halo2wrong::curves::group::ff::PrimeField;
+	use halo2::halo2curves::group::ff::PrimeField;
 	use rand::thread_rng;
 
 	#[test]

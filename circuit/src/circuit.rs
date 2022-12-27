@@ -1,43 +1,45 @@
-#![allow(missing_docs)]
-
 use crate::{
 	eddsa::{
 		native::{sign, PublicKey, SecretKey, Signature},
 		EddsaChip, EddsaConfig,
 	},
 	edwards::params::{BabyJubJub, EdwardsParams},
-	gadgets::{bits2num::to_bits, common::CommonChip, lt_eq::N_SHIFTED},
-	params::{poseidon_bn254_5x5::Params, RoundParams},
+	gadgets::{
+		bits2num::to_bits,
+		common::{CommonChip, CommonConfig},
+		lt_eq::N_SHIFTED,
+	},
+	params::poseidon_bn254_5x5::Params,
 	poseidon::{
 		native::{sponge::PoseidonSponge, Poseidon},
 		sponge::{PoseidonSpongeChip, PoseidonSpongeConfig},
 		PoseidonChip,
 	},
-	CommonConfig, PoseidonConfig,
-};
-use halo2wrong::{
-	curves::{bn256::Fr as Scalar, FieldExt},
-	halo2::{
-		arithmetic::Field,
-		circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner, Value},
-		plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Fixed, Instance},
-	},
 	RegionCtx,
 };
-use maingate::{MainGate, MainGateConfig, MainGateInstructions};
+use halo2::{
+	arithmetic::Field,
+	circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner, Value},
+	halo2curves::{bn256::Fr as Scalar, FieldExt},
+	plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Fixed, Instance},
+};
 use rand::Rng;
-use std::marker::PhantomData;
 
+/// Type alias for the native poseidon hasher with a width of 5 and bn254 params
 pub type PoseidonNativeHasher = Poseidon<Scalar, 5, Params>;
+/// Type alias for native poseidon sponge with a width of 5 and bn254 params
 pub type PoseidonNativeSponge = PoseidonSponge<Scalar, 5, Params>;
+/// Type alias for the poseidon hasher chip with a width of 5 and bn254 params
 pub type PoseidonHasher = PoseidonChip<Scalar, 5, Params>;
+/// Type alias for the poseidon spong chip with a width of 5 and bn254 params
 pub type SpongeHasher = PoseidonSpongeChip<Scalar, 5, Params>;
+/// Type alias for Eddsa chip on BabyJubJub elliptic curve
 type Eddsa = EddsaChip<Scalar, BabyJubJub, Params>;
 
-/// The columns config for the main circuit.
 #[derive(Clone, Debug)]
+/// The columns config for the main circuit.
 pub struct EigenTrustConfig {
-	maingate: MainGateConfig,
+	common: CommonConfig,
 	eddsa: EddsaConfig,
 	sponge: PoseidonSpongeConfig<5>,
 	temp: Column<Advice>,
@@ -46,6 +48,7 @@ pub struct EigenTrustConfig {
 }
 
 #[derive(Clone)]
+/// Structure of the main EigenTrust circuit
 pub struct EigenTrust<
 	const NUM_NEIGHBOURS: usize,
 	const NUM_ITER: usize,
@@ -75,6 +78,7 @@ impl<
 		const SCALE: u128,
 	> EigenTrust<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, SCALE>
 {
+	/// Constructs a new EigenTrust circuit
 	pub fn new(
 		pks: [PublicKey; NUM_NEIGHBOURS], signatures: [Signature; NUM_NEIGHBOURS],
 		ops: [[Scalar; NUM_NEIGHBOURS]; NUM_NEIGHBOURS], messages: [Scalar; NUM_NEIGHBOURS],
@@ -161,7 +165,7 @@ impl<
 	}
 
 	fn configure(meta: &mut ConstraintSystem<Scalar>) -> EigenTrustConfig {
-		let maingate = MainGate::configure(meta);
+		let common = CommonChip::configure(meta);
 		let eddsa = Eddsa::configure(meta);
 		let sponge = SpongeHasher::configure(meta);
 		let temp = meta.advice_column();
@@ -172,85 +176,88 @@ impl<
 		meta.enable_equality(fixed);
 		meta.enable_equality(instance);
 
-		EigenTrustConfig { maingate, eddsa, sponge, temp, fixed, instance }
+		EigenTrustConfig { common, eddsa, sponge, temp, fixed, instance }
 	}
 
 	fn synthesize(
 		&self, config: EigenTrustConfig, mut layouter: impl Layouter<Scalar>,
 	) -> Result<(), Error> {
-		let (zero, pk_x, pk_y, big_r_x, big_r_y, s, scale, ops, init_score) = layouter
+		let (zero, pk_x, pk_y, big_r_x, big_r_y, s, scale, ops, init_score, passed_s) = layouter
 			.assign_region(
 				|| "temp",
-				|mut region: Region<'_, Scalar>| {
+				|region: Region<'_, Scalar>| {
 					let mut ctx = RegionCtx::new(region, 0);
-					let zero_fixed =
-						ctx.assign_fixed(|| "zero_fixed", config.fixed, Scalar::zero())?;
-					let zero =
-						ctx.assign_advice(|| "zero", config.temp, Value::known(Scalar::zero()))?;
-					ctx.constrain_equal(zero_fixed.cell(), zero.cell())?;
+					let zero_fixed = ctx.assign_fixed(config.fixed, Scalar::zero())?;
+					let zero = ctx.assign_advice(config.temp, Value::known(Scalar::zero()))?;
+					ctx.constrain_equal(zero_fixed, zero.clone())?;
 					ctx.next();
 					let assigned_pk_x = self.pk_x.try_map(|v| {
-						let val = ctx.assign_advice(|| "pk_x", config.temp, v);
+						let val = ctx.assign_advice(config.temp, v);
 						ctx.next();
 						val
 					})?;
 					let assigned_pk_y = self.pk_y.try_map(|v| {
-						let val = ctx.assign_advice(|| "pk_y", config.temp, v);
+						let val = ctx.assign_advice(config.temp, v);
 						ctx.next();
 						val
 					})?;
 					let assigned_big_r_x = self.big_r_x.try_map(|v| {
-						let val = ctx.assign_advice(|| "big_r_x", config.temp, v);
+						let val = ctx.assign_advice(config.temp, v);
 						ctx.next();
 						val
 					})?;
 					let assigned_big_r_y = self.big_r_y.try_map(|v| {
-						let val = ctx.assign_advice(|| "big_r_y", config.temp, v);
+						let val = ctx.assign_advice(config.temp, v);
 						ctx.next();
 						val
 					})?;
 					let assigned_s = self.s.try_map(|v| {
-						let val = ctx.assign_advice(|| "s", config.temp, v);
+						let val = ctx.assign_advice(config.temp, v);
 						ctx.next();
 						val
 					})?;
 					let scale_fixed = ctx.assign_fixed(
-						|| "scale_fixed",
 						config.fixed,
 						Scalar::from_u128(SCALE.pow(NUM_ITER as u32)),
 					)?;
 					let scale = ctx.assign_advice(
-						|| "scale",
 						config.temp,
 						Value::known(Scalar::from_u128(SCALE.pow(NUM_ITER as u32))),
 					)?;
-					ctx.constrain_equal(scale_fixed.cell(), scale.cell())?;
+					ctx.constrain_equal(scale_fixed, scale.clone())?;
 					ctx.next();
 
-					let initial_score_fixed = ctx.assign_fixed(
-						|| "initial_score",
-						config.fixed,
-						Scalar::from_u128(INITIAL_SCORE),
-					)?;
+					let initial_score_fixed =
+						ctx.assign_fixed(config.fixed, Scalar::from_u128(INITIAL_SCORE))?;
 					let assigned_initial_score = ctx.assign_advice(
-						|| "initial_score",
 						config.temp,
 						Value::known(Scalar::from_u128(INITIAL_SCORE)),
 					)?;
-					ctx.constrain_equal(initial_score_fixed.cell(), assigned_initial_score.cell())?;
+					ctx.constrain_equal(initial_score_fixed, assigned_initial_score.clone())?;
 					ctx.next();
 
 					let assigned_ops = self.ops.try_map(|vs| {
 						vs.try_map(|v| {
-							let val = ctx.assign_advice(|| "op", config.temp, v);
+							let val = ctx.assign_advice(config.temp, v);
 							ctx.next();
 							val
 						})
 					})?;
 
+					let mut passed_s: [Option<AssignedCell<Scalar, Scalar>>; NUM_NEIGHBOURS] =
+						[(); NUM_NEIGHBOURS].map(|_| None);
+
+					for i in 0..NUM_NEIGHBOURS {
+						let ps = ctx.assign_from_instance(config.temp, config.instance, i)?;
+						passed_s[i] = Some(ps);
+						ctx.next();
+					}
+					let unwrapped_passed_s = passed_s.map(|x| x.unwrap());
+
 					Ok((
 						zero, assigned_pk_x, assigned_pk_y, assigned_big_r_x, assigned_big_r_y,
 						assigned_s, scale, assigned_ops, assigned_initial_score,
+						unwrapped_passed_s,
 					))
 				},
 			)?;
@@ -293,58 +300,58 @@ impl<
 			eddsa.synthesize(&config.eddsa, layouter.namespace(|| "eddsa"))?;
 		}
 
-		let final_s = layouter.assign_region(
-			|| "eigen_trust_algo",
-			|mut region: Region<'_, Scalar>| {
-				let ctx = &mut RegionCtx::new(region, 0);
-				let maingate = MainGate::new(config.maingate.clone());
+		let mut s = [(); NUM_NEIGHBOURS].map(|_| init_score.clone());
 
-				let mut s = [(); NUM_NEIGHBOURS].map(|_| init_score.clone());
+		for _ in 0..NUM_ITER {
+			let mut distributions =
+				[[(); NUM_NEIGHBOURS]; NUM_NEIGHBOURS].map(|arr| arr.map(|_| zero.clone()));
+			for j in 0..NUM_NEIGHBOURS {
+				let op_j = ops[j].clone();
+				distributions[j] = op_j.try_map(|v| {
+					CommonChip::mul(
+						v,
+						s[j].clone(),
+						&config.common,
+						layouter.namespace(|| "op_mul"),
+					)
+				})?;
+			}
 
-				for iter in 0..NUM_ITER {
-					let mut distributions =
-						[[(); NUM_NEIGHBOURS]; NUM_NEIGHBOURS].map(|arr| arr.map(|_| zero.clone()));
-					for j in 0..NUM_NEIGHBOURS {
-						let op_j = ops[j].clone();
-						distributions[j] = op_j.try_map(|v| maingate.mul(ctx, &v, &s[j]))?;
-					}
-
-					let mut new_s = [(); NUM_NEIGHBOURS].map(|_| zero.clone());
-					for i in 0..NUM_NEIGHBOURS {
-						for j in 0..NUM_NEIGHBOURS {
-							new_s[i] = maingate.add(ctx, &new_s[i], &distributions[j][i])?;
-						}
-					}
-
-					s = new_s;
+			let mut new_s = [(); NUM_NEIGHBOURS].map(|_| zero.clone());
+			for i in 0..NUM_NEIGHBOURS {
+				for j in 0..NUM_NEIGHBOURS {
+					new_s[i] = CommonChip::add(
+						new_s[i].clone(),
+						distributions[j][i].clone(),
+						&config.common,
+						layouter.namespace(|| "op_add"),
+					)?;
 				}
+			}
 
-				Ok(s)
-			},
-		)?;
+			s = new_s;
+		}
+
+		let mut passed_scaled = [(); NUM_NEIGHBOURS].map(|_| zero.clone());
+		for i in 0..NUM_NEIGHBOURS {
+			passed_scaled[i] = CommonChip::mul(
+				passed_s[i].clone(),
+				scale.clone(),
+				&config.common,
+				layouter.namespace(|| "op_mul"),
+			)?;
+		}
 
 		layouter.assign_region(
-			|| "unscale_res",
-			|mut region: Region<'_, Scalar>| {
-				let mut passed_s: [Option<AssignedCell<Scalar, Scalar>>; NUM_NEIGHBOURS] =
-					[(); NUM_NEIGHBOURS].map(|_| None);
-				for i in 0..NUM_NEIGHBOURS {
-					let ps = region.assign_advice_from_instance(
-						|| "final_s",
-						config.instance,
-						i,
-						config.temp,
-						i,
-					)?;
-					passed_s[i] = Some(ps);
-				}
-				let unwrapped_passed_s = passed_s.map(|x| x.unwrap());
-
+			|| "unscaled_res",
+			|region: Region<'_, Scalar>| {
 				let ctx = &mut RegionCtx::new(region, 0);
-				let maingate = MainGate::new(config.maingate.clone());
 				for i in 0..NUM_NEIGHBOURS {
-					let passed_scaled = maingate.mul(ctx, &unwrapped_passed_s[i], &scale)?;
-					ctx.constrain_equal(passed_scaled.cell(), final_s[i].clone().cell())?;
+					let passed_s = ctx.copy_assign(config.temp, passed_scaled[i].clone())?;
+					ctx.next();
+					let s = ctx.copy_assign(config.temp, s[i].clone())?;
+					ctx.next();
+					ctx.constrain_equal(passed_s, s)?;
 				}
 				Ok(())
 			},
@@ -358,7 +365,7 @@ impl<
 pub fn native<F: FieldExt, const N: usize, const I: usize, const S: u128>(
 	mut s: [F; N], ops: [[F; N]; N],
 ) -> [F; N] {
-	for i in 0..I {
+	for _ in 0..I {
 		let mut distributions: [[F; N]; N] = [[F::zero(); N]; N];
 		for j in 0..N {
 			distributions[j] = ops[j].map(|v| v * s[j]);
@@ -397,7 +404,7 @@ mod test {
 		eddsa::native::{sign, SecretKey},
 		utils::{generate_params, prove_and_verify},
 	};
-	use halo2wrong::{curves::bn256::Bn256, halo2::dev::MockProver};
+	use halo2::{dev::MockProver, halo2curves::bn256::Bn256};
 	use rand::thread_rng;
 
 	pub const NUM_ITER: usize = 10;
@@ -456,10 +463,15 @@ mod test {
 			pub_keys, signatures, ops, messages,
 		);
 
-		let prover = match MockProver::<Scalar>::run(k, &et, vec![vec![], res.to_vec()]) {
+		let prover = match MockProver::<Scalar>::run(k, &et, vec![res.to_vec()]) {
 			Ok(prover) => prover,
 			Err(e) => panic!("{}", e),
 		};
+
+		// let errs = prover.verify().err().unwrap();
+		// for err in errs {
+		// 	println!("{:#?}", err);
+		// }
 
 		assert_eq!(prover.verify(), Ok(()));
 	}
@@ -517,7 +529,7 @@ mod test {
 
 		let rng = &mut rand::thread_rng();
 		let params = generate_params(k);
-		let res = prove_and_verify::<Bn256, _, _>(params, et, &[&[], &res], rng).unwrap();
+		let res = prove_and_verify::<Bn256, _, _>(params, et, &[&res], rng).unwrap();
 		assert!(res);
 	}
 }

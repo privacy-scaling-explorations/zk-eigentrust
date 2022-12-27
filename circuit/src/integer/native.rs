@@ -1,5 +1,5 @@
 use super::rns::{compose_big, decompose_big, fe_to_big, RnsParams};
-use halo2wrong::halo2::arithmetic::FieldExt;
+use halo2::arithmetic::FieldExt;
 use num_bigint::BigUint;
 use num_integer::Integer as BigI;
 use num_traits::{One, Zero};
@@ -266,7 +266,7 @@ where
 mod test {
 	use super::*;
 	use crate::integer::rns::Bn256_4_68;
-	use halo2wrong::curves::bn256::{Fq, Fr};
+	use halo2::halo2curves::bn256::{Fq, Fr};
 	use num_integer::Integer as NumInteger;
 	use num_traits::{FromPrimitive, One, Zero};
 	use std::str::FromStr;

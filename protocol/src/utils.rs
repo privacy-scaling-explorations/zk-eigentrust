@@ -1,7 +1,7 @@
 use eigen_trust_circuit::{
 	circuit::{PoseidonNativeHasher, PoseidonNativeSponge},
 	eddsa::native::{PublicKey, SecretKey},
-	halo2wrong::curves::{bn256::Fr as Scalar, FieldExt},
+	halo2::halo2curves::{bn256::Fr as Scalar, FieldExt},
 };
 use futures::{
 	stream::{self, BoxStream, Fuse},

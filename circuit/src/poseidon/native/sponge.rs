@@ -1,5 +1,5 @@
 use crate::poseidon::{native::Poseidon, RoundParams};
-use halo2wrong::halo2::arithmetic::FieldExt;
+use halo2::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 /// Constructs objects.

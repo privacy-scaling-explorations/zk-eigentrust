@@ -1,7 +1,6 @@
+use super::params::EdwardsParams;
+use halo2::halo2curves::FieldExt;
 use std::marker::PhantomData;
-
-use super::params::{BabyJubJub, EdwardsParams};
-use halo2wrong::curves::FieldExt;
 
 #[derive(Clone, Copy, Debug)]
 /// Constructs PointProjective objects.
@@ -98,7 +97,8 @@ pub fn test_bit(b: &[u8], i: usize) -> bool {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use halo2wrong::curves::{bn256::Fr, group::ff::PrimeField};
+	use crate::edwards::params::BabyJubJub;
+	use halo2::halo2curves::{bn256::Fr, group::ff::PrimeField};
 
 	#[test]
 	fn test_add_same_point() {
