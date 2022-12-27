@@ -1,5 +1,3 @@
-#![allow(missing_docs)]
-
 use crate::{
 	eddsa::{
 		native::{sign, PublicKey, SecretKey, Signature},
@@ -27,14 +25,19 @@ use halo2::{
 };
 use rand::Rng;
 
+/// Type alias for the native poseidon hasher with a width of 5 and bn254 params
 pub type PoseidonNativeHasher = Poseidon<Scalar, 5, Params>;
+/// Type alias for native poseidon sponge with a width of 5 and bn254 params
 pub type PoseidonNativeSponge = PoseidonSponge<Scalar, 5, Params>;
+/// Type alias for the poseidon hasher chip with a width of 5 and bn254 params
 pub type PoseidonHasher = PoseidonChip<Scalar, 5, Params>;
+/// Type alias for the poseidon spong chip with a width of 5 and bn254 params
 pub type SpongeHasher = PoseidonSpongeChip<Scalar, 5, Params>;
+/// Type alias for Eddsa chip on BabyJubJub elliptic curve
 type Eddsa = EddsaChip<Scalar, BabyJubJub, Params>;
 
-/// The columns config for the main circuit.
 #[derive(Clone, Debug)]
+/// The columns config for the main circuit.
 pub struct EigenTrustConfig {
 	common: CommonConfig,
 	eddsa: EddsaConfig,
@@ -45,6 +48,7 @@ pub struct EigenTrustConfig {
 }
 
 #[derive(Clone)]
+/// Structure of the main EigenTrust circuit
 pub struct EigenTrust<
 	const NUM_NEIGHBOURS: usize,
 	const NUM_ITER: usize,
@@ -74,6 +78,7 @@ impl<
 		const SCALE: u128,
 	> EigenTrust<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, SCALE>
 {
+	/// Constructs a new EigenTrust circuit
 	pub fn new(
 		pks: [PublicKey; NUM_NEIGHBOURS], signatures: [Signature; NUM_NEIGHBOURS],
 		ops: [[Scalar; NUM_NEIGHBOURS]; NUM_NEIGHBOURS], messages: [Scalar; NUM_NEIGHBOURS],
