@@ -29,22 +29,22 @@ pub struct MerklePathConfig {
 
 /// Constructs a chip for the circuit.
 #[derive(Clone)]
-pub struct MerklePathChip<F: FieldExt, const ARITY: usize, const LENGTH: usize, P>
+pub struct MerklePathChip<F: FieldExt, const LENGTH: usize, P>
 where
 	P: RoundParams<F, WIDTH>,
 {
 	/// Constructs cell arrays for the nodes.
-	nodes: [[AssignedCell<F, F>; ARITY]; LENGTH],
+	nodes: [[AssignedCell<F, F>; 2]; LENGTH],
 	/// Constructs a phantom data for the parameters.
 	_params: PhantomData<P>,
 }
 
-impl<F: FieldExt, const ARITY: usize, const LENGTH: usize, P> MerklePathChip<F, ARITY, LENGTH, P>
+impl<F: FieldExt, const LENGTH: usize, P> MerklePathChip<F, LENGTH, P>
 where
 	P: RoundParams<F, WIDTH>,
 {
 	/// Create a new chip.
-	pub fn new(nodes: [[AssignedCell<F, F>; ARITY]; LENGTH]) -> Self {
+	pub fn new(nodes: [[AssignedCell<F, F>; 2]; LENGTH]) -> Self {
 		MerklePathChip { nodes, _params: PhantomData }
 	}
 
@@ -59,7 +59,7 @@ where
 
 	/// Synthesize the circuit.
 	pub fn synthesize(
-		&self, config: MerklePathConfig, path_arr: [[F; ARITY]; LENGTH], zero: AssignedCell<F, F>,
+		&self, config: MerklePathConfig, path_arr: [[F; 2]; LENGTH], zero: AssignedCell<F, F>,
 		mut layouter: impl Layouter<F>,
 	) -> Result<AssignedCell<F, F>, Error> {
 		let mut root: Option<AssignedCell<F, F>> = None;
@@ -74,12 +74,12 @@ where
 			let hashes =
 				pos.synthesize(&config.poseidon.clone(), layouter.namespace(|| "poseidon"))?;
 
-			let set = FixedSetChip::<F, ARITY>::new(path_arr[i + 1], hashes[0].clone());
+			let set = FixedSetChip::<F, 2>::new(path_arr[i + 1], hashes[0].clone());
 			let is_inside =
 				set.synthesize(config.set.clone(), layouter.namespace(|| "is_inside_set"))?;
 
 			// Enforce equality.
-			// If value is not inside the set it will return 0 and will give an error.
+			// If value is not inside the set, it won't satisfy the constraint.
 			layouter.assign_region(
 				|| "enforce_equality",
 				|mut region: Region<'_, F>| {
@@ -123,25 +123,24 @@ mod test {
 	}
 
 	#[derive(Clone)]
-	struct TestCircuit<F: FieldExt, const ARITY: usize, const LENGTH: usize, P>
+	struct TestCircuit<F: FieldExt, const LENGTH: usize, P>
 	where
 		P: RoundParams<F, WIDTH>,
 	{
-		path_arr: [[F; ARITY]; LENGTH],
+		path_arr: [[F; 2]; LENGTH],
 		_params: PhantomData<P>,
 	}
 
-	impl<F: FieldExt, const ARITY: usize, const LENGTH: usize, P> TestCircuit<F, ARITY, LENGTH, P>
+	impl<F: FieldExt, const LENGTH: usize, P> TestCircuit<F, LENGTH, P>
 	where
 		P: RoundParams<F, WIDTH>,
 	{
-		fn new(path_arr: [[F; ARITY]; LENGTH]) -> Self {
+		fn new(path_arr: [[F; 2]; LENGTH]) -> Self {
 			Self { path_arr, _params: PhantomData }
 		}
 	}
 
-	impl<F: FieldExt, const ARITY: usize, const LENGTH: usize, P> Circuit<F>
-		for TestCircuit<F, ARITY, LENGTH, P>
+	impl<F: FieldExt, const LENGTH: usize, P> Circuit<F> for TestCircuit<F, LENGTH, P>
 	where
 		P: RoundParams<F, WIDTH>,
 	{
@@ -149,11 +148,11 @@ mod test {
 		type FloorPlanner = SimpleFloorPlanner;
 
 		fn without_witnesses(&self) -> Self {
-			Self { path_arr: [[F::zero(); ARITY]; LENGTH], _params: PhantomData }
+			Self { path_arr: [[F::zero(); 2]; LENGTH], _params: PhantomData }
 		}
 
 		fn configure(meta: &mut ConstraintSystem<F>) -> TestConfig {
-			let path = MerklePathChip::<_, ARITY, LENGTH, P>::configure(meta);
+			let path = MerklePathChip::<_, LENGTH, P>::configure(meta);
 			let temp = meta.advice_column();
 			let pub_ins = meta.instance_column();
 
@@ -166,7 +165,7 @@ mod test {
 		fn synthesize(
 			&self, config: TestConfig, mut layouter: impl Layouter<F>,
 		) -> Result<(), Error> {
-			let (path_vec, zero) = layouter.assign_region(
+			let (path_arr, zero) = layouter.assign_region(
 				|| "temp",
 				|mut region: Region<'_, F>| {
 					let zero = region.assign_advice(
@@ -175,8 +174,8 @@ mod test {
 						LENGTH * 2 + 1,
 						|| Value::known(F::zero()),
 					)?;
-					let mut path_arr: [[Option<AssignedCell<F, F>>; ARITY]; LENGTH] =
-						[[(); ARITY]; LENGTH].map(|_| [(); ARITY].map(|_| None));
+					let mut path_arr: [[Option<AssignedCell<F, F>>; 2]; LENGTH] =
+						[[(); 2]; LENGTH].map(|_| [(); 2].map(|_| None));
 					for i in 0..LENGTH {
 						path_arr[i][0] = Some(region.assign_advice(
 							|| "temp",
@@ -194,7 +193,7 @@ mod test {
 					Ok((path_arr.map(|a| a.map(|a| a.unwrap())), zero))
 				},
 			)?;
-			let merkle_path = MerklePathChip::<F, ARITY, LENGTH, P>::new(path_vec);
+			let merkle_path = MerklePathChip::<F, LENGTH, P>::new(path_arr);
 			let root = merkle_path.synthesize(
 				config.path,
 				self.path_arr.clone(),
@@ -223,8 +222,8 @@ mod test {
 			Fr::random(rng.clone()),
 		];
 		let merkle = MerkleTree::<Fr, Params>::build_tree(leaves, 3);
-		let path = Path::<Fr, 2, 4, Params>::find_path(&merkle, value);
-		let test_chip = TestCircuit::<Fr, 2, 4, Params>::new(path.path_arr);
+		let path = Path::<Fr, 4, Params>::find_path(&merkle, value);
+		let test_chip = TestCircuit::<Fr, 4, Params>::new(path.path_arr);
 		let k = 9;
 		let pub_ins = vec![merkle.root];
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
@@ -233,7 +232,7 @@ mod test {
 
 	#[test]
 	fn test_verify_path_big() {
-		// Testing membership of the given path with a big tree and path.
+		// Testing membership of the given path with a big tree.
 		let rng = &mut thread_rng();
 		let value = Fr::random(rng.clone());
 		let leaves = vec![
@@ -246,8 +245,8 @@ mod test {
 			Fr::random(rng.clone()),
 		];
 		let merkle = MerkleTree::<Fr, Params>::build_tree(leaves, 8);
-		let path = Path::<Fr, 2, 9, Params>::find_path(&merkle, value);
-		let test_chip = TestCircuit::<Fr, 2, 9, Params>::new(path.path_arr);
+		let path = Path::<Fr, 9, Params>::find_path(&merkle, value);
+		let test_chip = TestCircuit::<Fr, 9, Params>::new(path.path_arr);
 		let k = 10;
 		let pub_ins = vec![merkle.root];
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
@@ -256,13 +255,13 @@ mod test {
 
 	#[test]
 	fn test_verify_path_small() {
-		// Testing membership of the given path with a small tree and path.
+		// Testing membership of the given path with a small tree.
 		let rng = &mut thread_rng();
 		let value = Fr::random(rng.clone());
 		let leaves = vec![Fr::random(rng.clone()), value];
 		let merkle = MerkleTree::<Fr, Params>::build_tree(leaves, 1);
-		let path = Path::<Fr, 2, 2, Params>::find_path(&merkle, value);
-		let test_chip = TestCircuit::<Fr, 2, 2, Params>::new(path.path_arr);
+		let path = Path::<Fr, 2, Params>::find_path(&merkle, value);
+		let test_chip = TestCircuit::<Fr, 2, Params>::new(path.path_arr);
 		let k = 9;
 		let pub_ins = vec![merkle.root];
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
@@ -286,8 +285,8 @@ mod test {
 			Fr::random(rng.clone()),
 		];
 		let merkle = MerkleTree::<Fr, Params>::build_tree(leaves, 4);
-		let path = Path::<Fr, 2, 5, Params>::find_path(&merkle, value);
-		let test_chip = TestCircuit::<Fr, 2, 5, Params>::new(path.path_arr);
+		let path = Path::<Fr, 5, Params>::find_path(&merkle, value);
+		let test_chip = TestCircuit::<Fr, 5, Params>::new(path.path_arr);
 		let k = 9;
 		let pub_ins = vec![merkle.root];
 		let rng = &mut rand::thread_rng();

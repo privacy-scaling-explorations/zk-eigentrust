@@ -58,29 +58,29 @@ where
 
 #[derive(Clone)]
 /// Path structure
-pub struct Path<F: FieldExt, const ARITY: usize, const LENGTH: usize, P>
+pub struct Path<F: FieldExt, const LENGTH: usize, P>
 where
 	P: RoundParams<F, WIDTH>,
 {
 	/// Value that is based on for construction of the path
 	pub(crate) value: F,
 	/// Array that keeps the path
-	pub(crate) path_arr: [[F; ARITY]; LENGTH],
+	pub(crate) path_arr: [[F; 2]; LENGTH],
 	/// PhantomData for the params
 	_params: PhantomData<P>,
 }
 
-impl<F: FieldExt, const ARITY: usize, const LENGTH: usize, P> Path<F, ARITY, LENGTH, P>
+impl<F: FieldExt, const LENGTH: usize, P> Path<F, LENGTH, P>
 where
 	P: RoundParams<F, WIDTH>,
 {
 	/// Find path for the given value to the root
-	pub fn find_path(merkle_tree: &MerkleTree<F, P>, value: F) -> Path<F, ARITY, LENGTH, P> {
+	pub fn find_path(merkle_tree: &MerkleTree<F, P>, value: F) -> Path<F, LENGTH, P> {
 		//
 		// TODO: This way of finding index will fail if we have same inputs
 		//
 		let mut value_index = merkle_tree.nodes[&0].iter().position(|x| x == &value).unwrap();
-		let mut path_arr: [[F; ARITY]; LENGTH] = [[F::zero(); ARITY]; LENGTH];
+		let mut path_arr: [[F; 2]; LENGTH] = [[F::zero(); 2]; LENGTH];
 		// Childs for a parent node is 2n and 2n + 1.
 		// value_index keeps index of that nodes in reverse order to apply this
 		// algorithm.
@@ -135,21 +135,21 @@ mod test {
 			Fr::random(rng.clone()),
 		];
 		let merkle = MerkleTree::<Fr, Params>::build_tree(leaves, 4);
-		let path = Path::<Fr, 2, 5, Params>::find_path(&merkle, value);
+		let path = Path::<Fr, 5, Params>::find_path(&merkle, value);
 		assert!(path.verify());
-		// Assert last element of the vector and the root of the tree
+		// Assert last element of the array and the root of the tree
 		assert_eq!(path.path_arr[merkle.height][0], merkle.root);
 	}
 
 	#[test]
-	fn should_build_tree_from_small_vec() {
-		// Testing build_tree and find_path functions with a small vector
+	fn should_build_small_tree() {
+		// Testing build_tree and find_path functions with a small array
 		let rng = &mut thread_rng();
 		let value = Fr::random(rng.clone());
 		let merkle = MerkleTree::<Fr, Params>::build_tree(vec![value], 0);
-		let path = Path::<Fr, 2, 1, Params>::find_path(&merkle, value);
+		let path = Path::<Fr, 1, Params>::find_path(&merkle, value);
 		assert!(path.verify());
-		// Assert last element of the vector and the root of the tree
+		// Assert last element of the array and the root of the tree
 		assert_eq!(path.path_arr[merkle.height][0], merkle.root);
 	}
 }
