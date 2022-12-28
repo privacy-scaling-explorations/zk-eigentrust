@@ -84,7 +84,7 @@ where
 				|| "enforce_equality",
 				|mut region: Region<'_, F>| {
 					let is_inside_copied =
-						is_inside_bool.copy_advice(|| "is_inside", &mut region, config.temp, 0)?;
+						is_inside.copy_advice(|| "is_inside", &mut region, config.temp, 0)?;
 					region.constrain_constant(is_inside_copied.cell(), F::one())?;
 					Ok(())
 				},
