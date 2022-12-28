@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use halo2wrong::halo2::arithmetic::FieldExt;
+use halo2::halo2curves::FieldExt;
 use num_traits::pow;
 use std::collections::HashMap;
 
@@ -54,61 +54,58 @@ where
 		let root = nodes[&height][0].clone();
 		MerkleTree { nodes, height, root, _params: PhantomData }
 	}
-
-	/// Find path for the given value to the root
-	pub fn find_path(&mut self, value: F) -> Path<F, P> {
-		//
-		// TODO: This way of finding index will fail if we have same inputs
-		//
-		let mut value_index = self.nodes[&0].iter().position(|x| x == &value).unwrap();
-		let mut path_vec: Vec<F> = Vec::new();
-		// Childs for a parent node is 2n and 2n + 1.
-		// value_index keeps index of that nodes in reverse order to apply this
-		// algorithm.
-		for level in 0..self.height {
-			if value_index % 2 == 1 {
-				path_vec.push(self.nodes[&level][value_index - 1]);
-				path_vec.push(self.nodes[&level][value_index]);
-			} else {
-				path_vec.push(self.nodes[&level][value_index]);
-				path_vec.push(self.nodes[&level][value_index + 1]);
-			}
-			value_index = value_index / 2;
-		}
-		path_vec.push(self.nodes[&self.height][0]);
-		Path { path_vec, value, _params: PhantomData }
-	}
 }
 
 #[derive(Clone)]
 /// Path structure
-pub struct Path<F: FieldExt, P>
+pub struct Path<F: FieldExt, const ARITY: usize, const LENGTH: usize, P>
 where
 	P: RoundParams<F, WIDTH>,
 {
 	/// Value that is based on for construction of the path
 	pub(crate) value: F,
-	/// Vector that keeps the path
-	pub(crate) path_vec: Vec<F>,
+	/// Array that keeps the path
+	pub(crate) path_arr: [[F; ARITY]; LENGTH],
 	/// PhantomData for the params
 	_params: PhantomData<P>,
 }
 
-impl<F: FieldExt, P> Path<F, P>
+impl<F: FieldExt, const ARITY: usize, const LENGTH: usize, P> Path<F, ARITY, LENGTH, P>
 where
 	P: RoundParams<F, WIDTH>,
 {
-	/// Sanity check for the path vector
+	/// Find path for the given value to the root
+	pub fn find_path(merkle_tree: &MerkleTree<F, P>, value: F) -> Path<F, ARITY, LENGTH, P> {
+		//
+		// TODO: This way of finding index will fail if we have same inputs
+		//
+		let mut value_index = merkle_tree.nodes[&0].iter().position(|x| x == &value).unwrap();
+		let mut path_arr: [[F; ARITY]; LENGTH] = [[F::zero(); ARITY]; LENGTH];
+		// Childs for a parent node is 2n and 2n + 1.
+		// value_index keeps index of that nodes in reverse order to apply this
+		// algorithm.
+		for level in 0..merkle_tree.height {
+			if value_index % 2 == 1 {
+				path_arr[level][0] = merkle_tree.nodes[&level][value_index - 1];
+				path_arr[level][1] = merkle_tree.nodes[&level][value_index];
+			} else {
+				path_arr[level][0] = merkle_tree.nodes[&level][value_index];
+				path_arr[level][1] = merkle_tree.nodes[&level][value_index + 1]
+			}
+			value_index = value_index / 2;
+		}
+		path_arr[merkle_tree.height][0] = merkle_tree.nodes[&merkle_tree.height][0];
+		Self { value, path_arr, _params: PhantomData }
+	}
+
+	/// Sanity check for the path array
 	pub fn verify(&self) -> bool {
 		let mut is_satisfied = true;
-		for i in 0..self.path_vec.len() - 1 {
-			if i % 2 != 0 {
-				continue;
-			}
+		for i in 0..self.path_arr.len() - 1 {
 			let pos_inputs =
-				[self.path_vec[i], self.path_vec[i + 1], F::zero(), F::zero(), F::zero()];
+				[self.path_arr[i][0], self.path_arr[i][1], F::zero(), F::zero(), F::zero()];
 			let hasher: Poseidon<F, WIDTH, P> = Poseidon::new(pos_inputs);
-			is_satisfied = is_satisfied | self.path_vec.contains(&(hasher.permute()[0]));
+			is_satisfied = is_satisfied | self.path_arr[i + 1].contains(&(hasher.permute()[0]));
 		}
 		is_satisfied
 	}
@@ -116,11 +113,10 @@ where
 
 #[cfg(test)]
 mod test {
-	use crate::params::poseidon_bn254_5x5::Params;
-	use halo2wrong::{curves::bn256::Fr, halo2::arithmetic::Field};
-	use rand::thread_rng;
-
 	use super::MerkleTree;
+	use crate::{merkle_tree::native::Path, params::poseidon_bn254_5x5::Params};
+	use halo2::{arithmetic::Field, halo2curves::bn256::Fr};
+	use rand::thread_rng;
 
 	#[test]
 	fn should_build_tree_and_find_path() {
@@ -138,12 +134,11 @@ mod test {
 			Fr::random(rng.clone()),
 			Fr::random(rng.clone()),
 		];
-		let mut merkle = MerkleTree::<Fr, Params>::build_tree(leaves, 4);
-
-		let path = merkle.find_path(value);
+		let merkle = MerkleTree::<Fr, Params>::build_tree(leaves, 4);
+		let path = Path::<Fr, 2, 5, Params>::find_path(&merkle, value);
 		assert!(path.verify());
 		// Assert last element of the vector and the root of the tree
-		assert_eq!(path.path_vec[(2 * merkle.height)], merkle.root);
+		assert_eq!(path.path_arr[merkle.height][0], merkle.root);
 	}
 
 	#[test]
@@ -151,10 +146,10 @@ mod test {
 		// Testing build_tree and find_path functions with a small vector
 		let rng = &mut thread_rng();
 		let value = Fr::random(rng.clone());
-		let mut merkle = MerkleTree::<Fr, Params>::build_tree(vec![value], 0);
-		let path = merkle.find_path(value);
+		let merkle = MerkleTree::<Fr, Params>::build_tree(vec![value], 0);
+		let path = Path::<Fr, 2, 1, Params>::find_path(&merkle, value);
 		assert!(path.verify());
 		// Assert last element of the vector and the root of the tree
-		assert_eq!(path.path_vec[(2 * merkle.height)], merkle.root);
+		assert_eq!(path.path_arr[merkle.height][0], merkle.root);
 	}
 }
