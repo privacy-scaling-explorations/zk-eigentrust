@@ -72,6 +72,59 @@ pub trait RoundParams<F: FieldExt, const WIDTH: usize>: Sbox {
 		}
 		new_state
 	}
+
+	/// Add round constants to the state values
+	/// for the AddRoundConstants operation.
+	fn apply_round_constants_val(
+		state_cells: &[Value<F>; WIDTH], round_const_values: &[Value<F>; WIDTH],
+	) -> [Value<F>; WIDTH] {
+		let mut next_state = [Value::unknown(); WIDTH];
+		for i in 0..WIDTH {
+			let round_const = &round_const_values[i];
+			let sum = *round_const + state_cells[i];
+			next_state[i] = sum;
+		}
+		next_state
+	}
+
+	/// Compute MDS matrix for MixLayer operation.
+	fn apply_mds_val(next_state: &[Value<F>; WIDTH]) -> [Value<F>; WIDTH] {
+		let mut new_state = [Value::known(F::zero()); WIDTH];
+		let mds = P::mds();
+		for i in 0..WIDTH {
+			for j in 0..WIDTH {
+				let mds_ij = &Value::known(mds[i][j]);
+				let m_product = next_state[j] * mds_ij;
+				new_state[i] = new_state[i] + m_product;
+			}
+		}
+		new_state
+	}
+
+	/// Add round constants expression to the state values
+	/// expression for the AddRoundConstants operation in the circuit.
+	fn apply_round_constants_expr(
+		curr_state: &[Expression<F>; WIDTH], round_constants: &[Expression<F>; WIDTH],
+	) -> [Expression<F>; WIDTH] {
+		let mut exprs = [(); WIDTH].map(|_| Expression::Constant(F::zero()));
+		for i in 0..WIDTH {
+			exprs[i] = curr_state[i] + round_constant[i];
+		}
+		exprs
+	}
+
+	/// Compute MDS matrix for MixLayer operation in the circuit.
+	fn apply_mds_expr(exprs: &[Expression<F>; WIDTH]) -> [Expression<F>; WIDTH] {
+		let mut new_exprs = [(); WIDTH].map(|_| Expression::Constant(F::zero()));
+		let mds = P::mds();
+		// Mat mul with MDS
+		for i in 0..WIDTH {
+			for j in 0..WIDTH {
+				new_exprs[i] = new_exprs[i].clone() + (exprs[j].clone() * mds[i][j]);
+			}
+		}
+		new_exprs
+	}
 }
 
 /// Trait definition for Sbox operation of Poseidon

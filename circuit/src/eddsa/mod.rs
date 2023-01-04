@@ -8,28 +8,22 @@ use crate::{
 		lt_eq::{LessEqualChip, LessEqualConfig},
 	},
 	params::RoundParams,
-	poseidon::{PoseidonChip, PoseidonConfig},
+	poseidon::{PoseidonChipset, PoseidonConfig},
+	RegionCtx,
 };
 use halo2::{
 	circuit::{AssignedCell, Layouter, Region},
 	halo2curves::FieldExt,
-	plonk::{Advice, Column, ConstraintSystem, Error},
+	plonk::{Advice, Column, ConstraintSystem, Error, Selector},
 };
 use std::marker::PhantomData;
 
-#[derive(Clone, Debug)]
-/// Configuration elements for the circuit are defined here.
-pub struct EddsaConfig {
-	/// Constructs eddsa gadgets circuit elements.
-	edwards: EdwardsConfig,
-	/// Constructs common circuit elements.
-	common: CommonConfig,
-	/// Constructs lt_eq circuit elements.
-	lt_eq: LessEqualConfig,
-	/// Constructs poseidon circuit elements.
-	poseidon: PoseidonConfig<5>,
-	/// Configures a column for the temp.
-	temp: Column<Advice>,
+struct EddsaConfig {
+	posiedon: PoseidonConfig,
+	lt_eq_selector: Selector,
+	scalar_mul_selector: Selector,
+	add_point_selector: Selector,
+	affine_selector: Selector,
 }
 
 /// Constructs individual cells for the configuration elements.
@@ -87,36 +81,40 @@ where
 			_r: PhantomData,
 		}
 	}
+}
 
-	/// Make the circuit config.
-	pub fn configure(meta: &mut ConstraintSystem<F>) -> EddsaConfig {
-		let common = CommonChip::configure(meta);
-		let edwards = EdwardsChip::<F, P>::configure(meta);
-		let lt_eq = LessEqualChip::configure(meta);
-		let poseidon = PoseidonChip::<_, 5, R>::configure(meta);
-		let temp = meta.advice_column();
-
-		meta.enable_equality(temp);
-
-		EddsaConfig { edwards, common, lt_eq, poseidon, temp }
-	}
+impl<F: FieldExt, P: EdwardsParams<F>, R> Chipset<F> for EddsaChip<F, P, R>
+where
+	R: RoundParams<F, 5>,
+{
+	type Config = EddsaConfig;
+	type Output = ();
 
 	/// Synthesize the circuit.
-	pub fn synthesize(
-		&self, config: &EddsaConfig, mut layouter: impl Layouter<F>,
-	) -> Result<(), Error> {
+	fn synthesize(
+		&self, common: CommonConfig, config: EddsaConfig, mut layouter: impl Layouter<F>,
+	) -> Result<Self::Output, Error> {
 		let (b8_x, b8_y, one, suborder) = layouter.assign_region(
 			|| "assign_values",
 			|mut region: Region<'_, F>| {
-				let b8_x =
-					region.assign_advice_from_constant(|| "b8_x", config.temp, 0, P::b8().0)?;
-				let b8_y =
-					region.assign_advice_from_constant(|| "b8_y", config.temp, 1, P::b8().1)?;
-				let one = region.assign_advice_from_constant(|| "one", config.temp, 2, F::one())?;
+				let b8_x = region.assign_advice_from_constant(
+					|| "b8_x",
+					config.advice[0],
+					0,
+					P::b8().0,
+				)?;
+				let b8_y = region.assign_advice_from_constant(
+					|| "b8_y",
+					config.advice[1],
+					0,
+					P::b8().1,
+				)?;
+				let one =
+					region.assign_advice_from_constant(|| "one", config.advice[2], 0, F::one())?;
 				let suborder = region.assign_advice_from_constant(
 					|| "suborder",
-					config.temp,
-					3,
+					config.advice[3],
+					0,
 					P::suborder(),
 				)?;
 				Ok((b8_x, b8_y, one, suborder))
@@ -124,23 +122,25 @@ where
 		)?;
 
 		// s cannot be higher than the suborder.
-		let lt_eq = LessEqualChip::new(
+		let lt_eq_chipset = LessEqualChipset::new(
 			self.s.clone(),
 			suborder,
 			self.s_bits,
 			self.suborder_bits,
 			self.s_suborder_diff_bits,
 		);
-		let is_lt_eq =
-			lt_eq.synthesize(&config.lt_eq, layouter.namespace(|| "s_lt_eq_suborder"))?;
+		let is_lt_eq = lt_eq_chipset.synthesize(
+			common,
+			config.lt_eq_selector,
+			layouter.namespace(|| "s_lt_eq_suborder"),
+		)?;
 
 		// Cl = s * G
 		let e = AssignedPoint::new(b8_x, b8_y, one.clone());
-		let cl = EdwardsChip::<F, P>::scalar_mul::<252>(
-			e,
-			self.s.clone(),
-			self.s_bits,
-			&config.edwards,
+		let cl_chipset = StrictScalarMulChipset::new(e, self.s.clone(), self.s_bits)?;
+		let cl = cl_chipset.synthesize(
+			common,
+			config.scalar_mul_selector,
 			layouter.namespace(|| "b_8 * s"),
 		)?;
 
@@ -153,75 +153,57 @@ where
 			self.pk_y.clone(),
 			self.m.clone(),
 		];
-		let hasher = PoseidonChip::<F, 5, R>::new(m_hash_input);
-		let m_hash_res = hasher.synthesize(&config.poseidon, layouter.namespace(|| "m_hash"))?;
+		let hasher = PoseidonChipset::<F, 5, R>::new(m_hash_input);
+		let m_hash_res =
+			hasher.synthesize(common, config.poseidon, layouter.namespace(|| "m_hash"))?;
 
 		// H(R || PK || M) * PK
 		// Scalar multiplication for the public key and hash.
 		let e = AssignedPoint::new(self.pk_x.clone(), self.pk_y.clone(), one.clone());
-		let pk_h = EdwardsChip::<F, P>::scalar_mul::<256>(
-			e,
-			m_hash_res[0].clone(),
-			self.m_hash_bits,
-			&config.edwards,
+		let pk_h_chipset = StrictScalarMulChipset::new(e, m_hash_res[0].clone(), self.m_hash_bits)?;
+		let ph = pk_h_chipset.synthesize(
+			common,
+			config.scalar_mul_selector,
 			layouter.namespace(|| "pk * m_hash"),
 		)?;
 
 		// Cr = R + H(R || PK || M) * PK
 		let big_r_point = AssignedPoint::new(self.big_r_x.clone(), self.big_r_y.clone(), one);
-		let cr = EdwardsChip::<F, P>::add_point(
-			big_r_point,
-			pk_h,
-			&config.edwards,
+		let cr_chip = AddPointChip::new(big_r_point, pk_h)?;
+		let cr = cr_chip.synthesize(
+			common,
+			config.add_point_selector,
 			layouter.namespace(|| "big_r + pk_h"),
 		)?;
 
 		// Converts two projective space points to their affine representation.
-		let cl_affine = EdwardsChip::<F, P>::into_affine(
-			cl,
-			&config.edwards,
+		let cl_affine_chip = IntoAffineChip::new(cl)?;
+		let cl_affine = cl_affine_chip.synthesize(
+			common,
+			config.affine_selector,
 			layouter.namespace(|| "cl_affine"),
 		)?;
-		let cr_affine = EdwardsChip::<F, P>::into_affine(
-			cr,
-			&config.edwards,
+		let cr_affine_chip = IntoAffineChip::new(cr)?;
+		let cr_affine = cr_affine_chip.synthesize(
+			common,
+			config.affine_selector,
 			layouter.namespace(|| "cr_affine"),
 		)?;
 
-		// Check if Clx == Crx and Cly == Cry.
-		let x_eq = CommonChip::is_equal(
-			cl_affine.0,
-			cr_affine.0,
-			&config.common,
-			layouter.namespace(|| "point_x_equal"),
-		)?;
-		let y_eq = CommonChip::is_equal(
-			cl_affine.1,
-			cr_affine.1,
-			&config.common,
-			layouter.namespace(|| "point_y_equal"),
-		)?;
-
-		// Use And gate between x and y equality.
-		// If equal returns 1, else 0.
-		let point_eq = CommonChip::and(
-			x_eq,
-			y_eq,
-			&config.common,
-			layouter.namespace(|| "point_eq"),
-		)?;
-
 		// Enforce equality.
-		// If either one of them returns 0, the circuit will give an error.
+		// Check if Clx == Crx and Cly == Cry.
 		layouter.assign_region(
 			|| "enforce_equal",
 			|mut region: Region<'_, F>| {
-				let lt_eq_copied =
-					is_lt_eq.copy_advice(|| "lt_eq_temp", &mut region, config.temp, 0)?;
-				let point_eq_copied =
-					point_eq.copy_advice(|| "point_eq_temp", &mut region, config.temp, 1)?;
-				region.constrain_constant(lt_eq_copied.cell(), F::one())?;
-				region.constrain_constant(point_eq_copied.cell(), F::one())?;
+				let region_ctx = RegionCtx::new(region, 0);
+
+				let cl_affine_x = region_ctx.copy_assign(config.advice[0], cl_affine.0);
+				let cl_affine_y = region_ctx.copy_assign(config.advice[1], cl_affine.1);
+				let cr_affine_x = region_ctx.copy_assign(config.advice[2], cr_affine.0);
+				let cr_affine_y = region_ctx.copy_assign(config.advice[3], cr_affine.1);
+
+				region_ctx.constrain_equal(cl_affine_x, cr_affine_x)?;
+				region_ctx.constrain_equal(cl_affine_y, cr_affine_y)?;
 				Ok(())
 			},
 		)?;

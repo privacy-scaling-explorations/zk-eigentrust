@@ -6,62 +6,37 @@ use halo2::{
 	poly::Rotation,
 };
 
-#[derive(Clone, Debug)]
-/// Configuration elements for the circuit defined here.
-pub struct FixedSetConfig {
-	/// Constructs is_zero circuit elements.
-	is_zero: CommonConfig,
-	/// Configures a column for the target.
-	target: Column<Advice>,
-	/// Configures a fixed column for the items.
-	items: Column<Fixed>,
-	/// Configures a column for the diffs.
-	diffs: Column<Advice>,
-	/// Configures a column for the product.
-	product: Column<Advice>,
-	/// Configures a fixed boolean value for each row of the circuit.
-	selector: Selector,
-}
-
 /// Constructs individual cells for the configuration elements.
 pub struct FixedSetChip<F: FieldExt, const N: usize> {
 	/// Constructs items variable for the circuit.
-	items: [F; N],
+	items: [AssignedCell<F, F>; N],
 	/// Assigns a cell for the target.
 	target: AssignedCell<F, F>,
 }
 
 impl<F: FieldExt, const N: usize> FixedSetChip<F, N> {
-	/// Create a new chip.
-	pub fn new(items: [F; N], target: AssignedCell<F, F>) -> Self {
+	pub fn new(items: [AssignedCell<F, F>; N], target: AssignedCell<F, F>) -> Self {
 		FixedSetChip { items, target }
 	}
+}
+
+impl<F: FieldExt, const N: usize> Chip<F> for FixedSetChip<F, N> {
+	type Output = AssignedCell<F, F>;
 
 	/// Make the circuit config.
-	pub fn configure(meta: &mut ConstraintSystem<F>) -> FixedSetConfig {
-		let is_zero = CommonChip::configure(meta);
-		let target = meta.advice_column();
-		let items = meta.fixed_column();
-		let diffs = meta.advice_column();
-		let product = meta.advice_column();
-		let fixed = meta.fixed_column();
-		let s = meta.selector();
-
-		meta.enable_equality(target);
-		meta.enable_equality(items);
-		meta.enable_equality(product);
-		meta.enable_constant(fixed);
+	fn configure(common: CommonConfig, meta: &mut ConstraintSystem<F>) -> Selector {
+		let selector = meta.selector();
 
 		meta.create_gate("fixed_set_membership", |v_cells| {
-			let _target_exp = v_cells.query_advice(target, Rotation::cur());
+			let target_exp = v_cells.query_advice(common.advice[0], Rotation::cur());
 
-			let _item_exp = v_cells.query_fixed(items, Rotation::cur());
-			let diff_exp = v_cells.query_advice(diffs, Rotation::cur());
+			let item_exp = v_cells.query_advice(common.advice[1], Rotation::cur());
+			let diff_exp = v_cells.query_advice(common.advice[2], Rotation::cur());
 
-			let product_exp = v_cells.query_advice(product, Rotation::cur());
-			let next_product_exp = v_cells.query_advice(product, Rotation::next());
+			let product_exp = v_cells.query_advice(common.advice[3], Rotation::cur());
+			let next_product_exp = v_cells.query_advice(common.advice[3], Rotation::next());
 
-			let s_exp = v_cells.query_selector(s);
+			let s_exp = v_cells.query_selector(selector);
 
 			vec![
 				// If the difference is equal to 0, that will make the next product equal to 0.
@@ -72,67 +47,103 @@ impl<F: FieldExt, const N: usize> FixedSetChip<F, N> {
 				// That makes next_product_exp = 0
 				// => (1 * 0) - 0 == 0
 				s_exp.clone() * (product_exp * diff_exp.clone() - next_product_exp),
-				// TODO: uncomment this line when the bug is fixed.
-				// s_exp * (target_exp - (diff_exp + item_exp)),
+				s_exp * (target_exp - (diff_exp + item_exp)),
 			]
 		});
 
-		FixedSetConfig { is_zero, target, items, diffs, product, selector: s }
+		selector
 	}
 
 	/// Synthesize the circuit.
-	pub fn synthesize(
-		&self, config: FixedSetConfig, mut layouter: impl Layouter<F>,
-	) -> Result<AssignedCell<F, F>, Error> {
-		let product = layouter.assign_region(
+	fn synthesize(
+		&self, config: CommonConfig, selector: Selector, mut layouter: impl Layouter<F>,
+	) -> Result<Self::Output, Error> {
+		layouter.assign_region(
 			|| "set_membership",
 			|mut region: Region<'_, F>| {
 				let mut assigned_product = region.assign_advice_from_constant(
 					|| "initial_product",
-					config.product,
+					common.advice[3],
 					0,
 					F::one(),
 				)?;
 				let mut assigned_target =
-					self.target.copy_advice(|| "target", &mut region, config.target, 0)?;
+					self.target.copy_advice(|| "target", &mut region, common.advice[0], 0)?;
 				for i in 0..N {
-					config.selector.enable(&mut region, i)?;
+					selector.enable(&mut region, i)?;
 
-					let item_value = Value::known(self.items[i]);
-					region.assign_fixed(
+					let item_value = region.assign_advice(
 						|| format!("item_{}", i),
-						config.items,
+						common.advice[1],
 						i,
-						|| item_value,
+						|| Value::known(self.items[i]),
 					)?;
 
 					// Calculating difference between given target and item from the set.
-					let diff = self.target.value().cloned() - item_value;
+					let diff = self.target.value().cloned() - item_value.value().cloned();
 					// If the difference is equal to 0, that means the target is in the set and next
 					// product will become 0.
 					let next_product = assigned_product.value().cloned() * diff;
 
-					region.assign_advice(|| format!("diff_{}", i), config.diffs, i, || diff)?;
+					region.assign_advice(|| format!("diff_{}", i), common.advice[2], i, || diff)?;
 					assigned_product = region.assign_advice(
 						|| format!("product_{}", i),
-						config.product,
+						common.advice[3],
 						i + 1,
 						|| next_product,
 					)?;
 					assigned_target = assigned_target.copy_advice(
 						|| "target",
 						&mut region,
-						config.target,
+						common.advice[0],
 						i + 1,
 					)?;
 				}
 
 				Ok(assigned_product)
 			},
+		)
+	}
+}
+
+struct FixedSetConfig {
+	is_zero_selector: Selector,
+	fixed_set_selector: Selector,
+}
+
+struct FixedSetChipset<F: FieldExt, const N: usize> {
+	/// Constructs items variable for the circuit.
+	items: [AssignedCell<F, F>; N],
+	/// Assigns a cell for the target.
+	target: AssignedCell<F, F>,
+}
+
+impl<F: FieldExt, const N: usize> FixedSetChipset<F, N> {
+	pub fn new(items: [AssignedCell<F, F>; N], target: AssignedCell<F, F>) -> Self {
+		FixedSetChipset { items, target }
+	}
+}
+
+impl<F: FieldExt, const N: usize> Chipset<F> for FixedSetChipset<F, N> {
+	type Config = FixedSetConfig;
+	type Output = AssignedCell<F, F>;
+
+	fn synthesize(
+		&self, common: CommonConfig, config: Self::Config, mut layouter: impl Layouter<F>,
+	) -> Result<Self::Output, Error> {
+		let fixed_set_chip = FixedSetChip::new(self.items, self.target);
+		let res = fixed_set_chip.synthesize(
+			common,
+			config.fixed_set_selector,
+			layouter.namespace(|| "fixed_set_membership"),
 		)?;
 
-		let is_zero =
-			CommonChip::is_zero(product, &config.is_zero, layouter.namespace(|| "is_member"))?;
+		let is_zero_chip = IsZeroChip::new(res);
+		let is_zero = is_zero_chip.synthesize(
+			common,
+			config.is_zero_selector,
+			layouter.namespace(|| "is_member"),
+		)?;
 
 		Ok(is_zero)
 	}

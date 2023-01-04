@@ -13,7 +13,7 @@ use crate::{
 	poseidon::{
 		native::{sponge::PoseidonSponge, Poseidon},
 		sponge::{PoseidonSpongeChip, PoseidonSpongeConfig},
-		PoseidonChip,
+		PoseidonChipset,
 	},
 	RegionCtx,
 };
@@ -30,7 +30,7 @@ pub type PoseidonNativeHasher = Poseidon<Scalar, 5, Params>;
 /// Type alias for native poseidon sponge with a width of 5 and bn254 params
 pub type PoseidonNativeSponge = PoseidonSponge<Scalar, 5, Params>;
 /// Type alias for the poseidon hasher chip with a width of 5 and bn254 params
-pub type PoseidonHasher = PoseidonChip<Scalar, 5, Params>;
+pub type PoseidonHasher = PoseidonChipset<Scalar, 5, Params>;
 /// Type alias for the poseidon spong chip with a width of 5 and bn254 params
 pub type SpongeHasher = PoseidonSpongeChip<Scalar, 5, Params>;
 /// Type alias for Eddsa chip on BabyJubJub elliptic curve

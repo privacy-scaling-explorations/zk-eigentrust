@@ -1,6 +1,7 @@
 use crate::{
 	params::RoundParams,
-	poseidon::{PoseidonChip, PoseidonConfig},
+	poseidon::{PoseidonChipset, PoseidonConfig},
+	CommonConfig,
 };
 use halo2::{
 	arithmetic::FieldExt,
@@ -10,38 +11,45 @@ use halo2::{
 };
 use std::marker::PhantomData;
 
-#[derive(Clone, Debug)]
-/// Configuration elements for the circuit are defined here.
-pub struct PoseidonSpongeConfig<const WIDTH: usize> {
-	/// Constructs poseidon circuit elements.
-	pub poseidon_config: PoseidonConfig<WIDTH>,
-	/// Configures a fixed boolean value for each row of the circuit.
-	absorb_selector: Selector,
-}
-
-/// Constructs a chip structure for the circuit.
-pub struct PoseidonSpongeChip<F: FieldExt, const WIDTH: usize, P>
-where
-	P: RoundParams<F, WIDTH>,
-{
-	/// Constructs a cell vector for the inputs.
-	inputs: Vec<AssignedCell<F, F>>,
-	/// Constructs a phantom data for the parameters.
-	_params: PhantomData<P>,
-}
-
-impl<F: FieldExt, const WIDTH: usize, P> PoseidonSpongeChip<F, WIDTH, P>
-where
-	P: RoundParams<F, WIDTH>,
-{
-	/// Create a new chip.
-	pub fn new() -> Self {
-		Self { inputs: Vec::new(), _params: PhantomData }
+/// Absorb the data in and split it into
+/// chunks of size WIDTH.
+fn load_state<F: FieldExt>(
+	columns: [Column<Advice>; WIDTH], region: &mut Region<'_, F>, round: usize,
+	prev_state: &[AssignedCell<F, F>],
+) -> Result<[AssignedCell<F, F>; WIDTH], Error> {
+	let mut state: [Option<AssignedCell<F, F>>; WIDTH] = [(); WIDTH].map(|_| None);
+	for i in 0..WIDTH {
+		if let Some(cell) = prev_state.get(i) {
+			state[i] = Some(cell.copy_advice(|| "state", region, columns[i], round)?);
+		} else {
+			state[i] = Some(region.assign_advice(
+				|| "state",
+				columns[i],
+				round,
+				|| Value::known(F::zero()),
+			)?);
+		}
 	}
+	Ok(state.map(|item| item.unwrap()))
+}
 
-	/// Make the circuit config.
-	pub fn configure(meta: &mut ConstraintSystem<F>) -> PoseidonSpongeConfig<WIDTH> {
-		let poseidon_config = PoseidonChip::<_, WIDTH, P>::configure(meta);
+struct AbsorbChip<F: FieldExt, const WIDTH: usize> {
+	prev_state: [AssignedCell<F, F>; WIDTH],
+	state: [AssignedCell<F, F>; WIDTH],
+}
+
+impl<F: FieldExt> AbsorbChip<F> {
+	pub fn new(
+		prev_state: [AssignedCell<F, F>; WIDTH], state: [AssignedCell<F, F>; WIDTH],
+	) -> Self {
+		Self { prev_state, state }
+	}
+}
+
+impl<F: FieldExt, const WIDTH: usize> Chip<F> for AbsorbChip<F, WIDTH> {
+	type Output = [AssignedCell<F, F>; WIDTH];
+
+	fn configure(config: CommonConfig, meta: &mut ConstraintSystem<F>) -> Selector {
 		let absorb_selector = meta.selector();
 
 		meta.create_gate("absorb", |v_cells| {
@@ -60,40 +68,81 @@ where
 			exprs
 		});
 
-		PoseidonSpongeConfig { poseidon_config, absorb_selector }
+		absorb_selector
 	}
 
-	/// Absorb the data in and split it into
-	/// chunks of size WIDTH.
-	fn load_state(
-		columns: [Column<Advice>; WIDTH], region: &mut Region<'_, F>, round: usize,
-		prev_state: &[AssignedCell<F, F>],
-	) -> Result<[AssignedCell<F, F>; WIDTH], Error> {
-		let mut state: [Option<AssignedCell<F, F>>; WIDTH] = [(); WIDTH].map(|_| None);
-		for i in 0..WIDTH {
-			if let Some(cell) = prev_state.get(i) {
-				state[i] = Some(cell.copy_advice(|| "state", region, columns[i], round)?);
-			} else {
-				state[i] = Some(region.assign_advice(
-					|| "state",
-					columns[i],
-					round,
-					|| Value::known(F::zero()),
-				)?);
-			}
-		}
-		Ok(state.map(|item| item.unwrap()))
+	fn synthesize(
+		&self, config: CommonConfig, selector: Selector, layouter: impl Layouter<F>,
+	) -> Result<Self::Output, Error> {
+		layouter.assign_region(
+			|| format!("absorb_{}", i),
+			|mut region: Region<'_, F>| {
+				let round = 1;
+				selector.enable(&mut region, round)?;
+
+				// Load previous Poseidon state
+				let loaded_state = load_state(config, &mut region, round - 1, &self.prev_state)?;
+
+				// Load next chunk
+				let loaded_chunk = load_state(config, &mut region, round, &self.state)?;
+
+				// Calculate the next state to permute
+				let next_state = loaded_chunk.zip(loaded_state).zip(config).try_map(
+					|((chunk_state, pos_state), column)| {
+						let sum =
+							chunk_state.value().and_then(|&s| pos_state.value().map(|&ps| s + ps));
+						region.assign_advice(|| "sum", column, round + 1, || sum)
+					},
+				)?;
+
+				Ok(next_state)
+			},
+		)
+	}
+}
+
+struct PoseidonSpongeConfig {
+	poseidon: PoseidonConfig,
+	absorb_selector: Selector,
+}
+
+/// Constructs a chip structure for the circuit.
+pub struct PoseidonSpongeChipset<F: FieldExt, const WIDTH: usize, P>
+where
+	P: RoundParams<F, WIDTH>,
+{
+	/// Constructs a cell vector for the inputs.
+	inputs: Vec<AssignedCell<F, F>>,
+	/// Constructs a phantom data for the parameters.
+	_params: PhantomData<P>,
+}
+
+impl<F: FieldExt, const WIDTH: usize, P> PoseidonSpongeChipset<F, WIDTH, P>
+where
+	P: RoundParams<F, WIDTH>,
+{
+	/// Create a new chip.
+	pub fn new() -> Self {
+		Self { inputs: Vec::new(), _params: PhantomData }
 	}
 
 	/// Clones and appends all elements from a slice to the vec.
 	pub fn update(&mut self, inputs: &[AssignedCell<F, F>]) {
 		self.inputs.extend_from_slice(inputs);
 	}
+}
+
+impl<F: FieldExt, const WIDTH: usize, P> Chipset<F> for PoseidonSpongeChipset<F, WIDTH, P>
+where
+	P: RoundParams<F, WIDTH>,
+{
+	type Config = PoseidonSpongeConfig;
+	type Output = AssignedCell<F, F>;
 
 	/// Squeeze the data out by
 	/// permuting until no more chunks are left.
-	pub fn squeeze(
-		&self, config: &PoseidonSpongeConfig<WIDTH>, mut layouter: impl Layouter<F>,
+	fn synthesize(
+		&self, common: CommonConfig, config: &PoseidonSpongeConfig, mut layouter: impl Layouter<F>,
 	) -> Result<AssignedCell<F, F>, Error> {
 		assert!(!self.inputs.is_empty());
 
@@ -105,42 +154,17 @@ where
 		)?;
 
 		for (i, chunk) in self.inputs.chunks(WIDTH).enumerate() {
-			let inputs = layouter.assign_region(
-				|| format!("absorb_{}", i),
-				|mut region: Region<'_, F>| {
-					let round = 1;
-					config.absorb_selector.enable(&mut region, round)?;
-
-					// Load previous Poseidon state
-					let loaded_state = Self::load_state(
-						config.poseidon_config.state,
-						&mut region,
-						round - 1,
-						&state,
-					)?;
-
-					// Load next chunk
-					let loaded_chunk =
-						Self::load_state(config.poseidon_config.state, &mut region, round, chunk)?;
-
-					// Calculate the next state to permute
-					let next_state = loaded_chunk
-						.zip(loaded_state)
-						.zip(config.poseidon_config.state)
-						.try_map(|((chunk_state, pos_state), column)| {
-							let sum = chunk_state
-								.value()
-								.and_then(|&s| pos_state.value().map(|&ps| s + ps));
-							region.assign_advice(|| "sum", column, round + 1, || sum)
-						})?;
-
-					Ok(next_state)
-				},
+			let absorb = AbsorbChip::new(state, chunk);
+			let inputs = absorb.synthesize(
+				common,
+				config.absorb_selector,
+				layouter.namespace(|| format!("absorb_{}", i)),
 			)?;
 
-			let pos = PoseidonChip::<_, WIDTH, P>::new(inputs);
+			let pos = PoseidonChipset::<_, WIDTH, P>::new(inputs);
 			state = pos.synthesize(
-				&config.poseidon_config,
+				common,
+				&config.poseidon,
 				layouter.namespace(|| format!("poseidon_permute_{}", i)),
 			)?;
 		}

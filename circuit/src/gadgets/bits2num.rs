@@ -5,6 +5,8 @@ use halo2::{
 	poly::Rotation,
 };
 
+use crate::CommonConfig;
+
 /// Converts given bytes to the bits.
 pub fn to_bits<const B: usize>(num: [u8; 32]) -> [bool; B] {
 	let mut bits = [false; B];
@@ -12,19 +14,6 @@ pub fn to_bits<const B: usize>(num: [u8; 32]) -> [bool; B] {
 		bits[i] = num[i / 8] & (1 << (i % 8)) != 0;
 	}
 	bits
-}
-
-/// Configuration elements for the circuit defined here.
-#[derive(Debug, Clone, Copy)]
-pub struct Bits2NumConfig {
-	/// Configures a column for the bits.
-	pub bits: Column<Advice>,
-	/// Configures a column for the lc1.
-	lc1: Column<Advice>,
-	/// Configures a column for the e2.
-	e2: Column<Advice>,
-	/// Configures a fixed boolean value for each row of the circuit.
-	selector: Selector,
 }
 
 /// Constructs a cell and a variable for the circuit.
@@ -41,31 +30,26 @@ impl<F: FieldExt, const B: usize> Bits2NumChip<F, B> {
 	pub fn new(value: AssignedCell<F, F>, bits: [F; B]) -> Self {
 		Self { value, bits: bits.map(|b| Value::known(b)) }
 	}
+}
+
+impl<F: FieldExt, const B: usize> Chip<F> for Bits2NumChip<F, B> {
+	type Output = [AssignedCell<F, F>; B];
 
 	/// Make the circuit config.
-	pub fn configure(meta: &mut ConstraintSystem<F>) -> Bits2NumConfig {
-		let bits = meta.advice_column();
-		let lc1 = meta.advice_column();
-		let e2 = meta.advice_column();
-		let fixed = meta.fixed_column();
-		let s = meta.selector();
-
-		meta.enable_equality(bits);
-		meta.enable_equality(lc1);
-		meta.enable_equality(e2);
-		meta.enable_constant(fixed);
+	fn configure(config: CommonConfig, meta: &mut ConstraintSystem<F>) -> Selector {
+		let selector = meta.selector();
 
 		meta.create_gate("bits2num", |v_cells| {
 			let one_exp = Expression::Constant(F::one());
-			let bit_exp = v_cells.query_advice(bits, Rotation::cur());
+			let bit_exp = v_cells.query_advice(config.advice[0], Rotation::cur());
 
-			let e2_exp = v_cells.query_advice(e2, Rotation::cur());
-			let e2_next_exp = v_cells.query_advice(e2, Rotation::next());
+			let e2_exp = v_cells.query_advice(config.advice[1], Rotation::cur());
+			let e2_next_exp = v_cells.query_advice(config.advice[1], Rotation::next());
 
-			let lc1_exp = v_cells.query_advice(lc1, Rotation::cur());
-			let lc1_next_exp = v_cells.query_advice(lc1, Rotation::next());
+			let lc1_exp = v_cells.query_advice(config.advice[2], Rotation::cur());
+			let lc1_next_exp = v_cells.query_advice(config.advice[2], Rotation::next());
 
-			let s_exp = v_cells.query_selector(s);
+			let s_exp = v_cells.query_selector(selector);
 
 			vec![
 				// bit * (1 - bit) == 0
@@ -89,34 +73,39 @@ impl<F: FieldExt, const B: usize> Bits2NumChip<F, B> {
 			]
 		});
 
-		Bits2NumConfig { bits, lc1, e2, selector: s }
+		selector
 	}
 
 	/// Synthesize the circuit.
-	pub fn synthesize(
-		&self, config: &Bits2NumConfig, mut layouter: impl Layouter<F>,
-	) -> Result<[AssignedCell<F, F>; B], Error> {
+	fn synthesize(
+		&self, config: CommonConfig, selector: Selector, mut layouter: impl Layouter<F>,
+	) -> Result<Self::Output, Error> {
 		layouter.assign_region(
 			|| "bits2num",
 			|mut region: Region<'_, F>| {
-				let mut lc1 =
-					region.assign_advice_from_constant(|| "lc1_0", config.lc1, 0, F::zero())?;
+				let mut lc1 = region.assign_advice_from_constant(
+					|| "lc1_0",
+					config.advice[2],
+					0,
+					F::zero(),
+				)?;
 				let mut e2 =
-					region.assign_advice_from_constant(|| "e2_0", config.e2, 0, F::one())?;
+					region.assign_advice_from_constant(|| "e2_0", config.advice[1], 0, F::one())?;
 
 				let mut bits: [Option<AssignedCell<F, F>>; B] = [(); B].map(|_| None);
 				for i in 0..self.bits.len() {
-					config.selector.enable(&mut region, i)?;
+					selector.enable(&mut region, i)?;
 
-					let bit = region.assign_advice(|| "bits", config.bits, i, || self.bits[i])?;
+					let bit =
+						region.assign_advice(|| "bits", config.advice[0], i, || self.bits[i])?;
 					bits[i] = Some(bit.clone());
 
 					let next_lc1 =
 						lc1.value().cloned() + bit.value().cloned() * e2.value().cloned();
 					let next_e2 = e2.value().cloned() + e2.value();
 
-					lc1 = region.assign_advice(|| "lc1", config.lc1, i + 1, || next_lc1)?;
-					e2 = region.assign_advice(|| "e2", config.e2, i + 1, || next_e2)?;
+					lc1 = region.assign_advice(|| "lc1", config.advice[1], i + 1, || next_lc1)?;
+					e2 = region.assign_advice(|| "e2", config.advice[2], i + 1, || next_e2)?;
 				}
 
 				region.constrain_equal(self.value.cell(), lc1.cell())?;
