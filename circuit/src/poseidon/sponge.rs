@@ -11,27 +11,7 @@ use halo2::{
 };
 use std::marker::PhantomData;
 
-/// Absorb the data in and split it into
-/// chunks of size WIDTH.
-fn load_state<F: FieldExt, const WIDTH: usize>(
-	columns: [Column<Advice>; WIDTH], region: &mut Region<'_, F>, round: usize,
-	prev_state: &[AssignedCell<F, F>],
-) -> Result<[AssignedCell<F, F>; WIDTH], Error> {
-	let mut state: [Option<AssignedCell<F, F>>; WIDTH] = [(); WIDTH].map(|_| None);
-	for i in 0..WIDTH {
-		if let Some(cell) = prev_state.get(i) {
-			state[i] = Some(cell.copy_advice(|| "state", region, columns[i], round)?);
-		} else {
-			state[i] = Some(region.assign_advice(
-				|| "state",
-				columns[i],
-				round,
-				|| Value::known(F::zero()),
-			)?);
-		}
-	}
-	Ok(state.map(|item| item.unwrap()))
-}
+use super::copy_state;
 
 pub struct AbsorbChip<F: FieldExt, const WIDTH: usize> {
 	prev_state: [AssignedCell<F, F>; WIDTH],
@@ -49,7 +29,7 @@ impl<F: FieldExt, const WIDTH: usize> AbsorbChip<F, WIDTH> {
 impl<F: FieldExt, const WIDTH: usize> Chip<F> for AbsorbChip<F, WIDTH> {
 	type Output = [AssignedCell<F, F>; WIDTH];
 
-	fn configure(common: CommonConfig, meta: &mut ConstraintSystem<F>) -> Selector {
+	fn configure(common: &CommonConfig, meta: &mut ConstraintSystem<F>) -> Selector {
 		let absorb_selector = meta.selector();
 
 		meta.create_gate("absorb", |v_cells| {
@@ -79,20 +59,20 @@ impl<F: FieldExt, const WIDTH: usize> Chip<F> for AbsorbChip<F, WIDTH> {
 				let round = 1;
 				selector.enable(&mut region, round)?;
 
-				let mut advice_columns: [Option<Column<Advice>>] = [None; WIDTH];
+				let mut advice_columns: [Option<Column<Advice>>; WIDTH] = [(); WIDTH].map(|_| None);
 				for i in 0..WIDTH {
 					advice_columns[i] = Some(common.advice[i]);
 				}
 				let advice_columns = advice_columns.map(|c| c.unwrap());
 				// Load previous Poseidon state
-				let loaded_state =
-					load_state(advice_columns, &mut region, round - 1, &self.prev_state)?;
+				let loaded_state = copy_state(common, &mut region, round - 1, &self.prev_state)?;
 
 				// Load next chunk
-				let loaded_chunk = load_state(advice_columns, &mut region, round, &self.state)?;
+				let loaded_chunk = copy_state(common, &mut region, round, &self.state)?;
 
 				// Calculate the next state to permute
-				let next_state = loaded_chunk.zip(loaded_state).zip(common.advice).try_map(
+				let columns = common.advice[0..WIDTH].try_into().unwrap();
+				let next_state = loaded_chunk.zip(loaded_state).zip(columns).try_map(
 					|((chunk_state, pos_state), column)| {
 						let sum =
 							chunk_state.value().and_then(|&s| pos_state.value().map(|&ps| s + ps));
@@ -106,7 +86,7 @@ impl<F: FieldExt, const WIDTH: usize> Chip<F> for AbsorbChip<F, WIDTH> {
 	}
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct PoseidonSpongeConfig {
 	poseidon: PoseidonConfig,
 	absorb_selector: Selector,
@@ -158,18 +138,33 @@ where
 	) -> Result<AssignedCell<F, F>, Error> {
 		assert!(!self.inputs.is_empty());
 
-		let mut state = layouter.assign_region(
+		let zero_state = layouter.assign_region(
 			|| "load_initial_state",
 			|mut region: Region<'_, F>| {
-				Self::load_state(config.poseidon_config.state, &mut region, 0, &[])
+				let mut state: [Option<AssignedCell<F, F>>; WIDTH] = [(); WIDTH].map(|_| None);
+				for i in 0..WIDTH {
+					state[i] = Some(region.assign_advice(
+						|| "state",
+						common.advice[i],
+						0,
+						|| Value::known(F::zero()),
+					)?);
+				}
+				Ok(state.map(|item| item.unwrap()))
 			},
 		)?;
 
+		let mut state = zero_state.clone();
 		for (i, chunk) in self.inputs.chunks(WIDTH).enumerate() {
-			let absorb = AbsorbChip::new(state, chunk);
+			let mut curr_chunk = zero_state.clone();
+			for j in 0..chunk.len() {
+				curr_chunk[j] = chunk[j].clone();
+			}
+
+			let absorb = AbsorbChip::new(state, curr_chunk);
 			let inputs = absorb.synthesize(
 				common,
-				config.absorb_selector,
+				&config.absorb_selector,
 				layouter.namespace(|| format!("absorb_{}", i)),
 			)?;
 

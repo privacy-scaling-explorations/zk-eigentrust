@@ -9,7 +9,7 @@ use crate::{
 	gadgets::lt_eq::{LessEqualChipset, LessEqualConfig},
 	params::RoundParams,
 	poseidon::{PoseidonChipset, PoseidonConfig},
-	Chipset, CommonChip, CommonConfig, RegionCtx,
+	Chip, Chipset, CommonChip, CommonConfig, RegionCtx,
 };
 use halo2::{
 	circuit::{AssignedCell, Layouter, Region},
@@ -18,9 +18,9 @@ use halo2::{
 };
 use std::marker::PhantomData;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct EddsaConfig {
-	posiedon: PoseidonConfig,
+	poseidon: PoseidonConfig,
 	lt_eq: LessEqualConfig,
 	scalar_mul: StrictScalarMulConfig,
 	add_point_selector: Selector,
@@ -29,10 +29,10 @@ pub struct EddsaConfig {
 
 impl EddsaConfig {
 	pub fn new(
-		posiedon: PoseidonConfig, lt_eq: LessEqualConfig, scalar_mul: StrictScalarMulConfig,
+		poseidon: PoseidonConfig, lt_eq: LessEqualConfig, scalar_mul: StrictScalarMulConfig,
 		add_point_selector: Selector, affine_selector: Selector,
 	) -> Self {
-		Self { posiedon, lt_eq, scalar_mul, add_point_selector, affine_selector }
+		Self { poseidon, lt_eq, scalar_mul, add_point_selector, affine_selector }
 	}
 }
 
@@ -109,21 +109,21 @@ where
 			|mut region: Region<'_, F>| {
 				let b8_x = region.assign_advice_from_constant(
 					|| "b8_x",
-					config.advice[0],
+					common.advice[0],
 					0,
 					P::b8().0,
 				)?;
 				let b8_y = region.assign_advice_from_constant(
 					|| "b8_y",
-					config.advice[1],
+					common.advice[1],
 					0,
 					P::b8().1,
 				)?;
 				let one =
-					region.assign_advice_from_constant(|| "one", config.advice[2], 0, F::one())?;
+					region.assign_advice_from_constant(|| "one", common.advice[2], 0, F::one())?;
 				let suborder = region.assign_advice_from_constant(
 					|| "suborder",
-					config.advice[3],
+					common.advice[3],
 					0,
 					P::suborder(),
 				)?;
@@ -147,7 +147,8 @@ where
 
 		// Cl = s * G
 		let e = AssignedPoint::new(b8_x, b8_y, one.clone());
-		let cl_chipset = StrictScalarMulChipset::new(e, self.s.clone(), self.s_bits)?;
+		let cl_chipset =
+			StrictScalarMulChipset::<F, P>::new(e, self.s.clone(), self.s_bits.to_vec());
 		let cl =
 			cl_chipset.synthesize(common, &config.scalar_mul, layouter.namespace(|| "b_8 * s"))?;
 
@@ -167,7 +168,11 @@ where
 		// H(R || PK || M) * PK
 		// Scalar multiplication for the public key and hash.
 		let e = AssignedPoint::new(self.pk_x.clone(), self.pk_y.clone(), one.clone());
-		let pk_h_chipset = StrictScalarMulChipset::new(e, m_hash_res[0].clone(), self.m_hash_bits)?;
+		let pk_h_chipset = StrictScalarMulChipset::<F, P>::new(
+			e,
+			m_hash_res[0].clone(),
+			self.m_hash_bits.to_vec(),
+		);
 		let pk_h = pk_h_chipset.synthesize(
 			common,
 			&config.scalar_mul,
@@ -176,7 +181,7 @@ where
 
 		// Cr = R + H(R || PK || M) * PK
 		let big_r_point = AssignedPoint::new(self.big_r_x.clone(), self.big_r_y.clone(), one);
-		let cr_chip = PointAddChip::new(big_r_point, pk_h)?;
+		let cr_chip = PointAddChip::<F, P>::new(big_r_point, pk_h);
 		let cr = cr_chip.synthesize(
 			common,
 			&config.add_point_selector,
@@ -184,13 +189,13 @@ where
 		)?;
 
 		// Converts two projective space points to their affine representation.
-		let cl_affine_chip = IntoAffineChip::new(cl)?;
+		let cl_affine_chip = IntoAffineChip::new(cl);
 		let cl_affine = cl_affine_chip.synthesize(
 			common,
 			&config.affine_selector,
 			layouter.namespace(|| "cl_affine"),
 		)?;
-		let cr_affine_chip = IntoAffineChip::new(cr)?;
+		let cr_affine_chip = IntoAffineChip::new(cr);
 		let cr_affine = cr_affine_chip.synthesize(
 			common,
 			&config.affine_selector,
@@ -204,10 +209,10 @@ where
 			|mut region: Region<'_, F>| {
 				let region_ctx = RegionCtx::new(region, 0);
 
-				let cl_affine_x = region_ctx.copy_assign(config.advice[0], cl_affine.0);
-				let cl_affine_y = region_ctx.copy_assign(config.advice[1], cl_affine.1);
-				let cr_affine_x = region_ctx.copy_assign(config.advice[2], cr_affine.0);
-				let cr_affine_y = region_ctx.copy_assign(config.advice[3], cr_affine.1);
+				let cl_affine_x = region_ctx.copy_assign(common.advice[0], cl_affine.0)?;
+				let cl_affine_y = region_ctx.copy_assign(common.advice[1], cl_affine.1)?;
+				let cr_affine_x = region_ctx.copy_assign(common.advice[2], cr_affine.0)?;
+				let cr_affine_y = region_ctx.copy_assign(common.advice[3], cr_affine.1)?;
 
 				region_ctx.constrain_equal(cl_affine_x, cr_affine_x)?;
 				region_ctx.constrain_equal(cl_affine_y, cr_affine_y)?;

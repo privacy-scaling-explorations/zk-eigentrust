@@ -141,7 +141,7 @@ pub const ADVICE: usize = 7;
 pub const FIXED: usize = 10;
 
 /// Common config for the whole circuit
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct CommonConfig {
 	/// Advice columns
 	advice: [Column<Advice>; ADVICE],

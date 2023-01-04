@@ -73,8 +73,14 @@ pub struct ConstrainBoolChip<F: FieldExt> {
 	x: AssignedCell<F, F>,
 }
 
+impl<F: FieldExt> ConstrainBoolChip<F> {
+	pub fn new(x: AssignedCell<F, F>) -> Self {
+		Self { x }
+	}
+}
+
 impl<F: FieldExt> Chip<F> for ConstrainBoolChip<F> {
-	type Output = AssignedCell<F, F>;
+	type Output = ();
 
 	fn configure(common: &CommonConfig, meta: &mut ConstraintSystem<F>) -> Selector {
 		let selector = meta.selector();
@@ -509,8 +515,11 @@ impl<F: FieldExt> Chipset<F> for StrictSelectChipset<F> {
 		)?;
 
 		let select_chip = SelectChip::new(self.x, self.y, self.bit);
-		let res =
-			select_chip.synthesize(common, &config.select, layouter.namespace(|| "select"))?;
+		let res = select_chip.synthesize(
+			common,
+			&config.select_selector,
+			layouter.namespace(|| "select"),
+		)?;
 
 		Ok(res)
 	}

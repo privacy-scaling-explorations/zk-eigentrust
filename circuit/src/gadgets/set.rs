@@ -72,11 +72,11 @@ impl<F: FieldExt, const N: usize> Chip<F> for FixedSetChip<F, N> {
 				for i in 0..N {
 					selector.enable(&mut region, i)?;
 
-					let item_value = region.assign_advice(
+					let item_value = self.items[i].copy_advice(
 						|| format!("item_{}", i),
+						&mut region,
 						common.advice[1],
 						i,
-						|| Value::known(self.items[i]),
 					)?;
 
 					// Calculating difference between given target and item from the set.

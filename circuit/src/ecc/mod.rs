@@ -8,7 +8,7 @@ use crate::{
 		rns::RnsParams,
 		IntegerChip, IntegerConfig,
 	},
-	CommonChip, CommonConfig,
+	Chip, CommonChip, CommonConfig,
 };
 use halo2::{
 	arithmetic::FieldExt,
@@ -120,8 +120,8 @@ where
 		const BITS: usize = 256;
 		let integer = IntegerChip::<W, N, NUM_LIMBS, NUM_BITS, P>::configure(meta);
 		let common = CommonChip::<N>::configure(meta);
-		let bits2num_selector = Bits2NumChip::configure(meta);
-		let select_selector = SelectChip::configure(meta);
+		let bits2num_selector = Bits2NumChip::configure(&common, meta);
+		let select_selector = SelectChip::configure(&common, meta);
 
 		EccConfig { integer, common, select_selector, bits2num_selector }
 	}
@@ -539,8 +539,12 @@ where
 		//    }
 		//    double selector - row i
 		// }
-		let bits2num = Bits2NumChip::new(value.clone(), value_bits);
-		let bits = bits2num.synthesize(&config.bits2num, layouter.namespace(|| "bits2num"))?;
+		let bits2num = Bits2NumChip::new(value.clone(), value_bits.to_vec());
+		let bits = bits2num.synthesize(
+			&config.common,
+			&config.bits2num_selector,
+			layouter.namespace(|| "bits2num"),
+		)?;
 		let mut exp_x = IntegerChip::reduce(
 			exp_x,
 			exp_x_rw,

@@ -35,7 +35,7 @@ where
 				state[i] = P::sbox_f(state[i]);
 			}
 			// Apply MDS
-			state = P::apply_mds(&state, &mds);
+			state = P::apply_mds(&state);
 			// Apply round constants
 			let consts = P::load_round_constants(i, &round_constants);
 			state = P::apply_round_constants(&state, &consts);
@@ -44,7 +44,7 @@ where
 				state[i] = P::sbox_inv_f(state[i]);
 			}
 			// Apply MDS for the second time
-			state = P::apply_mds(&state, &mds);
+			state = P::apply_mds(&state);
 			// Apply next round constants
 			let consts = P::load_round_constants(i + 1, &round_constants);
 			state = P::apply_round_constants(&state, &consts);

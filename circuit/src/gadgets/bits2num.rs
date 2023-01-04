@@ -19,22 +19,23 @@ pub fn to_bits<const B: usize>(num: [u8; 32]) -> [bool; B] {
 
 /// Constructs a cell and a variable for the circuit.
 #[derive(Clone)]
-pub struct Bits2NumChip<F: FieldExt, const B: usize> {
+pub struct Bits2NumChip<F: FieldExt> {
 	/// Assigns a cell for the value.
 	value: AssignedCell<F, F>,
 	/// Constructs bits variable for the circuit.
-	bits: [Value<F>; B],
+	bits: Vec<Value<F>>,
 }
 
-impl<F: FieldExt, const B: usize> Bits2NumChip<F, B> {
+impl<F: FieldExt> Bits2NumChip<F> {
 	/// Create a new chip.
-	pub fn new(value: AssignedCell<F, F>, bits: [F; B]) -> Self {
-		Self { value, bits: bits.map(|b| Value::known(b)) }
+	pub fn new(value: AssignedCell<F, F>, bits: Vec<F>) -> Self {
+		let bit_vals = bits.into_iter().map(Value::known).collect();
+		Self { value, bits: bit_vals }
 	}
 }
 
-impl<F: FieldExt, const B: usize> Chip<F> for Bits2NumChip<F, B> {
-	type Output = [AssignedCell<F, F>; B];
+impl<F: FieldExt> Chip<F> for Bits2NumChip<F> {
+	type Output = Vec<AssignedCell<F, F>>;
 
 	/// Make the circuit config.
 	fn configure(common: &CommonConfig, meta: &mut ConstraintSystem<F>) -> Selector {
@@ -93,13 +94,13 @@ impl<F: FieldExt, const B: usize> Chip<F> for Bits2NumChip<F, B> {
 				let mut e2 =
 					region.assign_advice_from_constant(|| "e2_0", common.advice[1], 0, F::one())?;
 
-				let mut bits: [Option<AssignedCell<F, F>>; B] = [(); B].map(|_| None);
+				let mut bits = Vec::new();
 				for i in 0..self.bits.len() {
 					selector.enable(&mut region, i)?;
 
 					let bit =
 						region.assign_advice(|| "bits", common.advice[0], i, || self.bits[i])?;
-					bits[i] = Some(bit.clone());
+					bits.push(bit.clone());
 
 					let next_lc1 =
 						lc1.value().cloned() + bit.value().cloned() * e2.value().cloned();
@@ -111,7 +112,7 @@ impl<F: FieldExt, const B: usize> Chip<F> for Bits2NumChip<F, B> {
 
 				region.constrain_equal(self.value.cell(), lc1.cell())?;
 
-				Ok(bits.map(|b| b.unwrap()))
+				Ok(bits)
 			},
 		)
 	}

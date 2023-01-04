@@ -14,6 +14,7 @@ use params::EdwardsParams;
 use std::marker::PhantomData;
 
 /// Assigned point from the circuit
+#[derive(Clone)]
 pub struct AssignedPoint<F: FieldExt> {
 	/// Point x
 	pub x: AssignedCell<F, F>,
@@ -218,20 +219,20 @@ impl<F: FieldExt> Chip<F> for IntoAffineChip<F> {
 	}
 }
 
-pub struct ScalarMulChip<F: FieldExt, const B: usize, P: EdwardsParams<F>> {
+pub struct ScalarMulChip<F: FieldExt, P: EdwardsParams<F>> {
 	e: AssignedPoint<F>,
 	// Constructs an array for the value bits.
-	value_bits: [AssignedCell<F, F>; B],
+	value_bits: Vec<AssignedCell<F, F>>,
 	_params: PhantomData<P>,
 }
 
-impl<F: FieldExt, const B: usize, P: EdwardsParams<F>> ScalarMulChip<F, B, P> {
-	pub fn new(e: AssignedPoint<F>, value_bits: [AssignedCell<F, F>; B]) -> Self {
+impl<F: FieldExt, P: EdwardsParams<F>> ScalarMulChip<F, P> {
+	pub fn new(e: AssignedPoint<F>, value_bits: Vec<AssignedCell<F, F>>) -> Self {
 		Self { e, value_bits, _params: PhantomData }
 	}
 }
 
-impl<F: FieldExt, const B: usize, P: EdwardsParams<F>> Chip<F> for ScalarMulChip<F, B, P> {
+impl<F: FieldExt, P: EdwardsParams<F>> Chip<F> for ScalarMulChip<F, P> {
 	type Output = AssignedPoint<F>;
 
 	fn configure(common: &CommonConfig, meta: &mut ConstraintSystem<F>) -> Selector {
@@ -347,7 +348,12 @@ impl<F: FieldExt, const B: usize, P: EdwardsParams<F>> Chip<F> for ScalarMulChip
 					);
 
 					let bit_value = self.value_bits[i].value().cloned();
-					let (r_x_next, r_y_next, r_z_next) = if bit_value == Value::known(F::one()) {
+					let mut is_one = false;
+					bit_value.map(|f| {
+						is_one = F::one() == f;
+						f
+					});
+					let (r_x_next, r_y_next, r_z_next) = if is_one {
 						(r_x3, r_y3, r_z3)
 					} else {
 						(
@@ -374,7 +380,7 @@ impl<F: FieldExt, const B: usize, P: EdwardsParams<F>> Chip<F> for ScalarMulChip
 	}
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct StrictScalarMulConfig {
 	bits2num_selector: Selector,
 	scalar_mul_selector: Selector,
@@ -386,22 +392,20 @@ impl StrictScalarMulConfig {
 	}
 }
 
-pub struct StrictScalarMulChipset<F: FieldExt, const B: usize, P: EdwardsParams<F>> {
+pub struct StrictScalarMulChipset<F: FieldExt, P: EdwardsParams<F>> {
 	e: AssignedPoint<F>,
 	value: AssignedCell<F, F>,
-	value_bits: [F; B],
+	value_bits: Vec<F>,
 	_params: PhantomData<P>,
 }
 
-impl<F: FieldExt, const B: usize, P: EdwardsParams<F>> StrictScalarMulChipset<F, B, P> {
-	pub fn new(e: AssignedPoint<F>, value: AssignedCell<F, F>, value_bits: [F; B]) -> Self {
+impl<F: FieldExt, P: EdwardsParams<F>> StrictScalarMulChipset<F, P> {
+	pub fn new(e: AssignedPoint<F>, value: AssignedCell<F, F>, value_bits: Vec<F>) -> Self {
 		Self { e, value, value_bits, _params: PhantomData }
 	}
 }
 
-impl<F: FieldExt, const B: usize, P: EdwardsParams<F>> Chipset<F>
-	for StrictScalarMulChipset<F, B, P>
-{
+impl<F: FieldExt, P: EdwardsParams<F>> Chipset<F> for StrictScalarMulChipset<F, P> {
 	type Config = StrictScalarMulConfig;
 	type Output = AssignedPoint<F>;
 
@@ -415,7 +419,7 @@ impl<F: FieldExt, const B: usize, P: EdwardsParams<F>> Chipset<F>
 			layouter.namespace(|| "scalar_bits"),
 		)?;
 
-		let scalar_chip = ScalarMulChip::<F, B, P>::new(self.e, bits);
+		let scalar_chip = ScalarMulChip::<F, P>::new(self.e, bits);
 		let res = scalar_chip.synthesize(
 			common,
 			&config.scalar_mul_selector,

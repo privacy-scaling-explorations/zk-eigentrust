@@ -10,7 +10,7 @@ use crate::{
 	gadgets::{
 		bits2num::{to_bits, Bits2NumChip},
 		common::{AddChip, IsZeroChip, MulChip},
-		lt_eq::{LessEqualChipset, LessEqualConfig, NShiftedChip, N_SHIFTED},
+		lt_eq::{LessEqualChipset, LessEqualConfig, NShiftedChip, DIFF_BITS, NUM_BITS, N_SHIFTED},
 	},
 	params::poseidon_bn254_5x5::Params,
 	poseidon::{
@@ -18,7 +18,7 @@ use crate::{
 		sponge::{AbsorbChip, PoseidonSpongeChipset, PoseidonSpongeConfig},
 		FullRoundChip, PartialRoundChip, PoseidonChipset, PoseidonConfig,
 	},
-	CommonChip, CommonConfig, RegionCtx,
+	Chip, Chipset, CommonChip, CommonConfig, RegionCtx,
 };
 use halo2::{
 	arithmetic::Field,
@@ -28,14 +28,19 @@ use halo2::{
 };
 use rand::Rng;
 
+const HASHER_WIDTH: usize = 5;
 /// Type alias for the native poseidon hasher with a width of 5 and bn254 params
-pub type PoseidonNativeHasher = Poseidon<Scalar, 5, Params>;
+pub type PoseidonNativeHasher = Poseidon<Scalar, HASHER_WIDTH, Params>;
 /// Type alias for native poseidon sponge with a width of 5 and bn254 params
-pub type PoseidonNativeSponge = PoseidonSponge<Scalar, 5, Params>;
+pub type PoseidonNativeSponge = PoseidonSponge<Scalar, HASHER_WIDTH, Params>;
 /// Type alias for the poseidon hasher chip with a width of 5 and bn254 params
-pub type PoseidonHasher = PoseidonChipset<Scalar, 5, Params>;
+pub type PoseidonHasher = PoseidonChipset<Scalar, HASHER_WIDTH, Params>;
+/// Partial rounds of permulation chip
+type PartialRoundHasher = PartialRoundChip<Scalar, HASHER_WIDTH, Params>;
+/// Full rounds of permuation chip
+type FullRoundHasher = PartialRoundChip<Scalar, HASHER_WIDTH, Params>;
 /// Type alias for the poseidon spong chip with a width of 5 and bn254 params
-pub type SpongeHasher = PoseidonSpongeChipset<Scalar, 5, Params>;
+pub type SpongeHasher = PoseidonSpongeChipset<Scalar, HASHER_WIDTH, Params>;
 /// Type alias for Eddsa chip on BabyJubJub elliptic curve
 type Eddsa = EddsaChipset<Scalar, BabyJubJub, Params>;
 
@@ -170,30 +175,30 @@ impl<
 	fn configure(meta: &mut ConstraintSystem<Scalar>) -> EigenTrustConfig {
 		let common = CommonChip::<Scalar>::configure(meta);
 
-		let partial_round_selector = PartialRoundChip::configure(&common, meta);
-		let full_round_selector = FullRoundChip::configure(&common, meta);
-		let poseidon = PoseidonConfig::new(partial_round_selector, full_round_selector);
+		let full_round_selector = FullRoundHasher::configure(&common, meta);
+		let partial_round_selector = PartialRoundHasher::configure(&common, meta);
+		let poseidon = PoseidonConfig::new(full_round_selector, partial_round_selector);
 
-		let absorb_selector = AbsorbChip::configure(meta);
+		let absorb_selector = AbsorbChip::<Scalar, HASHER_WIDTH>::configure(&common, meta);
 		let sponge = PoseidonSpongeConfig::new(poseidon, absorb_selector);
 
-		let bits2num_selector = Bits2NumChip::configure(meta);
-		let n_shifted_selector = NShiftedChip::configure(meta);
-		let is_zero_selector = IsZeroChip::configure(meta);
+		let bits2num_selector = Bits2NumChip::configure(&common, meta);
+		let n_shifted_selector = NShiftedChip::configure(&common, meta);
+		let is_zero_selector = IsZeroChip::configure(&common, meta);
 		let lt_eq = LessEqualConfig::new(bits2num_selector, n_shifted_selector, is_zero_selector);
 
-		let scalar_mul_selector = ScalarMulChip::configure(meta);
+		let scalar_mul_selector = ScalarMulChip::<_, BabyJubJub>::configure(&common, meta);
 		let strict_scalar_mul = StrictScalarMulConfig::new(bits2num_selector, scalar_mul_selector);
 
-		let add_point_selector = PointAddChip::configure(meta);
-		let affine_selector = IntoAffineChip::configure(meta);
+		let add_point_selector = PointAddChip::<_, BabyJubJub>::configure(&common, meta);
+		let affine_selector = IntoAffineChip::configure(&common, meta);
 
 		let eddsa = EddsaConfig::new(
 			poseidon, lt_eq, strict_scalar_mul, add_point_selector, affine_selector,
 		);
 
-		let add_selector = AddChip::configure(meta);
-		let mul_selector = MulChip::configure(meta);
+		let add_selector = AddChip::configure(&common, meta);
+		let mul_selector = MulChip::configure(&common, meta);
 
 		EigenTrustConfig { common, eddsa, sponge, poseidon, add_selector, mul_selector }
 	}
@@ -241,7 +246,7 @@ impl<
 						Scalar::from_u128(SCALE.pow(NUM_ITER as u32)),
 					)?;
 					let scale = ctx.assign_advice(
-						config.common.fixed[0],
+						config.common.advice[0],
 						Value::known(Scalar::from_u128(SCALE.pow(NUM_ITER as u32))),
 					)?;
 					ctx.constrain_equal(scale_fixed, scale.clone())?;
@@ -268,8 +273,9 @@ impl<
 						[(); NUM_NEIGHBOURS].map(|_| None);
 
 					for i in 0..NUM_NEIGHBOURS {
-						let ps =
-							ctx.assign_from_instance(config.common.advice[0], config.instance, i)?;
+						let ps = ctx.assign_from_instance(
+							config.common.advice[0], config.common.instance, i,
+						)?;
 						passed_s[i] = Some(ps);
 						ctx.next();
 					}
@@ -294,7 +300,7 @@ impl<
 		for i in 0..NUM_NEIGHBOURS {
 			let mut scores_sponge = SpongeHasher::new();
 			scores_sponge.update(&ops[i]);
-			let scores_message_hash = scores_sponge.squeeze(
+			let scores_message_hash = scores_sponge.synthesize(
 				&config.common,
 				&config.sponge,
 				layouter.namespace(|| "scores_sponge"),

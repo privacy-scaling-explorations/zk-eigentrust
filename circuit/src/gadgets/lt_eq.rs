@@ -13,9 +13,9 @@ pub const N_SHIFTED: [u8; 32] = [
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 16,
 ];
 /// Numbers are limited to 252 to avoid overflow
-const NUM_BITS: usize = 252;
+pub const NUM_BITS: usize = 252;
 /// Same number of bits as N_SHIFTED, since NUM + N_SHIFTED is the operation.
-const DIFF_BITS: usize = 253;
+pub const DIFF_BITS: usize = 253;
 
 pub struct NShiftedChip<F: FieldExt> {
 	x: AssignedCell<F, F>,
@@ -41,7 +41,6 @@ impl<F: FieldExt> Chip<F> for NShiftedChip<F> {
 			let s_exp = v_cells.query_selector(selector);
 			let x_exp = v_cells.query_advice(common.advice[0], Rotation::cur());
 			let y_exp = v_cells.query_advice(common.advice[1], Rotation::cur());
-
 			let res_exp = v_cells.query_advice(common.advice[2], Rotation::cur());
 
 			vec![
@@ -64,27 +63,27 @@ impl<F: FieldExt> Chip<F> for NShiftedChip<F> {
 	}
 
 	fn synthesize(
-		&self, common: &CommonConfig, selector: Selector, mut layouter: impl Layouter<F>,
+		&self, common: &CommonConfig, selector: &Selector, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
 		layouter.assign_region(
 			|| "less_than_equal",
 			|mut region: Region<'_, F>| {
 				selector.enable(&mut region, 0)?;
-				let assigned_x = self.x.copy_advice(|| "x", &mut region, common.x, 0)?;
-				let assigned_y = self.y.copy_advice(|| "y", &mut region, common.y, 0)?;
+				let assigned_x = self.x.copy_advice(|| "x", &mut region, common.advice[0], 0)?;
+				let assigned_y = self.y.copy_advice(|| "y", &mut region, common.advice[1], 0)?;
 
 				let n_shifted = Value::known(F::from_bytes_wide(&to_wide(&N_SHIFTED)));
 				let res = assigned_x.value().cloned() + n_shifted - assigned_y.value();
 
 				let assigned_res =
-					region.assign_advice(|| "x + n_shift - y", common.x, 1, || res)?;
+					region.assign_advice(|| "x + n_shift - y", common.advice[2], 0, || res)?;
 				Ok(assigned_res)
 			},
 		)
 	}
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct LessEqualConfig {
 	bits_2_num_selector: Selector,
 	n_shifted_selector: Selector,
@@ -111,6 +110,15 @@ pub struct LessEqualChipset<F: FieldExt> {
 	diff_bits: [F; DIFF_BITS],
 }
 
+impl<F: FieldExt> LessEqualChipset<F> {
+	pub fn new(
+		x: AssignedCell<F, F>, y: AssignedCell<F, F>, x_bits: [F; NUM_BITS], y_bits: [F; NUM_BITS],
+		diff_bits: [F; DIFF_BITS],
+	) -> Self {
+		Self { x, y, x_bits, y_bits, diff_bits }
+	}
+}
+
 impl<F: FieldExt> Chipset<F> for LessEqualChipset<F> {
 	type Config = LessEqualConfig;
 	type Output = AssignedCell<F, F>;
@@ -119,14 +127,14 @@ impl<F: FieldExt> Chipset<F> for LessEqualChipset<F> {
 	fn synthesize(
 		&self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
-		let x_b2n = Bits2NumChip::new(self.x.clone(), self.x_bits);
+		let x_b2n = Bits2NumChip::new(self.x.clone(), self.x_bits.to_vec());
 		let _ = x_b2n.synthesize(
 			common,
 			&config.bits_2_num_selector,
 			layouter.namespace(|| "x_b2n"),
 		)?;
 
-		let y_b2n = Bits2NumChip::new(self.y.clone(), self.y_bits);
+		let y_b2n = Bits2NumChip::new(self.y.clone(), self.y_bits.to_vec());
 		let _ = y_b2n.synthesize(
 			common,
 			&config.bits_2_num_selector,
@@ -140,7 +148,7 @@ impl<F: FieldExt> Chipset<F> for LessEqualChipset<F> {
 			layouter.namespace(|| "n_shifted_diff"),
 		)?;
 
-		let diff_b2n = Bits2NumChip::new(inp, self.diff_bits);
+		let diff_b2n = Bits2NumChip::new(inp, self.diff_bits.to_vec());
 		let bits = diff_b2n.synthesize(
 			common,
 			&config.bits_2_num_selector,

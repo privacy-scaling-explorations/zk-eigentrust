@@ -72,13 +72,15 @@ where
 	fn configure(common: &CommonConfig, meta: &mut ConstraintSystem<F>) -> Selector {
 		let selector = meta.selector();
 
-		let state = &common.advice[0..WIDTH];
-		let round_constants = &common.fixed[0..WIDTH];
+		let state_columns: [Column<Advice>; WIDTH] = common.advice[0..WIDTH].try_into().unwrap();
+		let rc_columns: [Column<Fixed>; WIDTH] = common.fixed[0..WIDTH].try_into().unwrap();
 
 		meta.create_gate("full_round", |v_cells| {
 			// 1. step for the TRF.
 			// AddRoundConstants step.
-			let mut exprs = P::apply_round_constants_expr(state, round_constants);
+			let state = state_columns.map(|c| v_cells.query_advice(c, Rotation::cur()));
+			let round_constants = rc_columns.map(|c| v_cells.query_fixed(c, Rotation::cur()));
+			let mut exprs = P::apply_round_constants_expr(&state, &round_constants);
 			// Applying S-boxes for the full round.
 			for i in 0..WIDTH {
 				// 2. step for the TRF.
@@ -92,7 +94,7 @@ where
 			let s_cells = v_cells.query_selector(selector);
 			// It should be equal to the state in next row
 			for i in 0..WIDTH {
-				let next_state = v_cells.query_advice(state[i], Rotation::next());
+				let next_state = v_cells.query_advice(state_columns[i], Rotation::next());
 				exprs[i] = s_cells.clone() * (exprs[i].clone() - next_state);
 			}
 			exprs
@@ -125,7 +127,8 @@ where
 					// 1. step for the TRF.
 					// AddRoundConstants step.
 					let state_vals = state_cells.map(|v| v.value().cloned());
-					let mut next_state = P::apply_round_constants(&state_vals, &round_const_values);
+					let mut next_state =
+						P::apply_round_constants_val(&state_vals, &round_const_values);
 					for i in 0..WIDTH {
 						// 2. step for the TRF.
 						// SubWords step, denoted by S-box.
@@ -134,7 +137,7 @@ where
 
 					// 3. step for the TRF.
 					// MixLayer step.
-					next_state = P::apply_mds(&next_state);
+					next_state = P::apply_mds_val(&next_state);
 
 					// Assign next state
 					for i in 0..WIDTH {
@@ -185,13 +188,15 @@ where
 	fn configure(common: &CommonConfig, meta: &mut ConstraintSystem<F>) -> Selector {
 		let selector = meta.selector();
 
-		let state = &common.advice[0..WIDTH];
-		let round_constants = &common.fixed[0..WIDTH];
+		let state_columns: [Column<Advice>; WIDTH] = common.advice[0..WIDTH].try_into().unwrap();
+		let rc_columns: [Column<Fixed>; WIDTH] = common.fixed[0..WIDTH].try_into().unwrap();
 
 		meta.create_gate("partial_round", |v_cells| {
 			// 1. step for the TRF.
 			// AddRoundConstants step.
-			let mut exprs = P::apply_round_constants_expr(state, round_constants);
+			let state = state_columns.map(|c| v_cells.query_advice(c, Rotation::cur()));
+			let round_constants = rc_columns.map(|c| v_cells.query_fixed(c, Rotation::cur()));
+			let mut exprs = P::apply_round_constants_expr(&state, &round_constants);
 			// Applying single S-box for the partial round.
 			// 2. step for the TRF.
 			// SubWords step, denoted by S-box.
@@ -204,12 +209,14 @@ where
 			let s_cells = v_cells.query_selector(selector);
 			// It should be equal to the state in next row
 			for i in 0..WIDTH {
-				let next_state = v_cells.query_advice(state[i], Rotation::next());
+				let next_state = v_cells.query_advice(state_columns[i], Rotation::next());
 				exprs[i] = s_cells.clone() * (exprs[i].clone() - next_state);
 			}
 
 			exprs
 		});
+
+		selector
 	}
 
 	fn synthesize(
@@ -223,7 +230,7 @@ where
 		let res = layouter.assign_region(
 			|| "partial_rounds",
 			|mut region: Region<'_, F>| {
-				let mut state_cells = copy_state(&config, &mut region, 0, self.inputs)?;
+				let mut state_cells = copy_state(&config, &mut region, 0, &self.inputs)?;
 				for round in 0..partial_rounds {
 					selector.enable(&mut region, round)?;
 
@@ -235,14 +242,14 @@ where
 					// AddRoundConstants step.
 					let state_vals = state_cells.map(|v| v.value().cloned());
 					let mut next_state =
-						Self::apply_round_constants(&state_vals, &round_const_cells);
+						P::apply_round_constants_val(&state_vals, &round_const_cells);
 					// 2. step for the TRF.
 					// SubWords step, denoted by S-box.
 					next_state[0] = next_state[0].map(|x| P::sbox_f(x));
 
 					// 3. step for the TRF.
 					// MixLayer step.
-					next_state = Self::apply_mds(&next_state);
+					next_state = P::apply_mds_val(&next_state);
 
 					// Assign next state
 					for i in 0..WIDTH {
@@ -258,14 +265,20 @@ where
 			},
 		)?;
 
-		(res, round_end)
+		Ok((res, round_end))
 	}
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct PoseidonConfig {
 	fr_selector: Selector,
 	pr_selector: Selector,
+}
+
+impl PoseidonConfig {
+	pub fn new(fr_selector: Selector, pr_selector: Selector) -> Self {
+		Self { fr_selector, pr_selector }
+	}
 }
 
 /// Constructs a chip structure for the circuit.
@@ -307,26 +320,26 @@ where
 		// The Round Function (TRF) and Hades:
 		// https://eprint.iacr.org/2019/458.pdf#page=5
 
-		let fr1 = FullRoundChip::new(self.inputs, 0);
+		let fr1 = FullRoundChip::<F, WIDTH, P>::new(self.inputs, 0);
 		let (state1, round_end) = fr1.synthesize(
 			&common,
 			&config.fr_selector,
 			layouter.namespace(|| "full_round_1"),
 		)?;
 
-		let pr = PartialRoundChip::new(state1, round_end);
+		let pr = PartialRoundChip::<F, WIDTH, P>::new(state1, round_end);
 		let (state2, round_end) = pr.synthesize(
 			&common,
 			&config.pr_selector,
 			layouter.namespace(|| "partial_round_1"),
-		);
+		)?;
 
-		let fr2 = FullRoundChip::new(state2, round_end);
+		let fr2 = FullRoundChip::<F, WIDTH, P>::new(state2, round_end);
 		let (state3, _) = fr2.synthesize(
 			&common,
 			&config.fr_selector,
 			layouter.namespace(|| "full_round_2"),
-		);
+		)?;
 
 		Ok(state3)
 	}
