@@ -13,7 +13,7 @@ use halo2::{
 use std::marker::PhantomData;
 
 /// Copy the intermediate poseidon state into the region
-fn copy_state<F: FieldExt>(
+fn copy_state<F: FieldExt, const WIDTH: usize>(
 	config: &CommonConfig, region: &mut Region<'_, F>, round: usize,
 	prev_state: &[AssignedCell<F, F>; WIDTH],
 ) -> Result<[AssignedCell<F, F>; WIDTH], Error> {
@@ -25,7 +25,7 @@ fn copy_state<F: FieldExt>(
 }
 
 /// Assign relevant constants to the circuit for the given round.
-fn load_round_constants<F: FieldExt>(
+fn load_round_constants<F: FieldExt, const WIDTH: usize>(
 	config: &CommonConfig, region: &mut Region<'_, F>, round: usize, round_constants: &[F],
 ) -> Result<[Value<F>; WIDTH], Error> {
 	let mut round_values: [Value<F>; WIDTH] = [(); WIDTH].map(|_| Value::unknown());
@@ -69,13 +69,16 @@ where
 {
 	type Output = ([AssignedCell<F, F>; WIDTH], usize);
 
-	fn configure(config: CommonConfig, meta: &mut ConstraintSystem<F>) -> Selector {
+	fn configure(common: &CommonConfig, meta: &mut ConstraintSystem<F>) -> Selector {
 		let selector = meta.selector();
+
+		let state = &common.advice[0..WIDTH];
+		let round_constants = &common.fixed[0..WIDTH];
 
 		meta.create_gate("full_round", |v_cells| {
 			// 1. step for the TRF.
 			// AddRoundConstants step.
-			let mut exprs = P::apply_round_constants_expr(&state, &round_constants);
+			let mut exprs = P::apply_round_constants_expr(state, round_constants);
 			// Applying S-boxes for the full round.
 			for i in 0..WIDTH {
 				// 2. step for the TRF.
@@ -99,19 +102,19 @@ where
 	}
 
 	fn synthesize(
-		&self, config: CommonConfig, selector: Selector, layouter: impl Layouter<F>,
+		&self, config: &CommonConfig, selector: &Selector, layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
 		let round_constants = P::round_constants();
 		let full_rounds = P::full_rounds();
 		let half_full_rounds = full_rounds / 2;
 		let round_end = self.round_offset + half_full_rounds * WIDTH;
-		let round_constants = &round_constants[self.round_offset..first_round_end];
+		let round_constants = &round_constants[self.round_offset..round_end];
 
 		let res = layouter.assign_region(
 			|| "full_rounds",
 			|mut region: Region<'_, F>| {
 				// Assign initial state
-				let mut state_cells = copy_state(&config, &mut region, 0, prev_state)?;
+				let mut state_cells = copy_state(&config, &mut region, 0, &self.inputs)?;
 				for round in 0..full_rounds {
 					selector.enable(&mut region, round)?;
 
@@ -121,8 +124,8 @@ where
 
 					// 1. step for the TRF.
 					// AddRoundConstants step.
-					let mut next_state =
-						Self::apply_round_constants(&state_cells, &round_const_values);
+					let state_vals = state_cells.map(|v| v.value().cloned());
+					let mut next_state = P::apply_round_constants(&state_vals, &round_const_values);
 					for i in 0..WIDTH {
 						// 2. step for the TRF.
 						// SubWords step, denoted by S-box.
@@ -131,7 +134,7 @@ where
 
 					// 3. step for the TRF.
 					// MixLayer step.
-					next_state = Self::apply_mds(&next_state);
+					next_state = P::apply_mds(&next_state);
 
 					// Assign next state
 					for i in 0..WIDTH {
@@ -147,7 +150,7 @@ where
 			},
 		)?;
 
-		(res, round_end)
+		Ok((res, round_end))
 	}
 }
 
@@ -169,7 +172,7 @@ where
 {
 	/// Create a new chip.
 	pub fn new(inputs: [AssignedCell<F, F>; WIDTH], offset: usize) -> Self {
-		Self { inputs, round_offset, _params: PhantomData }
+		Self { inputs, round_offset: offset, _params: PhantomData }
 	}
 }
 
@@ -179,12 +182,16 @@ where
 {
 	type Output = ([AssignedCell<F, F>; WIDTH], usize);
 
-	fn configure(config: CommonConfig, meta: &mut ConstraintSystem<F>) -> Selector {
+	fn configure(common: &CommonConfig, meta: &mut ConstraintSystem<F>) -> Selector {
 		let selector = meta.selector();
+
+		let state = &common.advice[0..WIDTH];
+		let round_constants = &common.fixed[0..WIDTH];
+
 		meta.create_gate("partial_round", |v_cells| {
 			// 1. step for the TRF.
 			// AddRoundConstants step.
-			let mut exprs = P::apply_round_constants_expr(&state, &round_constants);
+			let mut exprs = P::apply_round_constants_expr(state, round_constants);
 			// Applying single S-box for the partial round.
 			// 2. step for the TRF.
 			// SubWords step, denoted by S-box.
@@ -206,12 +213,12 @@ where
 	}
 
 	fn synthesize(
-		&self, config: CommonConfig, selector: Selector, layouter: impl Layouter<F>,
+		&self, config: &CommonConfig, selector: &Selector, layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
 		let round_constants = P::round_constants();
 		let partial_rounds = P::partial_rounds();
 		let round_end = self.round_offset + partial_rounds * WIDTH;
-		let round_constants = &round_constants[self.round_offset..second_round_end];
+		let round_constants = &round_constants[self.round_offset..round_end];
 
 		let res = layouter.assign_region(
 			|| "partial_rounds",
@@ -226,8 +233,9 @@ where
 
 					// 1. step for the TRF.
 					// AddRoundConstants step.
+					let state_vals = state_cells.map(|v| v.value().cloned());
 					let mut next_state =
-						Self::apply_round_constants(&state_cells, &round_const_cells);
+						Self::apply_round_constants(&state_vals, &round_const_cells);
 					// 2. step for the TRF.
 					// SubWords step, denoted by S-box.
 					next_state[0] = next_state[0].map(|x| P::sbox_f(x));
@@ -254,7 +262,8 @@ where
 	}
 }
 
-struct PoseidonConfig {
+#[derive(Clone)]
+pub struct PoseidonConfig {
 	fr_selector: Selector,
 	pr_selector: Selector,
 }
@@ -289,8 +298,8 @@ where
 
 	/// Synthesize the circuit.
 	fn synthesize(
-		&self, common: CommonConfig, config: &Self::Config, mut layouter: impl Layouter<F>,
-	) -> Result<[AssignedCell<F, F>; WIDTH], Error> {
+		&self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<F>,
+	) -> Result<Self::Output, Error> {
 		// The Hades Design Strategy for Hashing.
 		// Mixing rounds with half-full S-box layers and
 		// rounds with partial S-box layers.
@@ -300,23 +309,23 @@ where
 
 		let fr1 = FullRoundChip::new(self.inputs, 0);
 		let (state1, round_end) = fr1.synthesize(
-			common,
-			config.fr_selector,
+			&common,
+			&config.fr_selector,
 			layouter.namespace(|| "full_round_1"),
 		)?;
 
 		let pr = PartialRoundChip::new(state1, round_end);
 		let (state2, round_end) = pr.synthesize(
-			common,
-			config.pr_selector,
+			&common,
+			&config.pr_selector,
 			layouter.namespace(|| "partial_round_1"),
 		);
 
 		let fr2 = FullRoundChip::new(state2, round_end);
 		let (state3, _) = fr2.synthesize(
-			common,
-			config.fr_selector,
-			layouter.namespace(|| "full_round_1"),
+			&common,
+			&config.fr_selector,
+			layouter.namespace(|| "full_round_2"),
 		);
 
 		Ok(state3)
@@ -394,8 +403,8 @@ mod test {
 
 			let poseidon = TestPoseidonChipset::new(init_state);
 			let result_state = poseidon.synthesize(
-				common,
-				config.poseidon_config,
+				&config.common,
+				&config.poseidon_config,
 				layouter.namespace(|| "poseidon"),
 			)?;
 			for i in 0..5 {

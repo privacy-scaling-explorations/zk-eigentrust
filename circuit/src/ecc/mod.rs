@@ -1,30 +1,28 @@
 /// Native version of the chip
 pub mod native;
 
-use std::marker::PhantomData;
-
 use crate::{
-	gadgets::{
-		bits2num::{Bits2NumChip, Bits2NumConfig},
-		common::{CommonChip, CommonConfig},
-	},
+	gadgets::{bits2num::Bits2NumChip, common::SelectChip},
 	integer::{
 		native::{Quotient, ReductionWitness},
 		rns::RnsParams,
 		IntegerChip, IntegerConfig,
 	},
+	CommonChip, CommonConfig,
 };
 use halo2::{
 	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region, Value},
-	plonk::{ConstraintSystem, Error},
+	plonk::{ConstraintSystem, Error, Selector},
 };
+use std::marker::PhantomData;
 
 #[derive(Debug, Clone)]
 struct EccConfig<const NUM_LIMBS: usize> {
-	bits2num: Bits2NumConfig,
 	integer: IntegerConfig<NUM_LIMBS>,
 	common: CommonConfig,
+	bits2num_selector: Selector,
+	select_selector: Selector,
 }
 
 struct EccChip<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
@@ -120,11 +118,12 @@ where
 	/// Make the circuit config.
 	pub fn configure(meta: &mut ConstraintSystem<N>) -> EccConfig<NUM_LIMBS> {
 		const BITS: usize = 256;
-		let bits2num = Bits2NumChip::<N, BITS>::configure(meta);
 		let integer = IntegerChip::<W, N, NUM_LIMBS, NUM_BITS, P>::configure(meta);
-		let common = CommonChip::configure(meta);
+		let common = CommonChip::<N>::configure(meta);
+		let bits2num_selector = Bits2NumChip::configure(meta);
+		let select_selector = SelectChip::configure(meta);
 
-		EccConfig { bits2num, integer, common }
+		EccConfig { integer, common, select_selector, bits2num_selector }
 	}
 
 	pub fn add_reduced(
@@ -582,20 +581,18 @@ where
 			)?;
 			for j in 0..NUM_LIMBS {
 				// r_x
-				r_x[j] = CommonChip::select(
-					bits[i].clone(),
-					new_r_x[j].clone(),
-					r_x[j].clone(),
+				let select = SelectChip::new(bits[i].clone(), new_r_x[j].clone(), r_x[j].clone());
+				r_x[j] = select.synthesize(
 					&config.common,
+					&config.select_selector,
 					layouter.namespace(|| format!("select_r_x_{}", j)),
 				)?;
 
 				// r_y
-				r_y[j] = CommonChip::select(
-					bits[i].clone(),
-					new_r_y[j].clone(),
-					r_y[j].clone(),
+				let select = SelectChip::new(bits[i].clone(), new_r_y[j].clone(), r_y[j].clone());
+				r_y[j] = select.synthesize(
 					&config.common,
+					&config.select_selector,
 					layouter.namespace(|| format!("select_r_y_{}", j)),
 				)?;
 			}

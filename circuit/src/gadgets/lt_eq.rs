@@ -1,4 +1,5 @@
-use crate::utils::to_wide;
+use super::bits2num::Bits2NumChip;
+use crate::{gadgets::common::IsZeroChip, utils::to_wide, Chip, Chipset, CommonChip, CommonConfig};
 use halo2::{
 	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region, Value},
@@ -6,11 +7,6 @@ use halo2::{
 	poly::Rotation,
 };
 use std::vec;
-
-use super::{
-	bits2num::{Bits2NumChip, Bits2NumConfig},
-	common::{CommonChip, CommonConfig},
-};
 
 /// 1 << 252
 pub const N_SHIFTED: [u8; 32] = [
@@ -21,7 +17,7 @@ const NUM_BITS: usize = 252;
 /// Same number of bits as N_SHIFTED, since NUM + N_SHIFTED is the operation.
 const DIFF_BITS: usize = 253;
 
-struct NShiftedChip<F: FieldExt> {
+pub struct NShiftedChip<F: FieldExt> {
 	x: AssignedCell<F, F>,
 	y: AssignedCell<F, F>,
 }
@@ -35,7 +31,7 @@ impl<F: FieldExt> NShiftedChip<F> {
 impl<F: FieldExt> Chip<F> for NShiftedChip<F> {
 	type Output = AssignedCell<F, F>;
 
-	fn configure(config: CommonConfig, meta: &mut ConstraintSystem<F>) -> Selector {
+	fn configure(common: &CommonConfig, meta: &mut ConstraintSystem<F>) -> Selector {
 		let selector = meta.selector();
 		let n_shifted = F::from_bytes_wide(&to_wide(&N_SHIFTED));
 
@@ -43,10 +39,10 @@ impl<F: FieldExt> Chip<F> for NShiftedChip<F> {
 			let n_shifted_exp = Expression::Constant(n_shifted);
 
 			let s_exp = v_cells.query_selector(selector);
-			let x_exp = v_cells.query_advice(config.advice[0], Rotation::cur());
-			let y_exp = v_cells.query_advice(config.advice[1], Rotation::cur());
+			let x_exp = v_cells.query_advice(common.advice[0], Rotation::cur());
+			let y_exp = v_cells.query_advice(common.advice[1], Rotation::cur());
 
-			let res_exp = v_cells.query_advice(xconfig.advice[2], Rotation::cur());
+			let res_exp = v_cells.query_advice(common.advice[2], Rotation::cur());
 
 			vec![
 				// (x + n_shifted - y) - z == 0
@@ -68,23 +64,38 @@ impl<F: FieldExt> Chip<F> for NShiftedChip<F> {
 	}
 
 	fn synthesize(
-		&self, config: CommonConfig, selector: Selector, mut layouter: impl Layouter<F>,
-	) -> Result<AssignedCell<F, F>, Error> {
+		&self, common: &CommonConfig, selector: Selector, mut layouter: impl Layouter<F>,
+	) -> Result<Self::Output, Error> {
 		layouter.assign_region(
 			|| "less_than_equal",
 			|mut region: Region<'_, F>| {
-				config.selector.enable(&mut region, 0)?;
-				let assigned_x = self.x.copy_advice(|| "x", &mut region, config.x, 0)?;
-				let assigned_y = self.y.copy_advice(|| "y", &mut region, config.y, 0)?;
+				selector.enable(&mut region, 0)?;
+				let assigned_x = self.x.copy_advice(|| "x", &mut region, common.x, 0)?;
+				let assigned_y = self.y.copy_advice(|| "y", &mut region, common.y, 0)?;
 
 				let n_shifted = Value::known(F::from_bytes_wide(&to_wide(&N_SHIFTED)));
 				let res = assigned_x.value().cloned() + n_shifted - assigned_y.value();
 
 				let assigned_res =
-					region.assign_advice(|| "x + n_shift - y", config.x, 1, || res)?;
+					region.assign_advice(|| "x + n_shift - y", common.x, 1, || res)?;
 				Ok(assigned_res)
 			},
 		)
+	}
+}
+
+#[derive(Clone)]
+pub struct LessEqualConfig {
+	bits_2_num_selector: Selector,
+	n_shifted_selector: Selector,
+	is_zero_selector: Selector,
+}
+
+impl LessEqualConfig {
+	pub fn new(
+		bits_2_num_selector: Selector, n_shifted_selector: Selector, is_zero_selector: Selector,
+	) -> Self {
+		Self { bits_2_num_selector, n_shifted_selector, is_zero_selector }
 	}
 }
 
@@ -106,33 +117,33 @@ impl<F: FieldExt> Chipset<F> for LessEqualChipset<F> {
 
 	/// Synthesize the circuit.
 	fn synthesize(
-		&self, common: CommonConfig, config: Self::Config, mut layouter: impl Layouter<F>,
+		&self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
 		let x_b2n = Bits2NumChip::new(self.x.clone(), self.x_bits);
 		let _ = x_b2n.synthesize(
 			common,
-			config.bits_2_num_selector,
+			&config.bits_2_num_selector,
 			layouter.namespace(|| "x_b2n"),
 		)?;
 
 		let y_b2n = Bits2NumChip::new(self.y.clone(), self.y_bits);
 		let _ = y_b2n.synthesize(
 			common,
-			config.bits_2_num_selector,
+			&config.bits_2_num_selector,
 			layouter.namespace(|| "y_b2n"),
 		)?;
 
 		let n_shifted_chip = NShiftedChip::new(self.x, self.y);
 		let inp = n_shifted_chip.synthesize(
 			common,
-			config.n_shifted_selector,
+			&config.n_shifted_selector,
 			layouter.namespace(|| "n_shifted_diff"),
 		)?;
 
 		let diff_b2n = Bits2NumChip::new(inp, self.diff_bits);
 		let bits = diff_b2n.synthesize(
 			common,
-			config.bits_2_num_selector,
+			&config.bits_2_num_selector,
 			layouter.namespace(|| "bits2num"),
 		)?;
 
@@ -146,7 +157,7 @@ impl<F: FieldExt> Chipset<F> for LessEqualChipset<F> {
 		let is_zero_chip = IsZeroChip::new(bits[DIFF_BITS - 1].clone());
 		let res = is_zero_chip.synthesize(
 			common,
-			config.is_zero_selector,
+			&config.is_zero_selector,
 			layouter.namespace(|| "is_zero"),
 		)?;
 		Ok(res)

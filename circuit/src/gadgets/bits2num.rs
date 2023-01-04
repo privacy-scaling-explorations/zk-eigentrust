@@ -1,3 +1,4 @@
+use crate::Chip;
 use halo2::{
 	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region, Value},
@@ -36,18 +37,18 @@ impl<F: FieldExt, const B: usize> Chip<F> for Bits2NumChip<F, B> {
 	type Output = [AssignedCell<F, F>; B];
 
 	/// Make the circuit config.
-	fn configure(config: CommonConfig, meta: &mut ConstraintSystem<F>) -> Selector {
+	fn configure(common: &CommonConfig, meta: &mut ConstraintSystem<F>) -> Selector {
 		let selector = meta.selector();
 
 		meta.create_gate("bits2num", |v_cells| {
 			let one_exp = Expression::Constant(F::one());
-			let bit_exp = v_cells.query_advice(config.advice[0], Rotation::cur());
+			let bit_exp = v_cells.query_advice(common.advice[0], Rotation::cur());
 
-			let e2_exp = v_cells.query_advice(config.advice[1], Rotation::cur());
-			let e2_next_exp = v_cells.query_advice(config.advice[1], Rotation::next());
+			let e2_exp = v_cells.query_advice(common.advice[1], Rotation::cur());
+			let e2_next_exp = v_cells.query_advice(common.advice[1], Rotation::next());
 
-			let lc1_exp = v_cells.query_advice(config.advice[2], Rotation::cur());
-			let lc1_next_exp = v_cells.query_advice(config.advice[2], Rotation::next());
+			let lc1_exp = v_cells.query_advice(common.advice[2], Rotation::cur());
+			let lc1_next_exp = v_cells.query_advice(common.advice[2], Rotation::next());
 
 			let s_exp = v_cells.query_selector(selector);
 
@@ -78,34 +79,34 @@ impl<F: FieldExt, const B: usize> Chip<F> for Bits2NumChip<F, B> {
 
 	/// Synthesize the circuit.
 	fn synthesize(
-		&self, config: CommonConfig, selector: Selector, mut layouter: impl Layouter<F>,
+		&self, common: &CommonConfig, selector: &Selector, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
 		layouter.assign_region(
 			|| "bits2num",
 			|mut region: Region<'_, F>| {
 				let mut lc1 = region.assign_advice_from_constant(
 					|| "lc1_0",
-					config.advice[2],
+					common.advice[2],
 					0,
 					F::zero(),
 				)?;
 				let mut e2 =
-					region.assign_advice_from_constant(|| "e2_0", config.advice[1], 0, F::one())?;
+					region.assign_advice_from_constant(|| "e2_0", common.advice[1], 0, F::one())?;
 
 				let mut bits: [Option<AssignedCell<F, F>>; B] = [(); B].map(|_| None);
 				for i in 0..self.bits.len() {
 					selector.enable(&mut region, i)?;
 
 					let bit =
-						region.assign_advice(|| "bits", config.advice[0], i, || self.bits[i])?;
+						region.assign_advice(|| "bits", common.advice[0], i, || self.bits[i])?;
 					bits[i] = Some(bit.clone());
 
 					let next_lc1 =
 						lc1.value().cloned() + bit.value().cloned() * e2.value().cloned();
 					let next_e2 = e2.value().cloned() + e2.value();
 
-					lc1 = region.assign_advice(|| "lc1", config.advice[1], i + 1, || next_lc1)?;
-					e2 = region.assign_advice(|| "e2", config.advice[2], i + 1, || next_e2)?;
+					lc1 = region.assign_advice(|| "lc1", common.advice[1], i + 1, || next_lc1)?;
+					e2 = region.assign_advice(|| "e2", common.advice[2], i + 1, || next_e2)?;
 				}
 
 				region.constrain_equal(self.value.cell(), lc1.cell())?;
@@ -119,7 +120,10 @@ impl<F: FieldExt, const B: usize> Chip<F> for Bits2NumChip<F, B> {
 #[cfg(test)]
 mod test {
 	use super::*;
-	use crate::utils::{generate_params, prove_and_verify};
+	use crate::{
+		utils::{generate_params, prove_and_verify},
+		CommonChip,
+	};
 	use halo2::{
 		circuit::SimpleFloorPlanner,
 		dev::MockProver,
@@ -129,6 +133,7 @@ mod test {
 
 	#[derive(Clone)]
 	struct TestConfig {
+		common: CommonConfig,
 		bits2num: Bits2NumConfig,
 		temp: Column<Advice>,
 	}
@@ -154,12 +159,13 @@ mod test {
 		}
 
 		fn configure(meta: &mut ConstraintSystem<Fr>) -> TestConfig {
-			let bits2num = Bits2NumChip::<_, 256>::configure(meta);
+			let common = CommonChip::<Fr>::configure(meta);
+			let bits2num = Bits2NumChip::<_, 256>::configure(&common, meta);
 			let temp = meta.advice_column();
 
 			meta.enable_equality(temp);
 
-			TestConfig { bits2num, temp }
+			TestConfig { common, bits2num, temp }
 		}
 
 		fn synthesize(
@@ -174,7 +180,11 @@ mod test {
 
 			let bits = to_bits::<B>(self.bytes).map(|b| Fr::from(b));
 			let bits2num = Bits2NumChip::new(numba, bits);
-			let _ = bits2num.synthesize(&config.bits2num, layouter.namespace(|| "bits2num"))?;
+			let _ = bits2num.synthesize(
+				&config.common,
+				&config.bits2num,
+				layouter.namespace(|| "bits2num"),
+			)?;
 
 			Ok(())
 		}

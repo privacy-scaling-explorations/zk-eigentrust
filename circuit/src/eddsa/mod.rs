@@ -2,14 +2,14 @@
 pub mod native;
 
 use crate::{
-	edwards::{params::EdwardsParams, AssignedPoint, EdwardsChip, EdwardsConfig},
-	gadgets::{
-		common::{CommonChip, CommonConfig},
-		lt_eq::{LessEqualChip, LessEqualConfig},
+	edwards::{
+		params::EdwardsParams, AssignedPoint, IntoAffineChip, PointAddChip, StrictScalarMulChipset,
+		StrictScalarMulConfig,
 	},
+	gadgets::lt_eq::{LessEqualChipset, LessEqualConfig},
 	params::RoundParams,
 	poseidon::{PoseidonChipset, PoseidonConfig},
-	RegionCtx,
+	Chipset, CommonChip, CommonConfig, RegionCtx,
 };
 use halo2::{
 	circuit::{AssignedCell, Layouter, Region},
@@ -18,16 +18,26 @@ use halo2::{
 };
 use std::marker::PhantomData;
 
-struct EddsaConfig {
+#[derive(Clone)]
+pub struct EddsaConfig {
 	posiedon: PoseidonConfig,
-	lt_eq_selector: Selector,
-	scalar_mul_selector: Selector,
+	lt_eq: LessEqualConfig,
+	scalar_mul: StrictScalarMulConfig,
 	add_point_selector: Selector,
 	affine_selector: Selector,
 }
 
+impl EddsaConfig {
+	pub fn new(
+		posiedon: PoseidonConfig, lt_eq: LessEqualConfig, scalar_mul: StrictScalarMulConfig,
+		add_point_selector: Selector, affine_selector: Selector,
+	) -> Self {
+		Self { posiedon, lt_eq, scalar_mul, add_point_selector, affine_selector }
+	}
+}
+
 /// Constructs individual cells for the configuration elements.
-pub struct EddsaChip<F: FieldExt, P: EdwardsParams<F>, R>
+pub struct EddsaChipset<F: FieldExt, P: EdwardsParams<F>, R>
 where
 	R: RoundParams<F, 5>,
 {
@@ -55,7 +65,7 @@ where
 	_r: PhantomData<R>,
 }
 
-impl<F: FieldExt, P: EdwardsParams<F>, R> EddsaChip<F, P, R>
+impl<F: FieldExt, P: EdwardsParams<F>, R> EddsaChipset<F, P, R>
 where
 	R: RoundParams<F, 5>,
 {
@@ -83,7 +93,7 @@ where
 	}
 }
 
-impl<F: FieldExt, P: EdwardsParams<F>, R> Chipset<F> for EddsaChip<F, P, R>
+impl<F: FieldExt, P: EdwardsParams<F>, R> Chipset<F> for EddsaChipset<F, P, R>
 where
 	R: RoundParams<F, 5>,
 {
@@ -92,7 +102,7 @@ where
 
 	/// Synthesize the circuit.
 	fn synthesize(
-		&self, common: CommonConfig, config: EddsaConfig, mut layouter: impl Layouter<F>,
+		&self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
 		let (b8_x, b8_y, one, suborder) = layouter.assign_region(
 			|| "assign_values",
@@ -131,18 +141,15 @@ where
 		);
 		let is_lt_eq = lt_eq_chipset.synthesize(
 			common,
-			config.lt_eq_selector,
+			&config.lt_eq,
 			layouter.namespace(|| "s_lt_eq_suborder"),
 		)?;
 
 		// Cl = s * G
 		let e = AssignedPoint::new(b8_x, b8_y, one.clone());
 		let cl_chipset = StrictScalarMulChipset::new(e, self.s.clone(), self.s_bits)?;
-		let cl = cl_chipset.synthesize(
-			common,
-			config.scalar_mul_selector,
-			layouter.namespace(|| "b_8 * s"),
-		)?;
+		let cl =
+			cl_chipset.synthesize(common, &config.scalar_mul, layouter.namespace(|| "b_8 * s"))?;
 
 		// H(R || PK || M)
 		// Hashing R, public key and message composition.
@@ -155,24 +162,24 @@ where
 		];
 		let hasher = PoseidonChipset::<F, 5, R>::new(m_hash_input);
 		let m_hash_res =
-			hasher.synthesize(common, config.poseidon, layouter.namespace(|| "m_hash"))?;
+			hasher.synthesize(common, &config.poseidon, layouter.namespace(|| "m_hash"))?;
 
 		// H(R || PK || M) * PK
 		// Scalar multiplication for the public key and hash.
 		let e = AssignedPoint::new(self.pk_x.clone(), self.pk_y.clone(), one.clone());
 		let pk_h_chipset = StrictScalarMulChipset::new(e, m_hash_res[0].clone(), self.m_hash_bits)?;
-		let ph = pk_h_chipset.synthesize(
+		let pk_h = pk_h_chipset.synthesize(
 			common,
-			config.scalar_mul_selector,
+			&config.scalar_mul,
 			layouter.namespace(|| "pk * m_hash"),
 		)?;
 
 		// Cr = R + H(R || PK || M) * PK
 		let big_r_point = AssignedPoint::new(self.big_r_x.clone(), self.big_r_y.clone(), one);
-		let cr_chip = AddPointChip::new(big_r_point, pk_h)?;
+		let cr_chip = PointAddChip::new(big_r_point, pk_h)?;
 		let cr = cr_chip.synthesize(
 			common,
-			config.add_point_selector,
+			&config.add_point_selector,
 			layouter.namespace(|| "big_r + pk_h"),
 		)?;
 
@@ -180,13 +187,13 @@ where
 		let cl_affine_chip = IntoAffineChip::new(cl)?;
 		let cl_affine = cl_affine_chip.synthesize(
 			common,
-			config.affine_selector,
+			&config.affine_selector,
 			layouter.namespace(|| "cl_affine"),
 		)?;
 		let cr_affine_chip = IntoAffineChip::new(cr)?;
 		let cr_affine = cr_affine_chip.synthesize(
 			common,
-			config.affine_selector,
+			&config.affine_selector,
 			layouter.namespace(|| "cr_affine"),
 		)?;
 

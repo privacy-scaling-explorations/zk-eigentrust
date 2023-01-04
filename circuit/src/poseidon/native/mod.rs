@@ -61,7 +61,7 @@ where
 			}
 			// 3. step for the TRF.
 			// MixLayer step.
-			state = P::apply_mds(&state, &mds);
+			state = P::apply_mds(&state);
 		}
 
 		for round in 0..partial_rounds {
@@ -75,7 +75,7 @@ where
 			state[0] = P::sbox_f(state[0]);
 			// 3. step for the TRF.
 			// MixLayer step.
-			state = P::apply_mds(&state, &mds);
+			state = P::apply_mds(&state);
 		}
 
 		for round in 0..half_full_rounds {
@@ -91,7 +91,7 @@ where
 			}
 			// 3. step for the TRF.
 			// MixLayer step.
-			state = P::apply_mds(&state, &mds);
+			state = P::apply_mds(&state);
 		}
 
 		state

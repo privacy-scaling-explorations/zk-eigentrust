@@ -5,7 +5,7 @@ pub mod poseidon_bn254_5x5;
 /// Rescue Prime Bn254 with WIDTH = 5 and EXPONENTIATION = 5
 pub mod rescue_prime_bn254_5x5;
 
-use halo2::{arithmetic::FieldExt, plonk::Expression};
+use halo2::{arithmetic::FieldExt, circuit::Value, plonk::Expression};
 
 /// Trait definition of Round parameters of Poseidon
 pub trait RoundParams<F: FieldExt, const WIDTH: usize>: Sbox {
@@ -61,8 +61,9 @@ pub trait RoundParams<F: FieldExt, const WIDTH: usize>: Sbox {
 		next_state
 	}
 	/// Compute MDS matrix for MixLayer operation.
-	fn apply_mds(state: &[F; WIDTH], mds: &[[F; WIDTH]; WIDTH]) -> [F; WIDTH] {
+	fn apply_mds(state: &[F; WIDTH]) -> [F; WIDTH] {
 		let mut new_state = [F::zero(); WIDTH];
+		let mds = Self::mds();
 		for i in 0..WIDTH {
 			for j in 0..WIDTH {
 				let mds_ij = &mds[i][j];
@@ -90,7 +91,7 @@ pub trait RoundParams<F: FieldExt, const WIDTH: usize>: Sbox {
 	/// Compute MDS matrix for MixLayer operation.
 	fn apply_mds_val(next_state: &[Value<F>; WIDTH]) -> [Value<F>; WIDTH] {
 		let mut new_state = [Value::known(F::zero()); WIDTH];
-		let mds = P::mds();
+		let mds = Self::mds();
 		for i in 0..WIDTH {
 			for j in 0..WIDTH {
 				let mds_ij = &Value::known(mds[i][j]);
@@ -108,7 +109,7 @@ pub trait RoundParams<F: FieldExt, const WIDTH: usize>: Sbox {
 	) -> [Expression<F>; WIDTH] {
 		let mut exprs = [(); WIDTH].map(|_| Expression::Constant(F::zero()));
 		for i in 0..WIDTH {
-			exprs[i] = curr_state[i] + round_constant[i];
+			exprs[i] = curr_state[i] + round_constants[i];
 		}
 		exprs
 	}
@@ -116,8 +117,8 @@ pub trait RoundParams<F: FieldExt, const WIDTH: usize>: Sbox {
 	/// Compute MDS matrix for MixLayer operation in the circuit.
 	fn apply_mds_expr(exprs: &[Expression<F>; WIDTH]) -> [Expression<F>; WIDTH] {
 		let mut new_exprs = [(); WIDTH].map(|_| Expression::Constant(F::zero()));
-		let mds = P::mds();
 		// Mat mul with MDS
+		let mds = Self::mds();
 		for i in 0..WIDTH {
 			for j in 0..WIDTH {
 				new_exprs[i] = new_exprs[i].clone() + (exprs[j].clone() * mds[i][j]);

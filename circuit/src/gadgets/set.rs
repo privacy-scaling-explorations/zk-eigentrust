@@ -1,4 +1,4 @@
-use super::common::{CommonChip, CommonConfig};
+use crate::{gadgets::common::IsZeroChip, Chip, Chipset, CommonChip, CommonConfig};
 use halo2::{
 	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region, Value},
@@ -24,7 +24,7 @@ impl<F: FieldExt, const N: usize> Chip<F> for FixedSetChip<F, N> {
 	type Output = AssignedCell<F, F>;
 
 	/// Make the circuit config.
-	fn configure(common: CommonConfig, meta: &mut ConstraintSystem<F>) -> Selector {
+	fn configure(common: &CommonConfig, meta: &mut ConstraintSystem<F>) -> Selector {
 		let selector = meta.selector();
 
 		meta.create_gate("fixed_set_membership", |v_cells| {
@@ -56,7 +56,7 @@ impl<F: FieldExt, const N: usize> Chip<F> for FixedSetChip<F, N> {
 
 	/// Synthesize the circuit.
 	fn synthesize(
-		&self, config: CommonConfig, selector: Selector, mut layouter: impl Layouter<F>,
+		&self, common: &CommonConfig, selector: &Selector, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
 		layouter.assign_region(
 			|| "set_membership",
@@ -106,12 +106,13 @@ impl<F: FieldExt, const N: usize> Chip<F> for FixedSetChip<F, N> {
 	}
 }
 
-struct FixedSetConfig {
+#[derive(Clone)]
+pub struct FixedSetConfig {
 	is_zero_selector: Selector,
 	fixed_set_selector: Selector,
 }
 
-struct FixedSetChipset<F: FieldExt, const N: usize> {
+pub struct FixedSetChipset<F: FieldExt, const N: usize> {
 	/// Constructs items variable for the circuit.
 	items: [AssignedCell<F, F>; N],
 	/// Assigns a cell for the target.
@@ -129,19 +130,19 @@ impl<F: FieldExt, const N: usize> Chipset<F> for FixedSetChipset<F, N> {
 	type Output = AssignedCell<F, F>;
 
 	fn synthesize(
-		&self, common: CommonConfig, config: Self::Config, mut layouter: impl Layouter<F>,
+		&self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
 		let fixed_set_chip = FixedSetChip::new(self.items, self.target);
 		let res = fixed_set_chip.synthesize(
 			common,
-			config.fixed_set_selector,
+			&config.fixed_set_selector,
 			layouter.namespace(|| "fixed_set_membership"),
 		)?;
 
 		let is_zero_chip = IsZeroChip::new(res);
 		let is_zero = is_zero_chip.synthesize(
 			common,
-			config.is_zero_selector,
+			&config.is_zero_selector,
 			layouter.namespace(|| "is_member"),
 		)?;
 
@@ -189,7 +190,8 @@ mod test {
 		}
 
 		fn configure(meta: &mut ConstraintSystem<F>) -> TestConfig {
-			let fixed_set = FixedSetChip::<F, 3>::configure(meta);
+			let common = CommonChip::<F>::configure(meta);
+			let fixed_set = FixedSetChip::<F, 3>::configure(common, meta);
 			let temp = meta.advice_column();
 			let instance = meta.instance_column();
 
@@ -209,8 +211,11 @@ mod test {
 				},
 			)?;
 			let fixed_set_chip = FixedSetChip::new(self.items, numba);
-			let is_zero =
-				fixed_set_chip.synthesize(config.set, layouter.namespace(|| "fixed_set"))?;
+			let is_zero = fixed_set_chip.synthesize(
+				config.common,
+				config.set,
+				layouter.namespace(|| "fixed_set"),
+			)?;
 			layouter.constrain_instance(is_zero.cell(), config.pub_ins, 0)?;
 			Ok(())
 		}

@@ -1,3 +1,4 @@
+use crate::{Chip, Chipset, CommonConfig};
 use halo2::{
 	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region, Value},
@@ -6,7 +7,7 @@ use halo2::{
 };
 use std::marker::PhantomData;
 
-struct MulChip<F: FieldExt> {
+pub struct MulChip<F: FieldExt> {
 	// Assigns a cell for the x.
 	x: AssignedCell<F, F>,
 	// Assigns a cell for the y.
@@ -22,13 +23,13 @@ impl<F: FieldExt> MulChip<F> {
 impl<F: FieldExt> Chip<F> for MulChip<F> {
 	type Output = AssignedCell<F, F>;
 
-	fn configure(config: CommonConfig, meta: &mut ConstraintSystem<F>) -> Selector {
+	fn configure(common: &CommonConfig, meta: &mut ConstraintSystem<F>) -> Selector {
 		let selector = meta.selector();
 		// Gate for the mul circuit.
 		meta.create_gate("mul", |v_cells| {
-			let x_exp = v_cells.query_advice(config.advice[0], Rotation::cur());
-			let y_exp = v_cells.query_advice(config.advice[1], Rotation::cur());
-			let res_exp = v_cells.query_advice(config.advice[2], Rotation::cur());
+			let x_exp = v_cells.query_advice(common.advice[0], Rotation::cur());
+			let y_exp = v_cells.query_advice(common.advice[1], Rotation::cur());
+			let res_exp = v_cells.query_advice(common.advice[2], Rotation::cur());
 			let s_exp = v_cells.query_selector(selector);
 
 			vec![
@@ -48,19 +49,19 @@ impl<F: FieldExt> Chip<F> for MulChip<F> {
 	}
 
 	fn synthesize(
-		&self, config: CommonConfig, selector: Selector, layouter: impl Layouter<F>,
+		&self, common: &CommonConfig, selector: &Selector, layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
 		layouter.assign_region(
 			|| "mul",
 			|mut region: Region<'_, F>| {
 				selector.enable(&mut region, 0)?;
 
-				let assigned_x = x_checked.copy_advice(|| "x", &mut region, config.advice[0], 0)?;
-				let assigned_y = y_checked.copy_advice(|| "y", &mut region, config.advice[1], 0)?;
+				let assigned_x = self.x.copy_advice(|| "x", &mut region, common.advice[0], 0)?;
+				let assigned_y = self.y.copy_advice(|| "y", &mut region, common.advice[1], 0)?;
 
 				let res = assigned_x.value().cloned() * assigned_y.value();
 
-				let res_assigned = region.assign_advice(|| "res", config.advice[2], 0, || res)?;
+				let res_assigned = region.assign_advice(|| "res", common.advice[2], 0, || res)?;
 
 				Ok(res_assigned)
 			},
@@ -68,21 +69,21 @@ impl<F: FieldExt> Chip<F> for MulChip<F> {
 	}
 }
 
-struct ConstrainBoolChip<F: FieldExt> {
+pub struct ConstrainBoolChip<F: FieldExt> {
 	x: AssignedCell<F, F>,
 }
 
 impl<F: FieldExt> Chip<F> for ConstrainBoolChip<F> {
 	type Output = AssignedCell<F, F>;
 
-	fn configure(config: CommonConfig, meta: &mut ConstraintSystem<F>) -> Selector {
+	fn configure(common: &CommonConfig, meta: &mut ConstraintSystem<F>) -> Selector {
 		let selector = meta.selector();
 
 		// Gate for the is_bool circuit.
 		meta.create_gate("constrain_bool", |v_cells| {
 			let one = Expression::Constant(F::one());
-			let x_exp = v_cells.query_advice(advice[0], Rotation::cur());
-			let s_exp = v_cells.query_selector(selectors[1]);
+			let x_exp = v_cells.query_advice(common.advice[0], Rotation::cur());
+			let s_exp = v_cells.query_selector(selector);
 
 			vec![
 				// (1 - x) * x == 0
@@ -102,13 +103,13 @@ impl<F: FieldExt> Chip<F> for ConstrainBoolChip<F> {
 	}
 
 	fn synthesize(
-		&self, config: CommonConfig, selector: Selector, layouter: impl Layouter<F>,
+		&self, common: &CommonConfig, selector: &Selector, layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
 		layouter.assign_region(
 			|| "constrain_boolean",
 			|mut region: Region<'_, F>| {
 				selector.enable(&mut region, 0)?;
-				x.copy_advice(|| "x", &mut region, config.advice[0], 0)?;
+				self.x.copy_advice(|| "x", &mut region, common.advice[0], 0)?;
 
 				Ok(())
 			},
@@ -116,7 +117,7 @@ impl<F: FieldExt> Chip<F> for ConstrainBoolChip<F> {
 	}
 }
 
-struct IsZeroChip<F: FieldExt> {
+pub struct IsZeroChip<F: FieldExt> {
 	x: AssignedCell<F, F>,
 }
 
@@ -129,15 +130,15 @@ impl<F: FieldExt> IsZeroChip<F> {
 impl<F: FieldExt> Chip<F> for IsZeroChip<F> {
 	type Output = AssignedCell<F, F>;
 
-	fn configure(config: CommonConfig, meta: &mut ConstraintSystem<F>) -> Selector {
+	fn configure(common: &CommonConfig, meta: &mut ConstraintSystem<F>) -> Selector {
 		let selector = meta.selector();
 
 		meta.create_gate("is_zero", |v_cells| {
 			let one = Expression::Constant(F::one());
-			let x_exp = v_cells.query_advice(advice[0], Rotation::cur());
-			let x_inv_exp = v_cells.query_advice(advice[1], Rotation::cur());
-			let b_exp = v_cells.query_advice(advice[2], Rotation::cur());
-			let sel_exp = v_cells.query_selector(selectors[3]);
+			let x_exp = v_cells.query_advice(common.advice[0], Rotation::cur());
+			let x_inv_exp = v_cells.query_advice(common.advice[1], Rotation::cur());
+			let b_exp = v_cells.query_advice(common.advice[2], Rotation::cur());
+			let sel_exp = v_cells.query_selector(selector);
 
 			vec![
 				// x * b == 0
@@ -162,7 +163,7 @@ impl<F: FieldExt> Chip<F> for IsZeroChip<F> {
 	}
 
 	fn synthesize(
-		&self, config: CommonConfig, selector: Selector, layouter: impl Layouter<F>,
+		&self, common: &CommonConfig, selector: &Selector, layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
 		layouter.assign_region(
 			|| "is_zero",
@@ -170,17 +171,17 @@ impl<F: FieldExt> Chip<F> for IsZeroChip<F> {
 				selector.enable(&mut region, 0)?;
 
 				let one = Value::known(F::one());
-				let x_inv = x.value().and_then(|val| {
+				let x_inv = self.x.value().and_then(|val| {
 					let val_opt: Option<F> = val.invert().into();
 					Value::known(val_opt.unwrap_or(F::one()))
 				});
 				// In the circuit here, if x = 0, b will be assigned to the value 1.
 				// If x = 1, means x_inv = 1 as well, b will be assigned to the value 0.
-				let b = one - x.value().cloned() * x_inv;
+				let b = one - self.x.value().cloned() * x_inv;
 
-				x.copy_advice(|| "x", &mut region, config.advice[0], 0)?;
-				region.assign_advice(|| "x_inv", config.advice[1], 0, || x_inv)?;
-				let assigned_b = region.assign_advice(|| "b", config.advice[2], 0, || b)?;
+				self.x.copy_advice(|| "x", &mut region, common.advice[0], 0)?;
+				region.assign_advice(|| "x_inv", common.advice[1], 0, || x_inv)?;
+				let assigned_b = region.assign_advice(|| "b", common.advice[2], 0, || b)?;
 
 				Ok(assigned_b)
 			},
@@ -188,7 +189,7 @@ impl<F: FieldExt> Chip<F> for IsZeroChip<F> {
 	}
 }
 
-struct AddChip<F: FieldExt> {
+pub struct AddChip<F: FieldExt> {
 	x: AssignedCell<F, F>,
 	y: AssignedCell<F, F>,
 }
@@ -202,13 +203,13 @@ impl<F: FieldExt> AddChip<F> {
 impl<F: FieldExt> Chip<F> for AddChip<F> {
 	type Output = AssignedCell<F, F>;
 
-	fn configure(config: CommonConfig, meta: &mut ConstraintSystem<F>) -> Selector {
+	fn configure(common: &CommonConfig, meta: &mut ConstraintSystem<F>) -> Selector {
 		let selector = meta.selector();
 
 		meta.create_gate("add", |v_cells| {
-			let x_exp = v_cells.query_advice(advice[0], Rotation::cur());
-			let y_exp = v_cells.query_advice(advice[1], Rotation::cur());
-			let z_exp = v_cells.query_advice(advice[2], Rotation::cur());
+			let x_exp = v_cells.query_advice(common.advice[0], Rotation::cur());
+			let y_exp = v_cells.query_advice(common.advice[1], Rotation::cur());
+			let z_exp = v_cells.query_advice(common.advice[2], Rotation::cur());
 			let s_exp = v_cells.query_selector(selector);
 
 			vec![
@@ -228,18 +229,18 @@ impl<F: FieldExt> Chip<F> for AddChip<F> {
 	}
 
 	fn synthesize(
-		&self, config: CommonConfig, selector: Selector, layouter: impl Layouter<F>,
+		&self, common: &CommonConfig, selector: &Selector, layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
 		layouter.assign_region(
 			|| "add",
 			|mut region: Region<'_, F>| {
 				selector.enable(&mut region, 0)?;
-				let assigned_x = x.copy_advice(|| "x", &mut region, config.advice[0], 0)?;
-				let assigned_y = y.copy_advice(|| "y", &mut region, config.advice[1], 0)?;
+				let assigned_x = self.x.copy_advice(|| "x", &mut region, common.advice[0], 0)?;
+				let assigned_y = self.y.copy_advice(|| "y", &mut region, common.advice[1], 0)?;
 
 				let out = assigned_x.value().cloned() + assigned_y.value();
 
-				let out_assigned = region.assign_advice(|| "out", config.advice[2], 0, || out)?;
+				let out_assigned = region.assign_advice(|| "out", common.advice[2], 0, || out)?;
 
 				Ok(out_assigned)
 			},
@@ -247,7 +248,7 @@ impl<F: FieldExt> Chip<F> for AddChip<F> {
 	}
 }
 
-struct SubChip<F: FieldExt> {
+pub struct SubChip<F: FieldExt> {
 	x: AssignedCell<F, F>,
 	y: AssignedCell<F, F>,
 }
@@ -261,13 +262,13 @@ impl<F: FieldExt> SubChip<F> {
 impl<F: FieldExt> Chip<F> for SubChip<F> {
 	type Output = AssignedCell<F, F>;
 
-	fn configure(config: CommonConfig, meta: &mut ConstraintSystem<F>) -> Selector {
+	fn configure(common: &CommonConfig, meta: &mut ConstraintSystem<F>) -> Selector {
 		let selector = meta.selector();
 
 		meta.create_gate("sub", |v_cells| {
-			let lhs_exp = v_cells.query_advice(advice[0], Rotation::cur());
-			let rhs_exp = v_cells.query_advice(advice[1], Rotation::cur());
-			let out_exp = v_cells.query_advice(advice[2], Rotation::cur());
+			let lhs_exp = v_cells.query_advice(common.advice[0], Rotation::cur());
+			let rhs_exp = v_cells.query_advice(common.advice[1], Rotation::cur());
+			let out_exp = v_cells.query_advice(common.advice[2], Rotation::cur());
 			let s_exp = v_cells.query_selector(selector);
 
 			vec![
@@ -287,25 +288,27 @@ impl<F: FieldExt> Chip<F> for SubChip<F> {
 	}
 
 	fn synthesize(
-		&self, config: CommonConfig, selector: Selector, layouter: impl Layouter<F>,
+		&self, common: &CommonConfig, selector: &Selector, layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
 		layouter.assign_region(
 			|| "sub",
 			|mut region: Region<'_, F>| {
 				selector.enable(&mut region, 0)?;
-				let assigned_lhs = lhs.copy_advice(|| "lhs", &mut region, config.advice[0], 0)?;
-				let assigned_rhs = rhs.copy_advice(|| "rhs", &mut region, config.advice[1], 0)?;
+				let assigned_lhs =
+					self.x.copy_advice(|| "lhs", &mut region, common.advice[0], 0)?;
+				let assigned_rhs =
+					self.y.copy_advice(|| "rhs", &mut region, common.advice[1], 0)?;
 
 				let out = assigned_lhs.value().cloned() - assigned_rhs.value();
 
-				let assigned_out = region.assign_advice(|| "lhs", config.advice[2], 0, || out)?;
+				let assigned_out = region.assign_advice(|| "lhs", common.advice[2], 0, || out)?;
 				Ok(assigned_out)
 			},
 		)
 	}
 }
 
-struct SelectChip<F: FieldExt> {
+pub struct SelectChip<F: FieldExt> {
 	bit: AssignedCell<F, F>,
 	x: AssignedCell<F, F>,
 	y: AssignedCell<F, F>,
@@ -320,14 +323,14 @@ impl<F: FieldExt> SelectChip<F> {
 impl<F: FieldExt> Chip<F> for SelectChip<F> {
 	type Output = AssignedCell<F, F>;
 
-	fn configure(config: CommonConfig, meta: &mut ConstraintSystem<F>) -> Selector {
+	fn configure(common: &CommonConfig, meta: &mut ConstraintSystem<F>) -> Selector {
 		let selector = meta.selector();
 
 		meta.create_gate("select", |v_cells| {
-			let bit_exp = v_cells.query_advice(config.advice[0], Rotation::cur());
-			let x_exp = v_cells.query_advice(config.advice[1], Rotation::cur());
-			let y_exp = v_cells.query_advice(config.advice[2], Rotation::cur());
-			let res_exp = v_cells.query_advice(config.advice[3], Rotation::cur());
+			let bit_exp = v_cells.query_advice(common.advice[0], Rotation::cur());
+			let x_exp = v_cells.query_advice(common.advice[1], Rotation::cur());
+			let y_exp = v_cells.query_advice(common.advice[2], Rotation::cur());
+			let res_exp = v_cells.query_advice(common.advice[3], Rotation::cur());
 			let s_exp = v_cells.query_selector(selector);
 
 			vec![
@@ -354,7 +357,7 @@ impl<F: FieldExt> Chip<F> for SelectChip<F> {
 	}
 
 	fn synthesize(
-		&self, config: CommonConfig, selector: Selector, layouter: impl Layouter<F>,
+		&self, common: &CommonConfig, selector: &Selector, layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
 		layouter.assign_region(
 			|| "select",
@@ -362,9 +365,9 @@ impl<F: FieldExt> Chip<F> for SelectChip<F> {
 				selector.enable(&mut region, 0)?;
 
 				let assigned_bit =
-					assigned_bool.copy_advice(|| "bit", &mut region, config.advice[0], 0)?;
-				let assigned_x = x.copy_advice(|| "x", &mut region, config.advice[1], 0)?;
-				let assigned_y = y.copy_advice(|| "y", &mut region, config.advice[2], 0)?;
+					self.bit.copy_advice(|| "bit", &mut region, common.advice[0], 0)?;
+				let assigned_x = self.x.copy_advice(|| "x", &mut region, common.advice[1], 0)?;
+				let assigned_y = self.y.copy_advice(|| "y", &mut region, common.advice[2], 0)?;
 
 				// Conditional control checks the bit. Is it zero or not?
 				// If yes returns the y value, else x.
@@ -376,7 +379,7 @@ impl<F: FieldExt> Chip<F> for SelectChip<F> {
 					}
 				});
 
-				let assigned_res = region.assign_advice(|| "res", config.advice[3], 0, || res)?;
+				let assigned_res = region.assign_advice(|| "res", common.advice[3], 0, || res)?;
 
 				Ok(assigned_res)
 			},
@@ -384,12 +387,13 @@ impl<F: FieldExt> Chip<F> for SelectChip<F> {
 	}
 }
 
-struct IsEqualConfig {
+#[derive(Clone)]
+pub struct IsEqualConfig {
 	sub_selector: Selector,
 	is_zero_selector: Selector,
 }
 
-struct IsEqualChipset<F: FieldExt> {
+pub struct IsEqualChipset<F: FieldExt> {
 	x: AssignedCell<F, F>,
 	y: AssignedCell<F, F>,
 }
@@ -400,21 +404,21 @@ impl<F: FieldExt> IsEqualChipset<F> {
 	}
 }
 
-impl<F: FieldExt> Chipset<F> for IsEqualChip<F> {
+impl<F: FieldExt> Chipset<F> for IsEqualChipset<F> {
 	type Config = IsEqualConfig;
 	type Output = AssignedCell<F, F>;
 
 	fn synthesize(
-		&self, common: CommonConfig, config: Self::Config, layouter: impl Layouter<F>,
+		&self, common: &CommonConfig, config: &Self::Config, layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
 		let sub_chipset = SubChip::new(self.x, self.y);
 		let res =
-			sub_chipset.synthesize(common, config.sub_selector, layouter.namespace(|| "diff"))?;
+			sub_chipset.synthesize(common, &config.sub_selector, layouter.namespace(|| "diff"))?;
 
 		let is_zero_chip = IsZeroChip::new(res);
 		let is_zero = is_zero_chip.synthesize(
 			common,
-			config.is_zero_selector,
+			&config.is_zero_selector,
 			layouter.namespace(|| "is_zero"),
 		)?;
 
@@ -422,12 +426,13 @@ impl<F: FieldExt> Chipset<F> for IsEqualChip<F> {
 	}
 }
 
-struct AndConfig {
+#[derive(Clone)]
+pub struct AndConfig {
 	bool_selector: Selector,
 	mul_selector: Selector,
 }
 
-struct AndChipset<F: FieldExt> {
+pub struct AndChipset<F: FieldExt> {
 	// Assigns a cell for the x.
 	x: AssignedCell<F, F>,
 	// Assigns a cell for the y.
@@ -445,25 +450,25 @@ impl<F: FieldExt> Chipset<F> for AndChipset<F> {
 	type Output = AssignedCell<F, F>;
 
 	fn synthesize(
-		&self, common: CommonConfig, config: Self::Config, layouter: impl Layouter<F>,
+		&self, common: &CommonConfig, config: &Self::Config, layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
 		let bch_x = ConstrainBoolChip::new(self.x);
 		bch_x.synthesize(
 			common,
-			config.bool_selector,
+			&config.bool_selector,
 			layouter.namespace(|| "bool_constraint_x"),
 		);
 		let bch_y = ConstrainBoolChip::new(self.y);
 		bch_y.synthesize(
 			common,
-			config.bool_selector,
+			&config.bool_selector,
 			layouter.namespace(|| "bool_constraint_y"),
 		);
 
 		let mul_chip = MulChip::new(self.x, self.y);
 		let and_res = mul_chip.synthesize(
 			common,
-			config.mul_selector,
+			&config.mul_selector,
 			layouter.namespace(|| "mul_boolean"),
 		)?;
 
@@ -471,12 +476,13 @@ impl<F: FieldExt> Chipset<F> for AndChipset<F> {
 	}
 }
 
-struct StrictSelectConfig {
+#[derive(Clone)]
+pub struct StrictSelectConfig {
 	bool_selector: Selector,
 	select_selector: Selector,
 }
 
-struct StrictSelectChipset<F: FieldExt> {
+pub struct StrictSelectChipset<F: FieldExt> {
 	bit: AssignedCell<F, F>,
 	x: AssignedCell<F, F>,
 	y: AssignedCell<F, F>,
@@ -493,17 +499,18 @@ impl<F: FieldExt> Chipset<F> for StrictSelectChipset<F> {
 	type Output = AssignedCell<F, F>;
 
 	fn synthesize(
-		&self, common: CommonConfig, config: Self::Config, layouter: impl Layouter<F>,
+		&self, common: &CommonConfig, config: &Self::Config, layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
 		let bool_chip = ConstrainBoolChip::new(self.bit);
 		bool_chip.synthesize(
 			common,
-			config.bool_selector,
+			&config.bool_selector,
 			layouter.namespace(|| "constrain_bit"),
 		)?;
 
 		let select_chip = SelectChip::new(self.x, self.y, self.bit);
-		let res = select_chip.synthesize(common, config.select, layouter.namespace(|| "select"))?;
+		let res =
+			select_chip.synthesize(common, &config.select, layouter.namespace(|| "select"))?;
 
 		Ok(res)
 	}

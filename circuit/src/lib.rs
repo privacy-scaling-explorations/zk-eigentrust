@@ -153,7 +153,7 @@ pub struct CommonConfig {
 
 struct CommonChip<F: FieldExt>(PhantomData<F>);
 
-impl CommonChip<F> {
+impl<F: FieldExt> CommonChip<F> {
 	/// Initialization function for CommonConfig
 	pub fn configure(meta: &mut ConstraintSystem<F>) -> CommonConfig {
 		let advice = [(); ADVICE].map(|_| meta.advice_column());
@@ -170,11 +170,11 @@ pub trait Chip<F: FieldExt> {
 	/// Output of the synthesis
 	type Output: Clone;
 	/// Gate configuration, using common config columns
-	fn configure(config: &CommonConfig, meta: &mut ConstraintSystem<F>) -> Selector;
+	fn configure(common: &CommonConfig, meta: &mut ConstraintSystem<F>) -> Selector;
 	/// Chip synthesis. This function can return an assigned cell to be used
 	/// elsewhere in the circuit
 	fn synthesize(
-		&self, config: &CommonConfig, selector: &Selector, layouter: impl Layouter<F>,
+		&self, common: &CommonConfig, selector: &Selector, layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error>;
 }
 
@@ -188,6 +188,6 @@ pub trait Chipset<F: FieldExt> {
 	/// Chipset synthesis. This function can have multiple smaller chips
 	/// synthesised inside. Also can returns an assigned cell.
 	fn synthesize(
-		&self, config: &CommonConfig, config: &Self::Config, layouter: impl Layouter<F>,
+		&self, common: &CommonConfig, config: &Self::Config, layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error>;
 }
