@@ -7,7 +7,7 @@ use crate::{
 use halo2::{
 	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region, Value},
-	plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
+	plonk::{ConstraintSystem, Error, Expression, Selector},
 	poly::Rotation,
 };
 use std::marker::PhantomData;
@@ -60,11 +60,6 @@ impl<F: FieldExt, const WIDTH: usize> Chip<F> for AbsorbChip<F, WIDTH> {
 				let round = 1;
 				selector.enable(&mut region, round)?;
 
-				let mut advice_columns: [Option<Column<Advice>>; WIDTH] = [(); WIDTH].map(|_| None);
-				for i in 0..WIDTH {
-					advice_columns[i] = Some(common.advice[i]);
-				}
-				let advice_columns = advice_columns.map(|c| c.unwrap());
 				// Load previous Poseidon state
 				let loaded_state = copy_state(common, &mut region, round - 1, &self.prev_state)?;
 

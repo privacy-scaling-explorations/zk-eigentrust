@@ -1,8 +1,8 @@
-use crate::{gadgets::common::IsZeroChip, Chip, Chipset, CommonChip, CommonConfig};
+use crate::{gadgets::common::IsZeroChip, Chip, Chipset, CommonConfig};
 use halo2::{
 	arithmetic::FieldExt,
-	circuit::{AssignedCell, Layouter, Region, Value},
-	plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Selector},
+	circuit::{AssignedCell, Layouter, Region},
+	plonk::{ConstraintSystem, Error, Selector},
 	poly::Rotation,
 };
 

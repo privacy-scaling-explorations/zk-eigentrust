@@ -7,7 +7,7 @@ use crate::{gadgets::bits2num::Bits2NumChip, Chip, Chipset, CommonConfig};
 use halo2::{
 	circuit::{AssignedCell, Layouter, Region, Value},
 	halo2curves::FieldExt,
-	plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
+	plonk::{ConstraintSystem, Error, Expression, Selector},
 	poly::Rotation,
 };
 use params::EdwardsParams;

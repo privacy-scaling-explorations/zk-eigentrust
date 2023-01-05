@@ -2,10 +2,9 @@ use crate::{Chip, Chipset, CommonConfig};
 use halo2::{
 	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region, Value},
-	plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
+	plonk::{ConstraintSystem, Error, Expression, Selector},
 	poly::Rotation,
 };
-use std::marker::PhantomData;
 
 /// Chip for multiplication operation
 pub struct MulChip<F: FieldExt> {

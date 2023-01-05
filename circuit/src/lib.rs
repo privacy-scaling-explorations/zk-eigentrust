@@ -124,6 +124,13 @@ impl<'a, F: FieldExt> RegionCtx<'a, F> {
 		self.region.constrain_equal(a_cell.cell(), b_cell.cell())
 	}
 
+	/// Constrain a cell to be equal to a constant
+	pub fn constrain_to_constant(
+		&mut self, a_cell: AssignedCell<F, F>, constant: F,
+	) -> Result<(), Error> {
+		self.region.constrain_constant(a_cell.cell(), constant)
+	}
+
 	/// Enable selector at the current row offset
 	pub fn enable(&mut self, selector: Selector) -> Result<(), Error> {
 		selector.enable(&mut self.region, self.offset)

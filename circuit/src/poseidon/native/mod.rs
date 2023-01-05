@@ -35,7 +35,6 @@ where
 		let full_rounds = P::full_rounds();
 		let half_full_rounds = full_rounds / 2;
 		let partial_rounds = P::partial_rounds();
-		let mds = P::mds();
 		let round_constants = P::round_constants();
 		let total_count = P::round_constants_count();
 

@@ -9,12 +9,12 @@ use crate::{
 	gadgets::lt_eq::{LessEqualChipset, LessEqualConfig},
 	params::RoundParams,
 	poseidon::{PoseidonChipset, PoseidonConfig},
-	Chip, Chipset, CommonChip, CommonConfig, RegionCtx,
+	Chip, Chipset, CommonConfig, RegionCtx,
 };
 use halo2::{
 	circuit::{AssignedCell, Layouter, Region},
 	halo2curves::FieldExt,
-	plonk::{Advice, Column, ConstraintSystem, Error, Selector},
+	plonk::{Error, Selector},
 };
 use std::marker::PhantomData;
 
@@ -215,9 +215,11 @@ where
 				let cl_affine_y = region_ctx.copy_assign(common.advice[1], cl_affine.1.clone())?;
 				let cr_affine_x = region_ctx.copy_assign(common.advice[2], cr_affine.0.clone())?;
 				let cr_affine_y = region_ctx.copy_assign(common.advice[3], cr_affine.1.clone())?;
+				let lt_eq = region_ctx.copy_assign(common.advice[4], is_lt_eq.clone())?;
 
 				region_ctx.constrain_equal(cl_affine_x, cr_affine_x)?;
 				region_ctx.constrain_equal(cl_affine_y, cr_affine_y)?;
+				region_ctx.constrain_to_constant(lt_eq, F::one())?;
 				Ok(())
 			},
 		)?;

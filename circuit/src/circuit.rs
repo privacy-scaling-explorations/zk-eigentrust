@@ -5,18 +5,18 @@ use crate::{
 	},
 	edwards::{
 		params::{BabyJubJub, EdwardsParams},
-		IntoAffineChip, PointAddChip, ScalarMulChip, StrictScalarMulChipset, StrictScalarMulConfig,
+		IntoAffineChip, PointAddChip, ScalarMulChip, StrictScalarMulConfig,
 	},
 	gadgets::{
 		bits2num::{to_bits, Bits2NumChip},
 		common::{AddChip, IsZeroChip, MulChip},
-		lt_eq::{LessEqualChipset, LessEqualConfig, NShiftedChip, DIFF_BITS, NUM_BITS, N_SHIFTED},
+		lt_eq::{LessEqualConfig, NShiftedChip, N_SHIFTED},
 	},
 	params::poseidon_bn254_5x5::Params,
 	poseidon::{
 		native::{sponge::PoseidonSponge, Poseidon},
 		sponge::{AbsorbChip, PoseidonSpongeChipset, PoseidonSpongeConfig},
-		FullRoundChip, PartialRoundChip, PoseidonChipset, PoseidonConfig,
+		PartialRoundChip, PoseidonChipset, PoseidonConfig,
 	},
 	Chip, Chipset, CommonChip, CommonConfig, RegionCtx,
 };
@@ -24,7 +24,7 @@ use halo2::{
 	arithmetic::Field,
 	circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner, Value},
 	halo2curves::{bn256::Fr as Scalar, FieldExt},
-	plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Fixed, Instance, Selector},
+	plonk::{Circuit, ConstraintSystem, Error, Selector},
 };
 use rand::Rng;
 

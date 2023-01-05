@@ -25,7 +25,6 @@ where
 	/// Rescue Prime permutation
 	pub fn permute(&self) -> [F; WIDTH] {
 		let full_rounds = P::full_rounds();
-		let mds = P::mds();
 		let round_constants = P::round_constants();
 
 		let mut state = self.inputs;
