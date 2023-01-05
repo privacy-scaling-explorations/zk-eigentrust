@@ -80,7 +80,7 @@ impl<F: FieldExt> Chip<F> for Bits2NumChip<F> {
 
 	/// Synthesize the circuit.
 	fn synthesize(
-		&self, common: &CommonConfig, selector: &Selector, mut layouter: impl Layouter<F>,
+		self, common: &CommonConfig, selector: &Selector, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
 		layouter.assign_region(
 			|| "bits2num",

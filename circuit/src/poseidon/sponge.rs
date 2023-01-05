@@ -51,7 +51,7 @@ impl<F: FieldExt, const WIDTH: usize> Chip<F> for AbsorbChip<F, WIDTH> {
 	}
 
 	fn synthesize(
-		&self, common: &CommonConfig, selector: &Selector, layouter: impl Layouter<F>,
+		self, common: &CommonConfig, selector: &Selector, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
 		layouter.assign_region(
 			|| "absorb",
@@ -134,8 +134,8 @@ where
 	/// Squeeze the data out by
 	/// permuting until no more chunks are left.
 	fn synthesize(
-		&self, common: &CommonConfig, config: &PoseidonSpongeConfig, mut layouter: impl Layouter<F>,
-	) -> Result<AssignedCell<F, F>, Error> {
+		self, common: &CommonConfig, config: &PoseidonSpongeConfig, mut layouter: impl Layouter<F>,
+	) -> Result<Self::Output, Error> {
 		assert!(!self.inputs.is_empty());
 
 		let zero_state = layouter.assign_region(

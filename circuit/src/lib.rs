@@ -174,7 +174,7 @@ pub trait Chip<F: FieldExt> {
 	/// Chip synthesis. This function can return an assigned cell to be used
 	/// elsewhere in the circuit
 	fn synthesize(
-		&self, common: &CommonConfig, selector: &Selector, layouter: impl Layouter<F>,
+		self, common: &CommonConfig, selector: &Selector, layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error>;
 }
 
@@ -188,6 +188,6 @@ pub trait Chipset<F: FieldExt> {
 	/// Chipset synthesis. This function can have multiple smaller chips
 	/// synthesised inside. Also can returns an assigned cell.
 	fn synthesize(
-		&self, common: &CommonConfig, config: &Self::Config, layouter: impl Layouter<F>,
+		self, common: &CommonConfig, config: &Self::Config, layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error>;
 }

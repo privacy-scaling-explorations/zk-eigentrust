@@ -102,7 +102,7 @@ where
 
 	/// Synthesize the circuit.
 	fn synthesize(
-		&self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<F>,
+		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
 		let (b8_x, b8_y, one, suborder) = layouter.assign_region(
 			|| "assign_values",
@@ -206,13 +206,13 @@ where
 		// Check if Clx == Crx and Cly == Cry.
 		layouter.assign_region(
 			|| "enforce_equal",
-			|mut region: Region<'_, F>| {
-				let region_ctx = RegionCtx::new(region, 0);
+			|region: Region<'_, F>| {
+				let mut region_ctx = RegionCtx::new(region, 0);
 
-				let cl_affine_x = region_ctx.copy_assign(common.advice[0], cl_affine.0)?;
-				let cl_affine_y = region_ctx.copy_assign(common.advice[1], cl_affine.1)?;
-				let cr_affine_x = region_ctx.copy_assign(common.advice[2], cr_affine.0)?;
-				let cr_affine_y = region_ctx.copy_assign(common.advice[3], cr_affine.1)?;
+				let cl_affine_x = region_ctx.copy_assign(common.advice[0], cl_affine.0.clone())?;
+				let cl_affine_y = region_ctx.copy_assign(common.advice[1], cl_affine.1.clone())?;
+				let cr_affine_x = region_ctx.copy_assign(common.advice[2], cr_affine.0.clone())?;
+				let cr_affine_y = region_ctx.copy_assign(common.advice[3], cr_affine.1.clone())?;
 
 				region_ctx.constrain_equal(cl_affine_x, cr_affine_x)?;
 				region_ctx.constrain_equal(cl_affine_y, cr_affine_y)?;

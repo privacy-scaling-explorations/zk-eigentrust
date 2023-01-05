@@ -96,7 +96,7 @@ impl<F: FieldExt, P: EdwardsParams<F>> Chip<F> for PointAddChip<F, P> {
 	}
 
 	fn synthesize(
-		&self, common: &CommonConfig, selector: &Selector, mut layouter: impl Layouter<F>,
+		self, common: &CommonConfig, selector: &Selector, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
 		layouter.assign_region(
 			|| "add",
@@ -175,7 +175,7 @@ impl<F: FieldExt> Chip<F> for IntoAffineChip<F> {
 	}
 
 	fn synthesize(
-		&self, common: &CommonConfig, selector: &Selector, mut layouter: impl Layouter<F>,
+		self, common: &CommonConfig, selector: &Selector, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
 		layouter.assign_region(
 			|| "into_affine",
@@ -294,7 +294,7 @@ impl<F: FieldExt, P: EdwardsParams<F>> Chip<F> for ScalarMulChip<F, P> {
 	}
 
 	fn synthesize(
-		&self, common: &CommonConfig, selector: &Selector, mut layouter: impl Layouter<F>,
+		self, common: &CommonConfig, selector: &Selector, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
 		layouter.assign_region(
 			|| "scalar_mul",
@@ -410,7 +410,7 @@ impl<F: FieldExt, P: EdwardsParams<F>> Chipset<F> for StrictScalarMulChipset<F, 
 	type Output = AssignedPoint<F>;
 
 	fn synthesize(
-		&self, common: &CommonConfig, config: &Self::Config, layouter: impl Layouter<F>,
+		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
 		let bits2num_chip = Bits2NumChip::new(self.value, self.value_bits);
 		let bits = bits2num_chip.synthesize(

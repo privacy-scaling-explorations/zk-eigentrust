@@ -56,7 +56,7 @@ impl<F: FieldExt, const N: usize> Chip<F> for FixedSetChip<F, N> {
 
 	/// Synthesize the circuit.
 	fn synthesize(
-		&self, common: &CommonConfig, selector: &Selector, mut layouter: impl Layouter<F>,
+		self, common: &CommonConfig, selector: &Selector, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
 		layouter.assign_region(
 			|| "set_membership",
@@ -130,7 +130,7 @@ impl<F: FieldExt, const N: usize> Chipset<F> for FixedSetChipset<F, N> {
 	type Output = AssignedCell<F, F>;
 
 	fn synthesize(
-		&self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<F>,
+		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
 		let fixed_set_chip = FixedSetChip::new(self.items, self.target);
 		let res = fixed_set_chip.synthesize(
@@ -191,7 +191,7 @@ mod test {
 
 		fn configure(meta: &mut ConstraintSystem<F>) -> TestConfig {
 			let common = CommonChip::<F>::configure(meta);
-			let fixed_set = FixedSetChip::<F, 3>::configure(common, meta);
+			let fixed_set = FixedSetChip::<F, 3>::configure(&common, meta);
 			let temp = meta.advice_column();
 			let instance = meta.instance_column();
 

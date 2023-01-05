@@ -63,7 +63,7 @@ impl<F: FieldExt> Chip<F> for NShiftedChip<F> {
 	}
 
 	fn synthesize(
-		&self, common: &CommonConfig, selector: &Selector, mut layouter: impl Layouter<F>,
+		self, common: &CommonConfig, selector: &Selector, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
 		layouter.assign_region(
 			|| "less_than_equal",
@@ -125,7 +125,7 @@ impl<F: FieldExt> Chipset<F> for LessEqualChipset<F> {
 
 	/// Synthesize the circuit.
 	fn synthesize(
-		&self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<F>,
+		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
 		let x_b2n = Bits2NumChip::new(self.x.clone(), self.x_bits.to_vec());
 		let _ = x_b2n.synthesize(

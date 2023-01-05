@@ -76,10 +76,10 @@ where
 		let rc_columns: [Column<Fixed>; WIDTH] = common.fixed[0..WIDTH].try_into().unwrap();
 
 		meta.create_gate("full_round", |v_cells| {
-			// 1. step for the TRF.
-			// AddRoundConstants step.
 			let state = state_columns.map(|c| v_cells.query_advice(c, Rotation::cur()));
 			let round_constants = rc_columns.map(|c| v_cells.query_fixed(c, Rotation::cur()));
+			// 1. step for the TRF.
+			// AddRoundConstants step.
 			let mut exprs = P::apply_round_constants_expr(&state, &round_constants);
 			// Applying S-boxes for the full round.
 			for i in 0..WIDTH {
@@ -104,7 +104,7 @@ where
 	}
 
 	fn synthesize(
-		&self, config: &CommonConfig, selector: &Selector, layouter: impl Layouter<F>,
+		self, common: &CommonConfig, selector: &Selector, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
 		let round_constants = P::round_constants();
 		let full_rounds = P::full_rounds();
@@ -116,17 +116,17 @@ where
 			|| "full_rounds",
 			|mut region: Region<'_, F>| {
 				// Assign initial state
-				let mut state_cells = copy_state(&config, &mut region, 0, &self.inputs)?;
+				let mut state_cells = copy_state(&common, &mut region, 0, &self.inputs)?;
 				for round in 0..full_rounds {
 					selector.enable(&mut region, round)?;
 
 					// Assign round constants
 					let round_const_values =
-						load_round_constants(&config, &mut region, round, round_constants)?;
+						load_round_constants(&common, &mut region, round, round_constants)?;
 
 					// 1. step for the TRF.
 					// AddRoundConstants step.
-					let state_vals = state_cells.map(|v| v.value().cloned());
+					let state_vals = state_cells.clone().map(|v| v.value().cloned());
 					let mut next_state =
 						P::apply_round_constants_val(&state_vals, &round_const_values);
 					for i in 0..WIDTH {
@@ -143,7 +143,7 @@ where
 					for i in 0..WIDTH {
 						state_cells[i] = region.assign_advice(
 							|| "state",
-							config.advice[i],
+							common.advice[i],
 							round + 1,
 							|| next_state[i],
 						)?;
@@ -192,10 +192,10 @@ where
 		let rc_columns: [Column<Fixed>; WIDTH] = common.fixed[0..WIDTH].try_into().unwrap();
 
 		meta.create_gate("partial_round", |v_cells| {
-			// 1. step for the TRF.
-			// AddRoundConstants step.
 			let state = state_columns.map(|c| v_cells.query_advice(c, Rotation::cur()));
 			let round_constants = rc_columns.map(|c| v_cells.query_fixed(c, Rotation::cur()));
+			// 1. step for the TRF.
+			// AddRoundConstants step.
 			let mut exprs = P::apply_round_constants_expr(&state, &round_constants);
 			// Applying single S-box for the partial round.
 			// 2. step for the TRF.
@@ -220,7 +220,7 @@ where
 	}
 
 	fn synthesize(
-		&self, config: &CommonConfig, selector: &Selector, layouter: impl Layouter<F>,
+		self, common: &CommonConfig, selector: &Selector, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
 		let round_constants = P::round_constants();
 		let partial_rounds = P::partial_rounds();
@@ -230,17 +230,17 @@ where
 		let res = layouter.assign_region(
 			|| "partial_rounds",
 			|mut region: Region<'_, F>| {
-				let mut state_cells = copy_state(&config, &mut region, 0, &self.inputs)?;
+				let mut state_cells = copy_state(common, &mut region, 0, &self.inputs)?;
 				for round in 0..partial_rounds {
 					selector.enable(&mut region, round)?;
 
 					// Assign round constants
 					let round_const_cells =
-						load_round_constants(&config, &mut region, round, round_constants)?;
+						load_round_constants(&common, &mut region, round, round_constants)?;
 
 					// 1. step for the TRF.
 					// AddRoundConstants step.
-					let state_vals = state_cells.map(|v| v.value().cloned());
+					let state_vals = state_cells.clone().map(|v| v.value().cloned());
 					let mut next_state =
 						P::apply_round_constants_val(&state_vals, &round_const_cells);
 					// 2. step for the TRF.
@@ -255,7 +255,7 @@ where
 					for i in 0..WIDTH {
 						state_cells[i] = region.assign_advice(
 							|| "state",
-							config.advice[i],
+							common.advice[i],
 							round + 1,
 							|| next_state[i],
 						)?;
@@ -311,7 +311,7 @@ where
 
 	/// Synthesize the circuit.
 	fn synthesize(
-		&self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<F>,
+		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
 		// The Hades Design Strategy for Hashing.
 		// Mixing rounds with half-full S-box layers and

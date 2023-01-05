@@ -49,7 +49,7 @@ impl<F: FieldExt> Chip<F> for MulChip<F> {
 	}
 
 	fn synthesize(
-		&self, common: &CommonConfig, selector: &Selector, layouter: impl Layouter<F>,
+		self, common: &CommonConfig, selector: &Selector, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
 		layouter.assign_region(
 			|| "mul",
@@ -109,7 +109,7 @@ impl<F: FieldExt> Chip<F> for ConstrainBoolChip<F> {
 	}
 
 	fn synthesize(
-		&self, common: &CommonConfig, selector: &Selector, layouter: impl Layouter<F>,
+		self, common: &CommonConfig, selector: &Selector, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
 		layouter.assign_region(
 			|| "constrain_boolean",
@@ -169,7 +169,7 @@ impl<F: FieldExt> Chip<F> for IsZeroChip<F> {
 	}
 
 	fn synthesize(
-		&self, common: &CommonConfig, selector: &Selector, layouter: impl Layouter<F>,
+		self, common: &CommonConfig, selector: &Selector, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
 		layouter.assign_region(
 			|| "is_zero",
@@ -235,7 +235,7 @@ impl<F: FieldExt> Chip<F> for AddChip<F> {
 	}
 
 	fn synthesize(
-		&self, common: &CommonConfig, selector: &Selector, layouter: impl Layouter<F>,
+		self, common: &CommonConfig, selector: &Selector, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
 		layouter.assign_region(
 			|| "add",
@@ -294,7 +294,7 @@ impl<F: FieldExt> Chip<F> for SubChip<F> {
 	}
 
 	fn synthesize(
-		&self, common: &CommonConfig, selector: &Selector, layouter: impl Layouter<F>,
+		self, common: &CommonConfig, selector: &Selector, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
 		layouter.assign_region(
 			|| "sub",
@@ -363,7 +363,7 @@ impl<F: FieldExt> Chip<F> for SelectChip<F> {
 	}
 
 	fn synthesize(
-		&self, common: &CommonConfig, selector: &Selector, layouter: impl Layouter<F>,
+		self, common: &CommonConfig, selector: &Selector, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
 		layouter.assign_region(
 			|| "select",
@@ -415,7 +415,7 @@ impl<F: FieldExt> Chipset<F> for IsEqualChipset<F> {
 	type Output = AssignedCell<F, F>;
 
 	fn synthesize(
-		&self, common: &CommonConfig, config: &Self::Config, layouter: impl Layouter<F>,
+		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
 		let sub_chipset = SubChip::new(self.x, self.y);
 		let res =
@@ -456,15 +456,15 @@ impl<F: FieldExt> Chipset<F> for AndChipset<F> {
 	type Output = AssignedCell<F, F>;
 
 	fn synthesize(
-		&self, common: &CommonConfig, config: &Self::Config, layouter: impl Layouter<F>,
+		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
-		let bch_x = ConstrainBoolChip::new(self.x);
+		let bch_x = ConstrainBoolChip::new(self.x.clone());
 		bch_x.synthesize(
 			common,
 			&config.bool_selector,
 			layouter.namespace(|| "bool_constraint_x"),
 		);
-		let bch_y = ConstrainBoolChip::new(self.y);
+		let bch_y = ConstrainBoolChip::new(self.y.clone());
 		bch_y.synthesize(
 			common,
 			&config.bool_selector,
@@ -505,9 +505,9 @@ impl<F: FieldExt> Chipset<F> for StrictSelectChipset<F> {
 	type Output = AssignedCell<F, F>;
 
 	fn synthesize(
-		&self, common: &CommonConfig, config: &Self::Config, layouter: impl Layouter<F>,
+		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
-		let bool_chip = ConstrainBoolChip::new(self.bit);
+		let bool_chip = ConstrainBoolChip::new(self.bit.clone());
 		bool_chip.synthesize(
 			common,
 			&config.bool_selector,

@@ -109,7 +109,7 @@ pub trait RoundParams<F: FieldExt, const WIDTH: usize>: Sbox {
 	) -> [Expression<F>; WIDTH] {
 		let mut exprs = [(); WIDTH].map(|_| Expression::Constant(F::zero()));
 		for i in 0..WIDTH {
-			exprs[i] = curr_state[i] + round_constants[i];
+			exprs[i] = curr_state[i].clone() + round_constants[i].clone();
 		}
 		exprs
 	}

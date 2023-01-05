@@ -180,7 +180,7 @@ impl<
 		let poseidon = PoseidonConfig::new(full_round_selector, partial_round_selector);
 
 		let absorb_selector = AbsorbChip::<Scalar, HASHER_WIDTH>::configure(&common, meta);
-		let sponge = PoseidonSpongeConfig::new(poseidon, absorb_selector);
+		let sponge = PoseidonSpongeConfig::new(poseidon.clone(), absorb_selector);
 
 		let bits2num_selector = Bits2NumChip::configure(&common, meta);
 		let n_shifted_selector = NShiftedChip::configure(&common, meta);
@@ -194,7 +194,11 @@ impl<
 		let affine_selector = IntoAffineChip::configure(&common, meta);
 
 		let eddsa = EddsaConfig::new(
-			poseidon, lt_eq, strict_scalar_mul, add_point_selector, affine_selector,
+			poseidon.clone(),
+			lt_eq,
+			strict_scalar_mul,
+			add_point_selector,
+			affine_selector,
 		);
 
 		let add_selector = AddChip::configure(&common, meta);
