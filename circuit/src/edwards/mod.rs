@@ -49,6 +49,7 @@ pub struct PointAddChip<F: FieldExt, P: EdwardsParams<F>> {
 }
 
 impl<F: FieldExt, P: EdwardsParams<F>> PointAddChip<F, P> {
+	/// Construct new PointAdd chip
 	pub fn new(e: AssignedPoint<F>, r: AssignedPoint<F>) -> Self {
 		Self { e, r, _p: PhantomData }
 	}
@@ -132,11 +133,13 @@ impl<F: FieldExt, P: EdwardsParams<F>> Chip<F> for PointAddChip<F, P> {
 	}
 }
 
+/// Chip for converting a point into an affine representation
 pub struct IntoAffineChip<F: FieldExt> {
 	r: AssignedPoint<F>,
 }
 
 impl<F: FieldExt> IntoAffineChip<F> {
+	/// Construct a new chip
 	pub fn new(r: AssignedPoint<F>) -> Self {
 		Self { r }
 	}
@@ -219,6 +222,7 @@ impl<F: FieldExt> Chip<F> for IntoAffineChip<F> {
 	}
 }
 
+/// A chip for scalar multiplication
 pub struct ScalarMulChip<F: FieldExt, P: EdwardsParams<F>> {
 	e: AssignedPoint<F>,
 	// Constructs an array for the value bits.
@@ -227,6 +231,7 @@ pub struct ScalarMulChip<F: FieldExt, P: EdwardsParams<F>> {
 }
 
 impl<F: FieldExt, P: EdwardsParams<F>> ScalarMulChip<F, P> {
+	/// Construct a new chip
 	pub fn new(e: AssignedPoint<F>, value_bits: Vec<AssignedCell<F, F>>) -> Self {
 		Self { e, value_bits, _params: PhantomData }
 	}
@@ -381,17 +386,21 @@ impl<F: FieldExt, P: EdwardsParams<F>> Chip<F> for ScalarMulChip<F, P> {
 }
 
 #[derive(Clone, Debug)]
+/// Selectors for the StrictScalarMulChipset
 pub struct StrictScalarMulConfig {
 	bits2num_selector: Selector,
 	scalar_mul_selector: Selector,
 }
 
 impl StrictScalarMulConfig {
+	/// Construct a new config
 	pub fn new(bits2num_selector: Selector, scalar_mul_selector: Selector) -> Self {
 		Self { bits2num_selector, scalar_mul_selector }
 	}
 }
 
+/// Chipset for scalar multiplication that includes the checks for bits of a
+/// given scalar
 pub struct StrictScalarMulChipset<F: FieldExt, P: EdwardsParams<F>> {
 	e: AssignedPoint<F>,
 	value: AssignedCell<F, F>,
@@ -400,6 +409,7 @@ pub struct StrictScalarMulChipset<F: FieldExt, P: EdwardsParams<F>> {
 }
 
 impl<F: FieldExt, P: EdwardsParams<F>> StrictScalarMulChipset<F, P> {
+	/// Construct a new chipset
 	pub fn new(e: AssignedPoint<F>, value: AssignedCell<F, F>, value_bits: Vec<F>) -> Self {
 		Self { e, value, value_bits, _params: PhantomData }
 	}

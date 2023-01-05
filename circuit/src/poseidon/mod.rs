@@ -41,6 +41,7 @@ fn load_round_constants<F: FieldExt, const WIDTH: usize>(
 	Ok(round_values)
 }
 
+/// A chip for full round poseidon permutation
 pub struct FullRoundChip<F: FieldExt, const WIDTH: usize, P>
 where
 	P: RoundParams<F, WIDTH>,
@@ -157,6 +158,7 @@ where
 	}
 }
 
+/// A chip for a partial round poseidon permutation
 pub struct PartialRoundChip<F: FieldExt, const WIDTH: usize, P>
 where
 	P: RoundParams<F, WIDTH>,
@@ -270,12 +272,14 @@ where
 }
 
 #[derive(Clone, Debug)]
+/// Selectors for poseidon permutation
 pub struct PoseidonConfig {
 	fr_selector: Selector,
 	pr_selector: Selector,
 }
 
 impl PoseidonConfig {
+	/// Constructs a new config
 	pub fn new(fr_selector: Selector, pr_selector: Selector) -> Self {
 		Self { fr_selector, pr_selector }
 	}

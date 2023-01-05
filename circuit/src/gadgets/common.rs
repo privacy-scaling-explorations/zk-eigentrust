@@ -7,6 +7,7 @@ use halo2::{
 };
 use std::marker::PhantomData;
 
+/// Chip for multiplication operation
 pub struct MulChip<F: FieldExt> {
 	// Assigns a cell for the x.
 	x: AssignedCell<F, F>,
@@ -15,6 +16,7 @@ pub struct MulChip<F: FieldExt> {
 }
 
 impl<F: FieldExt> MulChip<F> {
+	/// Construct a new chip
 	pub fn new(x: AssignedCell<F, F>, y: AssignedCell<F, F>) -> Self {
 		Self { x, y }
 	}
@@ -69,11 +71,13 @@ impl<F: FieldExt> Chip<F> for MulChip<F> {
 	}
 }
 
+/// Chip for constraining a value to be a boolean
 pub struct ConstrainBoolChip<F: FieldExt> {
 	x: AssignedCell<F, F>,
 }
 
 impl<F: FieldExt> ConstrainBoolChip<F> {
+	/// Construct a new chip
 	pub fn new(x: AssignedCell<F, F>) -> Self {
 		Self { x }
 	}
@@ -123,11 +127,13 @@ impl<F: FieldExt> Chip<F> for ConstrainBoolChip<F> {
 	}
 }
 
+/// Chip for checking if a number is zero
 pub struct IsZeroChip<F: FieldExt> {
 	x: AssignedCell<F, F>,
 }
 
 impl<F: FieldExt> IsZeroChip<F> {
+	/// Construct a new chip
 	pub fn new(x: AssignedCell<F, F>) -> Self {
 		Self { x }
 	}
@@ -195,12 +201,14 @@ impl<F: FieldExt> Chip<F> for IsZeroChip<F> {
 	}
 }
 
+/// A chip for add operation
 pub struct AddChip<F: FieldExt> {
 	x: AssignedCell<F, F>,
 	y: AssignedCell<F, F>,
 }
 
 impl<F: FieldExt> AddChip<F> {
+	/// Construct a new chip
 	pub fn new(x: AssignedCell<F, F>, y: AssignedCell<F, F>) -> Self {
 		Self { x, y }
 	}
@@ -254,12 +262,14 @@ impl<F: FieldExt> Chip<F> for AddChip<F> {
 	}
 }
 
+/// A chip for subtract operation
 pub struct SubChip<F: FieldExt> {
 	x: AssignedCell<F, F>,
 	y: AssignedCell<F, F>,
 }
 
 impl<F: FieldExt> SubChip<F> {
+	/// Construct a new chip
 	pub fn new(x: AssignedCell<F, F>, y: AssignedCell<F, F>) -> Self {
 		Self { x, y }
 	}
@@ -314,6 +324,8 @@ impl<F: FieldExt> Chip<F> for SubChip<F> {
 	}
 }
 
+/// A chip for selecting a value based on a bit
+/// This chip does NOT checks the validity of the bit
 pub struct SelectChip<F: FieldExt> {
 	bit: AssignedCell<F, F>,
 	x: AssignedCell<F, F>,
@@ -321,6 +333,7 @@ pub struct SelectChip<F: FieldExt> {
 }
 
 impl<F: FieldExt> SelectChip<F> {
+	/// Construct a new chip
 	pub fn new(x: AssignedCell<F, F>, y: AssignedCell<F, F>, bit: AssignedCell<F, F>) -> Self {
 		Self { x, y, bit }
 	}
@@ -394,17 +407,20 @@ impl<F: FieldExt> Chip<F> for SelectChip<F> {
 }
 
 #[derive(Clone)]
+/// Selector for IsEqualChipset
 pub struct IsEqualConfig {
 	sub_selector: Selector,
 	is_zero_selector: Selector,
 }
 
+/// A chip for checking equality
 pub struct IsEqualChipset<F: FieldExt> {
 	x: AssignedCell<F, F>,
 	y: AssignedCell<F, F>,
 }
 
 impl<F: FieldExt> IsEqualChipset<F> {
+	/// Construct a new chip
 	pub fn new(x: AssignedCell<F, F>, y: AssignedCell<F, F>) -> Self {
 		Self { x, y }
 	}
@@ -433,11 +449,14 @@ impl<F: FieldExt> Chipset<F> for IsEqualChipset<F> {
 }
 
 #[derive(Clone)]
+/// Selectors for AndChipset
 pub struct AndConfig {
 	bool_selector: Selector,
 	mul_selector: Selector,
 }
 
+/// A chipset for bitwise AND operation.
+/// Requires that values are bits
 pub struct AndChipset<F: FieldExt> {
 	// Assigns a cell for the x.
 	x: AssignedCell<F, F>,
@@ -446,6 +465,7 @@ pub struct AndChipset<F: FieldExt> {
 }
 
 impl<F: FieldExt> AndChipset<F> {
+	/// Construct a new chip
 	pub fn new(x: AssignedCell<F, F>, y: AssignedCell<F, F>) -> Self {
 		Self { x, y }
 	}
@@ -463,13 +483,13 @@ impl<F: FieldExt> Chipset<F> for AndChipset<F> {
 			common,
 			&config.bool_selector,
 			layouter.namespace(|| "bool_constraint_x"),
-		);
+		)?;
 		let bch_y = ConstrainBoolChip::new(self.y.clone());
 		bch_y.synthesize(
 			common,
 			&config.bool_selector,
 			layouter.namespace(|| "bool_constraint_y"),
-		);
+		)?;
 
 		let mul_chip = MulChip::new(self.x, self.y);
 		let and_res = mul_chip.synthesize(
@@ -483,11 +503,14 @@ impl<F: FieldExt> Chipset<F> for AndChipset<F> {
 }
 
 #[derive(Clone)]
+/// Selectors for the StrictSelectChipset
 pub struct StrictSelectConfig {
 	bool_selector: Selector,
 	select_selector: Selector,
 }
 
+/// A chip for selecting a value based on a bit
+/// This chipset checks the validity on the bit
 pub struct StrictSelectChipset<F: FieldExt> {
 	bit: AssignedCell<F, F>,
 	x: AssignedCell<F, F>,
@@ -495,6 +518,7 @@ pub struct StrictSelectChipset<F: FieldExt> {
 }
 
 impl<F: FieldExt> StrictSelectChipset<F> {
+	/// Construct new chip
 	fn new(x: AssignedCell<F, F>, y: AssignedCell<F, F>, bit: AssignedCell<F, F>) -> Self {
 		Self { x, y, bit }
 	}

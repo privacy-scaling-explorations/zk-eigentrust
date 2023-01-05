@@ -19,6 +19,7 @@ use halo2::{
 use std::marker::PhantomData;
 
 #[derive(Clone, Debug)]
+/// Selector configuration for Eddsa
 pub struct EddsaConfig {
 	poseidon: PoseidonConfig,
 	lt_eq: LessEqualConfig,
@@ -28,6 +29,7 @@ pub struct EddsaConfig {
 }
 
 impl EddsaConfig {
+	/// Construct Eddsa config from selectors
 	pub fn new(
 		poseidon: PoseidonConfig, lt_eq: LessEqualConfig, scalar_mul: StrictScalarMulConfig,
 		add_point_selector: Selector, affine_selector: Selector,

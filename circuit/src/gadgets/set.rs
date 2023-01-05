@@ -6,7 +6,7 @@ use halo2::{
 	poly::Rotation,
 };
 
-/// Constructs individual cells for the configuration elements.
+/// A chip for checking item membership in a fixed set of field values
 pub struct FixedSetChip<F: FieldExt, const N: usize> {
 	/// Constructs items variable for the circuit.
 	items: [AssignedCell<F, F>; N],
@@ -15,6 +15,7 @@ pub struct FixedSetChip<F: FieldExt, const N: usize> {
 }
 
 impl<F: FieldExt, const N: usize> FixedSetChip<F, N> {
+	/// Constructs a new chip
 	pub fn new(items: [AssignedCell<F, F>; N], target: AssignedCell<F, F>) -> Self {
 		FixedSetChip { items, target }
 	}
@@ -107,11 +108,14 @@ impl<F: FieldExt, const N: usize> Chip<F> for FixedSetChip<F, N> {
 }
 
 #[derive(Clone)]
+/// Selectors for a FixedSetChipset
 pub struct FixedSetConfig {
 	is_zero_selector: Selector,
 	fixed_set_selector: Selector,
 }
 
+/// A chipset for checking a set membership
+/// Also contains the result inverter
 pub struct FixedSetChipset<F: FieldExt, const N: usize> {
 	/// Constructs items variable for the circuit.
 	items: [AssignedCell<F, F>; N],
@@ -120,6 +124,7 @@ pub struct FixedSetChipset<F: FieldExt, const N: usize> {
 }
 
 impl<F: FieldExt, const N: usize> FixedSetChipset<F, N> {
+	/// Constructs a new chip
 	pub fn new(items: [AssignedCell<F, F>; N], target: AssignedCell<F, F>) -> Self {
 		FixedSetChipset { items, target }
 	}

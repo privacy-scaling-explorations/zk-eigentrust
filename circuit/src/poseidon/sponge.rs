@@ -1,3 +1,4 @@
+use super::copy_state;
 use crate::{
 	params::RoundParams,
 	poseidon::{PoseidonChipset, PoseidonConfig},
@@ -11,14 +12,14 @@ use halo2::{
 };
 use std::marker::PhantomData;
 
-use super::copy_state;
-
+/// A chip for absorbing the previous poseidon state
 pub struct AbsorbChip<F: FieldExt, const WIDTH: usize> {
 	prev_state: [AssignedCell<F, F>; WIDTH],
 	state: [AssignedCell<F, F>; WIDTH],
 }
 
 impl<F: FieldExt, const WIDTH: usize> AbsorbChip<F, WIDTH> {
+	/// Constructor for a chip
 	pub fn new(
 		prev_state: [AssignedCell<F, F>; WIDTH], state: [AssignedCell<F, F>; WIDTH],
 	) -> Self {
@@ -87,12 +88,14 @@ impl<F: FieldExt, const WIDTH: usize> Chip<F> for AbsorbChip<F, WIDTH> {
 }
 
 #[derive(Clone, Debug)]
+/// Selectors for poseidon sponge
 pub struct PoseidonSpongeConfig {
 	poseidon: PoseidonConfig,
 	absorb_selector: Selector,
 }
 
 impl PoseidonSpongeConfig {
+	/// Constructs a new config
 	pub fn new(poseidon: PoseidonConfig, absorb_selector: Selector) -> Self {
 		Self { poseidon, absorb_selector }
 	}

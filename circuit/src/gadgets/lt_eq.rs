@@ -17,12 +17,14 @@ pub const NUM_BITS: usize = 252;
 /// Same number of bits as N_SHIFTED, since NUM + N_SHIFTED is the operation.
 pub const DIFF_BITS: usize = 253;
 
+/// Chip for finding the difference between 2 numbers shifted 252 bits
 pub struct NShiftedChip<F: FieldExt> {
 	x: AssignedCell<F, F>,
 	y: AssignedCell<F, F>,
 }
 
 impl<F: FieldExt> NShiftedChip<F> {
+	/// Constructs a new chip
 	pub fn new(x: AssignedCell<F, F>, y: AssignedCell<F, F>) -> Self {
 		Self { x, y }
 	}
@@ -84,6 +86,7 @@ impl<F: FieldExt> Chip<F> for NShiftedChip<F> {
 }
 
 #[derive(Clone, Debug)]
+/// Selectors for LessEqualChipset
 pub struct LessEqualConfig {
 	bits_2_num_selector: Selector,
 	n_shifted_selector: Selector,
@@ -91,6 +94,7 @@ pub struct LessEqualConfig {
 }
 
 impl LessEqualConfig {
+	/// Constructs new config
 	pub fn new(
 		bits_2_num_selector: Selector, n_shifted_selector: Selector, is_zero_selector: Selector,
 	) -> Self {
@@ -98,19 +102,18 @@ impl LessEqualConfig {
 	}
 }
 
-/// Constructs individual cells for the configuration elements.
+/// A chip for checking if number is in range
 pub struct LessEqualChipset<F: FieldExt> {
-	/// Assigns a cell for the x.
 	x: AssignedCell<F, F>,
-	/// Assigns a cell for the y.
 	y: AssignedCell<F, F>,
-	/// Constructs bits variables for the circuit.
+	/// Bits of x and y and their difference
 	x_bits: [F; NUM_BITS],
 	y_bits: [F; NUM_BITS],
 	diff_bits: [F; DIFF_BITS],
 }
 
 impl<F: FieldExt> LessEqualChipset<F> {
+	/// Constructs a new chipset
 	pub fn new(
 		x: AssignedCell<F, F>, y: AssignedCell<F, F>, x_bits: [F; NUM_BITS], y_bits: [F; NUM_BITS],
 		diff_bits: [F; DIFF_BITS],
