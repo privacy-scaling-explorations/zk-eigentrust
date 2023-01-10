@@ -1,30 +1,33 @@
 /// Native version of the chip
 pub mod native;
 
-use std::marker::PhantomData;
-
 use crate::{
-	gadgets::set::{FixedSetChip, FixedSetConfig},
+	gadgets::set::{SetChipset, SetConfig},
 	params::RoundParams,
-	poseidon::{PoseidonChip, PoseidonConfig},
+	poseidon::{PoseidonChipset, PoseidonConfig},
+	Chip, Chipset, CommonConfig, RegionCtx,
 };
 use halo2::{
 	circuit::{AssignedCell, Layouter, Region},
 	halo2curves::FieldExt,
 	plonk::{Advice, Column, ConstraintSystem, Error},
 };
+use std::marker::PhantomData;
 
 const WIDTH: usize = 5;
 
 /// Configuration elements for the circuit are defined here.
 #[derive(Debug, Clone)]
 pub struct MerklePathConfig {
-	/// Configures an advice column for the temp.
-	temp: Column<Advice>,
-	/// Configures FixedSet circuit.
-	set: FixedSetConfig,
-	/// Configures Poseidon circuit.
-	poseidon: PoseidonConfig<WIDTH>,
+	poseidon: PoseidonConfig,
+	set: SetConfig,
+}
+
+impl MerklePathConfig {
+	/// Construct a new config given the selector of child chips
+	pub fn new(poseidon: PoseidonConfig, set: SetConfig) -> Self {
+		Self { poseidon, set }
+	}
 }
 
 /// Constructs a chip for the circuit.
@@ -35,6 +38,8 @@ where
 {
 	/// Constructs cell arrays for the nodes.
 	nodes: [[AssignedCell<F, F>; 2]; LENGTH],
+	/// Zero value cell
+	zero: AssignedCell<F, F>,
 	/// Constructs a phantom data for the parameters.
 	_params: PhantomData<P>,
 }
@@ -44,55 +49,59 @@ where
 	P: RoundParams<F, WIDTH>,
 {
 	/// Create a new chip.
-	pub fn new(nodes: [[AssignedCell<F, F>; 2]; LENGTH]) -> Self {
-		MerklePathChip { nodes, _params: PhantomData }
+	pub fn new(nodes: [[AssignedCell<F, F>; 2]; LENGTH], zero: AssignedCell<F, F>) -> Self {
+		MerklePathChip { nodes, zero, _params: PhantomData }
 	}
+}
 
-	/// Make the circuit config.
-	pub fn configure(meta: &mut ConstraintSystem<F>) -> MerklePathConfig {
-		let temp = meta.advice_column();
-		let set = FixedSetChip::<F, 2>::configure(meta);
-		let poseidon = PoseidonChip::<_, WIDTH, P>::configure(meta);
-		meta.enable_equality(temp);
-		MerklePathConfig { temp, set, poseidon }
-	}
+impl<F: FieldExt, const LENGTH: usize, P> Chipset<F> for MerklePathChip<F, LENGTH, P>
+where
+	P: RoundParams<F, WIDTH>,
+{
+	type Config = MerklePathConfig;
+	type Output = AssignedCell<F, F>;
 
 	/// Synthesize the circuit.
-	pub fn synthesize(
-		&self, config: MerklePathConfig, path_arr: [[F; 2]; LENGTH], zero: AssignedCell<F, F>,
-		mut layouter: impl Layouter<F>,
-	) -> Result<AssignedCell<F, F>, Error> {
-		let mut root: Option<AssignedCell<F, F>> = None;
-		for i in 0..path_arr.len() - 1 {
-			let pos = PoseidonChip::<F, WIDTH, P>::new([
+	fn synthesize(
+		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<F>,
+	) -> Result<Self::Output, Error> {
+		for i in 0..self.nodes.len() - 1 {
+			let pos = PoseidonChipset::<F, WIDTH, P>::new([
 				self.nodes[i][0].clone(),
 				self.nodes[i][1].clone(),
-				zero.clone(),
-				zero.clone(),
-				zero.clone(),
+				self.zero.clone(),
+				self.zero.clone(),
+				self.zero.clone(),
 			]);
-			let hashes =
-				pos.synthesize(&config.poseidon.clone(), layouter.namespace(|| "poseidon"))?;
+			let hashes = pos.synthesize(
+				&common,
+				&config.poseidon,
+				layouter.namespace(|| "poseidon_level_hash"),
+			)?;
 
-			let set = FixedSetChip::<F, 2>::new(path_arr[i + 1], hashes[0].clone());
-			let is_inside =
-				set.synthesize(config.set.clone(), layouter.namespace(|| "is_inside_set"))?;
+			let set = SetChipset::<F>::new(self.nodes[i + 1].to_vec(), hashes[0].clone());
+			let is_inside = set.synthesize(
+				&common,
+				&config.set,
+				layouter.namespace(|| "level_membership"),
+			)?;
 
 			// Enforce equality.
 			// If value is not inside the set, it won't satisfy the constraint.
 			layouter.assign_region(
 				|| "enforce_equality",
-				|mut region: Region<'_, F>| {
-					let is_inside_copied =
-						is_inside.copy_advice(|| "is_inside", &mut region, config.temp, 0)?;
-					region.constrain_constant(is_inside_copied.cell(), F::one())?;
+				|region: Region<'_, F>| {
+					let mut ctx = RegionCtx::new(region, 0);
+					let is_inside_copied = ctx.copy_assign(common.advice[0], is_inside.clone())?;
+					ctx.constrain_to_constant(is_inside_copied, F::one())?;
 					Ok(())
 				},
 			)?;
-			root = Some(hashes[0].clone());
 		}
 
-		Ok(root.unwrap())
+		// Root is expected at the index 0 on last level
+		let root = self.nodes.last().unwrap()[0].clone();
+		Ok(root)
 	}
 }
 
@@ -102,9 +111,12 @@ mod test {
 
 	use super::*;
 	use crate::{
+		gadgets::{common::IsZeroChip, set::SetChip},
 		merkle_tree::native::{MerkleTree, Path},
 		params::poseidon_bn254_5x5::Params,
+		poseidon::{FullRoundChip, PartialRoundChip},
 		utils::{generate_params, prove_and_verify},
+		CommonChip, CommonConfig,
 	};
 	use halo2::{
 		arithmetic::Field,
@@ -117,9 +129,8 @@ mod test {
 
 	#[derive(Clone, Debug)]
 	struct TestConfig {
+		common: CommonConfig,
 		path: MerklePathConfig,
-		temp: Column<Advice>,
-		pub_ins: Column<Instance>,
 	}
 
 	#[derive(Clone)]
@@ -152,14 +163,16 @@ mod test {
 		}
 
 		fn configure(meta: &mut ConstraintSystem<F>) -> TestConfig {
-			let path = MerklePathChip::<_, LENGTH, P>::configure(meta);
-			let temp = meta.advice_column();
-			let pub_ins = meta.instance_column();
+			let common = CommonChip::configure(meta);
+			let fr_selector = FullRoundChip::<_, WIDTH, P>::configure(&common, meta);
+			let pr_selector = PartialRoundChip::<_, WIDTH, P>::configure(&common, meta);
+			let poseidon = PoseidonConfig::new(fr_selector, pr_selector);
+			let set_selector = SetChip::configure(&common, meta);
+			let is_zero_selector = IsZeroChip::configure(&common, meta);
+			let set = SetConfig::new(set_selector, is_zero_selector);
+			let path = MerklePathConfig::new(poseidon, set);
 
-			meta.enable_equality(temp);
-			meta.enable_equality(pub_ins);
-
-			TestConfig { path, temp, pub_ins }
+			TestConfig { common, path }
 		}
 
 		fn synthesize(
@@ -170,8 +183,8 @@ mod test {
 				|mut region: Region<'_, F>| {
 					let zero = region.assign_advice(
 						|| "zero",
-						config.temp,
-						LENGTH * 2 + 1,
+						config.common.advice[0],
+						LENGTH,
 						|| Value::known(F::zero()),
 					)?;
 					let mut path_arr: [[Option<AssignedCell<F, F>>; 2]; LENGTH] =
@@ -179,28 +192,27 @@ mod test {
 					for i in 0..LENGTH {
 						path_arr[i][0] = Some(region.assign_advice(
 							|| "temp",
-							config.temp,
+							config.common.advice[0],
 							i,
 							|| Value::known(self.path_arr[i][0]),
 						)?);
 						path_arr[i][1] = Some(region.assign_advice(
 							|| "temp",
-							config.temp,
-							i + LENGTH,
+							config.common.advice[1],
+							i,
 							|| Value::known(self.path_arr[i][1]),
 						)?);
 					}
 					Ok((path_arr.map(|a| a.map(|a| a.unwrap())), zero))
 				},
 			)?;
-			let merkle_path = MerklePathChip::<F, LENGTH, P>::new(path_arr);
+			let merkle_path = MerklePathChip::<F, LENGTH, P>::new(path_arr, zero);
 			let root = merkle_path.synthesize(
-				config.path,
-				self.path_arr.clone(),
-				zero,
+				&config.common,
+				&config.path,
 				layouter.namespace(|| "merkle_path"),
 			)?;
-			layouter.constrain_instance(root.cell(), config.pub_ins, 0)?;
+			layouter.constrain_instance(root.cell(), config.common.instance, 0)?;
 
 			Ok(())
 		}

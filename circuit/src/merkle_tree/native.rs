@@ -1,10 +1,8 @@
-use std::marker::PhantomData;
-
+use crate::{params::RoundParams, poseidon::native::Poseidon};
 use halo2::halo2curves::FieldExt;
 use num_traits::pow;
-use std::collections::HashMap;
+use std::{collections::HashMap, marker::PhantomData};
 
-use crate::{params::RoundParams, poseidon::native::Poseidon};
 const WIDTH: usize = 5;
 
 #[derive(Clone, Debug)]

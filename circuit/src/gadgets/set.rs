@@ -107,7 +107,7 @@ impl<F: FieldExt> Chip<F> for SetChip<F> {
 	}
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 /// Selectors for a FixedSetChipset
 pub struct SetConfig {
 	is_zero_selector: Selector,
