@@ -928,7 +928,7 @@ mod test {
 		let mut p_ins = Vec::new();
 		p_ins.extend(res.x.limbs);
 		p_ins.extend(res.y.limbs);
-		let prover = MockProver::run(k, &test_chip, vec![p_ins]).unwrap();
+		let prover = MockProver::run(k, &test_chip, vec![vec![], p_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
 	}
 
@@ -964,7 +964,7 @@ mod test {
 		let mut p_ins = Vec::new();
 		p_ins.extend(res.x.limbs);
 		p_ins.extend(res.y.limbs);
-		let prover = MockProver::run(k, &test_chip, vec![p_ins]).unwrap();
+		let prover = MockProver::run(k, &test_chip, vec![vec![], p_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
 	}
 
@@ -1014,7 +1014,7 @@ mod test {
 		let mut p_ins = Vec::new();
 		p_ins.extend(res.0.x.limbs);
 		p_ins.extend(res.0.y.limbs);
-		let prover = MockProver::run(k, &test_chip, vec![p_ins]).unwrap();
+		let prover = MockProver::run(k, &test_chip, vec![vec![], p_ins]).unwrap();
 		let errs = prover.verify().err().unwrap();
 		for err in errs {
 			println!("{:?}", err);

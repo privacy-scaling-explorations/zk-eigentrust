@@ -16,7 +16,7 @@ use crate::{
 	poseidon::{
 		native::{sponge::PoseidonSponge, Poseidon},
 		sponge::{AbsorbChip, PoseidonSpongeChipset, PoseidonSpongeConfig},
-		PartialRoundChip, PoseidonChipset, PoseidonConfig,
+		FullRoundChip, PartialRoundChip, PoseidonChipset, PoseidonConfig,
 	},
 	Chip, Chipset, CommonChip, CommonConfig, RegionCtx,
 };
@@ -38,7 +38,7 @@ pub type PoseidonHasher = PoseidonChipset<Scalar, HASHER_WIDTH, Params>;
 /// Partial rounds of permulation chip
 type PartialRoundHasher = PartialRoundChip<Scalar, HASHER_WIDTH, Params>;
 /// Full rounds of permuation chip
-type FullRoundHasher = PartialRoundChip<Scalar, HASHER_WIDTH, Params>;
+type FullRoundHasher = FullRoundChip<Scalar, HASHER_WIDTH, Params>;
 /// Type alias for the poseidon spong chip with a width of 5 and bn254 params
 pub type SpongeHasher = PoseidonSpongeChipset<Scalar, HASHER_WIDTH, Params>;
 /// Type alias for Eddsa chip on BabyJubJub elliptic curve
@@ -500,7 +500,7 @@ mod test {
 			.zip(messages)
 			.map(|((sk, pk), msg)| sign(&sk, &pk, msg));
 
-		let k = 13;
+		let k = 14;
 		let et = EigenTrust::<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, SCALE>::new(
 			pub_keys, signatures, ops, messages,
 		);
@@ -564,7 +564,7 @@ mod test {
 			.zip(messages)
 			.map(|((sk, pk), msg)| sign(&sk, &pk, msg));
 
-		let k = 13;
+		let k = 14;
 		let et = EigenTrust::<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, SCALE>::new(
 			pub_keys, signatures, ops, messages,
 		);

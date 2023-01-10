@@ -181,6 +181,7 @@ mod test {
 	use crate::{
 		gadgets::bits2num::to_bits,
 		utils::{generate_params, prove_and_verify},
+		CommonChip,
 	};
 	use halo2::{
 		circuit::{SimpleFloorPlanner, Value},
@@ -191,9 +192,8 @@ mod test {
 
 	#[derive(Clone)]
 	struct TestConfig {
+		common: CommonConfig,
 		lt_eq: LessEqualConfig,
-		temp: Column<Advice>,
-		pub_ins: Column<Instance>,
 	}
 
 	#[derive(Clone)]
@@ -217,14 +217,14 @@ mod test {
 		}
 
 		fn configure(meta: &mut ConstraintSystem<Fr>) -> TestConfig {
-			let lt_eq = LessEqualChip::<Fr>::configure(meta);
-			let temp = meta.advice_column();
-			let pub_ins = meta.instance_column();
+			let common = CommonChip::configure(meta);
+			let bits_2_num_selector = Bits2NumChip::configure(&common, meta);
+			let n_shifted_selector = NShiftedChip::configure(&common, meta);
+			let is_zero_selector = IsZeroChip::configure(&common, meta);
+			let lt_eq =
+				LessEqualConfig::new(bits_2_num_selector, n_shifted_selector, is_zero_selector);
 
-			meta.enable_equality(temp);
-			meta.enable_equality(pub_ins);
-
-			TestConfig { lt_eq, temp, pub_ins }
+			TestConfig { common, lt_eq }
 		}
 
 		fn synthesize(
@@ -235,14 +235,14 @@ mod test {
 				|mut region: Region<'_, Fr>| {
 					let x = region.assign_advice(
 						|| "temp_x",
-						config.temp,
+						config.common.advice[0],
 						0,
 						|| Value::known(self.x),
 					)?;
 					let y = region.assign_advice(
 						|| "temp_y",
-						config.temp,
-						1,
+						config.common.advice[1],
+						0,
 						|| Value::known(self.y),
 					)?;
 
@@ -254,10 +254,14 @@ mod test {
 			let diff_bits = to_bits(b.to_bytes()).map(Fr::from);
 			let x_bits = to_bits(self.x.to_bytes()).map(Fr::from);
 			let y_bits = to_bits(self.y.to_bytes()).map(Fr::from);
-			let lt_eq_chip = LessEqualChip::<Fr>::new(x, y, x_bits, y_bits, diff_bits);
-			let res = lt_eq_chip.synthesize(&config.lt_eq, layouter.namespace(|| "less_eq"))?;
+			let lt_eq_chip = LessEqualChipset::<Fr>::new(x, y, x_bits, y_bits, diff_bits);
+			let res = lt_eq_chip.synthesize(
+				&config.common,
+				&config.lt_eq,
+				layouter.namespace(|| "less_eq"),
+			)?;
 
-			layouter.constrain_instance(res.cell(), config.pub_ins, 0)?;
+			layouter.constrain_instance(res.cell(), config.common.instance, 0)?;
 			Ok(())
 		}
 	}
@@ -270,7 +274,7 @@ mod test {
 
 		let test_chip = TestCircuit::new(x, y);
 
-		let k = 9;
+		let k = 11;
 		let pub_ins = vec![Fr::from(0)];
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
@@ -284,7 +288,7 @@ mod test {
 
 		let test_chip = TestCircuit::new(x, y);
 
-		let k = 9;
+		let k = 11;
 		let pub_ins = vec![Fr::from(1)];
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
@@ -298,7 +302,7 @@ mod test {
 
 		let test_chip = TestCircuit::new(x, y);
 
-		let k = 9;
+		let k = 11;
 		let pub_ins = vec![Fr::from(0)];
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
@@ -313,7 +317,7 @@ mod test {
 
 		let test_chip = TestCircuit::new(x, y);
 
-		let k = 9;
+		let k = 11;
 		let pub_ins = vec![Fr::from(0)];
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
@@ -328,7 +332,7 @@ mod test {
 
 		let test_chip = TestCircuit::new(x, y);
 
-		let k = 9;
+		let k = 11;
 		let pub_ins = vec![Fr::from(1)];
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
@@ -343,7 +347,7 @@ mod test {
 
 		let test_chip = TestCircuit::new(x, y);
 
-		let k = 9;
+		let k = 11;
 		let pub_ins = vec![Fr::from(0)];
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
@@ -355,7 +359,7 @@ mod test {
 		let y = Fr::from(4);
 		let test_chip = TestCircuit::new(x, y);
 
-		let k = 9;
+		let k = 11;
 		let rng = &mut rand::thread_rng();
 		let params = generate_params(k);
 		let pub_ins = [Fr::from(0)];

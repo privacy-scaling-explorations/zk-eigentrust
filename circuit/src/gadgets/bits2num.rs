@@ -106,8 +106,8 @@ impl<F: FieldExt> Chip<F> for Bits2NumChip<F> {
 						lc1.value().cloned() + bit.value().cloned() * e2.value().cloned();
 					let next_e2 = e2.value().cloned() + e2.value();
 
-					lc1 = region.assign_advice(|| "lc1", common.advice[1], i + 1, || next_lc1)?;
-					e2 = region.assign_advice(|| "e2", common.advice[2], i + 1, || next_e2)?;
+					e2 = region.assign_advice(|| "e2", common.advice[1], i + 1, || next_e2)?;
+					lc1 = region.assign_advice(|| "lc1", common.advice[2], i + 1, || next_lc1)?;
 				}
 
 				region.constrain_equal(self.value.cell(), lc1.cell())?;
@@ -135,8 +135,7 @@ mod test {
 	#[derive(Clone)]
 	struct TestConfig {
 		common: CommonConfig,
-		bits2num: Bits2NumConfig,
-		temp: Column<Advice>,
+		bits2num_selector: Selector,
 	}
 
 	#[derive(Clone)]
@@ -161,12 +160,9 @@ mod test {
 
 		fn configure(meta: &mut ConstraintSystem<Fr>) -> TestConfig {
 			let common = CommonChip::<Fr>::configure(meta);
-			let bits2num = Bits2NumChip::<_, 256>::configure(&common, meta);
-			let temp = meta.advice_column();
+			let bits2num_selector = Bits2NumChip::configure(&common, meta);
 
-			meta.enable_equality(temp);
-
-			TestConfig { common, bits2num, temp }
+			TestConfig { common, bits2num_selector }
 		}
 
 		fn synthesize(
@@ -175,15 +171,20 @@ mod test {
 			let numba = layouter.assign_region(
 				|| "temp",
 				|mut region: Region<'_, Fr>| {
-					region.assign_advice(|| "temp_x", config.temp, 0, || Value::known(self.numba))
+					region.assign_advice(
+						|| "temp_x",
+						config.common.advice[0],
+						0,
+						|| Value::known(self.numba),
+					)
 				},
 			)?;
 
 			let bits = to_bits::<B>(self.bytes).map(|b| Fr::from(b));
-			let bits2num = Bits2NumChip::new(numba, bits);
+			let bits2num = Bits2NumChip::new(numba, bits.to_vec());
 			let _ = bits2num.synthesize(
 				&config.common,
-				&config.bits2num,
+				&config.bits2num_selector,
 				layouter.namespace(|| "bits2num"),
 			)?;
 
@@ -202,7 +203,7 @@ mod test {
 
 		let circuit = TestCircuit::<256>::new(numba, numba_bytes);
 		let k = 9;
-		let prover = MockProver::run(k, &circuit, vec![]).unwrap();
+		let prover = MockProver::run(k, &circuit, vec![vec![]]).unwrap();
 
 		assert_eq!(prover.verify(), Ok(()));
 	}
@@ -218,7 +219,7 @@ mod test {
 
 		let circuit = TestCircuit::<256>::new(numba, numba_bytes);
 		let k = 9;
-		let prover = MockProver::run(k, &circuit, vec![]).unwrap();
+		let prover = MockProver::run(k, &circuit, vec![vec![]]).unwrap();
 
 		assert_eq!(prover.verify(), Ok(()));
 	}
@@ -233,7 +234,7 @@ mod test {
 
 		let circuit = TestCircuit::<256>::new(Fr::zero(), numba_bytes);
 		let k = 9;
-		let prover = MockProver::run(k, &circuit, vec![]).unwrap();
+		let prover = MockProver::run(k, &circuit, vec![vec![]]).unwrap();
 
 		assert_eq!(prover.verify(), Ok(()));
 	}
@@ -243,7 +244,7 @@ mod test {
 		// Testing zero as value with 0 bits.
 		let circuit = TestCircuit::<0>::new(Fr::zero(), [0; 32]);
 		let k = 9;
-		let prover = MockProver::run(k, &circuit, vec![]).unwrap();
+		let prover = MockProver::run(k, &circuit, vec![vec![]]).unwrap();
 
 		assert_eq!(prover.verify(), Ok(()));
 	}
@@ -253,7 +254,7 @@ mod test {
 		// Testing zero as value with 254 bits.
 		let circuit = TestCircuit::<254>::new(Fr::zero(), [0; 32]);
 		let k = 9;
-		let prover = MockProver::run(k, &circuit, vec![]).unwrap();
+		let prover = MockProver::run(k, &circuit, vec![vec![]]).unwrap();
 
 		assert_eq!(prover.verify(), Ok(()));
 	}
@@ -270,7 +271,7 @@ mod test {
 		let k = 9;
 		let rng = &mut rand::thread_rng();
 		let params = generate_params(k);
-		let res = prove_and_verify::<Bn256, _, _>(params, circuit, &[], rng).unwrap();
+		let res = prove_and_verify::<Bn256, _, _>(params, circuit, &[&[]], rng).unwrap();
 
 		assert!(res);
 	}

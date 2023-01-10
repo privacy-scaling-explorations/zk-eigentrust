@@ -118,7 +118,7 @@ where
 			|mut region: Region<'_, F>| {
 				// Assign initial state
 				let mut state_cells = copy_state(&common, &mut region, 0, &self.inputs)?;
-				for round in 0..full_rounds {
+				for round in 0..half_full_rounds {
 					selector.enable(&mut region, round)?;
 
 					// Assign round constants
@@ -355,6 +355,7 @@ mod test {
 	use crate::{
 		params::{hex_to_field, poseidon_bn254_5x5::Params},
 		utils::{generate_params, prove_and_verify},
+		CommonChip,
 	};
 	use halo2::{
 		circuit::{Layouter, SimpleFloorPlanner},
@@ -363,12 +364,14 @@ mod test {
 		plonk::{Circuit, Column, ConstraintSystem, Error, Instance},
 	};
 
-	type TestPoseidonChipset = PoseidonChipset<Fr, 5, Params>;
+	type FrChip = FullRoundChip<Fr, 5, Params>;
+	type PrChip = PartialRoundChip<Fr, 5, Params>;
+	type PoseidonHasherChipset = PoseidonChipset<Fr, 5, Params>;
 
 	#[derive(Clone)]
 	struct PoseidonTesterConfig {
-		poseidon_config: PoseidonConfig,
-		results: Column<Instance>,
+		common: CommonConfig,
+		poseidon: PoseidonConfig,
 	}
 
 	#[derive(Clone)]
@@ -391,12 +394,12 @@ mod test {
 		}
 
 		fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
-			let poseidon_config = TestPoseidonChipset::configure(meta);
-			let results = meta.instance_column();
+			let common = CommonChip::configure(meta);
+			let fr_selector = FrChip::configure(&common, meta);
+			let pr_selector = PrChip::configure(&common, meta);
+			let poseidon = PoseidonConfig::new(fr_selector, pr_selector);
 
-			meta.enable_equality(results);
-
-			Self::Config { poseidon_config, results }
+			Self::Config { common, poseidon }
 		}
 
 		fn synthesize(
@@ -409,23 +412,23 @@ mod test {
 					for i in 0..5 {
 						state[i] = Some(region.assign_advice(
 							|| "state",
-							config.advice[i],
-							round,
-							|| init_state[i],
+							config.common.advice[i],
+							0,
+							|| self.inputs[i],
 						)?);
 					}
 					Ok(state.map(|item| item.unwrap()))
 				},
 			)?;
 
-			let poseidon = TestPoseidonChipset::new(init_state);
+			let poseidon = PoseidonChipset::<Fr, 5, Params>::new(init_state);
 			let result_state = poseidon.synthesize(
 				&config.common,
-				&config.poseidon_config,
+				&config.poseidon,
 				layouter.namespace(|| "poseidon"),
 			)?;
 			for i in 0..5 {
-				layouter.constrain_instance(result_state[i].cell(), config.results, i)?;
+				layouter.constrain_instance(result_state[i].cell(), config.common.instance, i)?;
 			}
 			Ok(())
 		}

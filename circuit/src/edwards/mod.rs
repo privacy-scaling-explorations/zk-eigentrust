@@ -447,6 +447,7 @@ mod test {
 		edwards::{native::Point, params::BabyJubJub},
 		gadgets::bits2num::to_bits,
 		utils::{generate_params, prove_and_verify},
+		CommonChip,
 	};
 	use halo2::{
 		circuit::{SimpleFloorPlanner, Value},
@@ -464,9 +465,10 @@ mod test {
 
 	#[derive(Clone)]
 	struct TestConfig {
-		edwards: EdwardsConfig,
-		pub_ins: Column<Instance>,
-		temp: Column<Advice>,
+		common: CommonConfig,
+		point_add_selector: Selector,
+		into_affine_selector: Selector,
+		scalar_mul_selector: Selector,
 	}
 
 	#[derive(Clone)]
@@ -490,75 +492,92 @@ mod test {
 		}
 
 		fn configure(meta: &mut ConstraintSystem<Fr>) -> TestConfig {
-			let edwards = EdwardsChip::<Fr, BabyJubJub>::configure(meta);
-			let pub_ins = meta.instance_column();
-			let temp = meta.advice_column();
+			let common = CommonChip::configure(meta);
+			let point_add_selector = PointAddChip::<Fr, BabyJubJub>::configure(&common, meta);
+			let into_affine_selector = IntoAffineChip::configure(&common, meta);
+			let scalar_mul_selector = ScalarMulChip::<Fr, BabyJubJub>::configure(&common, meta);
 
-			meta.enable_equality(pub_ins);
-			meta.enable_equality(temp);
-
-			TestConfig { edwards, pub_ins, temp }
+			TestConfig { common, point_add_selector, into_affine_selector, scalar_mul_selector }
 		}
 
 		fn synthesize(
 			&self, config: TestConfig, mut layouter: impl Layouter<Fr>,
 		) -> Result<(), Error> {
-			let mut items = Vec::new();
-			for i in 0..N {
-				items.push(layouter.assign_region(
-					|| "temp",
-					|mut region: Region<'_, Fr>| {
+			let items = layouter.assign_region(
+				|| "temp",
+				|mut region: Region<'_, Fr>| {
+					let mut items = Vec::new();
+					for i in 0..N {
 						let x = region.assign_advice(
 							|| "temp_inputs",
-							config.temp,
+							config.common.advice[0],
 							i,
 							|| Value::known(self.inputs[i]),
 						)?;
-						Ok(x)
-					},
-				)?);
-			}
+						items.push(x);
+					}
+					Ok(items)
+				},
+			)?;
+
 			match self.gadget {
 				Gadgets::AddPoint => {
 					let r =
 						AssignedPoint::new(items[0].clone(), items[1].clone(), items[2].clone());
 					let e =
 						AssignedPoint::new(items[3].clone(), items[4].clone(), items[5].clone());
-					let res = EdwardsChip::<_, BabyJubJub>::add_point(
-						r,
-						e,
-						&config.edwards,
-						layouter.namespace(|| "add"),
+					let chip = PointAddChip::<_, BabyJubJub>::new(r, e);
+					let res = chip.synthesize(
+						&config.common,
+						&config.point_add_selector,
+						layouter.namespace(|| "point_add"),
 					)?;
-					layouter.constrain_instance(res.x.cell(), config.pub_ins, 0)?;
-					layouter.constrain_instance(res.y.cell(), config.pub_ins, 1)?;
-					layouter.constrain_instance(res.z.cell(), config.pub_ins, 2)?;
+					layouter.constrain_instance(res.x.cell(), config.common.instance, 0)?;
+					layouter.constrain_instance(res.y.cell(), config.common.instance, 1)?;
+					layouter.constrain_instance(res.z.cell(), config.common.instance, 2)?;
 				},
 				Gadgets::IntoAffine => {
 					let p =
 						AssignedPoint::new(items[0].clone(), items[1].clone(), items[2].clone());
-					let (x, y) = EdwardsChip::<_, BabyJubJub>::into_affine(
-						p,
-						&config.edwards,
+					let chip = IntoAffineChip::new(p);
+					let (x, y) = chip.synthesize(
+						&config.common,
+						&config.into_affine_selector,
 						layouter.namespace(|| "into_affine"),
 					)?;
-					layouter.constrain_instance(x.cell(), config.pub_ins, 0)?;
-					layouter.constrain_instance(y.cell(), config.pub_ins, 1)?;
+					layouter.constrain_instance(x.cell(), config.common.instance, 0)?;
+					layouter.constrain_instance(y.cell(), config.common.instance, 1)?;
 				},
 				Gadgets::ScalarMul => {
 					let e =
 						AssignedPoint::new(items[0].clone(), items[1].clone(), items[2].clone());
-					let value_bits = to_bits::<256>(self.inputs[3].to_bytes()).map(Fr::from);
-					let res = EdwardsChip::<_, BabyJubJub>::scalar_mul(
-						e,
-						items[3].clone(),
-						value_bits,
-						&config.edwards,
+					let assigned_bits = layouter.assign_region(
+						|| "temp",
+						|mut region: Region<'_, Fr>| {
+							const NUM_BITS: usize = 256;
+							let bits = to_bits::<NUM_BITS>(self.inputs[3].to_bytes()).map(Fr::from);
+							let mut items = Vec::new();
+							for i in 0..NUM_BITS {
+								let x = region.assign_advice(
+									|| "temp_inputs",
+									config.common.advice[0],
+									i,
+									|| Value::known(bits[i]),
+								)?;
+								items.push(x);
+							}
+							Ok(items)
+						},
+					)?;
+					let chip = ScalarMulChip::<_, BabyJubJub>::new(e, assigned_bits);
+					let res = chip.synthesize(
+						&config.common,
+						&config.scalar_mul_selector,
 						layouter.namespace(|| "scalar_mul"),
 					)?;
-					layouter.constrain_instance(res.x.cell(), config.pub_ins, 0)?;
-					layouter.constrain_instance(res.y.cell(), config.pub_ins, 1)?;
-					layouter.constrain_instance(res.z.cell(), config.pub_ins, 2)?;
+					layouter.constrain_instance(res.x.cell(), config.common.instance, 0)?;
+					layouter.constrain_instance(res.y.cell(), config.common.instance, 1)?;
+					layouter.constrain_instance(res.z.cell(), config.common.instance, 2)?;
 				},
 			}
 			Ok(())
@@ -591,7 +610,7 @@ mod test {
 		let (x_res, y_res, z_res) = BabyJubJub::add(r.x, r.y, r.z, e.x, e.y, e.z);
 		let circuit = TestCircuit::new([r.x, r.y, r.z, e.x, e.y, e.z], Gadgets::AddPoint);
 
-		let k = 9;
+		let k = 11;
 		let rng = &mut rand::thread_rng();
 		let params = generate_params(k);
 		let pub_ins = [x_res, y_res, z_res];
@@ -642,7 +661,7 @@ mod test {
 		let res = r_point.mul_scalar(&scalar.to_bytes());
 		let circuit = TestCircuit::new([r.x, r.y, r.z, scalar], Gadgets::ScalarMul);
 
-		let k = 9;
+		let k = 11;
 		let pub_ins = vec![res.x, res.y, res.z];
 		let prover = MockProver::run(k, &circuit, vec![pub_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
@@ -658,7 +677,7 @@ mod test {
 		let res = r_point.mul_scalar(&scalar.to_bytes());
 		let circuit = TestCircuit::new([r.x, r.y, r.z, scalar], Gadgets::ScalarMul);
 
-		let k = 9;
+		let k = 11;
 		let pub_ins = vec![res.x, res.y, res.z];
 		let prover = MockProver::run(k, &circuit, vec![pub_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
@@ -674,7 +693,7 @@ mod test {
 		let res = r_point.mul_scalar(&scalar.to_bytes());
 		let circuit = TestCircuit::new([r.x, r.y, r.z, scalar], Gadgets::ScalarMul);
 
-		let k = 9;
+		let k = 11;
 		let pub_ins = vec![res.x, res.y, res.z];
 		let prover = MockProver::run(k, &circuit, vec![pub_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
@@ -689,7 +708,7 @@ mod test {
 		let res = r_point.mul_scalar(&scalar.to_bytes());
 		let circuit = TestCircuit::new([r.x, r.y, r.z, scalar], Gadgets::ScalarMul);
 
-		let k = 9;
+		let k = 11;
 		let rng = &mut rand::thread_rng();
 		let params = generate_params(k);
 		let pub_ins = [res.x, res.y, res.z];

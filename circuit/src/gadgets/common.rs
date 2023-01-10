@@ -316,7 +316,7 @@ impl<F: FieldExt> Chip<F> for SubChip<F> {
 
 				let out = assigned_lhs.value().cloned() - assigned_rhs.value();
 
-				let assigned_out = region.assign_advice(|| "lhs", common.advice[2], 0, || out)?;
+				let assigned_out = region.assign_advice(|| "out", common.advice[2], 0, || out)?;
 				Ok(assigned_out)
 			},
 		)
@@ -333,8 +333,8 @@ pub struct SelectChip<F: FieldExt> {
 
 impl<F: FieldExt> SelectChip<F> {
 	/// Construct a new chip
-	pub fn new(x: AssignedCell<F, F>, y: AssignedCell<F, F>, bit: AssignedCell<F, F>) -> Self {
-		Self { x, y, bit }
+	pub fn new(bit: AssignedCell<F, F>, x: AssignedCell<F, F>, y: AssignedCell<F, F>) -> Self {
+		Self { bit, x, y }
 	}
 }
 
@@ -412,6 +412,13 @@ pub struct IsEqualConfig {
 	is_zero_selector: Selector,
 }
 
+impl IsEqualConfig {
+	/// Constructs a new config given the selectors
+	pub fn new(sub_selector: Selector, is_zero_selector: Selector) -> Self {
+		Self { sub_selector, is_zero_selector }
+	}
+}
+
 /// A chip for checking equality
 pub struct IsEqualChipset<F: FieldExt> {
 	x: AssignedCell<F, F>,
@@ -452,6 +459,13 @@ impl<F: FieldExt> Chipset<F> for IsEqualChipset<F> {
 pub struct AndConfig {
 	bool_selector: Selector,
 	mul_selector: Selector,
+}
+
+impl AndConfig {
+	/// Construct the config given the selectors
+	pub fn new(mul_selector: Selector, bool_selector: Selector) -> Self {
+		Self { mul_selector, bool_selector }
+	}
 }
 
 /// A chipset for bitwise AND operation.
@@ -551,7 +565,10 @@ impl<F: FieldExt> Chipset<F> for StrictSelectChipset<F> {
 #[cfg(test)]
 mod test {
 	use super::*;
-	use crate::utils::{generate_params, prove_and_verify};
+	use crate::{
+		utils::{generate_params, prove_and_verify},
+		Chip, Chipset, CommonChip,
+	};
 	use halo2::{
 		circuit::{SimpleFloorPlanner, Value},
 		dev::MockProver,
@@ -572,8 +589,12 @@ mod test {
 	#[derive(Clone)]
 	struct TestConfig {
 		common: CommonConfig,
-		temp: Column<Advice>,
-		pub_ins: Column<Instance>,
+		is_equal: IsEqualConfig,
+		and: AndConfig,
+		mul_selector: Selector,
+		is_bool_selector: Selector,
+		is_zero_selector: Selector,
+		select_selector: Selector,
 	}
 
 	#[derive(Clone)]
@@ -598,12 +619,24 @@ mod test {
 
 		fn configure(meta: &mut ConstraintSystem<F>) -> TestConfig {
 			let common = CommonChip::configure(meta);
-			let temp = meta.advice_column();
-			let pub_ins = meta.instance_column();
-			meta.enable_equality(temp);
-			meta.enable_equality(pub_ins);
+			let mul_selector = MulChip::configure(&common, meta);
+			let sub_selector = SubChip::configure(&common, meta);
+			let is_bool_selector = ConstrainBoolChip::configure(&common, meta);
+			let is_zero_selector = IsZeroChip::configure(&common, meta);
+			let select_selector = SelectChip::configure(&common, meta);
 
-			TestConfig { common, pub_ins, temp }
+			let and = AndConfig::new(mul_selector, is_bool_selector);
+			let is_equal = IsEqualConfig::new(sub_selector, is_zero_selector);
+
+			TestConfig {
+				common,
+				is_equal,
+				and,
+				mul_selector,
+				is_bool_selector,
+				is_zero_selector,
+				select_selector,
+			}
 		}
 
 		fn synthesize(
@@ -616,7 +649,7 @@ mod test {
 					|mut region: Region<'_, F>| {
 						let x = region.assign_advice(
 							|| "temp_inputs",
-							config.temp,
+							config.common.advice[0],
 							i,
 							|| Value::known(self.inputs[i]),
 						)?;
@@ -627,56 +660,58 @@ mod test {
 
 			match self.gadget {
 				Gadgets::And => {
-					let and = CommonChip::and(
-						items[0].clone(),
-						items[1].clone(),
+					let and_chip = AndChipset::new(items[0].clone(), items[1].clone());
+					let and = and_chip.synthesize(
 						&config.common,
+						&config.and,
 						layouter.namespace(|| "and"),
 					)?;
-					layouter.constrain_instance(and.cell(), config.pub_ins, 0)?;
+					layouter.constrain_instance(and.cell(), config.common.instance, 0)?;
 				},
 				Gadgets::IsBool => {
-					CommonChip::is_bool(
-						items[0].clone(),
+					let is_bool_chip = ConstrainBoolChip::new(items[0].clone());
+					is_bool_chip.synthesize(
 						&config.common,
+						&config.is_bool_selector,
 						layouter.namespace(|| "is_bool"),
 					)?;
 				},
 				Gadgets::IsEqual => {
-					let is_equal = CommonChip::is_equal(
-						items[0].clone(),
-						items[1].clone(),
+					let is_equal_chip = IsEqualChipset::new(items[0].clone(), items[1].clone());
+					let is_equal = is_equal_chip.synthesize(
 						&config.common,
-						layouter.namespace(|| "is_zero"),
+						&config.is_equal,
+						layouter.namespace(|| "is_equal"),
 					)?;
-					layouter.constrain_instance(is_equal.cell(), config.pub_ins, 0)?;
+					layouter.constrain_instance(is_equal.cell(), config.common.instance, 0)?;
 				},
 				Gadgets::IsZero => {
-					let is_zero = CommonChip::is_zero(
-						items[0].clone(),
+					let is_zero_chip = IsZeroChip::new(items[0].clone());
+					let is_zero = is_zero_chip.synthesize(
 						&config.common,
+						&config.is_zero_selector,
 						layouter.namespace(|| "is_zero"),
 					)?;
-					layouter.constrain_instance(is_zero.cell(), config.pub_ins, 0)?;
+					layouter.constrain_instance(is_zero.cell(), config.common.instance, 0)?;
 				},
 				Gadgets::Mul => {
-					let mul = CommonChip::mul(
-						items[0].clone(),
-						items[1].clone(),
+					let mul_chip = MulChip::new(items[0].clone(), items[1].clone());
+					let mul = mul_chip.synthesize(
 						&config.common,
+						&config.mul_selector,
 						layouter.namespace(|| "mul"),
 					)?;
-					layouter.constrain_instance(mul.cell(), config.pub_ins, 0)?;
+					layouter.constrain_instance(mul.cell(), config.common.instance, 0)?;
 				},
 				Gadgets::Select => {
-					let select = CommonChip::select(
-						items[0].clone(),
-						items[1].clone(),
-						items[2].clone(),
+					let select_chip =
+						SelectChip::new(items[0].clone(), items[1].clone(), items[2].clone());
+					let select = select_chip.synthesize(
 						&config.common,
+						&config.select_selector,
 						layouter.namespace(|| "select"),
 					)?;
-					layouter.constrain_instance(select.cell(), config.pub_ins, 0)?;
+					layouter.constrain_instance(select.cell(), config.common.instance, 0)?;
 				},
 			}
 

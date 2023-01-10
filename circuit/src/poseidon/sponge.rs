@@ -180,8 +180,14 @@ where
 
 #[cfg(test)]
 mod test {
-	use super::{PoseidonSpongeChip, PoseidonSpongeConfig};
-	use crate::poseidon::native::sponge::PoseidonSponge;
+	use super::{AbsorbChip, PoseidonSpongeChipset, PoseidonSpongeConfig};
+	use crate::{
+		poseidon::{
+			native::sponge::PoseidonSponge, FullRoundChip, PartialRoundChip, PoseidonChipset,
+			PoseidonConfig,
+		},
+		Chip, Chipset, CommonChip, CommonConfig,
+	};
 
 	use crate::params::{hex_to_field, poseidon_bn254_5x5::Params};
 
@@ -193,12 +199,14 @@ mod test {
 	};
 
 	type TestPoseidonSponge = PoseidonSponge<Fr, 5, Params>;
-	type TestPoseidonSpongeChip = PoseidonSpongeChip<Fr, 5, Params>;
+	type TestPoseidonSpongeChipset = PoseidonSpongeChipset<Fr, 5, Params>;
+	type FrChip = FullRoundChip<Fr, 5, Params>;
+	type PrChip = PartialRoundChip<Fr, 5, Params>;
 
 	#[derive(Clone)]
 	struct PoseidonTesterConfig {
-		sponge: PoseidonSpongeConfig<5>,
-		results: Column<Instance>,
+		common: CommonConfig,
+		sponge: PoseidonSpongeConfig,
 	}
 
 	struct PoseidonTester {
@@ -213,22 +221,6 @@ mod test {
 				inputs2: inputs2.map(|item| Value::known(item)),
 			}
 		}
-
-		fn load_state(
-			config: &PoseidonSpongeConfig<5>, region: &mut Region<'_, Fr>, round: usize,
-			init_state: [Value<Fr>; 5],
-		) -> Result<[AssignedCell<Fr, Fr>; 5], Error> {
-			let mut state: [Option<AssignedCell<Fr, Fr>>; 5] = [(); 5].map(|_| None);
-			for i in 0..5 {
-				state[i] = Some(region.assign_advice(
-					|| "state",
-					config.poseidon_config.state[i],
-					round,
-					|| init_state[i],
-				)?);
-			}
-			Ok(state.map(|item| item.unwrap()))
-		}
 	}
 
 	impl Circuit<Fr> for PoseidonTester {
@@ -240,12 +232,14 @@ mod test {
 		}
 
 		fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
-			let sponge_config = TestPoseidonSpongeChip::configure(meta);
-			let results = meta.instance_column();
+			let common = CommonChip::configure(meta);
+			let absorb_selector = AbsorbChip::<_, 5>::configure(&common, meta);
+			let pr_selector = PrChip::configure(&common, meta);
+			let fr_selector = FrChip::configure(&common, meta);
+			let poseidon = PoseidonConfig::new(fr_selector, pr_selector);
+			let sponge = PoseidonSpongeConfig::new(poseidon, absorb_selector);
 
-			meta.enable_equality(results);
-
-			Self::Config { sponge: sponge_config, results }
+			Self::Config { common, sponge }
 		}
 
 		fn synthesize(
@@ -254,24 +248,45 @@ mod test {
 			let inputs1 = layouter.assign_region(
 				|| "load_state1",
 				|mut region: Region<'_, Fr>| {
-					Self::load_state(&config.sponge, &mut region, 0, self.inputs1)
+					let mut state: [Option<AssignedCell<Fr, Fr>>; 5] = [(); 5].map(|_| None);
+					for i in 0..5 {
+						state[i] = Some(region.assign_advice(
+							|| "state",
+							config.common.advice[i],
+							0,
+							|| self.inputs1[i],
+						)?);
+					}
+					Ok(state.map(|item| item.unwrap()))
 				},
 			)?;
 
 			let inputs2 = layouter.assign_region(
 				|| "load_state2",
 				|mut region: Region<'_, Fr>| {
-					Self::load_state(&config.sponge, &mut region, 0, self.inputs2)
+					let mut state: [Option<AssignedCell<Fr, Fr>>; 5] = [(); 5].map(|_| None);
+					for i in 0..5 {
+						state[i] = Some(region.assign_advice(
+							|| "state",
+							config.common.advice[i],
+							0,
+							|| self.inputs2[i],
+						)?);
+					}
+					Ok(state.map(|item| item.unwrap()))
 				},
 			)?;
 
-			let mut poseidon_sponge = TestPoseidonSpongeChip::new();
+			let mut poseidon_sponge = TestPoseidonSpongeChipset::new();
 			poseidon_sponge.update(&inputs1);
 			poseidon_sponge.update(&inputs2);
-			let result_state = poseidon_sponge
-				.squeeze(&config.sponge, layouter.namespace(|| "poseidon_sponge"))?;
+			let result_state = poseidon_sponge.synthesize(
+				&config.common,
+				&config.sponge,
+				layouter.namespace(|| "poseidon_sponge"),
+			)?;
 
-			layouter.constrain_instance(result_state.cell(), config.results, 0)?;
+			layouter.constrain_instance(result_state.cell(), config.common.instance, 0)?;
 			Ok(())
 		}
 	}

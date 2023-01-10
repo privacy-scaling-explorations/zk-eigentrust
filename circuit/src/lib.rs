@@ -167,6 +167,10 @@ impl<F: FieldExt> CommonChip<F> {
 		let fixed = [(); FIXED].map(|_| meta.fixed_column());
 		let instance = meta.instance_column();
 
+		advice.map(|c| meta.enable_equality(c));
+		fixed.map(|c| meta.enable_constant(c));
+		meta.enable_equality(instance);
+
 		CommonConfig { advice, fixed, instance }
 	}
 }
