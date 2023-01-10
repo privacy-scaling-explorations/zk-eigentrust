@@ -9,9 +9,9 @@ use crate::{
 		common::{CommonChip, CommonConfig},
 	},
 	integer::{
-		native::{Quotient, ReductionWitness},
+		native::{Integer, Quotient, ReductionWitness},
 		rns::RnsParams,
-		IntegerChip, IntegerConfig,
+		AssignedInteger, IntegerChip, IntegerConfig,
 	},
 };
 use halo2wrong::halo2::{
@@ -19,6 +19,38 @@ use halo2wrong::halo2::{
 	circuit::{AssignedCell, Layouter, Region, Value},
 	plonk::{ConstraintSystem, Error},
 };
+
+struct AssignedPoint<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
+where
+	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
+{
+	x: AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
+	y: AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
+}
+
+impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
+	AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>
+where
+	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
+{
+	/// Returns a new `AssignedPoint` given its coordinates as `AssignedInteger`
+	pub fn new(
+		x: AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
+		y: AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
+	) -> AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P> {
+		AssignedPoint { x, y }
+	}
+
+	/// Returns $x$ coordinate
+	pub fn x(&self) -> AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P> {
+		self.x.clone()
+	}
+
+	/// Returns $y$ coordinate
+	pub fn y(&self) -> AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P> {
+		self.y.clone()
+	}
+}
 
 #[derive(Debug, Clone)]
 struct EccConfig<const NUM_LIMBS: usize> {
@@ -128,94 +160,79 @@ where
 	}
 
 	pub fn add_reduced(
-		// Assigns a cell for the p_x.
-		p_x: [AssignedCell<N, N>; NUM_LIMBS],
-		// Assigns a cell for the p_y.
-		p_y: [AssignedCell<N, N>; NUM_LIMBS],
-		// Reduction witness for p_x -- make sure p_x is in the W field before being passed
-		p_x_rw: ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>,
-		// Reduction witness for p_y -- make sure p_y is in the W field before being passed
-		p_y_rw: ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>,
-		// Assigns a cell for the q_x.
-		q_x: [AssignedCell<N, N>; NUM_LIMBS],
-		// Assigns a cell for the q_y.
-		q_y: [AssignedCell<N, N>; NUM_LIMBS],
-		// Reduction witness for q_x -- make sure q_x is in the W field before being passed
-		q_x_rw: ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>,
-		// Reduction witness for q_y -- make sure q_y is in the W field before being passed
-		q_y_rw: ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>,
+		// Assigned point p
+		p: AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
+		// Assigned point p
+		q: AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
 		// Reduction witnesses for add operation
 		reduction_witnesses: Vec<ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>>,
 		// Ecc config columns
 		config: EccConfig<NUM_LIMBS>,
 		// Layouter
 		mut layouter: impl Layouter<N>,
-	) -> Result<
-		(
-			[AssignedCell<N, N>; NUM_LIMBS],
-			[AssignedCell<N, N>; NUM_LIMBS],
-		),
-		Error,
-	> {
-		let p_x = IntegerChip::reduce(
-			p_x,
-			p_x_rw,
-			config.integer.clone(),
-			layouter.namespace(|| "reduce_p_x"),
-		)?;
-		let p_y = IntegerChip::reduce(
-			p_y,
-			p_y_rw,
-			config.integer.clone(),
-			layouter.namespace(|| "reduce_p_y"),
-		)?;
-		let q_x = IntegerChip::reduce(
-			q_x,
-			q_x_rw,
-			config.integer.clone(),
-			layouter.namespace(|| "reduce_q_x"),
-		)?;
-		let q_y = IntegerChip::reduce(
-			q_y,
-			q_y_rw,
-			config.integer.clone(),
-			layouter.namespace(|| "reduce_q_y"),
-		)?;
+	) -> Result<AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>, Error> {
+		let p_x = AssignedInteger::new(
+			IntegerChip::reduce(
+				p.x().integer,
+				p.x().rw,
+				config.integer.clone(),
+				layouter.namespace(|| "reduce_p_x"),
+			)?,
+			p.x().rw,
+		);
+		let p_y = AssignedInteger::new(
+			IntegerChip::reduce(
+				p.y().integer,
+				p.y().rw,
+				config.integer.clone(),
+				layouter.namespace(|| "reduce_p_y"),
+			)?,
+			p.y().rw,
+		);
+		let q_x = AssignedInteger::new(
+			IntegerChip::reduce(
+				q.x().integer,
+				q.x().rw,
+				config.integer.clone(),
+				layouter.namespace(|| "reduce_q_x"),
+			)?,
+			q.x().rw,
+		);
+		let q_y = AssignedInteger::new(
+			IntegerChip::reduce(
+				q.y().integer,
+				q.y().rw,
+				config.integer.clone(),
+				layouter.namespace(|| "reduce_q_y"),
+			)?,
+			q.y().rw,
+		);
 
-		let (x, y) = Self::add_unreduced(
-			p_x,
-			p_y,
-			q_x,
-			q_y,
+		let p = AssignedPoint::new(p_x, p_y);
+		let q = AssignedPoint::new(q_x, q_y);
+
+		let point = Self::add_unreduced(
+			p,
+			q,
 			reduction_witnesses,
 			config,
 			layouter.namespace(|| "reduce_add"),
 		)?;
-		Ok((x, y))
+		Ok(point)
 	}
 
 	pub fn add_unreduced(
-		// Assigns a cell for the p_x.
-		p_x: [AssignedCell<N, N>; NUM_LIMBS],
-		// Assigns a cell for the p_y.
-		p_y: [AssignedCell<N, N>; NUM_LIMBS],
-		// Assigns a cell for the q_x.
-		q_x: [AssignedCell<N, N>; NUM_LIMBS],
-		// Assigns a cell for the q_y.
-		q_y: [AssignedCell<N, N>; NUM_LIMBS],
+		// Assigned point p
+		p: AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
+		// Assigned point q
+		q: AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
 		// Reduction witnesses for add operation
 		reduction_witnesses: Vec<ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>>,
 		// Ecc config columns
 		config: EccConfig<NUM_LIMBS>,
 		// Layouter
 		mut layouter: impl Layouter<N>,
-	) -> Result<
-		(
-			[AssignedCell<N, N>; NUM_LIMBS],
-			[AssignedCell<N, N>; NUM_LIMBS],
-		),
-		Error,
-	> {
+	) -> Result<AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>, Error> {
 		// Assign a region where we use columns from Integer chip
 		// sub selector - row 0
 		// sub selector - row 2
@@ -231,11 +248,11 @@ where
 			|mut region: Region<'_, N>| {
 				// numerator = other.y.sub(&self.y);
 				config.integer.sub_selector.enable(&mut region, 0)?;
-				let numerator = Self::assign(
-					Some(&q_y),
-					&p_y,
+				let numerator = IntegerChip::assign(
+					Some(&q.y.integer),
+					&p.y.integer,
 					&reduction_witnesses[0],
-					&config,
+					&config.integer,
 					&mut region,
 					0,
 				)
@@ -243,11 +260,11 @@ where
 
 				// denominator = other.x.sub(&self.x);
 				config.integer.sub_selector.enable(&mut region, 2)?;
-				let denominator = Self::assign(
-					Some(&q_x),
-					&p_x,
+				let denominator = IntegerChip::assign(
+					Some(&q.x.integer),
+					&p.x.integer,
 					&reduction_witnesses[1],
-					&config,
+					&config.integer,
 					&mut region,
 					2,
 				)
@@ -255,11 +272,11 @@ where
 
 				// m = numerator.result.div(&denominator.result)
 				config.integer.div_selector.enable(&mut region, 4)?;
-				let m = Self::assign(
+				let m = IntegerChip::assign(
 					Some(&numerator),
 					&denominator,
 					&reduction_witnesses[2],
-					&config,
+					&config.integer,
 					&mut region,
 					4,
 				)
@@ -267,29 +284,32 @@ where
 
 				// m_squared = m.result.mul(&m.result)
 				config.integer.mul_selector.enable(&mut region, 5)?;
-				let _m_squared =
-					Self::assign(None, &m, &reduction_witnesses[3], &config, &mut region, 5)
-						.unwrap();
+				let _m_squared = IntegerChip::assign(
+					None, &m, &reduction_witnesses[3], &config.integer, &mut region, 5,
+				)
+				.unwrap();
 
 				// m_squared_minus_p_x = m_squared.result.sub(&self.x)
 				config.integer.sub_selector.enable(&mut region, 6)?;
-				let _m_squared_minus_p_x =
-					Self::assign(None, &p_x, &reduction_witnesses[4], &config, &mut region, 6)
-						.unwrap();
+				let _m_squared_minus_p_x = IntegerChip::assign(
+					None, &p.x.integer, &reduction_witnesses[4], &config.integer, &mut region, 6,
+				)
+				.unwrap();
 
 				// r_x = m_squared_minus_p_x.result.sub(&other.x)
 				config.integer.sub_selector.enable(&mut region, 7)?;
-				let r_x =
-					Self::assign(None, &q_x, &reduction_witnesses[5], &config, &mut region, 7)
-						.unwrap();
+				let r_x = IntegerChip::assign(
+					None, &q.x.integer, &reduction_witnesses[5], &config.integer, &mut region, 7,
+				)
+				.unwrap();
 
 				// r_x_minus_p_x = self.x.sub(&r_x.result);
 				config.integer.sub_selector.enable(&mut region, 9)?;
-				let r_x_minus_p_x = Self::assign(
-					Some(&p_x),
+				let r_x_minus_p_x = IntegerChip::assign(
+					Some(&p.x.integer),
 					&r_x,
 					&reduction_witnesses[6],
-					&config,
+					&config.integer,
 					&mut region,
 					9,
 				)
@@ -297,11 +317,11 @@ where
 
 				// m_times_r_x_minus_p_x = m.result.mul(&r_x_minus_p_x.result);
 				config.integer.mul_selector.enable(&mut region, 11)?;
-				let _m_times_r_x_minus_p_x = Self::assign(
+				let _m_times_r_x_minus_p_x = IntegerChip::assign(
 					Some(&m),
 					&r_x_minus_p_x,
 					&reduction_witnesses[7],
-					&config,
+					&config.integer,
 					&mut region,
 					11,
 				)
@@ -309,79 +329,67 @@ where
 
 				// r_y = m_times_r_x_minus_p_x.result.sub(&self.y)
 				config.integer.sub_selector.enable(&mut region, 12)?;
-				let r_y = Self::assign(
-					None, &p_y, &reduction_witnesses[8], &config, &mut region, 12,
+				let r_y = IntegerChip::assign(
+					None, &p.y.integer, &reduction_witnesses[8], &config.integer, &mut region, 12,
 				)
 				.unwrap();
 
-				Ok((r_x, r_y))
+				let r_x = AssignedInteger::new(r_x, reduction_witnesses[5].clone());
+				let r_y = AssignedInteger::new(r_y, reduction_witnesses[8].clone());
+				let r = AssignedPoint::new(r_x, r_y);
+				Ok(r)
 			},
 		)
 	}
 
 	pub fn double_reduced(
-		// Assigns a cell for the p_x.
-		p_x: [AssignedCell<N, N>; NUM_LIMBS],
-		// Assigns a cell for the p_y.
-		p_y: [AssignedCell<N, N>; NUM_LIMBS],
-		// Reduction witness for p_x -- make sure p_x is in the W field before being passed
-		p_x_rw: ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>,
-		// Reduction witness for p_y -- make sure p_y is in the W field before being passed
-		p_y_rw: ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>,
+		// Assigned point p
+		p: AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
 		// Reduction witnesses for add operation
 		reduction_witnesses: Vec<ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>>,
 		// Ecc config columns
 		config: EccConfig<NUM_LIMBS>,
 		// Layouter
 		mut layouter: impl Layouter<N>,
-	) -> Result<
-		(
-			[AssignedCell<N, N>; NUM_LIMBS],
-			[AssignedCell<N, N>; NUM_LIMBS],
-		),
-		Error,
-	> {
-		let p_x = IntegerChip::reduce(
-			p_x,
-			p_x_rw,
-			config.integer.clone(),
-			layouter.namespace(|| "reduce_p_x"),
-		)?;
-		let p_y = IntegerChip::reduce(
-			p_y,
-			p_y_rw,
-			config.integer.clone(),
-			layouter.namespace(|| "reduce_p_y"),
-		)?;
+	) -> Result<AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>, Error> {
+		let p_x = AssignedInteger::new(
+			IntegerChip::reduce(
+				p.x().integer,
+				p.x().rw,
+				config.integer.clone(),
+				layouter.namespace(|| "reduce_p_x"),
+			)?,
+			p.x().rw,
+		);
+		let p_y = AssignedInteger::new(
+			IntegerChip::reduce(
+				p.y().integer,
+				p.y().rw,
+				config.integer.clone(),
+				layouter.namespace(|| "reduce_p_y"),
+			)?,
+			p.y().rw,
+		);
 
-		let (x, y) = Self::double_unreduced(
-			p_x,
-			p_y,
+		let p = AssignedPoint::new(p_x, p_y);
+		let point = Self::double_unreduced(
+			p,
 			reduction_witnesses,
 			config,
 			layouter.namespace(|| "reduce_double"),
 		)?;
-		Ok((x, y))
+		Ok(point)
 	}
 
 	pub fn double_unreduced(
-		// Assigns a cell for the p_x.
-		p_x: [AssignedCell<N, N>; NUM_LIMBS],
-		// Assigns a cell for the p_y.
-		p_y: [AssignedCell<N, N>; NUM_LIMBS],
+		p: AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
 		// Reduction witnesses for double operation
 		reduction_witnesses: Vec<ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>>,
 		// Ecc Config
 		config: EccConfig<NUM_LIMBS>,
 		// Layouter
 		mut layouter: impl Layouter<N>,
-	) -> Result<
-		(
-			[AssignedCell<N, N>; NUM_LIMBS],
-			[AssignedCell<N, N>; NUM_LIMBS],
-		),
-		Error,
-	> {
+	) -> Result<AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>, Error> {
 		// add selector - row 0
 		// mul selector - row 1
 		// mul3 selector - row 2
@@ -397,11 +405,11 @@ where
 			|mut region: Region<'_, N>| {
 				// double_p_y = self.y.add(&self.y)
 				config.integer.add_selector.enable(&mut region, 0)?;
-				let double_p_y = Self::assign(
-					Some(&p_y),
-					&p_y,
+				let double_p_y = IntegerChip::assign(
+					Some(&p.y().integer),
+					&p.y().integer,
 					&reduction_witnesses[0],
-					&config,
+					&config.integer,
 					&mut region,
 					0,
 				)
@@ -409,11 +417,11 @@ where
 
 				// p_x_square = self.x.mul(&self.x)
 				config.integer.mul_selector.enable(&mut region, 2)?;
-				let p_x_square = Self::assign(
-					Some(&p_x),
-					&p_x,
+				let p_x_square = IntegerChip::assign(
+					Some(&p.x().integer),
+					&p.x().integer,
 					&reduction_witnesses[1],
-					&config,
+					&config.integer,
 					&mut region,
 					2,
 				)
@@ -421,32 +429,32 @@ where
 
 				// p_x_square_times_two = p_x_square.result.add(&p_x_square.result);
 				config.integer.add_selector.enable(&mut region, 3)?;
-				let _p_x_square_times_two = Self::assign(
-					None, &p_x_square, &reduction_witnesses[2], &config, &mut region, 3,
+				let _p_x_square_times_two = IntegerChip::assign(
+					None, &p_x_square, &reduction_witnesses[2], &config.integer, &mut region, 3,
 				)
 				.unwrap();
 
 				// p_x_square_times_three = p_x_square.result.add(&p_x_square_times_two.result);
 				config.integer.add_selector.enable(&mut region, 4)?;
-				let _p_x_square_times_three = Self::assign(
-					None, &p_x_square, &reduction_witnesses[3], &config, &mut region, 4,
+				let _p_x_square_times_three = IntegerChip::assign(
+					None, &p_x_square, &reduction_witnesses[3], &config.integer, &mut region, 4,
 				)
 				.unwrap();
 
 				// m = p_x_square_times_three.result.div(&double_p_y.result)
 				config.integer.div_selector.enable(&mut region, 5)?;
-				let m = Self::assign(
-					None, &double_p_y, &reduction_witnesses[4], &config, &mut region, 5,
+				let m = IntegerChip::assign(
+					None, &double_p_y, &reduction_witnesses[4], &config.integer, &mut region, 5,
 				)
 				.unwrap();
 
 				// double_p_x = self.x.add(&self.x)
 				config.integer.add_selector.enable(&mut region, 7)?;
-				let double_p_x = Self::assign(
-					Some(&p_x),
-					&p_x,
+				let double_p_x = IntegerChip::assign(
+					Some(&p.x().integer),
+					&p.x().integer,
 					&reduction_witnesses[5],
-					&config,
+					&config.integer,
 					&mut region,
 					7,
 				)
@@ -454,11 +462,11 @@ where
 
 				// m_squared = m.result.mul(&m.result)
 				config.integer.mul_selector.enable(&mut region, 9)?;
-				let _m_squared = Self::assign(
+				let _m_squared = IntegerChip::assign(
 					Some(&m),
 					&m,
 					&reduction_witnesses[6],
-					&config,
+					&config.integer,
 					&mut region,
 					9,
 				)
@@ -466,18 +474,18 @@ where
 
 				// r_x = m_squared.result.sub(&double_p_x.result)
 				config.integer.sub_selector.enable(&mut region, 10)?;
-				let r_x = Self::assign(
-					None, &double_p_x, &reduction_witnesses[7], &config, &mut region, 10,
+				let r_x = IntegerChip::assign(
+					None, &double_p_x, &reduction_witnesses[7], &config.integer, &mut region, 10,
 				)
 				.unwrap();
 
 				// p_x_minus_r_x = self.x.sub(&r_x.result)
 				config.integer.sub_selector.enable(&mut region, 12)?;
-				let _p_x_minus_r_x = Self::assign(
-					Some(&p_x),
+				let _p_x_minus_r_x = IntegerChip::assign(
+					Some(&p.x().integer),
 					&r_x,
 					&reduction_witnesses[8],
-					&config,
+					&config.integer,
 					&mut region,
 					12,
 				)
@@ -485,22 +493,33 @@ where
 
 				// m_times_p_x_minus_r_x = m.result.mul(&p_x_minus_r_x.result)
 				config.integer.mul_selector.enable(&mut region, 13)?;
-				let _m_times_p_x_minus_r_x =
-					Self::assign(None, &m, &reduction_witnesses[9], &config, &mut region, 13)
-						.unwrap();
-
-				// r_y = m_times_p_x_minus_r_x.result.sub(&self.y)
-				config.integer.sub_selector.enable(&mut region, 14)?;
-				let r_y = Self::assign(
-					None, &p_y, &reduction_witnesses[10], &config, &mut region, 14,
+				let _m_times_p_x_minus_r_x = IntegerChip::assign(
+					None, &m, &reduction_witnesses[9], &config.integer, &mut region, 13,
 				)
 				.unwrap();
 
-				Ok((r_x, r_y))
+				// r_y = m_times_p_x_minus_r_x.result.sub(&self.y)
+				config.integer.sub_selector.enable(&mut region, 14)?;
+				let r_y = IntegerChip::assign(
+					None,
+					&p.y().integer,
+					&reduction_witnesses[10],
+					&config.integer,
+					&mut region,
+					14,
+				)
+				.unwrap();
+
+				let r_x = AssignedInteger::new(r_x, reduction_witnesses[7].clone());
+				let r_y = AssignedInteger::new(r_y, reduction_witnesses[10].clone());
+				let r = AssignedPoint::new(r_x, r_y);
+
+				Ok(r)
 			},
 		)
 	}
 
+	/*
 	pub fn mul_scalar(
 		// Assigns a cell for the r_x.
 		exp_x: [AssignedCell<N, N>; NUM_LIMBS],
@@ -566,47 +585,47 @@ where
 		let mut r_x = exps[first_bit].0.clone();
 		let mut r_y = exps[first_bit].1.clone();
 		let mut flag = true;
+		/*
+				for i in (first_bit + 1)..bits.len() {
+					// Here we pass this checks because we assigned(exp_x, exp_y) to (r_x,
+					// r_y) and we already constraint them when we calculate double operation. After
+					// we hit second positive bit we start to check addition constraints as well.
+					if (value_bits[i] == N::zero()) && flag {
+						continue;
+					} else {
+						flag = false;
+						let (new_r_x, new_r_y) = Self::add_unreduced(
+							r_x.clone(),
+							r_y.clone(),
+							exps[i].0.clone(),
+							exps[i].1.clone(),
+							reduction_witnesses_add[i].clone(),
+							config.clone(),
+							layouter.namespace(|| "add"),
+						)?;
 
-		for i in (first_bit + 1)..bits.len() {
-			// Here we pass this checks because we assigned(exp_x, exp_y) to (r_x,
-			// r_y) and we already constraint them when we calculate double operation. After
-			// we hit second positive bit we start to check addition constraints as well.
-			if (value_bits[i] == N::zero()) && flag {
-				continue;
-			} else {
-				flag = false;
-				let (new_r_x, new_r_y) = Self::add_unreduced(
-					r_x.clone(),
-					r_y.clone(),
-					exps[i].0.clone(),
-					exps[i].1.clone(),
-					reduction_witnesses_add[i].clone(),
-					config.clone(),
-					layouter.namespace(|| "add"),
-				)?;
+						for j in 0..NUM_LIMBS {
+							// r_x
+							r_x[j] = CommonChip::select(
+								bits[i].clone(),
+								new_r_x[j].clone(),
+								r_x[j].clone(),
+								config.common,
+								layouter.namespace(|| format!("select_r_x_{}", j)),
+							)?;
 
-				for j in 0..NUM_LIMBS {
-					// r_x
-					r_x[j] = CommonChip::select(
-						bits[i].clone(),
-						new_r_x[j].clone(),
-						r_x[j].clone(),
-						config.common,
-						layouter.namespace(|| format!("select_r_x_{}", j)),
-					)?;
-
-					// r_y
-					r_y[j] = CommonChip::select(
-						bits[i].clone(),
-						new_r_y[j].clone(),
-						r_y[j].clone(),
-						config.common,
-						layouter.namespace(|| format!("select_r_y_{}", j)),
-					)?;
+							// r_y
+							r_y[j] = CommonChip::select(
+								bits[i].clone(),
+								new_r_y[j].clone(),
+								r_y[j].clone(),
+								config.common,
+								layouter.namespace(|| format!("select_r_y_{}", j)),
+							)?;
+						}
+					}
 				}
-			}
-		}
-
+		*/
 		Ok((r_x, r_y))
 	}
 
@@ -620,6 +639,7 @@ where
 		}
 		counter
 	}
+	*/
 }
 
 #[cfg(test)]
@@ -631,6 +651,7 @@ mod test {
 		integer::{
 			native::{Integer, ReductionWitness},
 			rns::{Bn256_4_68, RnsParams},
+			AssignedInteger,
 		},
 	};
 	use halo2wrong::{
@@ -648,13 +669,13 @@ mod test {
 	use num_bigint::BigUint;
 	use rand::thread_rng;
 
-	use super::{EccChip, EccConfig};
+	use super::{AssignedPoint, EccChip, EccConfig};
 
 	#[derive(Clone)]
 	enum Gadgets {
 		Add,
 		Double,
-		Mul,
+		//Mul,
 	}
 
 	#[derive(Clone, Debug)]
@@ -833,29 +854,34 @@ mod test {
 				},
 			)?;
 
-			let (x, y) = match self.gadget {
-				Gadgets::Double => EccChip::double_unreduced(
-					p_x_limbs_assigned,
-					p_y_limbs_assigned,
-					//self.p_x_rw.clone(),
-					//self.p_y_rw.clone(),
+			let p_x_int = AssignedInteger::new(p_x_limbs_assigned, self.p_x_rw.clone());
+			let p_y_int = AssignedInteger::new(p_y_limbs_assigned, self.p_y_rw.clone());
+
+			let p = AssignedPoint::new(p_x_int, p_y_int);
+
+			let point = match self.gadget {
+				Gadgets::Double => EccChip::double_reduced(
+					p,
 					self.reduction_witnesses.clone().unwrap(),
 					config.ecc.clone(),
 					layouter.namespace(|| "double"),
 				)?,
-				Gadgets::Add => EccChip::add_reduced(
-					p_x_limbs_assigned,
-					p_y_limbs_assigned,
-					self.p_x_rw.clone(),
-					self.p_y_rw.clone(),
-					q_x_limbs_assigned,
-					q_y_limbs_assigned,
-					self.q_x_rw.clone().unwrap(),
-					self.q_y_rw.clone().unwrap(),
-					self.reduction_witnesses.clone().unwrap(),
-					config.ecc.clone(),
-					layouter.namespace(|| "add"),
-				)?,
+				Gadgets::Add => {
+					let q_x_int =
+						AssignedInteger::new(q_x_limbs_assigned, self.q_x_rw.clone().unwrap());
+					let q_y_int =
+						AssignedInteger::new(q_y_limbs_assigned, self.q_y_rw.clone().unwrap());
+					let q = AssignedPoint::new(q_x_int, q_y_int);
+
+					EccChip::add_reduced(
+						p,
+						q,
+						self.reduction_witnesses.clone().unwrap(),
+						config.ecc.clone(),
+						layouter.namespace(|| "add"),
+					)?
+				},
+				/*
 				Gadgets::Mul => EccChip::mul_scalar(
 					p_x_limbs_assigned,
 					p_y_limbs_assigned,
@@ -868,11 +894,16 @@ mod test {
 					config.ecc.clone(),
 					layouter.namespace(|| "scalar_mul"),
 				)?,
+				*/
 			};
 
 			for i in 0..NUM_LIMBS {
-				layouter.constrain_instance(x[i].cell(), config.pub_ins, i)?;
-				layouter.constrain_instance(y[i].cell(), config.pub_ins, i + NUM_LIMBS)?;
+				layouter.constrain_instance(point.x().integer[i].cell(), config.pub_ins, i)?;
+				layouter.constrain_instance(
+					point.y().integer[i].cell(),
+					config.pub_ins,
+					i + NUM_LIMBS,
+				)?;
 			}
 			Ok(())
 		}
@@ -954,7 +985,7 @@ mod test {
 		let prover = MockProver::run(k, &test_chip, vec![p_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
 	}
-
+	/*
 	#[test]
 	#[ignore = "Mul scalar broken"]
 	fn should_mul_with_scalar() {
@@ -1009,4 +1040,5 @@ mod test {
 		}
 		//assert_eq!(prover.verify(), Ok(()));
 	}
+	*/
 }

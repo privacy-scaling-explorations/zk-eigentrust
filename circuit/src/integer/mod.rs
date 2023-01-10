@@ -75,7 +75,7 @@ where
 
 		meta.create_gate("reduce", |v_cells| {
 			let reduce_s = v_cells.query_selector(reduce_selector);
-			let x_limb_exps = x_limbs.map(|x| v_cells.query_advice(x, Rotation::cur()));
+			let y_limb_exps = y_limbs.map(|x| v_cells.query_advice(x, Rotation::cur()));
 			let reduce_q_exp = v_cells.query_advice(quotient[0], Rotation::cur());
 			let t_exp = intermediate.map(|x| v_cells.query_advice(x, Rotation::cur()));
 			let result_exps = x_limbs.map(|x| v_cells.query_advice(x, Rotation::next()));
@@ -87,7 +87,7 @@ where
 				P::constrain_binary_crt_exp(t_exp, result_exps.clone(), residues_exps);
 			// NATIVE CONSTRAINTS
 			let native_constraint =
-				P::compose_exp(x_limb_exps) - reduce_q_exp * p_in_n - P::compose_exp(result_exps);
+				P::compose_exp(y_limb_exps) - reduce_q_exp * p_in_n - P::compose_exp(result_exps);
 			constraints.push(native_constraint);
 
 			constraints.iter().map(|x| reduce_s.clone() * x.clone()).collect::<Vec<Expression<N>>>()
@@ -194,8 +194,8 @@ where
 	}
 
 	/// Assigns given values and their reduction witnesses
-	fn assign(
-		x: &[AssignedCell<N, N>; NUM_LIMBS], y_opt: Option<&[AssignedCell<N, N>; NUM_LIMBS]>,
+	pub fn assign(
+		x_opt: Option<&[AssignedCell<N, N>; NUM_LIMBS]>, y: &[AssignedCell<N, N>; NUM_LIMBS],
 		reduction_witness: &ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>,
 		config: &IntegerConfig<NUM_LIMBS>, region: &mut Region<'_, N>, row: usize,
 	) -> Result<[AssignedCell<N, N>; NUM_LIMBS], Error> {
@@ -221,12 +221,11 @@ where
 		}
 
 		for i in 0..NUM_LIMBS {
-			x[i].copy_advice(|| format!("limb_x_{}", i), region, config.x_limbs[i], row)?;
-
-			if y_opt.is_some() {
-				let y = y_opt.unwrap();
-				y[i].copy_advice(|| format!("limb_y_{}", i), region, config.y_limbs[i], row)?;
+			if x_opt.is_some() {
+				let x = x_opt.unwrap();
+				x[i].copy_advice(|| format!("limb_x_{}", i), region, config.x_limbs[i], row)?;
 			}
+			y[i].copy_advice(|| format!("limb_y_{}", i), region, config.y_limbs[i], row)?;
 
 			region.assign_advice(
 				|| format!("intermediates_{}", i),
@@ -261,15 +260,14 @@ where
 
 	/// Assign cells for reduce operation.
 	pub fn reduce(
-		x_limbs: [AssignedCell<N, N>; NUM_LIMBS],
-		rw: ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>, config: IntegerConfig<NUM_LIMBS>,
-		mut layouter: impl Layouter<N>,
+		limbs: [AssignedCell<N, N>; NUM_LIMBS], rw: ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>,
+		config: IntegerConfig<NUM_LIMBS>, mut layouter: impl Layouter<N>,
 	) -> Result<[AssignedCell<N, N>; NUM_LIMBS], Error> {
 		layouter.assign_region(
 			|| "reduce_operation",
 			|mut region: Region<'_, N>| {
 				config.reduce_selector.enable(&mut region, 0)?;
-				Self::assign(&x_limbs, None, &rw, &config, &mut region, 0)
+				Self::assign(None, &limbs, &rw, &config, &mut region, 0)
 			},
 		)
 	}
@@ -284,7 +282,7 @@ where
 			|| "add_operation",
 			|mut region: Region<'_, N>| {
 				config.add_selector.enable(&mut region, 0)?;
-				Self::assign(&x_limbs, Some(&y_limbs), &rw, &config, &mut region, 0)
+				Self::assign(Some(&x_limbs), &y_limbs, &rw, &config, &mut region, 0)
 			},
 		)
 	}
@@ -299,7 +297,7 @@ where
 			|| "mul_operation",
 			|mut region: Region<'_, N>| {
 				config.mul_selector.enable(&mut region, 0)?;
-				Self::assign(&x_limbs, Some(&y_limbs), &rw, &config, &mut region, 0)
+				Self::assign(Some(&x_limbs), &y_limbs, &rw, &config, &mut region, 0)
 			},
 		)
 	}
@@ -314,7 +312,7 @@ where
 			|| "sub_operation",
 			|mut region: Region<'_, N>| {
 				config.sub_selector.enable(&mut region, 0)?;
-				Self::assign(&x_limbs, Some(&y_limbs), &rw, &config, &mut region, 0)
+				Self::assign(Some(&x_limbs), &y_limbs, &rw, &config, &mut region, 0)
 			},
 		)
 	}
@@ -329,9 +327,38 @@ where
 			|| "div_operation",
 			|mut region: Region<'_, N>| {
 				config.div_selector.enable(&mut region, 0)?;
-				Self::assign(&x_limbs, Some(&y_limbs), &rw, &config, &mut region, 0)
+				Self::assign(Some(&x_limbs), &y_limbs, &rw, &config, &mut region, 0)
 			},
 		)
+	}
+}
+
+#[derive(Debug, Clone)]
+///Assigned Integer
+pub struct AssignedInteger<
+	W: FieldExt,
+	N: FieldExt,
+	const NUM_LIMBS: usize,
+	const NUM_BITS: usize,
+	P,
+> where
+	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
+{
+	pub(crate) integer: [AssignedCell<N, N>; NUM_LIMBS],
+	pub(crate) rw: ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>,
+}
+
+impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
+	AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>
+where
+	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
+{
+	/// Returns a new `AssignedInteger` given its values
+	pub fn new(
+		integer: [AssignedCell<N, N>; NUM_LIMBS],
+		rw: ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>,
+	) -> Self {
+		Self { integer, rw }
 	}
 }
 
