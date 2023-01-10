@@ -3,7 +3,7 @@ pub mod native;
 /// RNS operations for the non-native field arithmetic
 pub mod rns;
 
-use halo2wrong::halo2::{
+use halo2::{
 	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region, Value},
 	plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
@@ -366,13 +366,11 @@ where
 mod test {
 	use super::{native::Integer, rns::Bn256_4_68, *};
 	use crate::utils::{generate_params, prove_and_verify};
-	use halo2wrong::{
-		curves::bn256::{Bn256, Fq, Fr},
-		halo2::{
-			circuit::{SimpleFloorPlanner, Value},
-			dev::MockProver,
-			plonk::{Circuit, Instance},
-		},
+	use halo2::{
+		circuit::{SimpleFloorPlanner, Value},
+		dev::MockProver,
+		halo2curves::bn256::{Bn256, Fq, Fr},
+		plonk::{Circuit, Instance},
 	};
 	use num_bigint::BigUint;
 	use std::str::FromStr;

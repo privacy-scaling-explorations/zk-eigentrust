@@ -14,7 +14,7 @@ use crate::{
 		AssignedInteger, IntegerChip, IntegerConfig,
 	},
 };
-use halo2wrong::halo2::{
+use halo2::{
 	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region, Value},
 	plonk::{ConstraintSystem, Error},
@@ -481,7 +481,7 @@ where
 		//    double selector - row i
 		// }
 		let bits2num = Bits2NumChip::new(value.clone(), value_bits);
-		let bits = bits2num.synthesize(config.bits2num, layouter.namespace(|| "bits2num"))?;
+		let bits = bits2num.synthesize(&config.bits2num, layouter.namespace(|| "bits2num"))?;
 		let mut exp_x = IntegerChip::reduce(
 			exp_x,
 			exp_x_rw,
@@ -551,6 +551,7 @@ where
 					}
 				}
 		*/
+
 		Ok((r_x, r_y))
 	}
 
@@ -569,32 +570,29 @@ where
 
 #[cfg(test)]
 mod test {
-	use std::str::FromStr;
-
+	use super::{EccChip, EccConfig};
 	use crate::{
-		ecc::{native::EcPoint, test},
+		ecc::native::EcPoint,
 		integer::{
 			native::{Integer, ReductionWitness},
 			rns::{Bn256_4_68, RnsParams},
 			AssignedInteger,
 		},
 	};
-	use halo2wrong::{
-		curves::{
+	use halo2::{
+		circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner, Value},
+		dev::MockProver,
+		halo2curves::{
 			bn256::{Fq, Fr},
 			FieldExt,
 		},
-		halo2::{
-			arithmetic::Field,
-			circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner, Value},
-			dev::MockProver,
-			plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Instance},
-		},
+		plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Instance},
 	};
 	use num_bigint::BigUint;
 	use rand::thread_rng;
 
 	use super::{AssignedPoint, EccChip, EccConfig};
+
 
 	#[derive(Clone)]
 	enum Gadgets {
@@ -917,6 +915,7 @@ mod test {
 		// Testing scalar multiplication.
 		let rng = &mut thread_rng();
 		let scalar = Fr::from_u128(30);
+
 		let zero = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::zero();
 		let a_big = BigUint::from_str("2342342453654645641233").unwrap();
 		let b_big = BigUint::from_str("1231231231234235346457675685645454").unwrap();

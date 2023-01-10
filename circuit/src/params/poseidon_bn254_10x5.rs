@@ -1,5 +1,5 @@
 use super::*;
-use halo2wrong::curves::bn256::Fr;
+use halo2::halo2curves::bn256::Fr;
 
 /// Configures a structure.
 pub struct Params;

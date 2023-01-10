@@ -61,12 +61,10 @@
 // red_v_bit_len: 69,
 
 use super::native::Integer;
-use halo2wrong::{
-	curves::bn256::{Fq, Fr},
-	halo2::{
-		arithmetic::{Field, FieldExt},
-		plonk::Expression,
-	},
+use halo2::{
+	arithmetic::{Field, FieldExt},
+	halo2curves::bn256::{Fq, Fr},
+	plonk::Expression,
 };
 use num_bigint::BigUint;
 use num_integer::Integer as BigInteger;
@@ -258,16 +256,15 @@ impl RnsParams<Fq, Fr, 4, 68> for Bn256_4_68 {
 
 	fn construct_sub_qr(a_bn: BigUint, b_bn: BigUint) -> (Fr, [Fr; 4]) {
 		let wrong_mod_bn = Self::wrong_modulus();
-		let mut quotient = BigUint::zero();
-		let mut result_bn = BigUint::zero();
-		if b_bn > a_bn {
+		let (quotient, result_bn) = if b_bn > a_bn {
 			let negative_result = big_to_fe::<Fq>(a_bn) - big_to_fe::<Fq>(b_bn);
-			(_, result_bn) = (fe_to_big(negative_result)).div_rem(&wrong_mod_bn);
+			let (_, result_bn) = (fe_to_big(negative_result)).div_rem(&wrong_mod_bn);
 			// This quotient is considered as -1 in calculations.
-			quotient = BigUint::from_i8(1).unwrap();
+			let quotient = BigUint::from_i8(1).unwrap();
+			(quotient, result_bn)
 		} else {
-			(quotient, result_bn) = (a_bn - b_bn).div_rem(&wrong_mod_bn);
-		}
+			(a_bn - b_bn).div_rem(&wrong_mod_bn)
+		};
 		// This check assures that the subtraction operation can only wrap the wrong
 		// field one time.
 		assert!(quotient <= BigUint::from_u8(1).unwrap());

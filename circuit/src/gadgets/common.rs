@@ -1,4 +1,4 @@
-use halo2wrong::halo2::{
+use halo2::{
 	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region, Value},
 	plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
@@ -12,7 +12,7 @@ pub struct CommonConfig {
 	/// Configures columns for the advice.
 	advice: [Column<Advice>; 3],
 	/// Configures fixed boolean values for each row of the circuit.
-	selectors: [Selector; 6],
+	selectors: [Selector; 7],
 }
 
 /// Structure for the common chip.
@@ -24,15 +24,8 @@ pub struct CommonChip<F: FieldExt> {
 impl<F: FieldExt> CommonChip<F> {
 	/// Make the circuit configs.
 	pub fn configure(meta: &mut ConstraintSystem<F>) -> CommonConfig {
-		let advice = [meta.advice_column(), meta.advice_column(), meta.advice_column()];
-		let selectors = [
-			meta.selector(),
-			meta.selector(),
-			meta.selector(),
-			meta.selector(),
-			meta.selector(),
-			meta.selector(),
-		];
+		let advice = [(); 3].map(|_| meta.advice_column());
+		let selectors = [(); 7].map(|_| meta.selector());
 
 		advice.map(|c| meta.enable_equality(c));
 
@@ -143,13 +136,33 @@ impl<F: FieldExt> CommonChip<F> {
 			]
 		});
 
+		// Gate for the add circuit.
+		meta.create_gate("add", |v_cells| {
+			let x_exp = v_cells.query_advice(advice[0], Rotation::cur());
+			let y_exp = v_cells.query_advice(advice[1], Rotation::cur());
+			let z_exp = v_cells.query_advice(advice[2], Rotation::cur());
+			let s_exp = v_cells.query_selector(selectors[5]);
+
+			vec![
+				// (x + y) - z == 0
+				// Example:
+				// let x = 3;
+				// let y = 2;
+				// let z = (x + y);
+				// z;
+				//
+				// z = (3 + 2) = 5 => Checking the constraint (3 + 2) - 5 == 0
+				s_exp * ((x_exp + y_exp) - z_exp),
+			]
+		});
+
 		// Gate for the select circuit.
 		meta.create_gate("select", |v_cells| {
 			let bit_exp = v_cells.query_advice(advice[0], Rotation::cur());
 			let x_exp = v_cells.query_advice(advice[1], Rotation::cur());
 			let y_exp = v_cells.query_advice(advice[2], Rotation::cur());
 			let res_exp = v_cells.query_advice(advice[1], Rotation::next());
-			let s_exp = v_cells.query_selector(selectors[5]);
+			let s_exp = v_cells.query_selector(selectors[6]);
 
 			vec![
 				// bit * (x - y) - (z - y)
@@ -180,12 +193,12 @@ impl<F: FieldExt> CommonChip<F> {
 		x: AssignedCell<F, F>,
 		// Assigns a cell for the y.
 		y: AssignedCell<F, F>,
-		config: CommonConfig,
+		config: &CommonConfig,
 		mut layouter: impl Layouter<F>,
 	) -> Result<AssignedCell<F, F>, Error> {
 		// Here we check our values x and y.
 		// Both of the values have to be boolean.
-		let x_checked = Self::is_bool(x, config.clone(), layouter.namespace(|| "is_bool_x"))?;
+		let x_checked = Self::is_bool(x, config, layouter.namespace(|| "is_bool_x"))?;
 		let y_checked = Self::is_bool(y, config, layouter.namespace(|| "is_bool_y"))?;
 
 		layouter.assign_region(
@@ -209,7 +222,7 @@ impl<F: FieldExt> CommonChip<F> {
 	pub fn is_bool(
 		// Assigns a cell for the x.
 		x: AssignedCell<F, F>,
-		config: CommonConfig,
+		config: &CommonConfig,
 		mut layouter: impl Layouter<F>,
 	) -> Result<AssignedCell<F, F>, Error> {
 		layouter.assign_region(
@@ -229,7 +242,7 @@ impl<F: FieldExt> CommonChip<F> {
 		lhs: AssignedCell<F, F>,
 		// Assigns a cell for the rhs.
 		rhs: AssignedCell<F, F>,
-		config: CommonConfig,
+		config: &CommonConfig,
 		mut layouter: impl Layouter<F>,
 	) -> Result<AssignedCell<F, F>, Error> {
 		let out = layouter.assign_region(
@@ -255,7 +268,7 @@ impl<F: FieldExt> CommonChip<F> {
 	pub fn is_zero(
 		// Assigns a cell for the x.
 		x: AssignedCell<F, F>,
-		config: CommonConfig,
+		config: &CommonConfig,
 		mut layouter: impl Layouter<F>,
 	) -> Result<AssignedCell<F, F>, Error> {
 		let is_zero = layouter.assign_region(
@@ -289,7 +302,7 @@ impl<F: FieldExt> CommonChip<F> {
 		x: AssignedCell<F, F>,
 		// Assigns a cell for the y.
 		y: AssignedCell<F, F>,
-		config: CommonConfig,
+		config: &CommonConfig,
 		mut layouter: impl Layouter<F>,
 	) -> Result<AssignedCell<F, F>, Error> {
 		layouter.assign_region(
@@ -308,6 +321,31 @@ impl<F: FieldExt> CommonChip<F> {
 		)
 	}
 
+	/// Synthesize the add circuit.
+	pub fn add(
+		// Assigns a cell for the x.
+		x: AssignedCell<F, F>,
+		// Assigns a cell for the y.
+		y: AssignedCell<F, F>,
+		config: &CommonConfig,
+		mut layouter: impl Layouter<F>,
+	) -> Result<AssignedCell<F, F>, Error> {
+		layouter.assign_region(
+			|| "add",
+			|mut region: Region<'_, F>| {
+				config.selectors[5].enable(&mut region, 0)?;
+				let assigned_x = x.copy_advice(|| "x", &mut region, config.advice[0], 0)?;
+				let assigned_y = y.copy_advice(|| "y", &mut region, config.advice[1], 0)?;
+
+				let out = assigned_x.value().cloned() + assigned_y.value();
+
+				let out_assigned = region.assign_advice(|| "out", config.advice[2], 0, || out)?;
+
+				Ok(out_assigned)
+			},
+		)
+	}
+
 	/// Synthesize the select circuit.
 	pub fn select(
 		// Assigns a cell for the bit.
@@ -316,7 +354,7 @@ impl<F: FieldExt> CommonChip<F> {
 		x: AssignedCell<F, F>,
 		// Assigns a cell for the y.
 		y: AssignedCell<F, F>,
-		config: CommonConfig,
+		config: &CommonConfig,
 		mut layouter: impl Layouter<F>,
 	) -> Result<AssignedCell<F, F>, Error> {
 		// Checking bit is boolean or not.
@@ -325,7 +363,7 @@ impl<F: FieldExt> CommonChip<F> {
 		layouter.assign_region(
 			|| "select",
 			|mut region: Region<'_, F>| {
-				config.selectors[5].enable(&mut region, 0)?;
+				config.selectors[6].enable(&mut region, 0)?;
 
 				let assigned_bit =
 					assigned_bool.copy_advice(|| "bit", &mut region, config.advice[0], 0)?;
@@ -354,13 +392,11 @@ impl<F: FieldExt> CommonChip<F> {
 mod test {
 	use super::*;
 	use crate::utils::{generate_params, prove_and_verify};
-	use halo2wrong::{
-		curves::bn256::{Bn256, Fr},
-		halo2::{
-			circuit::{SimpleFloorPlanner, Value},
-			dev::MockProver,
-			plonk::{Circuit, Instance},
-		},
+	use halo2::{
+		circuit::{SimpleFloorPlanner, Value},
+		dev::MockProver,
+		halo2curves::bn256::{Bn256, Fr},
+		plonk::{Circuit, Instance},
 	};
 
 	#[derive(Clone)]
@@ -434,7 +470,7 @@ mod test {
 					let and = CommonChip::and(
 						items[0].clone(),
 						items[1].clone(),
-						config.common,
+						&config.common,
 						layouter.namespace(|| "and"),
 					)?;
 					layouter.constrain_instance(and.cell(), config.pub_ins, 0)?;
@@ -442,7 +478,7 @@ mod test {
 				Gadgets::IsBool => {
 					CommonChip::is_bool(
 						items[0].clone(),
-						config.common,
+						&config.common,
 						layouter.namespace(|| "is_bool"),
 					)?;
 				},
@@ -450,7 +486,7 @@ mod test {
 					let is_equal = CommonChip::is_equal(
 						items[0].clone(),
 						items[1].clone(),
-						config.common,
+						&config.common,
 						layouter.namespace(|| "is_zero"),
 					)?;
 					layouter.constrain_instance(is_equal.cell(), config.pub_ins, 0)?;
@@ -458,7 +494,7 @@ mod test {
 				Gadgets::IsZero => {
 					let is_zero = CommonChip::is_zero(
 						items[0].clone(),
-						config.common,
+						&config.common,
 						layouter.namespace(|| "is_zero"),
 					)?;
 					layouter.constrain_instance(is_zero.cell(), config.pub_ins, 0)?;
@@ -467,7 +503,7 @@ mod test {
 					let mul = CommonChip::mul(
 						items[0].clone(),
 						items[1].clone(),
-						config.common,
+						&config.common,
 						layouter.namespace(|| "mul"),
 					)?;
 					layouter.constrain_instance(mul.cell(), config.pub_ins, 0)?;
@@ -477,7 +513,7 @@ mod test {
 						items[0].clone(),
 						items[1].clone(),
 						items[2].clone(),
-						config.common,
+						&config.common,
 						layouter.namespace(|| "select"),
 					)?;
 					layouter.constrain_instance(select.cell(), config.pub_ins, 0)?;

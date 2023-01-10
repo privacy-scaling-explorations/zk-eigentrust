@@ -1,4 +1,4 @@
-use halo2wrong::halo2::{
+use halo2::{
 	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region, Value},
 	plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
@@ -94,7 +94,7 @@ impl<F: FieldExt, const B: usize> Bits2NumChip<F, B> {
 
 	/// Synthesize the circuit.
 	pub fn synthesize(
-		&self, config: Bits2NumConfig, mut layouter: impl Layouter<F>,
+		&self, config: &Bits2NumConfig, mut layouter: impl Layouter<F>,
 	) -> Result<[AssignedCell<F, F>; B], Error> {
 		layouter.assign_region(
 			|| "bits2num",
@@ -131,9 +131,11 @@ impl<F: FieldExt, const B: usize> Bits2NumChip<F, B> {
 mod test {
 	use super::*;
 	use crate::utils::{generate_params, prove_and_verify};
-	use halo2wrong::{
-		curves::bn256::{Bn256, Fr},
-		halo2::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit},
+	use halo2::{
+		circuit::SimpleFloorPlanner,
+		dev::MockProver,
+		halo2curves::bn256::{Bn256, Fr},
+		plonk::Circuit,
 	};
 
 	#[derive(Clone)]
@@ -183,7 +185,7 @@ mod test {
 
 			let bits = to_bits::<B>(self.bytes).map(|b| Fr::from(b));
 			let bits2num = Bits2NumChip::new(numba, bits);
-			let _ = bits2num.synthesize(config.bits2num, layouter.namespace(|| "bits2num"))?;
+			let _ = bits2num.synthesize(&config.bits2num, layouter.namespace(|| "bits2num"))?;
 
 			Ok(())
 		}

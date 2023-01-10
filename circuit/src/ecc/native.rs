@@ -17,7 +17,7 @@ use crate::integer::{
 	native::{Integer, ReductionWitness},
 	rns::RnsParams,
 };
-use halo2wrong::halo2::arithmetic::FieldExt;
+use halo2::arithmetic::FieldExt;
 
 /// Structure for the EcPoint
 #[derive(Clone, Debug)]
@@ -166,26 +166,28 @@ where
 		}
 		(r, reduction_add, reduction_double)
 	}
+
+	/// Check if two points are equal
+	pub fn is_eq(&self, other: &Self) -> bool {
+		self.x.is_eq(&other.x) && self.y.is_eq(&other.y)
+	}
 }
 
 #[cfg(test)]
 mod test {
-	use halo2wrong::{
-		curves::{
-			bn256::{Fq, Fr, G1Affine},
-			group::Curve,
-		},
-		halo2::arithmetic::Field,
-	};
-
-	use rand::thread_rng;
-
+	use super::EcPoint;
 	use crate::integer::{
 		native::Integer,
 		rns::{big_to_fe, fe_to_big, Bn256_4_68},
 	};
-
-	use super::EcPoint;
+	use halo2::{
+		arithmetic::Field,
+		halo2curves::{
+			bn256::{Fq, Fr, G1Affine},
+			group::Curve,
+		},
+	};
+	use rand::thread_rng;
 
 	#[test]
 	fn should_add_two_points() {

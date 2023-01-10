@@ -4,7 +4,7 @@ pub mod native;
 pub mod sponge;
 
 use crate::params::RoundParams;
-use halo2wrong::halo2::{
+use halo2::{
 	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region, Value},
 	plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector, VirtualCells},
@@ -276,7 +276,7 @@ where
 
 	/// Synthesize the circuit.
 	pub fn synthesize(
-		&self, config: PoseidonConfig<WIDTH>, mut layouter: impl Layouter<F>,
+		&self, config: &PoseidonConfig<WIDTH>, mut layouter: impl Layouter<F>,
 	) -> Result<[AssignedCell<F, F>; WIDTH], Error> {
 		let full_rounds = P::full_rounds();
 		let half_full_rounds = full_rounds / 2;
@@ -331,18 +331,16 @@ where
 
 #[cfg(test)]
 mod test {
+	use super::*;
 	use crate::{
 		params::{hex_to_field, poseidon_bn254_5x5::Params},
 		utils::{generate_params, prove_and_verify},
-		*,
 	};
-	use halo2wrong::{
-		curves::bn256::{Bn256, Fr},
-		halo2::{
-			circuit::{Layouter, SimpleFloorPlanner},
-			dev::MockProver,
-			plonk::{Circuit, Column, ConstraintSystem, Error, Instance},
-		},
+	use halo2::{
+		circuit::{Layouter, SimpleFloorPlanner},
+		dev::MockProver,
+		halo2curves::bn256::{Bn256, Fr},
+		plonk::{Circuit, Column, ConstraintSystem, Error, Instance},
 	};
 
 	type TestPoseidonChip = PoseidonChip<Fr, 5, Params>;
@@ -353,6 +351,7 @@ mod test {
 		results: Column<Instance>,
 	}
 
+	#[derive(Clone)]
 	struct PoseidonTester {
 		inputs: [Value<Fr>; 5],
 	}
@@ -408,7 +407,7 @@ mod test {
 
 			let poseidon = TestPoseidonChip::new(init_state);
 			let result_state =
-				poseidon.synthesize(config.poseidon_config, layouter.namespace(|| "poseidon"))?;
+				poseidon.synthesize(&config.poseidon_config, layouter.namespace(|| "poseidon"))?;
 			for i in 0..5 {
 				layouter.constrain_instance(result_state[i].cell(), config.results, i)?;
 			}
