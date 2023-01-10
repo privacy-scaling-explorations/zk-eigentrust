@@ -158,7 +158,7 @@ impl Query {
 
 static MANAGER_STORE: Lazy<Arc<Mutex<Manager>>> = Lazy::new(|| {
 	let mut rng = thread_rng();
-	let params = ParamsKZG::new(13);
+	let params = ParamsKZG::new(14);
 	let random_circuit =
 		EigenTrust::<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, SCALE>::random(&mut rng);
 	let proving_key = keygen(&params, random_circuit).unwrap();
@@ -327,7 +327,7 @@ mod test {
 	#[tokio::test]
 	async fn should_fail_without_query() {
 		let mut rng = thread_rng();
-		let params = ParamsKZG::new(13);
+		let params = ParamsKZG::new(14);
 		let random_circuit =
 			EigenTrust::<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, SCALE>::random(&mut rng);
 		let proving_key = keygen(&params, random_circuit).unwrap();
@@ -346,7 +346,7 @@ mod test {
 	#[tokio::test]
 	async fn should_fail_with_wrong_public_key() {
 		let mut rng = thread_rng();
-		let params = ParamsKZG::new(13);
+		let params = ParamsKZG::new(14);
 		let random_circuit =
 			EigenTrust::<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, SCALE>::random(&mut rng);
 		let proving_key = keygen(&params, random_circuit).unwrap();
@@ -367,7 +367,7 @@ mod test {
 	#[tokio::test]
 	async fn should_fail_with_wrong_epoch() {
 		let mut rng = thread_rng();
-		let params = ParamsKZG::new(13);
+		let params = ParamsKZG::new(14);
 		let random_circuit =
 			EigenTrust::<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, SCALE>::random(&mut rng);
 		let proving_key = keygen(&params, random_circuit).unwrap();
@@ -388,7 +388,7 @@ mod test {
 	#[tokio::test]
 	async fn should_fail_with_incomplete_query() {
 		let mut rng = thread_rng();
-		let params = ParamsKZG::new(13);
+		let params = ParamsKZG::new(14);
 		let random_circuit =
 			EigenTrust::<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, SCALE>::random(&mut rng);
 		let proving_key = keygen(&params, random_circuit).unwrap();
@@ -407,7 +407,7 @@ mod test {
 	#[tokio::test]
 	async fn should_fail_if_route_is_not_found() {
 		let mut rng = thread_rng();
-		let params = ParamsKZG::new(13);
+		let params = ParamsKZG::new(14);
 		let random_circuit =
 			EigenTrust::<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, SCALE>::random(&mut rng);
 		let proving_key = keygen(&params, random_circuit).unwrap();
@@ -426,7 +426,7 @@ mod test {
 	#[tokio::test]
 	async fn should_query_score() {
 		let mut rng = thread_rng();
-		let params = ParamsKZG::new(13);
+		let params = ParamsKZG::new(14);
 		let random_circuit =
 			EigenTrust::<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, SCALE>::random(&mut rng);
 		let proving_key = keygen(&params, random_circuit).unwrap();
@@ -451,7 +451,7 @@ mod test {
 	#[tokio::test]
 	async fn should_fail_attestation_add_with_invalid_data() {
 		let mut rng = thread_rng();
-		let params = ParamsKZG::new(13);
+		let params = ParamsKZG::new(14);
 		let random_circuit =
 			EigenTrust::<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, SCALE>::random(&mut rng);
 		let proving_key = keygen(&params, random_circuit).unwrap();
@@ -480,7 +480,7 @@ mod test {
 	#[tokio::test]
 	async fn should_add_attestation() {
 		let mut rng = thread_rng();
-		let params = ParamsKZG::new(13);
+		let params = ParamsKZG::new(14);
 		let random_circuit =
 			EigenTrust::<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, SCALE>::random(&mut rng);
 		let proving_key = keygen(&params, random_circuit).unwrap();
