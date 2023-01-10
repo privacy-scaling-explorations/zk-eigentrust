@@ -183,8 +183,7 @@ mod test {
 	use super::{AbsorbChip, PoseidonSpongeChipset, PoseidonSpongeConfig};
 	use crate::{
 		poseidon::{
-			native::sponge::PoseidonSponge, FullRoundChip, PartialRoundChip, PoseidonChipset,
-			PoseidonConfig,
+			native::sponge::PoseidonSponge, FullRoundChip, PartialRoundChip, PoseidonConfig,
 		},
 		Chip, Chipset, CommonChip, CommonConfig,
 	};
@@ -195,7 +194,7 @@ mod test {
 		circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner, Value},
 		dev::MockProver,
 		halo2curves::bn256::Fr,
-		plonk::{Circuit, Column, ConstraintSystem, Error, Instance},
+		plonk::{Circuit, ConstraintSystem, Error},
 	};
 
 	type TestPoseidonSponge = PoseidonSponge<Fr, 5, Params>;

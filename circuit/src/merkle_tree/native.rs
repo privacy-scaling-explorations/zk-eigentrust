@@ -92,7 +92,7 @@ where
 			}
 			value_index = value_index / 2;
 		}
-		path_arr[merkle_tree.height][0] = merkle_tree.nodes[&merkle_tree.height][0];
+		path_arr[merkle_tree.height][0] = merkle_tree.root;
 		Self { value, path_arr, _params: PhantomData }
 	}
 

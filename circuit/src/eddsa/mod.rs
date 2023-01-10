@@ -255,7 +255,7 @@ mod test {
 			bn256::{Bn256, Fr},
 			group::ff::PrimeField,
 		},
-		plonk::{Advice, Circuit, Column, ConstraintSystem, Error},
+		plonk::{Circuit, ConstraintSystem, Error},
 	};
 	use rand::thread_rng;
 
@@ -325,7 +325,7 @@ mod test {
 		) -> Result<(), Error> {
 			let (big_r_x, big_r_y, s, pk_x, pk_y, m) = layouter.assign_region(
 				|| "temp",
-				|mut region: Region<'_, Fr>| {
+				|region: Region<'_, Fr>| {
 					let mut region_ctx = RegionCtx::new(region, 0);
 
 					let big_r_x_assigned = region_ctx

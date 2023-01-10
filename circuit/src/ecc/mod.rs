@@ -117,7 +117,6 @@ where
 
 	/// Make the circuit config.
 	pub fn configure(meta: &mut ConstraintSystem<N>) -> EccConfig<NUM_LIMBS> {
-		const BITS: usize = 256;
 		let integer = IntegerChip::<W, N, NUM_LIMBS, NUM_BITS, P>::configure(meta);
 		let common = CommonChip::<N>::configure(meta);
 		let bits2num_selector = Bits2NumChip::configure(&common, meta);

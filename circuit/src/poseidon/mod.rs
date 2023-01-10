@@ -361,12 +361,11 @@ mod test {
 		circuit::{Layouter, SimpleFloorPlanner},
 		dev::MockProver,
 		halo2curves::bn256::{Bn256, Fr},
-		plonk::{Circuit, Column, ConstraintSystem, Error, Instance},
+		plonk::{Circuit, ConstraintSystem, Error},
 	};
 
 	type FrChip = FullRoundChip<Fr, 5, Params>;
 	type PrChip = PartialRoundChip<Fr, 5, Params>;
-	type PoseidonHasherChipset = PoseidonChipset<Fr, 5, Params>;
 
 	#[derive(Clone)]
 	struct PoseidonTesterConfig {

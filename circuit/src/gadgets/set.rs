@@ -174,7 +174,7 @@ mod test {
 		circuit::{SimpleFloorPlanner, Value},
 		dev::MockProver,
 		halo2curves::bn256::{Bn256, Fr},
-		plonk::{Circuit, Instance},
+		plonk::Circuit,
 	};
 
 	#[derive(Clone)]

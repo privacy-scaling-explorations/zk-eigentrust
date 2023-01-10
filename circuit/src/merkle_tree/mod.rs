@@ -5,12 +5,12 @@ use crate::{
 	gadgets::set::{SetChipset, SetConfig},
 	params::RoundParams,
 	poseidon::{PoseidonChipset, PoseidonConfig},
-	Chip, Chipset, CommonConfig, RegionCtx,
+	Chipset, CommonConfig, RegionCtx,
 };
 use halo2::{
 	circuit::{AssignedCell, Layouter, Region},
 	halo2curves::FieldExt,
-	plonk::{Advice, Column, ConstraintSystem, Error},
+	plonk::Error,
 };
 use std::marker::PhantomData;
 
@@ -116,14 +116,14 @@ mod test {
 		params::poseidon_bn254_5x5::Params,
 		poseidon::{FullRoundChip, PartialRoundChip},
 		utils::{generate_params, prove_and_verify},
-		CommonChip, CommonConfig,
+		Chip, CommonChip, CommonConfig,
 	};
 	use halo2::{
 		arithmetic::Field,
 		circuit::{SimpleFloorPlanner, Value},
 		dev::MockProver,
 		halo2curves::bn256::{Bn256, Fr},
-		plonk::{Circuit, Instance},
+		plonk::{Circuit, ConstraintSystem},
 	};
 	use rand::thread_rng;
 
