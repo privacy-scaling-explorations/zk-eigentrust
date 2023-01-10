@@ -20,11 +20,14 @@ use halo2::{
 	plonk::{ConstraintSystem, Error},
 };
 
+/// Structure for the AssignedPoint.
 struct AssignedPoint<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
 where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 {
+	// x coordinate of the point
 	x: AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
+	// y coordinate of the point
 	y: AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
 }
 
@@ -41,24 +44,29 @@ where
 		AssignedPoint { x, y }
 	}
 
-	/// Returns $x$ coordinate
+	/// Returns `x` coordinate
 	pub fn x(&self) -> AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P> {
 		self.x.clone()
 	}
 
-	/// Returns $y$ coordinate
+	/// Returns `y` coordinate
 	pub fn y(&self) -> AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P> {
 		self.y.clone()
 	}
 }
 
 #[derive(Debug, Clone)]
+/// Configuration elements for the circuit are defined here.
 struct EccConfig<const NUM_LIMBS: usize> {
+	/// Constructs bits2num circuit elements.
 	bits2num: Bits2NumConfig,
+	/// Constructs integer circuit elements.
 	integer: IntegerConfig<NUM_LIMBS>,
+	/// Constructs common circuit elements.
 	common: CommonConfig,
 }
 
+/// Constructs a chip for the circuit.
 struct EccChip<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
 where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
@@ -84,6 +92,7 @@ where
 		EccConfig { bits2num, integer, common }
 	}
 
+	/// Adds two variable after the reduce operation
 	pub fn add_reduced(
 		// Assigned point p
 		p: AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
@@ -146,6 +155,7 @@ where
 		Ok(point)
 	}
 
+	/// Adds two variables without reduce operation
 	pub fn add_unreduced(
 		// Assigned point p
 		p: AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
@@ -158,24 +168,14 @@ where
 		// Layouter
 		mut layouter: impl Layouter<N>,
 	) -> Result<AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>, Error> {
-		// Assign a region where we use columns from Integer chip
-		// sub selector - row 0
-		// sub selector - row 2
-		// div selector - row 4
-		// mul selector - row 5
-		// sub selector - row 6
-		// sub selector - row 7
-		// sub selector - row 8
-		// mul selector - row 9
-		// sub selector - row 10
 		layouter.assign_region(
 			|| "elliptic_add_operation",
 			|mut region: Region<'_, N>| {
 				// numerator = other.y.sub(&self.y);
 				config.integer.sub_selector.enable(&mut region, 0)?;
 				let numerator = IntegerChip::assign(
-					Some(&q.y.integer),
-					&p.y.integer,
+					Some(&q.y().integer),
+					&p.y().integer,
 					&reduction_witnesses[0],
 					&config.integer,
 					&mut region,
@@ -186,8 +186,8 @@ where
 				// denominator = other.x.sub(&self.x);
 				config.integer.sub_selector.enable(&mut region, 2)?;
 				let denominator = IntegerChip::assign(
-					Some(&q.x.integer),
-					&p.x.integer,
+					Some(&q.x().integer),
+					&p.x().integer,
 					&reduction_witnesses[1],
 					&config.integer,
 					&mut region,
@@ -217,21 +217,31 @@ where
 				// m_squared_minus_p_x = m_squared.result.sub(&self.x)
 				config.integer.sub_selector.enable(&mut region, 6)?;
 				let _m_squared_minus_p_x = IntegerChip::assign(
-					None, &p.x.integer, &reduction_witnesses[4], &config.integer, &mut region, 6,
+					None,
+					&p.x().integer,
+					&reduction_witnesses[4],
+					&config.integer,
+					&mut region,
+					6,
 				)
 				.unwrap();
 
 				// r_x = m_squared_minus_p_x.result.sub(&other.x)
 				config.integer.sub_selector.enable(&mut region, 7)?;
 				let r_x = IntegerChip::assign(
-					None, &q.x.integer, &reduction_witnesses[5], &config.integer, &mut region, 7,
+					None,
+					&q.x().integer,
+					&reduction_witnesses[5],
+					&config.integer,
+					&mut region,
+					7,
 				)
 				.unwrap();
 
 				// r_x_minus_p_x = self.x.sub(&r_x.result);
 				config.integer.sub_selector.enable(&mut region, 9)?;
 				let r_x_minus_p_x = IntegerChip::assign(
-					Some(&p.x.integer),
+					Some(&p.x().integer),
 					&r_x,
 					&reduction_witnesses[6],
 					&config.integer,
@@ -255,7 +265,12 @@ where
 				// r_y = m_times_r_x_minus_p_x.result.sub(&self.y)
 				config.integer.sub_selector.enable(&mut region, 12)?;
 				let r_y = IntegerChip::assign(
-					None, &p.y.integer, &reduction_witnesses[8], &config.integer, &mut region, 12,
+					None,
+					&p.y().integer,
+					&reduction_witnesses[8],
+					&config.integer,
+					&mut region,
+					12,
 				)
 				.unwrap();
 
@@ -267,6 +282,7 @@ where
 		)
 	}
 
+	/// Doubles the variable after reduce operation
 	pub fn double_reduced(
 		// Assigned point p
 		p: AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
@@ -306,6 +322,7 @@ where
 		Ok(point)
 	}
 
+	/// Doubles the variable without reduce operation
 	pub fn double_unreduced(
 		p: AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
 		// Reduction witnesses for double operation
@@ -315,16 +332,6 @@ where
 		// Layouter
 		mut layouter: impl Layouter<N>,
 	) -> Result<AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>, Error> {
-		// add selector - row 0
-		// mul selector - row 1
-		// mul3 selector - row 2
-		// div selector - row 3
-		// add selector - row 4
-		// mul selector - row 5
-		// sub selector - row 6
-		// sub selector - row 7
-		// mul selector - row 8
-		// sub selector - row 9
 		layouter.assign_region(
 			|| "elliptic_double_operation",
 			|mut region: Region<'_, N>| {
@@ -570,7 +577,7 @@ where
 
 #[cfg(test)]
 mod test {
-	use super::{EccChip, EccConfig};
+	use super::{AssignedPoint, EccChip, EccConfig};
 	use crate::{
 		ecc::native::EcPoint,
 		integer::{
@@ -590,9 +597,7 @@ mod test {
 	};
 	use num_bigint::BigUint;
 	use rand::thread_rng;
-
-	use super::{AssignedPoint, EccChip, EccConfig};
-
+	use std::str::FromStr;
 
 	#[derive(Clone)]
 	enum Gadgets {
@@ -695,10 +700,6 @@ mod test {
 			let value = layouter.assign_region(
 				|| "scalar_mul_values",
 				|mut region: Region<'_, N>| {
-					let mut zero_limbs: [Option<AssignedCell<N, N>>; NUM_LIMBS] =
-						[(); NUM_LIMBS].map(|_| None);
-					let mut one_limbs: [Option<AssignedCell<N, N>>; NUM_LIMBS] =
-						[(); NUM_LIMBS].map(|_| None);
 					let value = region.assign_advice(
 						|| "value",
 						config.temp,

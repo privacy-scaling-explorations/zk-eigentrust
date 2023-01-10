@@ -334,7 +334,7 @@ where
 }
 
 #[derive(Debug, Clone)]
-///Assigned Integer
+/// Structure for the `AssignedInteger`.
 pub struct AssignedInteger<
 	W: FieldExt,
 	N: FieldExt,
@@ -344,7 +344,9 @@ pub struct AssignedInteger<
 > where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 {
+	// Limbs of the assigned integer
 	pub(crate) integer: [AssignedCell<N, N>; NUM_LIMBS],
+	// Reduction witness of the integer
 	pub(crate) rw: ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>,
 }
 
