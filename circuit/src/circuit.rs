@@ -1,50 +1,58 @@
 use crate::{
 	eddsa::{
 		native::{sign, PublicKey, SecretKey, Signature},
-		EddsaChip, EddsaConfig,
+		EddsaChipset, EddsaConfig,
 	},
-	edwards::params::{BabyJubJub, EdwardsParams},
+	edwards::{
+		params::{BabyJubJub, EdwardsParams},
+		IntoAffineChip, PointAddChip, ScalarMulChip, StrictScalarMulConfig,
+	},
 	gadgets::{
-		bits2num::to_bits,
-		common::{CommonChip, CommonConfig},
-		lt_eq::N_SHIFTED,
+		bits2num::{to_bits, Bits2NumChip},
+		common::{AddChip, IsZeroChip, MulChip},
+		lt_eq::{LessEqualConfig, NShiftedChip, N_SHIFTED},
 	},
 	params::poseidon_bn254_5x5::Params,
 	poseidon::{
 		native::{sponge::PoseidonSponge, Poseidon},
-		sponge::{PoseidonSpongeChip, PoseidonSpongeConfig},
-		PoseidonChip,
+		sponge::{AbsorbChip, PoseidonSpongeChipset, PoseidonSpongeConfig},
+		FullRoundChip, PartialRoundChip, PoseidonChipset, PoseidonConfig,
 	},
-	RegionCtx,
+	Chip, Chipset, CommonChip, CommonConfig, RegionCtx,
 };
 use halo2::{
 	arithmetic::Field,
 	circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner, Value},
 	halo2curves::{bn256::Fr as Scalar, FieldExt},
-	plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Fixed, Instance},
+	plonk::{Circuit, ConstraintSystem, Error, Selector},
 };
 use rand::Rng;
 
+const HASHER_WIDTH: usize = 5;
 /// Type alias for the native poseidon hasher with a width of 5 and bn254 params
-pub type PoseidonNativeHasher = Poseidon<Scalar, 5, Params>;
+pub type PoseidonNativeHasher = Poseidon<Scalar, HASHER_WIDTH, Params>;
 /// Type alias for native poseidon sponge with a width of 5 and bn254 params
-pub type PoseidonNativeSponge = PoseidonSponge<Scalar, 5, Params>;
+pub type PoseidonNativeSponge = PoseidonSponge<Scalar, HASHER_WIDTH, Params>;
 /// Type alias for the poseidon hasher chip with a width of 5 and bn254 params
-pub type PoseidonHasher = PoseidonChip<Scalar, 5, Params>;
+pub type PoseidonHasher = PoseidonChipset<Scalar, HASHER_WIDTH, Params>;
+/// Partial rounds of permulation chip
+type PartialRoundHasher = PartialRoundChip<Scalar, HASHER_WIDTH, Params>;
+/// Full rounds of permuation chip
+type FullRoundHasher = FullRoundChip<Scalar, HASHER_WIDTH, Params>;
 /// Type alias for the poseidon spong chip with a width of 5 and bn254 params
-pub type SpongeHasher = PoseidonSpongeChip<Scalar, 5, Params>;
+pub type SpongeHasher = PoseidonSpongeChipset<Scalar, HASHER_WIDTH, Params>;
 /// Type alias for Eddsa chip on BabyJubJub elliptic curve
-type Eddsa = EddsaChip<Scalar, BabyJubJub, Params>;
+type Eddsa = EddsaChipset<Scalar, BabyJubJub, Params>;
 
 #[derive(Clone, Debug)]
 /// The columns config for the main circuit.
 pub struct EigenTrustConfig {
 	common: CommonConfig,
+	sponge: PoseidonSpongeConfig,
+	poseidon: PoseidonConfig,
 	eddsa: EddsaConfig,
-	sponge: PoseidonSpongeConfig<5>,
-	temp: Column<Advice>,
-	fixed: Column<Fixed>,
-	instance: Column<Instance>,
+	add_selector: Selector,
+	mul_selector: Selector,
 }
 
 #[derive(Clone)]
@@ -165,18 +173,38 @@ impl<
 	}
 
 	fn configure(meta: &mut ConstraintSystem<Scalar>) -> EigenTrustConfig {
-		let common = CommonChip::configure(meta);
-		let eddsa = Eddsa::configure(meta);
-		let sponge = SpongeHasher::configure(meta);
-		let temp = meta.advice_column();
-		let fixed = meta.fixed_column();
-		let instance = meta.instance_column();
+		let common = CommonChip::<Scalar>::configure(meta);
 
-		meta.enable_equality(temp);
-		meta.enable_equality(fixed);
-		meta.enable_equality(instance);
+		let full_round_selector = FullRoundHasher::configure(&common, meta);
+		let partial_round_selector = PartialRoundHasher::configure(&common, meta);
+		let poseidon = PoseidonConfig::new(full_round_selector, partial_round_selector);
 
-		EigenTrustConfig { common, eddsa, sponge, temp, fixed, instance }
+		let absorb_selector = AbsorbChip::<Scalar, HASHER_WIDTH>::configure(&common, meta);
+		let sponge = PoseidonSpongeConfig::new(poseidon.clone(), absorb_selector);
+
+		let bits2num_selector = Bits2NumChip::configure(&common, meta);
+		let n_shifted_selector = NShiftedChip::configure(&common, meta);
+		let is_zero_selector = IsZeroChip::configure(&common, meta);
+		let lt_eq = LessEqualConfig::new(bits2num_selector, n_shifted_selector, is_zero_selector);
+
+		let scalar_mul_selector = ScalarMulChip::<_, BabyJubJub>::configure(&common, meta);
+		let strict_scalar_mul = StrictScalarMulConfig::new(bits2num_selector, scalar_mul_selector);
+
+		let add_point_selector = PointAddChip::<_, BabyJubJub>::configure(&common, meta);
+		let affine_selector = IntoAffineChip::configure(&common, meta);
+
+		let eddsa = EddsaConfig::new(
+			poseidon.clone(),
+			lt_eq,
+			strict_scalar_mul,
+			add_point_selector,
+			affine_selector,
+		);
+
+		let add_selector = AddChip::configure(&common, meta);
+		let mul_selector = MulChip::configure(&common, meta);
+
+		EigenTrustConfig { common, eddsa, sponge, poseidon, add_selector, mul_selector }
 	}
 
 	fn synthesize(
@@ -187,50 +215,51 @@ impl<
 				|| "temp",
 				|region: Region<'_, Scalar>| {
 					let mut ctx = RegionCtx::new(region, 0);
-					let zero_fixed = ctx.assign_fixed(config.fixed, Scalar::zero())?;
-					let zero = ctx.assign_advice(config.temp, Value::known(Scalar::zero()))?;
+					let zero_fixed = ctx.assign_fixed(config.common.fixed[0], Scalar::zero())?;
+					let zero =
+						ctx.assign_advice(config.common.advice[0], Value::known(Scalar::zero()))?;
 					ctx.constrain_equal(zero_fixed, zero.clone())?;
 					ctx.next();
 					let assigned_pk_x = self.pk_x.try_map(|v| {
-						let val = ctx.assign_advice(config.temp, v);
+						let val = ctx.assign_advice(config.common.advice[0], v);
 						ctx.next();
 						val
 					})?;
 					let assigned_pk_y = self.pk_y.try_map(|v| {
-						let val = ctx.assign_advice(config.temp, v);
+						let val = ctx.assign_advice(config.common.advice[0], v);
 						ctx.next();
 						val
 					})?;
 					let assigned_big_r_x = self.big_r_x.try_map(|v| {
-						let val = ctx.assign_advice(config.temp, v);
+						let val = ctx.assign_advice(config.common.advice[0], v);
 						ctx.next();
 						val
 					})?;
 					let assigned_big_r_y = self.big_r_y.try_map(|v| {
-						let val = ctx.assign_advice(config.temp, v);
+						let val = ctx.assign_advice(config.common.advice[0], v);
 						ctx.next();
 						val
 					})?;
 					let assigned_s = self.s.try_map(|v| {
-						let val = ctx.assign_advice(config.temp, v);
+						let val = ctx.assign_advice(config.common.advice[0], v);
 						ctx.next();
 						val
 					})?;
 					let scale_fixed = ctx.assign_fixed(
-						config.fixed,
+						config.common.fixed[0],
 						Scalar::from_u128(SCALE.pow(NUM_ITER as u32)),
 					)?;
 					let scale = ctx.assign_advice(
-						config.temp,
+						config.common.advice[0],
 						Value::known(Scalar::from_u128(SCALE.pow(NUM_ITER as u32))),
 					)?;
 					ctx.constrain_equal(scale_fixed, scale.clone())?;
 					ctx.next();
 
 					let initial_score_fixed =
-						ctx.assign_fixed(config.fixed, Scalar::from_u128(INITIAL_SCORE))?;
+						ctx.assign_fixed(config.common.fixed[0], Scalar::from_u128(INITIAL_SCORE))?;
 					let assigned_initial_score = ctx.assign_advice(
-						config.temp,
+						config.common.advice[0],
 						Value::known(Scalar::from_u128(INITIAL_SCORE)),
 					)?;
 					ctx.constrain_equal(initial_score_fixed, assigned_initial_score.clone())?;
@@ -238,7 +267,7 @@ impl<
 
 					let assigned_ops = self.ops.try_map(|vs| {
 						vs.try_map(|v| {
-							let val = ctx.assign_advice(config.temp, v);
+							let val = ctx.assign_advice(config.common.advice[0], v);
 							ctx.next();
 							val
 						})
@@ -248,7 +277,9 @@ impl<
 						[(); NUM_NEIGHBOURS].map(|_| None);
 
 					for i in 0..NUM_NEIGHBOURS {
-						let ps = ctx.assign_from_instance(config.temp, config.instance, i)?;
+						let ps = ctx.assign_from_instance(
+							config.common.advice[0], config.common.instance, i,
+						)?;
 						passed_s[i] = Some(ps);
 						ctx.next();
 					}
@@ -265,13 +296,19 @@ impl<
 		let mut pk_sponge = SpongeHasher::new();
 		pk_sponge.update(&pk_x);
 		pk_sponge.update(&pk_y);
-		let keys_message_hash =
-			pk_sponge.squeeze(&config.sponge, layouter.namespace(|| "keys_sponge"))?;
+		let keys_message_hash = pk_sponge.synthesize(
+			&config.common,
+			&config.sponge,
+			layouter.namespace(|| "keys_sponge"),
+		)?;
 		for i in 0..NUM_NEIGHBOURS {
 			let mut scores_sponge = SpongeHasher::new();
 			scores_sponge.update(&ops[i]);
-			let scores_message_hash =
-				scores_sponge.squeeze(&config.sponge, layouter.namespace(|| "scores_sponge"))?;
+			let scores_message_hash = scores_sponge.synthesize(
+				&config.common,
+				&config.sponge,
+				layouter.namespace(|| "scores_sponge"),
+			)?;
 			let message_hash_input = [
 				keys_message_hash.clone(),
 				scores_message_hash,
@@ -281,7 +318,8 @@ impl<
 			];
 			let poseidon = PoseidonHasher::new(message_hash_input);
 			let res = poseidon.synthesize(
-				&config.sponge.poseidon_config,
+				&config.common,
+				&config.poseidon,
 				layouter.namespace(|| "message_hash"),
 			)?;
 
@@ -297,7 +335,11 @@ impl<
 				self.s_suborder_diff_bits[i],
 				self.m_hash_bits[i],
 			);
-			eddsa.synthesize(&config.eddsa, layouter.namespace(|| "eddsa"))?;
+			eddsa.synthesize(
+				&config.common,
+				&config.eddsa,
+				layouter.namespace(|| "eddsa"),
+			)?;
 		}
 
 		let mut s = [(); NUM_NEIGHBOURS].map(|_| init_score.clone());
@@ -308,10 +350,10 @@ impl<
 			for j in 0..NUM_NEIGHBOURS {
 				let op_j = ops[j].clone();
 				distributions[j] = op_j.try_map(|v| {
-					CommonChip::mul(
-						v,
-						s[j].clone(),
+					let mul_chip = MulChip::new(v, s[j].clone());
+					mul_chip.synthesize(
 						&config.common,
+						&config.mul_selector,
 						layouter.namespace(|| "op_mul"),
 					)
 				})?;
@@ -320,10 +362,10 @@ impl<
 			let mut new_s = [(); NUM_NEIGHBOURS].map(|_| zero.clone());
 			for i in 0..NUM_NEIGHBOURS {
 				for j in 0..NUM_NEIGHBOURS {
-					new_s[i] = CommonChip::add(
-						new_s[i].clone(),
-						distributions[j][i].clone(),
+					let add_chip = AddChip::new(new_s[i].clone(), distributions[j][i].clone());
+					new_s[i] = add_chip.synthesize(
 						&config.common,
+						&config.add_selector,
 						layouter.namespace(|| "op_add"),
 					)?;
 				}
@@ -334,10 +376,10 @@ impl<
 
 		let mut passed_scaled = [(); NUM_NEIGHBOURS].map(|_| zero.clone());
 		for i in 0..NUM_NEIGHBOURS {
-			passed_scaled[i] = CommonChip::mul(
-				passed_s[i].clone(),
-				scale.clone(),
+			let mul_chip = MulChip::new(passed_s[i].clone(), scale.clone());
+			passed_scaled[i] = mul_chip.synthesize(
 				&config.common,
+				&config.mul_selector,
 				layouter.namespace(|| "op_mul"),
 			)?;
 		}
@@ -347,11 +389,11 @@ impl<
 			|region: Region<'_, Scalar>| {
 				let ctx = &mut RegionCtx::new(region, 0);
 				for i in 0..NUM_NEIGHBOURS {
-					let passed_s = ctx.copy_assign(config.temp, passed_scaled[i].clone())?;
-					ctx.next();
-					let s = ctx.copy_assign(config.temp, s[i].clone())?;
-					ctx.next();
+					let passed_s =
+						ctx.copy_assign(config.common.advice[0], passed_scaled[i].clone())?;
+					let s = ctx.copy_assign(config.common.advice[1], s[i].clone())?;
 					ctx.constrain_equal(passed_s, s)?;
+					ctx.next();
 				}
 				Ok(())
 			},
@@ -458,7 +500,7 @@ mod test {
 			.zip(messages)
 			.map(|((sk, pk), msg)| sign(&sk, &pk, msg));
 
-		let k = 13;
+		let k = 14;
 		let et = EigenTrust::<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, SCALE>::new(
 			pub_keys, signatures, ops, messages,
 		);
@@ -522,7 +564,7 @@ mod test {
 			.zip(messages)
 			.map(|((sk, pk), msg)| sign(&sk, &pk, msg));
 
-		let k = 13;
+		let k = 14;
 		let et = EigenTrust::<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, SCALE>::new(
 			pub_keys, signatures, ops, messages,
 		);

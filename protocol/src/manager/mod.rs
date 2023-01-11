@@ -217,7 +217,7 @@ mod test {
 	#[test]
 	fn should_calculate_proof() {
 		let mut rng = thread_rng();
-		let params = ParamsKZG::new(13);
+		let params = ParamsKZG::new(14);
 		let random_circuit =
 			EigenTrust::<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, SCALE>::random(&mut rng);
 		let proving_key = keygen(&params, random_circuit).unwrap();

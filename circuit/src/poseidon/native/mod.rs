@@ -35,7 +35,6 @@ where
 		let full_rounds = P::full_rounds();
 		let half_full_rounds = full_rounds / 2;
 		let partial_rounds = P::partial_rounds();
-		let mds = P::mds();
 		let round_constants = P::round_constants();
 		let total_count = P::round_constants_count();
 
@@ -61,7 +60,7 @@ where
 			}
 			// 3. step for the TRF.
 			// MixLayer step.
-			state = P::apply_mds(&state, &mds);
+			state = P::apply_mds(&state);
 		}
 
 		for round in 0..partial_rounds {
@@ -75,7 +74,7 @@ where
 			state[0] = P::sbox_f(state[0]);
 			// 3. step for the TRF.
 			// MixLayer step.
-			state = P::apply_mds(&state, &mds);
+			state = P::apply_mds(&state);
 		}
 
 		for round in 0..half_full_rounds {
@@ -91,7 +90,7 @@ where
 			}
 			// 3. step for the TRF.
 			// MixLayer step.
-			state = P::apply_mds(&state, &mds);
+			state = P::apply_mds(&state);
 		}
 
 		state

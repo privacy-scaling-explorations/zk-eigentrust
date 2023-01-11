@@ -1,9 +1,12 @@
+use crate::Chip;
 use halo2::{
 	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region, Value},
-	plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
+	plonk::{ConstraintSystem, Error, Expression, Selector},
 	poly::Rotation,
 };
+
+use crate::CommonConfig;
 
 /// Converts given bytes to the bits.
 pub fn to_bits<const B: usize>(num: [u8; 32]) -> [bool; B] {
@@ -14,58 +17,41 @@ pub fn to_bits<const B: usize>(num: [u8; 32]) -> [bool; B] {
 	bits
 }
 
-/// Configuration elements for the circuit defined here.
-#[derive(Debug, Clone, Copy)]
-pub struct Bits2NumConfig {
-	/// Configures a column for the bits.
-	pub bits: Column<Advice>,
-	/// Configures a column for the lc1.
-	lc1: Column<Advice>,
-	/// Configures a column for the e2.
-	e2: Column<Advice>,
-	/// Configures a fixed boolean value for each row of the circuit.
-	selector: Selector,
-}
-
 /// Constructs a cell and a variable for the circuit.
 #[derive(Clone)]
-pub struct Bits2NumChip<F: FieldExt, const B: usize> {
+pub struct Bits2NumChip<F: FieldExt> {
 	/// Assigns a cell for the value.
 	value: AssignedCell<F, F>,
 	/// Constructs bits variable for the circuit.
-	bits: [Value<F>; B],
+	bits: Vec<Value<F>>,
 }
 
-impl<F: FieldExt, const B: usize> Bits2NumChip<F, B> {
+impl<F: FieldExt> Bits2NumChip<F> {
 	/// Create a new chip.
-	pub fn new(value: AssignedCell<F, F>, bits: [F; B]) -> Self {
-		Self { value, bits: bits.map(|b| Value::known(b)) }
+	pub fn new(value: AssignedCell<F, F>, bits: Vec<F>) -> Self {
+		let bit_vals = bits.into_iter().map(Value::known).collect();
+		Self { value, bits: bit_vals }
 	}
+}
+
+impl<F: FieldExt> Chip<F> for Bits2NumChip<F> {
+	type Output = Vec<AssignedCell<F, F>>;
 
 	/// Make the circuit config.
-	pub fn configure(meta: &mut ConstraintSystem<F>) -> Bits2NumConfig {
-		let bits = meta.advice_column();
-		let lc1 = meta.advice_column();
-		let e2 = meta.advice_column();
-		let fixed = meta.fixed_column();
-		let s = meta.selector();
-
-		meta.enable_equality(bits);
-		meta.enable_equality(lc1);
-		meta.enable_equality(e2);
-		meta.enable_constant(fixed);
+	fn configure(common: &CommonConfig, meta: &mut ConstraintSystem<F>) -> Selector {
+		let selector = meta.selector();
 
 		meta.create_gate("bits2num", |v_cells| {
 			let one_exp = Expression::Constant(F::one());
-			let bit_exp = v_cells.query_advice(bits, Rotation::cur());
+			let bit_exp = v_cells.query_advice(common.advice[0], Rotation::cur());
 
-			let e2_exp = v_cells.query_advice(e2, Rotation::cur());
-			let e2_next_exp = v_cells.query_advice(e2, Rotation::next());
+			let e2_exp = v_cells.query_advice(common.advice[1], Rotation::cur());
+			let e2_next_exp = v_cells.query_advice(common.advice[1], Rotation::next());
 
-			let lc1_exp = v_cells.query_advice(lc1, Rotation::cur());
-			let lc1_next_exp = v_cells.query_advice(lc1, Rotation::next());
+			let lc1_exp = v_cells.query_advice(common.advice[2], Rotation::cur());
+			let lc1_next_exp = v_cells.query_advice(common.advice[2], Rotation::next());
 
-			let s_exp = v_cells.query_selector(s);
+			let s_exp = v_cells.query_selector(selector);
 
 			vec![
 				// bit * (1 - bit) == 0
@@ -89,39 +75,44 @@ impl<F: FieldExt, const B: usize> Bits2NumChip<F, B> {
 			]
 		});
 
-		Bits2NumConfig { bits, lc1, e2, selector: s }
+		selector
 	}
 
 	/// Synthesize the circuit.
-	pub fn synthesize(
-		&self, config: &Bits2NumConfig, mut layouter: impl Layouter<F>,
-	) -> Result<[AssignedCell<F, F>; B], Error> {
+	fn synthesize(
+		self, common: &CommonConfig, selector: &Selector, mut layouter: impl Layouter<F>,
+	) -> Result<Self::Output, Error> {
 		layouter.assign_region(
 			|| "bits2num",
 			|mut region: Region<'_, F>| {
-				let mut lc1 =
-					region.assign_advice_from_constant(|| "lc1_0", config.lc1, 0, F::zero())?;
+				let mut lc1 = region.assign_advice_from_constant(
+					|| "lc1_0",
+					common.advice[2],
+					0,
+					F::zero(),
+				)?;
 				let mut e2 =
-					region.assign_advice_from_constant(|| "e2_0", config.e2, 0, F::one())?;
+					region.assign_advice_from_constant(|| "e2_0", common.advice[1], 0, F::one())?;
 
-				let mut bits: [Option<AssignedCell<F, F>>; B] = [(); B].map(|_| None);
+				let mut bits = Vec::new();
 				for i in 0..self.bits.len() {
-					config.selector.enable(&mut region, i)?;
+					selector.enable(&mut region, i)?;
 
-					let bit = region.assign_advice(|| "bits", config.bits, i, || self.bits[i])?;
-					bits[i] = Some(bit.clone());
+					let bit =
+						region.assign_advice(|| "bits", common.advice[0], i, || self.bits[i])?;
+					bits.push(bit.clone());
 
 					let next_lc1 =
 						lc1.value().cloned() + bit.value().cloned() * e2.value().cloned();
 					let next_e2 = e2.value().cloned() + e2.value();
 
-					lc1 = region.assign_advice(|| "lc1", config.lc1, i + 1, || next_lc1)?;
-					e2 = region.assign_advice(|| "e2", config.e2, i + 1, || next_e2)?;
+					e2 = region.assign_advice(|| "e2", common.advice[1], i + 1, || next_e2)?;
+					lc1 = region.assign_advice(|| "lc1", common.advice[2], i + 1, || next_lc1)?;
 				}
 
 				region.constrain_equal(self.value.cell(), lc1.cell())?;
 
-				Ok(bits.map(|b| b.unwrap()))
+				Ok(bits)
 			},
 		)
 	}
@@ -130,7 +121,10 @@ impl<F: FieldExt, const B: usize> Bits2NumChip<F, B> {
 #[cfg(test)]
 mod test {
 	use super::*;
-	use crate::utils::{generate_params, prove_and_verify};
+	use crate::{
+		utils::{generate_params, prove_and_verify},
+		CommonChip,
+	};
 	use halo2::{
 		circuit::SimpleFloorPlanner,
 		dev::MockProver,
@@ -140,8 +134,8 @@ mod test {
 
 	#[derive(Clone)]
 	struct TestConfig {
-		bits2num: Bits2NumConfig,
-		temp: Column<Advice>,
+		common: CommonConfig,
+		bits2num_selector: Selector,
 	}
 
 	#[derive(Clone)]
@@ -165,12 +159,10 @@ mod test {
 		}
 
 		fn configure(meta: &mut ConstraintSystem<Fr>) -> TestConfig {
-			let bits2num = Bits2NumChip::<_, 256>::configure(meta);
-			let temp = meta.advice_column();
+			let common = CommonChip::<Fr>::configure(meta);
+			let bits2num_selector = Bits2NumChip::configure(&common, meta);
 
-			meta.enable_equality(temp);
-
-			TestConfig { bits2num, temp }
+			TestConfig { common, bits2num_selector }
 		}
 
 		fn synthesize(
@@ -179,13 +171,22 @@ mod test {
 			let numba = layouter.assign_region(
 				|| "temp",
 				|mut region: Region<'_, Fr>| {
-					region.assign_advice(|| "temp_x", config.temp, 0, || Value::known(self.numba))
+					region.assign_advice(
+						|| "temp_x",
+						config.common.advice[0],
+						0,
+						|| Value::known(self.numba),
+					)
 				},
 			)?;
 
 			let bits = to_bits::<B>(self.bytes).map(|b| Fr::from(b));
-			let bits2num = Bits2NumChip::new(numba, bits);
-			let _ = bits2num.synthesize(&config.bits2num, layouter.namespace(|| "bits2num"))?;
+			let bits2num = Bits2NumChip::new(numba, bits.to_vec());
+			let _ = bits2num.synthesize(
+				&config.common,
+				&config.bits2num_selector,
+				layouter.namespace(|| "bits2num"),
+			)?;
 
 			Ok(())
 		}
@@ -202,7 +203,7 @@ mod test {
 
 		let circuit = TestCircuit::<256>::new(numba, numba_bytes);
 		let k = 9;
-		let prover = MockProver::run(k, &circuit, vec![]).unwrap();
+		let prover = MockProver::run(k, &circuit, vec![vec![]]).unwrap();
 
 		assert_eq!(prover.verify(), Ok(()));
 	}
@@ -218,7 +219,7 @@ mod test {
 
 		let circuit = TestCircuit::<256>::new(numba, numba_bytes);
 		let k = 9;
-		let prover = MockProver::run(k, &circuit, vec![]).unwrap();
+		let prover = MockProver::run(k, &circuit, vec![vec![]]).unwrap();
 
 		assert_eq!(prover.verify(), Ok(()));
 	}
@@ -233,7 +234,7 @@ mod test {
 
 		let circuit = TestCircuit::<256>::new(Fr::zero(), numba_bytes);
 		let k = 9;
-		let prover = MockProver::run(k, &circuit, vec![]).unwrap();
+		let prover = MockProver::run(k, &circuit, vec![vec![]]).unwrap();
 
 		assert_eq!(prover.verify(), Ok(()));
 	}
@@ -243,7 +244,7 @@ mod test {
 		// Testing zero as value with 0 bits.
 		let circuit = TestCircuit::<0>::new(Fr::zero(), [0; 32]);
 		let k = 9;
-		let prover = MockProver::run(k, &circuit, vec![]).unwrap();
+		let prover = MockProver::run(k, &circuit, vec![vec![]]).unwrap();
 
 		assert_eq!(prover.verify(), Ok(()));
 	}
@@ -253,7 +254,7 @@ mod test {
 		// Testing zero as value with 254 bits.
 		let circuit = TestCircuit::<254>::new(Fr::zero(), [0; 32]);
 		let k = 9;
-		let prover = MockProver::run(k, &circuit, vec![]).unwrap();
+		let prover = MockProver::run(k, &circuit, vec![vec![]]).unwrap();
 
 		assert_eq!(prover.verify(), Ok(()));
 	}
@@ -270,7 +271,7 @@ mod test {
 		let k = 9;
 		let rng = &mut rand::thread_rng();
 		let params = generate_params(k);
-		let res = prove_and_verify::<Bn256, _, _>(params, circuit, &[], rng).unwrap();
+		let res = prove_and_verify::<Bn256, _, _>(params, circuit, &[&[]], rng).unwrap();
 
 		assert!(res);
 	}

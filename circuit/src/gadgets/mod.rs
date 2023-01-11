@@ -6,5 +6,3 @@ pub mod common;
 pub mod lt_eq;
 /// Set membership gadget
 pub mod set;
-/// Sum of an array of values
-pub mod sum;
