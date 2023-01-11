@@ -1,4 +1,4 @@
-use crate::{Chip, Chipset, CommonConfig};
+use crate::{Chip, Chipset, CommonConfig, RegionCtx};
 use halo2::{
 	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region, Value},
@@ -54,15 +54,15 @@ impl<F: FieldExt> Chip<F> for MulChip<F> {
 	) -> Result<Self::Output, Error> {
 		layouter.assign_region(
 			|| "mul",
-			|mut region: Region<'_, F>| {
-				selector.enable(&mut region, 0)?;
+			|region: Region<'_, F>| {
+				let mut ctx = RegionCtx::new(region, 0);
+				ctx.enable(selector.clone())?;
 
-				let assigned_x = self.x.copy_advice(|| "x", &mut region, common.advice[0], 0)?;
-				let assigned_y = self.y.copy_advice(|| "y", &mut region, common.advice[1], 0)?;
+				let assigned_x = ctx.copy_assign(common.advice[0], self.x.clone())?;
+				let assigned_y = ctx.copy_assign(common.advice[1], self.y.clone())?;
 
 				let res = assigned_x.value().cloned() * assigned_y.value();
-
-				let res_assigned = region.assign_advice(|| "res", common.advice[2], 0, || res)?;
+				let res_assigned = ctx.assign_advice(common.advice[2], res)?;
 
 				Ok(res_assigned)
 			},
@@ -116,9 +116,10 @@ impl<F: FieldExt> Chip<F> for ConstrainBoolChip<F> {
 	) -> Result<Self::Output, Error> {
 		layouter.assign_region(
 			|| "constrain_boolean",
-			|mut region: Region<'_, F>| {
-				selector.enable(&mut region, 0)?;
-				self.x.copy_advice(|| "x", &mut region, common.advice[0], 0)?;
+			|region: Region<'_, F>| {
+				let mut ctx = RegionCtx::new(region, 0);
+				ctx.enable(selector.clone())?;
+				ctx.copy_assign(common.advice[0], self.x.clone())?;
 
 				Ok(())
 			},
@@ -178,8 +179,9 @@ impl<F: FieldExt> Chip<F> for IsZeroChip<F> {
 	) -> Result<Self::Output, Error> {
 		layouter.assign_region(
 			|| "is_zero",
-			|mut region: Region<'_, F>| {
-				selector.enable(&mut region, 0)?;
+			|region: Region<'_, F>| {
+				let mut ctx = RegionCtx::new(region, 0);
+				ctx.enable(selector.clone())?;
 
 				let one = Value::known(F::one());
 				let x_inv = self.x.value().and_then(|val| {
@@ -190,9 +192,9 @@ impl<F: FieldExt> Chip<F> for IsZeroChip<F> {
 				// If x = 1, means x_inv = 1 as well, b will be assigned to the value 0.
 				let b = one - self.x.value().cloned() * x_inv;
 
-				self.x.copy_advice(|| "x", &mut region, common.advice[0], 0)?;
-				region.assign_advice(|| "x_inv", common.advice[1], 0, || x_inv)?;
-				let assigned_b = region.assign_advice(|| "b", common.advice[2], 0, || b)?;
+				ctx.copy_assign(common.advice[0], self.x.clone())?;
+				ctx.assign_advice(common.advice[1], x_inv)?;
+				let assigned_b = ctx.assign_advice(common.advice[2], b)?;
 
 				Ok(assigned_b)
 			},
@@ -246,14 +248,15 @@ impl<F: FieldExt> Chip<F> for AddChip<F> {
 	) -> Result<Self::Output, Error> {
 		layouter.assign_region(
 			|| "add",
-			|mut region: Region<'_, F>| {
-				selector.enable(&mut region, 0)?;
-				let assigned_x = self.x.copy_advice(|| "x", &mut region, common.advice[0], 0)?;
-				let assigned_y = self.y.copy_advice(|| "y", &mut region, common.advice[1], 0)?;
+			|region: Region<'_, F>| {
+				let mut ctx = RegionCtx::new(region, 0);
+				ctx.enable(selector.clone())?;
+
+				let assigned_x = ctx.copy_assign(common.advice[0], self.x.clone())?;
+				let assigned_y = ctx.copy_assign(common.advice[1], self.y.clone())?;
 
 				let out = assigned_x.value().cloned() + assigned_y.value();
-
-				let out_assigned = region.assign_advice(|| "out", common.advice[2], 0, || out)?;
+				let out_assigned = ctx.assign_advice(common.advice[2], out)?;
 
 				Ok(out_assigned)
 			},
@@ -307,16 +310,16 @@ impl<F: FieldExt> Chip<F> for SubChip<F> {
 	) -> Result<Self::Output, Error> {
 		layouter.assign_region(
 			|| "sub",
-			|mut region: Region<'_, F>| {
-				selector.enable(&mut region, 0)?;
-				let assigned_lhs =
-					self.x.copy_advice(|| "lhs", &mut region, common.advice[0], 0)?;
-				let assigned_rhs =
-					self.y.copy_advice(|| "rhs", &mut region, common.advice[1], 0)?;
+			|region: Region<'_, F>| {
+				let mut ctx = RegionCtx::new(region, 0);
+				ctx.enable(selector.clone())?;
+
+				let assigned_lhs = ctx.copy_assign(common.advice[0], self.x.clone())?;
+				let assigned_rhs = ctx.copy_assign(common.advice[1], self.y.clone())?;
 
 				let out = assigned_lhs.value().cloned() - assigned_rhs.value();
+				let assigned_out = ctx.assign_advice(common.advice[2], out)?;
 
-				let assigned_out = region.assign_advice(|| "out", common.advice[2], 0, || out)?;
 				Ok(assigned_out)
 			},
 		)
@@ -379,13 +382,14 @@ impl<F: FieldExt> Chip<F> for SelectChip<F> {
 	) -> Result<Self::Output, Error> {
 		layouter.assign_region(
 			|| "select",
-			|mut region: Region<'_, F>| {
-				selector.enable(&mut region, 0)?;
+			|region: Region<'_, F>| {
+				let mut ctx = RegionCtx::new(region, 0);
+				ctx.enable(selector.clone())?;
 
-				let assigned_bit =
-					self.bit.copy_advice(|| "bit", &mut region, common.advice[0], 0)?;
-				let assigned_x = self.x.copy_advice(|| "x", &mut region, common.advice[1], 0)?;
-				let assigned_y = self.y.copy_advice(|| "y", &mut region, common.advice[2], 0)?;
+				let assigned_bit = ctx.copy_assign(common.advice[0], self.bit.clone())?;
+
+				let assigned_x = ctx.copy_assign(common.advice[1], self.x.clone())?;
+				let assigned_y = ctx.copy_assign(common.advice[2], self.y.clone())?;
 
 				// Conditional control checks the bit. Is it zero or not?
 				// If yes returns the y value, else x.
@@ -397,7 +401,7 @@ impl<F: FieldExt> Chip<F> for SelectChip<F> {
 					}
 				});
 
-				let assigned_res = region.assign_advice(|| "res", common.advice[3], 0, || res)?;
+				let assigned_res = ctx.assign_advice(common.advice[3], res)?;
 
 				Ok(assigned_res)
 			},
@@ -642,21 +646,20 @@ mod test {
 		fn synthesize(
 			&self, config: TestConfig, mut layouter: impl Layouter<F>,
 		) -> Result<(), Error> {
-			let mut items = Vec::new();
-			for i in 0..N {
-				items.push(layouter.assign_region(
-					|| "temp",
-					|mut region: Region<'_, F>| {
-						let x = region.assign_advice(
-							|| "temp_inputs",
-							config.common.advice[0],
-							i,
-							|| Value::known(self.inputs[i]),
-						)?;
-						Ok(x)
-					},
-				)?);
-			}
+			let items = layouter.assign_region(
+				|| "temp",
+				|region: Region<'_, F>| {
+					let mut ctx = RegionCtx::new(region, 0);
+					let mut items = Vec::new();
+					for i in 0..N {
+						let val = Value::known(self.inputs[i]);
+						let x = ctx.assign_advice(config.common.advice[0], val)?;
+						ctx.next();
+						items.push(x);
+					}
+					Ok(items)
+				},
+			)?;
 
 			match self.gadget {
 				Gadgets::And => {

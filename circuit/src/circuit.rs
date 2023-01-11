@@ -18,11 +18,11 @@ use crate::{
 		sponge::{AbsorbChip, PoseidonSpongeChipset, PoseidonSpongeConfig},
 		FullRoundChip, PartialRoundChip, PoseidonChipset, PoseidonConfig,
 	},
-	Chip, Chipset, CommonChip, CommonConfig, RegionCtx,
+	Chip, Chipset, CommonChip, CommonConfig, RegionCtx, ADVICE,
 };
 use halo2::{
 	arithmetic::Field,
-	circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner, Value},
+	circuit::{Layouter, Region, SimpleFloorPlanner, Value},
 	halo2curves::{bn256::Fr as Scalar, FieldExt},
 	plonk::{Circuit, ConstraintSystem, Error, Selector},
 };
@@ -64,19 +64,19 @@ pub struct EigenTrust<
 	const SCALE: u128,
 > {
 	// Public keys
-	pk_x: [Value<Scalar>; NUM_NEIGHBOURS],
-	pk_y: [Value<Scalar>; NUM_NEIGHBOURS],
+	pk_x: Vec<Value<Scalar>>,
+	pk_y: Vec<Value<Scalar>>,
 	// Signature
-	big_r_x: [Value<Scalar>; NUM_NEIGHBOURS],
-	big_r_y: [Value<Scalar>; NUM_NEIGHBOURS],
-	s: [Value<Scalar>; NUM_NEIGHBOURS],
+	big_r_x: Vec<Value<Scalar>>,
+	big_r_y: Vec<Value<Scalar>>,
+	s: Vec<Value<Scalar>>,
 	// Opinions
-	ops: [[Value<Scalar>; NUM_NEIGHBOURS]; NUM_NEIGHBOURS],
+	ops: Vec<Vec<Value<Scalar>>>,
 	// Bits
-	s_bits: [[Scalar; 252]; NUM_NEIGHBOURS],
+	s_bits: Vec<[Scalar; 252]>,
 	suborder_bits: [Scalar; 252],
-	s_suborder_diff_bits: [[Scalar; 253]; NUM_NEIGHBOURS],
-	m_hash_bits: [[Scalar; 256]; NUM_NEIGHBOURS],
+	s_suborder_diff_bits: Vec<[Scalar; 253]>,
+	m_hash_bits: Vec<[Scalar; 256]>,
 }
 
 impl<
@@ -88,36 +88,44 @@ impl<
 {
 	/// Constructs a new EigenTrust circuit
 	pub fn new(
-		pks: [PublicKey; NUM_NEIGHBOURS], signatures: [Signature; NUM_NEIGHBOURS],
-		ops: [[Scalar; NUM_NEIGHBOURS]; NUM_NEIGHBOURS], messages: [Scalar; NUM_NEIGHBOURS],
+		pks: Vec<PublicKey>, signatures: Vec<Signature>, ops: Vec<Vec<Scalar>>,
+		messages: Vec<Scalar>,
 	) -> Self {
 		// Pubkey values
-		let pk_x = pks.clone().map(|pk| Value::known(pk.0.x));
-		let pk_y = pks.clone().map(|pk| Value::known(pk.0.y));
+		let pk_x = pks.iter().map(|pk| Value::known(pk.0.x.clone())).collect();
+		let pk_y = pks.iter().map(|pk| Value::known(pk.0.y.clone())).collect();
 
 		// Signature values
-		let big_r_x = signatures.clone().map(|sig| Value::known(sig.big_r.x));
-		let big_r_y = signatures.clone().map(|sig| Value::known(sig.big_r.y));
-		let s = signatures.clone().map(|sig| Value::known(sig.s));
+		let big_r_x = signatures.iter().map(|sig| Value::known(sig.big_r.x.clone())).collect();
+		let big_r_y = signatures.iter().map(|sig| Value::known(sig.big_r.y.clone())).collect();
+		let s = signatures.iter().map(|sig| Value::known(sig.s.clone())).collect();
 
 		// Opinions
-		let ops = ops.map(|vals| vals.map(|x| Value::known(x)));
+		let ops =
+			ops.iter().map(|vals| vals.iter().map(|x| Value::known(x.clone())).collect()).collect();
 
-		let s_bits =
-			signatures.clone().map(|sig| sig.s.to_bytes()).map(|s| to_bits(s).map(Scalar::from));
+		let s_bits = signatures
+			.iter()
+			.map(|sig| sig.s.to_bytes())
+			.map(|s| to_bits(s).map(Scalar::from))
+			.collect();
 		let suborder = BabyJubJub::suborder();
 		let suborder_bits = to_bits(suborder.to_bytes()).map(Scalar::from);
-		let diffs = signatures
-			.clone()
-			.map(|sig| sig.s + Scalar::from_bytes(&N_SHIFTED).unwrap() - suborder);
-		let diff_bits = diffs.map(|diff| to_bits(diff.to_bytes()).map(Scalar::from));
+		let diffs =
+			signatures.iter().map(|sig| sig.s + Scalar::from_bytes(&N_SHIFTED).unwrap() - suborder);
+		let diff_bits = diffs.map(|diff| to_bits(diff.to_bytes()).map(Scalar::from)).collect();
 
-		let m_hash_bits = pks.zip(signatures).zip(messages).map(|((pk, sig), msg)| {
-			let h_inputs = [sig.big_r.x, sig.big_r.y, pk.0.x, pk.0.y, msg];
-			let res = PoseidonNativeHasher::new(h_inputs).permute()[0];
-			let m_hash_bits = to_bits(res.to_bytes()).map(Scalar::from);
-			m_hash_bits
-		});
+		let m_hash_bits = pks
+			.iter()
+			.zip(signatures)
+			.zip(messages)
+			.map(|((pk, sig), msg)| {
+				let h_inputs = [sig.big_r.x, sig.big_r.y, pk.0.x, pk.0.y, msg];
+				let res = PoseidonNativeHasher::new(h_inputs).permute()[0];
+				let m_hash_bits = to_bits(res.to_bytes()).map(Scalar::from);
+				m_hash_bits
+			})
+			.collect();
 
 		Self {
 			pk_x,
@@ -135,15 +143,30 @@ impl<
 
 	/// Make a new circuit with the inputs being random values.
 	pub fn random<R: Rng + Clone>(rng: &mut R) -> Self {
-		let sks = [(); NUM_NEIGHBOURS].map(|_| SecretKey::random(rng));
-		let pks = sks.clone().map(|x| x.public());
-		let ops = [[(); NUM_NEIGHBOURS]; NUM_NEIGHBOURS]
-			.map(|arr| arr.map(|_| Scalar::random(rng.clone())));
-		let messages = [(); NUM_NEIGHBOURS].map(|_| Scalar::random(rng.clone()));
-		let signatures =
-			sks.zip(pks.clone()).zip(messages).map(|((sk, pk), msg)| sign(&sk, &pk, msg));
+		let mut pks = Vec::new();
+		let mut messages = Vec::new();
+		let mut sigs = Vec::new();
+		let mut ops = Vec::new();
 
-		EigenTrust::new(pks, signatures, ops, messages)
+		for i in 0..NUM_NEIGHBOURS {
+			let sk = SecretKey::random(rng);
+			let pk = sk.public();
+
+			let mut neighbour_ops = Vec::new();
+			for j in 0..NUM_NEIGHBOURS {
+				neighbour_ops.push(Scalar::random(rng.clone()));
+			}
+
+			let msg = Scalar::random(rng.clone());
+			let sig = sign(&sk, &pk, msg.clone());
+
+			pks.push(pk);
+			messages.push(msg);
+			sigs.push(sig);
+			ops.push(neighbour_ops);
+		}
+
+		EigenTrust::new(pks, sigs, ops, messages)
 	}
 }
 
@@ -159,16 +182,16 @@ impl<
 
 	fn without_witnesses(&self) -> Self {
 		Self {
-			pk_x: [Value::unknown(); NUM_NEIGHBOURS],
-			pk_y: [Value::unknown(); NUM_NEIGHBOURS],
-			big_r_x: [Value::unknown(); NUM_NEIGHBOURS],
-			big_r_y: [Value::unknown(); NUM_NEIGHBOURS],
-			s: [Value::unknown(); NUM_NEIGHBOURS],
-			ops: [[Value::unknown(); NUM_NEIGHBOURS]; NUM_NEIGHBOURS],
-			s_bits: [[Scalar::zero(); 252]; NUM_NEIGHBOURS],
+			pk_x: vec![Value::unknown(); NUM_NEIGHBOURS],
+			pk_y: vec![Value::unknown(); NUM_NEIGHBOURS],
+			big_r_x: vec![Value::unknown(); NUM_NEIGHBOURS],
+			big_r_y: vec![Value::unknown(); NUM_NEIGHBOURS],
+			s: vec![Value::unknown(); NUM_NEIGHBOURS],
+			ops: vec![vec![Value::unknown(); NUM_NEIGHBOURS]; NUM_NEIGHBOURS],
+			s_bits: vec![[Scalar::zero(); 252]; NUM_NEIGHBOURS],
 			suborder_bits: [Scalar::zero(); 252],
-			s_suborder_diff_bits: [[Scalar::zero(); 253]; NUM_NEIGHBOURS],
-			m_hash_bits: [[Scalar::zero(); 256]; NUM_NEIGHBOURS],
+			s_suborder_diff_bits: vec![[Scalar::zero(); 253]; NUM_NEIGHBOURS],
+			m_hash_bits: vec![[Scalar::zero(); 256]; NUM_NEIGHBOURS],
 		}
 	}
 
@@ -215,80 +238,107 @@ impl<
 				|| "temp",
 				|region: Region<'_, Scalar>| {
 					let mut ctx = RegionCtx::new(region, 0);
-					let zero_fixed = ctx.assign_fixed(config.common.fixed[0], Scalar::zero())?;
-					let zero =
-						ctx.assign_advice(config.common.advice[0], Value::known(Scalar::zero()))?;
-					ctx.constrain_equal(zero_fixed, zero.clone())?;
-					ctx.next();
-					let assigned_pk_x = self.pk_x.try_map(|v| {
-						let val = ctx.assign_advice(config.common.advice[0], v);
-						ctx.next();
-						val
-					})?;
-					let assigned_pk_y = self.pk_y.try_map(|v| {
-						let val = ctx.assign_advice(config.common.advice[0], v);
-						ctx.next();
-						val
-					})?;
-					let assigned_big_r_x = self.big_r_x.try_map(|v| {
-						let val = ctx.assign_advice(config.common.advice[0], v);
-						ctx.next();
-						val
-					})?;
-					let assigned_big_r_y = self.big_r_y.try_map(|v| {
-						let val = ctx.assign_advice(config.common.advice[0], v);
-						ctx.next();
-						val
-					})?;
-					let assigned_s = self.s.try_map(|v| {
-						let val = ctx.assign_advice(config.common.advice[0], v);
-						ctx.next();
-						val
-					})?;
-					let scale_fixed = ctx.assign_fixed(
-						config.common.fixed[0],
+
+					let zero = ctx.assign_from_constant(config.common.advice[0], Scalar::zero())?;
+
+					let scale = ctx.assign_from_constant(
+						config.common.advice[1],
 						Scalar::from_u128(SCALE.pow(NUM_ITER as u32)),
 					)?;
-					let scale = ctx.assign_advice(
-						config.common.advice[0],
-						Value::known(Scalar::from_u128(SCALE.pow(NUM_ITER as u32))),
+
+					let assigned_initial_score = ctx.assign_from_constant(
+						config.common.advice[2],
+						Scalar::from_u128(INITIAL_SCORE),
 					)?;
-					ctx.constrain_equal(scale_fixed, scale.clone())?;
+
+					// Move to the next row
 					ctx.next();
 
-					let initial_score_fixed =
-						ctx.assign_fixed(config.common.fixed[0], Scalar::from_u128(INITIAL_SCORE))?;
-					let assigned_initial_score = ctx.assign_advice(
-						config.common.advice[0],
-						Value::known(Scalar::from_u128(INITIAL_SCORE)),
-					)?;
-					ctx.constrain_equal(initial_score_fixed, assigned_initial_score.clone())?;
-					ctx.next();
-
-					let assigned_ops = self.ops.try_map(|vs| {
-						vs.try_map(|v| {
-							let val = ctx.assign_advice(config.common.advice[0], v);
-							ctx.next();
-							val
-						})
-					})?;
-
-					let mut passed_s: [Option<AssignedCell<Scalar, Scalar>>; NUM_NEIGHBOURS] =
-						[(); NUM_NEIGHBOURS].map(|_| None);
-
-					for i in 0..NUM_NEIGHBOURS {
-						let ps = ctx.assign_from_instance(
-							config.common.advice[0], config.common.instance, i,
-						)?;
-						passed_s[i] = Some(ps);
+					let mut assigned_pk_x = Vec::new();
+					for chunk in self.pk_x.chunks(ADVICE) {
+						for i in 0..ADVICE {
+							let val = chunk[i].clone();
+							let pk_x = ctx.assign_advice(config.common.advice[i], val)?;
+							assigned_pk_x.push(pk_x)
+						}
+						// Move to the next row
 						ctx.next();
 					}
-					let unwrapped_passed_s = passed_s.map(|x| x.unwrap());
+
+					let mut assigned_pk_y = Vec::new();
+					for chunk in self.pk_y.chunks(ADVICE) {
+						for i in 0..ADVICE {
+							let val = chunk[i].clone();
+							let pk_y = ctx.assign_advice(config.common.advice[i], val)?;
+							assigned_pk_y.push(pk_y)
+						}
+						// Move to the next row
+						ctx.next();
+					}
+
+					let mut assigned_big_r_x = Vec::new();
+					for chunk in self.big_r_x.chunks(ADVICE) {
+						for i in 0..ADVICE {
+							let val = chunk[i].clone();
+							let big_r_x = ctx.assign_advice(config.common.advice[i], val)?;
+							assigned_big_r_x.push(big_r_x)
+						}
+						// Move to the next row
+						ctx.next();
+					}
+
+					let mut assigned_big_r_y = Vec::new();
+					for chunk in self.big_r_y.chunks(ADVICE) {
+						for i in 0..ADVICE {
+							let val = chunk[i].clone();
+							let big_r_y = ctx.assign_advice(config.common.advice[i], val)?;
+							assigned_big_r_y.push(big_r_y)
+						}
+						// Move to the next row
+						ctx.next();
+					}
+
+					let mut assigned_s = Vec::new();
+					for chunk in self.s.chunks(ADVICE) {
+						for i in 0..ADVICE {
+							let val = chunk[i].clone();
+							let s = ctx.assign_advice(config.common.advice[i], val)?;
+							assigned_s.push(s)
+						}
+						// Move to the next row
+						ctx.next();
+					}
+
+					let mut assigned_ops = Vec::new();
+					for neighbour_ops in &self.ops {
+						let mut assigned_neighbour_op = Vec::new();
+						for chunk in neighbour_ops.chunks(ADVICE) {
+							for i in 0..ADVICE {
+								let val = chunk[i].clone();
+								let s = ctx.assign_advice(config.common.advice[i], val)?;
+								assigned_neighbour_op.push(s)
+							}
+							// Move to the next row
+							ctx.next();
+						}
+						assigned_ops.push(assigned_neighbour_op);
+					}
+
+					let mut passed_s = Vec::new();
+					for i in 0..NUM_NEIGHBOURS {
+						let index = i % ADVICE;
+						let ps = ctx.assign_from_instance(
+							config.common.advice[index], config.common.instance, i,
+						)?;
+						passed_s.push(ps);
+						if i == ADVICE - 1 {
+							ctx.next();
+						}
+					}
 
 					Ok((
 						zero, assigned_pk_x, assigned_pk_y, assigned_big_r_x, assigned_big_r_y,
-						assigned_s, scale, assigned_ops, assigned_initial_score,
-						unwrapped_passed_s,
+						assigned_s, scale, assigned_ops, assigned_initial_score, passed_s,
 					))
 				},
 			)?;
@@ -342,24 +392,25 @@ impl<
 			)?;
 		}
 
-		let mut s = [(); NUM_NEIGHBOURS].map(|_| init_score.clone());
-
+		let mut s = vec![init_score.clone(); NUM_NEIGHBOURS];
 		for _ in 0..NUM_ITER {
-			let mut distributions =
-				[[(); NUM_NEIGHBOURS]; NUM_NEIGHBOURS].map(|arr| arr.map(|_| zero.clone()));
-			for j in 0..NUM_NEIGHBOURS {
-				let op_j = ops[j].clone();
-				distributions[j] = op_j.try_map(|v| {
-					let mul_chip = MulChip::new(v, s[j].clone());
-					mul_chip.synthesize(
+			let mut distributions = Vec::new();
+			for i in 0..NUM_NEIGHBOURS {
+				let op_i = ops[i].clone();
+				let mut local_distr = Vec::new();
+				for j in 0..NUM_NEIGHBOURS {
+					let mul_chip = MulChip::new(op_i[j].clone(), s[i].clone());
+					let res = mul_chip.synthesize(
 						&config.common,
 						&config.mul_selector,
 						layouter.namespace(|| "op_mul"),
-					)
-				})?;
+					)?;
+					local_distr.push(res);
+				}
+				distributions.push(local_distr);
 			}
 
-			let mut new_s = [(); NUM_NEIGHBOURS].map(|_| zero.clone());
+			let mut new_s = vec![zero.clone(); NUM_NEIGHBOURS];
 			for i in 0..NUM_NEIGHBOURS {
 				for j in 0..NUM_NEIGHBOURS {
 					let add_chip = AddChip::new(new_s[i].clone(), distributions[j][i].clone());
@@ -374,14 +425,15 @@ impl<
 			s = new_s;
 		}
 
-		let mut passed_scaled = [(); NUM_NEIGHBOURS].map(|_| zero.clone());
+		let mut passed_scaled = Vec::new();
 		for i in 0..NUM_NEIGHBOURS {
 			let mul_chip = MulChip::new(passed_s[i].clone(), scale.clone());
-			passed_scaled[i] = mul_chip.synthesize(
+			let res = mul_chip.synthesize(
 				&config.common,
 				&config.mul_selector,
 				layouter.namespace(|| "op_mul"),
 			)?;
+			passed_scaled.push(res);
 		}
 
 		layouter.assign_region(
@@ -389,8 +441,8 @@ impl<
 			|region: Region<'_, Scalar>| {
 				let ctx = &mut RegionCtx::new(region, 0);
 				for i in 0..NUM_NEIGHBOURS {
-					let passed_s =
-						ctx.copy_assign(config.common.advice[0], passed_scaled[i].clone())?;
+					let passed_scaled_val = passed_scaled[i].clone();
+					let passed_s = ctx.copy_assign(config.common.advice[0], passed_scaled_val)?;
 					let s = ctx.copy_assign(config.common.advice[1], s[i].clone())?;
 					ctx.constrain_equal(passed_s, s)?;
 					ctx.next();
@@ -405,15 +457,27 @@ impl<
 
 /// Native version of EigenTrust algorithm
 pub fn native<F: FieldExt, const N: usize, const I: usize, const S: u128>(
-	mut s: [F; N], ops: [[F; N]; N],
-) -> [F; N] {
+	mut s: Vec<F>, ops: Vec<Vec<F>>,
+) -> Vec<F> {
+	assert!(s.len() == N);
+	assert!(ops.len() == N);
+	for i in 0..N {
+		assert!(ops[i].len() == N);
+	}
+
 	for _ in 0..I {
-		let mut distributions: [[F; N]; N] = [[F::zero(); N]; N];
-		for j in 0..N {
-			distributions[j] = ops[j].map(|v| v * s[j]);
+		let mut distributions = Vec::new();
+		for i in 0..N {
+			let ops_i = &ops[i];
+			let mut local_distr = Vec::new();
+			for j in 0..N {
+				let op = ops_i[j] * s[i];
+				local_distr.push(op);
+			}
+			distributions.push(local_distr);
 		}
 
-		let mut new_s: [F; N] = [F::zero(); N];
+		let mut new_s = vec![F::zero(); N];
 		for i in 0..N {
 			for j in 0..N {
 				new_s[i] += distributions[j][i];
@@ -456,16 +520,18 @@ mod test {
 
 	#[test]
 	fn test_closed_graph_circut() {
-		let s: [Scalar; NUM_NEIGHBOURS] = [Scalar::from_u128(INITIAL_SCORE); NUM_NEIGHBOURS];
-		let ops = [
-			[0, 200, 300, 500, 0],
-			[100, 0, 100, 100, 700],
-			[400, 100, 0, 200, 300],
-			[100, 100, 700, 0, 100],
-			[300, 100, 400, 200, 0],
+		let s = vec![Scalar::from_u128(INITIAL_SCORE); NUM_NEIGHBOURS];
+		let ops: Vec<Vec<Scalar>> = vec![
+			vec![0, 200, 300, 500, 0],
+			vec![100, 0, 100, 100, 700],
+			vec![400, 100, 0, 200, 300],
+			vec![100, 100, 700, 0, 100],
+			vec![300, 100, 400, 200, 0],
 		]
-		.map(|arr| arr.map(|x| Scalar::from_u128(x)));
-		let res = native::<Scalar, NUM_NEIGHBOURS, NUM_ITER, SCALE>(s, ops);
+		.into_iter()
+		.map(|arr| arr.into_iter().map(|x| Scalar::from_u128(x)).collect())
+		.collect();
+		let res = native::<Scalar, NUM_NEIGHBOURS, NUM_ITER, SCALE>(s, ops.clone());
 
 		let rng = &mut thread_rng();
 		let secret_keys = [(); NUM_NEIGHBOURS].map(|_| SecretKey::random(rng));
@@ -478,31 +544,39 @@ mod test {
 		sponge.update(&pk_y);
 		let keys_message_hash = sponge.squeeze();
 
-		let messages = ops.map(|scores| {
-			let mut sponge = PoseidonNativeSponge::new();
-			sponge.update(&scores);
-			let scores_message_hash = sponge.squeeze();
+		let messages: Vec<Scalar> = ops
+			.iter()
+			.map(|scores| {
+				let mut sponge = PoseidonNativeSponge::new();
+				sponge.update(&scores);
+				let scores_message_hash = sponge.squeeze();
 
-			let m_inputs = [
-				keys_message_hash,
-				scores_message_hash,
-				Scalar::zero(),
-				Scalar::zero(),
-				Scalar::zero(),
-			];
-			let poseidon = PoseidonNativeHasher::new(m_inputs);
-			let res = poseidon.permute()[0];
-			res
-		});
+				let m_inputs = [
+					keys_message_hash,
+					scores_message_hash,
+					Scalar::zero(),
+					Scalar::zero(),
+					Scalar::zero(),
+				];
+				let poseidon = PoseidonNativeHasher::new(m_inputs);
+				let res = poseidon.permute()[0];
+				res
+			})
+			.collect();
 
-		let signatures = secret_keys
+		let signatures: Vec<Signature> = secret_keys
+			.into_iter()
 			.zip(pub_keys.clone())
-			.zip(messages)
-			.map(|((sk, pk), msg)| sign(&sk, &pk, msg));
+			.zip(messages.clone())
+			.map(|((sk, pk), msg)| sign(&sk, &pk, msg))
+			.collect();
 
 		let k = 14;
 		let et = EigenTrust::<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, SCALE>::new(
-			pub_keys, signatures, ops, messages,
+			pub_keys.to_vec(),
+			signatures,
+			ops,
+			messages,
 		);
 
 		let prover = match MockProver::<Scalar>::run(k, &et, vec![res.to_vec()]) {
@@ -520,16 +594,18 @@ mod test {
 
 	#[test]
 	fn test_closed_graph_circut_prod() {
-		let s: [Scalar; NUM_NEIGHBOURS] = [Scalar::from_u128(INITIAL_SCORE); NUM_NEIGHBOURS];
-		let ops = [
-			[0, 200, 300, 500, 0],
-			[100, 0, 100, 100, 700],
-			[400, 100, 0, 200, 300],
-			[100, 100, 700, 0, 100],
-			[300, 100, 400, 200, 0],
+		let s = vec![Scalar::from_u128(INITIAL_SCORE); NUM_NEIGHBOURS];
+		let ops: Vec<Vec<Scalar>> = vec![
+			vec![0, 200, 300, 500, 0],
+			vec![100, 0, 100, 100, 700],
+			vec![400, 100, 0, 200, 300],
+			vec![100, 100, 700, 0, 100],
+			vec![300, 100, 400, 200, 0],
 		]
-		.map(|arr| arr.map(|x| Scalar::from_u128(x)));
-		let res = native::<Scalar, NUM_NEIGHBOURS, NUM_ITER, SCALE>(s, ops);
+		.into_iter()
+		.map(|arr| arr.into_iter().map(|x| Scalar::from_u128(x)).collect())
+		.collect();
+		let res = native::<Scalar, NUM_NEIGHBOURS, NUM_ITER, SCALE>(s, ops.clone());
 
 		let rng = &mut thread_rng();
 		let secret_keys = [(); NUM_NEIGHBOURS].map(|_| SecretKey::random(rng));
@@ -542,31 +618,39 @@ mod test {
 		sponge.update(&pk_y);
 		let keys_message_hash = sponge.squeeze();
 
-		let messages = ops.map(|scores| {
-			let mut sponge = PoseidonNativeSponge::new();
-			sponge.update(&scores);
-			let scores_message_hash = sponge.squeeze();
+		let messages: Vec<Scalar> = ops
+			.iter()
+			.map(|scores| {
+				let mut sponge = PoseidonNativeSponge::new();
+				sponge.update(&scores);
+				let scores_message_hash = sponge.squeeze();
 
-			let m_inputs = [
-				keys_message_hash,
-				scores_message_hash,
-				Scalar::zero(),
-				Scalar::zero(),
-				Scalar::zero(),
-			];
-			let poseidon = PoseidonNativeHasher::new(m_inputs);
-			let res = poseidon.permute()[0];
-			res
-		});
+				let m_inputs = [
+					keys_message_hash,
+					scores_message_hash,
+					Scalar::zero(),
+					Scalar::zero(),
+					Scalar::zero(),
+				];
+				let poseidon = PoseidonNativeHasher::new(m_inputs);
+				let res = poseidon.permute()[0];
+				res
+			})
+			.collect();
 
-		let signatures = secret_keys
+		let signatures: Vec<Signature> = secret_keys
+			.into_iter()
 			.zip(pub_keys.clone())
-			.zip(messages)
-			.map(|((sk, pk), msg)| sign(&sk, &pk, msg));
+			.zip(messages.clone())
+			.map(|((sk, pk), msg)| sign(&sk, &pk, msg))
+			.collect();
 
 		let k = 14;
 		let et = EigenTrust::<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, SCALE>::new(
-			pub_keys, signatures, ops, messages,
+			pub_keys.to_vec(),
+			signatures,
+			ops,
+			messages,
 		);
 
 		let rng = &mut rand::thread_rng();

@@ -3,7 +3,7 @@ pub mod native;
 /// Implementation of a Poseidon sponge
 pub mod sponge;
 
-use crate::{params::RoundParams, Chip, Chipset, CommonConfig};
+use crate::{params::RoundParams, Chip, Chipset, CommonConfig, RegionCtx};
 use halo2::{
 	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region, Value},
@@ -14,31 +14,27 @@ use std::marker::PhantomData;
 
 /// Copy the intermediate poseidon state into the region
 fn copy_state<F: FieldExt, const WIDTH: usize>(
-	config: &CommonConfig, region: &mut Region<'_, F>, round: usize,
-	prev_state: &[AssignedCell<F, F>; WIDTH],
+	ctx: &mut RegionCtx<'_, F>, config: &CommonConfig, prev_state: &[AssignedCell<F, F>; WIDTH],
 ) -> Result<[AssignedCell<F, F>; WIDTH], Error> {
 	let mut state: [Option<AssignedCell<F, F>>; WIDTH] = [(); WIDTH].map(|_| None);
 	for i in 0..WIDTH {
-		state[i] = Some(prev_state[i].copy_advice(|| "state", region, config.advice[i], round)?);
+		let new_state = ctx.copy_assign(config.advice[i], prev_state[i].clone())?;
+		state[i] = Some(new_state);
 	}
 	Ok(state.map(|item| item.unwrap()))
 }
 
 /// Assign relevant constants to the circuit for the given round.
 fn load_round_constants<F: FieldExt, const WIDTH: usize>(
-	config: &CommonConfig, region: &mut Region<'_, F>, round: usize, round_constants: &[F],
+	ctx: &mut RegionCtx<'_, F>, config: &CommonConfig, round_constants: &[F],
 ) -> Result<[Value<F>; WIDTH], Error> {
-	let mut round_values: [Value<F>; WIDTH] = [(); WIDTH].map(|_| Value::unknown());
+	let mut rc_values: [Value<F>; WIDTH] = [(); WIDTH].map(|_| Value::unknown());
 	for i in 0..WIDTH {
-		round_values[i] = Value::known(round_constants[round * WIDTH + i]);
-		region.assign_fixed(
-			|| "round_constant",
-			config.fixed[i],
-			round,
-			|| round_values[i],
-		)?;
+		let rc = round_constants[ctx.offset() * WIDTH + i].clone();
+		ctx.assign_fixed(config.fixed[i], rc)?;
+		rc_values[i] = Value::known(rc);
 	}
-	Ok(round_values)
+	Ok(rc_values)
 }
 
 /// A chip for full round poseidon permutation
@@ -115,21 +111,20 @@ where
 
 		let res = layouter.assign_region(
 			|| "full_rounds",
-			|mut region: Region<'_, F>| {
+			|region: Region<'_, F>| {
+				let mut ctx = RegionCtx::new(region, 0);
 				// Assign initial state
-				let mut state_cells = copy_state(&common, &mut region, 0, &self.inputs)?;
-				for round in 0..half_full_rounds {
-					selector.enable(&mut region, round)?;
+				let mut state_cells = copy_state(&mut ctx, &common, &self.inputs)?;
+				for _ in 0..half_full_rounds {
+					ctx.enable(selector.clone())?;
 
 					// Assign round constants
-					let round_const_values =
-						load_round_constants(&common, &mut region, round, round_constants)?;
+					let rc_values = load_round_constants(&mut ctx, &common, round_constants)?;
 
 					// 1. step for the TRF.
 					// AddRoundConstants step.
 					let state_vals = state_cells.clone().map(|v| v.value().cloned());
-					let mut next_state =
-						P::apply_round_constants_val(&state_vals, &round_const_values);
+					let mut next_state = P::apply_round_constants_val(&state_vals, &rc_values);
 					for i in 0..WIDTH {
 						// 2. step for the TRF.
 						// SubWords step, denoted by S-box.
@@ -141,13 +136,9 @@ where
 					next_state = P::apply_mds_val(&next_state);
 
 					// Assign next state
+					ctx.next();
 					for i in 0..WIDTH {
-						state_cells[i] = region.assign_advice(
-							|| "state",
-							common.advice[i],
-							round + 1,
-							|| next_state[i],
-						)?;
+						state_cells[i] = ctx.assign_advice(common.advice[i], next_state[i])?;
 					}
 				}
 				Ok(state_cells)
@@ -231,20 +222,19 @@ where
 
 		let res = layouter.assign_region(
 			|| "partial_rounds",
-			|mut region: Region<'_, F>| {
-				let mut state_cells = copy_state(common, &mut region, 0, &self.inputs)?;
-				for round in 0..partial_rounds {
-					selector.enable(&mut region, round)?;
+			|region: Region<'_, F>| {
+				let mut ctx = RegionCtx::new(region, 0);
+				let mut state_cells = copy_state(&mut ctx, common, &self.inputs)?;
+				for _ in 0..partial_rounds {
+					ctx.enable(selector.clone())?;
 
 					// Assign round constants
-					let round_const_cells =
-						load_round_constants(&common, &mut region, round, round_constants)?;
+					let rc_values = load_round_constants(&mut ctx, &common, round_constants)?;
 
 					// 1. step for the TRF.
 					// AddRoundConstants step.
 					let state_vals = state_cells.clone().map(|v| v.value().cloned());
-					let mut next_state =
-						P::apply_round_constants_val(&state_vals, &round_const_cells);
+					let mut next_state = P::apply_round_constants_val(&state_vals, &rc_values);
 					// 2. step for the TRF.
 					// SubWords step, denoted by S-box.
 					next_state[0] = next_state[0].map(|x| P::sbox_f(x));
@@ -254,13 +244,10 @@ where
 					next_state = P::apply_mds_val(&next_state);
 
 					// Assign next state
+					ctx.next();
 					for i in 0..WIDTH {
-						state_cells[i] = region.assign_advice(
-							|| "state",
-							common.advice[i],
-							round + 1,
-							|| next_state[i],
-						)?;
+						let new_state = next_state[i].clone();
+						state_cells[i] = ctx.assign_advice(common.advice[i], new_state)?;
 					}
 				}
 				Ok(state_cells)
@@ -406,15 +393,13 @@ mod test {
 		) -> Result<(), Error> {
 			let init_state = layouter.assign_region(
 				|| "load_state",
-				|mut region: Region<'_, Fr>| {
+				|region: Region<'_, Fr>| {
+					let mut ctx = RegionCtx::new(region, 0);
 					let mut state: [Option<AssignedCell<Fr, Fr>>; 5] = [(); 5].map(|_| None);
 					for i in 0..5 {
-						state[i] = Some(region.assign_advice(
-							|| "state",
-							config.common.advice[i],
-							0,
-							|| self.inputs[i],
-						)?);
+						let init_state = self.inputs[i].clone();
+						let asgn_state = ctx.assign_advice(config.common.advice[i], init_state)?;
+						state[i] = Some(asgn_state);
 					}
 					Ok(state.map(|item| item.unwrap()))
 				},

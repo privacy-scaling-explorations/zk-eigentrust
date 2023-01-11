@@ -1,4 +1,4 @@
-use crate::{gadgets::common::IsZeroChip, Chip, Chipset, CommonConfig};
+use crate::{gadgets::common::IsZeroChip, Chip, Chipset, CommonConfig, RegionCtx};
 use halo2::{
 	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region},
@@ -61,44 +61,26 @@ impl<F: FieldExt> Chip<F> for SetChip<F> {
 	) -> Result<Self::Output, Error> {
 		layouter.assign_region(
 			|| "set_membership",
-			|mut region: Region<'_, F>| {
-				let mut assigned_product = region.assign_advice_from_constant(
-					|| "initial_product",
-					common.advice[3],
-					0,
-					F::one(),
-				)?;
-				let mut assigned_target =
-					self.target.copy_advice(|| "target", &mut region, common.advice[0], 0)?;
-				for i in 0..self.items.len() {
-					selector.enable(&mut region, i)?;
+			|region: Region<'_, F>| {
+				let mut ctx = RegionCtx::new(region, 0);
 
-					let item_value = self.items[i].copy_advice(
-						|| format!("item_{}", i),
-						&mut region,
-						common.advice[1],
-						i,
-					)?;
+				let mut assigned_product = ctx.assign_from_constant(common.advice[3], F::one())?;
+				let mut assigned_target = ctx.copy_assign(common.advice[0], self.target.clone())?;
+				for i in 0..self.items.len() {
+					ctx.enable(selector.clone())?;
+
+					let item_value = ctx.copy_assign(common.advice[1], self.items[i].clone())?;
 
 					// Calculating difference between given target and item from the set.
 					let diff = self.target.value().cloned() - item_value.value().cloned();
 					// If the difference is equal to 0, that means the target is in the set and next
 					// product will become 0.
 					let next_product = assigned_product.value().cloned() * diff;
+					ctx.assign_advice(common.advice[2], diff)?;
 
-					region.assign_advice(|| format!("diff_{}", i), common.advice[2], i, || diff)?;
-					assigned_product = region.assign_advice(
-						|| format!("product_{}", i),
-						common.advice[3],
-						i + 1,
-						|| next_product,
-					)?;
-					assigned_target = assigned_target.copy_advice(
-						|| "target",
-						&mut region,
-						common.advice[0],
-						i + 1,
-					)?;
+					ctx.next();
+					assigned_product = ctx.assign_advice(common.advice[3], next_product)?;
+					assigned_target = ctx.copy_assign(common.advice[0], assigned_target)?;
 				}
 
 				Ok(assigned_product)
@@ -223,22 +205,17 @@ mod test {
 		) -> Result<(), Error> {
 			let (numba, items) = layouter.assign_region(
 				|| "temp",
-				|mut region: Region<'_, F>| {
-					let target = region.assign_advice(
-						|| "temp_x",
-						config.common.advice[0],
-						0,
-						|| self.target,
-					)?;
+				|region: Region<'_, F>| {
+					let mut ctx = RegionCtx::new(region, 0);
+					let target = ctx.assign_advice(config.common.advice[0], self.target.clone())?;
+
+					ctx.next();
 					let mut items = Vec::new();
 					for i in 0..self.items.len() {
-						let item = region.assign_advice(
-							|| "items",
-							config.common.advice[0],
-							i + 1,
-							|| self.items[i],
-						)?;
-						items.push(item);
+						let item = self.items[i].clone();
+						let assigned_item = ctx.assign_advice(config.common.advice[0], item)?;
+						items.push(assigned_item);
+						ctx.next();
 					}
 
 					Ok((target, items))
