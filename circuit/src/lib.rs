@@ -11,10 +11,12 @@
 #![warn(trivial_casts)]
 #![forbid(unsafe_code)]
 
+use std::marker::PhantomData;
+
 use halo2::{
 	arithmetic::FieldExt,
-	circuit::{AssignedCell, Region, Value},
-	plonk::{Advice, Column, Error, Fixed, Instance, Selector},
+	circuit::{AssignedCell, Layouter, Region, Value},
+	plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Instance, Selector},
 };
 
 pub use halo2;
@@ -124,6 +126,13 @@ impl<'a, F: FieldExt> RegionCtx<'a, F> {
 		self.region.constrain_equal(a_cell.cell(), b_cell.cell())
 	}
 
+	/// Constrain a cell to be equal to a constant
+	pub fn constrain_to_constant(
+		&mut self, a_cell: AssignedCell<F, F>, constant: F,
+	) -> Result<(), Error> {
+		self.region.constrain_constant(a_cell.cell(), constant)
+	}
+
 	/// Enable selector at the current row offset
 	pub fn enable(&mut self, selector: Selector) -> Result<(), Error> {
 		selector.enable(&mut self.region, self.offset)
@@ -133,4 +142,65 @@ impl<'a, F: FieldExt> RegionCtx<'a, F> {
 	pub fn next(&mut self) {
 		self.offset += 1
 	}
+}
+
+/// Number of advice columns in common config
+pub const ADVICE: usize = 7;
+/// Number of fixed columns in common config
+pub const FIXED: usize = 10;
+
+/// Common config for the whole circuit
+#[derive(Clone, Debug)]
+pub struct CommonConfig {
+	/// Advice columns
+	advice: [Column<Advice>; ADVICE],
+	/// Fixed columns
+	fixed: [Column<Fixed>; FIXED],
+	/// Instance column
+	instance: Column<Instance>,
+}
+
+struct CommonChip<F: FieldExt>(PhantomData<F>);
+
+impl<F: FieldExt> CommonChip<F> {
+	/// Initialization function for CommonConfig
+	pub fn configure(meta: &mut ConstraintSystem<F>) -> CommonConfig {
+		let advice = [(); ADVICE].map(|_| meta.advice_column());
+		let fixed = [(); FIXED].map(|_| meta.fixed_column());
+		let instance = meta.instance_column();
+
+		advice.map(|c| meta.enable_equality(c));
+		fixed.map(|c| meta.enable_constant(c));
+		meta.enable_equality(instance);
+
+		CommonConfig { advice, fixed, instance }
+	}
+}
+
+/// Trait for an atomic chip implementation
+/// Each chip uses common config columns, but has its own selector
+pub trait Chip<F: FieldExt> {
+	/// Output of the synthesis
+	type Output: Clone;
+	/// Gate configuration, using common config columns
+	fn configure(common: &CommonConfig, meta: &mut ConstraintSystem<F>) -> Selector;
+	/// Chip synthesis. This function can return an assigned cell to be used
+	/// elsewhere in the circuit
+	fn synthesize(
+		self, common: &CommonConfig, selector: &Selector, layouter: impl Layouter<F>,
+	) -> Result<Self::Output, Error>;
+}
+
+/// Chipset uses a collection of chips as primitives to build more abstract
+/// circuits
+pub trait Chipset<F: FieldExt> {
+	/// Config used for synthesis
+	type Config: Clone;
+	/// Output of the synthesis
+	type Output: Clone;
+	/// Chipset synthesis. This function can have multiple smaller chips
+	/// synthesised inside. Also can returns an assigned cell.
+	fn synthesize(
+		self, common: &CommonConfig, config: &Self::Config, layouter: impl Layouter<F>,
+	) -> Result<Self::Output, Error>;
 }

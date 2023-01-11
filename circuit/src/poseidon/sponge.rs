@@ -1,26 +1,103 @@
+use super::copy_state;
 use crate::{
 	params::RoundParams,
-	poseidon::{PoseidonChip, PoseidonConfig},
+	poseidon::{PoseidonChipset, PoseidonConfig},
+	Chip, Chipset, CommonConfig,
 };
 use halo2::{
 	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region, Value},
-	plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
+	plonk::{ConstraintSystem, Error, Expression, Selector},
 	poly::Rotation,
 };
 use std::marker::PhantomData;
 
+/// A chip for absorbing the previous poseidon state
+pub struct AbsorbChip<F: FieldExt, const WIDTH: usize> {
+	prev_state: [AssignedCell<F, F>; WIDTH],
+	state: [AssignedCell<F, F>; WIDTH],
+}
+
+impl<F: FieldExt, const WIDTH: usize> AbsorbChip<F, WIDTH> {
+	/// Constructor for a chip
+	pub fn new(
+		prev_state: [AssignedCell<F, F>; WIDTH], state: [AssignedCell<F, F>; WIDTH],
+	) -> Self {
+		Self { prev_state, state }
+	}
+}
+
+impl<F: FieldExt, const WIDTH: usize> Chip<F> for AbsorbChip<F, WIDTH> {
+	type Output = [AssignedCell<F, F>; WIDTH];
+
+	fn configure(common: &CommonConfig, meta: &mut ConstraintSystem<F>) -> Selector {
+		let absorb_selector = meta.selector();
+
+		meta.create_gate("absorb", |v_cells| {
+			let mut exprs = [(); WIDTH].map(|_| Expression::Constant(F::zero()));
+
+			let s = v_cells.query_selector(absorb_selector);
+			for i in 0..WIDTH {
+				let poseidon_exp = v_cells.query_advice(common.advice[i], Rotation::prev());
+				let sponge_exp = v_cells.query_advice(common.advice[i], Rotation::cur());
+				let next_sponge_exp = v_cells.query_advice(common.advice[i], Rotation::next());
+				let diff = next_sponge_exp - (sponge_exp + poseidon_exp);
+				exprs[i] = s.clone() * diff;
+			}
+
+			exprs
+		});
+
+		absorb_selector
+	}
+
+	fn synthesize(
+		self, common: &CommonConfig, selector: &Selector, mut layouter: impl Layouter<F>,
+	) -> Result<Self::Output, Error> {
+		layouter.assign_region(
+			|| "absorb",
+			|mut region: Region<'_, F>| {
+				let round = 1;
+				selector.enable(&mut region, round)?;
+
+				// Load previous Poseidon state
+				let loaded_state = copy_state(common, &mut region, round - 1, &self.prev_state)?;
+
+				// Load next chunk
+				let loaded_chunk = copy_state(common, &mut region, round, &self.state)?;
+
+				// Calculate the next state to permute
+				let columns = common.advice[0..WIDTH].try_into().unwrap();
+				let next_state = loaded_chunk.zip(loaded_state).zip(columns).try_map(
+					|((chunk_state, pos_state), column)| {
+						let sum =
+							chunk_state.value().and_then(|&s| pos_state.value().map(|&ps| s + ps));
+						region.assign_advice(|| "sum", column, round + 1, || sum)
+					},
+				)?;
+
+				Ok(next_state)
+			},
+		)
+	}
+}
+
 #[derive(Clone, Debug)]
-/// Configuration elements for the circuit are defined here.
-pub struct PoseidonSpongeConfig<const WIDTH: usize> {
-	/// Constructs poseidon circuit elements.
-	pub poseidon_config: PoseidonConfig<WIDTH>,
-	/// Configures a fixed boolean value for each row of the circuit.
+/// Selectors for poseidon sponge
+pub struct PoseidonSpongeConfig {
+	poseidon: PoseidonConfig,
 	absorb_selector: Selector,
 }
 
+impl PoseidonSpongeConfig {
+	/// Constructs a new config
+	pub fn new(poseidon: PoseidonConfig, absorb_selector: Selector) -> Self {
+		Self { poseidon, absorb_selector }
+	}
+}
+
 /// Constructs a chip structure for the circuit.
-pub struct PoseidonSpongeChip<F: FieldExt, const WIDTH: usize, P>
+pub struct PoseidonSpongeChipset<F: FieldExt, const WIDTH: usize, P>
 where
 	P: RoundParams<F, WIDTH>,
 {
@@ -30,7 +107,7 @@ where
 	_params: PhantomData<P>,
 }
 
-impl<F: FieldExt, const WIDTH: usize, P> PoseidonSpongeChip<F, WIDTH, P>
+impl<F: FieldExt, const WIDTH: usize, P> PoseidonSpongeChipset<F, WIDTH, P>
 where
 	P: RoundParams<F, WIDTH>,
 {
@@ -39,108 +116,60 @@ where
 		Self { inputs: Vec::new(), _params: PhantomData }
 	}
 
-	/// Make the circuit config.
-	pub fn configure(meta: &mut ConstraintSystem<F>) -> PoseidonSpongeConfig<WIDTH> {
-		let poseidon_config = PoseidonChip::<_, WIDTH, P>::configure(meta);
-		let absorb_selector = meta.selector();
-
-		meta.create_gate("absorb", |v_cells| {
-			let mut exprs = [(); WIDTH].map(|_| Expression::Constant(F::zero()));
-
-			let s = v_cells.query_selector(absorb_selector);
-			for i in 0..WIDTH {
-				let poseidon_exp = v_cells.query_advice(poseidon_config.state[i], Rotation::prev());
-				let sponge_exp = v_cells.query_advice(poseidon_config.state[i], Rotation::cur());
-				let next_sponge_exp =
-					v_cells.query_advice(poseidon_config.state[i], Rotation::next());
-				let diff = next_sponge_exp - (sponge_exp + poseidon_exp);
-				exprs[i] = s.clone() * diff;
-			}
-
-			exprs
-		});
-
-		PoseidonSpongeConfig { poseidon_config, absorb_selector }
-	}
-
-	/// Absorb the data in and split it into
-	/// chunks of size WIDTH.
-	fn load_state(
-		columns: [Column<Advice>; WIDTH], region: &mut Region<'_, F>, round: usize,
-		prev_state: &[AssignedCell<F, F>],
-	) -> Result<[AssignedCell<F, F>; WIDTH], Error> {
-		let mut state: [Option<AssignedCell<F, F>>; WIDTH] = [(); WIDTH].map(|_| None);
-		for i in 0..WIDTH {
-			if let Some(cell) = prev_state.get(i) {
-				state[i] = Some(cell.copy_advice(|| "state", region, columns[i], round)?);
-			} else {
-				state[i] = Some(region.assign_advice(
-					|| "state",
-					columns[i],
-					round,
-					|| Value::known(F::zero()),
-				)?);
-			}
-		}
-		Ok(state.map(|item| item.unwrap()))
-	}
-
 	/// Clones and appends all elements from a slice to the vec.
 	pub fn update(&mut self, inputs: &[AssignedCell<F, F>]) {
 		self.inputs.extend_from_slice(inputs);
 	}
+}
+
+impl<F: FieldExt, const WIDTH: usize, P> Chipset<F> for PoseidonSpongeChipset<F, WIDTH, P>
+where
+	P: RoundParams<F, WIDTH>,
+{
+	type Config = PoseidonSpongeConfig;
+	type Output = AssignedCell<F, F>;
 
 	/// Squeeze the data out by
 	/// permuting until no more chunks are left.
-	pub fn squeeze(
-		&self, config: &PoseidonSpongeConfig<WIDTH>, mut layouter: impl Layouter<F>,
-	) -> Result<AssignedCell<F, F>, Error> {
+	fn synthesize(
+		self, common: &CommonConfig, config: &PoseidonSpongeConfig, mut layouter: impl Layouter<F>,
+	) -> Result<Self::Output, Error> {
 		assert!(!self.inputs.is_empty());
 
-		let mut state = layouter.assign_region(
+		let zero_state = layouter.assign_region(
 			|| "load_initial_state",
 			|mut region: Region<'_, F>| {
-				Self::load_state(config.poseidon_config.state, &mut region, 0, &[])
+				let mut state: [Option<AssignedCell<F, F>>; WIDTH] = [(); WIDTH].map(|_| None);
+				for i in 0..WIDTH {
+					state[i] = Some(region.assign_advice(
+						|| "state",
+						common.advice[i],
+						0,
+						|| Value::known(F::zero()),
+					)?);
+				}
+				Ok(state.map(|item| item.unwrap()))
 			},
 		)?;
 
+		let mut state = zero_state.clone();
 		for (i, chunk) in self.inputs.chunks(WIDTH).enumerate() {
-			let inputs = layouter.assign_region(
-				|| format!("absorb_{}", i),
-				|mut region: Region<'_, F>| {
-					let round = 1;
-					config.absorb_selector.enable(&mut region, round)?;
+			let mut curr_chunk = zero_state.clone();
+			for j in 0..chunk.len() {
+				curr_chunk[j] = chunk[j].clone();
+			}
 
-					// Load previous Poseidon state
-					let loaded_state = Self::load_state(
-						config.poseidon_config.state,
-						&mut region,
-						round - 1,
-						&state,
-					)?;
-
-					// Load next chunk
-					let loaded_chunk =
-						Self::load_state(config.poseidon_config.state, &mut region, round, chunk)?;
-
-					// Calculate the next state to permute
-					let next_state = loaded_chunk
-						.zip(loaded_state)
-						.zip(config.poseidon_config.state)
-						.try_map(|((chunk_state, pos_state), column)| {
-							let sum = chunk_state
-								.value()
-								.and_then(|&s| pos_state.value().map(|&ps| s + ps));
-							region.assign_advice(|| "sum", column, round + 1, || sum)
-						})?;
-
-					Ok(next_state)
-				},
+			let absorb = AbsorbChip::new(state, curr_chunk);
+			let inputs = absorb.synthesize(
+				common,
+				&config.absorb_selector,
+				layouter.namespace(|| format!("absorb_{}", i)),
 			)?;
 
-			let pos = PoseidonChip::<_, WIDTH, P>::new(inputs);
+			let pos = PoseidonChipset::<_, WIDTH, P>::new(inputs);
 			state = pos.synthesize(
-				&config.poseidon_config,
+				common,
+				&config.poseidon,
 				layouter.namespace(|| format!("poseidon_permute_{}", i)),
 			)?;
 		}
@@ -151,8 +180,13 @@ where
 
 #[cfg(test)]
 mod test {
-	use super::{PoseidonSpongeChip, PoseidonSpongeConfig};
-	use crate::poseidon::native::sponge::PoseidonSponge;
+	use super::{AbsorbChip, PoseidonSpongeChipset, PoseidonSpongeConfig};
+	use crate::{
+		poseidon::{
+			native::sponge::PoseidonSponge, FullRoundChip, PartialRoundChip, PoseidonConfig,
+		},
+		Chip, Chipset, CommonChip, CommonConfig,
+	};
 
 	use crate::params::{hex_to_field, poseidon_bn254_5x5::Params};
 
@@ -160,16 +194,18 @@ mod test {
 		circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner, Value},
 		dev::MockProver,
 		halo2curves::bn256::Fr,
-		plonk::{Circuit, Column, ConstraintSystem, Error, Instance},
+		plonk::{Circuit, ConstraintSystem, Error},
 	};
 
 	type TestPoseidonSponge = PoseidonSponge<Fr, 5, Params>;
-	type TestPoseidonSpongeChip = PoseidonSpongeChip<Fr, 5, Params>;
+	type TestPoseidonSpongeChipset = PoseidonSpongeChipset<Fr, 5, Params>;
+	type FrChip = FullRoundChip<Fr, 5, Params>;
+	type PrChip = PartialRoundChip<Fr, 5, Params>;
 
 	#[derive(Clone)]
 	struct PoseidonTesterConfig {
-		sponge: PoseidonSpongeConfig<5>,
-		results: Column<Instance>,
+		common: CommonConfig,
+		sponge: PoseidonSpongeConfig,
 	}
 
 	struct PoseidonTester {
@@ -184,22 +220,6 @@ mod test {
 				inputs2: inputs2.map(|item| Value::known(item)),
 			}
 		}
-
-		fn load_state(
-			config: &PoseidonSpongeConfig<5>, region: &mut Region<'_, Fr>, round: usize,
-			init_state: [Value<Fr>; 5],
-		) -> Result<[AssignedCell<Fr, Fr>; 5], Error> {
-			let mut state: [Option<AssignedCell<Fr, Fr>>; 5] = [(); 5].map(|_| None);
-			for i in 0..5 {
-				state[i] = Some(region.assign_advice(
-					|| "state",
-					config.poseidon_config.state[i],
-					round,
-					|| init_state[i],
-				)?);
-			}
-			Ok(state.map(|item| item.unwrap()))
-		}
 	}
 
 	impl Circuit<Fr> for PoseidonTester {
@@ -211,12 +231,14 @@ mod test {
 		}
 
 		fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
-			let sponge_config = TestPoseidonSpongeChip::configure(meta);
-			let results = meta.instance_column();
+			let common = CommonChip::configure(meta);
+			let absorb_selector = AbsorbChip::<_, 5>::configure(&common, meta);
+			let pr_selector = PrChip::configure(&common, meta);
+			let fr_selector = FrChip::configure(&common, meta);
+			let poseidon = PoseidonConfig::new(fr_selector, pr_selector);
+			let sponge = PoseidonSpongeConfig::new(poseidon, absorb_selector);
 
-			meta.enable_equality(results);
-
-			Self::Config { sponge: sponge_config, results }
+			Self::Config { common, sponge }
 		}
 
 		fn synthesize(
@@ -225,24 +247,45 @@ mod test {
 			let inputs1 = layouter.assign_region(
 				|| "load_state1",
 				|mut region: Region<'_, Fr>| {
-					Self::load_state(&config.sponge, &mut region, 0, self.inputs1)
+					let mut state: [Option<AssignedCell<Fr, Fr>>; 5] = [(); 5].map(|_| None);
+					for i in 0..5 {
+						state[i] = Some(region.assign_advice(
+							|| "state",
+							config.common.advice[i],
+							0,
+							|| self.inputs1[i],
+						)?);
+					}
+					Ok(state.map(|item| item.unwrap()))
 				},
 			)?;
 
 			let inputs2 = layouter.assign_region(
 				|| "load_state2",
 				|mut region: Region<'_, Fr>| {
-					Self::load_state(&config.sponge, &mut region, 0, self.inputs2)
+					let mut state: [Option<AssignedCell<Fr, Fr>>; 5] = [(); 5].map(|_| None);
+					for i in 0..5 {
+						state[i] = Some(region.assign_advice(
+							|| "state",
+							config.common.advice[i],
+							0,
+							|| self.inputs2[i],
+						)?);
+					}
+					Ok(state.map(|item| item.unwrap()))
 				},
 			)?;
 
-			let mut poseidon_sponge = TestPoseidonSpongeChip::new();
+			let mut poseidon_sponge = TestPoseidonSpongeChipset::new();
 			poseidon_sponge.update(&inputs1);
 			poseidon_sponge.update(&inputs2);
-			let result_state = poseidon_sponge
-				.squeeze(&config.sponge, layouter.namespace(|| "poseidon_sponge"))?;
+			let result_state = poseidon_sponge.synthesize(
+				&config.common,
+				&config.sponge,
+				layouter.namespace(|| "poseidon_sponge"),
+			)?;
 
-			layouter.constrain_instance(result_state.cell(), config.results, 0)?;
+			layouter.constrain_instance(result_state.cell(), config.common.instance, 0)?;
 			Ok(())
 		}
 	}

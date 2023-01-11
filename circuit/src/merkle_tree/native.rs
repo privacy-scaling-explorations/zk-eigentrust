@@ -1,10 +1,8 @@
-use std::marker::PhantomData;
-
+use crate::{params::RoundParams, poseidon::native::Poseidon};
 use halo2::halo2curves::FieldExt;
 use num_traits::pow;
-use std::collections::HashMap;
+use std::{collections::HashMap, marker::PhantomData};
 
-use crate::{params::RoundParams, poseidon::native::Poseidon};
 const WIDTH: usize = 5;
 
 #[derive(Clone, Debug)]
@@ -94,7 +92,7 @@ where
 			}
 			value_index = value_index / 2;
 		}
-		path_arr[merkle_tree.height][0] = merkle_tree.nodes[&merkle_tree.height][0];
+		path_arr[merkle_tree.height][0] = merkle_tree.root;
 		Self { value, path_arr, _params: PhantomData }
 	}
 

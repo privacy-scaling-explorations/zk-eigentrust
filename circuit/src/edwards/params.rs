@@ -16,6 +16,8 @@ pub trait EdwardsParams<F: FieldExt> {
 	fn g() -> (F, F);
 	/// Returns suborder
 	fn suborder() -> F;
+	/// Suborder field size in bits
+	fn suborder_size() -> usize;
 	/// Performs Add operation
 	fn add(r_x: F, r_y: F, r_z: F, e_x: F, e_y: F, e_z: F) -> (F, F, F);
 	/// Performs Add operation on Expression
@@ -76,6 +78,10 @@ impl EdwardsParams<Fr> for BabyJubJub {
 		Fr::from_raw([
 			0x677297DC392126F1, 0xAB3EEDB83920EE0A, 0x370A08B6D0302B0B, 0x60C89CE5C263405,
 		])
+	}
+
+	fn suborder_size() -> usize {
+		252
 	}
 
 	/// ADD operation between points `r` and `e`

@@ -2,38 +2,44 @@
 pub mod native;
 
 use crate::{
-	edwards::{params::EdwardsParams, AssignedPoint, EdwardsChip, EdwardsConfig},
-	gadgets::{
-		common::{CommonChip, CommonConfig},
-		lt_eq::{LessEqualChip, LessEqualConfig},
+	edwards::{
+		params::EdwardsParams, AssignedPoint, IntoAffineChip, PointAddChip, StrictScalarMulChipset,
+		StrictScalarMulConfig,
 	},
+	gadgets::lt_eq::{LessEqualChipset, LessEqualConfig},
 	params::RoundParams,
-	poseidon::{PoseidonChip, PoseidonConfig},
+	poseidon::{PoseidonChipset, PoseidonConfig},
+	Chip, Chipset, CommonConfig, RegionCtx,
 };
 use halo2::{
 	circuit::{AssignedCell, Layouter, Region},
 	halo2curves::FieldExt,
-	plonk::{Advice, Column, ConstraintSystem, Error},
+	plonk::{Error, Selector},
 };
 use std::marker::PhantomData;
 
 #[derive(Clone, Debug)]
-/// Configuration elements for the circuit are defined here.
+/// Selector configuration for Eddsa
 pub struct EddsaConfig {
-	/// Constructs eddsa gadgets circuit elements.
-	edwards: EdwardsConfig,
-	/// Constructs common circuit elements.
-	common: CommonConfig,
-	/// Constructs lt_eq circuit elements.
+	poseidon: PoseidonConfig,
 	lt_eq: LessEqualConfig,
-	/// Constructs poseidon circuit elements.
-	poseidon: PoseidonConfig<5>,
-	/// Configures a column for the temp.
-	temp: Column<Advice>,
+	scalar_mul: StrictScalarMulConfig,
+	add_point_selector: Selector,
+	affine_selector: Selector,
+}
+
+impl EddsaConfig {
+	/// Construct Eddsa config from selectors
+	pub fn new(
+		poseidon: PoseidonConfig, lt_eq: LessEqualConfig, scalar_mul: StrictScalarMulConfig,
+		add_point_selector: Selector, affine_selector: Selector,
+	) -> Self {
+		Self { poseidon, lt_eq, scalar_mul, add_point_selector, affine_selector }
+	}
 }
 
 /// Constructs individual cells for the configuration elements.
-pub struct EddsaChip<F: FieldExt, P: EdwardsParams<F>, R>
+pub struct EddsaChipset<F: FieldExt, P: EdwardsParams<F>, R>
 where
 	R: RoundParams<F, 5>,
 {
@@ -61,7 +67,7 @@ where
 	_r: PhantomData<R>,
 }
 
-impl<F: FieldExt, P: EdwardsParams<F>, R> EddsaChip<F, P, R>
+impl<F: FieldExt, P: EdwardsParams<F>, R> EddsaChipset<F, P, R>
 where
 	R: RoundParams<F, 5>,
 {
@@ -87,36 +93,40 @@ where
 			_r: PhantomData,
 		}
 	}
+}
 
-	/// Make the circuit config.
-	pub fn configure(meta: &mut ConstraintSystem<F>) -> EddsaConfig {
-		let common = CommonChip::configure(meta);
-		let edwards = EdwardsChip::<F, P>::configure(meta);
-		let lt_eq = LessEqualChip::configure(meta);
-		let poseidon = PoseidonChip::<_, 5, R>::configure(meta);
-		let temp = meta.advice_column();
-
-		meta.enable_equality(temp);
-
-		EddsaConfig { edwards, common, lt_eq, poseidon, temp }
-	}
+impl<F: FieldExt, P: EdwardsParams<F>, R> Chipset<F> for EddsaChipset<F, P, R>
+where
+	R: RoundParams<F, 5>,
+{
+	type Config = EddsaConfig;
+	type Output = ();
 
 	/// Synthesize the circuit.
-	pub fn synthesize(
-		&self, config: &EddsaConfig, mut layouter: impl Layouter<F>,
-	) -> Result<(), Error> {
+	fn synthesize(
+		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<F>,
+	) -> Result<Self::Output, Error> {
 		let (b8_x, b8_y, one, suborder) = layouter.assign_region(
 			|| "assign_values",
 			|mut region: Region<'_, F>| {
-				let b8_x =
-					region.assign_advice_from_constant(|| "b8_x", config.temp, 0, P::b8().0)?;
-				let b8_y =
-					region.assign_advice_from_constant(|| "b8_y", config.temp, 1, P::b8().1)?;
-				let one = region.assign_advice_from_constant(|| "one", config.temp, 2, F::one())?;
+				let b8_x = region.assign_advice_from_constant(
+					|| "b8_x",
+					common.advice[0],
+					0,
+					P::b8().0,
+				)?;
+				let b8_y = region.assign_advice_from_constant(
+					|| "b8_y",
+					common.advice[1],
+					0,
+					P::b8().1,
+				)?;
+				let one =
+					region.assign_advice_from_constant(|| "one", common.advice[2], 0, F::one())?;
 				let suborder = region.assign_advice_from_constant(
 					|| "suborder",
-					config.temp,
-					3,
+					common.advice[3],
+					0,
 					P::suborder(),
 				)?;
 				Ok((b8_x, b8_y, one, suborder))
@@ -124,25 +134,25 @@ where
 		)?;
 
 		// s cannot be higher than the suborder.
-		let lt_eq = LessEqualChip::new(
+		let lt_eq_chipset = LessEqualChipset::new(
 			self.s.clone(),
 			suborder,
 			self.s_bits,
 			self.suborder_bits,
 			self.s_suborder_diff_bits,
 		);
-		let is_lt_eq =
-			lt_eq.synthesize(&config.lt_eq, layouter.namespace(|| "s_lt_eq_suborder"))?;
+		let is_lt_eq = lt_eq_chipset.synthesize(
+			common,
+			&config.lt_eq,
+			layouter.namespace(|| "s_lt_eq_suborder"),
+		)?;
 
 		// Cl = s * G
 		let e = AssignedPoint::new(b8_x, b8_y, one.clone());
-		let cl = EdwardsChip::<F, P>::scalar_mul::<252>(
-			e,
-			self.s.clone(),
-			self.s_bits,
-			&config.edwards,
-			layouter.namespace(|| "b_8 * s"),
-		)?;
+		let cl_chipset =
+			StrictScalarMulChipset::<F, P>::new(e, self.s.clone(), self.s_bits.to_vec());
+		let cl =
+			cl_chipset.synthesize(common, &config.scalar_mul, layouter.namespace(|| "b_8 * s"))?;
 
 		// H(R || PK || M)
 		// Hashing R, public key and message composition.
@@ -153,75 +163,63 @@ where
 			self.pk_y.clone(),
 			self.m.clone(),
 		];
-		let hasher = PoseidonChip::<F, 5, R>::new(m_hash_input);
-		let m_hash_res = hasher.synthesize(&config.poseidon, layouter.namespace(|| "m_hash"))?;
+		let hasher = PoseidonChipset::<F, 5, R>::new(m_hash_input);
+		let m_hash_res =
+			hasher.synthesize(common, &config.poseidon, layouter.namespace(|| "m_hash"))?;
 
 		// H(R || PK || M) * PK
 		// Scalar multiplication for the public key and hash.
 		let e = AssignedPoint::new(self.pk_x.clone(), self.pk_y.clone(), one.clone());
-		let pk_h = EdwardsChip::<F, P>::scalar_mul::<256>(
+		let pk_h_chipset = StrictScalarMulChipset::<F, P>::new(
 			e,
 			m_hash_res[0].clone(),
-			self.m_hash_bits,
-			&config.edwards,
+			self.m_hash_bits.to_vec(),
+		);
+		let pk_h = pk_h_chipset.synthesize(
+			common,
+			&config.scalar_mul,
 			layouter.namespace(|| "pk * m_hash"),
 		)?;
 
 		// Cr = R + H(R || PK || M) * PK
 		let big_r_point = AssignedPoint::new(self.big_r_x.clone(), self.big_r_y.clone(), one);
-		let cr = EdwardsChip::<F, P>::add_point(
-			big_r_point,
-			pk_h,
-			&config.edwards,
+		let cr_chip = PointAddChip::<F, P>::new(big_r_point, pk_h);
+		let cr = cr_chip.synthesize(
+			common,
+			&config.add_point_selector,
 			layouter.namespace(|| "big_r + pk_h"),
 		)?;
 
 		// Converts two projective space points to their affine representation.
-		let cl_affine = EdwardsChip::<F, P>::into_affine(
-			cl,
-			&config.edwards,
+		let cl_affine_chip = IntoAffineChip::new(cl);
+		let cl_affine = cl_affine_chip.synthesize(
+			common,
+			&config.affine_selector,
 			layouter.namespace(|| "cl_affine"),
 		)?;
-		let cr_affine = EdwardsChip::<F, P>::into_affine(
-			cr,
-			&config.edwards,
+		let cr_affine_chip = IntoAffineChip::new(cr);
+		let cr_affine = cr_affine_chip.synthesize(
+			common,
+			&config.affine_selector,
 			layouter.namespace(|| "cr_affine"),
 		)?;
 
-		// Check if Clx == Crx and Cly == Cry.
-		let x_eq = CommonChip::is_equal(
-			cl_affine.0,
-			cr_affine.0,
-			&config.common,
-			layouter.namespace(|| "point_x_equal"),
-		)?;
-		let y_eq = CommonChip::is_equal(
-			cl_affine.1,
-			cr_affine.1,
-			&config.common,
-			layouter.namespace(|| "point_y_equal"),
-		)?;
-
-		// Use And gate between x and y equality.
-		// If equal returns 1, else 0.
-		let point_eq = CommonChip::and(
-			x_eq,
-			y_eq,
-			&config.common,
-			layouter.namespace(|| "point_eq"),
-		)?;
-
 		// Enforce equality.
-		// If either one of them returns 0, the circuit will give an error.
+		// Check if Clx == Crx and Cly == Cry.
 		layouter.assign_region(
 			|| "enforce_equal",
-			|mut region: Region<'_, F>| {
-				let lt_eq_copied =
-					is_lt_eq.copy_advice(|| "lt_eq_temp", &mut region, config.temp, 0)?;
-				let point_eq_copied =
-					point_eq.copy_advice(|| "point_eq_temp", &mut region, config.temp, 1)?;
-				region.constrain_constant(lt_eq_copied.cell(), F::one())?;
-				region.constrain_constant(point_eq_copied.cell(), F::one())?;
+			|region: Region<'_, F>| {
+				let mut region_ctx = RegionCtx::new(region, 0);
+
+				let cl_affine_x = region_ctx.copy_assign(common.advice[0], cl_affine.0.clone())?;
+				let cl_affine_y = region_ctx.copy_assign(common.advice[1], cl_affine.1.clone())?;
+				let cr_affine_x = region_ctx.copy_assign(common.advice[2], cr_affine.0.clone())?;
+				let cr_affine_y = region_ctx.copy_assign(common.advice[3], cr_affine.1.clone())?;
+				let lt_eq = region_ctx.copy_assign(common.advice[4], is_lt_eq.clone())?;
+
+				region_ctx.constrain_equal(cl_affine_x, cr_affine_x)?;
+				region_ctx.constrain_equal(cl_affine_y, cr_affine_y)?;
+				region_ctx.constrain_to_constant(lt_eq, F::one())?;
 				Ok(())
 			},
 		)?;
@@ -232,17 +230,23 @@ where
 
 #[cfg(test)]
 mod test {
-	use super::{EddsaChip, EddsaConfig};
+	use super::{EddsaChipset, EddsaConfig};
 	use crate::{
 		eddsa::native::{sign, SecretKey},
 		edwards::{
 			native::Point,
 			params::{BabyJubJub, EdwardsParams},
+			IntoAffineChip, PointAddChip, ScalarMulChip, StrictScalarMulConfig,
 		},
-		gadgets::{bits2num::to_bits, lt_eq::N_SHIFTED},
+		gadgets::{
+			bits2num::{to_bits, Bits2NumChip},
+			common::IsZeroChip,
+			lt_eq::{LessEqualConfig, NShiftedChip, N_SHIFTED},
+		},
 		params::poseidon_bn254_5x5::Params,
-		poseidon::native::Poseidon,
+		poseidon::{native::Poseidon, FullRoundChip, PartialRoundChip, PoseidonConfig},
 		utils::{generate_params, prove_and_verify},
+		Chip, Chipset, CommonChip, CommonConfig, RegionCtx,
 	};
 	use halo2::{
 		circuit::{Layouter, Region, SimpleFloorPlanner, Value},
@@ -251,16 +255,18 @@ mod test {
 			bn256::{Bn256, Fr},
 			group::ff::PrimeField,
 		},
-		plonk::{Advice, Circuit, Column, ConstraintSystem, Error},
+		plonk::{Circuit, ConstraintSystem, Error},
 	};
 	use rand::thread_rng;
 
-	type Hasher = Poseidon<Fr, 5, Params>;
+	type PoseidonHasher = Poseidon<Fr, 5, Params>;
+	type FrChip = FullRoundChip<Fr, 5, Params>;
+	type PrChip = PartialRoundChip<Fr, 5, Params>;
 
 	#[derive(Clone)]
 	struct TestConfig {
+		common: CommonConfig,
 		eddsa: EddsaConfig,
-		temp: Column<Advice>,
 	}
 
 	#[derive(Clone)]
@@ -288,12 +294,30 @@ mod test {
 		}
 
 		fn configure(meta: &mut ConstraintSystem<Fr>) -> TestConfig {
-			let eddsa = EddsaChip::<Fr, BabyJubJub, Params>::configure(meta);
-			let temp = meta.advice_column();
+			let common = CommonChip::configure(meta);
 
-			meta.enable_equality(temp);
+			let full_round_selector = FrChip::configure(&common, meta);
+			let partial_round_selector = PrChip::configure(&common, meta);
+			let poseidon = PoseidonConfig::new(full_round_selector, partial_round_selector);
 
-			TestConfig { eddsa, temp }
+			let bits2num_selector = Bits2NumChip::configure(&common, meta);
+			let n_shifted_selector = NShiftedChip::configure(&common, meta);
+			let is_zero_selector = IsZeroChip::configure(&common, meta);
+			let lt_eq =
+				LessEqualConfig::new(bits2num_selector, n_shifted_selector, is_zero_selector);
+
+			let scalar_mul_selector = ScalarMulChip::<_, BabyJubJub>::configure(&common, meta);
+			let strict_scalar_mul =
+				StrictScalarMulConfig::new(bits2num_selector, scalar_mul_selector);
+
+			let add_point_selector = PointAddChip::<_, BabyJubJub>::configure(&common, meta);
+			let affine_selector = IntoAffineChip::configure(&common, meta);
+
+			let eddsa = EddsaConfig::new(
+				poseidon, lt_eq, strict_scalar_mul, add_point_selector, affine_selector,
+			);
+
+			TestConfig { common, eddsa }
 		}
 
 		fn synthesize(
@@ -301,35 +325,21 @@ mod test {
 		) -> Result<(), Error> {
 			let (big_r_x, big_r_y, s, pk_x, pk_y, m) = layouter.assign_region(
 				|| "temp",
-				|mut region: Region<'_, Fr>| {
-					let big_r_x_assigned = region.assign_advice(
-						|| "big_r_x",
-						config.temp,
-						0,
-						|| Value::known(self.big_r_x),
-					)?;
-					let big_r_y_assigned = region.assign_advice(
-						|| "big_r_y",
-						config.temp,
-						1,
-						|| Value::known(self.big_r_y),
-					)?;
+				|region: Region<'_, Fr>| {
+					let mut region_ctx = RegionCtx::new(region, 0);
+
+					let big_r_x_assigned = region_ctx
+						.assign_advice(config.common.advice[0], Value::known(self.big_r_x))?;
+					let big_r_y_assigned = region_ctx
+						.assign_advice(config.common.advice[1], Value::known(self.big_r_y))?;
 					let s_assigned =
-						region.assign_advice(|| "s", config.temp, 2, || Value::known(self.s))?;
-					let pk_x_assigned = region.assign_advice(
-						|| "pk_x",
-						config.temp,
-						3,
-						|| Value::known(self.pk_x),
-					)?;
-					let pk_y_assigned = region.assign_advice(
-						|| "pk_y",
-						config.temp,
-						4,
-						|| Value::known(self.pk_y),
-					)?;
+						region_ctx.assign_advice(config.common.advice[2], Value::known(self.s))?;
+					let pk_x_assigned = region_ctx
+						.assign_advice(config.common.advice[3], Value::known(self.pk_x))?;
+					let pk_y_assigned = region_ctx
+						.assign_advice(config.common.advice[4], Value::known(self.pk_y))?;
 					let m_assigned =
-						region.assign_advice(|| "m", config.temp, 5, || Value::known(self.m))?;
+						region_ctx.assign_advice(config.common.advice[5], Value::known(self.m))?;
 
 					Ok((
 						big_r_x_assigned, big_r_y_assigned, s_assigned, pk_x_assigned,
@@ -344,12 +354,16 @@ mod test {
 			let diff = self.s + Fr::from_bytes(&N_SHIFTED).unwrap() - suborder;
 			let diff_bits = to_bits(diff.to_bytes()).map(Fr::from);
 			let h_inputs = [self.big_r_x, self.big_r_y, self.pk_x, self.pk_y, self.m];
-			let res = Hasher::new(h_inputs).permute()[0];
+			let res = PoseidonHasher::new(h_inputs).permute()[0];
 			let m_hash_bits = to_bits(res.to_bytes()).map(Fr::from);
-			let eddsa = EddsaChip::<Fr, BabyJubJub, Params>::new(
+			let eddsa = EddsaChipset::<Fr, BabyJubJub, Params>::new(
 				big_r_x, big_r_y, s, pk_x, pk_y, m, s_bits, suborder_bits, diff_bits, m_hash_bits,
 			);
-			eddsa.synthesize(&config.eddsa, layouter.namespace(|| "eddsa"))?;
+			eddsa.synthesize(
+				&config.common,
+				&config.eddsa,
+				layouter.namespace(|| "eddsa"),
+			)?;
 			Ok(())
 		}
 	}
@@ -366,8 +380,8 @@ mod test {
 		let sig = sign(&sk, &pk, m);
 		let circuit = TestCircuit::new(sig.big_r.x, sig.big_r.y, sig.s, pk.0.x, pk.0.y, m);
 
-		let k = 10;
-		let prover = MockProver::run(k, &circuit, vec![]).unwrap();
+		let k = 11;
+		let prover = MockProver::run(k, &circuit, vec![vec![]]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
 	}
 
@@ -380,7 +394,7 @@ mod test {
 		let pk = sk.public();
 
 		let inputs = [Fr::zero(), Fr::one(), Fr::one(), Fr::zero(), Fr::zero()];
-		let different_r = Hasher::new(inputs).permute()[0];
+		let different_r = PoseidonHasher::new(inputs).permute()[0];
 
 		let m = Fr::from_str_vartime("123456789012345678901234567890").unwrap();
 		let mut sig = sign(&sk, &pk, m);
@@ -389,8 +403,8 @@ mod test {
 		sig.big_r = b8.mul_scalar(&different_r.to_bytes()).affine();
 		let circuit = TestCircuit::new(sig.big_r.x, sig.big_r.y, sig.s, pk.0.x, pk.0.y, m);
 
-		let k = 10;
-		let prover = MockProver::run(k, &circuit, vec![]).unwrap();
+		let k = 11;
+		let prover = MockProver::run(k, &circuit, vec![vec![]]).unwrap();
 		assert!(prover.verify().is_err());
 	}
 
@@ -407,8 +421,8 @@ mod test {
 		sig.s = sig.s.add(&Fr::from(1));
 		let circuit = TestCircuit::new(sig.big_r.x, sig.big_r.y, sig.s, pk.0.x, pk.0.y, m);
 
-		let k = 10;
-		let prover = MockProver::run(k, &circuit, vec![]).unwrap();
+		let k = 11;
+		let prover = MockProver::run(k, &circuit, vec![vec![]]).unwrap();
 		assert!(prover.verify().is_err());
 	}
 
@@ -426,8 +440,8 @@ mod test {
 		let m = Fr::from_str_vartime("123456789012345678901234567890").unwrap();
 		let sig = sign(&sk1, &pk1, m);
 		let circuit = TestCircuit::new(sig.big_r.x, sig.big_r.y, sig.s, pk2.0.x, pk2.0.y, m);
-		let k = 10;
-		let prover = MockProver::run(k, &circuit, vec![]).unwrap();
+		let k = 11;
+		let prover = MockProver::run(k, &circuit, vec![vec![]]).unwrap();
 		assert!(prover.verify().is_err());
 	}
 
@@ -445,8 +459,8 @@ mod test {
 		let sig = sign(&sk, &pk, m1);
 		let circuit = TestCircuit::new(sig.big_r.x, sig.big_r.y, sig.s, pk.0.x, pk.0.y, m2);
 
-		let k = 10;
-		let prover = MockProver::run(k, &circuit, vec![]).unwrap();
+		let k = 11;
+		let prover = MockProver::run(k, &circuit, vec![vec![]]).unwrap();
 
 		assert!(prover.verify().is_err());
 	}
@@ -462,10 +476,10 @@ mod test {
 		let sig = sign(&sk, &pk, m);
 		let circuit = TestCircuit::new(sig.big_r.x, sig.big_r.y, sig.s, pk.0.x, pk.0.y, m);
 
-		let k = 10;
+		let k = 11;
 		let rng = &mut rand::thread_rng();
 		let params = generate_params(k);
-		let res = prove_and_verify::<Bn256, _, _>(params, circuit, &[], rng).unwrap();
+		let res = prove_and_verify::<Bn256, _, _>(params, circuit, &[&[]], rng).unwrap();
 
 		assert!(res);
 	}
