@@ -1,4 +1,4 @@
-//! `main_gate` is a five width stardart like PLONK gate that constrains the
+//! `main_gate` is a five width standard like PLONK gate that constrains the
 //! equation below
 //!
 //! q_a * a + q_b * b + q_c * c + q_d * d + q_e * e +
@@ -9,17 +9,17 @@
 
 use halo2::{
 	arithmetic::FieldExt,
-	circuit::{AssignedCell, Layouter, Region, Value},
-	plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Instance, Selector},
+	circuit::{AssignedCell, Layouter},
+	plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Instance},
 	poly::Rotation,
 };
 use std::marker::PhantomData;
 
-const WIDTH: usize = 5;
+use crate::RegionCtx;
 
 #[derive(Copy, Clone, Debug)]
 /// Configuration elements for the circuit are defined here.
-pub struct MainConfig {
+pub struct MainGateConfig {
 	/// Configures columns for the advice.
 	a: Column<Advice>,
 	b: Column<Advice>,
@@ -42,14 +42,14 @@ pub struct MainConfig {
 }
 
 /// Structure for the main chip.
-pub struct MainChip<F: FieldExt> {
+pub struct MainGate<F: FieldExt> {
 	/// Constructs a phantom data for the FieldExt.
 	_phantom: PhantomData<F>,
 }
 
-impl<F: FieldExt> MainChip<F> {
+impl<F: FieldExt> MainGate<F> {
 	/// Make the circuit configs.
-	pub fn configure(meta: &mut ConstraintSystem<F>) -> MainConfig {
+	pub fn configure(meta: &mut ConstraintSystem<F>) -> MainGateConfig {
 		let a = meta.advice_column();
 		let b = meta.advice_column();
 		let c = meta.advice_column();
@@ -103,205 +103,258 @@ impl<F: FieldExt> MainChip<F> {
 			]
 		});
 
-		MainConfig { a, b, c, d, e, sa, sb, sc, sd, se, s_constant, s_mul_ab, s_mul_cd, instance }
+		MainGateConfig {
+			a,
+			b,
+			c,
+			d,
+			e,
+			sa,
+			sb,
+			sc,
+			sd,
+			se,
+			s_constant,
+			s_mul_ab,
+			s_mul_cd,
+			instance,
+		}
 	}
 
-	// /// Synthesize the and circuit.
-	// pub fn and(
-	// 	// Assigns a cell for the x.
-	// 	x: AssignedCell<F, F>,
-	// 	// Assigns a cell for the y.
-	// 	y: AssignedCell<F, F>,
-	// 	config: &MainConfig,
-	// 	mut layouter: impl Layouter<F>,
-	// ) -> Result<AssignedCell<F, F>, Error> {
-	// 	// Both of the `x` & `y` have to be boolean.
-	// 	layouter.assign_region(
-	// 		|| "and",
-	// 		|mut region: Region<'_, F>| {
-	// 			config.s_mul.enable(&mut region, 0)?;
-	// 			config.s_is_bool_a.enable(&mut region, 0)?;
-	// 			config.s_is_bool_b.enable(&mut region, 0)?;
+	/// Assigns a new witness that is equal to boolean AND of `x` and `y`
+	pub fn and(
+		// Assigns a cell for the x.
+		x: AssignedCell<F, F>,
+		// Assigns a cell for the y.
+		y: AssignedCell<F, F>,
+		config: &MainGateConfig,
+		layouter: impl Layouter<F> + Copy,
+	) -> Result<AssignedCell<F, F>, Error> {
+		// Both of the `x` & `y` have to be boolean.
+		let x = MainGate::is_bool(x, config, layouter)?;
+		let y = MainGate::is_bool(y, config, layouter)?;
 
-	// 			config.s_c.enable(&mut region, 0)?;
+		MainGate::mul(x, y, config, layouter)
+	}
 
-	// 			let assigned_x = x.copy_advice(|| "x", &mut region, config.a, 0)?;
-	// 			let assigned_y = y.copy_advice(|| "y", &mut region, config.b, 0)?;
+	/// Assigns a new witness that is either of `0` or `1`
+	pub fn is_bool(
+		// Assigns a cell for the x.
+		x: AssignedCell<F, F>,
+		config: &MainGateConfig,
+		mut layouter: impl Layouter<F>,
+	) -> Result<AssignedCell<F, F>, Error> {
+		// We should satisfy the equation below
+		// (1 - x) * x = 0
+		// x - x * x = 0
 
-	// 			let res = assigned_x.value().cloned() * assigned_y.value();
-	// 			let res_assigned = region.assign_advice(|| "res", config.c, 0, || res)?;
+		// Witness layout:
+		// | A   | B   | C   | D   | E  |
+		// | --- | --- | --- | --- | ---|
+		// | x   |     | x   | x   |    |
 
-	// 			Ok(res_assigned)
-	// 		},
-	// 	)
-	// }
+		layouter.assign_region(
+			|| "is_bool",
+			|region| {
+				let mut ctx = RegionCtx::new(region, 0);
 
-	// /// Synthesize the is_bool circuit.
-	// pub fn is_bool(
-	// 	// Assigns a cell for the x.
-	// 	x: AssignedCell<F, F>,
-	// 	config: &MainConfig,
-	// 	mut layouter: impl Layouter<F>,
-	// ) -> Result<AssignedCell<F, F>, Error> {
-	// 	layouter.assign_region(
-	// 		|| "is_boolean",
-	// 		|mut region: Region<'_, F>| {
-	// 			config.s_is_bool_a.enable(&mut region, 0)?;
+				ctx.assign_fixed(config.sa, F::one())?;
+				ctx.assign_fixed(config.s_mul_cd, -F::one())?;
 
-	// 			let assigned_x = x.copy_advice(|| "x", &mut region, config.a, 0)?;
+				let assigned_x = ctx.assign_advice(config.a, x.value().cloned())?;
+				ctx.copy_assign(config.c, assigned_x.clone())?;
+				ctx.copy_assign(config.d, assigned_x.clone())?;
 
-	// 			Ok(assigned_x)
-	// 		},
-	// 	)
-	// }
+				Ok(assigned_x)
+			},
+		)
+	}
 
-	// /// Synthesize the is_equal circuit.
-	// pub fn is_equal(
-	// 	v1: AssignedCell<F, F>, v2: AssignedCell<F, F>, config: &MainConfig,
-	// 	mut layouter: impl Layouter<F>,
-	// ) -> Result<AssignedCell<F, F>, Error> {
-	// 	layouter.assign_region(
-	// 		|| "is_equal",
-	// 		|mut region: Region<'_, F>| {
-	// 			config.s_a.enable(&mut region, 0)?;
-	// 			config.s_b.enable(&mut region, 0)?;
-	// 			config.s_c.enable(&mut region, 0)?;
+	/// Assigns a new witness (`x`) that is equal to `y`
+	pub fn is_equal(
+		x: AssignedCell<F, F>, y: AssignedCell<F, F>, config: &MainGateConfig,
+		mut layouter: impl Layouter<F>,
+	) -> Result<AssignedCell<F, F>, Error> {
+		// We should satisfy the equation below
+		// x - y = 0
 
-	// 			// Check if 0 + lhs = rhs
-	// 			let out =
-	// 				region.assign_advice(|| "out", config.a, 0, || Value::known(F::zero()))?;
-	// 			v1.copy_advice(|| "lhs", &mut region, config.b, 0)?;
-	// 			v2.copy_advice(|| "rhs", &mut region, config.c, 0)?;
+		// Witness layout:
+		// | A   | B   | C   | D   | E  |
+		// | --- | --- | --- | --- | ---|
+		// | x   | y   |  0  |     |    |
 
-	// 			Ok(out) // TODO: Should be `F::one()` ???
-	// 		},
-	// 	)
-	// }
+		layouter.assign_region(
+			|| "is_equal",
+			|region| {
+				let mut ctx = RegionCtx::new(region, 0);
 
-	// /// Synthesize the is_zero circuit.
-	// pub fn is_zero(
-	// 	// Assigns a cell for the x.
-	// 	x: AssignedCell<F, F>,
-	// 	config: &MainConfig,
-	// 	mut layouter: impl Layouter<F>,
-	// ) -> Result<AssignedCell<F, F>, Error> {
-	// 	let is_zero = layouter.assign_region(
-	// 		|| "is_zero",
-	// 		|mut region: Region<'_, F>| {
-	// 			config.s_mul.enable(&mut region, 0)?;
-	// 			config.s_c.enable(&mut region, 0)?;
+				ctx.assign_fixed(config.sa, F::one())?;
+				ctx.assign_fixed(config.sb, -F::one())?;
 
-	// 			let one = Value::known(F::one());
-	// 			let x_inv = x.value().and_then(|val| {
-	// 				let val_opt: Option<F> = val.invert().into();
-	// 				Value::known(val_opt.unwrap_or(F::one()))
-	// 			});
-	// 			// In the circuit here, if x = 0, b will be assigned to the value 1.
-	// 			// If x = 1, means x_inv = 1 as well, b will be assigned to the value 0.
-	// 			let b = one - x.value().cloned() * x_inv;
+				let assigned_x = ctx.assign_advice(config.a, x.value().cloned())?;
+				ctx.assign_advice(config.b, y.value().cloned())?;
 
-	// 			x.copy_advice(|| "x", &mut region, config.a, 0)?;
-	// 			let assigned_b = region.assign_advice(|| "1 - x * x_inv", config.b, 0, ||
-	// b)?; 			region.assign_advice(|| "0", config.c, 0, || Value::known(F::zero()))?;
+				Ok(assigned_x)
+			},
+		)
+	}
 
-	// 			Ok(assigned_b)
-	// 		},
-	// 	)?;
+	/// Assigns a new witness that is `zero`
+	pub fn is_zero(
+		// Assigns a cell for the x.
+		x: AssignedCell<F, F>,
+		config: &MainGateConfig,
+		mut layouter: impl Layouter<F>,
+	) -> Result<AssignedCell<F, F>, Error> {
+		// We should satisfy the equation below
+		// 1 - x * x_inv = 1
+		// x * x_inv = 0
 
-	// 	Ok(is_zero)
-	// }
+		// Witness layout:
+		// | A   | B     | C   | D   | E  |
+		// | --- | ----- | --- | --- | ---|
+		// | x   | x_inv |     |     |    |
 
-	// /// Synthesize the mul circuit.
-	// pub fn mul(
-	// 	// Assigns a cell for the x.
-	// 	x: AssignedCell<F, F>,
-	// 	// Assigns a cell for the y.
-	// 	y: AssignedCell<F, F>,
-	// 	config: &MainConfig,
-	// 	mut layouter: impl Layouter<F>,
-	// ) -> Result<AssignedCell<F, F>, Error> {
-	// 	layouter.assign_region(
-	// 		|| "mul",
-	// 		|mut region: Region<'_, F>| {
-	// 			config.s_mul.enable(&mut region, 0)?;
-	// 			config.s_c.enable(&mut region, 0)?;
+		layouter.assign_region(
+			|| "is_zero",
+			|region| {
+				let x_inv = x.clone().value().map(|v| v.invert().unwrap_or(F::zero()));
 
-	// 			let assigned_x = x.copy_advice(|| "a", &mut region, config.a, 0)?;
-	// 			let assigned_y = y.copy_advice(|| "b", &mut region, config.b, 0)?;
+				let mut ctx = RegionCtx::new(region, 0);
 
-	// 			let out = assigned_x.value().cloned() * assigned_y.value();
-	// 			let out_assigned = region.assign_advice(|| "a * b", config.c, 0, || out)?;
+				ctx.assign_fixed(config.s_mul_ab, F::one())?;
 
-	// 			Ok(out_assigned)
-	// 		},
-	// 	)
-	// }
+				let assigned_x = ctx.copy_assign(config.a, x.clone())?;
+				ctx.assign_advice(config.b, x_inv)?;
 
-	// /// Synthesize the add circuit.
-	// pub fn add(
-	// 	// Assigns a cell for the x.
-	// 	x: AssignedCell<F, F>,
-	// 	// Assigns a cell for the y.
-	// 	y: AssignedCell<F, F>,
-	// 	config: &MainConfig,
-	// 	mut layouter: impl Layouter<F>,
-	// ) -> Result<AssignedCell<F, F>, Error> {
-	// 	layouter.assign_region(
-	// 		|| "add",
-	// 		|mut region: Region<'_, F>| {
-	// 			config.s_a.enable(&mut region, 0)?;
-	// 			config.s_b.enable(&mut region, 0)?;
-	// 			config.s_c.enable(&mut region, 0)?;
+				Ok(assigned_x)
+			},
+		)
+	}
 
-	// 			let assigned_x = x.copy_advice(|| "a", &mut region, config.a, 0)?;
-	// 			let assigned_y = y.copy_advice(|| "b", &mut region, config.b, 0)?;
+	/// Assigns a new witness that is the product of `x` and `y`
+	pub fn mul(
+		// Assigns a cell for the x.
+		x: AssignedCell<F, F>,
+		// Assigns a cell for the y.
+		y: AssignedCell<F, F>,
+		config: &MainGateConfig,
+		mut layouter: impl Layouter<F>,
+	) -> Result<AssignedCell<F, F>, Error> {
+		// We should satisfy the equation below
+		// x * y - res = 0
 
-	// 			let out = assigned_x.value().cloned() + assigned_y.value();
-	// 			let out_assigned = region.assign_advice(|| "a + b", config.c, 0, || out)?;
+		// Witness layout:
+		// | A   | B   | C   | D   | E  |
+		// | --- | --- | --- | --- | ---|
+		// | x   | y   | res |     |    |
 
-	// 			Ok(out_assigned)
-	// 		},
-	// 	)
-	// }
+		layouter.assign_region(
+			|| "mul",
+			|region| {
+				let mut ctx = RegionCtx::new(region, 0);
 
-	// /// Synthesize the select circuit.
-	// pub fn select(
-	// 	// Assigns a cell for the bit.
-	// 	bit: AssignedCell<F, F>,
-	// 	// Assigns a cell for the x.
-	// 	x: AssignedCell<F, F>,
-	// 	// Assigns a cell for the y.
-	// 	y: AssignedCell<F, F>,
-	// 	config: &MainConfig,
-	// 	mut layouter: impl Layouter<F>,
-	// ) -> Result<AssignedCell<F, F>, Error> {
-	// 	// Checking bit is boolean or not.
-	// 	let assigned_bool = Self::is_bool(bit, config, layouter.namespace(||
-	// "is_boolean"))?;
+				ctx.assign_fixed(config.s_mul_ab, F::one())?;
+				ctx.assign_fixed(config.sc, -F::one())?;
 
-	// 	layouter.assign_region(
-	// 		|| "select",
-	// 		|mut region: Region<'_, F>| {
-	// 			config.s_select.enable(&mut region, 0)?;
+				let assigned_x = ctx.assign_advice(config.a, x.value().cloned())?;
+				let assigned_y = ctx.assign_advice(config.b, y.value().cloned())?;
 
-	// 			let assigned_bit = assigned_bool.copy_advice(|| "bit", &mut region, config.a,
-	// 0)?; 			let assigned_x = x.copy_advice(|| "x", &mut region, config.b, 0)?;
-	// 			let assigned_y = y.copy_advice(|| "y", &mut region, config.c, 0)?;
+				let prod = assigned_x.value().cloned() * assigned_y.value();
+				let assigned_prod = ctx.assign_advice(config.c, prod)?;
 
-	// 			// Conditional control checks the bit. Is it zero or not?
-	// 			// If yes returns the y value, else x.
-	// 			let res = assigned_bit.value().and_then(|bit_f| {
-	// 				if bool::from(bit_f.is_zero()) {
-	// 					assigned_y.value().cloned()
-	// 				} else {
-	// 					assigned_x.value().cloned()
-	// 				}
-	// 			});
+				Ok(assigned_prod)
+			},
+		)
+	}
 
-	// 			let assigned_res = region.assign_advice(|| "res", config.b, 1, || res)?;
+	/// Assigns a new witness that is sum of `x` and `y`
+	pub fn add(
+		// Assigns a cell for the x.
+		x: AssignedCell<F, F>,
+		// Assigns a cell for the y.
+		y: AssignedCell<F, F>,
+		config: &MainGateConfig,
+		mut layouter: impl Layouter<F>,
+	) -> Result<AssignedCell<F, F>, Error> {
+		// We should satisfy the equation below
+		// x + y - res = 0
 
-	// 			Ok(assigned_res)
-	// 		},
-	// 	)
-	// }
+		// Witness layout:
+		// | A   | B   | C   | D   | E  |
+		// | --- | --- | --- | --- | ---|
+		// | x   | y   | res |     |    |
+
+		layouter.assign_region(
+			|| "add",
+			|region| {
+				let mut ctx = RegionCtx::new(region, 0);
+
+				ctx.assign_fixed(config.sa, F::one())?;
+				ctx.assign_fixed(config.sb, F::one())?;
+				ctx.assign_fixed(config.sc, -F::one())?;
+
+				let assigned_x = ctx.assign_advice(config.a, x.value().cloned())?;
+				let assigned_y = ctx.assign_advice(config.b, y.value().cloned())?;
+
+				let sum = assigned_x.value().cloned() + assigned_y.value();
+				let assigned_sum = ctx.assign_advice(config.c, sum)?;
+
+				Ok(assigned_sum)
+			},
+		)
+	}
+
+	/// Assigns new witness that equals to `x` if `bit` is true or assigned to
+	/// `y` if `bit` is false
+	pub fn select(
+		// Assigns a cell for the bit.
+		bit: AssignedCell<F, F>,
+		// Assigns a cell for the x.
+		x: AssignedCell<F, F>,
+		// Assigns a cell for the y.
+		y: AssignedCell<F, F>,
+		config: &MainGateConfig,
+		mut layouter: impl Layouter<F>,
+	) -> Result<AssignedCell<F, F>, Error> {
+		// We should satisfy the equation below with bit asserted condition flag
+		// c (x-y) + y - res = 0
+		// cond * x - cond * y + y - res = 0
+
+		// Witness layout:
+		// | A   | B   | C | D   | E  |
+		// | --- | --- | - | --- | ---|
+		// | c   | x   | c | y   | res|
+
+		let res = x.value().zip(y.value()).zip(bit.value()).map(|((x, y), bit)| {
+			if *bit == F::one() {
+				*x
+			} else {
+				assert_eq!(*bit, F::zero());
+				*y
+			}
+		});
+
+		layouter.assign_region(
+			|| "select",
+			|region| {
+				let mut ctx = RegionCtx::new(region, 0);
+
+				ctx.assign_fixed(config.s_mul_ab, F::one())?;
+				ctx.assign_fixed(config.s_mul_cd, -F::one())?;
+				ctx.assign_fixed(config.sd, F::one())?;
+				ctx.assign_fixed(config.se, -F::one())?;
+
+				let b1 = ctx.assign_advice(config.a, bit.value().cloned())?;
+				ctx.assign_advice(config.b, x.value().cloned())?;
+				let b2 = ctx.assign_advice(config.c, bit.value().cloned())?;
+				ctx.assign_advice(config.d, y.value().cloned())?;
+				let res = ctx.assign_advice(config.e, res)?;
+
+				ctx.constrain_equal(b1, b2)?;
+
+				Ok(res)
+			},
+		)
+	}
 }
