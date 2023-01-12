@@ -148,12 +148,12 @@ impl<
 		let mut sigs = Vec::new();
 		let mut ops = Vec::new();
 
-		for i in 0..NUM_NEIGHBOURS {
+		for _ in 0..NUM_NEIGHBOURS {
 			let sk = SecretKey::random(rng);
 			let pk = sk.public();
 
 			let mut neighbour_ops = Vec::new();
-			for j in 0..NUM_NEIGHBOURS {
+			for _ in 0..NUM_NEIGHBOURS {
 				neighbour_ops.push(Scalar::random(rng.clone()));
 			}
 
@@ -256,7 +256,7 @@ impl<
 
 					let mut assigned_pk_x = Vec::new();
 					for chunk in self.pk_x.chunks(ADVICE) {
-						for i in 0..ADVICE {
+						for i in 0..chunk.len() {
 							let val = chunk[i].clone();
 							let pk_x = ctx.assign_advice(config.common.advice[i], val)?;
 							assigned_pk_x.push(pk_x)
@@ -267,7 +267,7 @@ impl<
 
 					let mut assigned_pk_y = Vec::new();
 					for chunk in self.pk_y.chunks(ADVICE) {
-						for i in 0..ADVICE {
+						for i in 0..chunk.len() {
 							let val = chunk[i].clone();
 							let pk_y = ctx.assign_advice(config.common.advice[i], val)?;
 							assigned_pk_y.push(pk_y)
@@ -278,7 +278,7 @@ impl<
 
 					let mut assigned_big_r_x = Vec::new();
 					for chunk in self.big_r_x.chunks(ADVICE) {
-						for i in 0..ADVICE {
+						for i in 0..chunk.len() {
 							let val = chunk[i].clone();
 							let big_r_x = ctx.assign_advice(config.common.advice[i], val)?;
 							assigned_big_r_x.push(big_r_x)
@@ -289,7 +289,7 @@ impl<
 
 					let mut assigned_big_r_y = Vec::new();
 					for chunk in self.big_r_y.chunks(ADVICE) {
-						for i in 0..ADVICE {
+						for i in 0..chunk.len() {
 							let val = chunk[i].clone();
 							let big_r_y = ctx.assign_advice(config.common.advice[i], val)?;
 							assigned_big_r_y.push(big_r_y)
@@ -300,7 +300,7 @@ impl<
 
 					let mut assigned_s = Vec::new();
 					for chunk in self.s.chunks(ADVICE) {
-						for i in 0..ADVICE {
+						for i in 0..chunk.len() {
 							let val = chunk[i].clone();
 							let s = ctx.assign_advice(config.common.advice[i], val)?;
 							assigned_s.push(s)
@@ -313,7 +313,7 @@ impl<
 					for neighbour_ops in &self.ops {
 						let mut assigned_neighbour_op = Vec::new();
 						for chunk in neighbour_ops.chunks(ADVICE) {
-							for i in 0..ADVICE {
+							for i in 0..chunk.len() {
 								let val = chunk[i].clone();
 								let s = ctx.assign_advice(config.common.advice[i], val)?;
 								assigned_neighbour_op.push(s)
