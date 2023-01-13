@@ -10,28 +10,24 @@ pub mod attestation;
 use crate::{
 	epoch::Epoch,
 	error::EigenError,
-	utils::{calculate_message_hash, keyset_from_raw, scalar_from_bs58, to_wide_bytes},
+	utils::{calculate_message_hash, keyset_from_raw},
 };
 use attestation::Attestation;
-use bs58::decode::Error as Bs58Error;
 use eigen_trust_circuit::{
-	circuit::{native, EigenTrust, PoseidonNativeHasher, PoseidonNativeSponge},
-	eddsa::native::{sign, PublicKey, SecretKey, Signature},
+	circuit::{native, EigenTrust, PoseidonNativeHasher},
+	eddsa::native::{sign, PublicKey},
 	halo2::{
 		halo2curves::{
 			bn256::{Bn256, Fr as Scalar, G1Affine},
-			group::ff::PrimeField,
 			FieldExt,
 		},
-		plonk::{ProvingKey, VerifyingKey},
+		plonk::ProvingKey,
 		poly::kzg::commitment::ParamsKZG,
 	},
-	params::poseidon_bn254_5x5::Params,
-	poseidon::native::Poseidon,
 	utils::{field_to_string, prove, verify},
 };
 use rand::thread_rng;
-use serde::{ser::SerializeStruct, Deserialize, Serialize, Serializer};
+use serde::{ser::SerializeStruct, Serialize, Serializer};
 use std::collections::HashMap;
 
 /// Number of iterations to run the eigen trust algorithm
@@ -77,7 +73,7 @@ pub const PUBLIC_KEYS: [&str; NUM_NEIGHBOURS] = [
 #[derive(Debug, Clone)]
 /// Structure for holding the ZK proof and public inputs needed for verification
 pub struct Proof {
-	pub(crate) pub_ins: [Scalar; NUM_NEIGHBOURS],
+	pub(crate) pub_ins: Vec<Scalar>,
 	pub(crate) proof: Vec<u8>,
 }
 
@@ -86,7 +82,7 @@ impl Serialize for Proof {
 	where
 		S: Serializer,
 	{
-		let values = self.pub_ins.map(|x| field_to_string(x));
+		let values: Vec<String> = self.pub_ins.iter().map(|x| field_to_string(x)).collect();
 		let mut state = serializer.serialize_struct("Proof", 2)?;
 		state.serialize_field("pub_ins", &values)?;
 		state.serialize_field("proof", &self.proof)?;
@@ -134,11 +130,12 @@ impl Manager {
 		let (sks, pks) = keyset_from_raw(FIXED_SET);
 
 		let score = Scalar::from_u128(INITIAL_SCORE / NUM_NEIGHBOURS as u128);
-		let scores = [[score; NUM_NEIGHBOURS]; NUM_NEIGHBOURS];
+		let scores = vec![vec![score; NUM_NEIGHBOURS]; NUM_NEIGHBOURS];
 
-		let messages = calculate_message_hash(pks.clone(), scores);
+		const N: usize = NUM_NEIGHBOURS;
+		let messages = calculate_message_hash::<N, N>(pks.clone(), scores.clone());
 
-		for (((sk, pk), msg), scs) in sks.zip(pks.clone()).zip(messages).zip(scores) {
+		for (((sk, pk), msg), scs) in sks.into_iter().zip(pks.clone()).zip(messages).zip(scores) {
 			let sig = sign(&sk, &pk, msg);
 
 			let pk_hash_inp = [pk.0.x, pk.0.y, Scalar::zero(), Scalar::zero(), Scalar::zero()];
@@ -153,29 +150,34 @@ impl Manager {
 	pub fn calculate_proofs(&mut self, epoch: Epoch) -> Result<(), EigenError> {
 		let (_, pks) = keyset_from_raw(FIXED_SET);
 
-		let pk_hashes = pks.clone().map(|pk| {
-			let pk_hash_inp = [pk.0.x, pk.0.y, Scalar::zero(), Scalar::zero(), Scalar::zero()];
-			let pk_hash = PoseidonNativeHasher::new(pk_hash_inp).permute()[0];
-			pk_hash
-		});
+		let pk_hashes: Vec<Scalar> = pks
+			.iter()
+			.map(|pk| {
+				let pk_hash_inp = [pk.0.x, pk.0.y, Scalar::zero(), Scalar::zero(), Scalar::zero()];
+				let pk_hash = PoseidonNativeHasher::new(pk_hash_inp).permute()[0];
+				pk_hash
+			})
+			.collect();
 
-		let mut ops = [[Scalar::zero(); NUM_NEIGHBOURS]; NUM_NEIGHBOURS];
-		let mut sigs = [(); NUM_NEIGHBOURS].map(|_| None);
-
-		for (i, pk_hash) in pk_hashes.iter().enumerate() {
+		let mut ops = Vec::new();
+		let mut sigs = Vec::new();
+		for pk_hash in pk_hashes {
 			let att = self.attestations.get(&pk_hash).unwrap();
-			ops[i] = att.scores;
-			sigs[i] = Some(att.sig.clone());
+			ops.push(att.scores.to_vec());
+			sigs.push(att.sig.clone());
 		}
 
-		let sigs = sigs.map(|s| s.unwrap());
-		let messages = calculate_message_hash(pks.clone(), ops);
+		const N: usize = NUM_NEIGHBOURS;
+		let messages = calculate_message_hash::<N, N>(pks.clone(), ops.clone());
 
 		let mut rng = thread_rng();
 		let et = EigenTrust::<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, SCALE>::new(
-			pks, sigs, ops, messages,
+			pks,
+			sigs,
+			ops.clone(),
+			messages,
 		);
-		let init_score = [(); NUM_NEIGHBOURS].map(|_| Scalar::from_u128(INITIAL_SCORE));
+		let init_score = vec![Scalar::from_u128(INITIAL_SCORE); NUM_NEIGHBOURS];
 		let pub_ins = native::<Scalar, NUM_NEIGHBOURS, NUM_ITER, SCALE>(init_score, ops);
 
 		let proof_bytes = prove(&self.params, et, &[&pub_ins], &self.proving_key, &mut rng)

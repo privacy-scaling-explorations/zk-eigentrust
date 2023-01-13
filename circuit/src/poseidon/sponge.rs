@@ -2,11 +2,11 @@ use super::copy_state;
 use crate::{
 	params::RoundParams,
 	poseidon::{PoseidonChipset, PoseidonConfig},
-	Chip, Chipset, CommonConfig,
+	Chip, Chipset, CommonConfig, RegionCtx,
 };
 use halo2::{
 	arithmetic::FieldExt,
-	circuit::{AssignedCell, Layouter, Region, Value},
+	circuit::{AssignedCell, Layouter, Region},
 	plonk::{ConstraintSystem, Error, Expression, Selector},
 	poly::Rotation,
 };
@@ -38,9 +38,9 @@ impl<F: FieldExt, const WIDTH: usize> Chip<F> for AbsorbChip<F, WIDTH> {
 
 			let s = v_cells.query_selector(absorb_selector);
 			for i in 0..WIDTH {
-				let poseidon_exp = v_cells.query_advice(common.advice[i], Rotation::prev());
-				let sponge_exp = v_cells.query_advice(common.advice[i], Rotation::cur());
-				let next_sponge_exp = v_cells.query_advice(common.advice[i], Rotation::next());
+				let poseidon_exp = v_cells.query_advice(common.advice[i], Rotation::cur());
+				let sponge_exp = v_cells.query_advice(common.advice[i], Rotation::next());
+				let next_sponge_exp = v_cells.query_advice(common.advice[i], Rotation(2));
 				let diff = next_sponge_exp - (sponge_exp + poseidon_exp);
 				exprs[i] = s.clone() * diff;
 			}
@@ -56,25 +56,28 @@ impl<F: FieldExt, const WIDTH: usize> Chip<F> for AbsorbChip<F, WIDTH> {
 	) -> Result<Self::Output, Error> {
 		layouter.assign_region(
 			|| "absorb",
-			|mut region: Region<'_, F>| {
-				let round = 1;
-				selector.enable(&mut region, round)?;
+			|region: Region<'_, F>| {
+				let mut ctx = RegionCtx::new(region, 0);
+				ctx.enable(selector.clone())?;
 
 				// Load previous Poseidon state
-				let loaded_state = copy_state(common, &mut region, round - 1, &self.prev_state)?;
+				let loaded_state = copy_state(&mut ctx, common, &self.prev_state)?;
+				ctx.next();
 
 				// Load next chunk
-				let loaded_chunk = copy_state(common, &mut region, round, &self.state)?;
+				let loaded_chunk = copy_state(&mut ctx, common, &self.state)?;
+				ctx.next();
 
 				// Calculate the next state to permute
 				let columns = common.advice[0..WIDTH].try_into().unwrap();
-				let next_state = loaded_chunk.zip(loaded_state).zip(columns).try_map(
-					|((chunk_state, pos_state), column)| {
-						let sum =
-							chunk_state.value().and_then(|&s| pos_state.value().map(|&ps| s + ps));
-						region.assign_advice(|| "sum", column, round + 1, || sum)
-					},
-				)?;
+				let collection = loaded_chunk.zip(loaded_state).zip(columns);
+				let next_state = collection.try_map(|((chunk_state, pos_state), column)| {
+					let sum = chunk_state.value().and_then(|&s| {
+						let pos_state_val = pos_state.value();
+						pos_state_val.map(|&ps| s + ps)
+					});
+					ctx.assign_advice(column, sum)
+				})?;
 
 				Ok(next_state)
 			},
@@ -138,15 +141,13 @@ where
 
 		let zero_state = layouter.assign_region(
 			|| "load_initial_state",
-			|mut region: Region<'_, F>| {
+			|region: Region<'_, F>| {
+				let mut ctx = RegionCtx::new(region, 0);
+
 				let mut state: [Option<AssignedCell<F, F>>; WIDTH] = [(); WIDTH].map(|_| None);
 				for i in 0..WIDTH {
-					state[i] = Some(region.assign_advice(
-						|| "state",
-						common.advice[i],
-						0,
-						|| Value::known(F::zero()),
-					)?);
+					let zero_asgn = ctx.assign_from_constant(common.advice[i], F::zero())?;
+					state[i] = Some(zero_asgn);
 				}
 				Ok(state.map(|item| item.unwrap()))
 			},
@@ -185,7 +186,7 @@ mod test {
 		poseidon::{
 			native::sponge::PoseidonSponge, FullRoundChip, PartialRoundChip, PoseidonConfig,
 		},
-		Chip, Chipset, CommonChip, CommonConfig,
+		Chip, Chipset, CommonChip, CommonConfig, RegionCtx,
 	};
 
 	use crate::params::{hex_to_field, poseidon_bn254_5x5::Params};
@@ -246,15 +247,13 @@ mod test {
 		) -> Result<(), Error> {
 			let inputs1 = layouter.assign_region(
 				|| "load_state1",
-				|mut region: Region<'_, Fr>| {
+				|region: Region<'_, Fr>| {
+					let mut ctx = RegionCtx::new(region, 0);
 					let mut state: [Option<AssignedCell<Fr, Fr>>; 5] = [(); 5].map(|_| None);
 					for i in 0..5 {
-						state[i] = Some(region.assign_advice(
-							|| "state",
-							config.common.advice[i],
-							0,
-							|| self.inputs1[i],
-						)?);
+						let val = self.inputs1[i].clone();
+						let asgn_val = ctx.assign_advice(config.common.advice[i], val)?;
+						state[i] = Some(asgn_val);
 					}
 					Ok(state.map(|item| item.unwrap()))
 				},
@@ -262,15 +261,13 @@ mod test {
 
 			let inputs2 = layouter.assign_region(
 				|| "load_state2",
-				|mut region: Region<'_, Fr>| {
+				|region: Region<'_, Fr>| {
+					let mut ctx = RegionCtx::new(region, 0);
 					let mut state: [Option<AssignedCell<Fr, Fr>>; 5] = [(); 5].map(|_| None);
 					for i in 0..5 {
-						state[i] = Some(region.assign_advice(
-							|| "state",
-							config.common.advice[i],
-							0,
-							|| self.inputs2[i],
-						)?);
+						let val = self.inputs2[i].clone();
+						let asgn_val = ctx.assign_advice(config.common.advice[i], val)?;
+						state[i] = Some(asgn_val);
 					}
 					Ok(state.map(|item| item.unwrap()))
 				},

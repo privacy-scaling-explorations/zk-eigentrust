@@ -45,25 +45,19 @@ pub mod utils;
 
 use eigen_trust_circuit::{
 	circuit::EigenTrust,
-	eddsa::native::PublicKey,
 	halo2::{
-		halo2curves::{
-			bn256::{Bn256, Fr as Scalar},
-			group::ff::PrimeField,
-			FieldExt,
-		},
+		halo2curves::{bn256::Fr as Scalar, group::ff::PrimeField, FieldExt},
 		poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
 	},
-	params::poseidon_bn254_5x5::Params,
-	utils::{keygen, to_short, to_wide},
+	utils::{keygen, to_short},
 };
 use epoch::Epoch;
 use error::EigenError;
 use hyper::{
 	body::{aggregate, Buf},
-	server::conn::{AddrStream, Http},
-	service::{make_service_fn, service_fn},
-	Body, Method, Request, Response, StatusCode,
+	server::conn::Http,
+	service::service_fn,
+	Body, Method, Request, Response,
 };
 use manager::{
 	attestation::{Attestation, AttestationData},
@@ -71,14 +65,12 @@ use manager::{
 };
 use once_cell::sync::Lazy;
 use rand::thread_rng;
-use serde::{ser::StdError, Deserialize, Serialize};
-use serde_json::{from_reader, to_string, Error as SerdeError, Result as SerdeResult};
+use serde_json::{from_reader, to_string, Result as SerdeResult};
 use std::{
 	collections::HashMap,
-	fmt::{Display, Formatter, Result as FmtResult},
 	mem::drop,
 	net::SocketAddr,
-	sync::{Arc, Mutex, MutexGuard, PoisonError},
+	sync::{Arc, Mutex},
 };
 use tokio::{
 	io::{AsyncRead, AsyncWrite},
@@ -86,7 +78,6 @@ use tokio::{
 	select,
 	time::{self, Duration},
 };
-use utils::scalar_from_bs58;
 
 const BAD_REQUEST: u16 = 400;
 const NOT_FOUND: u16 = 404;
@@ -460,10 +451,11 @@ mod test {
 		let arc_manager = Arc::new(Mutex::new(manager));
 
 		let (sks, pks) = keyset_from_raw(FIXED_SET);
-		let scores = [Scalar::from_u128(INITIAL_SCORE / NUM_NEIGHBOURS as u128); NUM_NEIGHBOURS];
-		let message_hash = calculate_message_hash(pks.clone(), [scores]);
+		let score = Scalar::from_u128(INITIAL_SCORE / NUM_NEIGHBOURS as u128);
+		let scores = vec![vec![score; NUM_NEIGHBOURS]];
+		let message_hash = calculate_message_hash::<NUM_NEIGHBOURS, 1>(pks.clone(), scores.clone());
 		let sig = sign(&sks[0], &pks[0], message_hash[0]);
-		let attestation = Attestation::new(sig, pks[0].clone(), pks, scores);
+		let attestation = Attestation::new(sig, pks[0].clone(), pks, scores[0].clone());
 		let attestation_data: AttestationData = attestation.into();
 		let mut attestation_bytes = to_vec(&attestation_data).unwrap();
 		// Remove some bytes
@@ -489,12 +481,13 @@ mod test {
 		let arc_manager = Arc::new(Mutex::new(manager));
 
 		let (sks, pks) = keyset_from_raw(FIXED_SET);
-		let scores = [Scalar::from_u128(INITIAL_SCORE / NUM_NEIGHBOURS as u128); NUM_NEIGHBOURS];
-		let message_hash = calculate_message_hash(pks.clone(), [scores]);
+		let score = Scalar::from_u128(INITIAL_SCORE / NUM_NEIGHBOURS as u128);
+		let scores = vec![vec![score; NUM_NEIGHBOURS]];
+		let message_hash = calculate_message_hash::<NUM_NEIGHBOURS, 1>(pks.clone(), scores.clone());
 		let sig = sign(&sks[0], &pks[0], message_hash[0]);
-		let attestation = Attestation::new(sig, pks[0].clone(), pks, scores);
+		let attestation = Attestation::new(sig, pks[0].clone(), pks, scores[0].clone());
 		let attestation_data: AttestationData = attestation.into();
-		let mut attestation_bytes = to_vec(&attestation_data).unwrap();
+		let attestation_bytes = to_vec(&attestation_data).unwrap();
 
 		let req = Request::post(Uri::from_static("http://localhost:3000/attestation"))
 			.body(Body::from(attestation_bytes))

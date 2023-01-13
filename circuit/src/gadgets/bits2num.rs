@@ -1,4 +1,4 @@
-use crate::Chip;
+use crate::{Chip, RegionCtx};
 use halo2::{
 	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region, Value},
@@ -84,33 +84,27 @@ impl<F: FieldExt> Chip<F> for Bits2NumChip<F> {
 	) -> Result<Self::Output, Error> {
 		layouter.assign_region(
 			|| "bits2num",
-			|mut region: Region<'_, F>| {
-				let mut lc1 = region.assign_advice_from_constant(
-					|| "lc1_0",
-					common.advice[2],
-					0,
-					F::zero(),
-				)?;
-				let mut e2 =
-					region.assign_advice_from_constant(|| "e2_0", common.advice[1], 0, F::one())?;
+			|region: Region<'_, F>| {
+				let mut ctx = RegionCtx::new(region, 0);
+				let mut lc1 = ctx.assign_from_constant(common.advice[2], F::zero())?;
+				let mut e2 = ctx.assign_from_constant(common.advice[1], F::one())?;
 
 				let mut bits = Vec::new();
 				for i in 0..self.bits.len() {
-					selector.enable(&mut region, i)?;
+					ctx.enable(selector.clone())?;
 
-					let bit =
-						region.assign_advice(|| "bits", common.advice[0], i, || self.bits[i])?;
+					let bit = ctx.assign_advice(common.advice[0], self.bits[i].clone())?;
 					bits.push(bit.clone());
 
-					let next_lc1 =
-						lc1.value().cloned() + bit.value().cloned() * e2.value().cloned();
+					let cond_e2 = bit.value().cloned() * e2.value().cloned();
+					let next_lc1 = lc1.value().cloned() + cond_e2;
 					let next_e2 = e2.value().cloned() + e2.value();
 
-					e2 = region.assign_advice(|| "e2", common.advice[1], i + 1, || next_e2)?;
-					lc1 = region.assign_advice(|| "lc1", common.advice[2], i + 1, || next_lc1)?;
+					ctx.next();
+					e2 = ctx.assign_advice(common.advice[1], next_e2)?;
+					lc1 = ctx.assign_advice(common.advice[2], next_lc1)?;
 				}
-
-				region.constrain_equal(self.value.cell(), lc1.cell())?;
+				ctx.constrain_equal(self.value.clone(), lc1.clone())?;
 
 				Ok(bits)
 			},
@@ -170,13 +164,10 @@ mod test {
 		) -> Result<(), Error> {
 			let numba = layouter.assign_region(
 				|| "temp",
-				|mut region: Region<'_, Fr>| {
-					region.assign_advice(
-						|| "temp_x",
-						config.common.advice[0],
-						0,
-						|| Value::known(self.numba),
-					)
+				|region: Region<'_, Fr>| {
+					let mut ctx = RegionCtx::new(region, 0);
+					let numba_val = Value::known(self.numba);
+					ctx.assign_advice(config.common.advice[0], numba_val)
 				},
 			)?;
 
