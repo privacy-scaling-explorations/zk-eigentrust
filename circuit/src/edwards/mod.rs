@@ -3,7 +3,7 @@ pub mod native;
 /// Edward curve params
 pub mod params;
 
-use crate::{gadgets::bits2num::Bits2NumChip, Chip, Chipset, CommonConfig};
+use crate::{gadgets::bits2num::Bits2NumChip, Chip, Chipset, CommonConfig, RegionCtx};
 use halo2::{
 	circuit::{AssignedCell, Layouter, Region, Value},
 	halo2curves::FieldExt,
@@ -101,15 +101,16 @@ impl<F: FieldExt, P: EdwardsParams<F>> Chip<F> for PointAddChip<F, P> {
 	) -> Result<Self::Output, Error> {
 		layouter.assign_region(
 			|| "add",
-			|mut region: Region<'_, F>| {
-				selector.enable(&mut region, 0)?;
+			|region: Region<'_, F>| {
+				let mut ctx = RegionCtx::new(region, 0);
+				ctx.enable(selector.clone())?;
 
-				let r_x = self.r.x.copy_advice(|| "r_x", &mut region, common.advice[0], 0)?;
-				let r_y = self.r.y.copy_advice(|| "r_y", &mut region, common.advice[1], 0)?;
-				let r_z = self.r.z.copy_advice(|| "r_z", &mut region, common.advice[2], 0)?;
-				let e_x = self.e.x.copy_advice(|| "e_x", &mut region, common.advice[3], 0)?;
-				let e_y = self.e.y.copy_advice(|| "e_y", &mut region, common.advice[4], 0)?;
-				let e_z = self.e.z.copy_advice(|| "e_z", &mut region, common.advice[5], 0)?;
+				let r_x = ctx.copy_assign(common.advice[0], self.r.x.clone())?;
+				let r_y = ctx.copy_assign(common.advice[1], self.r.y.clone())?;
+				let r_z = ctx.copy_assign(common.advice[2], self.r.z.clone())?;
+				let e_x = ctx.copy_assign(common.advice[3], self.e.x.clone())?;
+				let e_y = ctx.copy_assign(common.advice[4], self.e.y.clone())?;
+				let e_z = ctx.copy_assign(common.advice[5], self.e.z.clone())?;
 
 				// Add `r` and `e`.
 				let (r_x3, r_y3, r_z3) = P::add_value(
@@ -121,9 +122,10 @@ impl<F: FieldExt, P: EdwardsParams<F>> Chip<F> for PointAddChip<F, P> {
 					e_z.value().cloned(),
 				);
 
-				let r_x_res = region.assign_advice(|| "r_x", common.advice[0], 1, || r_x3)?;
-				let r_y_res = region.assign_advice(|| "r_y", common.advice[1], 1, || r_y3)?;
-				let r_z_res = region.assign_advice(|| "r_z", common.advice[2], 1, || r_z3)?;
+				ctx.next();
+				let r_x_res = ctx.assign_advice(common.advice[0], r_x3)?;
+				let r_y_res = ctx.assign_advice(common.advice[1], r_y3)?;
+				let r_z_res = ctx.assign_advice(common.advice[2], r_z3)?;
 
 				let res = AssignedPoint::new(r_x_res, r_y_res, r_z_res);
 
@@ -182,12 +184,13 @@ impl<F: FieldExt> Chip<F> for IntoAffineChip<F> {
 	) -> Result<Self::Output, Error> {
 		layouter.assign_region(
 			|| "into_affine",
-			|mut region: Region<'_, F>| {
-				selector.enable(&mut region, 0)?;
+			|region: Region<'_, F>| {
+				let mut ctx = RegionCtx::new(region, 0);
+				ctx.enable(selector.clone())?;
 
-				self.r.x.copy_advice(|| "r_x", &mut region, common.advice[0], 0)?;
-				self.r.y.copy_advice(|| "r_y", &mut region, common.advice[1], 0)?;
-				self.r.z.copy_advice(|| "r_z", &mut region, common.advice[2], 0)?;
+				ctx.copy_assign(common.advice[0], self.r.x.clone())?;
+				ctx.copy_assign(common.advice[1], self.r.y.clone())?;
+				ctx.copy_assign(common.advice[2], self.r.z.clone())?;
 
 				// Calculating affine representation for the point.
 				// Divide both points with the third dimension to get the affine point.
@@ -197,24 +200,9 @@ impl<F: FieldExt> Chip<F> for IntoAffineChip<F> {
 				let r_x_affine = self.r.x.value_field() * z_invert;
 				let r_y_affine = self.r.y.value_field() * z_invert;
 
-				let x = region.assign_advice(
-					|| "r_x_affine",
-					common.advice[3],
-					0,
-					|| r_x_affine.evaluate(),
-				)?;
-				let y = region.assign_advice(
-					|| "r_y_affine",
-					common.advice[4],
-					0,
-					|| r_y_affine.evaluate(),
-				)?;
-				region.assign_advice(
-					|| "r_z_invert",
-					common.advice[5],
-					0,
-					|| z_invert.evaluate(),
-				)?;
+				let x = ctx.assign_advice(common.advice[3], r_x_affine.evaluate())?;
+				let y = ctx.assign_advice(common.advice[4], r_y_affine.evaluate())?;
+				ctx.assign_advice(common.advice[5], z_invert.evaluate())?;
 
 				Ok((x, y))
 			},
@@ -303,37 +291,19 @@ impl<F: FieldExt, P: EdwardsParams<F>> Chip<F> for ScalarMulChip<F, P> {
 	) -> Result<Self::Output, Error> {
 		layouter.assign_region(
 			|| "scalar_mul",
-			|mut region: Region<'_, F>| {
-				for i in 0..self.value_bits.len() {
-					self.value_bits[i].copy_advice(|| "bit", &mut region, common.advice[0], i)?;
-				}
-
-				let mut r_x = region.assign_advice_from_constant(
-					|| "r_x_0",
-					common.advice[1],
-					0,
-					F::zero(),
-				)?;
-				let mut r_y = region.assign_advice_from_constant(
-					|| "r_y_0",
-					common.advice[2],
-					0,
-					F::one(),
-				)?;
-				let mut r_z = region.assign_advice_from_constant(
-					|| "r_z_0",
-					common.advice[3],
-					0,
-					F::one(),
-				)?;
-
-				let mut e_x = self.e.x.copy_advice(|| "e_x", &mut region, common.advice[4], 0)?;
-				let mut e_y = self.e.y.copy_advice(|| "e_y", &mut region, common.advice[5], 0)?;
-				let mut e_z = self.e.z.copy_advice(|| "e_z", &mut region, common.advice[6], 0)?;
+			|region: Region<'_, F>| {
+				let mut ctx = RegionCtx::new(region, 0);
+				let mut r_x = ctx.assign_from_constant(common.advice[1], F::zero())?;
+				let mut r_y = ctx.assign_from_constant(common.advice[2], F::one())?;
+				let mut r_z = ctx.assign_from_constant(common.advice[3], F::one())?;
+				let mut e_x = ctx.copy_assign(common.advice[4], self.e.x.clone())?;
+				let mut e_y = ctx.copy_assign(common.advice[5], self.e.y.clone())?;
+				let mut e_z = ctx.copy_assign(common.advice[6], self.e.z.clone())?;
 
 				// Double and add operation.
 				for i in 0..self.value_bits.len() {
-					selector.enable(&mut region, i)?;
+					ctx.enable(selector.clone())?;
+					ctx.copy_assign(common.advice[0], self.value_bits[i].clone())?;
 
 					// Add `r` and `e`.
 					let (r_x3, r_y3, r_z3) = P::add_value(
@@ -368,13 +338,13 @@ impl<F: FieldExt, P: EdwardsParams<F>> Chip<F> for ScalarMulChip<F, P> {
 						)
 					};
 
-					r_x = region.assign_advice(|| "r_x", common.advice[1], i + 1, || r_x_next)?;
-					r_y = region.assign_advice(|| "r_y", common.advice[2], i + 1, || r_y_next)?;
-					r_z = region.assign_advice(|| "r_z", common.advice[3], i + 1, || r_z_next)?;
-
-					e_x = region.assign_advice(|| "e_x", common.advice[4], i + 1, || e_x3)?;
-					e_y = region.assign_advice(|| "e_y", common.advice[5], i + 1, || e_y3)?;
-					e_z = region.assign_advice(|| "e_z", common.advice[6], i + 1, || e_z3)?;
+					ctx.next();
+					r_x = ctx.assign_advice(common.advice[1], r_x_next)?;
+					r_y = ctx.assign_advice(common.advice[2], r_y_next)?;
+					r_z = ctx.assign_advice(common.advice[3], r_z_next)?;
+					e_x = ctx.assign_advice(common.advice[4], e_x3)?;
+					e_y = ctx.assign_advice(common.advice[5], e_y3)?;
+					e_z = ctx.assign_advice(common.advice[6], e_z3)?;
 				}
 
 				let res = AssignedPoint::new(r_x, r_y, r_z);
@@ -505,15 +475,13 @@ mod test {
 		) -> Result<(), Error> {
 			let items = layouter.assign_region(
 				|| "temp",
-				|mut region: Region<'_, Fr>| {
+				|region: Region<'_, Fr>| {
+					let mut ctx = RegionCtx::new(region, 0);
 					let mut items = Vec::new();
 					for i in 0..N {
-						let x = region.assign_advice(
-							|| "temp_inputs",
-							config.common.advice[0],
-							i,
-							|| Value::known(self.inputs[i]),
-						)?;
+						let val = Value::known(self.inputs[i]);
+						let x = ctx.assign_advice(config.common.advice[0], val)?;
+						ctx.next();
 						items.push(x);
 					}
 					Ok(items)
@@ -553,17 +521,15 @@ mod test {
 						AssignedPoint::new(items[0].clone(), items[1].clone(), items[2].clone());
 					let assigned_bits = layouter.assign_region(
 						|| "temp",
-						|mut region: Region<'_, Fr>| {
+						|region: Region<'_, Fr>| {
+							let mut ctx = RegionCtx::new(region, 0);
 							const NUM_BITS: usize = 256;
 							let bits = to_bits::<NUM_BITS>(self.inputs[3].to_bytes()).map(Fr::from);
 							let mut items = Vec::new();
 							for i in 0..NUM_BITS {
-								let x = region.assign_advice(
-									|| "temp_inputs",
-									config.common.advice[0],
-									i,
-									|| Value::known(bits[i]),
-								)?;
+								let val = Value::known(bits[i]);
+								let x = ctx.assign_advice(config.common.advice[0], val)?;
+								ctx.next();
 								items.push(x);
 							}
 							Ok(items)

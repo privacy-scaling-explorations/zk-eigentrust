@@ -38,8 +38,6 @@ where
 {
 	/// Constructs cell arrays for the nodes.
 	nodes: [[AssignedCell<F, F>; 2]; LENGTH],
-	/// Zero value cell
-	zero: AssignedCell<F, F>,
 	/// Constructs a phantom data for the parameters.
 	_params: PhantomData<P>,
 }
@@ -49,8 +47,8 @@ where
 	P: RoundParams<F, WIDTH>,
 {
 	/// Create a new chip.
-	pub fn new(nodes: [[AssignedCell<F, F>; 2]; LENGTH], zero: AssignedCell<F, F>) -> Self {
-		MerklePathChip { nodes, zero, _params: PhantomData }
+	pub fn new(nodes: [[AssignedCell<F, F>; 2]; LENGTH]) -> Self {
+		MerklePathChip { nodes, _params: PhantomData }
 	}
 }
 
@@ -65,13 +63,21 @@ where
 	fn synthesize(
 		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
+		let zero = layouter.assign_region(
+			|| "assign_zero",
+			|region: Region<'_, F>| {
+				let mut ctx = RegionCtx::new(region, 0);
+				ctx.assign_from_constant(common.advice[0], F::zero())
+			},
+		)?;
+
 		for i in 0..self.nodes.len() - 1 {
 			let pos = PoseidonChipset::<F, WIDTH, P>::new([
 				self.nodes[i][0].clone(),
 				self.nodes[i][1].clone(),
-				self.zero.clone(),
-				self.zero.clone(),
-				self.zero.clone(),
+				zero.clone(),
+				zero.clone(),
+				zero.clone(),
 			]);
 			let hashes = pos.synthesize(
 				&common,
@@ -178,35 +184,28 @@ mod test {
 		fn synthesize(
 			&self, config: TestConfig, mut layouter: impl Layouter<F>,
 		) -> Result<(), Error> {
-			let (path_arr, zero) = layouter.assign_region(
+			let path_arr = layouter.assign_region(
 				|| "temp",
-				|mut region: Region<'_, F>| {
-					let zero = region.assign_advice(
-						|| "zero",
-						config.common.advice[0],
-						LENGTH,
-						|| Value::known(F::zero()),
-					)?;
+				|region: Region<'_, F>| {
+					let mut ctx = RegionCtx::new(region, 0);
+
 					let mut path_arr: [[Option<AssignedCell<F, F>>; 2]; LENGTH] =
 						[[(); 2]; LENGTH].map(|_| [(); 2].map(|_| None));
+
 					for i in 0..LENGTH {
-						path_arr[i][0] = Some(region.assign_advice(
-							|| "temp",
-							config.common.advice[0],
-							i,
-							|| Value::known(self.path_arr[i][0]),
-						)?);
-						path_arr[i][1] = Some(region.assign_advice(
-							|| "temp",
-							config.common.advice[1],
-							i,
-							|| Value::known(self.path_arr[i][1]),
-						)?);
+						let l_val = Value::known(self.path_arr[i][0]);
+						let r_val = Value::known(self.path_arr[i][1]);
+						let l_assigned = ctx.assign_advice(config.common.advice[0], l_val)?;
+						let r_assigned = ctx.assign_advice(config.common.advice[1], r_val)?;
+						path_arr[i][0] = Some(l_assigned);
+						path_arr[i][1] = Some(r_assigned);
+
+						ctx.next();
 					}
-					Ok((path_arr.map(|a| a.map(|a| a.unwrap())), zero))
+					Ok(path_arr.map(|a| a.map(|a| a.unwrap())))
 				},
 			)?;
-			let merkle_path = MerklePathChip::<F, LENGTH, P>::new(path_arr, zero);
+			let merkle_path = MerklePathChip::<F, LENGTH, P>::new(path_arr);
 			let root = merkle_path.synthesize(
 				&config.common,
 				&config.path,

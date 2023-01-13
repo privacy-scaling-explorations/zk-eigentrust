@@ -108,27 +108,12 @@ where
 	) -> Result<Self::Output, Error> {
 		let (b8_x, b8_y, one, suborder) = layouter.assign_region(
 			|| "assign_values",
-			|mut region: Region<'_, F>| {
-				let b8_x = region.assign_advice_from_constant(
-					|| "b8_x",
-					common.advice[0],
-					0,
-					P::b8().0,
-				)?;
-				let b8_y = region.assign_advice_from_constant(
-					|| "b8_y",
-					common.advice[1],
-					0,
-					P::b8().1,
-				)?;
-				let one =
-					region.assign_advice_from_constant(|| "one", common.advice[2], 0, F::one())?;
-				let suborder = region.assign_advice_from_constant(
-					|| "suborder",
-					common.advice[3],
-					0,
-					P::suborder(),
-				)?;
+			|region: Region<'_, F>| {
+				let mut ctx = RegionCtx::new(region, 0);
+				let b8_x = ctx.assign_from_constant(common.advice[0], P::b8().0)?;
+				let b8_y = ctx.assign_from_constant(common.advice[1], P::b8().1)?;
+				let one = ctx.assign_from_constant(common.advice[2], F::one())?;
+				let suborder = ctx.assign_from_constant(common.advice[3], P::suborder())?;
 				Ok((b8_x, b8_y, one, suborder))
 			},
 		)?;
@@ -326,25 +311,23 @@ mod test {
 			let (big_r_x, big_r_y, s, pk_x, pk_y, m) = layouter.assign_region(
 				|| "temp",
 				|region: Region<'_, Fr>| {
-					let mut region_ctx = RegionCtx::new(region, 0);
+					let mut ctx = RegionCtx::new(region, 0);
 
-					let big_r_x_assigned = region_ctx
-						.assign_advice(config.common.advice[0], Value::known(self.big_r_x))?;
-					let big_r_y_assigned = region_ctx
-						.assign_advice(config.common.advice[1], Value::known(self.big_r_y))?;
-					let s_assigned =
-						region_ctx.assign_advice(config.common.advice[2], Value::known(self.s))?;
-					let pk_x_assigned = region_ctx
-						.assign_advice(config.common.advice[3], Value::known(self.pk_x))?;
-					let pk_y_assigned = region_ctx
-						.assign_advice(config.common.advice[4], Value::known(self.pk_y))?;
-					let m_assigned =
-						region_ctx.assign_advice(config.common.advice[5], Value::known(self.m))?;
+					let big_r_x_val = Value::known(self.big_r_x);
+					let big_r_y_val = Value::known(self.big_r_y);
+					let s_val = Value::known(self.s);
+					let pk_x_val = Value::known(self.pk_x);
+					let pk_y_val = Value::known(self.pk_y);
+					let m_val = Value::known(self.m);
 
-					Ok((
-						big_r_x_assigned, big_r_y_assigned, s_assigned, pk_x_assigned,
-						pk_y_assigned, m_assigned,
-					))
+					let big_r_x = ctx.assign_advice(config.common.advice[0], big_r_x_val)?;
+					let big_r_y = ctx.assign_advice(config.common.advice[1], big_r_y_val)?;
+					let s = ctx.assign_advice(config.common.advice[2], s_val)?;
+					let pk_x = ctx.assign_advice(config.common.advice[3], pk_x_val)?;
+					let pk_y = ctx.assign_advice(config.common.advice[4], pk_y_val)?;
+					let m = ctx.assign_advice(config.common.advice[5], m_val)?;
+
+					Ok((big_r_x, big_r_y, s, pk_x, pk_y, m))
 				},
 			)?;
 

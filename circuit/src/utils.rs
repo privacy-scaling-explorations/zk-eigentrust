@@ -41,7 +41,7 @@ pub fn to_short(b: &[u8]) -> [u8; 32] {
 }
 
 /// Converts field element to string
-pub fn field_to_string<F: FieldExt>(f: F) -> String {
+pub fn field_to_string<F: FieldExt>(f: &F) -> String {
 	let bytes = f.to_repr();
 	let bn_f = BigUint::from_bytes_le(bytes.as_ref());
 	bn_f.to_string()

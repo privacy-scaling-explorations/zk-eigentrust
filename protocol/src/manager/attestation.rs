@@ -1,6 +1,6 @@
 use eigen_trust_circuit::{
-	eddsa::native::{PublicKey, SecretKey, Signature},
-	halo2::halo2curves::{bn256::Fr as Scalar, group::ff::PrimeField, FieldExt},
+	eddsa::native::{PublicKey, Signature},
+	halo2::halo2curves::bn256::Fr as Scalar,
 };
 use serde::{Deserialize, Serialize};
 
@@ -23,8 +23,8 @@ impl From<Attestation> for AttestationData {
 		let sig_r_y = att.sig.big_r.y.to_bytes();
 		let sig_s = att.sig.s.to_bytes();
 		let pk_bytes = att.pk.to_raw();
-		let neighbours = att.neighbours.map(|v| v.to_raw()).to_vec();
-		let scores = att.scores.map(|v| v.to_bytes()).to_vec();
+		let neighbours = att.neighbours.into_iter().map(|v| v.to_raw()).collect();
+		let scores = att.scores.into_iter().map(|v| v.to_bytes()).collect();
 
 		Self { sig_r_x, sig_r_y, sig_s, pk: pk_bytes, neighbours, scores }
 	}
@@ -35,15 +35,14 @@ impl From<Attestation> for AttestationData {
 pub struct Attestation {
 	pub(crate) sig: Signature,
 	pub(crate) pk: PublicKey,
-	pub(crate) neighbours: [PublicKey; NUM_NEIGHBOURS],
-	pub(crate) scores: [Scalar; NUM_NEIGHBOURS],
+	pub(crate) neighbours: Vec<PublicKey>,
+	pub(crate) scores: Vec<Scalar>,
 }
 
 impl Attestation {
 	/// Construct a new attestation for given data
 	pub fn new(
-		sig: Signature, pk: PublicKey, neighbours: [PublicKey; NUM_NEIGHBOURS],
-		scores: [Scalar; NUM_NEIGHBOURS],
+		sig: Signature, pk: PublicKey, neighbours: Vec<PublicKey>, scores: Vec<Scalar>,
 	) -> Self {
 		Self { sig, pk, neighbours, scores }
 	}
@@ -57,8 +56,8 @@ impl From<AttestationData> for Attestation {
 		let sig_s = Scalar::from_bytes(&att.sig_s).unwrap();
 		let sig = Signature::new(sig_r_x, sig_r_y, sig_s);
 
-		let mut neighbours = [(); NUM_NEIGHBOURS].map(|_| PublicKey::default());
-		let mut scores = [Scalar::zero(); NUM_NEIGHBOURS];
+		let mut neighbours = vec![PublicKey::default(); NUM_NEIGHBOURS];
+		let mut scores = vec![Scalar::zero(); NUM_NEIGHBOURS];
 		for (i, n) in att.neighbours.iter().enumerate().take(NUM_NEIGHBOURS) {
 			neighbours[i] = PublicKey::from_raw(*n);
 		}
