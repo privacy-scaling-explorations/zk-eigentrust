@@ -55,8 +55,6 @@ where
 #[derive(Debug, Clone)]
 /// Configuration elements for the circuit are defined here.
 struct EccConfig<const NUM_LIMBS: usize> {
-	/// Constructs bits2num circuit elements.
-	bits2num: Bits2NumConfig,
 	/// Constructs integer circuit elements.
 	integer: IntegerConfig<NUM_LIMBS>,
 	/// Constructs common circuit elements.
@@ -520,7 +518,7 @@ where
 		let mut r_x = exps[first_bit].0.clone();
 		let mut r_y = exps[first_bit].1.clone();
 		let mut flag = true;
-		/*
+
 				for i in (first_bit + 1)..bits.len() {
 					// Here we pass this checks because we assigned(exp_x, exp_y) to (r_x,
 					// r_y) and we already constraint them when we calculate double operation. After
@@ -569,6 +567,7 @@ where
 		}
 		Ok((r_x, r_y))
 	}
+	*/
 
 	fn find_first_positive_bit(input: [N; 256]) -> usize {
 		let mut counter = 0;
@@ -580,7 +579,6 @@ where
 		}
 		counter
 	}
-	*/
 }
 
 #[cfg(test)]
