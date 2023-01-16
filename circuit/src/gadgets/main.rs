@@ -867,3 +867,36 @@ impl<F: FieldExt> Chipset<F> for SelectChipset<F> {
 		Ok(res)
 	}
 }
+
+/// Chip for AND operation
+pub struct AndChipset<F: FieldExt> {
+	x: AssignedCell<F, F>,
+	y: AssignedCell<F, F>,
+}
+
+impl<F: FieldExt> AndChipset<F> {
+	/// Create new AndChipset
+	pub fn new(x: AssignedCell<F, F>, y: AssignedCell<F, F>) -> Self {
+		Self { x, y }
+	}
+}
+
+impl<F: FieldExt> Chipset<F> for AndChipset<F> {
+	type Config = MainConfig;
+	type Output = AssignedCell<F, F>;
+
+	fn synthesize(
+		self, common: &crate::CommonConfig, config: &Self::Config, mut layouter: impl Layouter<F>,
+	) -> Result<Self::Output, Error> {
+		let bool_chip = IsBoolChipset::new(self.x.clone());
+		bool_chip.synthesize(common, &config, layouter.namespace(|| "constraint bit"))?;
+
+		let bool_chip = IsBoolChipset::new(self.y.clone());
+		bool_chip.synthesize(common, &config, layouter.namespace(|| "constraint bit"))?;
+
+		let mul_chip = MulChipset::new(self.x, self.y);
+		let product = mul_chip.synthesize(common, &config, layouter.namespace(|| "mul"))?;
+
+		Ok(product)
+	}
+}
