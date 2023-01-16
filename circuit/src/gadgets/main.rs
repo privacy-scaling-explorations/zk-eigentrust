@@ -7,11 +7,11 @@
 //! public_input +
 //! q_constant = 0
 
-use crate::{Chip, RegionCtx};
+use crate::{Chip, Chipset, RegionCtx};
 use halo2::{
 	arithmetic::FieldExt,
-	circuit::{AssignedCell, Layouter},
-	plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Instance},
+	circuit::{AssignedCell, Layouter, Value},
+	plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Instance, Selector},
 	poly::Rotation,
 };
 
@@ -451,6 +451,8 @@ pub struct MainConfig {
 	fixed: [Column<Fixed>; NUM_FIXED],
 
 	instance: Column<Instance>,
+
+	selector: Selector,
 }
 
 impl MainConfig {
@@ -464,7 +466,9 @@ impl MainConfig {
 		fixed.map(|c| meta.enable_constant(c));
 		meta.enable_equality(instance);
 
-		Self { advice, fixed, instance }
+		let selector = meta.selector();
+
+		Self { advice, fixed, instance, selector }
 	}
 }
 
@@ -552,5 +556,103 @@ impl<F: FieldExt> Chip<F> for MainChip<F> {
 				Ok(())
 			},
 		)
+	}
+}
+
+/// Chip for addition operation
+pub struct AddChipset<F: FieldExt> {
+	x: AssignedCell<F, F>,
+	y: AssignedCell<F, F>,
+}
+
+impl<F: FieldExt> AddChipset<F> {
+	/// Create new AddChipset
+	pub fn new(x: AssignedCell<F, F>, y: AssignedCell<F, F>) -> Self {
+		Self { x, y }
+	}
+}
+
+impl<F: FieldExt> Chipset<F> for AddChipset<F> {
+	type Config = MainConfig;
+	type Output = AssignedCell<F, F>;
+
+	fn synthesize(
+		self, common: &crate::CommonConfig, config: &Self::Config, mut layouter: impl Layouter<F>,
+	) -> Result<Self::Output, Error> {
+		// We should satisfy the equation below
+		// x + y - res = 0
+
+		// Witness layout:
+		// | A   | B   | C   | D   | E  |
+		// | --- | --- | --- | --- | ---|
+		// | x   | y   | res |     |    |
+
+		let (zero, sum) = layouter.assign_region(
+			|| "assign_values",
+			|region| {
+				let mut ctx = RegionCtx::new(region, 0);
+				let zero = ctx.assign_advice(common.advice[0], Value::known(F::zero()))?;
+				let sum =
+					ctx.assign_advice(common.advice[1], self.x.value().cloned() + self.y.value())?;
+				Ok((zero, sum))
+			},
+		)?;
+
+		let advices = [self.x, self.y, sum.clone(), zero.clone(), zero];
+		let fixed =
+			[F::one(), F::one(), -F::one(), F::zero(), F::zero(), F::zero(), F::zero(), F::zero()];
+		let main_chip = MainChip::new(advices, fixed);
+		main_chip.synthesize(common, &config.selector, layouter)?;
+
+		Ok(sum)
+	}
+}
+
+/// Chip for multiplication operation
+pub struct MulChipset<F: FieldExt> {
+	x: AssignedCell<F, F>,
+	y: AssignedCell<F, F>,
+}
+
+impl<F: FieldExt> MulChipset<F> {
+	/// Create new MulChipset
+	pub fn new(x: AssignedCell<F, F>, y: AssignedCell<F, F>) -> Self {
+		Self { x, y }
+	}
+}
+
+impl<F: FieldExt> Chipset<F> for MulChipset<F> {
+	type Config = MainConfig;
+	type Output = AssignedCell<F, F>;
+
+	fn synthesize(
+		self, common: &crate::CommonConfig, config: &Self::Config, mut layouter: impl Layouter<F>,
+	) -> Result<Self::Output, Error> {
+		// We should satisfy the equation below
+		// x * y - res = 0
+
+		// Witness layout:
+		// | A   | B   | C   | D   | E  |
+		// | --- | --- | --- | --- | ---|
+		// | x   | y   | res |     |    |
+
+		let (zero, product) = layouter.assign_region(
+			|| "assign_values",
+			|region| {
+				let mut ctx = RegionCtx::new(region, 0);
+				let zero = ctx.assign_advice(common.advice[0], Value::known(F::zero()))?;
+				let product =
+					ctx.assign_advice(common.advice[1], self.x.value().cloned() * self.y.value())?;
+				Ok((zero, product))
+			},
+		)?;
+
+		let advices = [self.x, self.y, product.clone(), zero.clone(), zero];
+		let fixed =
+			[F::one(), F::one(), -F::one(), F::zero(), F::zero(), F::zero(), F::zero(), F::zero()];
+		let main_chip = MainChip::new(advices, fixed);
+		main_chip.synthesize(common, &config.selector, layouter)?;
+
+		Ok(product)
 	}
 }
