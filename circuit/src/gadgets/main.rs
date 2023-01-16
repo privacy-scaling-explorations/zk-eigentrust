@@ -656,3 +656,101 @@ impl<F: FieldExt> Chipset<F> for MulChipset<F> {
 		Ok(product)
 	}
 }
+
+/// Chip for is_bool operation
+pub struct IsBoolChipset<F: FieldExt> {
+	x: AssignedCell<F, F>,
+}
+
+impl<F: FieldExt> IsBoolChipset<F> {
+	/// Create new IsBoolChipset
+	pub fn new(x: AssignedCell<F, F>) -> Self {
+		Self { x }
+	}
+}
+
+impl<F: FieldExt> Chipset<F> for IsBoolChipset<F> {
+	type Config = MainConfig;
+	type Output = AssignedCell<F, F>;
+
+	fn synthesize(
+		self, common: &crate::CommonConfig, config: &Self::Config, mut layouter: impl Layouter<F>,
+	) -> Result<Self::Output, Error> {
+		// We should satisfy the equation below
+		// (1 - x) * x = 0
+		// x - x * x = 0
+
+		// Witness layout:
+		// | A   | B   | C   | D   | E  |
+		// | --- | --- | --- | --- | ---|
+		// | x   |     | x   | x   |    |
+
+		let zero = layouter.assign_region(
+			|| "assign_values",
+			|region| {
+				let mut ctx = RegionCtx::new(region, 0);
+				let zero = ctx.assign_advice(common.advice[0], Value::known(F::zero()))?;
+				Ok(zero)
+			},
+		)?;
+
+		// [a, b, c, d, e]
+		let advices = [self.x.clone(), zero.clone(), self.x.clone(), self.x.clone(), zero];
+		// [s_a, s_b, s_c, s_d, s_e, s_mul_ab, s_mul_cd, s_constant]
+		let fixed =
+			[F::one(), F::zero(), F::zero(), F::zero(), F::zero(), F::zero(), -F::one(), F::zero()];
+		let main_chip = MainChip::new(advices, fixed);
+		main_chip.synthesize(common, &config.selector, layouter)?;
+
+		Ok(self.x.clone())
+	}
+}
+
+/// Chip for is_equal operation
+pub struct IsEqualChipset<F: FieldExt> {
+	x: AssignedCell<F, F>,
+	y: AssignedCell<F, F>,
+}
+
+impl<F: FieldExt> IsEqualChipset<F> {
+	/// Create new IsEqualChipset
+	pub fn new(x: AssignedCell<F, F>, y: AssignedCell<F, F>) -> Self {
+		Self { x, y }
+	}
+}
+
+impl<F: FieldExt> Chipset<F> for IsEqualChipset<F> {
+	type Config = MainConfig;
+	type Output = AssignedCell<F, F>;
+
+	fn synthesize(
+		self, common: &crate::CommonConfig, config: &Self::Config, mut layouter: impl Layouter<F>,
+	) -> Result<Self::Output, Error> {
+		// We should satisfy the equation below
+		// x - y = 0
+
+		// Witness layout:
+		// | A   | B   | C   | D   | E  |
+		// | --- | --- | --- | --- | ---|
+		// | x   | y   |  0  |     |    |
+
+		let zero = layouter.assign_region(
+			|| "assign_values",
+			|region| {
+				let mut ctx = RegionCtx::new(region, 0);
+				let zero = ctx.assign_advice(common.advice[0], Value::known(F::zero()))?;
+				Ok(zero)
+			},
+		)?;
+
+		// [a, b, c, d, e]
+		let advices = [self.x.clone(), self.y, zero.clone(), zero.clone(), zero];
+		// [s_a, s_b, s_c, s_d, s_e, s_mul_ab, s_mul_cd, s_constant]
+		let fixed =
+			[F::one(), -F::one(), F::zero(), F::zero(), F::zero(), F::zero(), F::zero(), F::zero()];
+		let main_chip = MainChip::new(advices, fixed);
+		main_chip.synthesize(common, &config.selector, layouter)?;
+
+		Ok(self.x.clone())
+	}
+}
