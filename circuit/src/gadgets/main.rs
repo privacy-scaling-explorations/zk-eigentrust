@@ -649,7 +649,7 @@ impl<F: FieldExt> Chipset<F> for MulChipset<F> {
 
 		let advices = [self.x, self.y, product.clone(), zero.clone(), zero];
 		let fixed =
-			[F::one(), F::one(), -F::one(), F::zero(), F::zero(), F::zero(), F::zero(), F::zero()];
+			[F::zero(), F::zero(), -F::one(), F::zero(), F::zero(), F::one(), F::zero(), F::zero()];
 		let main_chip = MainChip::new(advices, fixed);
 		main_chip.synthesize(common, &config.selector, layouter)?;
 
@@ -752,5 +752,118 @@ impl<F: FieldExt> Chipset<F> for IsEqualChipset<F> {
 		main_chip.synthesize(common, &config.selector, layouter)?;
 
 		Ok(self.x.clone())
+	}
+}
+
+/// Chip for is_zero operation
+pub struct IsZeroChipset<F: FieldExt> {
+	x: AssignedCell<F, F>,
+}
+
+impl<F: FieldExt> IsZeroChipset<F> {
+	/// Create new IsZeroChipset
+	pub fn new(x: AssignedCell<F, F>) -> Self {
+		Self { x }
+	}
+}
+
+impl<F: FieldExt> Chipset<F> for IsZeroChipset<F> {
+	type Config = MainConfig;
+	type Output = AssignedCell<F, F>;
+
+	fn synthesize(
+		self, common: &crate::CommonConfig, config: &Self::Config, mut layouter: impl Layouter<F>,
+	) -> Result<Self::Output, Error> {
+		// We should satisfy the equation below
+		// 1 - x * x_inv = 1
+		// x * x_inv = 0
+
+		// Witness layout:
+		// | A   | B     | C   | D   | E  |
+		// | --- | ----- | --- | --- | ---|
+		// | x   | x_inv |     |     |    |
+
+		let (zero, x_inv) = layouter.assign_region(
+			|| "assign_values",
+			|region| {
+				let x_inv = self.x.clone().value().map(|v| v.invert().unwrap_or(F::zero()));
+
+				let mut ctx = RegionCtx::new(region, 0);
+				let zero = ctx.assign_advice(common.advice[0], Value::known(F::zero()))?;
+				let x_inv = ctx.assign_advice(common.advice[1], x_inv)?;
+				Ok((zero, x_inv))
+			},
+		)?;
+
+		// [a, b, c, d, e]
+		let advices = [self.x.clone(), x_inv, zero.clone(), zero.clone(), zero];
+		// [s_a, s_b, s_c, s_d, s_e, s_mul_ab, s_mul_cd, s_constant]
+		let fixed =
+			[F::zero(), F::zero(), F::zero(), F::zero(), F::zero(), F::one(), F::zero(), F::zero()];
+		let main_chip = MainChip::new(advices, fixed);
+		main_chip.synthesize(common, &config.selector, layouter)?;
+
+		Ok(self.x.clone())
+	}
+}
+
+/// Chip for select operation
+pub struct SelectChipset<F: FieldExt> {
+	bit: AssignedCell<F, F>,
+	x: AssignedCell<F, F>,
+	y: AssignedCell<F, F>,
+}
+
+impl<F: FieldExt> SelectChipset<F> {
+	/// Create new SelectChipset
+	pub fn new(bit: AssignedCell<F, F>, x: AssignedCell<F, F>, y: AssignedCell<F, F>) -> Self {
+		Self { bit, x, y }
+	}
+}
+
+impl<F: FieldExt> Chipset<F> for SelectChipset<F> {
+	type Config = MainConfig;
+	type Output = AssignedCell<F, F>;
+
+	fn synthesize(
+		self, common: &crate::CommonConfig, config: &Self::Config, mut layouter: impl Layouter<F>,
+	) -> Result<Self::Output, Error> {
+		// We should satisfy the equation below with bit asserted condition flag
+		// c (x - y) + y - res = 0
+		// cond * x - cond * y + y - res = 0
+
+		// Witness layout:
+		// | A   | B   | C | D   | E  |
+		// | --- | --- | - | --- | ---|
+		// | c   | x   | c | y   | res|
+
+		let res = layouter.assign_region(
+			|| "assign values",
+			|region| {
+				let res = self.x.value().zip(self.y.value()).zip(self.bit.value()).map(
+					|((x, y), bit)| {
+						if *bit == F::one() {
+							*x
+						} else {
+							assert_eq!(*bit, F::zero());
+							*y
+						}
+					},
+				);
+				let mut ctx = RegionCtx::new(region, 0);
+				let res = ctx.assign_advice(common.advice[0], res)?;
+				Ok(res)
+			},
+		)?;
+
+		// [a, b, c, d, e]
+		let advices = [self.bit.clone(), self.x, self.bit.clone(), self.y, res.clone()];
+		// [s_a, s_b, s_c, s_d, s_e, s_mul_ab, s_mul_cd, s_constant]
+		let fixed =
+			[F::zero(), F::zero(), F::zero(), F::one(), -F::one(), F::one(), -F::one(), F::zero()];
+		let main_chip = MainChip::new(advices, fixed);
+		main_chip.synthesize(common, &config.selector, layouter)?;
+
+		Ok(res)
 	}
 }
