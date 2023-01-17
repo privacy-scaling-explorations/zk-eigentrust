@@ -75,9 +75,7 @@ impl<F: FieldExt> MainChip<F> {
 impl<F: FieldExt> Chip<F> for MainChip<F> {
 	type Output = ();
 
-	fn configure(
-		common: &crate::CommonConfig, meta: &mut ConstraintSystem<F>,
-	) -> halo2::plonk::Selector {
+	fn configure(common: &CommonConfig, meta: &mut ConstraintSystem<F>) -> Selector {
 		let selector = meta.selector();
 
 		meta.create_gate("main gate", |v_cells| {
@@ -114,8 +112,7 @@ impl<F: FieldExt> Chip<F> for MainChip<F> {
 	}
 
 	fn synthesize(
-		self, common: &crate::CommonConfig, selector: &halo2::plonk::Selector,
-		mut layouter: impl Layouter<F>,
+		self, common: &CommonConfig, selector: &Selector, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
 		layouter.assign_region(
 			|| "main gate",
@@ -124,12 +121,11 @@ impl<F: FieldExt> Chip<F> for MainChip<F> {
 
 				ctx.enable(*selector)?;
 
-				let result = self
-					.advice
+				self.advice
 					.clone()
 					.into_iter()
 					.enumerate()
-					.map(|(i, v)| ctx.assign_advice(common.advice[i], v.value().cloned()))
+					.map(|(i, v)| ctx.copy_assign(common.advice[i], v))
 					.collect::<Result<Vec<_>, Error>>()?;
 
 				self.fixed
@@ -162,7 +158,7 @@ impl<F: FieldExt> Chipset<F> for AddChipset<F> {
 	type Output = AssignedCell<F, F>;
 
 	fn synthesize(
-		self, common: &crate::CommonConfig, config: &Self::Config, mut layouter: impl Layouter<F>,
+		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
 		// We should satisfy the equation below
 		// x + y - res = 0
@@ -211,7 +207,7 @@ impl<F: FieldExt> Chipset<F> for MulChipset<F> {
 	type Output = AssignedCell<F, F>;
 
 	fn synthesize(
-		self, common: &crate::CommonConfig, config: &Self::Config, mut layouter: impl Layouter<F>,
+		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
 		// We should satisfy the equation below
 		// x * y - res = 0
@@ -259,7 +255,7 @@ impl<F: FieldExt> Chipset<F> for IsBoolChipset<F> {
 	type Output = ();
 
 	fn synthesize(
-		self, common: &crate::CommonConfig, config: &Self::Config, mut layouter: impl Layouter<F>,
+		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
 		// We should satisfy the equation below
 		// (1 - x) * x = 0
@@ -309,7 +305,7 @@ impl<F: FieldExt> Chipset<F> for IsEqualChipset<F> {
 	type Output = AssignedCell<F, F>;
 
 	fn synthesize(
-		self, common: &crate::CommonConfig, config: &Self::Config, mut layouter: impl Layouter<F>,
+		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
 		// We should satisfy the equation below
 		// x - y = 0
@@ -349,7 +345,7 @@ impl<F: FieldExt> Chipset<F> for IsZeroChipset<F> {
 	type Output = AssignedCell<F, F>;
 
 	fn synthesize(
-		self, common: &crate::CommonConfig, config: &Self::Config, mut layouter: impl Layouter<F>,
+		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
 		// We should satisfy the equation below
 		// 1 - x * x_inv = 1
@@ -406,7 +402,7 @@ impl<F: FieldExt> Chipset<F> for SelectChipset<F> {
 	type Output = AssignedCell<F, F>;
 
 	fn synthesize(
-		self, common: &crate::CommonConfig, config: &Self::Config, mut layouter: impl Layouter<F>,
+		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
 		// We should satisfy the equation below with bit asserted condition flag
 		// c (x - y) + y - res = 0
@@ -465,7 +461,7 @@ impl<F: FieldExt> Chipset<F> for AndChipset<F> {
 	type Output = AssignedCell<F, F>;
 
 	fn synthesize(
-		self, common: &crate::CommonConfig, config: &Self::Config, mut layouter: impl Layouter<F>,
+		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
 		let bool_chip = IsBoolChipset::new(self.x.clone());
 		bool_chip.synthesize(common, &config, layouter.namespace(|| "constraint bit"))?;
@@ -493,6 +489,8 @@ mod tests {
 		halo2curves::bn256::{Bn256, Fr},
 		plonk::Circuit,
 	};
+
+	use rand::thread_rng;
 
 	#[derive(Clone)]
 	enum Gadgets {
@@ -676,7 +674,7 @@ mod tests {
 		let test_chip = TestCircuit::new([Fr::from(1), Fr::from(1)], Gadgets::And);
 
 		let k = 4;
-		let rng = &mut rand::thread_rng();
+		let rng = &mut thread_rng();
 		let params = generate_params(k);
 		let res =
 			prove_and_verify::<Bn256, _, _>(params, test_chip, &[&[Fr::from(1)]], rng).unwrap();
@@ -725,7 +723,7 @@ mod tests {
 		let test_chip = TestCircuit::new([Fr::from(0)], Gadgets::IsBool);
 
 		let k = 4;
-		let rng = &mut rand::thread_rng();
+		let rng = &mut thread_rng();
 		let params = generate_params(k);
 		let dummy_instance = vec![Fr::zero()];
 		let res =
@@ -762,7 +760,7 @@ mod tests {
 		let test_chip = TestCircuit::new([Fr::from(123), Fr::from(123)], Gadgets::IsEqual);
 
 		let k = 4;
-		let rng = &mut rand::thread_rng();
+		let rng = &mut thread_rng();
 		let params = generate_params(k);
 		let res = prove_and_verify::<Bn256, _, _>(params, test_chip, &[&[Fr::one()]], rng).unwrap();
 
@@ -797,7 +795,7 @@ mod tests {
 		let test_chip = TestCircuit::new([Fr::from(0)], Gadgets::IsZero);
 
 		let k = 4;
-		let rng = &mut rand::thread_rng();
+		let rng = &mut thread_rng();
 		let params = generate_params(k);
 		let res = prove_and_verify::<Bn256, _, _>(params, test_chip, &[&[Fr::one()]], rng).unwrap();
 
@@ -843,7 +841,7 @@ mod tests {
 		let test_chip = TestCircuit::new([Fr::from(5), Fr::from(2)], Gadgets::Add);
 
 		let k = 4;
-		let rng = &mut rand::thread_rng();
+		let rng = &mut thread_rng();
 		let params = generate_params(k);
 		let res =
 			prove_and_verify::<Bn256, _, _>(params, test_chip, &[&[Fr::from(5 + 2)]], rng).unwrap();
@@ -860,8 +858,7 @@ mod tests {
 		let k = 4;
 		let pub_ins = vec![Fr::from(10)];
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
-		prover.assert_satisfied();
-		// assert_eq!(prover.verify(), Ok(()));
+		assert_eq!(prover.verify(), Ok(()));
 	}
 
 	#[test]
@@ -872,8 +869,7 @@ mod tests {
 		let k = 4;
 		let pub_ins = vec![Fr::from(3)];
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
-		prover.assert_satisfied();
-		// assert_eq!(prover.verify(), Ok(()));
+		assert_eq!(prover.verify(), Ok(()));
 	}
 
 	#[test]
@@ -892,7 +888,7 @@ mod tests {
 		let test_chip = TestCircuit::new([Fr::from(5), Fr::from(2)], Gadgets::Mul);
 
 		let k = 4;
-		let rng = &mut rand::thread_rng();
+		let rng = &mut thread_rng();
 		let params = generate_params(k);
 		let res =
 			prove_and_verify::<Bn256, _, _>(params, test_chip, &[&[Fr::from(10)]], rng).unwrap();
@@ -940,7 +936,7 @@ mod tests {
 		let test_chip = TestCircuit::new([Fr::from(0), Fr::from(2), Fr::from(3)], Gadgets::Select);
 
 		let k = 4;
-		let rng = &mut rand::thread_rng();
+		let rng = &mut thread_rng();
 		let params = generate_params(k);
 		let res =
 			prove_and_verify::<Bn256, _, _>(params, test_chip, &[&[Fr::from(3)]], rng).unwrap();
