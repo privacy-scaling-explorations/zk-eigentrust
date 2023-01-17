@@ -7,7 +7,7 @@
 //! public_input +
 //! q_constant = 0
 
-use crate::{Chip, Chipset, RegionCtx};
+use crate::{Chip, Chipset, CommonConfig, RegionCtx};
 use halo2::{
 	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Value},
@@ -32,7 +32,7 @@ pub struct MainConfig {
 
 	instance: Column<Instance>,
 
-	selector: Selector,
+	selector: Selector, // SHOULD be removed when replacing `CommonGate` with this `MainGate`
 }
 
 impl MainConfig {
@@ -49,6 +49,13 @@ impl MainConfig {
 		let selector = meta.selector();
 
 		Self { advice, fixed, instance, selector }
+	}
+
+	/// Temporary construct for testing
+	pub fn construct_from_selector<F: FieldExt>(common: &CommonConfig, selector: Selector) -> Self {
+		let advice = common.advice.split_at(NUM_ADVICE).0.try_into().unwrap();
+		let fixed = common.fixed.split_at(NUM_FIXED).0.try_into().unwrap();
+		Self { advice, fixed, instance: common.instance.clone(), selector: selector.clone() }
 	}
 }
 
@@ -119,7 +126,8 @@ impl<F: FieldExt> Chip<F> for MainChip<F> {
 
 				ctx.enable(*selector)?;
 
-				self.advice
+				let result = self
+					.advice
 					.clone()
 					.into_iter()
 					.enumerate()
@@ -127,11 +135,13 @@ impl<F: FieldExt> Chip<F> for MainChip<F> {
 					.collect::<Result<Vec<_>, Error>>()?;
 
 				self.fixed
-					.clone()
 					.into_iter()
 					.enumerate()
 					.map(|(i, v)| ctx.assign_fixed(common.fixed[i], v))
 					.collect::<Result<Vec<_>, Error>>()?;
+
+				println!("\n\tregoin: {:?}", result);
+				println!("region selector: {:?} \n", ctx.region);
 
 				Ok(())
 			},
@@ -479,4 +489,490 @@ impl<F: FieldExt> Chipset<F> for AndChipset<F> {
 
 		Ok(product)
 	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use crate::{
+		utils::{generate_params, prove_and_verify},
+		Chipset, CommonChip, CommonConfig,
+	};
+	use halo2::{
+		circuit::{SimpleFloorPlanner, Value},
+		dev::MockProver,
+		halo2curves::bn256::{Bn256, Fr},
+		plonk::Circuit,
+	};
+
+	#[derive(Clone)]
+	enum Gadgets {
+		And,
+		IsBool,
+		IsEqual,
+		IsZero,
+		Mul,
+		Select,
+		Add,
+	}
+
+	#[derive(Clone)]
+	struct TestConfig {
+		common: CommonConfig,
+		main: MainConfig,
+	}
+
+	#[derive(Clone)]
+	struct TestCircuit<F: FieldExt, const N: usize> {
+		inputs: [F; N],
+		gadget: Gadgets,
+	}
+
+	impl<F: FieldExt, const N: usize> TestCircuit<F, N> {
+		fn new(inputs: [F; N], gadget: Gadgets) -> Self {
+			Self { inputs, gadget }
+		}
+	}
+
+	impl<F: FieldExt, const N: usize> Circuit<F> for TestCircuit<F, N> {
+		type Config = TestConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			self.clone()
+		}
+
+		fn configure(meta: &mut ConstraintSystem<F>) -> TestConfig {
+			let common = CommonChip::configure(meta);
+			let selector = MainChip::configure(&common, meta);
+			let main = MainConfig::construct_from_selector::<F>(&common, selector);
+			TestConfig { common, main }
+		}
+
+		fn synthesize(
+			&self, config: TestConfig, mut layouter: impl Layouter<F>,
+		) -> Result<(), Error> {
+			let items = layouter.assign_region(
+				|| "temp",
+				|region| {
+					let mut ctx = RegionCtx::new(region, 0);
+					let mut items = Vec::new();
+					for i in 0..N {
+						let val = Value::known(self.inputs[i]);
+						let x = ctx.assign_advice(config.common.advice[0], val)?;
+						ctx.next();
+						items.push(x);
+					}
+					Ok(items)
+				},
+			)?;
+
+			match self.gadget {
+				Gadgets::And => {
+					let and_chip = AndChipset::new(items[0].clone(), items[1].clone());
+					let and = and_chip.synthesize(
+						&config.common,
+						&config.main,
+						layouter.namespace(|| "and"),
+					)?;
+					layouter.constrain_instance(and.cell(), config.common.instance, 0)?;
+				},
+				Gadgets::IsBool => {
+					let is_bool_chip = IsBoolChipset::new(items[0].clone());
+					is_bool_chip.synthesize(
+						&config.common,
+						&config.main,
+						layouter.namespace(|| "is_bool"),
+					)?;
+				},
+				Gadgets::IsEqual => {
+					let is_equal_chip = IsEqualChipset::new(items[0].clone(), items[1].clone());
+					let is_equal = is_equal_chip.synthesize(
+						&config.common,
+						&config.main,
+						layouter.namespace(|| "is_equal"),
+					)?;
+					layouter.constrain_instance(is_equal.cell(), config.common.instance, 0)?;
+				},
+				Gadgets::IsZero => {
+					let is_zero_chip = IsZeroChipset::new(items[0].clone());
+					let is_zero = is_zero_chip.synthesize(
+						&config.common,
+						&config.main,
+						layouter.namespace(|| "is_zero"),
+					)?;
+					layouter.constrain_instance(is_zero.cell(), config.common.instance, 0)?;
+				},
+				Gadgets::Add => {
+					let add_chip = AddChipset::new(items[0].clone(), items[1].clone());
+					let add = add_chip.synthesize(
+						&config.common,
+						&config.main,
+						layouter.namespace(|| "add"),
+					)?;
+					layouter.constrain_instance(add.cell(), config.common.instance, 0)?;
+				},
+				Gadgets::Mul => {
+					let mul_chip = MulChipset::new(items[0].clone(), items[1].clone());
+					let mul = mul_chip.synthesize(
+						&config.common,
+						&config.main,
+						layouter.namespace(|| "mul"),
+					)?;
+					layouter.constrain_instance(mul.cell(), config.common.instance, 0)?;
+				},
+				Gadgets::Select => {
+					let select_chip =
+						SelectChipset::new(items[0].clone(), items[1].clone(), items[2].clone());
+					let select = select_chip.synthesize(
+						&config.common,
+						&config.main,
+						layouter.namespace(|| "select"),
+					)?;
+					layouter.constrain_instance(select.cell(), config.common.instance, 0)?;
+				},
+			}
+
+			Ok(())
+		}
+	}
+
+	// // TEST CASES FOR THE AND CIRCUIT
+	// #[test]
+	// fn test_and_x1_y1() {
+	// 	// Testing x = 1 and y = 1.
+	// 	let test_chip = TestCircuit::new([Fr::from(1), Fr::from(1)], Gadgets::And);
+
+	// 	let pub_ins = vec![Fr::from(1)];
+	// 	let k = 4;
+	// 	let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+	// 	assert_eq!(prover.verify(), Ok(()));
+	// }
+
+	// #[test]
+	// fn test_and_x1_y0() {
+	// 	// Testing x = 1 and y = 0.
+	// 	let test_chip = TestCircuit::new([Fr::from(1), Fr::from(0)], Gadgets::And);
+
+	// 	let pub_ins = vec![Fr::from(0)];
+	// 	let k = 4;
+	// 	let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+	// 	assert_eq!(prover.verify(), Ok(()));
+	// }
+
+	// #[test]
+	// fn test_and_x0_y0() {
+	// 	// Testing x = 0 and y = 0.
+	// 	let test_chip = TestCircuit::new([Fr::from(0), Fr::from(0)], Gadgets::And);
+
+	// 	let pub_ins = vec![Fr::from(0)];
+	// 	let k = 4;
+	// 	let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+	// 	assert_eq!(prover.verify(), Ok(()));
+	// }
+
+	// #[test]
+	// fn test_and_x0_y1() {
+	// 	// Testing x = 0 and y = 1.
+	// 	let test_chip = TestCircuit::new([Fr::from(0), Fr::from(1)], Gadgets::And);
+
+	// 	let pub_ins = vec![Fr::from(0)];
+	// 	let k = 4;
+	// 	let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+	// 	assert_eq!(prover.verify(), Ok(()));
+	// }
+
+	// #[test]
+	// fn test_and_production() {
+	// 	let test_chip = TestCircuit::new([Fr::from(1), Fr::from(1)], Gadgets::And);
+
+	// 	let k = 4;
+	// 	let rng = &mut rand::thread_rng();
+	// 	let params = generate_params(k);
+	// 	let res =
+	// 		prove_and_verify::<Bn256, _, _>(params, test_chip, &[&[Fr::from(1)]],
+	// rng).unwrap();
+
+	// 	assert!(res);
+	// }
+
+	// // TEST CASES FOR THE IS_BOOL CIRCUIT
+	// // In a IsBool test case sending a dummy instance doesn't
+	// // affect the circuit output because it is not constrained.
+	// #[test]
+	// fn test_is_bool_value_zero() {
+	// 	// Testing input zero as value.
+	// 	let test_chip = TestCircuit::new([Fr::from(0)], Gadgets::IsBool);
+
+	// 	let k = 4;
+	// 	let dummy_instance = vec![Fr::zero()];
+	// 	let prover = MockProver::run(k, &test_chip, vec![dummy_instance]).unwrap();
+	// 	assert_eq!(prover.verify(), Ok(()));
+	// }
+
+	// #[test]
+	// fn test_is_bool_value_one() {
+	// 	// Testing input one as value.
+	// 	let test_chip = TestCircuit::new([Fr::from(1)], Gadgets::IsBool);
+
+	// 	let k = 4;
+	// 	let dummy_instance = vec![Fr::zero()];
+	// 	let prover = MockProver::run(k, &test_chip, vec![dummy_instance]).unwrap();
+	// 	assert_eq!(prover.verify(), Ok(()));
+	// }
+
+	// #[test]
+	// fn test_is_bool_invalid_value() {
+	// 	// Testing input two as value, which is invalid for the boolean circuit.
+	// 	let test_chip = TestCircuit::new([Fr::from(2)], Gadgets::IsBool);
+
+	// 	let k = 4;
+	// 	let dummy_instance = vec![Fr::zero()];
+	// 	let prover = MockProver::run(k, &test_chip, vec![dummy_instance]).unwrap();
+	// 	assert!(prover.verify().is_err());
+	// }
+
+	// #[test]
+	// fn test_is_bool_production() {
+	// 	let test_chip = TestCircuit::new([Fr::from(0)], Gadgets::IsBool);
+
+	// 	let k = 4;
+	// 	let rng = &mut rand::thread_rng();
+	// 	let params = generate_params(k);
+	// 	let dummy_instance = vec![Fr::zero()];
+	// 	let res =
+	// 		prove_and_verify::<Bn256, _, _>(params, test_chip, &[&dummy_instance],
+	// rng).unwrap();
+
+	// 	assert!(res);
+	// }
+
+	// // TEST CASES FOR THE IS_EQUAL CIRCUIT
+	// #[test]
+	// fn test_is_equal() {
+	// 	// Testing equal values.
+	// 	let test_chip = TestCircuit::new([Fr::from(123), Fr::from(123)],
+	// Gadgets::IsEqual);
+
+	// 	let pub_ins = vec![Fr::one()];
+	// 	let k = 4;
+	// 	let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+	// 	assert_eq!(prover.verify(), Ok(()));
+	// }
+
+	// #[test]
+	// fn test_is_not_equal() {
+	// 	// Testing not equal values.
+	// 	let test_chip = TestCircuit::new([Fr::from(123), Fr::from(124)],
+	// Gadgets::IsEqual);
+
+	// 	let pub_ins = vec![Fr::zero()];
+	// 	let k = 4;
+	// 	let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+	// 	assert_eq!(prover.verify(), Ok(()));
+	// }
+
+	// #[test]
+	// fn test_is_equal_production() {
+	// 	let test_chip = TestCircuit::new([Fr::from(123), Fr::from(123)],
+	// Gadgets::IsEqual);
+
+	// 	let k = 4;
+	// 	let rng = &mut rand::thread_rng();
+	// 	let params = generate_params(k);
+	// 	let res = prove_and_verify::<Bn256, _, _>(params, test_chip, &[&[Fr::one()]],
+	// rng).unwrap();
+
+	// 	assert!(res);
+	// }
+
+	// // TEST CASES FOR THE IS_ZERO CIRCUIT
+	// #[test]
+	// fn test_is_zero() {
+	// 	// Testing zero as value.
+	// 	let test_chip = TestCircuit::new([Fr::from(0)], Gadgets::IsZero);
+
+	// 	let pub_ins = vec![Fr::one()];
+	// 	let k = 4;
+	// 	let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+	// 	assert_eq!(prover.verify(), Ok(()));
+	// }
+
+	// #[test]
+	// fn test_is_zero_not() {
+	// 	// Testing a non-zero value.
+	// 	let test_chip = TestCircuit::new([Fr::from(1)], Gadgets::IsZero);
+
+	// 	let pub_ins = vec![Fr::zero()];
+	// 	let k = 4;
+	// 	let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+	// 	assert_eq!(prover.verify(), Ok(()));
+	// }
+
+	// #[test]
+	// fn test_is_zero_production() {
+	// 	let test_chip = TestCircuit::new([Fr::from(0)], Gadgets::IsZero);
+
+	// 	let k = 4;
+	// 	let rng = &mut rand::thread_rng();
+	// 	let params = generate_params(k);
+	// 	let res = prove_and_verify::<Bn256, _, _>(params, test_chip, &[&[Fr::one()]],
+	// rng).unwrap();
+
+	// 	assert!(res);
+	// }
+
+	// TEST CASES FOR THE ADD CIRCUIT
+	#[test]
+	fn test_add() {
+		// Testing x = 5 and y = 2.
+		let test_chip = TestCircuit::new([Fr::from(5), Fr::from(2)], Gadgets::Add);
+
+		let k = 4;
+		let pub_ins = vec![Fr::from(5 + 2)];
+		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[test]
+	fn test_add_y1() {
+		// Testing x = 3 and y = 1.
+		let test_chip = TestCircuit::new([Fr::from(3), Fr::from(1)], Gadgets::Add);
+
+		let k = 4;
+		let pub_ins = vec![Fr::from(3 + 1)];
+		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[test]
+	fn test_add_y0() {
+		// Testing x = 4 and y = 0.
+		let test_chip = TestCircuit::new([Fr::from(4), Fr::from(0)], Gadgets::Add);
+
+		let k = 4;
+		let pub_ins = vec![Fr::from(4 + 0)];
+		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[test]
+	fn test_add_production() {
+		let test_chip = TestCircuit::new([Fr::from(5), Fr::from(2)], Gadgets::Add);
+
+		let k = 4;
+		let rng = &mut rand::thread_rng();
+		let params = generate_params(k);
+		let res =
+			prove_and_verify::<Bn256, _, _>(params, test_chip, &[&[Fr::from(5 + 2)]], rng).unwrap();
+
+		assert!(res);
+	}
+
+	// // TEST CASES FOR THE MUL CIRCUIT
+	// #[test]
+	// fn test_mul() {
+	// 	// Testing x = 5 and y = 2.
+	// 	let test_chip = TestCircuit::new([Fr::from(5), Fr::from(2)],
+	// Gadgets::Mul);
+
+	// 	let k = 4;
+	// 	let pub_ins = vec![Fr::from(10)];
+	// 	let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+	// 	prover.assert_satisfied();
+	// 	// assert_eq!(prover.verify(), Ok(()));
+	// }
+
+	// #[test]
+	// fn test_mul_y1() {
+	// 	// Testing x = 3 and y = 1.
+	// 	let test_chip = TestCircuit::new([Fr::from(3), Fr::from(1)],
+	// Gadgets::Mul);
+
+	// 	let k = 4;
+	// 	let pub_ins = vec![Fr::from(3)];
+	// 	let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+	// 	prover.assert_satisfied();
+	// 	// assert_eq!(prover.verify(), Ok(()));
+	// }
+
+	// #[test]
+	// fn test_mul_y0() {
+	// 	// Testing x = 4 and y = 0.
+	// 	let test_chip = TestCircuit::new([Fr::from(4), Fr::from(0)],
+	// Gadgets::Mul);
+
+	// 	let k = 4;
+	// 	let pub_ins = vec![Fr::from(0)];
+	// 	let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+	// 	assert_eq!(prover.verify(), Ok(()));
+	// }
+
+	// #[test]
+	// fn test_mul_production() {
+	// 	let test_chip = TestCircuit::new([Fr::from(5), Fr::from(2)],
+	// Gadgets::Mul);
+
+	// 	let k = 4;
+	// 	let rng = &mut rand::thread_rng();
+	// 	let params = generate_params(k);
+	// 	let res =
+	// 		prove_and_verify::<Bn256, _, _>(params, test_chip, &[&[Fr::from(10)]],
+	// rng).unwrap();
+
+	// 	assert!(res);
+	// }
+
+	// // TEST CASES FOR THE SELECT CIRCUIT
+	// #[test]
+	// fn test_select() {
+	// 	// Testing bit = 0.
+	// 	let test_chip = TestCircuit::new([Fr::from(0), Fr::from(2), Fr::from(3)],
+	// Gadgets::Select);
+
+	// 	let pub_ins = vec![Fr::from(3)];
+	// 	let k = 4;
+	// 	let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+	// 	assert_eq!(prover.verify(), Ok(()));
+	// }
+
+	// #[test]
+	// fn test_select_one_as_bit() {
+	// 	// Testing bit = 1.
+	// 	let test_chip = TestCircuit::new([Fr::from(1), Fr::from(7), Fr::from(4)],
+	// Gadgets::Select);
+
+	// 	let pub_ins = vec![Fr::from(7)];
+	// 	let k = 4;
+	// 	let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+	// 	assert_eq!(prover.verify(), Ok(()));
+	// }
+
+	// #[test]
+	// fn test_select_two_as_bit() {
+	// 	// Testing bit = 2. Constraint not satisfied error will return
+	// 	// because the bit is not a boolean value.
+	// 	let test_chip = TestCircuit::new([Fr::from(2), Fr::from(3), Fr::from(6)],
+	// Gadgets::Select);
+
+	// 	let pub_ins = vec![Fr::from(3)];
+	// 	let k = 4;
+	// 	let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+	// 	assert!(prover.verify().is_err());
+	// }
+
+	// #[test]
+	// fn test_select_production() {
+	// 	let test_chip = TestCircuit::new([Fr::from(0), Fr::from(2), Fr::from(3)],
+	// Gadgets::Select);
+
+	// 	let k = 4;
+	// 	let rng = &mut rand::thread_rng();
+	// 	let params = generate_params(k);
+	// 	let res =
+	// 		prove_and_verify::<Bn256, _, _>(params, test_chip, &[&[Fr::from(3)]],
+	// rng).unwrap();
+
+	// 	assert!(res);
+	// }
 }
