@@ -457,6 +457,8 @@ version = "0.1.0"
 dependencies = [
  "ethers",
  "ethers-etherscan",
+ "rand 0.8.5",
+ "tokio",
 ]
 
 [[package]]
