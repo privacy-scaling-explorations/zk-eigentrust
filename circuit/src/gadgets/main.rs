@@ -393,10 +393,14 @@ impl<F: FieldExt> Chipset<F> for IsZeroChipset<F> {
 		// x * x_inv = 0
 		// x * x_inv + res - 1 = 0
 
+		// Addional constraint:
+		// x * res = x * (1 - x * x_inv) = 0
+
 		// Witness layout:
 		// | A   | B     | C   | D   | E  |
 		// | --- | ----- | --- | --- | ---|
 		// | x   | x_inv | res |     |    |
+		// | x   | res   |
 
 		let (zero, x_inv, res) = layouter.assign_region(
 			|| "assign_values",
@@ -413,12 +417,21 @@ impl<F: FieldExt> Chipset<F> for IsZeroChipset<F> {
 		)?;
 
 		// [a, b, c, d, e]
-		let advices = [self.x.clone(), x_inv, res.clone(), zero.clone(), zero];
+		let advices = [self.x.clone(), x_inv, res.clone(), zero.clone(), zero.clone()];
 		// [s_a, s_b, s_c, s_d, s_e, s_mul_ab, s_mul_cd, s_constant]
 		let fixed =
 			[F::zero(), F::zero(), F::one(), F::zero(), F::zero(), F::one(), F::zero(), -F::one()];
 		let main_chip = MainChip::new(advices, fixed);
-		main_chip.synthesize(common, &config.selector, layouter)?;
+		main_chip.synthesize(common, &config.selector, layouter.namespace(|| "is_zero"))?;
+
+		// Additional constraint
+		// [a, b, c, d, e]
+		let advices = [self.x, res.clone(), zero.clone(), zero.clone(), zero];
+		// [s_a, s_b, s_c, s_d, s_e, s_mul_ab, s_mul_cd, s_constant]
+		let fixed =
+			[F::zero(), F::zero(), F::zero(), F::zero(), F::zero(), F::one(), F::zero(), F::zero()];
+		let main_chip = MainChip::new(advices, fixed);
+		main_chip.synthesize(common, &config.selector, layouter.namespace(|| "mul"))?;
 
 		Ok(res)
 	}
