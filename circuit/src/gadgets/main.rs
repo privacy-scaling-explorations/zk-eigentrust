@@ -314,29 +314,21 @@ impl<F: FieldExt> Chipset<F> for IsEqualChipset<F> {
 		// We should satisfy the equation below
 		// x - y = 0
 
-		// Witness layout:
-		// | A   | B   | C   | D   | E  |
-		// | --- | --- | --- | --- | ---|
-		// | x   | y   |  0  |     |    |
-
-		let zero = layouter.assign_region(
+		let diff = layouter.assign_region(
 			|| "assign_values",
 			|region| {
+				let diff = self.x.clone().value().cloned() - self.y.value();
+
 				let mut ctx = RegionCtx::new(region, 0);
-				let zero = ctx.assign_advice(common.advice[0], Value::known(F::zero()))?;
-				Ok(zero)
+				let diff = ctx.assign_advice(common.advice[0], diff)?;
+				Ok(diff)
 			},
 		)?;
 
-		// [a, b, c, d, e]
-		let advices = [self.x.clone(), self.y, zero.clone(), zero.clone(), zero];
-		// [s_a, s_b, s_c, s_d, s_e, s_mul_ab, s_mul_cd, s_constant]
-		let fixed =
-			[F::one(), -F::one(), F::zero(), F::zero(), F::zero(), F::zero(), F::zero(), F::zero()];
-		let main_chip = MainChip::new(advices, fixed);
-		main_chip.synthesize(common, &config.selector, layouter)?;
+		let is_zero_chip = IsZeroChipset::new(diff);
+		let res = is_zero_chip.synthesize(common, config, layouter)?;
 
-		Ok(self.x.clone())
+		Ok(res)
 	}
 }
 
