@@ -425,7 +425,6 @@ impl<F: FieldExt> Chipset<F> for SelectChipset<F> {
 						if *bit == F::one() {
 							*x
 						} else {
-							assert_eq!(*bit, F::zero());
 							*y
 						}
 					},
