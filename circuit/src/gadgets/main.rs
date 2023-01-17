@@ -362,33 +362,36 @@ impl<F: FieldExt> Chipset<F> for IsZeroChipset<F> {
 		// We should satisfy the equation below
 		// 1 - x * x_inv = 1
 		// x * x_inv = 0
+		// x * x_inv + res - 1 = 0
 
 		// Witness layout:
 		// | A   | B     | C   | D   | E  |
 		// | --- | ----- | --- | --- | ---|
-		// | x   | x_inv |     |     |    |
+		// | x   | x_inv | res |     |    |
 
-		let (zero, x_inv) = layouter.assign_region(
+		let (zero, x_inv, res) = layouter.assign_region(
 			|| "assign_values",
 			|region| {
 				let x_inv = self.x.clone().value().map(|v| v.invert().unwrap_or(F::zero()));
+				let res = Value::known(F::one()) - self.x.clone().value().cloned() * x_inv.clone();
 
 				let mut ctx = RegionCtx::new(region, 0);
 				let zero = ctx.assign_advice(common.advice[0], Value::known(F::zero()))?;
 				let x_inv = ctx.assign_advice(common.advice[1], x_inv)?;
-				Ok((zero, x_inv))
+				let res = ctx.assign_advice(common.advice[2], res)?;
+				Ok((zero, x_inv, res))
 			},
 		)?;
 
 		// [a, b, c, d, e]
-		let advices = [self.x.clone(), x_inv, zero.clone(), zero.clone(), zero];
+		let advices = [self.x.clone(), x_inv, res.clone(), zero.clone(), zero];
 		// [s_a, s_b, s_c, s_d, s_e, s_mul_ab, s_mul_cd, s_constant]
 		let fixed =
-			[F::zero(), F::zero(), F::zero(), F::zero(), F::zero(), F::one(), F::zero(), F::zero()];
+			[F::zero(), F::zero(), F::one(), F::zero(), F::zero(), F::one(), F::zero(), -F::one()];
 		let main_chip = MainChip::new(advices, fixed);
 		main_chip.synthesize(common, &config.selector, layouter)?;
 
-		Ok(self.x.clone())
+		Ok(res)
 	}
 }
 
