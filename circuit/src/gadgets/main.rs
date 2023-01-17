@@ -189,6 +189,55 @@ impl<F: FieldExt> Chipset<F> for AddChipset<F> {
 	}
 }
 
+/// Chip for subtract operation
+pub struct SubChipset<F: FieldExt> {
+	x: AssignedCell<F, F>,
+	y: AssignedCell<F, F>,
+}
+
+impl<F: FieldExt> SubChipset<F> {
+	/// Create new SubChipset
+	pub fn new(x: AssignedCell<F, F>, y: AssignedCell<F, F>) -> Self {
+		Self { x, y }
+	}
+}
+
+impl<F: FieldExt> Chipset<F> for SubChipset<F> {
+	type Config = MainConfig;
+	type Output = AssignedCell<F, F>;
+
+	fn synthesize(
+		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<F>,
+	) -> Result<Self::Output, Error> {
+		// We should satisfy the equation below
+		// x - y - res = 0
+
+		// Witness layout:
+		// | A   | B   | C   | D   | E  |
+		// | --- | --- | --- | --- | ---|
+		// | x   | y   | res |     |    |
+
+		let (zero, diff) = layouter.assign_region(
+			|| "assign_values",
+			|region| {
+				let mut ctx = RegionCtx::new(region, 0);
+				let zero = ctx.assign_advice(common.advice[0], Value::known(F::zero()))?;
+				let diff =
+					ctx.assign_advice(common.advice[1], self.x.value().cloned() - self.y.value())?;
+				Ok((zero, diff))
+			},
+		)?;
+
+		let advices = [self.x, self.y, diff.clone(), zero.clone(), zero];
+		let fixed =
+			[F::one(), -F::one(), -F::one(), F::zero(), F::zero(), F::zero(), F::zero(), F::zero()];
+		let main_chip = MainChip::new(advices, fixed);
+		main_chip.synthesize(common, &config.selector, layouter)?;
+
+		Ok(diff)
+	}
+}
+
 /// Chip for multiplication operation
 pub struct MulChipset<F: FieldExt> {
 	x: AssignedCell<F, F>,
@@ -310,19 +359,11 @@ impl<F: FieldExt> Chipset<F> for IsEqualChipset<F> {
 		// We should satisfy the equation below
 		// x - y = 0
 
-		let diff = layouter.assign_region(
-			|| "assign_values",
-			|region| {
-				let diff = self.x.clone().value().cloned() - self.y.value();
-
-				let mut ctx = RegionCtx::new(region, 0);
-				let diff = ctx.assign_advice(common.advice[0], diff)?;
-				Ok(diff)
-			},
-		)?;
+		let sub_chip = SubChipset::new(self.x, self.y);
+		let diff = sub_chip.synthesize(common, config, layouter.namespace(|| "sub"))?;
 
 		let is_zero_chip = IsZeroChipset::new(diff);
-		let res = is_zero_chip.synthesize(common, config, layouter)?;
+		let res = is_zero_chip.synthesize(common, config, layouter.namespace(|| "is_zero"))?;
 
 		Ok(res)
 	}
