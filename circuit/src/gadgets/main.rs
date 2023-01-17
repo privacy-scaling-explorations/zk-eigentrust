@@ -256,7 +256,7 @@ impl<F: FieldExt> IsBoolChipset<F> {
 
 impl<F: FieldExt> Chipset<F> for IsBoolChipset<F> {
 	type Config = MainConfig;
-	type Output = AssignedCell<F, F>;
+	type Output = ();
 
 	fn synthesize(
 		self, common: &crate::CommonConfig, config: &Self::Config, mut layouter: impl Layouter<F>,
@@ -287,7 +287,7 @@ impl<F: FieldExt> Chipset<F> for IsBoolChipset<F> {
 		let main_chip = MainChip::new(advices, fixed);
 		main_chip.synthesize(common, &config.selector, layouter)?;
 
-		Ok(self.x.clone())
+		Ok(())
 	}
 }
 
