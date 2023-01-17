@@ -413,6 +413,10 @@ impl<F: FieldExt> Chipset<F> for SelectChipset<F> {
 		// | --- | --- | - | --- | ---|
 		// | c   | x   | c | y   | res|
 
+		// Check if `bit` is really boolean
+		let is_bool_chip = IsBoolChipset::new(self.bit.clone());
+		is_bool_chip.synthesize(common, config, layouter.namespace(|| "is_bool"))?;
+
 		let res = layouter.assign_region(
 			|| "assign values",
 			|region| {
