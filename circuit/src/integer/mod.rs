@@ -3,45 +3,19 @@ pub mod native;
 /// RNS operations for the non-native field arithmetic
 pub mod rns;
 
+use self::native::Integer;
 use crate::{Chip, CommonConfig};
 use halo2::{
 	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region, Value},
-	plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
+	plonk::{ConstraintSystem, Error, Expression, Selector},
 	poly::Rotation,
 };
 use native::{Quotient, ReductionWitness};
 use rns::RnsParams;
 use std::marker::PhantomData;
 
-use self::native::Integer;
-
-/// Configuration elements for the circuit are defined here.
-#[derive(Debug, Clone)]
-pub struct IntegerConfig<const NUM_LIMBS: usize> {
-	/// Configures columns for the x limbs.
-	pub(crate) x_limbs: [Column<Advice>; NUM_LIMBS],
-	/// Configures columns for the y limbs.
-	pub(crate) y_limbs: [Column<Advice>; NUM_LIMBS],
-	/// Configures columns for the quotient value(s).
-	pub(crate) quotient: [Column<Advice>; NUM_LIMBS],
-	/// Configures columns for the intermediate values.
-	pub(crate) intermediate: [Column<Advice>; NUM_LIMBS],
-	/// Configures columns for the residues.
-	pub(crate) residues: Vec<Column<Advice>>,
-	/// Configures a fixed boolean value for each row of the circuit.
-	pub(crate) reduce_selector: Selector,
-	/// Configures a fixed boolean value for each row of the circuit.
-	pub(crate) add_selector: Selector,
-	/// Configures a fixed boolean value for each row of the circuit.
-	pub(crate) sub_selector: Selector,
-	/// Configures a fixed boolean value for each row of the circuit.
-	pub(crate) mul_selector: Selector,
-	/// Configures a fixed boolean value for each row of the circuit.
-	pub(crate) div_selector: Selector,
-}
-
-/// Chip structure for the integer reduce circuit.
+/// Chip structure for the integer assign circuit.
 pub struct IntegerAssign<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
 where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
@@ -61,7 +35,7 @@ where
 		x_opt: Option<&[AssignedCell<N, N>; NUM_LIMBS]>, y: &[AssignedCell<N, N>; NUM_LIMBS],
 		reduction_witness: &ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>, common: &CommonConfig,
 		region: &mut Region<'_, N>, row: usize,
-	) -> Result<[AssignedCell<N, N>; NUM_LIMBS], Error> {
+	) -> Result<AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>, Error> {
 		match &reduction_witness.quotient {
 			Quotient::Short(n) => {
 				region.assign_advice(
@@ -122,7 +96,11 @@ where
 				|| Value::known(reduction_witness.result.limbs[i]),
 			)?)
 		}
-		let assigned_result = assigned_result.map(|x| x.unwrap());
+		//let assigned_result = assigned_result.map(|x| x.unwrap();
+		let assigned_result = AssignedInteger::new(
+			assigned_result.map(|x| x.unwrap()),
+			reduction_witness.clone(),
+		);
 		Ok(assigned_result)
 	}
 }
@@ -139,8 +117,8 @@ pub struct IntegerReduceChip<
 {
 	// Integer value
 	integer: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
-	// Assigned limbs from the integer
-	limbs: [AssignedCell<N, N>; NUM_LIMBS],
+	// Assigned integer from the integer
+	assigned_integer: AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
 	/// Constructs phantom datas for the variables.
 	_native: PhantomData<N>,
 	_wrong: PhantomData<W>,
@@ -154,9 +132,16 @@ where
 {
 	/// Construct new Integer Reduce chip
 	pub fn new(
-		integer: Integer<W, N, NUM_LIMBS, NUM_BITS, P>, limbs: [AssignedCell<N, N>; NUM_LIMBS],
+		integer: &Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
+		assigned_integer: &AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
 	) -> Self {
-		Self { integer, limbs, _native: PhantomData, _wrong: PhantomData, _rns: PhantomData }
+		Self {
+			integer: integer.clone(),
+			assigned_integer: assigned_integer.clone(),
+			_native: PhantomData,
+			_wrong: PhantomData,
+			_rns: PhantomData,
+		}
 	}
 }
 
@@ -165,7 +150,7 @@ impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
 where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 {
-	type Output = [AssignedCell<N, N>; NUM_LIMBS];
+	type Output = AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>;
 
 	/// Make the circuit config.
 	fn configure(common: &CommonConfig, meta: &mut ConstraintSystem<N>) -> Selector {
@@ -215,7 +200,8 @@ where
 			|mut region: Region<'_, N>| {
 				selector.enable(&mut region, 1)?;
 				IntegerAssign::assign(
-					None, &self.limbs, &reduction_witness, &common, &mut region, 1,
+					None, &self.assigned_integer.integer_limbs, &reduction_witness, &common,
+					&mut region, 1,
 				)
 			},
 		)
@@ -236,10 +222,10 @@ pub struct IntegerAddChip<
 	x_integer: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
 	// Integer y
 	y_integer: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
-	// Assigned limbs from the integer x
-	x_limbs: [AssignedCell<N, N>; NUM_LIMBS],
-	// Assigned limbs from the integer y
-	y_limbs: [AssignedCell<N, N>; NUM_LIMBS],
+	// Assigned integer from the integer x
+	x_assigned: AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
+	// Assigned integer from the integer y
+	y_assigned: AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
 	/// Constructs phantom datas for the variables.
 	_native: PhantomData<N>,
 	_wrong: PhantomData<W>,
@@ -251,17 +237,18 @@ impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
 where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 {
-	/// Construct new Integer Reduce chip
+	/// Construct new Integer Add chip
 	pub fn new(
-		x_integer: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
-		y_integer: Integer<W, N, NUM_LIMBS, NUM_BITS, P>, x_limbs: [AssignedCell<N, N>; NUM_LIMBS],
-		y_limbs: [AssignedCell<N, N>; NUM_LIMBS],
+		x_integer: &Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
+		y_integer: &Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
+		x_assigned: &AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
+		y_assigned: &AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
 	) -> Self {
 		Self {
-			x_integer,
-			y_integer,
-			x_limbs,
-			y_limbs,
+			x_integer: x_integer.clone(),
+			y_integer: y_integer.clone(),
+			x_assigned: x_assigned.clone(),
+			y_assigned: y_assigned.clone(),
 			_native: PhantomData,
 			_wrong: PhantomData,
 			_rns: PhantomData,
@@ -274,7 +261,7 @@ impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
 where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 {
-	type Output = [AssignedCell<N, N>; NUM_LIMBS];
+	type Output = AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>;
 
 	/// Make the circuit config.
 	fn configure(common: &CommonConfig, meta: &mut ConstraintSystem<N>) -> Selector {
@@ -326,8 +313,8 @@ where
 			|mut region: Region<'_, N>| {
 				selector.enable(&mut region, 1)?;
 				IntegerAssign::assign(
-					Some(&self.x_limbs),
-					&self.y_limbs,
+					Some(&self.x_assigned.integer_limbs),
+					&self.y_assigned.integer_limbs,
 					&reduction_witness,
 					&common,
 					&mut region,
@@ -352,10 +339,10 @@ pub struct IntegerSubChip<
 	x_integer: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
 	// Integer y
 	y_integer: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
-	// Assigned limbs from the integer x
-	x_limbs: [AssignedCell<N, N>; NUM_LIMBS],
-	// Assigned limbs from the integer y
-	y_limbs: [AssignedCell<N, N>; NUM_LIMBS],
+	// Assigned integer from the integer x
+	x_assigned: AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
+	// Assigned integer from the integer y
+	y_assigned: AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
 	/// Constructs phantom datas for the variables.
 	_native: PhantomData<N>,
 	_wrong: PhantomData<W>,
@@ -367,17 +354,18 @@ impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
 where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 {
-	/// Construct new Integer Reduce chip
+	/// Construct new Integer Sub chip
 	pub fn new(
-		x_integer: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
-		y_integer: Integer<W, N, NUM_LIMBS, NUM_BITS, P>, x_limbs: [AssignedCell<N, N>; NUM_LIMBS],
-		y_limbs: [AssignedCell<N, N>; NUM_LIMBS],
+		x_integer: &Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
+		y_integer: &Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
+		x_assigned: &AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
+		y_assigned: &AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
 	) -> Self {
 		Self {
-			x_integer,
-			y_integer,
-			x_limbs,
-			y_limbs,
+			x_integer: x_integer.clone(),
+			y_integer: y_integer.clone(),
+			x_assigned: x_assigned.clone(),
+			y_assigned: y_assigned.clone(),
 			_native: PhantomData,
 			_wrong: PhantomData,
 			_rns: PhantomData,
@@ -390,7 +378,7 @@ impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
 where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 {
-	type Output = [AssignedCell<N, N>; NUM_LIMBS];
+	type Output = AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>;
 
 	/// Make the circuit config.
 	fn configure(common: &CommonConfig, meta: &mut ConstraintSystem<N>) -> Selector {
@@ -445,8 +433,8 @@ where
 			|mut region: Region<'_, N>| {
 				selector.enable(&mut region, 1)?;
 				IntegerAssign::assign(
-					Some(&self.x_limbs),
-					&self.y_limbs,
+					Some(&self.x_assigned.integer_limbs),
+					&self.y_assigned.integer_limbs,
 					&reduction_witness,
 					&common,
 					&mut region,
@@ -471,10 +459,10 @@ pub struct IntegerMulChip<
 	x_integer: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
 	// Integer y
 	y_integer: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
-	// Assigned limbs from the integer x
-	x_limbs: [AssignedCell<N, N>; NUM_LIMBS],
-	// Assigned limbs from the integer y
-	y_limbs: [AssignedCell<N, N>; NUM_LIMBS],
+	// Assigned integer from the integer x
+	x_assigned: AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
+	// Assigned integer from the integer y
+	y_assigned: AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
 	/// Constructs phantom datas for the variables.
 	_native: PhantomData<N>,
 	_wrong: PhantomData<W>,
@@ -486,17 +474,18 @@ impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
 where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 {
-	/// Construct new Integer Reduce chip
+	/// Construct new Integer Mul chip
 	pub fn new(
-		x_integer: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
-		y_integer: Integer<W, N, NUM_LIMBS, NUM_BITS, P>, x_limbs: [AssignedCell<N, N>; NUM_LIMBS],
-		y_limbs: [AssignedCell<N, N>; NUM_LIMBS],
+		x_integer: &Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
+		y_integer: &Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
+		x_assigned: &AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
+		y_assigned: &AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
 	) -> Self {
 		Self {
-			x_integer,
-			y_integer,
-			x_limbs,
-			y_limbs,
+			x_integer: x_integer.clone(),
+			y_integer: y_integer.clone(),
+			x_assigned: x_assigned.clone(),
+			y_assigned: y_assigned.clone(),
 			_native: PhantomData,
 			_wrong: PhantomData,
 			_rns: PhantomData,
@@ -509,7 +498,7 @@ impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
 where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 {
-	type Output = [AssignedCell<N, N>; NUM_LIMBS];
+	type Output = AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>;
 
 	/// Make the circuit config.
 	fn configure(common: &CommonConfig, meta: &mut ConstraintSystem<N>) -> Selector {
@@ -567,8 +556,8 @@ where
 			|mut region: Region<'_, N>| {
 				selector.enable(&mut region, 1)?;
 				IntegerAssign::assign(
-					Some(&self.x_limbs),
-					&self.y_limbs,
+					Some(&self.x_assigned.integer_limbs),
+					&self.y_assigned.integer_limbs,
 					&reduction_witness,
 					&common,
 					&mut region,
@@ -593,10 +582,10 @@ pub struct IntegerDivChip<
 	x_integer: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
 	// Integer y
 	y_integer: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
-	// Assigned limbs from the integer x
-	x_limbs: [AssignedCell<N, N>; NUM_LIMBS],
-	// Assigned limbs from the integer y
-	y_limbs: [AssignedCell<N, N>; NUM_LIMBS],
+	// Assigned integer from the integer x
+	x_assigned: AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
+	// Assigned integer from the integer y
+	y_assigned: AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
 	/// Constructs phantom datas for the variables.
 	_native: PhantomData<N>,
 	_wrong: PhantomData<W>,
@@ -608,17 +597,18 @@ impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
 where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 {
-	/// Construct new Integer Reduce chip
+	/// Construct new Integer Div chip
 	pub fn new(
-		x_integer: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
-		y_integer: Integer<W, N, NUM_LIMBS, NUM_BITS, P>, x_limbs: [AssignedCell<N, N>; NUM_LIMBS],
-		y_limbs: [AssignedCell<N, N>; NUM_LIMBS],
+		x_integer: &Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
+		y_integer: &Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
+		x_assigned: &AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
+		y_assigned: &AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
 	) -> Self {
 		Self {
-			x_integer,
-			y_integer,
-			x_limbs,
-			y_limbs,
+			x_integer: x_integer.clone(),
+			y_integer: y_integer.clone(),
+			x_assigned: x_assigned.clone(),
+			y_assigned: y_assigned.clone(),
 			_native: PhantomData,
 			_wrong: PhantomData,
 			_rns: PhantomData,
@@ -631,7 +621,7 @@ impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
 where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 {
-	type Output = [AssignedCell<N, N>; NUM_LIMBS];
+	type Output = AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>;
 
 	/// Make the circuit config.
 	fn configure(common: &CommonConfig, meta: &mut ConstraintSystem<N>) -> Selector {
@@ -689,308 +679,13 @@ where
 			|mut region: Region<'_, N>| {
 				selector.enable(&mut region, 1)?;
 				IntegerAssign::assign(
-					Some(&self.x_limbs),
-					&self.y_limbs,
+					Some(&self.x_assigned.integer_limbs),
+					&self.y_assigned.integer_limbs,
 					&reduction_witness,
 					&common,
 					&mut region,
 					1,
 				)
-			},
-		)
-	}
-}
-
-/// Constructs a chip for the circuit.
-pub struct IntegerChip<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
-where
-	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
-{
-	/// Constructs phantom datas for the variables.
-	_native: PhantomData<N>,
-	_wrong: PhantomData<W>,
-	_rns: PhantomData<P>,
-}
-
-impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
-	IntegerChip<W, N, NUM_LIMBS, NUM_BITS, P>
-where
-	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
-{
-	/// Make the circuit config.
-	pub fn configure(meta: &mut ConstraintSystem<N>) -> IntegerConfig<NUM_LIMBS> {
-		let x_limbs = [(); NUM_LIMBS].map(|_| meta.advice_column());
-		let y_limbs = [(); NUM_LIMBS].map(|_| meta.advice_column());
-		let quotient = [(); NUM_LIMBS].map(|_| meta.advice_column());
-		let intermediate = [(); NUM_LIMBS].map(|_| meta.advice_column());
-		let residues: Vec<Column<Advice>> =
-			vec![(); NUM_LIMBS / 2].iter().map(|_| meta.advice_column()).collect();
-		let reduce_selector = meta.selector();
-		let add_selector = meta.selector();
-		let sub_selector = meta.selector();
-		let mul_selector = meta.selector();
-		let div_selector = meta.selector();
-
-		x_limbs.map(|x| meta.enable_equality(x));
-		y_limbs.map(|y| meta.enable_equality(y));
-
-		let p_in_n = P::wrong_modulus_in_native_modulus();
-
-		meta.create_gate("reduce", |v_cells| {
-			let reduce_s = v_cells.query_selector(reduce_selector);
-			let y_limb_exps = y_limbs.map(|x| v_cells.query_advice(x, Rotation::cur()));
-			let reduce_q_exp = v_cells.query_advice(quotient[0], Rotation::cur());
-			let t_exp = intermediate.map(|x| v_cells.query_advice(x, Rotation::cur()));
-			let result_exps = x_limbs.map(|x| v_cells.query_advice(x, Rotation::next()));
-			let residues_exps: Vec<Expression<N>> =
-				residues.iter().map(|x| v_cells.query_advice(*x, Rotation::cur())).collect();
-
-			// REDUCTION CONSTRAINTS
-			let mut constraints =
-				P::constrain_binary_crt_exp(t_exp, result_exps.clone(), residues_exps);
-			// NATIVE CONSTRAINTS
-			let native_constraint =
-				P::compose_exp(y_limb_exps) - reduce_q_exp * p_in_n - P::compose_exp(result_exps);
-			constraints.push(native_constraint);
-
-			constraints.iter().map(|x| reduce_s.clone() * x.clone()).collect::<Vec<Expression<N>>>()
-		});
-
-		meta.create_gate("add", |v_cells| {
-			let add_s = v_cells.query_selector(add_selector);
-			let x_limb_exps = x_limbs.map(|x| v_cells.query_advice(x, Rotation::cur()));
-			let y_limb_exps = y_limbs.map(|y| v_cells.query_advice(y, Rotation::cur()));
-			let t_exp = intermediate.map(|x| v_cells.query_advice(x, Rotation::cur()));
-			let result_exps = x_limbs.map(|x| v_cells.query_advice(x, Rotation::next()));
-			let residues_exps: Vec<Expression<N>> =
-				residues.iter().map(|x| v_cells.query_advice(*x, Rotation::cur())).collect();
-
-			// REDUCTION CONSTRAINTS
-			let mut constraints =
-				P::constrain_binary_crt_exp(t_exp, result_exps.clone(), residues_exps);
-			// NATIVE CONSTRAINTS
-			let native_constraint = P::compose_exp(x_limb_exps) + P::compose_exp(y_limb_exps)
-				- P::compose_exp(result_exps);
-			constraints.push(native_constraint);
-
-			constraints.iter().map(|x| add_s.clone() * x.clone()).collect::<Vec<Expression<N>>>()
-		});
-
-		meta.create_gate("sub", |v_cells| {
-			let sub_s = v_cells.query_selector(sub_selector);
-			let x_limb_exps = x_limbs.map(|x| v_cells.query_advice(x, Rotation::cur()));
-			let y_limb_exps = y_limbs.map(|y| v_cells.query_advice(y, Rotation::cur()));
-			let sub_q_exp = v_cells.query_advice(quotient[0], Rotation::cur());
-			let t_exp = intermediate.map(|x| v_cells.query_advice(x, Rotation::cur()));
-			let result_exps = x_limbs.map(|x| v_cells.query_advice(x, Rotation::next()));
-			let residues_exps: Vec<Expression<N>> =
-				residues.iter().map(|x| v_cells.query_advice(*x, Rotation::cur())).collect();
-
-			// REDUCTION CONSTRAINTS
-			let mut constraints =
-				P::constrain_binary_crt_exp(t_exp, result_exps.clone(), residues_exps);
-			// NATIVE CONSTRAINTS
-			let native_constraint = P::compose_exp(x_limb_exps) - P::compose_exp(y_limb_exps)
-				+ sub_q_exp * p_in_n
-				- P::compose_exp(result_exps);
-			constraints.push(native_constraint);
-
-			constraints.iter().map(|x| sub_s.clone() * x.clone()).collect::<Vec<Expression<N>>>()
-		});
-
-		meta.create_gate("mul", |v_cells| {
-			let mul_s = v_cells.query_selector(mul_selector);
-			let x_limb_exps = x_limbs.map(|x| v_cells.query_advice(x, Rotation::cur()));
-			let y_limb_exps = y_limbs.map(|y| v_cells.query_advice(y, Rotation::cur()));
-			let mul_q_exp = quotient.map(|x| v_cells.query_advice(x, Rotation::cur()));
-			let t_exp = intermediate.map(|x| v_cells.query_advice(x, Rotation::cur()));
-			let result_exps = x_limbs.map(|x| v_cells.query_advice(x, Rotation::next()));
-			let residues_exps: Vec<Expression<N>> =
-				residues.iter().map(|x| v_cells.query_advice(*x, Rotation::cur())).collect();
-
-			// REDUCTION CONSTRAINTS
-			let mut constraints =
-				P::constrain_binary_crt_exp(t_exp, result_exps.clone(), residues_exps);
-			// NATIVE CONSTRAINTS
-			let native_constraints = P::compose_exp(x_limb_exps) * P::compose_exp(y_limb_exps)
-				- P::compose_exp(mul_q_exp) * p_in_n
-				- P::compose_exp(result_exps);
-			constraints.push(native_constraints);
-
-			constraints.iter().map(|x| mul_s.clone() * x.clone()).collect::<Vec<Expression<N>>>()
-		});
-
-		meta.create_gate("div", |v_cells| {
-			let div_s = v_cells.query_selector(div_selector);
-			let x_limb_exps = x_limbs.map(|x| v_cells.query_advice(x, Rotation::cur()));
-			let y_limb_exps = y_limbs.map(|y| v_cells.query_advice(y, Rotation::cur()));
-			let div_q_exp = quotient.map(|x| v_cells.query_advice(x, Rotation::cur()));
-			let t_exp = intermediate.map(|x| v_cells.query_advice(x, Rotation::cur()));
-			let result_exps = x_limbs.map(|x| v_cells.query_advice(x, Rotation::next()));
-			let residues_exps: Vec<Expression<N>> =
-				residues.iter().map(|x| v_cells.query_advice(*x, Rotation::cur())).collect();
-
-			// REDUCTION CONSTRAINTS
-			let mut constraints =
-				P::constrain_binary_crt_exp(t_exp, result_exps.clone(), residues_exps);
-			//NATIVE CONSTRAINTS
-			let native_constraints = P::compose_exp(y_limb_exps) * P::compose_exp(result_exps)
-				- P::compose_exp(x_limb_exps)
-				- P::compose_exp(div_q_exp) * p_in_n;
-			constraints.push(native_constraints);
-
-			constraints.iter().map(|x| div_s.clone() * x.clone()).collect::<Vec<Expression<N>>>()
-		});
-
-		IntegerConfig {
-			x_limbs,
-			y_limbs,
-			quotient,
-			intermediate,
-			residues,
-			reduce_selector,
-			add_selector,
-			sub_selector,
-			mul_selector,
-			div_selector,
-		}
-	}
-
-	/// Assigns given values and their reduction witnesses
-	pub fn assign(
-		x_opt: Option<&[AssignedCell<N, N>; NUM_LIMBS]>, y: &[AssignedCell<N, N>; NUM_LIMBS],
-		reduction_witness: &ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>,
-		config: &IntegerConfig<NUM_LIMBS>, region: &mut Region<'_, N>, row: usize,
-	) -> Result<[AssignedCell<N, N>; NUM_LIMBS], Error> {
-		match &reduction_witness.quotient {
-			Quotient::Short(n) => {
-				region.assign_advice(
-					|| "quotient",
-					config.quotient[0],
-					row,
-					|| Value::known(*n),
-				)?;
-			},
-			Quotient::Long(n) => {
-				for i in 0..NUM_LIMBS {
-					region.assign_advice(
-						|| format!("quotient_{}", i),
-						config.quotient[i],
-						row,
-						|| Value::known(n.limbs[i]),
-					)?;
-				}
-			},
-		}
-
-		for i in 0..NUM_LIMBS {
-			if x_opt.is_some() {
-				let x = x_opt.unwrap();
-				x[i].copy_advice(|| format!("limb_x_{}", i), region, config.x_limbs[i], row)?;
-			}
-			y[i].copy_advice(|| format!("limb_y_{}", i), region, config.y_limbs[i], row)?;
-
-			region.assign_advice(
-				|| format!("intermediates_{}", i),
-				config.intermediate[i],
-				row,
-				|| Value::known(reduction_witness.intermediate[i]),
-			)?;
-		}
-
-		for i in 0..reduction_witness.residues.len() {
-			region.assign_advice(
-				|| format!("residues_{}", i),
-				config.residues[i],
-				row,
-				|| Value::known(reduction_witness.residues[i]),
-			)?;
-		}
-
-		let mut assigned_result: [Option<AssignedCell<N, N>>; NUM_LIMBS] =
-			[(); NUM_LIMBS].map(|_| None);
-		for i in 0..NUM_LIMBS {
-			assigned_result[i] = Some(region.assign_advice(
-				|| format!("result_{}", i),
-				config.x_limbs[i],
-				row + 1,
-				|| Value::known(reduction_witness.result.limbs[i]),
-			)?)
-		}
-		let assigned_result = assigned_result.map(|x| x.unwrap());
-		Ok(assigned_result)
-	}
-
-	/// Assign cells for reduce operation.
-	pub fn reduce(
-		limbs: [AssignedCell<N, N>; NUM_LIMBS], rw: ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>,
-		config: IntegerConfig<NUM_LIMBS>, mut layouter: impl Layouter<N>,
-	) -> Result<[AssignedCell<N, N>; NUM_LIMBS], Error> {
-		layouter.assign_region(
-			|| "reduce_operation",
-			|mut region: Region<'_, N>| {
-				config.reduce_selector.enable(&mut region, 0)?;
-				Self::assign(None, &limbs, &rw, &config, &mut region, 0)
-			},
-		)
-	}
-
-	/// Assign cells for add operation.
-	pub fn add(
-		x_limbs: [AssignedCell<N, N>; NUM_LIMBS], y_limbs: [AssignedCell<N, N>; NUM_LIMBS],
-		rw: ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>, config: IntegerConfig<NUM_LIMBS>,
-		mut layouter: impl Layouter<N>,
-	) -> Result<[AssignedCell<N, N>; NUM_LIMBS], Error> {
-		layouter.assign_region(
-			|| "add_operation",
-			|mut region: Region<'_, N>| {
-				config.add_selector.enable(&mut region, 0)?;
-				Self::assign(Some(&x_limbs), &y_limbs, &rw, &config, &mut region, 0)
-			},
-		)
-	}
-
-	/// Assign cells for mul operation.
-	pub fn mul(
-		x_limbs: [AssignedCell<N, N>; NUM_LIMBS], y_limbs: [AssignedCell<N, N>; NUM_LIMBS],
-		rw: ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>, config: IntegerConfig<NUM_LIMBS>,
-		mut layouter: impl Layouter<N>,
-	) -> Result<[AssignedCell<N, N>; NUM_LIMBS], Error> {
-		layouter.assign_region(
-			|| "mul_operation",
-			|mut region: Region<'_, N>| {
-				config.mul_selector.enable(&mut region, 0)?;
-				Self::assign(Some(&x_limbs), &y_limbs, &rw, &config, &mut region, 0)
-			},
-		)
-	}
-
-	/// Assign cells for sub operation.
-	pub fn sub(
-		x_limbs: [AssignedCell<N, N>; NUM_LIMBS], y_limbs: [AssignedCell<N, N>; NUM_LIMBS],
-		rw: ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>, config: IntegerConfig<NUM_LIMBS>,
-		mut layouter: impl Layouter<N>,
-	) -> Result<[AssignedCell<N, N>; NUM_LIMBS], Error> {
-		layouter.assign_region(
-			|| "sub_operation",
-			|mut region: Region<'_, N>| {
-				config.sub_selector.enable(&mut region, 0)?;
-				Self::assign(Some(&x_limbs), &y_limbs, &rw, &config, &mut region, 0)
-			},
-		)
-	}
-
-	/// Assign cells for div operation.
-	pub fn div(
-		x_limbs: [AssignedCell<N, N>; NUM_LIMBS], y_limbs: [AssignedCell<N, N>; NUM_LIMBS],
-		rw: ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>, config: IntegerConfig<NUM_LIMBS>,
-		mut layouter: impl Layouter<N>,
-	) -> Result<[AssignedCell<N, N>; NUM_LIMBS], Error> {
-		layouter.assign_region(
-			|| "div_operation",
-			|mut region: Region<'_, N>| {
-				config.div_selector.enable(&mut region, 0)?;
-				Self::assign(Some(&x_limbs), &y_limbs, &rw, &config, &mut region, 0)
 			},
 		)
 	}
@@ -1008,7 +703,7 @@ pub struct AssignedInteger<
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 {
 	// Limbs of the assigned integer
-	pub(crate) integer: [AssignedCell<N, N>; NUM_LIMBS],
+	pub(crate) integer_limbs: [AssignedCell<N, N>; NUM_LIMBS],
 	// Reduction witness of the integer
 	pub(crate) rw: ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>,
 }
@@ -1020,10 +715,10 @@ where
 {
 	/// Returns a new `AssignedInteger` given its values
 	pub fn new(
-		integer: [AssignedCell<N, N>; NUM_LIMBS],
+		integer_limbs: [AssignedCell<N, N>; NUM_LIMBS],
 		rw: ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>,
 	) -> Self {
-		Self { integer, rw }
+		Self { integer_limbs, rw }
 	}
 }
 
@@ -1156,26 +851,35 @@ mod test {
 
 			match self.gadget {
 				Gadgets::Reduce => {
-					let chip = IntegerReduceChip::new(
-						self.x.clone(),
-						x_limbs_assigned.map(|x| x.unwrap()),
-					);
+					let assigned_integer =
+						AssignedInteger::new(x_limbs_assigned.map(|x| x.unwrap()), self.x.reduce());
+					let chip = IntegerReduceChip::new(&self.x.clone(), &assigned_integer);
 					let result = chip.synthesize(
 						&config.common,
 						&config.reduce_selector,
 						layouter.namespace(|| "reduce"),
 					)?;
 					for i in 0..NUM_LIMBS {
-						layouter.constrain_instance(result[i].cell(), config.common.instance, i)?;
+						layouter.constrain_instance(
+							result.integer_limbs[i].cell(),
+							config.common.instance,
+							i,
+						)?;
 					}
 				},
 
 				Gadgets::Add => {
+					let x_assigned =
+						AssignedInteger::new(x_limbs_assigned.map(|x| x.unwrap()), self.x.reduce());
+					let y_assigned = AssignedInteger::new(
+						y_limbs_assigned.map(|x| x.unwrap()),
+						self.y.clone().unwrap().reduce(),
+					);
 					let chip = IntegerAddChip::new(
-						self.x.clone(),
-						self.y.clone().unwrap(),
-						x_limbs_assigned.map(|x| x.unwrap()),
-						y_limbs_assigned.map(|y| y.unwrap()),
+						&self.x.clone(),
+						&self.y.clone().unwrap(),
+						&x_assigned,
+						&y_assigned,
 					);
 					let result = chip.synthesize(
 						&config.common,
@@ -1183,15 +887,25 @@ mod test {
 						layouter.namespace(|| "add"),
 					)?;
 					for i in 0..NUM_LIMBS {
-						layouter.constrain_instance(result[i].cell(), config.common.instance, i)?;
+						layouter.constrain_instance(
+							result.integer_limbs[i].cell(),
+							config.common.instance,
+							i,
+						)?;
 					}
 				},
 				Gadgets::Sub => {
+					let x_assigned =
+						AssignedInteger::new(x_limbs_assigned.map(|x| x.unwrap()), self.x.reduce());
+					let y_assigned = AssignedInteger::new(
+						y_limbs_assigned.map(|x| x.unwrap()),
+						self.y.clone().unwrap().reduce(),
+					);
 					let chip = IntegerSubChip::new(
-						self.x.clone(),
-						self.y.clone().unwrap(),
-						x_limbs_assigned.map(|x| x.unwrap()),
-						y_limbs_assigned.map(|y| y.unwrap()),
+						&self.x.clone(),
+						&self.y.clone().unwrap(),
+						&x_assigned,
+						&y_assigned,
 					);
 					let result = chip.synthesize(
 						&config.common,
@@ -1199,15 +913,25 @@ mod test {
 						layouter.namespace(|| "sub"),
 					)?;
 					for i in 0..NUM_LIMBS {
-						layouter.constrain_instance(result[i].cell(), config.common.instance, i)?;
+						layouter.constrain_instance(
+							result.integer_limbs[i].cell(),
+							config.common.instance,
+							i,
+						)?;
 					}
 				},
 				Gadgets::Mul => {
+					let x_assigned =
+						AssignedInteger::new(x_limbs_assigned.map(|x| x.unwrap()), self.x.reduce());
+					let y_assigned = AssignedInteger::new(
+						y_limbs_assigned.map(|x| x.unwrap()),
+						self.y.clone().unwrap().reduce(),
+					);
 					let chip = IntegerMulChip::new(
-						self.x.clone(),
-						self.y.clone().unwrap(),
-						x_limbs_assigned.map(|x| x.unwrap()),
-						y_limbs_assigned.map(|y| y.unwrap()),
+						&self.x.clone(),
+						&self.y.clone().unwrap(),
+						&x_assigned,
+						&y_assigned,
 					);
 
 					let result = chip.synthesize(
@@ -1216,16 +940,26 @@ mod test {
 						layouter.namespace(|| "mul"),
 					)?;
 					for i in 0..NUM_LIMBS {
-						layouter.constrain_instance(result[i].cell(), config.common.instance, i)?;
+						layouter.constrain_instance(
+							result.integer_limbs[i].cell(),
+							config.common.instance,
+							i,
+						)?;
 					}
 				},
 
 				Gadgets::Div => {
+					let x_assigned =
+						AssignedInteger::new(x_limbs_assigned.map(|x| x.unwrap()), self.x.reduce());
+					let y_assigned = AssignedInteger::new(
+						y_limbs_assigned.map(|x| x.unwrap()),
+						self.y.clone().unwrap().reduce(),
+					);
 					let chip = IntegerDivChip::new(
-						self.x.clone(),
-						self.y.clone().unwrap(),
-						x_limbs_assigned.map(|x| x.unwrap()),
-						y_limbs_assigned.map(|y| y.unwrap()),
+						&self.x.clone(),
+						&self.y.clone().unwrap(),
+						&x_assigned,
+						&y_assigned,
 					);
 
 					let result = chip.synthesize(
@@ -1234,7 +968,11 @@ mod test {
 						layouter.namespace(|| "div"),
 					)?;
 					for i in 0..NUM_LIMBS {
-						layouter.constrain_instance(result[i].cell(), config.common.instance, i)?;
+						layouter.constrain_instance(
+							result.integer_limbs[i].cell(),
+							config.common.instance,
+							i,
+						)?;
 					}
 				},
 			};
