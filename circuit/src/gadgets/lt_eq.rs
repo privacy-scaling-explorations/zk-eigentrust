@@ -1,5 +1,5 @@
 use super::bits2num::Bits2NumChip;
-use crate::{gadgets::common::IsZeroChip, utils::to_wide, Chip, Chipset, CommonConfig};
+use crate::{gadgets::common::IsZeroChip, utils::to_wide, Chip, Chipset, CommonConfig, RegionCtx};
 use halo2::{
 	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region, Value},
@@ -69,16 +69,18 @@ impl<F: FieldExt> Chip<F> for NShiftedChip<F> {
 	) -> Result<Self::Output, Error> {
 		layouter.assign_region(
 			|| "less_than_equal",
-			|mut region: Region<'_, F>| {
-				selector.enable(&mut region, 0)?;
-				let assigned_x = self.x.copy_advice(|| "x", &mut region, common.advice[0], 0)?;
-				let assigned_y = self.y.copy_advice(|| "y", &mut region, common.advice[1], 0)?;
+			|region: Region<'_, F>| {
+				let mut ctx = RegionCtx::new(region, 0);
+				ctx.enable(selector.clone())?;
+
+				let assigned_x = ctx.copy_assign(common.advice[0], self.x.clone())?;
+				let assigned_y = ctx.copy_assign(common.advice[1], self.y.clone())?;
 
 				let n_shifted = Value::known(F::from_bytes_wide(&to_wide(&N_SHIFTED)));
 				let res = assigned_x.value().cloned() + n_shifted - assigned_y.value();
 
-				let assigned_res =
-					region.assign_advice(|| "x + n_shift - y", common.advice[2], 0, || res)?;
+				let assigned_res = ctx.assign_advice(common.advice[2], res)?;
+
 				Ok(assigned_res)
 			},
 		)
@@ -218,11 +220,10 @@ mod test {
 
 		fn configure(meta: &mut ConstraintSystem<Fr>) -> TestConfig {
 			let common = CommonChip::configure(meta);
-			let bits_2_num_selector = Bits2NumChip::configure(&common, meta);
-			let n_shifted_selector = NShiftedChip::configure(&common, meta);
+			let b2n_selector = Bits2NumChip::configure(&common, meta);
+			let ns_selector = NShiftedChip::configure(&common, meta);
 			let is_zero_selector = IsZeroChip::configure(&common, meta);
-			let lt_eq =
-				LessEqualConfig::new(bits_2_num_selector, n_shifted_selector, is_zero_selector);
+			let lt_eq = LessEqualConfig::new(b2n_selector, ns_selector, is_zero_selector);
 
 			TestConfig { common, lt_eq }
 		}
@@ -232,20 +233,12 @@ mod test {
 		) -> Result<(), Error> {
 			let (x, y) = layouter.assign_region(
 				|| "temp",
-				|mut region: Region<'_, Fr>| {
-					let x = region.assign_advice(
-						|| "temp_x",
-						config.common.advice[0],
-						0,
-						|| Value::known(self.x),
-					)?;
-					let y = region.assign_advice(
-						|| "temp_y",
-						config.common.advice[1],
-						0,
-						|| Value::known(self.y),
-					)?;
-
+				|region: Region<'_, Fr>| {
+					let mut ctx = RegionCtx::new(region, 0);
+					let x_val = Value::known(self.x);
+					let y_val = Value::known(self.y);
+					let x = ctx.assign_advice(config.common.advice[0], x_val)?;
+					let y = ctx.assign_advice(config.common.advice[1], y_val)?;
 					Ok((x, y))
 				},
 			)?;
