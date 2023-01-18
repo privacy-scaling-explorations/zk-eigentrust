@@ -225,8 +225,8 @@ mod test {
 		},
 		gadgets::{
 			bits2num::{to_bits, Bits2NumChip},
-			common::IsZeroChip,
 			lt_eq::{LessEqualConfig, NShiftedChip, N_SHIFTED},
+			main::IsZeroChip,
 		},
 		params::poseidon_bn254_5x5::Params,
 		poseidon::{native::Poseidon, FullRoundChip, PartialRoundChip, PoseidonConfig},

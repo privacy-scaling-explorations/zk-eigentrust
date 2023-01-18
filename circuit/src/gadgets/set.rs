@@ -1,4 +1,4 @@
-use crate::{gadgets::common::IsZeroChip, Chip, Chipset, CommonConfig, RegionCtx};
+use crate::{gadgets::main::IsZeroChip, Chip, Chipset, CommonConfig, RegionCtx};
 use halo2::{
 	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region},
