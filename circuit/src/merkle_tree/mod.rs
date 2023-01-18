@@ -118,7 +118,7 @@ mod test {
 	use super::*;
 	use crate::{
 		gadgets::{
-			common::{IsZeroChipset, MainChip, MainConfig},
+			common::{MainChip, MainConfig},
 			set::SetChip,
 		},
 		merkle_tree::native::{MerkleTree, Path},

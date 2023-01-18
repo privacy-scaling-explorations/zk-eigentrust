@@ -241,7 +241,7 @@ mod test {
 		let test_chip = TestCircuit::new(set, target);
 
 		let pub_ins = vec![Fr::one()];
-		let k = 4;
+		let k = 5;
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
 	}
@@ -291,7 +291,7 @@ mod test {
 		let target = Fr::from(2);
 		let test_chip = TestCircuit::new(set, target);
 
-		let k = 4;
+		let k = 5;
 		let rng = &mut rand::thread_rng();
 		let params = generate_params(k);
 		let res = prove_and_verify::<Bn256, _, _>(params, test_chip, &[&[Fr::one()]], rng).unwrap();

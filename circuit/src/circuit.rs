@@ -9,7 +9,7 @@ use crate::{
 	},
 	gadgets::{
 		bits2num::{to_bits, Bits2NumChip},
-		common::{AddChipset, IsZeroChipset, MainChip, MainConfig, MulChipset},
+		common::{AddChipset, MainChip, MainConfig, MulChipset},
 		lt_eq::{LessEqualConfig, NShiftedChip, N_SHIFTED},
 	},
 	params::poseidon_bn254_5x5::Params,
@@ -24,7 +24,7 @@ use halo2::{
 	arithmetic::Field,
 	circuit::{Layouter, Region, SimpleFloorPlanner, Value},
 	halo2curves::{bn256::Fr as Scalar, FieldExt},
-	plonk::{Circuit, ConstraintSystem, Error, Selector},
+	plonk::{Circuit, ConstraintSystem, Error},
 };
 use rand::Rng;
 
