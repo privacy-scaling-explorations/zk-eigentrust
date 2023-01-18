@@ -1,5 +1,7 @@
-use super::bits2num::Bits2NumChip;
-use crate::{gadgets::main::IsZeroChip, utils::to_wide, Chip, Chipset, CommonConfig, RegionCtx};
+use super::{bits2num::Bits2NumChip, common::MainConfig};
+use crate::{
+	gadgets::common::IsZeroChipset, utils::to_wide, Chip, Chipset, CommonConfig, RegionCtx,
+};
 use halo2::{
 	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region, Value},
@@ -92,15 +94,15 @@ impl<F: FieldExt> Chip<F> for NShiftedChip<F> {
 pub struct LessEqualConfig {
 	bits_2_num_selector: Selector,
 	n_shifted_selector: Selector,
-	is_zero_selector: Selector,
+	main: MainConfig,
 }
 
 impl LessEqualConfig {
 	/// Constructs new config
 	pub fn new(
-		bits_2_num_selector: Selector, n_shifted_selector: Selector, is_zero_selector: Selector,
+		bits_2_num_selector: Selector, n_shifted_selector: Selector, main: MainConfig,
 	) -> Self {
-		Self { bits_2_num_selector, n_shifted_selector, is_zero_selector }
+		Self { bits_2_num_selector, n_shifted_selector, main }
 	}
 }
 
@@ -167,12 +169,9 @@ impl<F: FieldExt> Chipset<F> for LessEqualChipset<F> {
 		// This means y is bigger than x and is_zero will return 1.
 		// If both are equal last bit still will be 1 and the number will be exactly 253
 		// bits. In that case, is_zero will return 0 as well.
-		let is_zero_chip = IsZeroChip::new(bits[DIFF_BITS - 1].clone());
-		let res = is_zero_chip.synthesize(
-			common,
-			&config.is_zero_selector,
-			layouter.namespace(|| "is_zero"),
-		)?;
+		let is_zero_chip = IsZeroChipset::new(bits[DIFF_BITS - 1].clone());
+		let res =
+			is_zero_chip.synthesize(common, &config.main, layouter.namespace(|| "is_zero"))?;
 		Ok(res)
 	}
 }
@@ -181,7 +180,7 @@ impl<F: FieldExt> Chipset<F> for LessEqualChipset<F> {
 mod test {
 	use super::*;
 	use crate::{
-		gadgets::bits2num::to_bits,
+		gadgets::{bits2num::to_bits, common::MainChip},
 		utils::{generate_params, prove_and_verify},
 		CommonChip,
 	};
@@ -222,8 +221,9 @@ mod test {
 			let common = CommonChip::configure(meta);
 			let b2n_selector = Bits2NumChip::configure(&common, meta);
 			let ns_selector = NShiftedChip::configure(&common, meta);
-			let is_zero_selector = IsZeroChip::configure(&common, meta);
-			let lt_eq = LessEqualConfig::new(b2n_selector, ns_selector, is_zero_selector);
+			let main_selector = MainChip::configure(&common, meta);
+			let main = MainConfig::new(main_selector);
+			let lt_eq = LessEqualConfig::new(b2n_selector, ns_selector, main);
 
 			TestConfig { common, lt_eq }
 		}
