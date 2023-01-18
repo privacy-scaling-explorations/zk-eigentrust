@@ -9,7 +9,7 @@ use crate::{
 	},
 	gadgets::{
 		bits2num::{to_bits, Bits2NumChip},
-		common::{AddChip, IsZeroChip, MulChip},
+		common::{AddChipset, IsZeroChipset, MainChip, MainConfig, MulChipset},
 		lt_eq::{LessEqualConfig, NShiftedChip, N_SHIFTED},
 	},
 	params::poseidon_bn254_5x5::Params,
@@ -48,11 +48,10 @@ type Eddsa = EddsaChipset<Scalar, BabyJubJub, Params>;
 /// The columns config for the main circuit.
 pub struct EigenTrustConfig {
 	common: CommonConfig,
+	main: MainConfig,
 	sponge: PoseidonSpongeConfig,
 	poseidon: PoseidonConfig,
 	eddsa: EddsaConfig,
-	add_selector: Selector,
-	mul_selector: Selector,
 }
 
 #[derive(Clone)]
@@ -207,8 +206,9 @@ impl<
 
 		let bits2num_selector = Bits2NumChip::configure(&common, meta);
 		let n_shifted_selector = NShiftedChip::configure(&common, meta);
-		let is_zero_selector = IsZeroChip::configure(&common, meta);
-		let lt_eq = LessEqualConfig::new(bits2num_selector, n_shifted_selector, is_zero_selector);
+		let main_selector = MainChip::configure(&common, meta);
+		let main = MainConfig::new(main_selector);
+		let lt_eq = LessEqualConfig::new(bits2num_selector, n_shifted_selector, main.clone());
 
 		let scalar_mul_selector = ScalarMulChip::<_, BabyJubJub>::configure(&common, meta);
 		let strict_scalar_mul = StrictScalarMulConfig::new(bits2num_selector, scalar_mul_selector);
@@ -224,10 +224,7 @@ impl<
 			affine_selector,
 		);
 
-		let add_selector = AddChip::configure(&common, meta);
-		let mul_selector = MulChip::configure(&common, meta);
-
-		EigenTrustConfig { common, eddsa, sponge, poseidon, add_selector, mul_selector }
+		EigenTrustConfig { common, eddsa, sponge, poseidon, main }
 	}
 
 	fn synthesize(
@@ -399,10 +396,10 @@ impl<
 				let op_i = ops[i].clone();
 				let mut local_distr = Vec::new();
 				for j in 0..NUM_NEIGHBOURS {
-					let mul_chip = MulChip::new(op_i[j].clone(), s[i].clone());
+					let mul_chip = MulChipset::new(op_i[j].clone(), s[i].clone());
 					let res = mul_chip.synthesize(
 						&config.common,
-						&config.mul_selector,
+						&config.main,
 						layouter.namespace(|| "op_mul"),
 					)?;
 					local_distr.push(res);
@@ -413,10 +410,10 @@ impl<
 			let mut new_s = vec![zero.clone(); NUM_NEIGHBOURS];
 			for i in 0..NUM_NEIGHBOURS {
 				for j in 0..NUM_NEIGHBOURS {
-					let add_chip = AddChip::new(new_s[i].clone(), distributions[j][i].clone());
+					let add_chip = AddChipset::new(new_s[i].clone(), distributions[j][i].clone());
 					new_s[i] = add_chip.synthesize(
 						&config.common,
-						&config.add_selector,
+						&config.main,
 						layouter.namespace(|| "op_add"),
 					)?;
 				}
@@ -427,10 +424,10 @@ impl<
 
 		let mut passed_scaled = Vec::new();
 		for i in 0..NUM_NEIGHBOURS {
-			let mul_chip = MulChip::new(passed_s[i].clone(), scale.clone());
+			let mul_chip = MulChipset::new(passed_s[i].clone(), scale.clone());
 			let res = mul_chip.synthesize(
 				&config.common,
-				&config.mul_selector,
+				&config.main,
 				layouter.namespace(|| "op_mul"),
 			)?;
 			passed_scaled.push(res);
