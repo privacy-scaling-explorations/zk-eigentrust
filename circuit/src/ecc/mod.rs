@@ -14,8 +14,8 @@ use halo2::{
 	plonk::{Error, Selector},
 };
 
-#[derive(Clone)]
 /// Structure for the AssignedPoint.
+#[derive(Clone)]
 struct AssignedPoint<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
 where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
@@ -40,8 +40,8 @@ where
 	}
 }
 
-#[derive(Debug, Clone)]
 /// Configuration elements for the circuit are defined here.
+#[derive(Debug, Clone)]
 struct EccAddConfig {
 	/// Constructs selectors from different circuits.
 	integer_reduce_selector: Selector,
@@ -65,7 +65,7 @@ impl EccAddConfig {
 	}
 }
 
-/// Constructs a chipset for the circuit.
+/// Chipset structure for the EccAdd.
 struct EccAddChipset<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
 where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
@@ -81,7 +81,7 @@ impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
 where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 {
-	/// Creates a new ecc add chip.
+	/// Creates a new ecc add chipset.
 	pub fn new(
 		p: AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
 		q: AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
@@ -229,8 +229,8 @@ where
 	}
 }
 
-#[derive(Debug, Clone)]
 /// Configuration elements for the circuit are defined here.
+#[derive(Debug, Clone)]
 struct EccDoubleConfig {
 	/// Constructs selectors from different circuits.
 	integer_reduce_selector: Selector,
@@ -257,7 +257,7 @@ impl EccDoubleConfig {
 	}
 }
 
-/// Constructs a chipset for the circuit.
+/// Chipset structure for the EccDouble.
 struct EccDoubleChipset<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
 where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
@@ -271,7 +271,7 @@ impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
 where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 {
-	/// Create a new chip.
+	/// Creates a new ecc double chipset.
 	pub fn new(p: AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>) -> Self {
 		Self { p }
 	}
@@ -597,7 +597,6 @@ mod test {
 	{
 		p: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
 		q: Option<EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>>,
-		reduction_witnesses: Option<Vec<ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>>>,
 		reduction_witnesses_add: Option<[Vec<ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>>; 256]>,
 		reduction_witnesses_double:
 			Option<[Vec<ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>>; 256]>,
@@ -614,7 +613,6 @@ mod test {
 		fn new(
 			p: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
 			q: Option<EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>>,
-			reduction_witnesses: Option<Vec<ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>>>,
 			reduction_witnesses_add: Option<
 				[Vec<ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>>; 256],
 			>,
@@ -626,7 +624,6 @@ mod test {
 			Self {
 				p,
 				q,
-				reduction_witnesses,
 				reduction_witnesses_add,
 				reduction_witnesses_double,
 				value,
@@ -831,7 +828,6 @@ mod test {
 	#[test]
 	fn should_add_two_points() {
 		// Testing add.
-		let zero = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::zero();
 		let a_big = BigUint::from_str("23423423525345345").unwrap();
 		let b_big = BigUint::from_str("65464575675").unwrap();
 		let c_big = BigUint::from_str("23423423423425345647567567568").unwrap();
@@ -840,16 +836,11 @@ mod test {
 		let c = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(c_big);
 		let p_point = EcPoint::<Fq, Fr, 4, 68, Bn256_4_68>::new(a.clone(), b.clone());
 		let q_point = EcPoint::<Fq, Fr, 4, 68, Bn256_4_68>::new(b.clone(), c.clone());
-		let rw_p_x = a.add(&zero);
-		let rw_p_y = b.add(&zero);
-		let rw_q_x = b.add(&zero);
-		let rw_q_y = c.add(&zero);
 
 		let res = p_point.add(&q_point);
 		let test_chip = TestCircuit::<Fq, Fr, 4, 68, Bn256_4_68>::new(
 			p_point,
 			Some(q_point),
-			Some(res.reduction_witnesses),
 			None,
 			None,
 			None,
@@ -868,20 +859,16 @@ mod test {
 	#[test]
 	fn should_double_a_point() {
 		// Testing double.
-		let zero = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::zero();
 		let a_big = BigUint::from_str("23423423525345345").unwrap();
 		let b_big = BigUint::from_str("65464575675").unwrap();
 		let a = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_big);
 		let b = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(b_big);
 		let p_point = EcPoint::<Fq, Fr, 4, 68, Bn256_4_68>::new(a.clone(), b.clone());
-		let rw_p_x = a.add(&zero);
-		let rw_p_y = b.add(&zero);
 
 		let res = p_point.double();
 		let test_chip = TestCircuit::<Fq, Fr, 4, 68, Bn256_4_68>::new(
 			p_point,
 			None,
-			Some(res.reduction_witnesses),
 			None,
 			None,
 			None,

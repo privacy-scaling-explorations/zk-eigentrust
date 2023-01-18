@@ -811,23 +811,17 @@ mod test {
 				},
 			)?;
 
+			let mut result = None;
 			match self.gadget {
 				Gadgets::Reduce => {
 					let assigned_integer =
 						AssignedInteger::new(&self.x, &x_limbs_assigned.map(|x| x.unwrap()));
 					let chip = IntegerReduceChip::new(&assigned_integer);
-					let result = chip.synthesize(
+					result = Some(chip.synthesize(
 						&config.common,
 						&config.reduce_selector,
 						layouter.namespace(|| "reduce"),
-					)?;
-					for i in 0..NUM_LIMBS {
-						layouter.constrain_instance(
-							result.integer_limbs[i].cell(),
-							config.common.instance,
-							i,
-						)?;
-					}
+					)?);
 				},
 
 				Gadgets::Add => {
@@ -838,18 +832,11 @@ mod test {
 						&y_limbs_assigned.map(|x| x.unwrap()),
 					);
 					let chip = IntegerAddChip::new(&x_assigned, &y_assigned);
-					let result = chip.synthesize(
+					result = Some(chip.synthesize(
 						&config.common,
 						&config.add_selector,
 						layouter.namespace(|| "add"),
-					)?;
-					for i in 0..NUM_LIMBS {
-						layouter.constrain_instance(
-							result.integer_limbs[i].cell(),
-							config.common.instance,
-							i,
-						)?;
-					}
+					)?);
 				},
 				Gadgets::Sub => {
 					let x_assigned =
@@ -859,18 +846,11 @@ mod test {
 						&y_limbs_assigned.map(|x| x.unwrap()),
 					);
 					let chip = IntegerSubChip::new(&x_assigned, &y_assigned);
-					let result = chip.synthesize(
+					result = Some(chip.synthesize(
 						&config.common,
 						&config.sub_selector,
 						layouter.namespace(|| "sub"),
-					)?;
-					for i in 0..NUM_LIMBS {
-						layouter.constrain_instance(
-							result.integer_limbs[i].cell(),
-							config.common.instance,
-							i,
-						)?;
-					}
+					)?);
 				},
 				Gadgets::Mul => {
 					let x_assigned =
@@ -881,18 +861,11 @@ mod test {
 					);
 					let chip = IntegerMulChip::new(&x_assigned, &y_assigned);
 
-					let result = chip.synthesize(
+					result = Some(chip.synthesize(
 						&config.common,
 						&config.mul_selector,
 						layouter.namespace(|| "mul"),
-					)?;
-					for i in 0..NUM_LIMBS {
-						layouter.constrain_instance(
-							result.integer_limbs[i].cell(),
-							config.common.instance,
-							i,
-						)?;
-					}
+					)?);
 				},
 
 				Gadgets::Div => {
@@ -904,20 +877,20 @@ mod test {
 					);
 					let chip = IntegerDivChip::new(&x_assigned, &y_assigned);
 
-					let result = chip.synthesize(
+					result = Some(chip.synthesize(
 						&config.common,
 						&config.div_selector,
 						layouter.namespace(|| "div"),
-					)?;
-					for i in 0..NUM_LIMBS {
-						layouter.constrain_instance(
-							result.integer_limbs[i].cell(),
-							config.common.instance,
-							i,
-						)?;
-					}
+					)?);
 				},
 			};
+			for i in 0..NUM_LIMBS {
+				layouter.constrain_instance(
+					result.clone().unwrap().integer_limbs[i].cell(),
+					config.common.instance,
+					i,
+				)?;
+			}
 
 			Ok(())
 		}
