@@ -7,7 +7,7 @@
 //! public_input +
 //! q_constant = 0
 
-use crate::{Chip, Chipset, CommonConfig, RegionCtx, ADVICE, FIXED};
+use crate::{Chip, Chipset, CommonConfig, RegionCtx};
 use halo2::{
 	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Value},
@@ -15,12 +15,19 @@ use halo2::{
 	poly::Rotation,
 };
 
+/// Number of advice columns in MainChip
+pub const NUM_ADVICE: usize = 5;
+/// Number of fixed columns in MainChip
+pub const NUM_FIXED: usize = 8;
+
+/// Main config for common primitives like `add`, `mul` ...
 #[derive(Debug, Clone)]
 pub struct MainConfig {
 	selector: Selector,
 }
 
 impl MainConfig {
+	/// Initialization function for MainConfig
 	pub fn new(selector: Selector) -> Self {
 		Self { selector }
 	}
@@ -28,13 +35,13 @@ impl MainConfig {
 
 /// Structure for the main chip.
 pub struct MainChip<F: FieldExt> {
-	advice: [AssignedCell<F, F>; ADVICE],
-	fixed: [F; FIXED],
+	advice: [AssignedCell<F, F>; NUM_ADVICE],
+	fixed: [F; NUM_FIXED],
 }
 
 impl<F: FieldExt> MainChip<F> {
 	/// Assigns a new witness that is equal to boolean AND of `x` and `y`
-	pub fn new(advice: [AssignedCell<F, F>; ADVICE], fixed: [F; FIXED]) -> Self {
+	pub fn new(advice: [AssignedCell<F, F>; NUM_ADVICE], fixed: [F; NUM_FIXED]) -> Self {
 		Self { advice, fixed }
 	}
 }
