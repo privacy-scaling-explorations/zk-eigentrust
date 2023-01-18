@@ -2,13 +2,16 @@
 pub mod native;
 
 use crate::{
-	gadgets::{bits2num::Bits2NumChip, common::SelectChip},
+	gadgets::{
+		bits2num::Bits2NumChip,
+		common::{MainChip, MainConfig, SelectChipset},
+	},
 	integer::{
 		native::{Quotient, ReductionWitness},
 		rns::RnsParams,
 		IntegerChip, IntegerConfig,
 	},
-	Chip, CommonChip, CommonConfig,
+	Chip, Chipset, CommonChip, CommonConfig,
 };
 use halo2::{
 	arithmetic::FieldExt,
@@ -21,8 +24,8 @@ use std::marker::PhantomData;
 struct EccConfig<const NUM_LIMBS: usize> {
 	integer: IntegerConfig<NUM_LIMBS>,
 	common: CommonConfig,
+	main: MainConfig,
 	bits2num_selector: Selector,
-	select_selector: Selector,
 }
 
 struct EccChip<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
@@ -120,9 +123,10 @@ where
 		let integer = IntegerChip::<W, N, NUM_LIMBS, NUM_BITS, P>::configure(meta);
 		let common = CommonChip::<N>::configure(meta);
 		let bits2num_selector = Bits2NumChip::configure(&common, meta);
-		let select_selector = SelectChip::configure(&common, meta);
+		let selector = MainChip::configure(&common, meta);
+		let main = MainConfig::new(selector);
 
-		EccConfig { integer, common, select_selector, bits2num_selector }
+		EccConfig { integer, common, main, bits2num_selector }
 	}
 
 	pub fn add_reduced(
@@ -584,18 +588,20 @@ where
 			)?;
 			for j in 0..NUM_LIMBS {
 				// r_x
-				let select = SelectChip::new(bits[i].clone(), new_r_x[j].clone(), r_x[j].clone());
+				let select =
+					SelectChipset::new(bits[i].clone(), new_r_x[j].clone(), r_x[j].clone());
 				r_x[j] = select.synthesize(
 					&config.common,
-					&config.select_selector,
+					&config.main,
 					layouter.namespace(|| format!("select_r_x_{}", j)),
 				)?;
 
 				// r_y
-				let select = SelectChip::new(bits[i].clone(), new_r_y[j].clone(), r_y[j].clone());
+				let select =
+					SelectChipset::new(bits[i].clone(), new_r_y[j].clone(), r_y[j].clone());
 				r_y[j] = select.synthesize(
 					&config.common,
-					&config.select_selector,
+					&config.main,
 					layouter.namespace(|| format!("select_r_y_{}", j)),
 				)?;
 			}

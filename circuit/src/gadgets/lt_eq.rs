@@ -1,5 +1,5 @@
 use super::bits2num::Bits2NumChip;
-use crate::{gadgets::common::IsZeroChip, utils::to_wide, Chip, Chipset, CommonConfig, RegionCtx};
+use crate::{gadgets::main::IsZeroChip, utils::to_wide, Chip, Chipset, CommonConfig, RegionCtx};
 use halo2::{
 	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region, Value},
