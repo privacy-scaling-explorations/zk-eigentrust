@@ -11,7 +11,7 @@ use crate::{Chip, Chipset, CommonConfig, RegionCtx};
 use halo2::{
 	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Value},
-	plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Instance, Selector},
+	plonk::{ConstraintSystem, Error, Selector},
 	poly::Rotation,
 };
 
