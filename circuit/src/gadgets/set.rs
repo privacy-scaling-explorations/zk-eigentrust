@@ -1,10 +1,12 @@
-use crate::{gadgets::main::IsZeroChip, Chip, Chipset, CommonConfig, RegionCtx};
+use crate::{gadgets::common::IsZeroChipset, Chip, Chipset, CommonConfig, RegionCtx};
 use halo2::{
 	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region},
 	plonk::{ConstraintSystem, Error, Selector},
 	poly::Rotation,
 };
+
+use super::common::MainConfig;
 
 /// A chip for checking item membership in a set of field values
 pub struct SetChip<F: FieldExt> {
@@ -92,14 +94,14 @@ impl<F: FieldExt> Chip<F> for SetChip<F> {
 #[derive(Debug, Clone)]
 /// Selectors for a FixedSetChipset
 pub struct SetConfig {
-	is_zero_selector: Selector,
+	main: MainConfig,
 	set_selector: Selector,
 }
 
 impl SetConfig {
 	/// Constructs a new config given the selectors
-	pub fn new(set_selector: Selector, is_zero_selector: Selector) -> Self {
-		Self { set_selector, is_zero_selector }
+	pub fn new(set_selector: Selector, main: MainConfig) -> Self {
+		Self { set_selector, main }
 	}
 }
 
@@ -133,12 +135,9 @@ impl<F: FieldExt> Chipset<F> for SetChipset<F> {
 			layouter.namespace(|| "set_membership"),
 		)?;
 
-		let is_zero_chip = IsZeroChip::new(res);
-		let is_zero = is_zero_chip.synthesize(
-			common,
-			&config.is_zero_selector,
-			layouter.namespace(|| "is_member"),
-		)?;
+		let is_zero_chip = IsZeroChipset::new(res);
+		let is_zero =
+			is_zero_chip.synthesize(common, &config.main, layouter.namespace(|| "is_member"))?;
 
 		Ok(is_zero)
 	}
@@ -148,6 +147,7 @@ impl<F: FieldExt> Chipset<F> for SetChipset<F> {
 mod test {
 	use super::*;
 	use crate::{
+		gadgets::common::MainChip,
 		utils::{generate_params, prove_and_verify},
 		CommonChip,
 	};
@@ -193,9 +193,10 @@ mod test {
 
 		fn configure(meta: &mut ConstraintSystem<F>) -> TestConfig {
 			let common = CommonChip::<F>::configure(meta);
-			let is_zero_selector = IsZeroChip::configure(&common, meta);
+			let main_selector = MainChip::configure(&common, meta);
+			let main = MainConfig::new(main_selector);
 			let set_selector = SetChip::configure(&common, meta);
-			let set = SetConfig::new(set_selector, is_zero_selector);
+			let set = SetConfig::new(set_selector, main);
 
 			TestConfig { common, set }
 		}
