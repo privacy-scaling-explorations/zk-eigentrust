@@ -15,7 +15,7 @@ use native::{Quotient, ReductionWitness};
 use rns::RnsParams;
 use std::marker::PhantomData;
 
-/// Chip structure for the integer assign circuit.
+/// Chip structure for the IntegerAssign.
 pub struct IntegerAssign<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
 where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
@@ -98,14 +98,14 @@ where
 		}
 		//let assigned_result = assigned_result.map(|x| x.unwrap();
 		let assigned_result = AssignedInteger::new(
-			assigned_result.map(|x| x.unwrap()),
-			reduction_witness.clone(),
+			&reduction_witness.result,
+			&assigned_result.map(|x| x.unwrap()),
 		);
 		Ok(assigned_result)
 	}
 }
 
-/// Chip structure for the integer reduce circuit.
+/// Chip structure for the IntegerReduce.
 pub struct IntegerReduceChip<
 	W: FieldExt,
 	N: FieldExt,
@@ -115,9 +115,7 @@ pub struct IntegerReduceChip<
 > where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 {
-	// Integer value
-	integer: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
-	// Assigned integer from the integer
+	// Assigned integer
 	assigned_integer: AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
 	/// Constructs phantom datas for the variables.
 	_native: PhantomData<N>,
@@ -130,13 +128,9 @@ impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
 where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 {
-	/// Construct new Integer Reduce chip
-	pub fn new(
-		integer: &Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
-		assigned_integer: &AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
-	) -> Self {
+	/// Creates a new reduce chip
+	pub fn new(assigned_integer: &AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>) -> Self {
 		Self {
-			integer: integer.clone(),
 			assigned_integer: assigned_integer.clone(),
 			_native: PhantomData,
 			_wrong: PhantomData,
@@ -190,11 +184,11 @@ where
 		selector
 	}
 
-	/// Assign cells for reduce operation.
+	/// Synthesize the circuit.
 	fn synthesize(
 		self, common: &CommonConfig, selector: &Selector, mut layouter: impl Layouter<N>,
 	) -> Result<Self::Output, Error> {
-		let reduction_witness = self.integer.reduce();
+		let reduction_witness = self.assigned_integer.integer.reduce();
 		layouter.assign_region(
 			|| "reduce_operation",
 			|mut region: Region<'_, N>| {
@@ -208,7 +202,7 @@ where
 	}
 }
 
-/// Chip structure for the integer add circuit.
+/// Chip structure for the IntegerAdd.
 pub struct IntegerAddChip<
 	W: FieldExt,
 	N: FieldExt,
@@ -218,14 +212,10 @@ pub struct IntegerAddChip<
 > where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 {
-	// Integer x
-	x_integer: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
-	// Integer y
-	y_integer: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
-	// Assigned integer from the integer x
-	x_assigned: AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
-	// Assigned integer from the integer y
-	y_assigned: AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
+	// Assigned integer x
+	x: AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
+	// Assigned integer y
+	y: AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
 	/// Constructs phantom datas for the variables.
 	_native: PhantomData<N>,
 	_wrong: PhantomData<W>,
@@ -237,18 +227,14 @@ impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
 where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 {
-	/// Construct new Integer Add chip
+	/// Creates a new add chip.
 	pub fn new(
-		x_integer: &Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
-		y_integer: &Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
-		x_assigned: &AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
-		y_assigned: &AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
+		x: &AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
+		y: &AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
 	) -> Self {
 		Self {
-			x_integer: x_integer.clone(),
-			y_integer: y_integer.clone(),
-			x_assigned: x_assigned.clone(),
-			y_assigned: y_assigned.clone(),
+			x: x.clone(),
+			y: y.clone(),
 			_native: PhantomData,
 			_wrong: PhantomData,
 			_rns: PhantomData,
@@ -303,18 +289,18 @@ where
 		selector
 	}
 
-	/// Assign cells for add operation.
+	/// Synthesize the circuit.
 	fn synthesize(
 		self, common: &CommonConfig, selector: &Selector, mut layouter: impl Layouter<N>,
 	) -> Result<Self::Output, Error> {
-		let reduction_witness = self.x_integer.add(&self.y_integer);
+		let reduction_witness = self.x.integer.add(&self.y.integer);
 		layouter.assign_region(
 			|| "add_operation",
 			|mut region: Region<'_, N>| {
 				selector.enable(&mut region, 1)?;
 				IntegerAssign::assign(
-					Some(&self.x_assigned.integer_limbs),
-					&self.y_assigned.integer_limbs,
+					Some(&self.x.integer_limbs),
+					&self.y.integer_limbs,
 					&reduction_witness,
 					&common,
 					&mut region,
@@ -325,7 +311,7 @@ where
 	}
 }
 
-/// Chip structure for the integer sub circuit.
+/// Chip structure for the IntegerSub.
 pub struct IntegerSubChip<
 	W: FieldExt,
 	N: FieldExt,
@@ -335,14 +321,10 @@ pub struct IntegerSubChip<
 > where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 {
-	// Integer x
-	x_integer: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
-	// Integer y
-	y_integer: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
-	// Assigned integer from the integer x
-	x_assigned: AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
-	// Assigned integer from the integer y
-	y_assigned: AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
+	// Assigned integer x
+	x: AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
+	// Assigned integer y
+	y: AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
 	/// Constructs phantom datas for the variables.
 	_native: PhantomData<N>,
 	_wrong: PhantomData<W>,
@@ -354,18 +336,14 @@ impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
 where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 {
-	/// Construct new Integer Sub chip
+	/// Creates a new sub chip
 	pub fn new(
-		x_integer: &Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
-		y_integer: &Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
-		x_assigned: &AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
-		y_assigned: &AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
+		x: &AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
+		y: &AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
 	) -> Self {
 		Self {
-			x_integer: x_integer.clone(),
-			y_integer: y_integer.clone(),
-			x_assigned: x_assigned.clone(),
-			y_assigned: y_assigned.clone(),
+			x: x.clone(),
+			y: y.clone(),
 			_native: PhantomData,
 			_wrong: PhantomData,
 			_rns: PhantomData,
@@ -427,14 +405,14 @@ where
 	fn synthesize(
 		self, common: &CommonConfig, selector: &Selector, mut layouter: impl Layouter<N>,
 	) -> Result<Self::Output, Error> {
-		let reduction_witness = self.x_integer.sub(&self.y_integer);
+		let reduction_witness = self.x.integer.sub(&self.y.integer);
 		layouter.assign_region(
 			|| "sub_operation",
 			|mut region: Region<'_, N>| {
 				selector.enable(&mut region, 1)?;
 				IntegerAssign::assign(
-					Some(&self.x_assigned.integer_limbs),
-					&self.y_assigned.integer_limbs,
+					Some(&self.x.integer_limbs),
+					&self.y.integer_limbs,
 					&reduction_witness,
 					&common,
 					&mut region,
@@ -445,7 +423,7 @@ where
 	}
 }
 
-/// Chip structure for the integer mul circuit.
+/// Chip structure for the IntegerMul.
 pub struct IntegerMulChip<
 	W: FieldExt,
 	N: FieldExt,
@@ -455,14 +433,10 @@ pub struct IntegerMulChip<
 > where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 {
-	// Integer x
-	x_integer: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
-	// Integer y
-	y_integer: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
-	// Assigned integer from the integer x
-	x_assigned: AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
-	// Assigned integer from the integer y
-	y_assigned: AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
+	// Assigned integer x
+	x: AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
+	// Assigned integer y
+	y: AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
 	/// Constructs phantom datas for the variables.
 	_native: PhantomData<N>,
 	_wrong: PhantomData<W>,
@@ -474,18 +448,14 @@ impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
 where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 {
-	/// Construct new Integer Mul chip
+	/// Creates a new mul chip
 	pub fn new(
-		x_integer: &Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
-		y_integer: &Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
-		x_assigned: &AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
-		y_assigned: &AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
+		x: &AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
+		y: &AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
 	) -> Self {
 		Self {
-			x_integer: x_integer.clone(),
-			y_integer: y_integer.clone(),
-			x_assigned: x_assigned.clone(),
-			y_assigned: y_assigned.clone(),
+			x: x.clone(),
+			y: y.clone(),
 			_native: PhantomData,
 			_wrong: PhantomData,
 			_rns: PhantomData,
@@ -546,18 +516,18 @@ where
 		selector
 	}
 
-	/// Assign cells for mul operation.
+	/// Synthesize the circuit.
 	fn synthesize(
 		self, common: &CommonConfig, selector: &Selector, mut layouter: impl Layouter<N>,
 	) -> Result<Self::Output, Error> {
-		let reduction_witness = self.x_integer.mul(&self.y_integer);
+		let reduction_witness = self.x.integer.mul(&self.y.integer);
 		layouter.assign_region(
 			|| "mul_operation",
 			|mut region: Region<'_, N>| {
 				selector.enable(&mut region, 1)?;
 				IntegerAssign::assign(
-					Some(&self.x_assigned.integer_limbs),
-					&self.y_assigned.integer_limbs,
+					Some(&self.x.integer_limbs),
+					&self.y.integer_limbs,
 					&reduction_witness,
 					&common,
 					&mut region,
@@ -568,7 +538,7 @@ where
 	}
 }
 
-/// Chip structure for the integer div circuit.
+/// Chip structure for the IntegerDiv.
 pub struct IntegerDivChip<
 	W: FieldExt,
 	N: FieldExt,
@@ -578,14 +548,10 @@ pub struct IntegerDivChip<
 > where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 {
-	// Integer x
-	x_integer: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
-	// Integer y
-	y_integer: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
-	// Assigned integer from the integer x
-	x_assigned: AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
-	// Assigned integer from the integer y
-	y_assigned: AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
+	// Assigned integer x
+	x: AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
+	// Assigned integer y
+	y: AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
 	/// Constructs phantom datas for the variables.
 	_native: PhantomData<N>,
 	_wrong: PhantomData<W>,
@@ -597,18 +563,14 @@ impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
 where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 {
-	/// Construct new Integer Div chip
+	/// Creates a new div chip
 	pub fn new(
-		x_integer: &Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
-		y_integer: &Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
-		x_assigned: &AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
-		y_assigned: &AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
+		x: &AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
+		y: &AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
 	) -> Self {
 		Self {
-			x_integer: x_integer.clone(),
-			y_integer: y_integer.clone(),
-			x_assigned: x_assigned.clone(),
-			y_assigned: y_assigned.clone(),
+			x: x.clone(),
+			y: y.clone(),
 			_native: PhantomData,
 			_wrong: PhantomData,
 			_rns: PhantomData,
@@ -669,18 +631,18 @@ where
 		selector
 	}
 
-	/// Assign cells for div operation.
+	/// Synthesize the circuit.
 	fn synthesize(
 		self, common: &CommonConfig, selector: &Selector, mut layouter: impl Layouter<N>,
 	) -> Result<Self::Output, Error> {
-		let reduction_witness = self.x_integer.div(&self.y_integer);
+		let reduction_witness = self.x.integer.div(&self.y.integer);
 		layouter.assign_region(
 			|| "div_operation",
 			|mut region: Region<'_, N>| {
 				selector.enable(&mut region, 1)?;
 				IntegerAssign::assign(
-					Some(&self.x_assigned.integer_limbs),
-					&self.y_assigned.integer_limbs,
+					Some(&self.x.integer_limbs),
+					&self.y.integer_limbs,
 					&reduction_witness,
 					&common,
 					&mut region,
@@ -702,10 +664,10 @@ pub struct AssignedInteger<
 > where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 {
-	// Limbs of the assigned integer
+	// Original value of the assigned integer.
+	pub(crate) integer: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
+	// Limbs of the assigned integer.
 	pub(crate) integer_limbs: [AssignedCell<N, N>; NUM_LIMBS],
-	// Reduction witness of the integer
-	pub(crate) rw: ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>,
 }
 
 impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
@@ -715,10 +677,10 @@ where
 {
 	/// Returns a new `AssignedInteger` given its values
 	pub fn new(
-		integer_limbs: [AssignedCell<N, N>; NUM_LIMBS],
-		rw: ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>,
+		integer: &Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
+		integer_limbs: &[AssignedCell<N, N>; NUM_LIMBS],
 	) -> Self {
-		Self { integer_limbs, rw }
+		Self { integer: integer.clone(), integer_limbs: integer_limbs.clone() }
 	}
 }
 
@@ -852,8 +814,8 @@ mod test {
 			match self.gadget {
 				Gadgets::Reduce => {
 					let assigned_integer =
-						AssignedInteger::new(x_limbs_assigned.map(|x| x.unwrap()), self.x.reduce());
-					let chip = IntegerReduceChip::new(&self.x.clone(), &assigned_integer);
+						AssignedInteger::new(&self.x, &x_limbs_assigned.map(|x| x.unwrap()));
+					let chip = IntegerReduceChip::new(&assigned_integer);
 					let result = chip.synthesize(
 						&config.common,
 						&config.reduce_selector,
@@ -870,17 +832,12 @@ mod test {
 
 				Gadgets::Add => {
 					let x_assigned =
-						AssignedInteger::new(x_limbs_assigned.map(|x| x.unwrap()), self.x.reduce());
+						AssignedInteger::new(&self.x, &x_limbs_assigned.map(|x| x.unwrap()));
 					let y_assigned = AssignedInteger::new(
-						y_limbs_assigned.map(|x| x.unwrap()),
-						self.y.clone().unwrap().reduce(),
-					);
-					let chip = IntegerAddChip::new(
-						&self.x.clone(),
 						&self.y.clone().unwrap(),
-						&x_assigned,
-						&y_assigned,
+						&y_limbs_assigned.map(|x| x.unwrap()),
 					);
+					let chip = IntegerAddChip::new(&x_assigned, &y_assigned);
 					let result = chip.synthesize(
 						&config.common,
 						&config.add_selector,
@@ -896,17 +853,12 @@ mod test {
 				},
 				Gadgets::Sub => {
 					let x_assigned =
-						AssignedInteger::new(x_limbs_assigned.map(|x| x.unwrap()), self.x.reduce());
+						AssignedInteger::new(&self.x, &x_limbs_assigned.map(|x| x.unwrap()));
 					let y_assigned = AssignedInteger::new(
-						y_limbs_assigned.map(|x| x.unwrap()),
-						self.y.clone().unwrap().reduce(),
-					);
-					let chip = IntegerSubChip::new(
-						&self.x.clone(),
 						&self.y.clone().unwrap(),
-						&x_assigned,
-						&y_assigned,
+						&y_limbs_assigned.map(|x| x.unwrap()),
 					);
+					let chip = IntegerSubChip::new(&x_assigned, &y_assigned);
 					let result = chip.synthesize(
 						&config.common,
 						&config.sub_selector,
@@ -922,17 +874,12 @@ mod test {
 				},
 				Gadgets::Mul => {
 					let x_assigned =
-						AssignedInteger::new(x_limbs_assigned.map(|x| x.unwrap()), self.x.reduce());
+						AssignedInteger::new(&self.x, &x_limbs_assigned.map(|x| x.unwrap()));
 					let y_assigned = AssignedInteger::new(
-						y_limbs_assigned.map(|x| x.unwrap()),
-						self.y.clone().unwrap().reduce(),
-					);
-					let chip = IntegerMulChip::new(
-						&self.x.clone(),
 						&self.y.clone().unwrap(),
-						&x_assigned,
-						&y_assigned,
+						&y_limbs_assigned.map(|x| x.unwrap()),
 					);
+					let chip = IntegerMulChip::new(&x_assigned, &y_assigned);
 
 					let result = chip.synthesize(
 						&config.common,
@@ -950,17 +897,12 @@ mod test {
 
 				Gadgets::Div => {
 					let x_assigned =
-						AssignedInteger::new(x_limbs_assigned.map(|x| x.unwrap()), self.x.reduce());
+						AssignedInteger::new(&self.x, &x_limbs_assigned.map(|x| x.unwrap()));
 					let y_assigned = AssignedInteger::new(
-						y_limbs_assigned.map(|x| x.unwrap()),
-						self.y.clone().unwrap().reduce(),
-					);
-					let chip = IntegerDivChip::new(
-						&self.x.clone(),
 						&self.y.clone().unwrap(),
-						&x_assigned,
-						&y_assigned,
+						&y_limbs_assigned.map(|x| x.unwrap()),
 					);
+					let chip = IntegerDivChip::new(&x_assigned, &y_assigned);
 
 					let result = chip.synthesize(
 						&config.common,

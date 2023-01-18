@@ -2,23 +2,17 @@
 pub mod native;
 
 use crate::{
-	gadgets::{bits2num::Bits2NumChip, common::SelectChip},
 	integer::{
-		native::{Integer, Quotient, ReductionWitness},
-		rns::RnsParams,
-		AssignedInteger, IntegerAddChip, IntegerDivChip, IntegerMulChip, IntegerReduceChip,
-		IntegerSubChip,
+		rns::RnsParams, AssignedInteger, IntegerAddChip, IntegerDivChip, IntegerMulChip,
+		IntegerReduceChip, IntegerSubChip,
 	},
-	Chip, Chipset, CommonChip, CommonConfig, RegionCtx,
+	Chip, Chipset, CommonConfig,
 };
 use halo2::{
 	arithmetic::FieldExt,
-	circuit::{AssignedCell, Layouter, Region, Value},
-	plonk::{ConstraintSystem, Error, Selector},
+	circuit::Layouter,
+	plonk::{Error, Selector},
 };
-use std::marker::PhantomData;
-
-use self::native::EcPoint;
 
 #[derive(Clone)]
 /// Structure for the AssignedPoint.
@@ -71,19 +65,15 @@ impl EccAddConfig {
 	}
 }
 
-/// Constructs a chip for the circuit.
+/// Constructs a chipset for the circuit.
 struct EccAddChipset<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
 where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 {
-	// Not assigned elliptic curve point p
-	p: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
-	// Not assigned elliptic curve point q
-	q: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
 	// Assigned point p
-	p_assigned: AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
+	p: AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
 	// Assigned point q
-	q_assigned: AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
+	q: AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
 }
 
 impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
@@ -91,13 +81,12 @@ impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
 where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 {
-	/// Create a new chip.
+	/// Creates a new ecc add chip.
 	pub fn new(
-		p: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>, q: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
-		p_assigned: AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
-		q_assigned: AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
+		p: AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
+		q: AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
 	) -> Self {
-		Self { p, q, p_assigned, q_assigned }
+		Self { p, q }
 	}
 }
 
@@ -113,28 +102,32 @@ where
 	fn synthesize(
 		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<N>,
 	) -> Result<Self::Output, Error> {
-		let p_x = IntegerReduceChip::new(&self.p.x, &self.p_assigned.x);
+		// Reduce p_x
+		let p_x = IntegerReduceChip::new(&self.p.x);
 		let p_x_reduced = p_x.synthesize(
 			&common,
 			&config.integer_reduce_selector,
 			layouter.namespace(|| "reduce_p_x"),
 		)?;
 
-		let p_y = IntegerReduceChip::new(&self.p.y, &self.p_assigned.y);
+		// Reduce p_y
+		let p_y = IntegerReduceChip::new(&self.p.y);
 		let p_y_reduced = p_y.synthesize(
 			&common,
 			&config.integer_reduce_selector,
 			layouter.namespace(|| "reduce_p_y"),
 		)?;
 
-		let q_x = IntegerReduceChip::new(&self.q.x, &self.q_assigned.x);
+		// Reduce q_x
+		let q_x = IntegerReduceChip::new(&self.q.x);
 		let q_x_reduced = q_x.synthesize(
 			&common,
 			&config.integer_reduce_selector,
 			layouter.namespace(|| "reduce_q_x"),
 		)?;
 
-		let q_y = IntegerReduceChip::new(&self.q.y, &self.q_assigned.y);
+		// Reduce q_y
+		let q_y = IntegerReduceChip::new(&self.q.y);
 		let q_y_reduced = q_y.synthesize(
 			&common,
 			&config.integer_reduce_selector,
@@ -142,9 +135,8 @@ where
 		)?;
 
 		// numerator = other.y.sub(&self.y);
-		let numerator = self.q.y.sub(&self.p.y).result;
-		let numerator_chip = IntegerSubChip::new(&self.q.y, &self.p.y, &q_y_reduced, &p_y_reduced);
-		let numerator_assigned = numerator_chip
+		let numerator_chip = IntegerSubChip::new(&q_y_reduced, &p_y_reduced);
+		let numerator = numerator_chip
 			.synthesize(
 				&common,
 				&config.integer_sub_selector,
@@ -153,10 +145,8 @@ where
 			.unwrap();
 
 		// denominator = other.x.sub(&self.x);
-		let denominator = self.q.x.sub(&self.p.x).result;
-		let denominator_chip =
-			IntegerSubChip::new(&self.q.x, &self.p.x, &q_x_reduced, &p_x_reduced);
-		let denominator_assigned = denominator_chip
+		let denominator_chip = IntegerSubChip::new(&q_x_reduced, &p_x_reduced);
+		let denominator = denominator_chip
 			.synthesize(
 				&common,
 				&config.integer_sub_selector,
@@ -165,11 +155,8 @@ where
 			.unwrap();
 
 		// m = numerator.result.div(&denominator.result)
-		let m = numerator.div(&denominator).result;
-		let m_chip = IntegerDivChip::new(
-			&numerator, &denominator, &numerator_assigned, &denominator_assigned,
-		);
-		let m_assigned = m_chip
+		let m_chip = IntegerDivChip::new(&numerator, &denominator);
+		let m = m_chip
 			.synthesize(
 				&common,
 				&config.integer_div_selector,
@@ -178,9 +165,8 @@ where
 			.unwrap();
 
 		// m_squared = m.result.mul(&m.result)
-		let m_squared = m.mul(&m).result;
-		let m_squared_chip = IntegerMulChip::new(&m, &m, &m_assigned, &m_assigned);
-		let m_squared_assigned = m_squared_chip
+		let m_squared_chip = IntegerMulChip::new(&m, &m);
+		let m_squared = m_squared_chip
 			.synthesize(
 				&common,
 				&config.integer_mul_selector,
@@ -189,11 +175,8 @@ where
 			.unwrap();
 
 		// m_squared_minus_p_x = m_squared.result.sub(&self.x)
-		let m_squared_minus_p_x = m_squared.sub(&self.p.x).result;
-		let m_squared_minus_p_x_chip = IntegerSubChip::new(
-			&m_squared, &self.p.x, &m_squared_assigned, &self.p_assigned.x,
-		);
-		let m_squared_minus_p_x_assigned = m_squared_minus_p_x_chip
+		let m_squared_minus_p_x_chip = IntegerSubChip::new(&m_squared, &p_x_reduced);
+		let m_squared_minus_p_x = m_squared_minus_p_x_chip
 			.synthesize(
 				&common,
 				&config.integer_sub_selector,
@@ -202,11 +185,8 @@ where
 			.unwrap();
 
 		// r_x = m_squared_minus_p_x.result.sub(&other.x)
-		let r_x = m_squared_minus_p_x.sub(&self.q.x).result;
-		let r_x_chip = IntegerSubChip::new(
-			&m_squared_minus_p_x, &self.q.x, &m_squared_minus_p_x_assigned, &self.q_assigned.x,
-		);
-		let r_x_assigned = r_x_chip
+		let r_x_chip = IntegerSubChip::new(&m_squared_minus_p_x, &q_x_reduced);
+		let r_x = r_x_chip
 			.synthesize(
 				&common,
 				&config.integer_sub_selector,
@@ -215,10 +195,8 @@ where
 			.unwrap();
 
 		// r_x_minus_p_x = self.x.sub(&r_x.result);
-		let r_x_minus_p_x = self.p.x.sub(&r_x).result;
-		let r_x_minus_p_x_chip =
-			IntegerSubChip::new(&self.p.x, &r_x, &self.p_assigned.x, &r_x_assigned);
-		let r_x_minus_p_x_assigned = r_x_minus_p_x_chip
+		let r_x_minus_p_x_chip = IntegerSubChip::new(&p_x_reduced, &r_x);
+		let r_x_minus_p_x = r_x_minus_p_x_chip
 			.synthesize(
 				&common,
 				&config.integer_sub_selector,
@@ -227,10 +205,8 @@ where
 			.unwrap();
 
 		// m_times_r_x_minus_p_x = m.result.mul(&r_x_minus_p_x.result);
-		let m_times_r_x_minus_p_x = m.mul(&r_x_minus_p_x).result;
-		let m_times_r_x_minus_p_x_chip =
-			IntegerMulChip::new(&m, &r_x_minus_p_x, &m_assigned, &r_x_minus_p_x_assigned);
-		let m_times_r_x_minus_p_x_assigned = m_times_r_x_minus_p_x_chip
+		let m_times_r_x_minus_p_x_chip = IntegerMulChip::new(&m, &r_x_minus_p_x);
+		let m_times_r_x_minus_p_x = m_times_r_x_minus_p_x_chip
 			.synthesize(
 				&common,
 				&config.integer_mul_selector,
@@ -239,11 +215,8 @@ where
 			.unwrap();
 
 		// r_y = m_times_r_x_minus_p_x.result.sub(&self.y)
-		let _r_y = m_times_r_x_minus_p_x.mul(&self.p.y).result;
-		let r_y_chip = IntegerSubChip::new(
-			&m_times_r_x_minus_p_x, &self.p.y, &m_times_r_x_minus_p_x_assigned, &self.p_assigned.y,
-		);
-		let r_y_assigned = r_y_chip
+		let r_y_chip = IntegerSubChip::new(&m_times_r_x_minus_p_x, &p_y_reduced);
+		let r_y = r_y_chip
 			.synthesize(
 				&common,
 				&config.integer_sub_selector,
@@ -251,7 +224,7 @@ where
 			)
 			.unwrap();
 
-		let r = AssignedPoint::new(r_x_assigned, r_y_assigned);
+		let r = AssignedPoint::new(r_x, r_y);
 		Ok(r)
 	}
 }
@@ -284,15 +257,13 @@ impl EccDoubleConfig {
 	}
 }
 
-/// Constructs a chip for the circuit.
+/// Constructs a chipset for the circuit.
 struct EccDoubleChipset<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
 where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 {
-	// Not assigned elliptic curve point p
-	p: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
 	// Assigned point p
-	p_assigned: AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
+	p: AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
 }
 
 impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
@@ -301,11 +272,8 @@ where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 {
 	/// Create a new chip.
-	pub fn new(
-		p: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
-		p_assigned: AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
-	) -> Self {
-		Self { p, p_assigned }
+	pub fn new(p: AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>) -> Self {
+		Self { p }
 	}
 }
 
@@ -321,14 +289,16 @@ where
 	fn synthesize(
 		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<N>,
 	) -> Result<Self::Output, Error> {
-		let p_x = IntegerReduceChip::new(&self.p.x, &self.p_assigned.x);
+		// Reduce p_x
+		let p_x = IntegerReduceChip::new(&self.p.x);
 		let p_x_reduced = p_x.synthesize(
 			&common,
 			&config.integer_reduce_selector,
 			layouter.namespace(|| "reduce_p_x"),
 		)?;
 
-		let p_y = IntegerReduceChip::new(&self.p.y, &self.p_assigned.y);
+		// Reduce p_y
+		let p_y = IntegerReduceChip::new(&self.p.y);
 		let p_y_reduced = p_y.synthesize(
 			&common,
 			&config.integer_reduce_selector,
@@ -336,10 +306,8 @@ where
 		)?;
 
 		// double_p_y = self.y.add(&self.y)
-		let double_p_y = self.p.y.add(&self.p.y).result;
-		let double_p_y_chip =
-			IntegerAddChip::new(&self.p.y, &self.p.y, &self.p_assigned.y, &self.p_assigned.y);
-		let double_p_y_assigned = double_p_y_chip
+		let double_p_y_chip = IntegerAddChip::new(&p_y_reduced, &p_y_reduced);
+		let double_p_y = double_p_y_chip
 			.synthesize(
 				&common,
 				&config.integer_add_selector,
@@ -348,10 +316,8 @@ where
 			.unwrap();
 
 		// p_x_square = self.x.mul(&self.x)
-		let p_x_square = self.p.x.mul(&self.p.x).result;
-		let p_x_square_chip =
-			IntegerMulChip::new(&self.p.x, &self.p.x, &self.p_assigned.x, &self.p_assigned.x);
-		let p_x_square_assigned = p_x_square_chip
+		let p_x_square_chip = IntegerMulChip::new(&p_x_reduced, &p_x_reduced);
+		let p_x_square = p_x_square_chip
 			.synthesize(
 				&common,
 				&config.integer_mul_selector,
@@ -360,11 +326,8 @@ where
 			.unwrap();
 
 		// p_x_square_times_two = p_x_square.result.add(&p_x_square.result);
-		let p_x_square_times_two = p_x_square.add(&p_x_square).result;
-		let p_x_square_times_two_chip = IntegerAddChip::new(
-			&p_x_square, &p_x_square, &p_x_square_assigned, &p_x_square_assigned,
-		);
-		let p_x_square_times_two_assigned = p_x_square_times_two_chip
+		let p_x_square_times_two_chip = IntegerAddChip::new(&p_x_square, &p_x_square);
+		let p_x_square_times_two = p_x_square_times_two_chip
 			.synthesize(
 				&common,
 				&config.integer_add_selector,
@@ -373,12 +336,8 @@ where
 			.unwrap();
 
 		// p_x_square_times_three = p_x_square.result.add(&p_x_square_times_two.result);
-		let p_x_square_times_three = p_x_square.add(&p_x_square_times_two).result;
-		let p_x_square_times_three_chip = IntegerAddChip::new(
-			&p_x_square_times_two, &p_x_square, &p_x_square_times_two_assigned,
-			&p_x_square_assigned,
-		);
-		let p_x_square_times_three_assigned = p_x_square_times_three_chip
+		let p_x_square_times_three_chip = IntegerAddChip::new(&p_x_square_times_two, &p_x_square);
+		let p_x_square_times_three = p_x_square_times_three_chip
 			.synthesize(
 				&common,
 				&config.integer_add_selector,
@@ -387,12 +346,8 @@ where
 			.unwrap();
 
 		// m = p_x_square_times_three.result.div(&double_p_y.result)
-		let m = p_x_square_times_three.div(&double_p_y).result;
-		let m_chip = IntegerDivChip::new(
-			&p_x_square_times_three, &double_p_y, &p_x_square_times_three_assigned,
-			&double_p_y_assigned,
-		);
-		let m_assigned = m_chip
+		let m_chip = IntegerDivChip::new(&p_x_square_times_three, &double_p_y);
+		let m = m_chip
 			.synthesize(
 				&common,
 				&config.integer_div_selector,
@@ -401,9 +356,8 @@ where
 			.unwrap();
 
 		// double_p_x = self.x.add(&self.x)
-		let double_p_x = self.p.x.add(&self.p.x).result;
-		let double_p_x_chip = IntegerAddChip::new(&self.p.x, &self.p.x, &p_x_reduced, &p_x_reduced);
-		let double_p_x_assigned = double_p_x_chip
+		let double_p_x_chip = IntegerAddChip::new(&p_x_reduced, &p_x_reduced);
+		let double_p_x = double_p_x_chip
 			.synthesize(
 				&common,
 				&config.integer_add_selector,
@@ -412,9 +366,8 @@ where
 			.unwrap();
 
 		// m_squared = m.result.mul(&m.result)
-		let m_squared = m.mul(&m).result;
-		let m_squared_chip = IntegerMulChip::new(&m, &m, &m_assigned, &m_assigned);
-		let m_squared_assigned = m_squared_chip
+		let m_squared_chip = IntegerMulChip::new(&m, &m);
+		let m_squared = m_squared_chip
 			.synthesize(
 				&common,
 				&config.integer_mul_selector,
@@ -423,11 +376,8 @@ where
 			.unwrap();
 
 		// r_x = m_squared.result.sub(&double_p_x.result)
-		let r_x = m_squared.sub(&double_p_x).result;
-		let r_x_chip = IntegerSubChip::new(
-			&m_squared, &double_p_x, &m_squared_assigned, &double_p_x_assigned,
-		);
-		let r_x_assigned = r_x_chip
+		let r_x_chip = IntegerSubChip::new(&m_squared, &double_p_x);
+		let r_x = r_x_chip
 			.synthesize(
 				&common,
 				&config.integer_sub_selector,
@@ -436,9 +386,8 @@ where
 			.unwrap();
 
 		// p_x_minus_r_x = self.x.sub(&r_x.result)
-		let p_x_minus_r_x = self.p.x.sub(&r_x).result;
-		let p_x_minus_r_x_chip = IntegerSubChip::new(&self.p.x, &r_x, &p_x_reduced, &r_x_assigned);
-		let p_x_minus_r_x_assigned = p_x_minus_r_x_chip
+		let p_x_minus_r_x_chip = IntegerSubChip::new(&p_x_reduced, &r_x);
+		let p_x_minus_r_x = p_x_minus_r_x_chip
 			.synthesize(
 				&common,
 				&config.integer_sub_selector,
@@ -447,10 +396,8 @@ where
 			.unwrap();
 
 		// m_times_p_x_minus_r_x = m.result.mul(&p_x_minus_r_x.result)
-		let m_times_p_x_minus_r_x = m.mul(&p_x_minus_r_x).result;
-		let m_times_p_x_minus_r_x_chip =
-			IntegerMulChip::new(&m, &p_x_minus_r_x, &m_assigned, &p_x_minus_r_x_assigned);
-		let m_times_p_x_minus_r_x_assigned = m_times_p_x_minus_r_x_chip
+		let m_times_p_x_minus_r_x_chip = IntegerMulChip::new(&m, &p_x_minus_r_x);
+		let m_times_p_x_minus_r_x = m_times_p_x_minus_r_x_chip
 			.synthesize(
 				&common,
 				&config.integer_mul_selector,
@@ -459,11 +406,8 @@ where
 			.unwrap();
 
 		// r_y = m_times_p_x_minus_r_x.result.sub(&self.y)
-		let _r_y = m_times_p_x_minus_r_x.sub(&self.p.y).result;
-		let r_y_chip = IntegerSubChip::new(
-			&m_times_p_x_minus_r_x, &self.p.y, &m_times_p_x_minus_r_x_assigned, &p_y_reduced,
-		);
-		let r_y_assigned = r_y_chip
+		let r_y_chip = IntegerSubChip::new(&m_times_p_x_minus_r_x, &p_y_reduced);
+		let r_y = r_y_chip
 			.synthesize(
 				&common,
 				&config.integer_sub_selector,
@@ -471,7 +415,7 @@ where
 			)
 			.unwrap();
 
-		let r = AssignedPoint::new(r_x_assigned, r_y_assigned);
+		let r = AssignedPoint::new(r_x, r_y);
 
 		Ok(r)
 	}
@@ -627,10 +571,9 @@ mod test {
 			bn256::{Fq, Fr},
 			FieldExt,
 		},
-		plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Instance},
+		plonk::{Circuit, ConstraintSystem, Error},
 	};
 	use num_bigint::BigUint;
-	use rand::thread_rng;
 	use std::str::FromStr;
 
 	#[derive(Clone)]
@@ -653,11 +596,7 @@ mod test {
 		P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 	{
 		p: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
-		p_x_rw: ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>,
-		p_y_rw: ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>,
 		q: Option<EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>>,
-		q_x_rw: Option<ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>>,
-		q_y_rw: Option<ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>>,
 		reduction_witnesses: Option<Vec<ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>>>,
 		reduction_witnesses_add: Option<[Vec<ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>>; 256]>,
 		reduction_witnesses_double:
@@ -674,11 +613,7 @@ mod test {
 	{
 		fn new(
 			p: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
-			p_x_rw: ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>,
-			p_y_rw: ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>,
 			q: Option<EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>>,
-			q_x_rw: Option<ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>>,
-			q_y_rw: Option<ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>>,
 			reduction_witnesses: Option<Vec<ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>>>,
 			reduction_witnesses_add: Option<
 				[Vec<ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>>; 256],
@@ -690,11 +625,7 @@ mod test {
 		) -> Self {
 			Self {
 				p,
-				p_x_rw,
-				p_y_rw,
 				q,
-				q_x_rw,
-				q_y_rw,
 				reduction_witnesses,
 				reduction_witnesses_add,
 				reduction_witnesses_double,
@@ -761,7 +692,7 @@ mod test {
 				},
 			)?;
 
-			let (p_x_limbs_assigned, p_y_limbs_assigned) = layouter.assign_region(
+			let (p_x_limbs, p_y_limbs) = layouter.assign_region(
 				|| "p_temp",
 				|mut region: Region<'_, N>| {
 					let mut x_limbs: [Option<AssignedCell<N, N>>; NUM_LIMBS] =
@@ -791,7 +722,7 @@ mod test {
 				},
 			)?;
 
-			let (q_x_limbs_assigned, q_y_limbs_assigned) = layouter.assign_region(
+			let (q_x_limbs, q_y_limbs) = layouter.assign_region(
 				|| "q_temp",
 				|mut region: Region<'_, N>| {
 					let mut x_limbs: [Option<AssignedCell<N, N>>; NUM_LIMBS] =
@@ -828,14 +759,14 @@ mod test {
 				},
 			)?;
 
-			let p_x_int = AssignedInteger::new(p_x_limbs_assigned, self.p_x_rw.clone());
-			let p_y_int = AssignedInteger::new(p_y_limbs_assigned, self.p_y_rw.clone());
+			let p_x_int = AssignedInteger::new(&self.p.x, &p_x_limbs);
+			let p_y_int = AssignedInteger::new(&self.p.y, &p_y_limbs);
 
-			let p_assigned = AssignedPoint::new(p_x_int, p_y_int);
+			let p = AssignedPoint::new(p_x_int, p_y_int);
 
-			let point = match self.gadget {
+			match self.gadget {
 				Gadgets::Double => {
-					let chip = EccDoubleChipset::new(self.p.clone(), p_assigned);
+					let chip = EccDoubleChipset::new(p);
 					let result = chip.synthesize(
 						&config.common,
 						&config.ecc_double,
@@ -855,18 +786,11 @@ mod test {
 					}
 				},
 				Gadgets::Add => {
-					let q_x_int =
-						AssignedInteger::new(q_x_limbs_assigned, self.q_x_rw.clone().unwrap());
-					let q_y_int =
-						AssignedInteger::new(q_y_limbs_assigned, self.q_y_rw.clone().unwrap());
-					let q_assigned = AssignedPoint::new(q_x_int, q_y_int);
+					let q_x_int = AssignedInteger::new(&self.q.clone().unwrap().x, &q_x_limbs);
+					let q_y_int = AssignedInteger::new(&self.q.clone().unwrap().y, &q_y_limbs);
+					let q = AssignedPoint::new(q_x_int, q_y_int);
 
-					let chip = EccAddChipset::new(
-						self.p.clone(),
-						self.q.clone().unwrap(),
-						p_assigned,
-						q_assigned,
-					);
+					let chip = EccAddChipset::new(p, q);
 					let result = chip.synthesize(
 						&config.common,
 						&config.ecc_add,
@@ -887,8 +811,8 @@ mod test {
 				},
 				/*
 				Gadgets::Mul => EccChip::mul_scalar(
-					p_x_limbs_assigned,
-					p_y_limbs_assigned,
+					p_x_limbs,
+					p_y_limbs,
 					self.p_x_rw.clone(),
 					self.p_y_rw.clone(),
 					value,
@@ -924,11 +848,7 @@ mod test {
 		let res = p_point.add(&q_point);
 		let test_chip = TestCircuit::<Fq, Fr, 4, 68, Bn256_4_68>::new(
 			p_point,
-			rw_p_x.clone(),
-			rw_p_y.clone(),
 			Some(q_point),
-			Some(rw_q_x.clone()),
-			Some(rw_q_y.clone()),
 			Some(res.reduction_witnesses),
 			None,
 			None,
@@ -960,10 +880,6 @@ mod test {
 		let res = p_point.double();
 		let test_chip = TestCircuit::<Fq, Fr, 4, 68, Bn256_4_68>::new(
 			p_point,
-			rw_p_x.clone(),
-			rw_p_y.clone(),
-			None,
-			None,
 			None,
 			Some(res.reduction_witnesses),
 			None,
