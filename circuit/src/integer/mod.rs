@@ -4,7 +4,7 @@ pub mod native;
 pub mod rns;
 
 use self::native::Integer;
-use crate::{Chip, CommonConfig};
+use crate::{Chip, CommonConfig, RegionCtx};
 use halo2::{
 	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region, Value},
@@ -34,72 +34,51 @@ where
 	pub fn assign(
 		x_opt: Option<&[AssignedCell<N, N>; NUM_LIMBS]>, y: &[AssignedCell<N, N>; NUM_LIMBS],
 		reduction_witness: &ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>, common: &CommonConfig,
-		region: &mut Region<'_, N>, row: usize,
+		ctx: &mut RegionCtx<N>,
 	) -> Result<AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>, Error> {
-		match &reduction_witness.quotient {
-			Quotient::Short(n) => {
-				region.assign_advice(
-					|| "quotient",
-					common.advice[NUM_LIMBS],
-					row - 1,
-					|| Value::known(*n),
-				)?;
-			},
-			Quotient::Long(n) => {
-				for i in 0..NUM_LIMBS {
-					region.assign_advice(
-						|| format!("quotient_{}", i),
-						common.advice[i + NUM_LIMBS],
-						row - 1,
-						|| Value::known(n.limbs[i]),
-					)?;
-				}
-			},
-		}
-
 		for i in 0..NUM_LIMBS {
 			if x_opt.is_some() {
 				let x = x_opt.unwrap();
-				x[i].copy_advice(
-					|| format!("limb_x_{}", i),
-					region,
-					common.advice[i + NUM_LIMBS],
-					row,
-				)?;
+				ctx.copy_assign(common.advice[i + NUM_LIMBS], x[i].clone())?;
 			}
-			y[i].copy_advice(|| format!("limb_y_{}", i), region, common.advice[i], row)?;
-
-			region.assign_advice(
-				|| format!("intermediates_{}", i),
-				common.advice[i],
-				row - 1,
-				|| Value::known(reduction_witness.intermediate[i]),
-			)?;
+			ctx.copy_assign(common.advice[i], y[i].clone())?;
 		}
+		ctx.next();
 
+		match &reduction_witness.quotient {
+			Quotient::Short(n) => {
+				ctx.assign_advice(common.advice[NUM_LIMBS], Value::known(*n))?;
+			},
+			Quotient::Long(n) => {
+				for i in 0..NUM_LIMBS {
+					ctx.assign_advice(common.advice[i + NUM_LIMBS], Value::known(n.limbs[i]))?;
+				}
+			},
+		}
 		for i in 0..reduction_witness.residues.len() {
-			region.assign_advice(
-				|| format!("residues_{}", i),
+			ctx.assign_advice(
 				common.advice[i],
-				row + 1,
-				|| Value::known(reduction_witness.residues[i]),
+				Value::known(reduction_witness.residues[i]),
 			)?;
 		}
 
+		ctx.next();
 		let mut assigned_result: [Option<AssignedCell<N, N>>; NUM_LIMBS] =
 			[(); NUM_LIMBS].map(|_| None);
 		for i in 0..NUM_LIMBS {
-			assigned_result[i] = Some(region.assign_advice(
-				|| format!("result_{}", i),
+			ctx.assign_advice(
+				common.advice[i],
+				Value::known(reduction_witness.intermediate[i]),
+			)?;
+			assigned_result[i] = Some(ctx.assign_advice(
 				common.advice[i + NUM_LIMBS],
-				row + 1,
-				|| Value::known(reduction_witness.result.limbs[i]),
-			)?)
+				Value::known(reduction_witness.result.limbs[i]),
+			)?);
 		}
 		//let assigned_result = assigned_result.map(|x| x.unwrap();
 		let assigned_result = AssignedInteger::new(
-			&reduction_witness.result,
-			&assigned_result.map(|x| x.unwrap()),
+			reduction_witness.result.clone(),
+			assigned_result.map(|x| x.unwrap()),
 		);
 		Ok(assigned_result)
 	}
@@ -129,13 +108,8 @@ where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 {
 	/// Creates a new reduce chip
-	pub fn new(assigned_integer: &AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>) -> Self {
-		Self {
-			assigned_integer: assigned_integer.clone(),
-			_native: PhantomData,
-			_wrong: PhantomData,
-			_rns: PhantomData,
-		}
+	pub fn new(assigned_integer: AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>) -> Self {
+		Self { assigned_integer, _native: PhantomData, _wrong: PhantomData, _rns: PhantomData }
 	}
 }
 
@@ -154,18 +128,18 @@ where
 		meta.create_gate("reduce", |v_cells| {
 			let s = v_cells.query_selector(selector);
 			let mut t_exp = [(); NUM_LIMBS].map(|_| None);
-			let reduce_q_exp = v_cells.query_advice(common.advice[NUM_LIMBS], Rotation::prev());
+			let reduce_q_exp = v_cells.query_advice(common.advice[NUM_LIMBS], Rotation::next());
 			let mut limbs_exp = [(); NUM_LIMBS].map(|_| None);
 			let mut residues_exp = Vec::new();
 			let mut result_exp = [(); NUM_LIMBS].map(|_| None);
 			for i in 0..NUM_LIMBS {
-				t_exp[i] = Some(v_cells.query_advice(common.advice[i], Rotation::prev()));
 				limbs_exp[i] = Some(v_cells.query_advice(common.advice[i], Rotation::cur()));
-				if i < NUM_LIMBS / 2 {
-					residues_exp.push(v_cells.query_advice(common.advice[i], Rotation::next()));
-				}
+				t_exp[i] = Some(v_cells.query_advice(common.advice[i], Rotation(2)));
 				result_exp[i] =
-					Some(v_cells.query_advice(common.advice[i + NUM_LIMBS], Rotation::next()));
+					Some(v_cells.query_advice(common.advice[i + NUM_LIMBS], Rotation(2)));
+			}
+			for i in 0..NUM_LIMBS / 2 {
+				residues_exp.push(v_cells.query_advice(common.advice[i], Rotation::next()));
 			}
 			let t_exp = t_exp.map(|x| x.unwrap());
 			let limbs_exp = limbs_exp.map(|x| x.unwrap());
@@ -191,11 +165,12 @@ where
 		let reduction_witness = self.assigned_integer.integer.reduce();
 		layouter.assign_region(
 			|| "reduce_operation",
-			|mut region: Region<'_, N>| {
-				selector.enable(&mut region, 1)?;
+			|region: Region<'_, N>| {
+				let mut ctx = RegionCtx::new(region, 0);
+				ctx.enable(selector.clone())?;
 				IntegerAssign::assign(
 					None, &self.assigned_integer.integer_limbs, &reduction_witness, &common,
-					&mut region, 1,
+					&mut ctx,
 				)
 			},
 		)
@@ -229,16 +204,10 @@ where
 {
 	/// Creates a new add chip.
 	pub fn new(
-		x: &AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
-		y: &AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
+		x: AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
+		y: AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
 	) -> Self {
-		Self {
-			x: x.clone(),
-			y: y.clone(),
-			_native: PhantomData,
-			_wrong: PhantomData,
-			_rns: PhantomData,
-		}
+		Self { x, y, _native: PhantomData, _wrong: PhantomData, _rns: PhantomData }
 	}
 }
 
@@ -255,21 +224,21 @@ where
 		meta.create_gate("add", |v_cells| {
 			let s = v_cells.query_selector(selector);
 			let mut t_exp = [(); NUM_LIMBS].map(|_| None);
-			let _add_q_exp = v_cells.query_advice(common.advice[NUM_LIMBS], Rotation::prev());
+			let _add_q_exp = v_cells.query_advice(common.advice[NUM_LIMBS], Rotation::next());
 			let mut x_limbs_exp = [(); NUM_LIMBS].map(|_| None);
 			let mut y_limbs_exp = [(); NUM_LIMBS].map(|_| None);
 			let mut residues_exp = Vec::new();
 			let mut result_exp = [(); NUM_LIMBS].map(|_| None);
 			for i in 0..NUM_LIMBS {
-				t_exp[i] = Some(v_cells.query_advice(common.advice[i], Rotation::prev()));
 				x_limbs_exp[i] =
 					Some(v_cells.query_advice(common.advice[i + NUM_LIMBS], Rotation::cur()));
 				y_limbs_exp[i] = Some(v_cells.query_advice(common.advice[i], Rotation::cur()));
-				if i < NUM_LIMBS / 2 {
-					residues_exp.push(v_cells.query_advice(common.advice[i], Rotation::next()));
-				}
+				t_exp[i] = Some(v_cells.query_advice(common.advice[i], Rotation(2)));
 				result_exp[i] =
-					Some(v_cells.query_advice(common.advice[i + NUM_LIMBS], Rotation::next()));
+					Some(v_cells.query_advice(common.advice[i + NUM_LIMBS], Rotation(2)));
+			}
+			for i in 0..NUM_LIMBS / 2 {
+				residues_exp.push(v_cells.query_advice(common.advice[i], Rotation::next()));
 			}
 			let t_exp = t_exp.map(|x| x.unwrap());
 			let x_limbs_exp = x_limbs_exp.map(|x| x.unwrap());
@@ -296,15 +265,15 @@ where
 		let reduction_witness = self.x.integer.add(&self.y.integer);
 		layouter.assign_region(
 			|| "add_operation",
-			|mut region: Region<'_, N>| {
-				selector.enable(&mut region, 1)?;
+			|region: Region<'_, N>| {
+				let mut ctx = RegionCtx::new(region, 0);
+				ctx.enable(selector.clone())?;
 				IntegerAssign::assign(
 					Some(&self.x.integer_limbs),
 					&self.y.integer_limbs,
 					&reduction_witness,
 					&common,
-					&mut region,
-					1,
+					&mut ctx,
 				)
 			},
 		)
@@ -338,16 +307,10 @@ where
 {
 	/// Creates a new sub chip
 	pub fn new(
-		x: &AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
-		y: &AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
+		x: AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
+		y: AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
 	) -> Self {
-		Self {
-			x: x.clone(),
-			y: y.clone(),
-			_native: PhantomData,
-			_wrong: PhantomData,
-			_rns: PhantomData,
-		}
+		Self { x, y, _native: PhantomData, _wrong: PhantomData, _rns: PhantomData }
 	}
 }
 
@@ -366,21 +329,21 @@ where
 		meta.create_gate("sub", |v_cells| {
 			let s = v_cells.query_selector(selector);
 			let mut t_exp = [(); NUM_LIMBS].map(|_| None);
-			let sub_q_exp = v_cells.query_advice(common.advice[NUM_LIMBS], Rotation::prev());
+			let sub_q_exp = v_cells.query_advice(common.advice[NUM_LIMBS], Rotation::next());
 			let mut x_limbs_exp = [(); NUM_LIMBS].map(|_| None);
 			let mut y_limbs_exp = [(); NUM_LIMBS].map(|_| None);
 			let mut residues_exp = Vec::new();
 			let mut result_exp = [(); NUM_LIMBS].map(|_| None);
 			for i in 0..NUM_LIMBS {
-				t_exp[i] = Some(v_cells.query_advice(common.advice[i], Rotation::prev()));
 				x_limbs_exp[i] =
 					Some(v_cells.query_advice(common.advice[i + NUM_LIMBS], Rotation::cur()));
 				y_limbs_exp[i] = Some(v_cells.query_advice(common.advice[i], Rotation::cur()));
-				if i < NUM_LIMBS / 2 {
-					residues_exp.push(v_cells.query_advice(common.advice[i], Rotation::next()));
-				}
+				t_exp[i] = Some(v_cells.query_advice(common.advice[i], Rotation(2)));
 				result_exp[i] =
-					Some(v_cells.query_advice(common.advice[i + NUM_LIMBS], Rotation::next()));
+					Some(v_cells.query_advice(common.advice[i + NUM_LIMBS], Rotation(2)));
+			}
+			for i in 0..NUM_LIMBS / 2 {
+				residues_exp.push(v_cells.query_advice(common.advice[i], Rotation::next()));
 			}
 			let t_exp = t_exp.map(|x| x.unwrap());
 			let x_limbs_exp = x_limbs_exp.map(|x| x.unwrap());
@@ -408,15 +371,15 @@ where
 		let reduction_witness = self.x.integer.sub(&self.y.integer);
 		layouter.assign_region(
 			|| "sub_operation",
-			|mut region: Region<'_, N>| {
-				selector.enable(&mut region, 1)?;
+			|region: Region<'_, N>| {
+				let mut ctx = RegionCtx::new(region, 0);
+				ctx.enable(selector.clone())?;
 				IntegerAssign::assign(
 					Some(&self.x.integer_limbs),
 					&self.y.integer_limbs,
 					&reduction_witness,
 					&common,
-					&mut region,
-					1,
+					&mut ctx,
 				)
 			},
 		)
@@ -450,16 +413,10 @@ where
 {
 	/// Creates a new mul chip
 	pub fn new(
-		x: &AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
-		y: &AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
+		x: AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
+		y: AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
 	) -> Self {
-		Self {
-			x: x.clone(),
-			y: y.clone(),
-			_native: PhantomData,
-			_wrong: PhantomData,
-			_rns: PhantomData,
-		}
+		Self { x, y, _native: PhantomData, _wrong: PhantomData, _rns: PhantomData }
 	}
 }
 
@@ -484,17 +441,17 @@ where
 			let mut residues_exp = Vec::new();
 			let mut result_exp = [(); NUM_LIMBS].map(|_| None);
 			for i in 0..NUM_LIMBS {
-				t_exp[i] = Some(v_cells.query_advice(common.advice[i], Rotation::prev()));
-				mul_q_exp[i] =
-					Some(v_cells.query_advice(common.advice[i + NUM_LIMBS], Rotation::prev()));
 				x_limbs_exp[i] =
 					Some(v_cells.query_advice(common.advice[i + NUM_LIMBS], Rotation::cur()));
 				y_limbs_exp[i] = Some(v_cells.query_advice(common.advice[i], Rotation::cur()));
-				if i < NUM_LIMBS / 2 {
-					residues_exp.push(v_cells.query_advice(common.advice[i], Rotation::next()));
-				}
-				result_exp[i] =
+				mul_q_exp[i] =
 					Some(v_cells.query_advice(common.advice[i + NUM_LIMBS], Rotation::next()));
+				t_exp[i] = Some(v_cells.query_advice(common.advice[i], Rotation(2)));
+				result_exp[i] =
+					Some(v_cells.query_advice(common.advice[i + NUM_LIMBS], Rotation(2)));
+			}
+			for i in 0..NUM_LIMBS / 2 {
+				residues_exp.push(v_cells.query_advice(common.advice[i], Rotation::next()));
 			}
 			let t_exp = t_exp.map(|x| x.unwrap());
 			let mul_q_exp = mul_q_exp.map(|x| x.unwrap());
@@ -523,15 +480,15 @@ where
 		let reduction_witness = self.x.integer.mul(&self.y.integer);
 		layouter.assign_region(
 			|| "mul_operation",
-			|mut region: Region<'_, N>| {
-				selector.enable(&mut region, 1)?;
+			|region: Region<'_, N>| {
+				let mut ctx = RegionCtx::new(region, 0);
+				ctx.enable(selector.clone())?;
 				IntegerAssign::assign(
 					Some(&self.x.integer_limbs),
 					&self.y.integer_limbs,
 					&reduction_witness,
 					&common,
-					&mut region,
-					1,
+					&mut ctx,
 				)
 			},
 		)
@@ -565,16 +522,10 @@ where
 {
 	/// Creates a new div chip
 	pub fn new(
-		x: &AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
-		y: &AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
+		x: AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
+		y: AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
 	) -> Self {
-		Self {
-			x: x.clone(),
-			y: y.clone(),
-			_native: PhantomData,
-			_wrong: PhantomData,
-			_rns: PhantomData,
-		}
+		Self { x, y, _native: PhantomData, _wrong: PhantomData, _rns: PhantomData }
 	}
 }
 
@@ -599,17 +550,17 @@ where
 			let mut residues_exp = Vec::new();
 			let mut result_exp = [(); NUM_LIMBS].map(|_| None);
 			for i in 0..NUM_LIMBS {
-				t_exp[i] = Some(v_cells.query_advice(common.advice[i], Rotation::prev()));
-				div_q_exp[i] =
-					Some(v_cells.query_advice(common.advice[i + NUM_LIMBS], Rotation::prev()));
 				x_limbs_exp[i] =
 					Some(v_cells.query_advice(common.advice[i + NUM_LIMBS], Rotation::cur()));
 				y_limbs_exp[i] = Some(v_cells.query_advice(common.advice[i], Rotation::cur()));
-				if i < NUM_LIMBS / 2 {
-					residues_exp.push(v_cells.query_advice(common.advice[i], Rotation::next()));
-				}
-				result_exp[i] =
+				div_q_exp[i] =
 					Some(v_cells.query_advice(common.advice[i + NUM_LIMBS], Rotation::next()));
+				t_exp[i] = Some(v_cells.query_advice(common.advice[i], Rotation(2)));
+				result_exp[i] =
+					Some(v_cells.query_advice(common.advice[i + NUM_LIMBS], Rotation(2)));
+			}
+			for i in 0..NUM_LIMBS / 2 {
+				residues_exp.push(v_cells.query_advice(common.advice[i], Rotation::next()));
 			}
 			let t_exp = t_exp.map(|x| x.unwrap());
 			let div_q_exp = div_q_exp.map(|x| x.unwrap());
@@ -638,15 +589,15 @@ where
 		let reduction_witness = self.x.integer.div(&self.y.integer);
 		layouter.assign_region(
 			|| "div_operation",
-			|mut region: Region<'_, N>| {
-				selector.enable(&mut region, 1)?;
+			|region: Region<'_, N>| {
+				let mut ctx = RegionCtx::new(region, 0);
+				ctx.enable(selector.clone())?;
 				IntegerAssign::assign(
 					Some(&self.x.integer_limbs),
 					&self.y.integer_limbs,
 					&reduction_witness,
 					&common,
-					&mut region,
-					1,
+					&mut ctx,
 				)
 			},
 		)
@@ -677,10 +628,10 @@ where
 {
 	/// Returns a new `AssignedInteger` given its values
 	pub fn new(
-		integer: &Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
-		integer_limbs: &[AssignedCell<N, N>; NUM_LIMBS],
+		integer: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
+		integer_limbs: [AssignedCell<N, N>; NUM_LIMBS],
 	) -> Self {
-		Self { integer: integer.clone(), integer_limbs: integer_limbs.clone() }
+		Self { integer, integer_limbs }
 	}
 }
 
@@ -782,30 +733,27 @@ mod test {
 		) -> Result<(), Error> {
 			let (x_limbs_assigned, y_limbs_assigned) = layouter.assign_region(
 				|| "temp",
-				|mut region: Region<'_, N>| {
+				|region: Region<'_, N>| {
+					let mut ctx = RegionCtx::new(region, 0);
 					let mut x_limbs: [Option<AssignedCell<N, N>>; NUM_LIMBS] =
 						[(); NUM_LIMBS].map(|_| None);
 					let mut y_limbs: [Option<AssignedCell<N, N>>; NUM_LIMBS] =
 						[(); NUM_LIMBS].map(|_| None);
 					for i in 0..NUM_LIMBS {
-						let x = region.assign_advice(
-							|| "temp_x",
+						let x = ctx.assign_advice(
 							config.common.advice[0],
-							i,
-							|| Value::known(self.x.limbs[i]),
+							Value::known(self.x.limbs[i]),
 						)?;
 						x_limbs[i] = Some(x);
-
 						if self.y.is_some() {
 							let y_unwrapped = self.y.clone().unwrap();
-							let y = region.assign_advice(
-								|| "temp_y",
-								config.common.advice[0],
-								i + NUM_LIMBS,
-								|| Value::known(y_unwrapped.limbs[i]),
+							let y = ctx.assign_advice(
+								config.common.advice[1],
+								Value::known(y_unwrapped.limbs[i]),
 							)?;
 							y_limbs[i] = Some(y);
 						}
+						ctx.next();
 					}
 					Ok((x_limbs, y_limbs))
 				},
@@ -815,8 +763,8 @@ mod test {
 			match self.gadget {
 				Gadgets::Reduce => {
 					let assigned_integer =
-						AssignedInteger::new(&self.x, &x_limbs_assigned.map(|x| x.unwrap()));
-					let chip = IntegerReduceChip::new(&assigned_integer);
+						AssignedInteger::new(self.x.clone(), x_limbs_assigned.map(|x| x.unwrap()));
+					let chip = IntegerReduceChip::new(assigned_integer);
 					result = Some(chip.synthesize(
 						&config.common,
 						&config.reduce_selector,
@@ -826,12 +774,12 @@ mod test {
 
 				Gadgets::Add => {
 					let x_assigned =
-						AssignedInteger::new(&self.x, &x_limbs_assigned.map(|x| x.unwrap()));
+						AssignedInteger::new(self.x.clone(), x_limbs_assigned.map(|x| x.unwrap()));
 					let y_assigned = AssignedInteger::new(
-						&self.y.clone().unwrap(),
-						&y_limbs_assigned.map(|x| x.unwrap()),
+						self.y.clone().unwrap(),
+						y_limbs_assigned.map(|x| x.unwrap()),
 					);
-					let chip = IntegerAddChip::new(&x_assigned, &y_assigned);
+					let chip = IntegerAddChip::new(x_assigned, y_assigned);
 					result = Some(chip.synthesize(
 						&config.common,
 						&config.add_selector,
@@ -840,12 +788,12 @@ mod test {
 				},
 				Gadgets::Sub => {
 					let x_assigned =
-						AssignedInteger::new(&self.x, &x_limbs_assigned.map(|x| x.unwrap()));
+						AssignedInteger::new(self.x.clone(), x_limbs_assigned.map(|x| x.unwrap()));
 					let y_assigned = AssignedInteger::new(
-						&self.y.clone().unwrap(),
-						&y_limbs_assigned.map(|x| x.unwrap()),
+						self.y.clone().unwrap(),
+						y_limbs_assigned.map(|x| x.unwrap()),
 					);
-					let chip = IntegerSubChip::new(&x_assigned, &y_assigned);
+					let chip = IntegerSubChip::new(x_assigned, y_assigned);
 					result = Some(chip.synthesize(
 						&config.common,
 						&config.sub_selector,
@@ -854,12 +802,12 @@ mod test {
 				},
 				Gadgets::Mul => {
 					let x_assigned =
-						AssignedInteger::new(&self.x, &x_limbs_assigned.map(|x| x.unwrap()));
+						AssignedInteger::new(self.x.clone(), x_limbs_assigned.map(|x| x.unwrap()));
 					let y_assigned = AssignedInteger::new(
-						&self.y.clone().unwrap(),
-						&y_limbs_assigned.map(|x| x.unwrap()),
+						self.y.clone().unwrap(),
+						y_limbs_assigned.map(|x| x.unwrap()),
 					);
-					let chip = IntegerMulChip::new(&x_assigned, &y_assigned);
+					let chip = IntegerMulChip::new(x_assigned, y_assigned);
 
 					result = Some(chip.synthesize(
 						&config.common,
@@ -870,12 +818,12 @@ mod test {
 
 				Gadgets::Div => {
 					let x_assigned =
-						AssignedInteger::new(&self.x, &x_limbs_assigned.map(|x| x.unwrap()));
+						AssignedInteger::new(self.x.clone(), x_limbs_assigned.map(|x| x.unwrap()));
 					let y_assigned = AssignedInteger::new(
-						&self.y.clone().unwrap(),
-						&y_limbs_assigned.map(|x| x.unwrap()),
+						self.y.clone().unwrap(),
+						y_limbs_assigned.map(|x| x.unwrap()),
 					);
-					let chip = IntegerDivChip::new(&x_assigned, &y_assigned);
+					let chip = IntegerDivChip::new(x_assigned, y_assigned);
 
 					result = Some(chip.synthesize(
 						&config.common,
