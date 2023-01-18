@@ -75,7 +75,6 @@ where
 				Value::known(reduction_witness.result.limbs[i]),
 			)?);
 		}
-		//let assigned_result = assigned_result.map(|x| x.unwrap();
 		let assigned_result = AssignedInteger::new(
 			reduction_witness.result.clone(),
 			assigned_result.map(|x| x.unwrap()),
