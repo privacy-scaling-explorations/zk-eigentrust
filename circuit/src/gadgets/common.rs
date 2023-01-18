@@ -15,6 +15,17 @@ use halo2::{
 	poly::Rotation,
 };
 
+#[derive(Debug, Clone)]
+pub struct MainConfig {
+	selector: Selector,
+}
+
+impl MainConfig {
+	pub fn new(selector: Selector) -> Self {
+		Self { selector }
+	}
+}
+
 /// Structure for the main chip.
 pub struct MainChip<F: FieldExt> {
 	advice: [AssignedCell<F, F>; ADVICE],
@@ -546,7 +557,7 @@ mod tests {
 		fn configure(meta: &mut ConstraintSystem<F>) -> TestConfig {
 			let common = CommonChip::configure(meta);
 			let selector = MainChip::configure(&common, meta);
-			let main = MainConfig::construct_from_selector::<F>(&common, selector);
+			let main = MainConfig::new(selector);
 			TestConfig { common, main }
 		}
 
