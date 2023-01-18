@@ -225,8 +225,8 @@ mod test {
 		},
 		gadgets::{
 			bits2num::{to_bits, Bits2NumChip},
+			common::{IsZeroChipset, MainChip, MainConfig},
 			lt_eq::{LessEqualConfig, NShiftedChip, N_SHIFTED},
-			main::IsZeroChip,
 		},
 		params::poseidon_bn254_5x5::Params,
 		poseidon::{native::Poseidon, FullRoundChip, PartialRoundChip, PoseidonConfig},
@@ -287,9 +287,9 @@ mod test {
 
 			let bits2num_selector = Bits2NumChip::configure(&common, meta);
 			let n_shifted_selector = NShiftedChip::configure(&common, meta);
-			let is_zero_selector = IsZeroChip::configure(&common, meta);
-			let lt_eq =
-				LessEqualConfig::new(bits2num_selector, n_shifted_selector, is_zero_selector);
+			let main_selector = MainChip::configure(&common, meta);
+			let main = MainConfig::new(main_selector);
+			let lt_eq = LessEqualConfig::new(bits2num_selector, n_shifted_selector, main);
 
 			let scalar_mul_selector = ScalarMulChip::<_, BabyJubJub>::configure(&common, meta);
 			let strict_scalar_mul =
