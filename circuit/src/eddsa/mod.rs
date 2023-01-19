@@ -225,13 +225,13 @@ mod test {
 		},
 		gadgets::{
 			bits2num::{to_bits, Bits2NumChip},
-			common::{MainChip, MainConfig},
 			lt_eq::{LessEqualConfig, NShiftedChip, N_SHIFTED},
+			main::{MainChip, MainConfig},
 		},
 		params::poseidon_bn254_5x5::Params,
 		poseidon::{native::Poseidon, FullRoundChip, PartialRoundChip, PoseidonConfig},
 		utils::{generate_params, prove_and_verify},
-		Chip, Chipset, CommonChip, CommonConfig, RegionCtx,
+		Chip, Chipset, CommonConfig, RegionCtx,
 	};
 	use halo2::{
 		circuit::{Layouter, Region, SimpleFloorPlanner, Value},
@@ -279,7 +279,8 @@ mod test {
 		}
 
 		fn configure(meta: &mut ConstraintSystem<Fr>) -> TestConfig {
-			let common = CommonChip::configure(meta);
+			let common = CommonConfig::new(meta);
+			let main = MainConfig::new(MainChip::configure(&common, meta));
 
 			let full_round_selector = FrChip::configure(&common, meta);
 			let partial_round_selector = PrChip::configure(&common, meta);
@@ -287,8 +288,6 @@ mod test {
 
 			let bits2num_selector = Bits2NumChip::configure(&common, meta);
 			let n_shifted_selector = NShiftedChip::configure(&common, meta);
-			let main_selector = MainChip::configure(&common, meta);
-			let main = MainConfig::new(main_selector);
 			let lt_eq = LessEqualConfig::new(bits2num_selector, n_shifted_selector, main);
 
 			let scalar_mul_selector = ScalarMulChip::<_, BabyJubJub>::configure(&common, meta);

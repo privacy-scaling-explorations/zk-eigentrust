@@ -513,7 +513,7 @@ mod tests {
 	use super::*;
 	use crate::{
 		utils::{generate_params, prove_and_verify},
-		Chipset, CommonChip, CommonConfig,
+		Chipset, CommonConfig,
 	};
 	use halo2::{
 		circuit::{SimpleFloorPlanner, Value},
@@ -562,9 +562,8 @@ mod tests {
 		}
 
 		fn configure(meta: &mut ConstraintSystem<F>) -> TestConfig {
-			let common = CommonChip::configure(meta);
-			let selector = MainChip::configure(&common, meta);
-			let main = MainConfig::new(selector);
+			let common = CommonConfig::new(meta);
+			let main = MainConfig::new(MainChip::configure(&common, meta));
 			TestConfig { common, main }
 		}
 

@@ -4,14 +4,14 @@ pub mod native;
 use crate::{
 	gadgets::{
 		bits2num::Bits2NumChip,
-		common::{MainChip, MainConfig, SelectChipset},
+		main::{MainChip, MainConfig, SelectChipset},
 	},
 	integer::{
 		native::{Quotient, ReductionWitness},
 		rns::RnsParams,
 		IntegerChip, IntegerConfig,
 	},
-	Chip, Chipset, CommonChip, CommonConfig,
+	Chip, Chipset, CommonConfig,
 };
 use halo2::{
 	arithmetic::FieldExt,
@@ -121,10 +121,9 @@ where
 	/// Make the circuit config.
 	pub fn configure(meta: &mut ConstraintSystem<N>) -> EccConfig<NUM_LIMBS> {
 		let integer = IntegerChip::<W, N, NUM_LIMBS, NUM_BITS, P>::configure(meta);
-		let common = CommonChip::<N>::configure(meta);
+		let common = CommonConfig::new(meta);
+		let main = MainConfig::new(MainChip::configure(&common, meta));
 		let bits2num_selector = Bits2NumChip::configure(&common, meta);
-		let selector = MainChip::configure(&common, meta);
-		let main = MainConfig::new(selector);
 
 		EccConfig { integer, common, main, bits2num_selector }
 	}

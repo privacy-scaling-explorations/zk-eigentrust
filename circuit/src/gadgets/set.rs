@@ -1,4 +1,4 @@
-use crate::{gadgets::common::IsZeroChipset, Chip, Chipset, CommonConfig, RegionCtx};
+use crate::{gadgets::main::IsZeroChipset, Chip, Chipset, CommonConfig, RegionCtx};
 use halo2::{
 	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region},
@@ -6,7 +6,7 @@ use halo2::{
 	poly::Rotation,
 };
 
-use super::common::MainConfig;
+use super::main::MainConfig;
 
 /// A chip for checking item membership in a set of field values
 pub struct SetChip<F: FieldExt> {
@@ -147,9 +147,9 @@ impl<F: FieldExt> Chipset<F> for SetChipset<F> {
 mod test {
 	use super::*;
 	use crate::{
-		gadgets::common::MainChip,
+		gadgets::main::MainChip,
 		utils::{generate_params, prove_and_verify},
-		CommonChip,
+		CommonConfig,
 	};
 	use halo2::{
 		arithmetic::Field,
@@ -192,9 +192,9 @@ mod test {
 		}
 
 		fn configure(meta: &mut ConstraintSystem<F>) -> TestConfig {
-			let common = CommonChip::<F>::configure(meta);
-			let main_selector = MainChip::configure(&common, meta);
-			let main = MainConfig::new(main_selector);
+			let common = CommonConfig::new(meta);
+			let main = MainConfig::new(MainChip::configure(&common, meta));
+
 			let set_selector = SetChip::configure(&common, meta);
 			let set = SetConfig::new(set_selector, main);
 

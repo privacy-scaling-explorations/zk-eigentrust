@@ -118,14 +118,14 @@ mod test {
 	use super::*;
 	use crate::{
 		gadgets::{
-			common::{MainChip, MainConfig},
+			main::{MainChip, MainConfig},
 			set::SetChip,
 		},
 		merkle_tree::native::{MerkleTree, Path},
 		params::poseidon_bn254_5x5::Params,
 		poseidon::{FullRoundChip, PartialRoundChip},
 		utils::{generate_params, prove_and_verify},
-		Chip, CommonChip, CommonConfig,
+		Chip, CommonConfig,
 	};
 	use halo2::{
 		arithmetic::Field,
@@ -172,13 +172,12 @@ mod test {
 		}
 
 		fn configure(meta: &mut ConstraintSystem<F>) -> TestConfig {
-			let common = CommonChip::configure(meta);
+			let common = CommonConfig::new(meta);
+			let main = MainConfig::new(MainChip::configure(&common, meta));
 			let fr_selector = FullRoundChip::<_, WIDTH, P>::configure(&common, meta);
 			let pr_selector = PartialRoundChip::<_, WIDTH, P>::configure(&common, meta);
 			let poseidon = PoseidonConfig::new(fr_selector, pr_selector);
 			let set_selector = SetChip::configure(&common, meta);
-			let main_selector = MainChip::configure(&common, meta);
-			let main = MainConfig::new(main_selector);
 			let set = SetConfig::new(set_selector, main);
 			let path = MerklePathConfig::new(poseidon, set);
 

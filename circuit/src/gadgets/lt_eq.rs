@@ -1,7 +1,5 @@
-use super::{bits2num::Bits2NumChip, common::MainConfig};
-use crate::{
-	gadgets::common::IsZeroChipset, utils::to_wide, Chip, Chipset, CommonConfig, RegionCtx,
-};
+use super::{bits2num::Bits2NumChip, main::MainConfig};
+use crate::{gadgets::main::IsZeroChipset, utils::to_wide, Chip, Chipset, CommonConfig, RegionCtx};
 use halo2::{
 	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region, Value},
@@ -180,9 +178,8 @@ impl<F: FieldExt> Chipset<F> for LessEqualChipset<F> {
 mod test {
 	use super::*;
 	use crate::{
-		gadgets::{bits2num::to_bits, common::MainChip},
+		gadgets::{bits2num::to_bits, main::MainChip},
 		utils::{generate_params, prove_and_verify},
-		CommonChip,
 	};
 	use halo2::{
 		circuit::{SimpleFloorPlanner, Value},
@@ -218,11 +215,11 @@ mod test {
 		}
 
 		fn configure(meta: &mut ConstraintSystem<Fr>) -> TestConfig {
-			let common = CommonChip::configure(meta);
+			let common = CommonConfig::new(meta);
+			let main = MainConfig::new(MainChip::configure(&common, meta));
+
 			let b2n_selector = Bits2NumChip::configure(&common, meta);
 			let ns_selector = NShiftedChip::configure(&common, meta);
-			let main_selector = MainChip::configure(&common, meta);
-			let main = MainConfig::new(main_selector);
 			let lt_eq = LessEqualConfig::new(b2n_selector, ns_selector, main);
 
 			TestConfig { common, lt_eq }

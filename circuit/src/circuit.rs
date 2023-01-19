@@ -9,8 +9,8 @@ use crate::{
 	},
 	gadgets::{
 		bits2num::{to_bits, Bits2NumChip},
-		common::{AddChipset, MainChip, MainConfig, MulChipset},
 		lt_eq::{LessEqualConfig, NShiftedChip, N_SHIFTED},
+		main::{AddChipset, MainChip, MainConfig, MulChipset},
 	},
 	params::poseidon_bn254_5x5::Params,
 	poseidon::{
@@ -18,7 +18,7 @@ use crate::{
 		sponge::{AbsorbChip, PoseidonSpongeChipset, PoseidonSpongeConfig},
 		FullRoundChip, PartialRoundChip, PoseidonChipset, PoseidonConfig,
 	},
-	Chip, Chipset, CommonChip, CommonConfig, RegionCtx, ADVICE,
+	Chip, Chipset, CommonConfig, RegionCtx, ADVICE,
 };
 use halo2::{
 	arithmetic::Field,
@@ -195,7 +195,8 @@ impl<
 	}
 
 	fn configure(meta: &mut ConstraintSystem<Scalar>) -> EigenTrustConfig {
-		let common = CommonChip::<Scalar>::configure(meta);
+		let common = CommonConfig::new(meta);
+		let main = MainConfig::new(MainChip::configure(&common, meta));
 
 		let full_round_selector = FullRoundHasher::configure(&common, meta);
 		let partial_round_selector = PartialRoundHasher::configure(&common, meta);
@@ -206,8 +207,6 @@ impl<
 
 		let bits2num_selector = Bits2NumChip::configure(&common, meta);
 		let n_shifted_selector = NShiftedChip::configure(&common, meta);
-		let main_selector = MainChip::configure(&common, meta);
-		let main = MainConfig::new(main_selector);
 		let lt_eq = LessEqualConfig::new(bits2num_selector, n_shifted_selector, main.clone());
 
 		let scalar_mul_selector = ScalarMulChip::<_, BabyJubJub>::configure(&common, meta);
