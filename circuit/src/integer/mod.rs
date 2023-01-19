@@ -639,7 +639,7 @@ mod test {
 	use super::{native::Integer, rns::Bn256_4_68, *};
 	use crate::{
 		utils::{generate_params, prove_and_verify},
-		CommonChip,
+		CommonConfig,
 	};
 	use halo2::{
 		circuit::{SimpleFloorPlanner, Value},
@@ -705,7 +705,8 @@ mod test {
 		}
 
 		fn configure(meta: &mut ConstraintSystem<N>) -> TestConfig<NUM_LIMBS> {
-			let common = CommonChip::configure(meta);
+			let common = CommonConfig::new(meta);
+
 			let reduce_selector =
 				IntegerReduceChip::<W, N, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
 			let add_selector =

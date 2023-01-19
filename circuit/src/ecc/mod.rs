@@ -17,7 +17,6 @@ use halo2::{
 /// Structure for the AssignedPoint.
 #[derive(Clone)]
 struct AssignedPoint<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
-
 where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 {
@@ -523,7 +522,7 @@ mod test {
 			AssignedInteger, IntegerAddChip, IntegerDivChip, IntegerMulChip, IntegerReduceChip,
 			IntegerSubChip,
 		},
-		Chip, Chipset, CommonChip, CommonConfig, RegionCtx,
+		Chip, Chipset, CommonConfig, RegionCtx,
 	};
 	use halo2::{
 		circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner, Value},
@@ -607,7 +606,7 @@ mod test {
 		}
 
 		fn configure(meta: &mut ConstraintSystem<N>) -> TestConfig<NUM_LIMBS> {
-			let common = CommonChip::configure(meta);
+			let common = CommonConfig::new(meta);
 
 			let integer_reduce_selector =
 				IntegerReduceChip::<W, N, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
