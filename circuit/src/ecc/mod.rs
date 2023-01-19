@@ -17,6 +17,7 @@ use halo2::{
 /// Structure for the AssignedPoint.
 #[derive(Clone)]
 struct AssignedPoint<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
+
 where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 {

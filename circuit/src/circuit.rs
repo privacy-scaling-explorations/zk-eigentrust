@@ -9,8 +9,8 @@ use crate::{
 	},
 	gadgets::{
 		bits2num::{to_bits, Bits2NumChip},
-		common::{AddChip, IsZeroChip, MulChip},
 		lt_eq::{LessEqualConfig, NShiftedChip, N_SHIFTED},
+		main::{AddChipset, MainChip, MainConfig, MulChipset},
 	},
 	params::poseidon_bn254_5x5::Params,
 	poseidon::{
@@ -18,13 +18,13 @@ use crate::{
 		sponge::{AbsorbChip, PoseidonSpongeChipset, PoseidonSpongeConfig},
 		FullRoundChip, PartialRoundChip, PoseidonChipset, PoseidonConfig,
 	},
-	Chip, Chipset, CommonChip, CommonConfig, RegionCtx, ADVICE,
+	Chip, Chipset, CommonConfig, RegionCtx, ADVICE,
 };
 use halo2::{
 	arithmetic::Field,
 	circuit::{Layouter, Region, SimpleFloorPlanner, Value},
 	halo2curves::{bn256::Fr as Scalar, FieldExt},
-	plonk::{Circuit, ConstraintSystem, Error, Selector},
+	plonk::{Circuit, ConstraintSystem, Error},
 };
 use rand::Rng;
 
@@ -48,11 +48,10 @@ type Eddsa = EddsaChipset<Scalar, BabyJubJub, Params>;
 /// The columns config for the main circuit.
 pub struct EigenTrustConfig {
 	common: CommonConfig,
+	main: MainConfig,
 	sponge: PoseidonSpongeConfig,
 	poseidon: PoseidonConfig,
 	eddsa: EddsaConfig,
-	add_selector: Selector,
-	mul_selector: Selector,
 }
 
 #[derive(Clone)]
@@ -196,7 +195,8 @@ impl<
 	}
 
 	fn configure(meta: &mut ConstraintSystem<Scalar>) -> EigenTrustConfig {
-		let common = CommonChip::<Scalar>::configure(meta);
+		let common = CommonConfig::new(meta);
+		let main = MainConfig::new(MainChip::configure(&common, meta));
 
 		let full_round_selector = FullRoundHasher::configure(&common, meta);
 		let partial_round_selector = PartialRoundHasher::configure(&common, meta);
@@ -207,8 +207,7 @@ impl<
 
 		let bits2num_selector = Bits2NumChip::configure(&common, meta);
 		let n_shifted_selector = NShiftedChip::configure(&common, meta);
-		let is_zero_selector = IsZeroChip::configure(&common, meta);
-		let lt_eq = LessEqualConfig::new(bits2num_selector, n_shifted_selector, is_zero_selector);
+		let lt_eq = LessEqualConfig::new(main.clone(), bits2num_selector, n_shifted_selector);
 
 		let scalar_mul_selector = ScalarMulChip::<_, BabyJubJub>::configure(&common, meta);
 		let strict_scalar_mul = StrictScalarMulConfig::new(bits2num_selector, scalar_mul_selector);
@@ -224,10 +223,7 @@ impl<
 			affine_selector,
 		);
 
-		let add_selector = AddChip::configure(&common, meta);
-		let mul_selector = MulChip::configure(&common, meta);
-
-		EigenTrustConfig { common, eddsa, sponge, poseidon, add_selector, mul_selector }
+		EigenTrustConfig { common, main, eddsa, sponge, poseidon }
 	}
 
 	fn synthesize(
@@ -399,10 +395,10 @@ impl<
 				let op_i = ops[i].clone();
 				let mut local_distr = Vec::new();
 				for j in 0..NUM_NEIGHBOURS {
-					let mul_chip = MulChip::new(op_i[j].clone(), s[i].clone());
+					let mul_chip = MulChipset::new(op_i[j].clone(), s[i].clone());
 					let res = mul_chip.synthesize(
 						&config.common,
-						&config.mul_selector,
+						&config.main,
 						layouter.namespace(|| "op_mul"),
 					)?;
 					local_distr.push(res);
@@ -413,10 +409,10 @@ impl<
 			let mut new_s = vec![zero.clone(); NUM_NEIGHBOURS];
 			for i in 0..NUM_NEIGHBOURS {
 				for j in 0..NUM_NEIGHBOURS {
-					let add_chip = AddChip::new(new_s[i].clone(), distributions[j][i].clone());
+					let add_chip = AddChipset::new(new_s[i].clone(), distributions[j][i].clone());
 					new_s[i] = add_chip.synthesize(
 						&config.common,
-						&config.add_selector,
+						&config.main,
 						layouter.namespace(|| "op_add"),
 					)?;
 				}
@@ -427,10 +423,10 @@ impl<
 
 		let mut passed_scaled = Vec::new();
 		for i in 0..NUM_NEIGHBOURS {
-			let mul_chip = MulChip::new(passed_s[i].clone(), scale.clone());
+			let mul_chip = MulChipset::new(passed_s[i].clone(), scale.clone());
 			let res = mul_chip.synthesize(
 				&config.common,
-				&config.mul_selector,
+				&config.main,
 				layouter.namespace(|| "op_mul"),
 			)?;
 			passed_scaled.push(res);

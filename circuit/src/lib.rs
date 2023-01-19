@@ -172,11 +172,9 @@ pub struct CommonConfig {
 	instance: Column<Instance>,
 }
 
-struct CommonChip<F: FieldExt>(PhantomData<F>);
-
-impl<F: FieldExt> CommonChip<F> {
-	/// Initialization function for CommonConfig
-	pub fn configure(meta: &mut ConstraintSystem<F>) -> CommonConfig {
+impl CommonConfig {
+	/// Create a new `CommonConfig` columns
+	pub fn new<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
 		let advice = [(); ADVICE].map(|_| meta.advice_column());
 		let fixed = [(); FIXED].map(|_| meta.fixed_column());
 		let instance = meta.instance_column();
@@ -185,7 +183,7 @@ impl<F: FieldExt> CommonChip<F> {
 		fixed.map(|c| meta.enable_constant(c));
 		meta.enable_equality(instance);
 
-		CommonConfig { advice, fixed, instance }
+		Self { advice, fixed, instance }
 	}
 }
 
