@@ -1,5 +1,5 @@
-use super::bits2num::Bits2NumChip;
-use crate::{gadgets::common::IsZeroChip, utils::to_wide, Chip, Chipset, CommonConfig, RegionCtx};
+use super::{bits2num::Bits2NumChip, main::MainConfig};
+use crate::{gadgets::main::IsZeroChipset, utils::to_wide, Chip, Chipset, CommonConfig, RegionCtx};
 use halo2::{
 	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region, Value},
@@ -90,17 +90,17 @@ impl<F: FieldExt> Chip<F> for NShiftedChip<F> {
 #[derive(Clone, Debug)]
 /// Selectors for LessEqualChipset
 pub struct LessEqualConfig {
+	main: MainConfig,
 	bits_2_num_selector: Selector,
 	n_shifted_selector: Selector,
-	is_zero_selector: Selector,
 }
 
 impl LessEqualConfig {
 	/// Constructs new config
 	pub fn new(
-		bits_2_num_selector: Selector, n_shifted_selector: Selector, is_zero_selector: Selector,
+		main: MainConfig, bits_2_num_selector: Selector, n_shifted_selector: Selector,
 	) -> Self {
-		Self { bits_2_num_selector, n_shifted_selector, is_zero_selector }
+		Self { main, bits_2_num_selector, n_shifted_selector }
 	}
 }
 
@@ -167,12 +167,9 @@ impl<F: FieldExt> Chipset<F> for LessEqualChipset<F> {
 		// This means y is bigger than x and is_zero will return 1.
 		// If both are equal last bit still will be 1 and the number will be exactly 253
 		// bits. In that case, is_zero will return 0 as well.
-		let is_zero_chip = IsZeroChip::new(bits[DIFF_BITS - 1].clone());
-		let res = is_zero_chip.synthesize(
-			common,
-			&config.is_zero_selector,
-			layouter.namespace(|| "is_zero"),
-		)?;
+		let is_zero_chip = IsZeroChipset::new(bits[DIFF_BITS - 1].clone());
+		let res =
+			is_zero_chip.synthesize(common, &config.main, layouter.namespace(|| "is_zero"))?;
 		Ok(res)
 	}
 }
@@ -181,9 +178,8 @@ impl<F: FieldExt> Chipset<F> for LessEqualChipset<F> {
 mod test {
 	use super::*;
 	use crate::{
-		gadgets::bits2num::to_bits,
+		gadgets::{bits2num::to_bits, main::MainChip},
 		utils::{generate_params, prove_and_verify},
-		CommonChip,
 	};
 	use halo2::{
 		circuit::{SimpleFloorPlanner, Value},
@@ -219,11 +215,12 @@ mod test {
 		}
 
 		fn configure(meta: &mut ConstraintSystem<Fr>) -> TestConfig {
-			let common = CommonChip::configure(meta);
+			let common = CommonConfig::new(meta);
+			let main = MainConfig::new(MainChip::configure(&common, meta));
+
 			let b2n_selector = Bits2NumChip::configure(&common, meta);
 			let ns_selector = NShiftedChip::configure(&common, meta);
-			let is_zero_selector = IsZeroChip::configure(&common, meta);
-			let lt_eq = LessEqualConfig::new(b2n_selector, ns_selector, is_zero_selector);
+			let lt_eq = LessEqualConfig::new(main, b2n_selector, ns_selector);
 
 			TestConfig { common, lt_eq }
 		}

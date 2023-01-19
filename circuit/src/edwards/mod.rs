@@ -417,7 +417,7 @@ mod test {
 		edwards::{native::Point, params::BabyJubJub},
 		gadgets::bits2num::to_bits,
 		utils::{generate_params, prove_and_verify},
-		CommonChip,
+		CommonConfig,
 	};
 	use halo2::{
 		circuit::{SimpleFloorPlanner, Value},
@@ -462,7 +462,7 @@ mod test {
 		}
 
 		fn configure(meta: &mut ConstraintSystem<Fr>) -> TestConfig {
-			let common = CommonChip::configure(meta);
+			let common = CommonConfig::new(meta);
 			let point_add_selector = PointAddChip::<Fr, BabyJubJub>::configure(&common, meta);
 			let into_affine_selector = IntoAffineChip::configure(&common, meta);
 			let scalar_mul_selector = ScalarMulChip::<Fr, BabyJubJub>::configure(&common, meta);

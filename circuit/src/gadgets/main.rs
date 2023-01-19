@@ -11,51 +11,25 @@ use crate::{Chip, Chipset, CommonConfig, RegionCtx};
 use halo2::{
 	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Value},
-	plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Instance, Selector},
+	plonk::{ConstraintSystem, Error, Selector},
 	poly::Rotation,
 };
 
-/// Number of advice columns inside the `MaingateConfig`
+/// Number of advice columns in MainChip
 pub const NUM_ADVICE: usize = 5;
-
-/// Number of fixed columns inside the `MaingateConfig`
+/// Number of fixed columns in MainChip
 pub const NUM_FIXED: usize = 8;
 
-#[derive(Copy, Clone, Debug)]
-/// Configuration elements for the circuit are defined here.
+/// Main config for common primitives like `add`, `mul` ...
+#[derive(Debug, Clone)]
 pub struct MainConfig {
-	/// Configures columns for the advice.
-	advice: [Column<Advice>; NUM_ADVICE],
-
-	/// Configures the fixed boolean values for each row of the circuit.
-	fixed: [Column<Fixed>; NUM_FIXED],
-
-	instance: Column<Instance>,
-
-	selector: Selector, // SHOULD be removed when replacing `CommonGate` with this `MainGate`
+	selector: Selector,
 }
 
 impl MainConfig {
-	/// Create a new `MainConfig` columns
-	pub fn new<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
-		let advice = [(); NUM_ADVICE].map(|_| meta.advice_column());
-		let fixed = [(); NUM_FIXED].map(|_| meta.fixed_column());
-		let instance = meta.instance_column();
-
-		advice.map(|c| meta.enable_equality(c));
-		fixed.map(|c| meta.enable_constant(c));
-		meta.enable_equality(instance);
-
-		let selector = meta.selector();
-
-		Self { advice, fixed, instance, selector }
-	}
-
-	/// Temporary construct for testing
-	pub fn construct_from_selector<F: FieldExt>(common: &CommonConfig, selector: Selector) -> Self {
-		let advice = common.advice.split_at(NUM_ADVICE).0.try_into().unwrap();
-		let fixed = common.fixed.split_at(NUM_FIXED).0.try_into().unwrap();
-		Self { advice, fixed, instance: common.instance.clone(), selector: selector.clone() }
+	/// Initialization function for MainConfig
+	pub fn new(selector: Selector) -> Self {
+		Self { selector }
 	}
 }
 
@@ -539,7 +513,7 @@ mod tests {
 	use super::*;
 	use crate::{
 		utils::{generate_params, prove_and_verify},
-		Chipset, CommonChip, CommonConfig,
+		Chipset, CommonConfig,
 	};
 	use halo2::{
 		circuit::{SimpleFloorPlanner, Value},
@@ -588,9 +562,8 @@ mod tests {
 		}
 
 		fn configure(meta: &mut ConstraintSystem<F>) -> TestConfig {
-			let common = CommonChip::configure(meta);
-			let selector = MainChip::configure(&common, meta);
-			let main = MainConfig::construct_from_selector::<F>(&common, selector);
+			let common = CommonConfig::new(meta);
+			let main = MainConfig::new(MainChip::configure(&common, meta));
 			TestConfig { common, main }
 		}
 

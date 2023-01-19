@@ -1,10 +1,12 @@
-use crate::{gadgets::common::IsZeroChip, Chip, Chipset, CommonConfig, RegionCtx};
+use crate::{gadgets::main::IsZeroChipset, Chip, Chipset, CommonConfig, RegionCtx};
 use halo2::{
 	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region},
 	plonk::{ConstraintSystem, Error, Selector},
 	poly::Rotation,
 };
+
+use super::main::MainConfig;
 
 /// A chip for checking item membership in a set of field values
 pub struct SetChip<F: FieldExt> {
@@ -92,14 +94,14 @@ impl<F: FieldExt> Chip<F> for SetChip<F> {
 #[derive(Debug, Clone)]
 /// Selectors for a FixedSetChipset
 pub struct SetConfig {
-	is_zero_selector: Selector,
+	main: MainConfig,
 	set_selector: Selector,
 }
 
 impl SetConfig {
 	/// Constructs a new config given the selectors
-	pub fn new(set_selector: Selector, is_zero_selector: Selector) -> Self {
-		Self { set_selector, is_zero_selector }
+	pub fn new(main: MainConfig, set_selector: Selector) -> Self {
+		Self { main, set_selector }
 	}
 }
 
@@ -133,12 +135,9 @@ impl<F: FieldExt> Chipset<F> for SetChipset<F> {
 			layouter.namespace(|| "set_membership"),
 		)?;
 
-		let is_zero_chip = IsZeroChip::new(res);
-		let is_zero = is_zero_chip.synthesize(
-			common,
-			&config.is_zero_selector,
-			layouter.namespace(|| "is_member"),
-		)?;
+		let is_zero_chip = IsZeroChipset::new(res);
+		let is_zero =
+			is_zero_chip.synthesize(common, &config.main, layouter.namespace(|| "is_member"))?;
 
 		Ok(is_zero)
 	}
@@ -148,8 +147,9 @@ impl<F: FieldExt> Chipset<F> for SetChipset<F> {
 mod test {
 	use super::*;
 	use crate::{
+		gadgets::main::MainChip,
 		utils::{generate_params, prove_and_verify},
-		CommonChip,
+		CommonConfig,
 	};
 	use halo2::{
 		arithmetic::Field,
@@ -192,10 +192,11 @@ mod test {
 		}
 
 		fn configure(meta: &mut ConstraintSystem<F>) -> TestConfig {
-			let common = CommonChip::<F>::configure(meta);
-			let is_zero_selector = IsZeroChip::configure(&common, meta);
+			let common = CommonConfig::new(meta);
+			let main = MainConfig::new(MainChip::configure(&common, meta));
+
 			let set_selector = SetChip::configure(&common, meta);
-			let set = SetConfig::new(set_selector, is_zero_selector);
+			let set = SetConfig::new(main, set_selector);
 
 			TestConfig { common, set }
 		}
@@ -240,7 +241,7 @@ mod test {
 		let test_chip = TestCircuit::new(set, target);
 
 		let pub_ins = vec![Fr::one()];
-		let k = 4;
+		let k = 5;
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
 	}
@@ -290,7 +291,7 @@ mod test {
 		let target = Fr::from(2);
 		let test_chip = TestCircuit::new(set, target);
 
-		let k = 4;
+		let k = 5;
 		let rng = &mut rand::thread_rng();
 		let params = generate_params(k);
 		let res = prove_and_verify::<Bn256, _, _>(params, test_chip, &[&[Fr::one()]], rng).unwrap();

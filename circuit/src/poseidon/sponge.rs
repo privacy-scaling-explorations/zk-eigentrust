@@ -186,7 +186,7 @@ mod test {
 		poseidon::{
 			native::sponge::PoseidonSponge, FullRoundChip, PartialRoundChip, PoseidonConfig,
 		},
-		Chip, Chipset, CommonChip, CommonConfig, RegionCtx,
+		Chip, Chipset, CommonConfig, RegionCtx,
 	};
 
 	use crate::params::{hex_to_field, poseidon_bn254_5x5::Params};
@@ -232,7 +232,7 @@ mod test {
 		}
 
 		fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
-			let common = CommonChip::configure(meta);
+			let common = CommonConfig::new(meta);
 			let absorb_selector = AbsorbChip::<_, 5>::configure(&common, meta);
 			let pr_selector = PrChip::configure(&common, meta);
 			let fr_selector = FrChip::configure(&common, meta);
