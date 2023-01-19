@@ -121,6 +121,60 @@ where
 		Self { x: r_x.result, y: r_y.result, reduction_witnesses }
 	}
 
+	/// Given 2 `AssignedPoint` `P` and `Q` efficiently computes `2*P + Q`
+	pub fn ladder(&self, other: &Self) -> Self {
+		// (P + Q) + P
+		// P is to_double (x_1, y_1)
+		// Q is to_add (x_2, y_2)
+
+		// lambda_0 = (y_2 - y_1) / (x_2 - x_1)
+		let denominator = other.x.sub(&self.x);
+		let numerator = other.y.sub(&self.y);
+		let lambda_zero = numerator.result.div(&denominator.result);
+
+		// x_3 = lambda_0 * lambda_0 - x_1 - x_2
+		let lambda_zero_squared = lambda_zero.result.mul(&lambda_zero.result);
+		let lambda_zero_squared_minus_p_x = lambda_zero_squared.result.sub(&self.x);
+		let x_three = lambda_zero_squared_minus_p_x.result.sub(&other.x);
+
+		// lambda_1 = lambda_0 + 2 * y_1 / (x_3 - x_1)
+		let double_p_y = self.y.add(&self.y);
+		let x_three_minus_p_x = x_three.result.sub(&self.x);
+		let double_p_y_div_x_three_minus_p_x = double_p_y.result.div(&x_three_minus_p_x.result);
+		let lambda_one = lambda_zero.result.add(&double_p_y_div_x_three_minus_p_x.result);
+
+		// x_4 = lambda_1 * lambda_1 - x_1 - x_3
+		let lambda_one_squared = lambda_one.result.mul(&lambda_one.result);
+		let lambda_one_squared_minus_r_x = lambda_one_squared.result.sub(&x_three.result);
+		let r_x = lambda_one_squared_minus_r_x.result.sub(&self.x);
+
+		// y_4 = lambda_1 * (x_4 - x_1) - y_1
+		let r_x_minus_p_x = r_x.result.sub(&self.x);
+		let lambda_one_times_r_x_minus_p_x = lambda_one.result.mul(&r_x_minus_p_x.result);
+		let r_y = lambda_one_times_r_x_minus_p_x.result.sub(&self.y);
+
+		let reduction_witnesses = vec![
+			denominator,
+			numerator,
+			lambda_zero,
+			lambda_zero_squared,
+			lambda_zero_squared_minus_p_x,
+			x_three,
+			double_p_y,
+			x_three_minus_p_x,
+			double_p_y_div_x_three_minus_p_x,
+			lambda_one,
+			lambda_one_squared,
+			lambda_one_squared_minus_r_x,
+			r_x.clone(),
+			r_x_minus_p_x,
+			lambda_one_times_r_x_minus_p_x,
+			r_y.clone(),
+		];
+
+		Self { x: r_x.result, y: r_y.result, reduction_witnesses }
+	}
+
 	/// Scalar multiplication for given point
 	pub fn mul_scalar(
 		&self, le_bytes: [u8; 32],
@@ -230,6 +284,32 @@ mod test {
 
 		let a_w = EcPoint::new(a_x_w, a_y_w);
 		let c_w = a_w.double();
+
+		assert_eq!(c.x, big_to_fe(c_w.x.value()));
+		assert_eq!(c.y, big_to_fe(c_w.y.value()));
+	}
+
+	#[test]
+	fn should_ladder() {
+		let rng = &mut thread_rng();
+
+		let a = G1Affine::random(rng.clone());
+		let b = G1Affine::random(rng.clone());
+		let c = (a + a + b).to_affine();
+
+		let a_x_bn = fe_to_big(a.x);
+		let a_y_bn = fe_to_big(a.y);
+		let b_x_bn = fe_to_big(b.x);
+		let b_y_bn = fe_to_big(b.y);
+
+		let a_x_w = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_x_bn);
+		let a_y_w = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_y_bn);
+		let b_x_w = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(b_x_bn);
+		let b_y_w = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(b_y_bn);
+
+		let a_w = EcPoint::new(a_x_w, a_y_w);
+		let b_w = EcPoint::new(b_x_w, b_y_w);
+		let c_w = a_w.ladder(&b_w);
 
 		assert_eq!(c.x, big_to_fe(c_w.x.value()));
 		assert_eq!(c.y, big_to_fe(c_w.y.value()));
