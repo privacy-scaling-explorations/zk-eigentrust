@@ -157,7 +157,7 @@ impl<F: FieldExt> Chipset<F> for AddChipset<F> {
 		let fixed =
 			[F::one(), F::one(), -F::one(), F::zero(), F::zero(), F::zero(), F::zero(), F::zero()];
 		let main_chip = MainChip::new(advices, fixed);
-		main_chip.synthesize(common, &config.selector, layouter)?;
+		main_chip.synthesize(common, &config.selector, layouter.namespace(|| "main_add"))?;
 
 		Ok(sum)
 	}
@@ -206,7 +206,7 @@ impl<F: FieldExt> Chipset<F> for SubChipset<F> {
 		let fixed =
 			[F::one(), -F::one(), -F::one(), F::zero(), F::zero(), F::zero(), F::zero(), F::zero()];
 		let main_chip = MainChip::new(advices, fixed);
-		main_chip.synthesize(common, &config.selector, layouter)?;
+		main_chip.synthesize(common, &config.selector, layouter.namespace(|| "main_sub"))?;
 
 		Ok(diff)
 	}
@@ -255,7 +255,7 @@ impl<F: FieldExt> Chipset<F> for MulChipset<F> {
 		let fixed =
 			[F::zero(), F::zero(), -F::one(), F::zero(), F::zero(), F::one(), F::zero(), F::zero()];
 		let main_chip = MainChip::new(advices, fixed);
-		main_chip.synthesize(common, &config.selector, layouter)?;
+		main_chip.synthesize(common, &config.selector, layouter.namespace(|| "main_mul"))?;
 
 		Ok(product)
 	}
@@ -304,7 +304,11 @@ impl<F: FieldExt> Chipset<F> for IsBoolChipset<F> {
 		let fixed =
 			[F::one(), F::zero(), F::zero(), F::zero(), F::zero(), F::zero(), -F::one(), F::zero()];
 		let main_chip = MainChip::new(advices, fixed);
-		main_chip.synthesize(common, &config.selector, layouter)?;
+		main_chip.synthesize(
+			common,
+			&config.selector,
+			layouter.namespace(|| "main_is_bool"),
+		)?;
 
 		Ok(())
 	}
@@ -469,7 +473,11 @@ impl<F: FieldExt> Chipset<F> for SelectChipset<F> {
 		let fixed =
 			[F::zero(), F::zero(), F::zero(), F::one(), -F::one(), F::one(), -F::one(), F::zero()];
 		let main_chip = MainChip::new(advices, fixed);
-		main_chip.synthesize(common, &config.selector, layouter)?;
+		main_chip.synthesize(
+			common,
+			&config.selector,
+			layouter.namespace(|| "main_select"),
+		)?;
 
 		Ok(res)
 	}
