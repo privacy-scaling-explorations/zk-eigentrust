@@ -128,8 +128,8 @@ where
 		// Q is to_add (x_2, y_2)
 
 		// lambda_0 = (y_2 - y_1) / (x_2 - x_1)
-		let denominator = other.x.sub(&self.x);
 		let numerator = other.y.sub(&self.y);
+		let denominator = other.x.sub(&self.x);
 		let lambda_zero = numerator.result.div(&denominator.result);
 
 		// x_3 = lambda_0 * lambda_0 - x_1 - x_2
@@ -139,9 +139,9 @@ where
 
 		// lambda_1 = lambda_0 + 2 * y_1 / (x_3 - x_1)
 		let double_p_y = self.y.add(&self.y);
-		let x_three_minus_p_x = x_three.result.sub(&self.x);
-		let double_p_y_div_x_three_minus_p_x = double_p_y.result.div(&x_three_minus_p_x.result);
-		let lambda_one = lambda_zero.result.add(&double_p_y_div_x_three_minus_p_x.result);
+		let denom_lambda_one = x_three.result.sub(&self.x);
+		let div_res = double_p_y.result.div(&denom_lambda_one.result);
+		let lambda_one = lambda_zero.result.add(&div_res.result);
 
 		// x_4 = lambda_1 * lambda_1 - x_1 - x_3
 		let lambda_one_squared = lambda_one.result.mul(&lambda_one.result);
@@ -154,15 +154,15 @@ where
 		let r_y = lambda_one_times_r_x_minus_p_x.result.sub(&self.y);
 
 		let reduction_witnesses = vec![
-			denominator,
 			numerator,
+			denominator,
 			lambda_zero,
 			lambda_zero_squared,
 			lambda_zero_squared_minus_p_x,
 			x_three,
 			double_p_y,
-			x_three_minus_p_x,
-			double_p_y_div_x_three_minus_p_x,
+			denom_lambda_one,
+			div_res,
 			lambda_one,
 			lambda_one_squared,
 			lambda_one_squared_minus_r_x,
