@@ -140,7 +140,6 @@ where
 				residues_exp.push(v_cells.query_advice(common.advice[i], Rotation::next()));
 			}
 			let reduce_q_exp = v_cells.query_advice(common.advice[NUM_LIMBS], Rotation::next());
-
 			let t_exp = t_exp.map(|x| x.unwrap());
 			let limbs_exp = limbs_exp.map(|x| x.unwrap());
 			let result_exp = result_exp.map(|x| x.unwrap());

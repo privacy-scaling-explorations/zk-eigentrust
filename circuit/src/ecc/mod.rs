@@ -142,6 +142,7 @@ where
 			layouter.namespace(|| "numerator"),
 		)?;
 
+
 		// denominator = q.x.sub(&p.x);
 		let denominator_chip = IntegerSubChip::new(q_x_reduced.clone(), p_x_reduced.clone());
 		let denominator = denominator_chip.synthesize(
