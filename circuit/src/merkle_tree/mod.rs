@@ -178,7 +178,7 @@ mod test {
 			let pr_selector = PartialRoundChip::<_, WIDTH, P>::configure(&common, meta);
 			let poseidon = PoseidonConfig::new(fr_selector, pr_selector);
 			let set_selector = SetChip::configure(&common, meta);
-			let set = SetConfig::new(set_selector, main);
+			let set = SetConfig::new(main, set_selector);
 			let path = MerklePathConfig::new(poseidon, set);
 
 			TestConfig { common, path }

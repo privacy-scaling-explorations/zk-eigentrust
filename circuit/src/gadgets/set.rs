@@ -100,8 +100,8 @@ pub struct SetConfig {
 
 impl SetConfig {
 	/// Constructs a new config given the selectors
-	pub fn new(set_selector: Selector, main: MainConfig) -> Self {
-		Self { set_selector, main }
+	pub fn new(main: MainConfig, set_selector: Selector) -> Self {
+		Self { main, set_selector }
 	}
 }
 
@@ -196,7 +196,7 @@ mod test {
 			let main = MainConfig::new(MainChip::configure(&common, meta));
 
 			let set_selector = SetChip::configure(&common, meta);
-			let set = SetConfig::new(set_selector, main);
+			let set = SetConfig::new(main, set_selector);
 
 			TestConfig { common, set }
 		}
