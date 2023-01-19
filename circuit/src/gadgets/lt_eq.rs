@@ -90,17 +90,17 @@ impl<F: FieldExt> Chip<F> for NShiftedChip<F> {
 #[derive(Clone, Debug)]
 /// Selectors for LessEqualChipset
 pub struct LessEqualConfig {
+	main: MainConfig,
 	bits_2_num_selector: Selector,
 	n_shifted_selector: Selector,
-	main: MainConfig,
 }
 
 impl LessEqualConfig {
 	/// Constructs new config
 	pub fn new(
-		bits_2_num_selector: Selector, n_shifted_selector: Selector, main: MainConfig,
+		main: MainConfig, bits_2_num_selector: Selector, n_shifted_selector: Selector,
 	) -> Self {
-		Self { bits_2_num_selector, n_shifted_selector, main }
+		Self { main, bits_2_num_selector, n_shifted_selector }
 	}
 }
 
@@ -220,7 +220,7 @@ mod test {
 
 			let b2n_selector = Bits2NumChip::configure(&common, meta);
 			let ns_selector = NShiftedChip::configure(&common, meta);
-			let lt_eq = LessEqualConfig::new(b2n_selector, ns_selector, main);
+			let lt_eq = LessEqualConfig::new(main, b2n_selector, ns_selector);
 
 			TestConfig { common, lt_eq }
 		}

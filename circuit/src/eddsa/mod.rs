@@ -288,7 +288,7 @@ mod test {
 
 			let bits2num_selector = Bits2NumChip::configure(&common, meta);
 			let n_shifted_selector = NShiftedChip::configure(&common, meta);
-			let lt_eq = LessEqualConfig::new(bits2num_selector, n_shifted_selector, main);
+			let lt_eq = LessEqualConfig::new(main, bits2num_selector, n_shifted_selector);
 
 			let scalar_mul_selector = ScalarMulChip::<_, BabyJubJub>::configure(&common, meta);
 			let strict_scalar_mul =

@@ -207,7 +207,7 @@ impl<
 
 		let bits2num_selector = Bits2NumChip::configure(&common, meta);
 		let n_shifted_selector = NShiftedChip::configure(&common, meta);
-		let lt_eq = LessEqualConfig::new(bits2num_selector, n_shifted_selector, main.clone());
+		let lt_eq = LessEqualConfig::new(main.clone(), bits2num_selector, n_shifted_selector);
 
 		let scalar_mul_selector = ScalarMulChip::<_, BabyJubJub>::configure(&common, meta);
 		let strict_scalar_mul = StrictScalarMulConfig::new(bits2num_selector, scalar_mul_selector);
@@ -223,7 +223,7 @@ impl<
 			affine_selector,
 		);
 
-		EigenTrustConfig { common, eddsa, sponge, poseidon, main }
+		EigenTrustConfig { common, main, eddsa, sponge, poseidon }
 	}
 
 	fn synthesize(
