@@ -342,7 +342,7 @@ mod test {
 	use crate::{
 		params::{hex_to_field, poseidon_bn254_5x5::Params},
 		utils::{generate_params, prove_and_verify},
-		CommonChip,
+		CommonConfig,
 	};
 	use halo2::{
 		circuit::{Layouter, SimpleFloorPlanner},
@@ -380,7 +380,7 @@ mod test {
 		}
 
 		fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
-			let common = CommonChip::configure(meta);
+			let common = CommonConfig::new(meta);
 			let fr_selector = FrChip::configure(&common, meta);
 			let pr_selector = PrChip::configure(&common, meta);
 			let poseidon = PoseidonConfig::new(fr_selector, pr_selector);
