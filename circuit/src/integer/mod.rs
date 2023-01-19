@@ -127,7 +127,6 @@ where
 		meta.create_gate("reduce", |v_cells| {
 			let s = v_cells.query_selector(selector);
 			let mut t_exp = [(); NUM_LIMBS].map(|_| None);
-			let reduce_q_exp = v_cells.query_advice(common.advice[NUM_LIMBS], Rotation::next());
 			let mut limbs_exp = [(); NUM_LIMBS].map(|_| None);
 			let mut residues_exp = Vec::new();
 			let mut result_exp = [(); NUM_LIMBS].map(|_| None);
@@ -140,6 +139,8 @@ where
 			for i in 0..NUM_LIMBS / 2 {
 				residues_exp.push(v_cells.query_advice(common.advice[i], Rotation::next()));
 			}
+			let reduce_q_exp = v_cells.query_advice(common.advice[NUM_LIMBS], Rotation::next());
+
 			let t_exp = t_exp.map(|x| x.unwrap());
 			let limbs_exp = limbs_exp.map(|x| x.unwrap());
 			let result_exp = result_exp.map(|x| x.unwrap());
@@ -223,7 +224,6 @@ where
 		meta.create_gate("add", |v_cells| {
 			let s = v_cells.query_selector(selector);
 			let mut t_exp = [(); NUM_LIMBS].map(|_| None);
-			let _add_q_exp = v_cells.query_advice(common.advice[NUM_LIMBS], Rotation::next());
 			let mut x_limbs_exp = [(); NUM_LIMBS].map(|_| None);
 			let mut y_limbs_exp = [(); NUM_LIMBS].map(|_| None);
 			let mut residues_exp = Vec::new();
@@ -239,6 +239,8 @@ where
 			for i in 0..NUM_LIMBS / 2 {
 				residues_exp.push(v_cells.query_advice(common.advice[i], Rotation::next()));
 			}
+			let _add_q_exp = v_cells.query_advice(common.advice[NUM_LIMBS], Rotation::next());
+
 			let t_exp = t_exp.map(|x| x.unwrap());
 			let x_limbs_exp = x_limbs_exp.map(|x| x.unwrap());
 			let y_limbs_exp = y_limbs_exp.map(|x| x.unwrap());
@@ -328,7 +330,6 @@ where
 		meta.create_gate("sub", |v_cells| {
 			let s = v_cells.query_selector(selector);
 			let mut t_exp = [(); NUM_LIMBS].map(|_| None);
-			let sub_q_exp = v_cells.query_advice(common.advice[NUM_LIMBS], Rotation::next());
 			let mut x_limbs_exp = [(); NUM_LIMBS].map(|_| None);
 			let mut y_limbs_exp = [(); NUM_LIMBS].map(|_| None);
 			let mut residues_exp = Vec::new();
@@ -344,6 +345,8 @@ where
 			for i in 0..NUM_LIMBS / 2 {
 				residues_exp.push(v_cells.query_advice(common.advice[i], Rotation::next()));
 			}
+			let sub_q_exp = v_cells.query_advice(common.advice[NUM_LIMBS], Rotation::next());
+
 			let t_exp = t_exp.map(|x| x.unwrap());
 			let x_limbs_exp = x_limbs_exp.map(|x| x.unwrap());
 			let y_limbs_exp = y_limbs_exp.map(|x| x.unwrap());
@@ -639,7 +642,7 @@ mod test {
 	use super::{native::Integer, rns::Bn256_4_68, *};
 	use crate::{
 		utils::{generate_params, prove_and_verify},
-		CommonChip,
+		CommonConfig,
 	};
 	use halo2::{
 		circuit::{SimpleFloorPlanner, Value},
@@ -705,7 +708,7 @@ mod test {
 		}
 
 		fn configure(meta: &mut ConstraintSystem<N>) -> TestConfig<NUM_LIMBS> {
-			let common = CommonChip::configure(meta);
+			let common = CommonConfig::new(meta);
 			let reduce_selector =
 				IntegerReduceChip::<W, N, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
 			let add_selector =
