@@ -142,7 +142,6 @@ where
 			layouter.namespace(|| "numerator"),
 		)?;
 
-
 		// denominator = q.x.sub(&p.x);
 		let denominator_chip = IntegerSubChip::new(q_x_reduced.clone(), p_x_reduced.clone());
 		let denominator = denominator_chip.synthesize(
@@ -1071,7 +1070,7 @@ mod test {
 		let a = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_big);
 		let b = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(b_big);
 		let c = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(c_big);
-		let p_point = EcPoint::<Fq, Fr, 4, 68, Bn256_4_68>::new(a.clone(), b.clone());
+		let p_point = EcPoint::<Fq, Fr, 4, 68, Bn256_4_68>::new(a.clone(), c.clone());
 		let q_point = EcPoint::<Fq, Fr, 4, 68, Bn256_4_68>::new(b.clone(), c.clone());
 
 		let res = p_point.ladder(&q_point);
