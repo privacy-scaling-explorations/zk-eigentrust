@@ -117,7 +117,7 @@ mod test {
 	use super::*;
 	use crate::{
 		utils::{generate_params, prove_and_verify},
-		CommonChip,
+		CommonConfig,
 	};
 	use halo2::{
 		circuit::SimpleFloorPlanner,
@@ -153,7 +153,7 @@ mod test {
 		}
 
 		fn configure(meta: &mut ConstraintSystem<Fr>) -> TestConfig {
-			let common = CommonChip::<Fr>::configure(meta);
+			let common = CommonConfig::new(meta);
 			let bits2num_selector = Bits2NumChip::configure(&common, meta);
 
 			TestConfig { common, bits2num_selector }
