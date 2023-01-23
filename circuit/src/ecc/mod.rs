@@ -464,34 +464,32 @@ where
 			layouter.namespace(|| "denominator"),
 		)?;
 
-		// lambda_zero = numerator.result.div(&denominator.result)
-		let lambda_zero_chip = IntegerDivChip::new(numerator, denominator);
-		let lambda_zero = lambda_zero_chip.synthesize(
+		// m_zero = numerator.result.div(&denominator.result)
+		let m_zero_chip = IntegerDivChip::new(numerator, denominator);
+		let m_zero = m_zero_chip.synthesize(
 			&common,
 			&config.integer_div_selector,
-			layouter.namespace(|| "lambda_zero"),
+			layouter.namespace(|| "m_zero"),
 		)?;
 
-		// lambda_zero_squared = lambda_zero.result.mul(&lambda_zero.result)
-		let lambda_zero_squared_chip =
-			IntegerMulChip::new(lambda_zero.clone(), lambda_zero.clone());
-		let lambda_zero_squared = lambda_zero_squared_chip.synthesize(
+		// m_zero_squared = m_zero.result.mul(&m_zero.result)
+		let m_zero_squared_chip = IntegerMulChip::new(m_zero.clone(), m_zero.clone());
+		let m_zero_squared = m_zero_squared_chip.synthesize(
 			&common,
 			&config.integer_mul_selector,
-			layouter.namespace(|| "lambda_zero_squared"),
+			layouter.namespace(|| "m_zero_squared"),
 		)?;
 
-		// lambda_zero_squared_minus_p_x = lambda_zero_squared.result.sub(&p.x)
-		let lambda_zero_squared_minus_p_x_chip =
-			IntegerSubChip::new(lambda_zero_squared, self.p.x.clone());
-		let lambda_zero_squared_minus_p_x = lambda_zero_squared_minus_p_x_chip.synthesize(
+		// m_zero_squared_minus_p_x = m_zero_squared.result.sub(&p.x)
+		let m_zero_squared_minus_p_x_chip = IntegerSubChip::new(m_zero_squared, self.p.x.clone());
+		let m_zero_squared_minus_p_x = m_zero_squared_minus_p_x_chip.synthesize(
 			&common,
 			&config.integer_sub_selector,
-			layouter.namespace(|| "lambda_zero_squared_minus_p_x"),
+			layouter.namespace(|| "m_zero_squared_minus_p_x"),
 		)?;
 
-		// x_three = lambda_zero_squared_minus_p_x.result.sub(&q.x)
-		let x_three_chip = IntegerSubChip::new(lambda_zero_squared_minus_p_x, self.q.x.clone());
+		// x_three = m_zero_squared_minus_p_x.result.sub(&q.x)
+		let x_three_chip = IntegerSubChip::new(m_zero_squared_minus_p_x, self.q.x.clone());
 		let x_three = x_three_chip.synthesize(
 			&common,
 			&config.integer_sub_selector,
@@ -506,49 +504,49 @@ where
 			layouter.namespace(|| "double_p_y"),
 		)?;
 
-		// denom_lambda_one = x_three.result.sub(&double_p_y.result);
-		let denom_lambda_one_chip = IntegerSubChip::new(x_three.clone(), self.p.x.clone());
-		let denom_lambda_one = denom_lambda_one_chip.synthesize(
+		// denom_m_one = x_three.result.sub(&double_p_y.result);
+		let denom_m_one_chip = IntegerSubChip::new(x_three.clone(), self.p.x.clone());
+		let denom_m_one = denom_m_one_chip.synthesize(
 			&common,
 			&config.integer_sub_selector,
-			layouter.namespace(|| "denom_lambda_one"),
+			layouter.namespace(|| "denom_m_one"),
 		)?;
 
-		// div_res = double_p_y.result.div(&denom_lambda_one)
-		let div_res_chip = IntegerDivChip::new(double_p_y, denom_lambda_one);
+		// div_res = double_p_y.result.div(&denom_m_one)
+		let div_res_chip = IntegerDivChip::new(double_p_y, denom_m_one);
 		let div_res = div_res_chip.synthesize(
 			&common,
 			&config.integer_div_selector,
 			layouter.namespace(|| "div_res"),
 		)?;
 
-		// lambda_one = lambda_zero.result.add(&div_res.result);
-		let lambda_one_chip = IntegerAddChip::new(lambda_zero, div_res);
-		let lambda_one = lambda_one_chip.synthesize(
+		// m_one = m_zero.result.add(&div_res.result);
+		let m_one_chip = IntegerAddChip::new(m_zero, div_res);
+		let m_one = m_one_chip.synthesize(
 			&common,
 			&config.integer_add_selector,
-			layouter.namespace(|| "lambda_one"),
+			layouter.namespace(|| "m_one"),
 		)?;
 
-		// lambda_one_squared = lambda_one.result.mul(&lambda_one.result);
-		let lambda_one_squared_chip = IntegerMulChip::new(lambda_one.clone(), lambda_one.clone());
-		let lambda_one_squared = lambda_one_squared_chip.synthesize(
+		// m_one_squared = m_one.result.mul(&m_one.result);
+		let m_one_squared_chip = IntegerMulChip::new(m_one.clone(), m_one.clone());
+		let m_one_squared = m_one_squared_chip.synthesize(
 			&common,
 			&config.integer_mul_selector,
-			layouter.namespace(|| "lambda_one_squared"),
+			layouter.namespace(|| "m_one_squared"),
 		)?;
 
-		// lambda_one_squared_minus_r_x =
-		// lambda_one_squared.result.sub(&x_three.result);
-		let lambda_one_squared_minus_r_x_chip = IntegerSubChip::new(lambda_one_squared, x_three);
-		let lambda_one_squared_minus_r_x = lambda_one_squared_minus_r_x_chip.synthesize(
+		// m_one_squared_minus_r_x =
+		// m_one_squared.result.sub(&x_three.result);
+		let m_one_squared_minus_r_x_chip = IntegerSubChip::new(m_one_squared, x_three);
+		let m_one_squared_minus_r_x = m_one_squared_minus_r_x_chip.synthesize(
 			&common,
 			&config.integer_sub_selector,
-			layouter.namespace(|| "lambda_one_squared_minus_r_x"),
+			layouter.namespace(|| "m_one_squared_minus_r_x"),
 		)?;
 
-		// r_x = lambda_one_squared_minus_r_x.result.sub(&p.x);
-		let r_x_chip = IntegerSubChip::new(lambda_one_squared_minus_r_x, self.p.x.clone());
+		// r_x = m_one_squared_minus_r_x.result.sub(&p.x);
+		let r_x_chip = IntegerSubChip::new(m_one_squared_minus_r_x, self.p.x.clone());
 		let r_x = r_x_chip.synthesize(
 			&common,
 			&config.integer_sub_selector,
@@ -563,17 +561,17 @@ where
 			layouter.namespace(|| "r_x_minus_p_x"),
 		)?;
 
-		// lambda_one_times_r_x_minus_p_x =
-		// lambda_one.result.mul(&r_x_minus_p_x.result);
-		let lambda_one_times_r_x_minus_p_x_chip = IntegerMulChip::new(lambda_one, r_x_minus_p_x);
-		let lambda_one_times_r_x_minus_p_x = lambda_one_times_r_x_minus_p_x_chip.synthesize(
+		// m_one_times_r_x_minus_p_x =
+		// m_one.result.mul(&r_x_minus_p_x.result);
+		let m_one_times_r_x_minus_p_x_chip = IntegerMulChip::new(m_one, r_x_minus_p_x);
+		let m_one_times_r_x_minus_p_x = m_one_times_r_x_minus_p_x_chip.synthesize(
 			&common,
 			&config.integer_mul_selector,
-			layouter.namespace(|| "lambda_one_times_r_x_minus_p_x"),
+			layouter.namespace(|| "m_one_times_r_x_minus_p_x"),
 		)?;
 
-		// r_y = lambda_one_times_r_x_minus_p_x.result.sub(&p.y);
-		let r_y_chip = IntegerSubChip::new(lambda_one_times_r_x_minus_p_x, self.p.y);
+		// r_y = m_one_times_r_x_minus_p_x.result.sub(&p.y);
+		let r_y_chip = IntegerSubChip::new(m_one_times_r_x_minus_p_x, self.p.y);
 		let r_y = r_y_chip.synthesize(
 			&common,
 			&config.integer_sub_selector,
@@ -724,24 +722,25 @@ mod test {
 	use crate::{
 		ecc::native::EcPoint,
 		integer::{
-			native::{Integer, ReductionWitness},
-			rns::{Bn256_4_68, RnsParams},
-			AssignedInteger, IntegerAddChip, IntegerDivChip, IntegerMulChip, IntegerReduceChip,
-			IntegerSubChip,
+			native::Integer, rns::Bn256_4_68, AssignedInteger, IntegerAddChip, IntegerDivChip,
+			IntegerMulChip, IntegerReduceChip, IntegerSubChip,
 		},
 		Chip, Chipset, CommonConfig, RegionCtx,
 	};
 	use halo2::{
 		circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner, Value},
 		dev::MockProver,
-		halo2curves::{
-			bn256::{Fq, Fr},
-			FieldExt,
-		},
+		halo2curves::bn256::{Fq, Fr},
 		plonk::{Circuit, ConstraintSystem, Error},
 	};
 	use num_bigint::BigUint;
 	use std::str::FromStr;
+
+	type W = Fq;
+	type N = Fr;
+	const NUM_LIMBS: usize = 4;
+	const NUM_BITS: usize = 68;
+	type P = Bn256_4_68;
 
 	#[derive(Clone)]
 	enum Gadgets {
@@ -752,7 +751,7 @@ mod test {
 	}
 
 	#[derive(Clone, Debug)]
-	struct TestConfig<const NUM_LIMBS: usize> {
+	struct TestConfig {
 		common: CommonConfig,
 		ecc_add: EccAddConfig,
 		ecc_double: EccDoubleConfig,
@@ -760,61 +759,33 @@ mod test {
 	}
 
 	#[derive(Clone)]
-	struct TestCircuit<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
-	where
-		P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
-	{
+	struct TestCircuit {
 		p: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
 		q: Option<EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>>,
-		reduction_witnesses_add: Option<[Vec<ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>>; 256]>,
-		reduction_witnesses_double:
-			Option<[Vec<ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>>; 256]>,
 		value: Option<N>,
 		value_bits: Option<[N; 256]>,
 		gadget: Gadgets,
 	}
 
-	impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
-		TestCircuit<W, N, NUM_LIMBS, NUM_BITS, P>
-	where
-		P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
-	{
+	impl TestCircuit {
 		fn new(
 			p: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
-			q: Option<EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>>,
-			reduction_witnesses_add: Option<
-				[Vec<ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>>; 256],
-			>,
-			reduction_witnesses_double: Option<
-				[Vec<ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>>; 256],
-			>,
-			value: Option<N>, value_bits: Option<[N; 256]>, gadget: Gadgets,
+			q: Option<EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>>, value: Option<N>,
+			value_bits: Option<[N; 256]>, gadget: Gadgets,
 		) -> Self {
-			Self {
-				p,
-				q,
-				reduction_witnesses_add,
-				reduction_witnesses_double,
-				value,
-				value_bits,
-				gadget,
-			}
+			Self { p, q, value, value_bits, gadget }
 		}
 	}
 
-	impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P> Circuit<N>
-		for TestCircuit<W, N, NUM_LIMBS, NUM_BITS, P>
-	where
-		P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
-	{
-		type Config = TestConfig<NUM_LIMBS>;
+	impl Circuit<N> for TestCircuit {
+		type Config = TestConfig;
 		type FloorPlanner = SimpleFloorPlanner;
 
 		fn without_witnesses(&self) -> Self {
 			self.clone()
 		}
 
-		fn configure(meta: &mut ConstraintSystem<N>) -> TestConfig<NUM_LIMBS> {
+		fn configure(meta: &mut ConstraintSystem<N>) -> TestConfig {
 			let common = CommonConfig::new(meta);
 
 			let integer_reduce_selector =
@@ -847,7 +818,7 @@ mod test {
 		}
 
 		fn synthesize(
-			&self, config: TestConfig<NUM_LIMBS>, mut layouter: impl Layouter<N>,
+			&self, config: TestConfig, mut layouter: impl Layouter<N>,
 		) -> Result<(), Error> {
 			/*
 			let value = layouter.assign_region(
@@ -1008,22 +979,14 @@ mod test {
 		let a_big = BigUint::from_str("23423423525345345").unwrap();
 		let b_big = BigUint::from_str("65464575675").unwrap();
 		let c_big = BigUint::from_str("23423423423425345647567567568").unwrap();
-		let a = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_big);
-		let b = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(b_big);
-		let c = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(c_big);
-		let p_point = EcPoint::<Fq, Fr, 4, 68, Bn256_4_68>::new(a.clone(), b.clone());
-		let q_point = EcPoint::<Fq, Fr, 4, 68, Bn256_4_68>::new(b.clone(), c.clone());
+		let a = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(a_big);
+		let b = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(b_big);
+		let c = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(c_big);
+		let p_point = EcPoint::<W, N, NUM_LIMBS, NUM_BITS, P>::new(a.clone(), b.clone());
+		let q_point = EcPoint::<W, N, NUM_LIMBS, NUM_BITS, P>::new(b.clone(), c.clone());
 
 		let res = p_point.add(&q_point);
-		let test_chip = TestCircuit::<Fq, Fr, 4, 68, Bn256_4_68>::new(
-			p_point,
-			Some(q_point),
-			None,
-			None,
-			None,
-			None,
-			Gadgets::Add,
-		);
+		let test_chip = TestCircuit::new(p_point, Some(q_point), None, None, Gadgets::Add);
 
 		let k = 7;
 		let mut p_ins = Vec::new();
@@ -1038,20 +1001,12 @@ mod test {
 		// Testing double.
 		let a_big = BigUint::from_str("23423423525345345").unwrap();
 		let b_big = BigUint::from_str("65464575675").unwrap();
-		let a = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_big);
-		let b = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(b_big);
-		let p_point = EcPoint::<Fq, Fr, 4, 68, Bn256_4_68>::new(a.clone(), b.clone());
+		let a = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(a_big);
+		let b = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(b_big);
+		let p_point = EcPoint::<W, N, NUM_LIMBS, NUM_BITS, P>::new(a.clone(), b.clone());
 
 		let res = p_point.double();
-		let test_chip = TestCircuit::<Fq, Fr, 4, 68, Bn256_4_68>::new(
-			p_point,
-			None,
-			None,
-			None,
-			None,
-			None,
-			Gadgets::Double,
-		);
+		let test_chip = TestCircuit::new(p_point, None, None, None, Gadgets::Double);
 
 		let k = 7;
 		let mut p_ins = Vec::new();
@@ -1067,22 +1022,14 @@ mod test {
 		let a_big = BigUint::from_str("23423423525345345").unwrap();
 		let b_big = BigUint::from_str("65464575675").unwrap();
 		let c_big = BigUint::from_str("23423423423425345647567567568").unwrap();
-		let a = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_big);
-		let b = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(b_big);
-		let c = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(c_big);
-		let p_point = EcPoint::<Fq, Fr, 4, 68, Bn256_4_68>::new(a.clone(), c.clone());
-		let q_point = EcPoint::<Fq, Fr, 4, 68, Bn256_4_68>::new(b.clone(), c.clone());
+		let a = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(a_big);
+		let b = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(b_big);
+		let c = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(c_big);
+		let p_point = EcPoint::<W, N, NUM_LIMBS, NUM_BITS, P>::new(a.clone(), c.clone());
+		let q_point = EcPoint::<W, N, NUM_LIMBS, NUM_BITS, P>::new(b.clone(), c.clone());
 
 		let res = p_point.ladder(&q_point);
-		let test_chip = TestCircuit::<Fq, Fr, 4, 68, Bn256_4_68>::new(
-			p_point,
-			Some(q_point),
-			None,
-			None,
-			None,
-			None,
-			Gadgets::Ladder,
-		);
+		let test_chip = TestCircuit::new(p_point, Some(q_point), None, None, Gadgets::Ladder);
 
 		let k = 7;
 		let mut p_ins = Vec::new();

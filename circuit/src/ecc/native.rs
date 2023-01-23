@@ -13,10 +13,7 @@
 // r_x = m_1 * m_1 - p_x - f
 // r_y = m_1 * (r_x - p_x) - p_y
 
-use crate::integer::{
-	native::{Integer, ReductionWitness},
-	rns::RnsParams,
-};
+use crate::integer::{native::Integer, rns::RnsParams};
 use halo2::arithmetic::FieldExt;
 
 /// Structure for the EcPoint
@@ -29,8 +26,6 @@ where
 	pub x: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
 	/// Y coordinate of the EcPoint
 	pub y: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
-	/// Reduction Witnesses for the EcPoint operations
-	pub reduction_witnesses: Vec<ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>>,
 }
 
 impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
@@ -42,7 +37,7 @@ where
 	pub fn new(
 		x: Integer<W, N, NUM_LIMBS, NUM_BITS, P>, y: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
 	) -> Self {
-		Self { x, y, reduction_witnesses: Vec::new() }
+		Self { x, y }
 	}
 
 	/// Create a new object with x = 0 and y = 1
@@ -70,19 +65,7 @@ where
 		let m_times_r_x_minus_p_x = m.result.mul(&r_x_minus_p_x.result);
 		let r_y = m_times_r_x_minus_p_x.result.sub(&self.y);
 
-		let reduction_witnesses = vec![
-			numerator,
-			denominator,
-			m,
-			m_squared,
-			m_squared_minus_p_x,
-			r_x.clone(),
-			r_x_minus_p_x,
-			m_times_r_x_minus_p_x,
-			r_y.clone(),
-		];
-
-		Self { x: r_x.result, y: r_y.result, reduction_witnesses }
+		Self { x: r_x.result, y: r_y.result }
 	}
 
 	/// Double the given point
@@ -104,21 +87,7 @@ where
 		let m_times_p_x_minus_r_x = m.result.mul(&p_x_minus_r_x.result);
 		let r_y = m_times_p_x_minus_r_x.result.sub(&self.y);
 
-		let reduction_witnesses = vec![
-			double_p_y,
-			p_x_square,
-			p_x_square_times_two,
-			p_x_square_times_three,
-			m,
-			double_p_x,
-			m_squared,
-			r_x.clone(),
-			p_x_minus_r_x,
-			m_times_p_x_minus_r_x,
-			r_y.clone(),
-		];
-
-		Self { x: r_x.result, y: r_y.result, reduction_witnesses }
+		Self { x: r_x.result, y: r_y.result }
 	}
 
 	/// Given 2 `AssignedPoint` `P` and `Q` efficiently computes `2*P + Q`
@@ -127,66 +96,39 @@ where
 		// P is to_double (x_1, y_1)
 		// Q is to_add (x_2, y_2)
 
-		// lambda_0 = (y_2 - y_1) / (x_2 - x_1)
+		// m_0 = (y_2 - y_1) / (x_2 - x_1)
 		let numerator = other.y.sub(&self.y);
 		let denominator = other.x.sub(&self.x);
-		let lambda_zero = numerator.result.div(&denominator.result);
+		let m_zero = numerator.result.div(&denominator.result);
 
-		// x_3 = lambda_0 * lambda_0 - x_1 - x_2
-		let lambda_zero_squared = lambda_zero.result.mul(&lambda_zero.result);
-		let lambda_zero_squared_minus_p_x = lambda_zero_squared.result.sub(&self.x);
-		let x_three = lambda_zero_squared_minus_p_x.result.sub(&other.x);
+		// x_3 = m_0 * m_0 - x_1 - x_2
+		let m_zero_squared = m_zero.result.mul(&m_zero.result);
+		let m_zero_squared_minus_p_x = m_zero_squared.result.sub(&self.x);
+		let x_three = m_zero_squared_minus_p_x.result.sub(&other.x);
 
-		// lambda_1 = lambda_0 + 2 * y_1 / (x_3 - x_1)
+		// m_1 = m_0 + 2 * y_1 / (x_3 - x_1)
 		let double_p_y = self.y.add(&self.y);
-		let denom_lambda_one = x_three.result.sub(&self.x);
-		let div_res = double_p_y.result.div(&denom_lambda_one.result);
-		let lambda_one = lambda_zero.result.add(&div_res.result);
+		let denom_m_one = x_three.result.sub(&self.x);
+		let div_res = double_p_y.result.div(&denom_m_one.result);
+		let m_one = m_zero.result.add(&div_res.result);
 
-		// x_4 = lambda_1 * lambda_1 - x_1 - x_3
-		let lambda_one_squared = lambda_one.result.mul(&lambda_one.result);
-		let lambda_one_squared_minus_r_x = lambda_one_squared.result.sub(&x_three.result);
-		let r_x = lambda_one_squared_minus_r_x.result.sub(&self.x);
+		// x_4 = m_1 * m_1 - x_1 - x_3
+		let m_one_squared = m_one.result.mul(&m_one.result);
+		let m_one_squared_minus_r_x = m_one_squared.result.sub(&x_three.result);
+		let r_x = m_one_squared_minus_r_x.result.sub(&self.x);
 
-		// y_4 = lambda_1 * (x_4 - x_1) - y_1
+		// y_4 = m_1 * (x_4 - x_1) - y_1
 		let r_x_minus_p_x = r_x.result.sub(&self.x);
-		let lambda_one_times_r_x_minus_p_x = lambda_one.result.mul(&r_x_minus_p_x.result);
-		let r_y = lambda_one_times_r_x_minus_p_x.result.sub(&self.y);
+		let m_one_times_r_x_minus_p_x = m_one.result.mul(&r_x_minus_p_x.result);
+		let r_y = m_one_times_r_x_minus_p_x.result.sub(&self.y);
 
-		let reduction_witnesses = vec![
-			numerator,
-			denominator,
-			lambda_zero,
-			lambda_zero_squared,
-			lambda_zero_squared_minus_p_x,
-			x_three,
-			double_p_y,
-			denom_lambda_one,
-			div_res,
-			lambda_one,
-			lambda_one_squared,
-			lambda_one_squared_minus_r_x,
-			r_x.clone(),
-			r_x_minus_p_x,
-			lambda_one_times_r_x_minus_p_x,
-			r_y.clone(),
-		];
-
-		Self { x: r_x.result, y: r_y.result, reduction_witnesses }
+		Self { x: r_x.result, y: r_y.result }
 	}
 
 	/// Scalar multiplication for given point
-	pub fn mul_scalar(
-		&self, le_bytes: [u8; 32],
-	) -> (
-		Self,
-		[Vec<ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>>; 256],
-		[Vec<ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>>; 256],
-	) {
+	pub fn mul_scalar(&self, le_bytes: [u8; 32]) -> Self {
 		let mut r = Self::zero();
 		let mut exp: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P> = self.clone();
-		let mut reduction_add = [(); 256].map(|_| r.reduction_witnesses.clone());
-		let mut reduction_double = [(); 256].map(|_| r.reduction_witnesses.clone());
 
 		// Big Endian vs Little Endian
 		let bits = le_bytes.map(|byte| {
@@ -197,7 +139,6 @@ where
 			byte_bits
 		});
 		let mut flag = true;
-		let mut i = 0;
 		// Double and Add operation
 		for bit in bits.flatten() {
 			if *bit {
@@ -213,12 +154,9 @@ where
 					r = r.add(&exp.clone());
 				}
 			}
-			reduction_add[i] = r.reduction_witnesses.clone();
 			exp = exp.double();
-			reduction_double[i] = exp.reduction_witnesses.clone();
-			i += 1;
 		}
-		(r, reduction_add, reduction_double)
+		r
 	}
 
 	/// Check if two points are equal
@@ -331,7 +269,7 @@ mod test {
 		let a_w = EcPoint::new(a_x_w, a_y_w);
 		let c_w = a_w.mul_scalar(scalar.to_bytes());
 
-		assert_eq!(c.x, big_to_fe(c_w.0.x.value()));
-		assert_eq!(c.y, big_to_fe(c_w.0.y.value()));
+		assert_eq!(c.x, big_to_fe(c_w.x.value()));
+		assert_eq!(c.y, big_to_fe(c_w.y.value()));
 	}
 }

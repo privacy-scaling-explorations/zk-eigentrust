@@ -652,6 +652,12 @@ mod test {
 	use num_bigint::BigUint;
 	use std::str::FromStr;
 
+	type W = Fq;
+	type N = Fr;
+	const NUM_LIMBS: usize = 4;
+	const NUM_BITS: usize = 68;
+	type P = Bn256_4_68;
+
 	#[derive(Clone)]
 	enum Gadgets {
 		Reduce,
@@ -662,7 +668,7 @@ mod test {
 	}
 
 	#[derive(Clone, Debug)]
-	struct TestConfig<const NUM_LIMBS: usize> {
+	struct TestConfig {
 		common: CommonConfig,
 		reduce_selector: Selector,
 		add_selector: Selector,
@@ -672,20 +678,13 @@ mod test {
 	}
 
 	#[derive(Clone)]
-	struct TestCircuit<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
-	where
-		P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
-	{
+	struct TestCircuit {
 		x: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
 		y: Option<Integer<W, N, NUM_LIMBS, NUM_BITS, P>>,
 		gadget: Gadgets,
 	}
 
-	impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
-		TestCircuit<W, N, NUM_LIMBS, NUM_BITS, P>
-	where
-		P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
-	{
+	impl TestCircuit {
 		fn new(
 			x: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
 			y: Option<Integer<W, N, NUM_LIMBS, NUM_BITS, P>>, gadget: Gadgets,
@@ -694,19 +693,15 @@ mod test {
 		}
 	}
 
-	impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P> Circuit<N>
-		for TestCircuit<W, N, NUM_LIMBS, NUM_BITS, P>
-	where
-		P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
-	{
-		type Config = TestConfig<NUM_LIMBS>;
+	impl Circuit<N> for TestCircuit {
+		type Config = TestConfig;
 		type FloorPlanner = SimpleFloorPlanner;
 
 		fn without_witnesses(&self) -> Self {
 			self.clone()
 		}
 
-		fn configure(meta: &mut ConstraintSystem<N>) -> TestConfig<NUM_LIMBS> {
+		fn configure(meta: &mut ConstraintSystem<N>) -> TestConfig {
 			let common = CommonConfig::new(meta);
 			let reduce_selector =
 				IntegerReduceChip::<W, N, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
@@ -730,7 +725,7 @@ mod test {
 		}
 
 		fn synthesize(
-			&self, config: TestConfig<NUM_LIMBS>, mut layouter: impl Layouter<N>,
+			&self, config: TestConfig, mut layouter: impl Layouter<N>,
 		) -> Result<(), Error> {
 			let (x_limbs_assigned, y_limbs_assigned) = layouter.assign_region(
 				|| "temp",
@@ -852,10 +847,9 @@ mod test {
 			"2188824287183927522224640574525727508869631115729782366268903789426208582",
 		)
 		.unwrap();
-		let a = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_big);
+		let a = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(a_big);
 		let res = a.reduce();
-		let test_chip =
-			TestCircuit::<Fq, Fr, 4, 68, Bn256_4_68>::new(a.clone(), None, Gadgets::Reduce);
+		let test_chip = TestCircuit::new(a.clone(), None, Gadgets::Reduce);
 
 		let k = 5;
 		let p_ins = res.result.limbs.to_vec();
@@ -870,10 +864,9 @@ mod test {
 			"2188824287183927522224640574525727508869631115729782366268903789426208584192938236132395034328372853987091237643",
 		)
 		.unwrap();
-		let a = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_big);
+		let a = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(a_big);
 		let res = a.reduce();
-		let test_chip =
-			TestCircuit::<Fq, Fr, 4, 68, Bn256_4_68>::new(a.clone(), None, Gadgets::Reduce);
+		let test_chip = TestCircuit::new(a.clone(), None, Gadgets::Reduce);
 
 		let k = 5;
 		let p_ins = res.result.limbs.to_vec();
@@ -889,10 +882,10 @@ mod test {
 		)
 		.unwrap();
 		let b_big = BigUint::from_str("3534512312312312314235346475676435").unwrap();
-		let a = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_big);
-		let b = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(b_big);
+		let a = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(a_big);
+		let b = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(b_big);
 		let res = a.add(&b);
-		let test_chip = TestCircuit::<Fq, Fr, 4, 68, Bn256_4_68>::new(a, Some(b), Gadgets::Add);
+		let test_chip = TestCircuit::new(a, Some(b), Gadgets::Add);
 
 		let k = 5;
 		let p_ins = res.result.limbs.to_vec();
@@ -908,10 +901,10 @@ mod test {
 		)
 		.unwrap();
 		let b_big = BigUint::from_str("121231231231231231231231231233").unwrap();
-		let a = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_big);
-		let b = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(b_big);
+		let a = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(a_big);
+		let b = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(b_big);
 		let res = a.mul(&b);
-		let test_chip = TestCircuit::<Fq, Fr, 4, 68, Bn256_4_68>::new(a, Some(b), Gadgets::Mul);
+		let test_chip = TestCircuit::new(a, Some(b), Gadgets::Mul);
 		let k = 5;
 		let pub_ins = res.result.limbs.to_vec();
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
@@ -952,10 +945,10 @@ mod test {
 		)
 		.unwrap();
 		let b_big = BigUint::from_str("121231231231231231231231231233").unwrap();
-		let a = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_big);
-		let b = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(b_big);
+		let a = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(a_big);
+		let b = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(b_big);
 		let res = a.sub(&b);
-		let test_chip = TestCircuit::<Fq, Fr, 4, 68, Bn256_4_68>::new(a, Some(b), Gadgets::Sub);
+		let test_chip = TestCircuit::new(a, Some(b), Gadgets::Sub);
 		let k = 5;
 		let pub_ins = res.result.limbs.to_vec();
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
@@ -970,10 +963,10 @@ mod test {
 		)
 		.unwrap();
 		let b_big = BigUint::from_str("2").unwrap();
-		let a = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_big);
-		let b = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(b_big);
+		let a = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(a_big);
+		let b = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(b_big);
 		let res = a.div(&b);
-		let test_chip = TestCircuit::<Fq, Fr, 4, 68, Bn256_4_68>::new(a, Some(b), Gadgets::Div);
+		let test_chip = TestCircuit::new(a, Some(b), Gadgets::Div);
 		let k = 5;
 		let pub_ins = res.result.limbs.to_vec();
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
