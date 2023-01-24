@@ -755,7 +755,7 @@ mod test {
 				},
 			)?;
 
-			let mut result = None;
+			let result;
 			match self.gadget {
 				Gadgets::Reduce => {
 					let assigned_integer =

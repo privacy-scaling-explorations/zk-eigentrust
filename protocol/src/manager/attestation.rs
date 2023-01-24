@@ -17,6 +17,69 @@ pub struct AttestationData {
 	scores: Vec<[u8; 32]>,
 }
 
+impl AttestationData {
+	/// Convert the struct into a vector of bytes
+	pub fn to_bytes(self) -> Vec<u8> {
+		let mut bytes = Vec::new();
+		bytes.extend_from_slice(&self.sig_r_x);
+		bytes.extend_from_slice(&self.sig_r_y);
+		bytes.extend_from_slice(&self.sig_s);
+		bytes.extend_from_slice(&self.pk[0]);
+		bytes.extend_from_slice(&self.pk[1]);
+		for i in 0..NUM_NEIGHBOURS {
+			bytes.extend_from_slice(&self.neighbours[i][0]);
+			bytes.extend_from_slice(&self.neighbours[i][1]);
+		}
+		for score in self.scores {
+			bytes.extend_from_slice(&score);
+		}
+		bytes
+	}
+
+	/// Construct the struct from raw bytes
+	pub fn from_bytes(mut bytes: Vec<u8>) -> Self {
+		let bytes = &mut bytes;
+
+		let mut sig_r_x: [u8; 32] = [0; 32];
+		sig_r_x.copy_from_slice(&bytes.drain(..32).as_slice());
+
+		let mut sig_r_y: [u8; 32] = [0; 32];
+		sig_r_y.copy_from_slice(&bytes.drain(..32).as_slice());
+
+		let mut sig_s: [u8; 32] = [0; 32];
+		sig_s.copy_from_slice(&bytes.drain(..32).as_slice());
+
+		let mut pk_x: [u8; 32] = [0; 32];
+		pk_x.copy_from_slice(&bytes.drain(..32).as_slice());
+
+		let mut pk_y: [u8; 32] = [0; 32];
+		pk_y.copy_from_slice(&bytes.drain(..32).as_slice());
+
+		let pk = [pk_x, pk_y];
+
+		let mut neighbours = Vec::new();
+		for i in 0..NUM_NEIGHBOURS {
+			let mut neighbour_x: [u8; 32] = [0; 32];
+			neighbour_x.copy_from_slice(&bytes.drain(..32).as_slice());
+
+			let mut neighbour_y: [u8; 32] = [0; 32];
+			neighbour_y.copy_from_slice(&bytes.drain(..32).as_slice());
+
+			neighbours.push([neighbour_x, neighbour_y]);
+		}
+
+		let mut scores = Vec::new();
+		while !bytes.is_empty() {
+			let mut score: [u8; 32] = [0; 32];
+			score.copy_from_slice(&bytes.drain(..32).as_slice());
+
+			scores.push(score);
+		}
+
+		Self { sig_r_x, sig_r_y, sig_s, pk, neighbours, scores }
+	}
+}
+
 impl From<Attestation> for AttestationData {
 	fn from(att: Attestation) -> Self {
 		let sig_r_x = att.sig.big_r.x.to_bytes();

@@ -7,13 +7,10 @@
 /// Attestation implementation
 pub mod attestation;
 
-use crate::{
-	epoch::Epoch,
-	error::EigenError,
-	utils::{calculate_message_hash, keyset_from_raw},
-};
+use crate::{epoch::Epoch, error::EigenError, utils::keyset_from_raw};
 use attestation::Attestation;
 use eigen_trust_circuit::{
+	calculate_message_hash,
 	circuit::{native, EigenTrust, PoseidonNativeHasher},
 	eddsa::native::{sign, PublicKey},
 	halo2::{
@@ -133,7 +130,7 @@ impl Manager {
 		let scores = vec![vec![score; NUM_NEIGHBOURS]; NUM_NEIGHBOURS];
 
 		const N: usize = NUM_NEIGHBOURS;
-		let messages = calculate_message_hash::<N, N>(pks.clone(), scores.clone());
+		let (_, messages) = calculate_message_hash::<N, N>(pks.clone(), scores.clone());
 
 		for (((sk, pk), msg), scs) in sks.into_iter().zip(pks.clone()).zip(messages).zip(scores) {
 			let sig = sign(&sk, &pk, msg);
@@ -168,7 +165,7 @@ impl Manager {
 		}
 
 		const N: usize = NUM_NEIGHBOURS;
-		let messages = calculate_message_hash::<N, N>(pks.clone(), ops.clone());
+		let (_, messages) = calculate_message_hash::<N, N>(pks.clone(), ops.clone());
 
 		let mut rng = thread_rng();
 		let et = EigenTrust::<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, SCALE>::new(

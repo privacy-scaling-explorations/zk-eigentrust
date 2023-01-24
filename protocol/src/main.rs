@@ -1,67 +1,10 @@
-//! # Eigen Trust
-//!
-//! A library for managing trust in a distributed network with zero-knowledge
-//! features.
-//!
-//! ## Main characteristics:
-//! **Self-policing** - the shared ethics of the user population is defined and
-//! enforced by the peers themselves and not by some central authority.
-//!
-//! **Minimal** - computation, infrastructure, storage, and message complexity
-//! are reduced to a minimum.
-//!
-//! **Incorruptible** - Reputation should be obtained by consistent good
-//! behavior through several transactions. This is enforced for all users, so no
-//! one can cheat the system and obtain a higher reputation. It is also
-//! resistant to malicious collectives.
-//!
-//! ## Implementation
-//! The library is implemented according to the original [Eigen Trust paper](http://ilpubs.stanford.edu:8090/562/1/2002-56.pdf).
-//! It is developed under the Ethereum Foundation grant.
-
 #![feature(async_closure)]
-#![feature(array_zip, array_try_map)]
-#![allow(clippy::tabs_in_doc_comments)]
-#![deny(
-	future_incompatible, nonstandard_style, deprecated, unreachable_code, unreachable_patterns,
-	absolute_paths_not_starting_with_crate, unsafe_code, clippy::panic, clippy::unnecessary_cast,
-	clippy::cast_lossless, clippy::cast_possible_wrap, missing_docs
-)]
-#![warn(trivial_casts)]
-#![forbid(unsafe_code)]
 
-/// The module for epoch-related calculations, like seconds until the next
-/// epoch, current epoch, etc.
-pub mod epoch;
-/// The module where the error enum is defined
-pub mod error;
-/// The module for the manager related functionalities, like:
-/// - Adding/removing neighbors of peers
-/// - Calculating the score of peers
-/// - Keeping track of neighbors scores towards us
-pub mod manager;
-/// Common utility functions used across the crate
-pub mod utils;
-
-use eigen_trust_circuit::{
-	circuit::EigenTrust,
-	halo2::{
-		halo2curves::{bn256::Fr as Scalar, group::ff::PrimeField, FieldExt},
-		poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
-	},
-	utils::{keygen, to_short},
-};
-use epoch::Epoch;
-use error::EigenError;
 use hyper::{
 	body::{aggregate, Buf},
 	server::conn::Http,
 	service::service_fn,
 	Body, Method, Request, Response,
-};
-use manager::{
-	attestation::{Attestation, AttestationData},
-	Manager, Proof, INITIAL_SCORE, NUM_ITER, NUM_NEIGHBOURS, SCALE,
 };
 use once_cell::sync::Lazy;
 use rand::thread_rng;
@@ -77,6 +20,23 @@ use tokio::{
 	net::TcpListener,
 	select,
 	time::{self, Duration},
+};
+
+use eigen_trust_circuit::{
+	circuit::EigenTrust,
+	halo2::{
+		halo2curves::{bn256::Fr as Scalar, group::ff::PrimeField},
+		poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
+	},
+	utils::{keygen, to_short},
+};
+use eigen_trust_protocol::{
+	epoch::Epoch,
+	error::EigenError,
+	manager::{
+		attestation::{Attestation, AttestationData},
+		Manager, Proof, INITIAL_SCORE, NUM_ITER, NUM_NEIGHBOURS, SCALE,
+	},
 };
 
 const BAD_REQUEST: u16 = 400;
@@ -309,10 +269,13 @@ async fn main() -> Result<(), EigenError> {
 #[cfg(test)]
 mod test {
 	use super::*;
-	use crate::utils::{calculate_message_hash, keyset_from_raw};
-	use eigen_trust_circuit::{eddsa::native::sign, halo2::halo2curves::bn256::Fr as Scalar};
+	use eigen_trust_circuit::{
+		calculate_message_hash,
+		eddsa::native::sign,
+		halo2::{arithmetic::FieldExt, halo2curves::bn256::Fr as Scalar},
+	};
+	use eigen_trust_protocol::{manager::FIXED_SET, utils::keyset_from_raw};
 	use hyper::Uri;
-	use manager::FIXED_SET;
 	use serde_json::to_vec;
 
 	#[tokio::test]
@@ -453,7 +416,8 @@ mod test {
 		let (sks, pks) = keyset_from_raw(FIXED_SET);
 		let score = Scalar::from_u128(INITIAL_SCORE / NUM_NEIGHBOURS as u128);
 		let scores = vec![vec![score; NUM_NEIGHBOURS]];
-		let message_hash = calculate_message_hash::<NUM_NEIGHBOURS, 1>(pks.clone(), scores.clone());
+		let (_, message_hash) =
+			calculate_message_hash::<NUM_NEIGHBOURS, 1>(pks.clone(), scores.clone());
 		let sig = sign(&sks[0], &pks[0], message_hash[0]);
 		let attestation = Attestation::new(sig, pks[0].clone(), pks, scores[0].clone());
 		let attestation_data: AttestationData = attestation.into();
@@ -483,7 +447,8 @@ mod test {
 		let (sks, pks) = keyset_from_raw(FIXED_SET);
 		let score = Scalar::from_u128(INITIAL_SCORE / NUM_NEIGHBOURS as u128);
 		let scores = vec![vec![score; NUM_NEIGHBOURS]];
-		let message_hash = calculate_message_hash::<NUM_NEIGHBOURS, 1>(pks.clone(), scores.clone());
+		let (_, message_hash) =
+			calculate_message_hash::<NUM_NEIGHBOURS, 1>(pks.clone(), scores.clone());
 		let sig = sign(&sks[0], &pks[0], message_hash[0]);
 		let attestation = Attestation::new(sig, pks[0].clone(), pks, scores[0].clone());
 		let attestation_data: AttestationData = attestation.into();
