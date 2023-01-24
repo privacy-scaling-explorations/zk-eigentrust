@@ -4,6 +4,7 @@ use ethers::{
 	prelude::{abigen, ContractError},
 	providers::{Http, Provider},
 	signers::{coins_bip39::English, LocalWallet, MnemonicBuilder, Signer, Wallet},
+	types::Address,
 };
 use std::{convert::TryFrom, sync::Arc, time::Duration};
 
@@ -14,7 +15,7 @@ abigen!(
 
 type CntrError = ContractError<SignerMiddleware<Provider<Http>, LocalWallet>>;
 
-pub async fn deploy() -> Result<String, CntrError> {
+pub async fn deploy() -> Result<Address, CntrError> {
 	let client = setup_client();
 
 	// 5. Deploy da contract
@@ -25,7 +26,7 @@ pub async fn deploy() -> Result<String, CntrError> {
 
 	println!("Deployed contract address: {:?}", addr);
 
-	Ok(addr.to_string())
+	Ok(addr)
 }
 
 pub fn setup_client() -> Arc<SignerMiddleware<Provider<Http>, LocalWallet>> {

@@ -17,7 +17,7 @@ use eigen_trust_protocol::manager::{
 	attestation::{Attestation, AttestationData},
 	NUM_NEIGHBOURS,
 };
-use ethers::{abi::Address, solc::utils::read_json_file, types::Bytes};
+use ethers::{abi::Address, providers::Middleware, solc::utils::read_json_file, types::Bytes};
 use serde::{de::DeserializeOwned, Deserialize};
 use std::{io::Error, path::Path, str::FromStr};
 
@@ -39,12 +39,11 @@ pub fn read_csv_file<T: DeserializeOwned>(path: impl AsRef<Path>) -> Result<Vec<
 struct InputData {
 	ops: [u128; NUM_NEIGHBOURS],
 	secret_key: [String; 2],
-	as_address: String,
 }
 
 #[tokio::main]
 async fn main() {
-	// let res = deploy().await.unwrap();
+	let as_address = deploy().await.unwrap();
 	let root = Path::new(&env!("CARGO_MANIFEST_DIR"));
 	let boostrap_path = root.join("../data/bootstrap-nodes.csv");
 	let input_path = root.join("../data/input-data.json");
@@ -89,14 +88,21 @@ async fn main() {
 	let att_data = AttestationData::from(att);
 	let bytes = att_data.to_bytes();
 
-	let as_address = Address::from_str(input_data.as_address.as_str()).unwrap();
 	let client = setup_client();
+	let main_address = client.get_accounts().await.unwrap()[0];
 	let as_contract = AttestationStation::new(as_address, client);
 
-	let as_data = AsData(Address::zero(), pks_hash.to_bytes(), Bytes::from(bytes));
+	let as_data = AsData(
+		Address::zero(),
+		pks_hash.to_bytes(),
+		Bytes::from(bytes.clone()),
+	);
 	let as_data_vec = vec![as_data];
 
 	as_contract.attest(as_data_vec).call().await.unwrap();
+
+	let data = as_contract.events();
+	// println!("{:?}, {:?}", data, Bytes::from(bytes));
 
 	// Part 1
 	// Sumbit to Attestation station
