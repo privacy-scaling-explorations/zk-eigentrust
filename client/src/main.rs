@@ -17,7 +17,13 @@ use eigen_trust_protocol::manager::{
 	attestation::{Attestation, AttestationData},
 	NUM_NEIGHBOURS,
 };
-use ethers::{abi::Address, providers::Middleware, solc::utils::read_json_file, types::Bytes};
+use ethers::{
+	abi::Address,
+	prelude::k256::elliptic_curve::PrimeField,
+	providers::{Middleware, StreamExt},
+	solc::utils::read_json_file,
+	types::Bytes,
+};
 use serde::{de::DeserializeOwned, Deserialize};
 use std::{io::Error, path::Path, str::FromStr};
 
@@ -99,13 +105,19 @@ async fn main() {
 	);
 	let as_data_vec = vec![as_data];
 
-	as_contract.attest(as_data_vec).call().await.unwrap();
+	let _res = as_contract.attest(as_data_vec).send().await.unwrap().await.unwrap();
 
-	let data = as_contract.events();
-	// println!("{:?}, {:?}", data, Bytes::from(bytes));
+	let events = as_contract.events().query().await.unwrap();
+	for event in events {
+		let bytes = event.val.to_vec();
+		let as_data = AttestationData::from_bytes(bytes);
+		let as_obj = Attestation::from(as_data);
 
-	// Part 1
-	// Sumbit to Attestation station
+		let (as_pks_hash, _) =
+			calculate_message_hash::<NUM_NEIGHBOURS, 1>(as_obj.neighbours, vec![as_obj.scores]);
+
+		assert!(as_pks_hash == pks_hash);
+	}
 
 	// Part 2
 	// Collect all the attestations given the list of addresses that posted them

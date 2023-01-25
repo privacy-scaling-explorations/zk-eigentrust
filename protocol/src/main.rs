@@ -193,7 +193,14 @@ async fn handle_request(
 			let mut m = manager.unwrap();
 			let data = data.unwrap();
 			let sig: Attestation = data.clone().into();
-			m.add_attestation(sig);
+			let add_res = m.add_attestation(sig);
+			if add_res.is_err() {
+				let res = Response::builder()
+					.status(BAD_REQUEST)
+					.body(ResponseBody::InvalidRequest.to_string())
+					.unwrap();
+				return Ok(res);
+			}
 			let res = ResponseBody::AttestationAddSuccess;
 			return Ok(Response::new(res.to_string()));
 		},

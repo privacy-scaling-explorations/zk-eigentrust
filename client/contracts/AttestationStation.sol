@@ -18,7 +18,7 @@ contract AttestationStation {
     );
 
     function attest(AttestationData[] memory _attestations) public {
-        for (uint256 i = 0; i < _attestations.length; ++i) {
+        for (uint256 i = 0; i < _attestations.length; i++) {
             AttestationData memory attestation = _attestations[i];
             attestations[msg.sender][attestation.about][attestation.key] = attestation.val;
             emit AttestationCreated(

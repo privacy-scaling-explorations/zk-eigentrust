@@ -58,7 +58,7 @@ impl AttestationData {
 		let pk = [pk_x, pk_y];
 
 		let mut neighbours = Vec::new();
-		for i in 0..NUM_NEIGHBOURS {
+		for _ in 0..NUM_NEIGHBOURS {
 			let mut neighbour_x: [u8; 32] = [0; 32];
 			neighbour_x.copy_from_slice(&bytes.drain(..32).as_slice());
 
@@ -96,10 +96,14 @@ impl From<Attestation> for AttestationData {
 #[derive(Clone)]
 /// Attestation struct holding the signatures of participants
 pub struct Attestation {
-	pub(crate) sig: Signature,
-	pub(crate) pk: PublicKey,
-	pub(crate) neighbours: Vec<PublicKey>,
-	pub(crate) scores: Vec<Scalar>,
+	/// Signature over a message hash
+	pub sig: Signature,
+	/// Public key of the sender
+	pub pk: PublicKey,
+	/// Neighbours of the sender
+	pub neighbours: Vec<PublicKey>,
+	/// Scores for each of the neighbours
+	pub scores: Vec<Scalar>,
 }
 
 impl Attestation {
