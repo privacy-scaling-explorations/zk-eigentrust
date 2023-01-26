@@ -92,7 +92,7 @@ where
 			// 4. step for the TRF
 			// Applying S-box-inverse
 			for i in 0..WIDTH {
-				exprs[i] = P::sbox_inv_expr(exprs[i].clone());
+				// exprs[i] = P::sbox_inv_expr(exprs[i].clone()); // TODO!
 			}
 
 			// 5. step for the TRF
@@ -117,7 +117,7 @@ where
 	}
 
 	fn synthesize(
-		self, common: &crate::CommonConfig, selector: &Selector, layouter: impl Layouter<F>,
+		self, common: &crate::CommonConfig, selector: &Selector, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
 		let full_rounds = P::full_rounds();
 		let round_constants = P::round_constants();
@@ -226,7 +226,7 @@ mod test {
 		}
 
 		fn synthesize(
-			&self, config: Self::Config, layouter: impl Layouter<Fr>,
+			&self, config: Self::Config, mut layouter: impl Layouter<Fr>,
 		) -> Result<(), Error> {
 			let init_state = layouter.assign_region(
 				|| "load_state",
