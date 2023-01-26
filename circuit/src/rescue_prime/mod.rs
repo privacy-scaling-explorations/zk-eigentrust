@@ -57,9 +57,11 @@ where
 			for i in 0..WIDTH {
 				exprs[i] = P::sbox_expr(exprs[i].clone());
 			}
+
 			// 2. step for the TRF
 			// MixLayer step.
 			exprs = P::apply_mds_expr(&exprs);
+
 			// 3. step for the TRF
 			// Apply RoundConstants
 			exprs = P::apply_round_constants_expr(&exprs, &round_constants);
