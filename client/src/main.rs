@@ -24,6 +24,7 @@ use ethers::{
 	solc::utils::read_json_file,
 	types::Bytes,
 };
+use hyper::{Body, Client, Method, Request, Uri};
 use serde::{de::DeserializeOwned, Deserialize};
 use std::{io::Error, path::Path, str::FromStr};
 
@@ -95,7 +96,6 @@ async fn main() {
 	let bytes = att_data.to_bytes();
 
 	let client = setup_client();
-	let main_address = client.get_accounts().await.unwrap()[0];
 	let as_contract = AttestationStation::new(as_address, client);
 
 	let as_data = AsData(
@@ -110,18 +110,24 @@ async fn main() {
 	let events = as_contract.events().query().await.unwrap();
 	for event in events {
 		let bytes = event.val.to_vec();
-		let as_data = AttestationData::from_bytes(bytes);
-		let as_obj = Attestation::from(as_data);
+		let att_data = AttestationData::from_bytes(bytes);
+		let att = Attestation::from(att_data.clone());
 
 		let (as_pks_hash, _) =
-			calculate_message_hash::<NUM_NEIGHBOURS, 1>(as_obj.neighbours, vec![as_obj.scores]);
+			calculate_message_hash::<NUM_NEIGHBOURS, 1>(att.neighbours, vec![att.scores]);
 
 		assert!(as_pks_hash == pks_hash);
-	}
 
-	// Part 2
-	// Collect all the attestations given the list of addresses that posted them
-	// Turn these attestations into Attestation struct - validate them
-	// Turn the attestations into AttestationData
-	// Sumbit the into eigen-trust-server
+		let client = Client::new();
+		let uri = "http://127.0.0.1:3000/attestation".parse::<Uri>().unwrap();
+		let serialized_att = serde_json::to_string(&att_data).unwrap();
+		let req = Request::builder()
+			.uri(uri)
+			.method(Method::POST)
+			.body(Body::from(serialized_att))
+			.unwrap();
+		let resp = client.request(req).await.unwrap();
+
+		println!("Response: {}", resp.status());
+	}
 }
