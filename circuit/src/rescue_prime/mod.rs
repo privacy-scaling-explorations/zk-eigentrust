@@ -1,16 +1,41 @@
 use std::marker::PhantomData;
 
 use halo2::{
-	circuit::AssignedCell,
+	circuit::{AssignedCell, Layouter, Value},
 	halo2curves::FieldExt,
-	plonk::{Advice, Column, Fixed},
+	plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Selector},
 	poly::Rotation,
 };
 
-use crate::{params::RoundParams, Chip};
+use crate::{params::RoundParams, Chip, CommonConfig, RegionCtx};
 
 /// Native implementation
 pub mod native;
+
+/// Copy the intermediate poseidon state into the region
+fn copy_state<F: FieldExt, const WIDTH: usize>(
+	ctx: &mut RegionCtx<'_, F>, config: &CommonConfig, prev_state: &[AssignedCell<F, F>; WIDTH],
+) -> Result<[AssignedCell<F, F>; WIDTH], Error> {
+	let mut state: [Option<AssignedCell<F, F>>; WIDTH] = [(); WIDTH].map(|_| None);
+	for i in 0..WIDTH {
+		let new_state = ctx.copy_assign(config.advice[i], prev_state[i].clone())?;
+		state[i] = Some(new_state);
+	}
+	Ok(state.map(|item| item.unwrap()))
+}
+
+/// Assign relevant constants to the circuit for the given round.
+fn load_round_constants<F: FieldExt, const WIDTH: usize>(
+	ctx: &mut RegionCtx<'_, F>, config: &CommonConfig, round_constants: &[F],
+) -> Result<[Value<F>; WIDTH], Error> {
+	let mut rc_values: [Value<F>; WIDTH] = [(); WIDTH].map(|_| Value::unknown());
+	for i in 0..WIDTH {
+		let rc = round_constants[ctx.offset() * WIDTH + i].clone();
+		ctx.assign_fixed(config.fixed[i], rc)?;
+		rc_values[i] = Value::known(rc);
+	}
+	Ok(rc_values)
+}
 
 /// Constructs a chip structure for the circuit.
 pub struct ResurPrimeChip<F: FieldExt, const WIDTH: usize, P>
@@ -39,9 +64,7 @@ where
 {
 	type Output = [AssignedCell<F, F>; WIDTH];
 
-	fn configure(
-		common: &crate::CommonConfig, meta: &mut halo2::plonk::ConstraintSystem<F>,
-	) -> halo2::plonk::Selector {
+	fn configure(common: &crate::CommonConfig, meta: &mut ConstraintSystem<F>) -> Selector {
 		let selector = meta.selector();
 
 		let state_columns: [Column<Advice>; WIDTH] = common.advice[0..WIDTH].try_into().unwrap();
@@ -94,9 +117,65 @@ where
 	}
 
 	fn synthesize(
-		self, common: &crate::CommonConfig, selector: &halo2::plonk::Selector,
-		layouter: impl halo2::circuit::Layouter<F>,
-	) -> Result<Self::Output, halo2::plonk::Error> {
-		todo!()
+		self, common: &crate::CommonConfig, selector: &Selector, layouter: impl Layouter<F>,
+	) -> Result<Self::Output, Error> {
+		let full_rounds = P::full_rounds();
+		let round_constants = P::round_constants();
+
+		let res = layouter.assign_region(
+			|| "full_rounds",
+			|region| {
+				let mut ctx = RegionCtx::new(region, 0);
+				// Assign initial state
+				let mut state_cells = copy_state(&mut ctx, &common, &self.inputs)?;
+
+				for _ in 0..full_rounds - 1 {
+					ctx.enable(selector.clone())?;
+
+					// Assign round constants
+					let rc_values = load_round_constants(&mut ctx, &common, &round_constants)?;
+
+					let mut next_state = state_cells.clone().map(|v| v.value().cloned());
+					// 1. step for the TRF.
+					// S-box.
+					for i in 0..WIDTH {
+						next_state[i] = next_state[i].map(|s| P::sbox_f(s));
+					}
+
+					// 2. step for the TRF
+					// Apply MDS
+					next_state = P::apply_mds_val(&next_state);
+
+					// 3. step for the TRF
+					// Apply RoundConstants
+					next_state = P::apply_round_constants_val(&next_state, &rc_values);
+
+					// 4. step for the TRF
+					// Apply S-box inverse
+					for i in 0..WIDTH {
+						next_state[i] = next_state[i].map(|s| P::sbox_inv_f(s));
+					}
+
+					// 5. step for the TRF
+					// Apply MDS for 2nd time
+					next_state = P::apply_mds_val(&next_state);
+
+					ctx.next();
+
+					// 6. step for the TRF
+					// Apply next RoundConstants
+					let next_rc_values = load_round_constants(&mut ctx, &common, &round_constants)?;
+					next_state = P::apply_round_constants_val(&next_state, &next_rc_values);
+
+					// Assign next state
+					for i in 0..WIDTH {
+						state_cells[i] = ctx.assign_advice(common.advice[i], next_state[i])?;
+					}
+				}
+				Ok(state_cells)
+			},
+		)?;
+
+		Ok(res)
 	}
 }
