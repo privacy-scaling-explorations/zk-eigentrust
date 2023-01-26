@@ -1,0 +1,14 @@
+{
+    "epoch_interval": 10,
+    "endpoint": [
+        [
+            127,
+            0,
+            0,
+            1
+        ],
+        3000
+    ],
+    "ethereum_node_url": "http://localhost:8545",
+    "as_contract_address": "0xe6e340d132b5f46d1e472debcd681b2abc16e57e"
+}

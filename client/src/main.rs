@@ -1,10 +1,10 @@
-mod attestation_station;
+mod att_station;
 mod compile;
 mod deploy;
 mod sign;
 mod transaction;
 
-use attestation_station::{AttestationData as AsData, AttestationStation};
+use att_station::{AttestationData as AsData, AttestationStation};
 use csv::Reader as CsvReader;
 use deploy::{deploy, setup_client};
 use eigen_trust_circuit::{
@@ -17,16 +17,9 @@ use eigen_trust_protocol::manager::{
 	attestation::{Attestation, AttestationData},
 	NUM_NEIGHBOURS,
 };
-use ethers::{
-	abi::Address,
-	prelude::k256::elliptic_curve::PrimeField,
-	providers::{Middleware, StreamExt},
-	solc::utils::read_json_file,
-	types::Bytes,
-};
-use hyper::{Body, Client, Method, Request, Uri};
+use ethers::{abi::Address, solc::utils::read_json_file, types::Bytes};
 use serde::{de::DeserializeOwned, Deserialize};
-use std::{io::Error, path::Path, str::FromStr};
+use std::{io::Error, path::Path};
 
 /// Reads the json file and deserialize it into the provided type
 pub fn read_csv_file<T: DeserializeOwned>(path: impl AsRef<Path>) -> Result<Vec<T>, Error> {
@@ -51,6 +44,8 @@ struct InputData {
 #[tokio::main]
 async fn main() {
 	let as_address = deploy().await.unwrap();
+
+	// PART 1 - SUBMIT
 	let root = Path::new(&env!("CARGO_MANIFEST_DIR"));
 	let boostrap_path = root.join("../data/bootstrap-nodes.csv");
 	let input_path = root.join("../data/input-data.json");
@@ -106,28 +101,4 @@ async fn main() {
 	let as_data_vec = vec![as_data];
 
 	let _res = as_contract.attest(as_data_vec).send().await.unwrap().await.unwrap();
-
-	let events = as_contract.events().query().await.unwrap();
-	for event in events {
-		let bytes = event.val.to_vec();
-		let att_data = AttestationData::from_bytes(bytes);
-		let att = Attestation::from(att_data.clone());
-
-		let (as_pks_hash, _) =
-			calculate_message_hash::<NUM_NEIGHBOURS, 1>(att.neighbours, vec![att.scores]);
-
-		assert!(as_pks_hash == pks_hash);
-
-		let client = Client::new();
-		let uri = "http://127.0.0.1:3000/attestation".parse::<Uri>().unwrap();
-		let serialized_att = serde_json::to_string(&att_data).unwrap();
-		let req = Request::builder()
-			.uri(uri)
-			.method(Method::POST)
-			.body(Body::from(serialized_att))
-			.unwrap();
-		let resp = client.request(req).await.unwrap();
-
-		println!("Response: {}", resp.status());
-	}
 }

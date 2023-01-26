@@ -1,17 +1,13 @@
 use ethers::{
-	core::utils::Anvil,
 	middleware::SignerMiddleware,
 	prelude::{abigen, ContractError},
 	providers::{Http, Provider},
-	signers::{coins_bip39::English, LocalWallet, MnemonicBuilder, Signer, Wallet},
+	signers::{coins_bip39::English, LocalWallet, MnemonicBuilder, Signer},
 	types::Address,
 };
-use std::{convert::TryFrom, sync::Arc, time::Duration};
+use std::{convert::TryFrom, sync::Arc};
 
-abigen!(
-	AttestationStation,
-	"client/contracts/AttestationStation.json"
-);
+abigen!(AttestationStation, "contracts/AttestationStation.json");
 
 type CntrError = ContractError<SignerMiddleware<Provider<Http>, LocalWallet>>;
 

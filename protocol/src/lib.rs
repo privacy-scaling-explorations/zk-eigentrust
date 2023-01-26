@@ -34,6 +34,8 @@
 pub mod epoch;
 /// The module where the error enum is defined
 pub mod error;
+/// Helper functions and ABIs for ethereum
+pub mod ethereum;
 /// The module for the manager related functionalities, like:
 /// - Adding/removing neighbors of peers
 /// - Calculating the score of peers
