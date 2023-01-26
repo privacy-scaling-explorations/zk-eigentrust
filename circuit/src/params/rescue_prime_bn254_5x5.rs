@@ -12,10 +12,6 @@ impl Sbox for Params {
 		exp4 * exp
 	}
 
-	fn sbox_inv_expr<F: FieldExt>(exp: Expression<F>) -> Expression<F> {
-		todo!("Need to find a way to get inverse sbox")
-	}
-
 	fn sbox_f<F: FieldExt>(f: F) -> F {
 		let f2 = f * f;
 		let f4 = f2 * f2;

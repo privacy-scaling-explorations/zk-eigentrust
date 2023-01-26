@@ -38,7 +38,7 @@ fn load_round_constants<F: FieldExt, const WIDTH: usize>(
 }
 
 /// Constructs a chip structure for the circuit.
-pub struct ResurPrimeChip<F: FieldExt, const WIDTH: usize, P>
+pub struct RescuePrimeChip<F: FieldExt, const WIDTH: usize, P>
 where
 	P: RoundParams<F, WIDTH>,
 {
@@ -48,7 +48,7 @@ where
 	_params: PhantomData<P>,
 }
 
-impl<F: FieldExt, const WIDTH: usize, P> ResurPrimeChip<F, WIDTH, P>
+impl<F: FieldExt, const WIDTH: usize, P> RescuePrimeChip<F, WIDTH, P>
 where
 	P: RoundParams<F, WIDTH>,
 {
@@ -58,7 +58,7 @@ where
 	}
 }
 
-impl<F: FieldExt, const WIDTH: usize, P> Chip<F> for ResurPrimeChip<F, WIDTH, P>
+impl<F: FieldExt, const WIDTH: usize, P> Chip<F> for RescuePrimeChip<F, WIDTH, P>
 where
 	P: RoundParams<F, WIDTH>,
 {
@@ -177,5 +177,112 @@ where
 		)?;
 
 		Ok(res)
+	}
+}
+
+#[cfg(test)]
+mod test {
+	use super::*;
+	use crate::{
+		params::{hex_to_field, rescue_prime_bn254_5x5::Params},
+		utils::{generate_params, prove_and_verify},
+		CommonConfig,
+	};
+	use halo2::{
+		circuit::{Layouter, SimpleFloorPlanner},
+		dev::MockProver,
+		halo2curves::bn256::{Bn256, Fr},
+		plonk::{Circuit, ConstraintSystem, Error},
+	};
+	#[derive(Clone)]
+	struct RescuePrimeTesterConfig {
+		common: CommonConfig,
+		selector: Selector,
+	}
+
+	#[derive(Clone)]
+	struct RescuePrimeTester {
+		inputs: [Value<Fr>; 5],
+	}
+
+	impl RescuePrimeTester {
+		fn new(inputs: [Value<Fr>; 5]) -> Self {
+			Self { inputs }
+		}
+	}
+
+	impl Circuit<Fr> for RescuePrimeTester {
+		type Config = RescuePrimeTesterConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			Self::new([Value::unknown(); 5])
+		}
+
+		fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
+			let common = CommonConfig::new(meta);
+			let selector = RescuePrimeChip::<Fr, 5, Params>::configure(&common, meta);
+			Self::Config { common, selector }
+		}
+
+		fn synthesize(
+			&self, config: Self::Config, layouter: impl Layouter<Fr>,
+		) -> Result<(), Error> {
+			let init_state = layouter.assign_region(
+				|| "load_state",
+				|region| {
+					let mut ctx = RegionCtx::new(region, 0);
+					let mut state: [Option<AssignedCell<Fr, Fr>>; 5] = [(); 5].map(|_| None);
+					for i in 0..5 {
+						let init_state = self.inputs[i].clone();
+						let asgn_state = ctx.assign_advice(config.common.advice[i], init_state)?;
+						state[i] = Some(asgn_state);
+					}
+					Ok(state.map(|item| item.unwrap()))
+				},
+			)?;
+
+			let rescue_prime = RescuePrimeChip::<Fr, 5, Params>::new(init_state);
+			let result_state = rescue_prime.synthesize(
+				&config.common,
+				&config.selector,
+				layouter.namespace(|| "rescue_prime"),
+			)?;
+
+			for i in 0..5 {
+				layouter.constrain_instance(result_state[i].cell(), config.common.instance, i)?;
+			}
+
+			Ok(())
+		}
+	}
+
+	#[test]
+	fn test_native_rescue_prime_5x5() {
+		// Testing 5x5 input.
+		let inputs: [Value<Fr>; 5] = [
+			"0x0000000000000000000000000000000000000000000000000000000000000000",
+			"0x0000000000000000000000000000000000000000000000000000000000000001",
+			"0x0000000000000000000000000000000000000000000000000000000000000002",
+			"0x0000000000000000000000000000000000000000000000000000000000000003",
+			"0x0000000000000000000000000000000000000000000000000000000000000004",
+		]
+		.map(|n| Value::known(hex_to_field(n)));
+
+		// Results taken from https://github.com/matter-labs/rescue-poseidon
+		let outputs: [Fr; 5] = [
+			"0x1a06ea09af4d8d61f991846f001ded4056feafcef55f1e9c4fd18100b8c7654f",
+			"0x2f66d057b2bd9692f51e072013b8f320c5e6d7081070ffe7ca357e18e5faecf4",
+			"0x177abf3b6a2e903adf4c71f18f744b55b39c487a9a4fd1a1d4aee381b99f357b",
+			"0x1271bfa104c298efaccc1680be1b6e36cbf2c87ea789f2f79f7742bc16992235",
+			"0x040f785abfad4da68331f9c884343fa6eecb07060ebcd96117862acebae5c3ac",
+		]
+		.map(|n| hex_to_field(n));
+
+		let rescue_prime = RescuePrimeTester::new(inputs);
+
+		let k = 7;
+		let prover = MockProver::run(k, &rescue_prime, vec![outputs.to_vec()]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
 	}
 }
