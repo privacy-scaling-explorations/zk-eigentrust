@@ -1,16 +1,14 @@
-use std::marker::PhantomData;
+/// Native implementation
+pub mod native;
 
+use crate::{params::RoundParams, Chip, CommonConfig, RegionCtx};
 use halo2::{
 	circuit::{AssignedCell, Layouter, Value},
 	halo2curves::FieldExt,
 	plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Selector},
 	poly::Rotation,
 };
-
-use crate::{params::RoundParams, Chip, CommonConfig, RegionCtx};
-
-/// Native implementation
-pub mod native;
+use std::marker::PhantomData;
 
 /// Copy the intermediate poseidon state into the region
 fn copy_state<F: FieldExt, const WIDTH: usize>(
@@ -258,7 +256,7 @@ mod test {
 	}
 
 	#[test]
-	fn test_native_rescue_prime_5x5() {
+	fn test_rescue_prime_5x5() {
 		// Testing 5x5 input.
 		let inputs: [Value<Fr>; 5] = [
 			"0x0000000000000000000000000000000000000000000000000000000000000000",
@@ -279,10 +277,41 @@ mod test {
 		]
 		.map(|n| hex_to_field(n));
 
-		let rescue_prime = RescuePrimeTester::new(inputs);
+		let rescue_prime_tester = RescuePrimeTester::new(inputs);
 
 		let k = 7;
-		let prover = MockProver::run(k, &rescue_prime, vec![outputs.to_vec()]).unwrap();
+		let prover = MockProver::run(k, &rescue_prime_tester, vec![outputs.to_vec()]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[test]
+	fn test_rescue_prime_5x5_production() {
+		let inputs: [Value<Fr>; 5] = [
+			"0x0000000000000000000000000000000000000000000000000000000000000000",
+			"0x0000000000000000000000000000000000000000000000000000000000000001",
+			"0x0000000000000000000000000000000000000000000000000000000000000002",
+			"0x0000000000000000000000000000000000000000000000000000000000000003",
+			"0x0000000000000000000000000000000000000000000000000000000000000004",
+		]
+		.map(|n| Value::known(hex_to_field(n)));
+
+		// Results taken from https://github.com/matter-labs/rescue-poseidon
+		let outputs: [Fr; 5] = [
+			"0x1a06ea09af4d8d61f991846f001ded4056feafcef55f1e9c4fd18100b8c7654f",
+			"0x2f66d057b2bd9692f51e072013b8f320c5e6d7081070ffe7ca357e18e5faecf4",
+			"0x177abf3b6a2e903adf4c71f18f744b55b39c487a9a4fd1a1d4aee381b99f357b",
+			"0x1271bfa104c298efaccc1680be1b6e36cbf2c87ea789f2f79f7742bc16992235",
+			"0x040f785abfad4da68331f9c884343fa6eecb07060ebcd96117862acebae5c3ac",
+		]
+		.map(|n| hex_to_field(n));
+
+		let rescue_prime_tester = RescuePrimeTester::new(inputs);
+
+		let k = 7;
+		let rng = &mut rand::thread_rng();
+		let params = generate_params(k);
+		let res =
+			prove_and_verify::<Bn256, _, _>(params, rescue_prime_tester, &[&outputs], rng).unwrap();
+		assert!(res);
 	}
 }
