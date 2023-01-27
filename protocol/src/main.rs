@@ -13,6 +13,7 @@ use serde::Deserialize;
 use serde_json::to_string;
 use std::{
 	collections::HashMap,
+	env,
 	mem::drop,
 	net::SocketAddr,
 	path::Path,
@@ -186,7 +187,8 @@ async fn handle_request(
 
 #[tokio::main]
 async fn main() -> Result<(), EigenError> {
-	let source = Path::new(&env!("CARGO_MANIFEST_DIR")).join("data/protocol-config.json");
+	let root = env::current_dir().unwrap();
+	let source = root.join("../data/protocol-config.json");
 	let config: ProtocolConfig = read_json_file(source).unwrap();
 
 	let addr: SocketAddr = config.endpoint.into();

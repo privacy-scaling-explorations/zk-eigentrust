@@ -2,12 +2,13 @@
     "ops": [
         300,
         100,
-        200,
-        200,
+        100,
+        300,
         200
     ],
     "secret_key": [
         "2L9bbXNEayuRMMbrWFynPtgkrXH1iBdfryRH9Soa8M67",
         "9rBeBVtbN2MkHDTpeAouqkMWNFJC6Bxb6bXH9jUueWaF"
-    ]
+    ],
+    "as_address": "0x851356ae760d987e095750cceb3bc6014560891c"
 }
