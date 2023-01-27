@@ -1,8 +1,6 @@
 mod att_station;
 mod compile;
 mod deploy;
-mod sign;
-mod transaction;
 
 use att_station::{AttestationData as AsData, AttestationStation};
 use clap::{Parser, ValueEnum};
@@ -129,7 +127,11 @@ async fn main() {
 			);
 			let as_data_vec = vec![as_data];
 
-			let _res = as_contract.attest(as_data_vec).send().await.unwrap().await.unwrap();
+			let res = as_contract.attest(as_data_vec).send().await.unwrap().await.unwrap();
+
+			if let Some(receipt) = res {
+				println!("Transaction status: {:?}", receipt.status);
+			}
 		},
 	}
 }
