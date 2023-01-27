@@ -1,10 +1,10 @@
 #![feature(async_closure)]
 
 use ethers::{
-	contract::Contract,
+	contract::EthEvent,
 	providers::StreamExt,
 	solc::utils::read_json_file,
-	types::{Address, ValueOrArray},
+	types::{Address, Filter, ValueOrArray},
 };
 use hyper::{server::conn::Http, service::service_fn, Body, Method, Request, Response};
 use once_cell::sync::Lazy;
@@ -16,7 +16,6 @@ use std::{
 	env,
 	mem::drop,
 	net::SocketAddr,
-	path::Path,
 	sync::{Arc, Mutex},
 };
 use tokio::{
@@ -205,10 +204,10 @@ async fn main() -> Result<(), EigenError> {
 	drop(manager);
 
 	let client = setup_client(&config.ethereum_node_url);
-	let att_created_event = Contract::event_of_type::<AttestationCreatedFilter>(&client);
-	let att_created_event = att_created_event.from_block(0).address(ValueOrArray::Value(
+	let filter = Filter::new().from_block(0).address(ValueOrArray::Value(
 		config.as_contract_address.parse::<Address>().unwrap(),
 	));
+	let att_created_event = AttestationCreatedFilter::new(filter, &client);
 	let mut event_stream = att_created_event.stream().await.unwrap();
 
 	loop {
