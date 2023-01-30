@@ -38,13 +38,10 @@ where
 			// Apply round constants
 			let consts = P::load_round_constants(i, &round_constants);
 			state = P::apply_round_constants(&state, &consts);
-			let m = state[0].clone();
 			// Apply Sbox inverse
 			for i in 0..WIDTH {
 				state[i] = P::sbox_inv_f(state[i]);
 			}
-			let m_corres = state[0].clone();
-			println!("REEEEEEEAAAALLLL: {:?}", m * m_corres);
 			// Apply MDS for the second time
 			state = P::apply_mds(&state);
 			// Apply next round constants
