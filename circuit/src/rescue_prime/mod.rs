@@ -62,7 +62,7 @@ where
 {
 	type Output = [AssignedCell<F, F>; WIDTH];
 
-	fn configure(common: &crate::CommonConfig, meta: &mut ConstraintSystem<F>) -> Selector {
+	fn configure(common: &CommonConfig, meta: &mut ConstraintSystem<F>) -> Selector {
 		let selector = meta.selector();
 
 		let state_columns: [Column<Advice>; WIDTH] = common.advice[0..WIDTH].try_into().unwrap();
@@ -79,12 +79,13 @@ where
 			//   |  4  |   3   |  state(3)    |    const(3)   |     *      |
 			//                 ...
 
-			let mut exprs = vec![];
 			let s_cells = v_cells.query_selector(selector);
-
 			let mut state = state_columns.map(|c| v_cells.query_advice(c, Rotation::cur()));
+			let sbox_inverts = state_columns.map(|c| v_cells.query_advice(c, Rotation::next()));
 			let round_constants = rc_columns.map(|c| v_cells.query_fixed(c, Rotation::cur()));
 			let next_round_constants = rc_columns.map(|c| v_cells.query_fixed(c, Rotation(2)));
+
+			let mut exprs = vec![];
 
 			// 1. step for the TRF
 			// Applying S-boxes for the full round.
@@ -103,10 +104,12 @@ where
 			// 4. step for the TRF
 			// Applying S-box-inverse
 			for i in 0..WIDTH {
-				let sbox_inv = v_cells.query_advice(state_columns[i], Rotation::next());
 				// x - sbox(sbox_inv(x)) = 0
-				exprs.push(s_cells.clone() * (state[i].clone() - P::sbox_expr(sbox_inv.clone())));
-				state[i] = sbox_inv;
+				let org = P::sbox_expr(sbox_inverts[i].clone());
+				let org_contrait = s_cells.clone() * (state[i].clone() - org);
+				exprs.push(org_contrait);
+
+				state[i] = sbox_inverts[i].clone();
 			}
 
 			// 5. step for the TRF
@@ -130,7 +133,7 @@ where
 	}
 
 	fn synthesize(
-		self, common: &crate::CommonConfig, selector: &Selector, mut layouter: impl Layouter<F>,
+		self, common: &CommonConfig, selector: &Selector, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
 		let full_rounds = P::full_rounds();
 		let round_constants = P::round_constants();
@@ -142,11 +145,11 @@ where
 				// Assign initial state
 				let mut state_cells = copy_state(&mut ctx, &common, &self.inputs)?;
 
+				// Assign initial round constants
+				let mut rc_values = load_round_constants(&mut ctx, &common, &round_constants)?;
+
 				for _ in 0..full_rounds - 1 {
 					ctx.enable(selector.clone())?;
-
-					// Assign round constants
-					let rc_values = load_round_constants(&mut ctx, &common, &round_constants)?;
 
 					let mut next_state = state_cells.clone().map(|v| v.value().cloned());
 					// 1. step for the TRF.
@@ -179,8 +182,8 @@ where
 
 					// 6. step for the TRF
 					// Apply next RoundConstants
-					let next_rc_values = load_round_constants(&mut ctx, &common, &round_constants)?;
-					next_state = P::apply_round_constants_val(&next_state, &next_rc_values);
+					rc_values = load_round_constants(&mut ctx, &common, &round_constants)?;
+					next_state = P::apply_round_constants_val(&next_state, &rc_values);
 
 					// Assign next state
 					for i in 0..WIDTH {
