@@ -11,11 +11,12 @@
 #![warn(trivial_casts)]
 #![forbid(unsafe_code)]
 
-use std::marker::PhantomData;
-
+use crate::circuit::{PoseidonNativeHasher, PoseidonNativeSponge};
+use eddsa::native::PublicKey;
 use halo2::{
 	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region, Value},
+	halo2curves::bn256::Fr as Scalar,
 	plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Instance, Selector},
 };
 
@@ -213,4 +214,38 @@ pub trait Chipset<F: FieldExt> {
 	fn synthesize(
 		self, common: &CommonConfig, config: &Self::Config, layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error>;
+}
+
+/// Calculate message hashes from given public keys and scores
+pub fn calculate_message_hash<const N: usize, const S: usize>(
+	pks: Vec<PublicKey>, scores: Vec<Vec<Scalar>>,
+) -> (Scalar, Vec<Scalar>) {
+	assert!(pks.len() == N);
+	assert!(scores.len() == S);
+	for score in &scores {
+		assert!(score.len() == N);
+	}
+
+	let pks_x: Vec<Scalar> = pks.iter().map(|pk| pk.0.x.clone()).collect();
+	let pks_y: Vec<Scalar> = pks.iter().map(|pk| pk.0.y.clone()).collect();
+	let mut pk_sponge = PoseidonNativeSponge::new();
+	pk_sponge.update(&pks_x);
+	pk_sponge.update(&pks_y);
+	let pks_hash = pk_sponge.squeeze();
+
+	let messages = scores
+		.into_iter()
+		.map(|ops| {
+			let mut scores_sponge = PoseidonNativeSponge::new();
+			scores_sponge.update(&ops);
+			let scores_hash = scores_sponge.squeeze();
+
+			let final_hash_input =
+				[pks_hash, scores_hash, Scalar::zero(), Scalar::zero(), Scalar::zero()];
+			let final_hash = PoseidonNativeHasher::new(final_hash_input).permute()[0];
+			final_hash
+		})
+		.collect();
+
+	(pks_hash, messages)
 }

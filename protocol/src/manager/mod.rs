@@ -7,24 +7,22 @@
 /// Attestation implementation
 pub mod attestation;
 
-use crate::{
-	epoch::Epoch,
-	error::EigenError,
-	utils::{calculate_message_hash, keyset_from_raw},
-};
+use crate::{epoch::Epoch, error::EigenError, utils::keyset_from_raw};
 use attestation::Attestation;
 use eigen_trust_circuit::{
+	calculate_message_hash,
 	circuit::{native, EigenTrust, PoseidonNativeHasher},
-	eddsa::native::{sign, PublicKey},
+	eddsa::native::{sign, verify as verify_sig, PublicKey},
 	halo2::{
 		halo2curves::{
 			bn256::{Bn256, Fr as Scalar, G1Affine},
+			group::ff::PrimeField,
 			FieldExt,
 		},
 		plonk::ProvingKey,
 		poly::kzg::commitment::ParamsKZG,
 	},
-	utils::{field_to_string, prove, verify},
+	utils::{field_to_string, prove, to_short, verify},
 };
 use rand::thread_rng;
 use serde::{ser::SerializeStruct, Serialize, Serializer};
@@ -111,10 +109,49 @@ impl Manager {
 
 	/// Add a new attestation into the cache, by first calculating the hash of
 	/// the proving key
-	pub fn add_attestation(&mut self, sig: Attestation) {
-		let pk_hash_inp = [sig.pk.0.x, sig.pk.0.y, Scalar::zero(), Scalar::zero(), Scalar::zero()];
+	pub fn add_attestation(&mut self, att: Attestation) -> Result<(), EigenError> {
+		let group = PUBLIC_KEYS
+			.map(|x| bs58::decode(x).into_vec().unwrap())
+			.map(|x| to_short(&x))
+			.map(|x| Scalar::from_repr(x).unwrap());
+
+		let pk_hashes: Vec<Scalar> = att
+			.neighbours
+			.iter()
+			.map(|pk| {
+				let mut inps = [Scalar::zero(); 5];
+				inps[0] = pk.0.x;
+				inps[1] = pk.0.y;
+				let res = PoseidonNativeHasher::new(inps).permute()[0];
+				res
+			})
+			.collect();
+
+		if group.as_ref() != &pk_hashes {
+			return Err(EigenError::InvalidAttestation);
+		}
+
+		let mut pk_hash_inp = [Scalar::zero(); 5];
+		pk_hash_inp[0] = att.pk.0.x;
+		pk_hash_inp[1] = att.pk.0.y;
 		let res = PoseidonNativeHasher::new(pk_hash_inp).permute()[0];
-		self.attestations.insert(res, sig);
+
+		if !group.contains(&res) {
+			return Err(EigenError::InvalidAttestation);
+		}
+
+		let (_, message_hash) =
+			calculate_message_hash::<NUM_NEIGHBOURS, 1>(att.neighbours.clone(), vec![att
+				.scores
+				.clone()]);
+
+		if !verify_sig(&att.sig, &att.pk, message_hash[0]) {
+			return Err(EigenError::InvalidAttestation);
+		}
+
+		self.attestations.insert(res, att);
+
+		Ok(())
 	}
 
 	/// Get the attestation cached under the hash of the public key
@@ -133,7 +170,7 @@ impl Manager {
 		let scores = vec![vec![score; NUM_NEIGHBOURS]; NUM_NEIGHBOURS];
 
 		const N: usize = NUM_NEIGHBOURS;
-		let messages = calculate_message_hash::<N, N>(pks.clone(), scores.clone());
+		let (_, messages) = calculate_message_hash::<N, N>(pks.clone(), scores.clone());
 
 		for (((sk, pk), msg), scs) in sks.into_iter().zip(pks.clone()).zip(messages).zip(scores) {
 			let sig = sign(&sk, &pk, msg);
@@ -168,7 +205,7 @@ impl Manager {
 		}
 
 		const N: usize = NUM_NEIGHBOURS;
-		let messages = calculate_message_hash::<N, N>(pks.clone(), ops.clone());
+		let (_, messages) = calculate_message_hash::<N, N>(pks.clone(), ops.clone());
 
 		let mut rng = thread_rng();
 		let et = EigenTrust::<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, SCALE>::new(

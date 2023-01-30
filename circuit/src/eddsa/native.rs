@@ -24,7 +24,7 @@ fn blh(b: &[u8]) -> Vec<u8> {
 }
 
 /// Configures a structure for the secret key.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct SecretKey(Fr, Fr);
 
 impl SecretKey {
