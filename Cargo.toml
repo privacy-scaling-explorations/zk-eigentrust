@@ -2,5 +2,6 @@
 members = [
 	"protocol",
 	"circuit",
+	"client",
 ]
 default-members = ["protocol"]

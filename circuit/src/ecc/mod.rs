@@ -905,7 +905,7 @@ mod test {
 
 			let p = AssignedPoint::new(p_x_int, p_y_int);
 
-			let mut result = None;
+			let result;
 			match self.gadget {
 				Gadgets::Add => {
 					let q_x_int = AssignedInteger::new(self.q.clone().unwrap().x, q_x_limbs);
