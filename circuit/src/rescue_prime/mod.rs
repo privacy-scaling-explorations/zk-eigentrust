@@ -28,7 +28,7 @@ fn load_round_constants<F: FieldExt, const WIDTH: usize>(
 ) -> Result<[Value<F>; WIDTH], Error> {
 	let mut rc_values: [Value<F>; WIDTH] = [(); WIDTH].map(|_| Value::unknown());
 	for i in 0..WIDTH {
-		let rc = round_constants[ctx.offset() * WIDTH + i].clone();
+		let rc = round_constants[(ctx.offset() / 2) * WIDTH + i].clone();
 		ctx.assign_fixed(config.fixed[i], rc)?;
 		rc_values[i] = Value::known(rc);
 	}
@@ -69,43 +69,58 @@ where
 		let rc_columns: [Column<Fixed>; WIDTH] = common.fixed[0..WIDTH].try_into().unwrap();
 
 		meta.create_gate("full_round", |v_cells| {
-			let state = state_columns.map(|c| v_cells.query_advice(c, Rotation::cur()));
+			//
+			//   |  i  | round |    state     |   constants   |  selector  |
+			//   |-----|-------|--------------|---------------|------------|
+			//   |  0  |   1   |  state(1)    |    const(1)   |     *      |
+			//   |  1  |       | sbox_invs(1) |               |            |
+			//   |  2  |   2   |  state(2)    |    const(2)   |     *      |
+			//   |  3  |       | sbox_invs(2) |               |            |
+			//   |  4  |   3   |  state(3)    |    const(3)   |     *      |
+			//                 ...
+
+			let mut exprs = vec![];
+			let s_cells = v_cells.query_selector(selector);
+
+			let mut state = state_columns.map(|c| v_cells.query_advice(c, Rotation::cur()));
 			let round_constants = rc_columns.map(|c| v_cells.query_fixed(c, Rotation::cur()));
-			let next_round_constants = rc_columns.map(|c| v_cells.query_fixed(c, Rotation::next()));
-			let mut exprs = state;
+			let next_round_constants = rc_columns.map(|c| v_cells.query_fixed(c, Rotation(2)));
+
 			// 1. step for the TRF
 			// Applying S-boxes for the full round.
 			for i in 0..WIDTH {
-				exprs[i] = P::sbox_expr(exprs[i].clone());
+				state[i] = P::sbox_expr(state[i].clone());
 			}
 
 			// 2. step for the TRF
 			// MixLayer step.
-			exprs = P::apply_mds_expr(&exprs);
+			state = P::apply_mds_expr(&state);
 
 			// 3. step for the TRF
 			// Apply RoundConstants
-			exprs = P::apply_round_constants_expr(&exprs, &round_constants);
+			state = P::apply_round_constants_expr(&state, &round_constants);
 
 			// 4. step for the TRF
 			// Applying S-box-inverse
 			for i in 0..WIDTH {
-				// exprs[i] = P::sbox_inv_expr(exprs[i].clone()); // TODO!
+				let sbox_inv = v_cells.query_advice(state_columns[i], Rotation::next());
+				// x - sbox(sbox_inv(x)) = 0
+				exprs.push(s_cells.clone() * (state[i].clone() - P::sbox_expr(sbox_inv.clone())));
+				state[i] = sbox_inv;
 			}
 
 			// 5. step for the TRF
 			// 2nd MixLayer step
-			exprs = P::apply_mds_expr(&exprs);
+			state = P::apply_mds_expr(&state);
 
 			// 6. step for the TRF
 			// Apply next RoundConstants
-			exprs = P::apply_round_constants_expr(&exprs, &next_round_constants);
+			state = P::apply_round_constants_expr(&state, &next_round_constants);
 
-			let s_cells = v_cells.query_selector(selector);
 			// It should be equal to the state in next row
 			for i in 0..WIDTH {
-				let next_state = v_cells.query_advice(state_columns[i], Rotation::next());
-				exprs[i] = s_cells.clone() * (exprs[i].clone() - next_state);
+				let next_state = v_cells.query_advice(state_columns[i], Rotation(2));
+				exprs.push(s_cells.clone() * (state[i].clone() - next_state));
 			}
 
 			exprs
@@ -150,8 +165,10 @@ where
 
 					// 4. step for the TRF
 					// Apply S-box inverse
+					ctx.next();
 					for i in 0..WIDTH {
 						next_state[i] = next_state[i].map(|s| P::sbox_inv_f(s));
+						ctx.assign_advice(common.advice[i], next_state[i])?;
 					}
 
 					// 5. step for the TRF
