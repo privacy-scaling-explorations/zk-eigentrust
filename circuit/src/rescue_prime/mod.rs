@@ -106,8 +106,8 @@ where
 			for i in 0..WIDTH {
 				// x - sbox(sbox_inv(x)) = 0
 				let org = P::sbox_expr(sbox_inverts[i].clone());
-				let org_contrait = s_cells.clone() * (state[i].clone() - org);
-				exprs.push(org_contrait);
+				let org_constraint = s_cells.clone() * (state[i].clone() - org);
+				exprs.push(org_constraint);
 
 				state[i] = sbox_inverts[i].clone();
 			}
