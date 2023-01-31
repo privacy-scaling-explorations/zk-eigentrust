@@ -1,25 +1,23 @@
 mod att_station;
+mod attest;
 mod compile;
 mod deploy;
 
-use att_station::{AttestationData as AsData, AttestationStation};
-use clap::{Parser, ValueEnum};
+use attest::attest;
+use clap::{Args, Parser, Subcommand};
 use compile::compile;
 use csv::Reader as CsvReader;
 use deploy::{deploy, setup_client};
-use eigen_trust_circuit::{
-	calculate_message_hash,
-	eddsa::native::{sign, SecretKey},
-	halo2::halo2curves::{bn256::Fr as Scalar, FieldExt},
-	utils::to_short,
+use eigen_trust_protocol::manager::NUM_NEIGHBOURS;
+use ethers::{
+	abi::Address,
+	prelude::EthDisplay,
+	providers::Http,
+	signers::coins_bip39::{English, Mnemonic},
+	solc::utils::read_json_file,
 };
-use eigen_trust_protocol::manager::{
-	attestation::{Attestation, AttestationData},
-	NUM_NEIGHBOURS,
-};
-use ethers::{abi::Address, solc::utils::read_json_file, types::Bytes};
 use serde::{de::DeserializeOwned, Deserialize};
-use std::{env, io::Error, path::Path};
+use std::{env, io::Error, path::Path, str::FromStr};
 
 /// Reads the json file and deserialize it into the provided type
 pub fn read_csv_file<T: DeserializeOwned>(path: impl AsRef<Path>) -> Result<Vec<T>, Error> {
@@ -35,8 +33,8 @@ pub fn read_csv_file<T: DeserializeOwned>(path: impl AsRef<Path>) -> Result<Vec<
 	Ok(records)
 }
 
-#[derive(Deserialize)]
-struct InputData {
+#[derive(Deserialize, Debug, EthDisplay, Clone)]
+struct ClientConfig {
 	ops: [u128; NUM_NEIGHBOURS],
 	secret_key: [String; 2],
 	as_address: String,
@@ -46,28 +44,42 @@ struct InputData {
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
-struct Args {
-	#[arg(short, long, value_enum)]
+struct Cli {
+	#[command(subcommand)]
 	mode: Mode,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Subcommand)]
 enum Mode {
+	Show,
 	Compile,
 	Deploy,
 	Attest,
+	Update(UpdateData),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Args)]
+struct UpdateData {
+	name: Option<String>,
+	score: Option<u128>,
+	sk: Option<String>,
+	as_address: Option<String>,
+	mnemonic: Option<String>,
+	node_url: Option<String>,
 }
 
 #[tokio::main]
 async fn main() {
-	let cli = Args::parse();
+	let cli = Cli::parse();
 
 	let root = env::current_dir().unwrap();
 	let boostrap_path = root.join("../data/bootstrap-nodes.csv");
 	let input_path = root.join("../data/client-config.json");
-	let user_secrets_raw: Vec<[String; 2]> = read_csv_file(boostrap_path).unwrap();
-	let input_data: InputData = read_json_file(input_path).unwrap();
-	assert!(user_secrets_raw.contains(&input_data.secret_key));
+	let user_secrets_raw: Vec<[String; 3]> = read_csv_file(boostrap_path).unwrap();
+	let client_config: ClientConfig = read_json_file(input_path).unwrap();
+
+	let pos = user_secrets_raw.iter().position(|x| &client_config.secret_key == &x[1..]);
+	assert!(pos.is_some());
 
 	match cli.mode {
 		Mode::Compile => {
@@ -75,66 +87,92 @@ async fn main() {
 			println!("Finished compiling!");
 		},
 		Mode::Deploy => {
-			let client = setup_client(&input_data.mnemonic, &input_data.ethereum_node_url);
+			let client = setup_client(&client_config.mnemonic, &client_config.ethereum_node_url);
 			let address = deploy(client).await.unwrap();
 			println!("Contract address: {}", address);
 		},
 		Mode::Attest => {
-			let user_secrets_vec: Vec<SecretKey> = user_secrets_raw
-				.into_iter()
-				.map(|x| {
-					let sk0_decoded = bs58::decode(&x[0]).into_vec().unwrap();
-					let sk1_decoded = bs58::decode(&x[1]).into_vec().unwrap();
-					let sk0 = to_short(&sk0_decoded);
-					let sk1 = to_short(&sk1_decoded);
-					SecretKey::from_raw([sk0, sk1])
-				})
-				.collect();
+			let client = setup_client(&client_config.mnemonic, &client_config.ethereum_node_url);
+			attest(
+				client, user_secrets_raw, client_config.secret_key, client_config.ops,
+				client_config.as_address,
+			)
+			.await;
+		},
+		Mode::Update(data) => {
+			let UpdateData { name, score, sk, as_address, mnemonic, node_url } = data;
 
-			let user_secrets: [SecretKey; NUM_NEIGHBOURS] = user_secrets_vec.try_into().unwrap();
-			let user_publics = user_secrets.map(|s| s.public());
+			let mut client_config_updated = client_config.clone();
 
-			let sk0_bytes = bs58::decode(&input_data.secret_key[0]).into_vec().unwrap();
-			let sk1_bytes = bs58::decode(&input_data.secret_key[1]).into_vec().unwrap();
-
-			let mut sk0: [u8; 32] = [0; 32];
-			sk0[..].copy_from_slice(&sk0_bytes);
-
-			let mut sk1: [u8; 32] = [0; 32];
-			sk1[..].copy_from_slice(&sk1_bytes);
-
-			let sk = SecretKey::from_raw([sk0, sk1]);
-			let pk = sk.public();
-
-			let ops = input_data.ops.map(|x| Scalar::from_u128(x));
-
-			let (pks_hash, message_hash) =
-				calculate_message_hash::<NUM_NEIGHBOURS, 1>(user_publics.to_vec(), vec![
-					ops.to_vec()
-				]);
-
-			let sig = sign(&sk, &pk, message_hash[0]);
-
-			let att = Attestation::new(sig, pk, user_publics.to_vec(), ops.to_vec());
-			let att_data = AttestationData::from(att);
-			let bytes = att_data.to_bytes();
-
-			let client = setup_client(&input_data.mnemonic, &input_data.ethereum_node_url);
-			let as_address: Address = input_data.as_address.parse().unwrap();
-			let as_contract = AttestationStation::new(as_address, client);
-
-			let as_data = AsData(
-				Address::zero(),
-				pks_hash.to_bytes(),
-				Bytes::from(bytes.clone()),
-			);
-			let as_data_vec = vec![as_data];
-
-			let res = as_contract.attest(as_data_vec).send().await.unwrap().await.unwrap();
-
-			if let Some(receipt) = res {
-				println!("Transaction status: {:?}", receipt.status);
+			if let (Some(name), Some(score)) = (name, score) {
+				let available_names: Vec<String> =
+					user_secrets_raw.iter().map(|x| x[0].clone()).collect();
+				let pos = available_names.iter().position(|x| &name == x);
+				if pos.is_none() {
+					eprintln!(
+						"Invalid neighbour name: {:?}, available: {:?}",
+						name, available_names
+					);
+					return;
+				}
+				let pos = pos.unwrap();
+				client_config_updated.ops[pos] = score;
+			} else {
+				eprintln!("Please provice both name and score in order to update your opinion!");
 			}
+
+			if let Some(sk) = sk {
+				let sk_vec: Vec<String> = sk.split(",").map(|x| x.to_string()).collect();
+				if sk_vec.len() != 2 {
+					eprintln!(
+						"Invalid secret key passed, expected 2 bs58 values separated by commas, e.g.: \
+						'2L9bbXNEayuRMMbrWFynPtgkrXH1iBdfryRH9Soa8M67,9rBeBVtbN2MkHDTpeAouqkMWNFJC6Bxb6bXH9jUueWaF'"
+					);
+					return;
+				}
+				let sk: [String; 2] = sk_vec.try_into().unwrap();
+
+				let sk0_decoded = bs58::decode(&sk[0]).into_vec();
+				let sk1_decoded = bs58::decode(&sk[1]).into_vec();
+				if sk0_decoded.is_err() || sk1_decoded.is_err() {
+					eprintln!("Failed to decode secret key! Expecting bs58 encoded values!");
+					return;
+				}
+
+				client_config_updated.secret_key = sk;
+			}
+
+			if let Some(as_address) = as_address {
+				let as_address_parsed: Result<Address, _> = as_address.parse();
+				if as_address_parsed.is_err() {
+					eprintln!("Failed to parse address!");
+					return;
+				}
+
+				client_config_updated.as_address = as_address;
+			}
+
+			if let Some(mnemonic) = mnemonic {
+				let parsed_mnemonic = Mnemonic::<English>::new_from_phrase(&mnemonic);
+				if parsed_mnemonic.is_err() {
+					eprintln!("Failed to parse mnemonic!");
+					return;
+				}
+				client_config_updated.mnemonic = mnemonic;
+			}
+
+			if let Some(node_url) = node_url {
+				let provider = Http::from_str(&node_url);
+				if provider.is_err() {
+					eprintln!("Failed to parse node url!");
+					return;
+				}
+				client_config_updated.ethereum_node_url = node_url;
+			}
+		},
+		Mode::Show => {
+			println!("Client config:");
+			println!("{:#?}", client_config);
 		},
 	}
 }
