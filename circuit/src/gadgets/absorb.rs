@@ -19,7 +19,7 @@ pub fn copy_state<F: FieldExt, const WIDTH: usize>(
 	Ok(state.map(|item| item.unwrap()))
 }
 
-/// A chip for absorbing the previous hash(Poseidon, RescuePrime, ...) state
+/// A chip for absorbing the previous hash(poseidon, rescue_prime, ...) state
 pub struct AbsorbChip<F: FieldExt, const WIDTH: usize> {
 	prev_state: [AssignedCell<F, F>; WIDTH],
 	state: [AssignedCell<F, F>; WIDTH],
