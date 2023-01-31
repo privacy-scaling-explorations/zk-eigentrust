@@ -959,12 +959,12 @@ mod test {
 
 			for i in 0..NUM_LIMBS {
 				layouter.constrain_instance(
-					result.clone().unwrap().x.integer_limbs[i].cell(),
+					result.clone().unwrap().x.limbs[i].cell(),
 					config.common.instance,
 					i,
 				)?;
 				layouter.constrain_instance(
-					result.clone().unwrap().y.integer_limbs[i].cell(),
+					result.clone().unwrap().y.limbs[i].cell(),
 					config.common.instance,
 					i + NUM_LIMBS,
 				)?;
