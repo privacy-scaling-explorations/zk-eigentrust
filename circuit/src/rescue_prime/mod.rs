@@ -1,6 +1,9 @@
 /// Native implementation
 pub mod native;
 
+/// Implementation of a RescuePrime sponge
+pub mod sponge;
+
 use crate::{params::RoundParams, Chip, CommonConfig, RegionCtx};
 use halo2::{
 	circuit::{AssignedCell, Layouter, Value},
