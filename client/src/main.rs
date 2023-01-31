@@ -40,6 +40,8 @@ struct InputData {
 	ops: [u128; NUM_NEIGHBOURS],
 	secret_key: [String; 2],
 	as_address: String,
+	mnemonic: String,
+	ethereum_node_url: String,
 }
 
 #[derive(Parser, Debug)]
@@ -60,23 +62,24 @@ enum Mode {
 async fn main() {
 	let cli = Args::parse();
 
+	let root = env::current_dir().unwrap();
+	let boostrap_path = root.join("../data/bootstrap-nodes.csv");
+	let input_path = root.join("../data/client-config.json");
+	let user_secrets_raw: Vec<[String; 2]> = read_csv_file(boostrap_path).unwrap();
+	let input_data: InputData = read_json_file(input_path).unwrap();
+	assert!(user_secrets_raw.contains(&input_data.secret_key));
+
 	match cli.mode {
 		Mode::Compile => {
 			compile();
 			println!("Finished compiling!");
 		},
 		Mode::Deploy => {
-			let address = deploy().await.unwrap();
+			let client = setup_client(&input_data.mnemonic, &input_data.ethereum_node_url);
+			let address = deploy(client).await.unwrap();
 			println!("Contract address: {}", address);
 		},
 		Mode::Attest => {
-			let root = env::current_dir().unwrap();
-			let boostrap_path = root.join("../data/bootstrap-nodes.csv");
-			let input_path = root.join("../data/client-config.json");
-			let user_secrets_raw: Vec<[String; 2]> = read_csv_file(boostrap_path).unwrap();
-			let input_data: InputData = read_json_file(input_path).unwrap();
-			assert!(user_secrets_raw.contains(&input_data.secret_key));
-
 			let user_secrets_vec: Vec<SecretKey> = user_secrets_raw
 				.into_iter()
 				.map(|x| {
@@ -116,7 +119,7 @@ async fn main() {
 			let att_data = AttestationData::from(att);
 			let bytes = att_data.to_bytes();
 
-			let client = setup_client();
+			let client = setup_client(&input_data.mnemonic, &input_data.ethereum_node_url);
 			let as_address: Address = input_data.as_address.parse().unwrap();
 			let as_contract = AttestationStation::new(as_address, client);
 

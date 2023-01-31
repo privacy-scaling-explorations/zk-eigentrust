@@ -11,9 +11,9 @@ abigen!(AttestationStation, "contracts/AttestationStation.json");
 
 type CntrError = ContractError<SignerMiddleware<Provider<Http>, LocalWallet>>;
 
-pub async fn deploy() -> Result<Address, CntrError> {
-	let client = setup_client();
+type SignerMiddlewareArc = Arc<SignerMiddleware<Provider<Http>, LocalWallet>>;
 
+pub async fn deploy(client: SignerMiddlewareArc) -> Result<Address, CntrError> {
 	// 5. Deploy da contract
 	let contract = AttestationStation::deploy(client, ())?.send().await?;
 
@@ -25,10 +25,9 @@ pub async fn deploy() -> Result<Address, CntrError> {
 	Ok(addr)
 }
 
-pub fn setup_client() -> Arc<SignerMiddleware<Provider<Http>, LocalWallet>> {
-	let provider = Provider::<Http>::try_from("http://localhost:8545").unwrap();
-	let phrase = "test test test test test test test test test test test junk";
-	let wallet = MnemonicBuilder::<English>::default().phrase(phrase).build().unwrap();
+pub fn setup_client(mnemonic_phrase: &str, node_url: &str) -> SignerMiddlewareArc {
+	let provider = Provider::<Http>::try_from(node_url).unwrap();
+	let wallet = MnemonicBuilder::<English>::default().phrase(mnemonic_phrase).build().unwrap();
 
 	// 4. instantiate the client with the wallet
 	let client = SignerMiddleware::new(provider, wallet.with_chain_id(31337u64));
