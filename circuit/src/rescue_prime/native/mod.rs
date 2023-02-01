@@ -1,3 +1,6 @@
+/// Native sponge implementation
+pub mod sponge;
+
 use crate::params::RoundParams;
 use halo2::arithmetic::FieldExt;
 use std::marker::PhantomData;
@@ -83,9 +86,9 @@ mod test {
 		]
 		.map(|n| hex_to_field(n));
 
-		let poseidon = TestHasher::new(inputs);
+		let rescue_prime = TestHasher::new(inputs);
 
-		let out = poseidon.permute();
+		let out = rescue_prime.permute();
 
 		assert_eq!(out, outputs);
 	}

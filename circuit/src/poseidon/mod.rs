@@ -3,7 +3,9 @@ pub mod native;
 /// Implementation of a Poseidon sponge
 pub mod sponge;
 
-use crate::{params::RoundParams, Chip, Chipset, CommonConfig, RegionCtx};
+use crate::{
+	gadgets::absorb::copy_state, params::RoundParams, Chip, Chipset, CommonConfig, RegionCtx,
+};
 use halo2::{
 	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region, Value},
@@ -11,18 +13,6 @@ use halo2::{
 	poly::Rotation,
 };
 use std::marker::PhantomData;
-
-/// Copy the intermediate poseidon state into the region
-fn copy_state<F: FieldExt, const WIDTH: usize>(
-	ctx: &mut RegionCtx<'_, F>, config: &CommonConfig, prev_state: &[AssignedCell<F, F>; WIDTH],
-) -> Result<[AssignedCell<F, F>; WIDTH], Error> {
-	let mut state: [Option<AssignedCell<F, F>>; WIDTH] = [(); WIDTH].map(|_| None);
-	for i in 0..WIDTH {
-		let new_state = ctx.copy_assign(config.advice[i], prev_state[i].clone())?;
-		state[i] = Some(new_state);
-	}
-	Ok(state.map(|item| item.unwrap()))
-}
 
 /// Assign relevant constants to the circuit for the given round.
 fn load_round_constants<F: FieldExt, const WIDTH: usize>(

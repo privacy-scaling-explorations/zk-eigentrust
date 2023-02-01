@@ -8,6 +8,7 @@ use crate::{
 		IntoAffineChip, PointAddChip, ScalarMulChip, StrictScalarMulConfig,
 	},
 	gadgets::{
+		absorb::AbsorbChip,
 		bits2num::{to_bits, Bits2NumChip},
 		lt_eq::{LessEqualConfig, NShiftedChip, N_SHIFTED},
 		main::{AddChipset, MainChip, MainConfig, MulChipset},
@@ -15,7 +16,7 @@ use crate::{
 	params::poseidon_bn254_5x5::Params,
 	poseidon::{
 		native::{sponge::PoseidonSponge, Poseidon},
-		sponge::{AbsorbChip, PoseidonSpongeChipset, PoseidonSpongeConfig},
+		sponge::{PoseidonSpongeChipset, PoseidonSpongeConfig},
 		FullRoundChip, PartialRoundChip, PoseidonChipset, PoseidonConfig,
 	},
 	Chip, Chipset, CommonConfig, RegionCtx, ADVICE,
