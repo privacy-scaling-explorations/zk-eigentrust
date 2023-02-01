@@ -10,8 +10,8 @@ use ethers::{
 	signers::coins_bip39::{English, Mnemonic},
 	solc::utils::read_json_file,
 };
-use serde::de::DeserializeOwned;
-use std::{env, io::Error, path::Path, str::FromStr};
+use serde::{de::DeserializeOwned, Serialize};
+use std::{env, fs, io::Error, path::Path, str::FromStr};
 
 /// Reads the json file and deserialize it into the provided type
 pub fn read_csv_file<T: DeserializeOwned>(path: impl AsRef<Path>) -> Result<Vec<T>, Error> {
@@ -25,6 +25,13 @@ pub fn read_csv_file<T: DeserializeOwned>(path: impl AsRef<Path>) -> Result<Vec<
 		records.push(record);
 	}
 	Ok(records)
+}
+
+/// Reads the json file and deserialize it into the provided type
+pub fn write_json_file<T: Serialize>(json: T, path: impl AsRef<Path>) -> Result<(), Error> {
+	let bytes = serde_json::to_vec(&json)?;
+	fs::write(path, bytes)?;
+	Ok(())
 }
 
 #[derive(Parser, Debug)]
@@ -59,9 +66,9 @@ async fn main() {
 
 	let root = env::current_dir().unwrap();
 	let boostrap_path = root.join("../data/bootstrap-nodes.csv");
-	let input_path = root.join("../data/client-config.json");
+	let config_path = root.join("../data/client-config.json");
 	let user_secrets_raw: Vec<[String; 3]> = read_csv_file(boostrap_path).unwrap();
-	let config: ClientConfig = read_json_file(input_path).unwrap();
+	let config: ClientConfig = read_json_file(config_path.clone()).unwrap();
 
 	let pos = user_secrets_raw.iter().position(|x| &config.secret_key == &x[1..]);
 	assert!(pos.is_some());
@@ -153,6 +160,11 @@ async fn main() {
 					return;
 				}
 				client_config_updated.ethereum_node_url = node_url;
+			}
+
+			let res = write_json_file(client_config_updated, config_path);
+			if res.is_err() {
+				println!("Failed to same updated config!");
 			}
 		},
 		Mode::Show => {

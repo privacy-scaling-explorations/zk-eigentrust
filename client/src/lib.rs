@@ -13,7 +13,7 @@ use eigen_trust_protocol::manager::{
 	NUM_NEIGHBOURS,
 };
 use ethers::{abi::Address, prelude::EthDisplay, types::Bytes};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use utils::{setup_client, SignerMiddlewareArc};
 
 #[derive(Debug)]
@@ -23,7 +23,7 @@ pub enum ClientError {
 	TxError,
 }
 
-#[derive(Deserialize, Debug, EthDisplay, Clone)]
+#[derive(Serialize, Deserialize, Debug, EthDisplay, Clone)]
 pub struct ClientConfig {
 	pub ops: [u128; NUM_NEIGHBOURS],
 	pub secret_key: [String; 2],
