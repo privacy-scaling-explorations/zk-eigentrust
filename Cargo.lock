@@ -536,22 +536,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "client"
-version = "0.1.0"
-dependencies = [
- "bs58",
- "clap",
- "csv",
- "eigen-trust-circuit",
- "eigen-trust-protocol",
- "ethers",
- "rand 0.8.5",
- "serde",
- "serde_json",
- "tokio",
-]
-
-[[package]]
 name = "cloudabi"
 version = "0.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -953,6 +937,22 @@ dependencies = [
  "num-traits",
  "plotters",
  "rand 0.8.5",
+]
+
+[[package]]
+name = "eigen-trust-client"
+version = "0.1.0"
+dependencies = [
+ "bs58",
+ "clap",
+ "csv",
+ "eigen-trust-circuit",
+ "eigen-trust-protocol",
+ "ethers",
+ "rand 0.8.5",
+ "serde",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]

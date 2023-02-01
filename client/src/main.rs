@@ -1,22 +1,16 @@
-mod att_station;
-mod attest;
-mod compile;
-mod deploy;
-
-use attest::attest;
 use clap::{Args, Parser, Subcommand};
-use compile::compile;
 use csv::Reader as CsvReader;
-use deploy::{deploy, setup_client};
-use eigen_trust_protocol::manager::NUM_NEIGHBOURS;
+use eigen_trust_client::{
+	utils::{compile, deploy},
+	ClientConfig, EigenTrustClient,
+};
 use ethers::{
 	abi::Address,
-	prelude::EthDisplay,
 	providers::Http,
 	signers::coins_bip39::{English, Mnemonic},
 	solc::utils::read_json_file,
 };
-use serde::{de::DeserializeOwned, Deserialize};
+use serde::de::DeserializeOwned;
 use std::{env, io::Error, path::Path, str::FromStr};
 
 /// Reads the json file and deserialize it into the provided type
@@ -31,15 +25,6 @@ pub fn read_csv_file<T: DeserializeOwned>(path: impl AsRef<Path>) -> Result<Vec<
 		records.push(record);
 	}
 	Ok(records)
-}
-
-#[derive(Deserialize, Debug, EthDisplay, Clone)]
-struct ClientConfig {
-	ops: [u128; NUM_NEIGHBOURS],
-	secret_key: [String; 2],
-	as_address: String,
-	mnemonic: String,
-	ethereum_node_url: String,
 }
 
 #[derive(Parser, Debug)]
@@ -76,9 +61,9 @@ async fn main() {
 	let boostrap_path = root.join("../data/bootstrap-nodes.csv");
 	let input_path = root.join("../data/client-config.json");
 	let user_secrets_raw: Vec<[String; 3]> = read_csv_file(boostrap_path).unwrap();
-	let client_config: ClientConfig = read_json_file(input_path).unwrap();
+	let config: ClientConfig = read_json_file(input_path).unwrap();
 
-	let pos = user_secrets_raw.iter().position(|x| &client_config.secret_key == &x[1..]);
+	let pos = user_secrets_raw.iter().position(|x| &config.secret_key == &x[1..]);
 	assert!(pos.is_some());
 
 	match cli.mode {
@@ -87,22 +72,22 @@ async fn main() {
 			println!("Finished compiling!");
 		},
 		Mode::Deploy => {
-			let client = setup_client(&client_config.mnemonic, &client_config.ethereum_node_url);
-			let address = deploy(client).await.unwrap();
-			println!("Contract address: {}", address);
+			let deploy_res = deploy(&config.mnemonic, &config.ethereum_node_url).await;
+			if let Err(e) = deploy_res {
+				eprintln!("Failed to deploy the AttestationStation contract: {:?}", e);
+				return;
+			}
+			let address = deploy_res.unwrap();
+			println!("AttestationStation contract deployed. Address: {}", address);
 		},
 		Mode::Attest => {
-			let client = setup_client(&client_config.mnemonic, &client_config.ethereum_node_url);
-			attest(
-				client, user_secrets_raw, client_config.secret_key, client_config.ops,
-				client_config.as_address,
-			)
-			.await;
+			let client = EigenTrustClient::new(config, user_secrets_raw);
+			client.attest().await.unwrap();
 		},
 		Mode::Update(data) => {
 			let UpdateData { name, score, sk, as_address, mnemonic, node_url } = data;
 
-			let mut client_config_updated = client_config.clone();
+			let mut client_config_updated = config.clone();
 
 			if let (Some(name), Some(score)) = (name, score) {
 				let available_names: Vec<String> =
@@ -172,7 +157,7 @@ async fn main() {
 		},
 		Mode::Show => {
 			println!("Client config:");
-			println!("{:#?}", client_config);
+			println!("{:#?}", config);
 		},
 	}
 }
