@@ -229,8 +229,8 @@ impl<
 	fn synthesize(
 		&self, config: EigenTrustConfig, mut layouter: impl Layouter<Scalar>,
 	) -> Result<(), Error> {
-		let (zero, pk_x, pk_y, big_r_x, big_r_y, s, scale, ops, init_score, passed_s) = layouter
-			.assign_region(
+		let (zero, pk_x, pk_y, big_r_x, big_r_y, s, scale, ops, init_score, total_score, passed_s) =
+			layouter.assign_region(
 				|| "temp",
 				|region: Region<'_, Scalar>| {
 					let mut ctx = RegionCtx::new(region, 0);
@@ -245,6 +245,11 @@ impl<
 					let assigned_initial_score = ctx.assign_from_constant(
 						config.common.advice[2],
 						Scalar::from_u128(INITIAL_SCORE),
+					)?;
+
+					let assigned_total_score = ctx.assign_from_constant(
+						config.common.advice[3],
+						Scalar::from_u128(INITIAL_SCORE * NUM_NEIGHBOURS as u128),
 					)?;
 
 					// Move to the next row
@@ -334,7 +339,8 @@ impl<
 
 					Ok((
 						zero, assigned_pk_x, assigned_pk_y, assigned_big_r_x, assigned_big_r_y,
-						assigned_s, scale, assigned_ops, assigned_initial_score, passed_s,
+						assigned_s, scale, assigned_ops, assigned_initial_score,
+						assigned_total_score, passed_s,
 					))
 				},
 			)?;
@@ -432,6 +438,16 @@ impl<
 			passed_scaled.push(res);
 		}
 
+		let mut sum = zero.clone();
+		for i in 0..NUM_NEIGHBOURS {
+			let add_chipset = AddChipset::new(sum.clone(), passed_s[i].clone());
+			sum = add_chipset.synthesize(
+				&config.common,
+				&config.main,
+				layouter.namespace(|| "s_sum"),
+			)?;
+		}
+
 		layouter.assign_region(
 			|| "unscaled_res",
 			|region: Region<'_, Scalar>| {
@@ -443,6 +459,10 @@ impl<
 					ctx.constrain_equal(passed_s, s)?;
 					ctx.next();
 				}
+				// Constrain the total reputation in the set
+				let sum = ctx.copy_assign(config.common.advice[0], sum.clone())?;
+				let total_score = ctx.copy_assign(config.common.advice[1], total_score.clone())?;
+				ctx.constrain_equal(sum, total_score)?;
 				Ok(())
 			},
 		)?;
