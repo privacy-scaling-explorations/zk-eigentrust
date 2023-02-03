@@ -1,0 +1,17 @@
+[package]
+name = "halo2-snark-aggregator-solidity"
+version = "0.1.0"
+edition = "2021"
+authors = ["zhangjunyu <junyu92@gmail.com>"]
+
+[dependencies]
+halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2022_09_10" }
+halo2-ecc-circuit-lib = { path = "../halo2-ecc-circuit-lib" }
+halo2-snark-aggregator-api = { path = "../halo2-snark-aggregator-api" }
+halo2-snark-aggregator-circuit = { path = "../halo2-snark-aggregator-circuit" }
+halo2curves = { git = 'https://github.com/privacy-scaling-explorations/halo2curves', tag = "0.2.1" }
+
+log = "0.4.17"
+num-bigint = { version = "0.4", features = ["rand"] }
+sha3 = "0.10.1"
+tera = "1.15.0"
