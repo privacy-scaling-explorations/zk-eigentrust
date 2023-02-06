@@ -46,7 +46,7 @@ impl<F: FieldExt, P: EdwardsParams<F>> PointProjective<F, P> {
 	}
 }
 
-#[derive(Hash, Clone, Debug, PartialEq, Eq, Default)]
+#[derive(Hash, Clone, Copy, Debug, PartialEq, Eq, Default)]
 /// Configures Point objects.
 pub struct Point<F: FieldExt, P: EdwardsParams<F>> {
 	/// Constructs a field element for the x.
