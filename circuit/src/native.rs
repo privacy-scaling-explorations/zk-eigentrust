@@ -16,6 +16,12 @@ struct Opinion {
 	scores: [Fr; NUM_NEIGHBOURS],
 }
 
+impl Opinion {
+	pub fn new(sig: Signature, message_hash: Fr, scores: [Fr; NUM_NEIGHBOURS]) -> Self {
+		Self { sig, message_hash, scores }
+	}
+}
+
 struct EigenTrustSet {
 	set: [(PublicKey, Fr); NUM_NEIGHBOURS],
 	ops: HashMap<PublicKey, Opinion>,
@@ -81,16 +87,47 @@ impl EigenTrustSet {
 
 #[cfg(test)]
 mod test {
+	use super::{EigenTrustSet, Opinion, NUM_NEIGHBOURS};
+	use crate::{
+		calculate_message_hash,
+		eddsa::native::{sign, PublicKey, SecretKey},
+	};
+	use rand::thread_rng;
+
 	#[test]
 	fn test_add_member_in_initial_set() {}
-
+	#[test]
 	fn test_add_two_members_without_opinions() {}
+	#[test]
+	#[should_panic]
+	fn test_add_two_members_with_one_opinion() {
+		let mut set = EigenTrustSet::new();
 
-	fn test_add_two_members_with_one_opinion() {}
+		let rng = &mut thread_rng();
 
+		let sk1 = SecretKey::random(rng);
+		let sk2 = SecretKey::random(rng);
+
+		let pk1 = sk1.public();
+		let pk2 = sk2.public();
+
+		set.add_member(pk1);
+		set.add_member(pk2);
+
+		let pks = [PublicKey::default(); NUM_NEIGHBOURS];
+		let scores = [Fr::zero(); NUM_NEIGHBOURS];
+		let (_, message_hashes) = calculate_message_hash(pks.to_vec(), vec![scores.to_vec()]);
+		let sig = sign(&sk1, &pk1, message_hashes[0]);
+
+		let op = Opinion::new(sig, message_hashes[0], scores);
+
+		set.update_op(pk1, op);
+		set.converge();
+	}
+	#[test]
 	fn test_add_two_members_with_opinions() {}
-
+	#[test]
 	fn test_add_three_members_with_opinions() {}
-
+	#[test]
 	fn test_add_three_members_with_two_opinions() {}
 }
