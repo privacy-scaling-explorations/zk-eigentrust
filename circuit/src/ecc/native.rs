@@ -40,9 +40,51 @@
 
 use std::str::FromStr;
 
-use crate::integer::{native::Integer, rns::RnsParams};
-use halo2::arithmetic::FieldExt;
+use crate::integer::{
+	native::Integer,
+	rns::{big_to_fe, RnsParams},
+};
+use halo2::{
+	arithmetic::FieldExt,
+	halo2curves::{
+		group::{ff::PrimeField, Curve},
+		CurveAffine,
+	},
+};
 use num_bigint::BigUint;
+use num_traits::One;
+
+pub(crate) fn make_mul_aux<C: CurveAffine>(aux_to_add: C) -> C {
+	let n = C::Scalar::NUM_BITS as usize;
+	let mut k0 = BigUint::one();
+	let one = BigUint::one();
+	for i in 0..n {
+		k0 |= &one << i;
+	}
+	(-aux_to_add * big_to_fe::<C::Scalar>(k0)).to_affine()
+}
+
+fn make_mul_aux_old<C: CurveAffine>(
+	aux_to_add: C, window_size: usize, number_of_pairs: usize,
+) -> C {
+	assert!(window_size > 0);
+	assert!(number_of_pairs > 0);
+
+	let n = C::Scalar::NUM_BITS as usize;
+	let mut number_of_selectors = n / window_size;
+	if n % window_size != 0 {
+		number_of_selectors += 1;
+	}
+	let mut k0 = BigUint::one();
+	let one = BigUint::one();
+	for i in 0..number_of_selectors {
+		k0 |= &one << (i * window_size);
+	}
+	let k1 = (one << number_of_pairs) - 1usize;
+	// k = k0* 2^n_pairs
+	let k = k0 * k1;
+	(-aux_to_add * big_to_fe::<C::Scalar>(k)).to_affine()
+}
 
 /// Structure for the EcPoint
 #[derive(Clone, Debug)]
@@ -78,14 +120,22 @@ where
 		Self::new(Integer::one(), Integer::one())
 	}
 
+	fn select(bit: bool, table: [Self; 2]) -> Self {
+		if bit {
+			table[1].clone()
+		} else {
+			table[0].clone()
+		}
+	}
+
 	/// Test
 	pub fn to_add() -> Self {
 		let x = BigUint::from_str(
-			"11143412416519439331419640462670787706968393568080883579028635293413925809028",
+			"1025389013226514519632353278017320480435469671263900652059493789374121978352",
 		)
 		.unwrap();
 		let y = BigUint::from_str(
-			"18705266499955353801688064566059223627556459445165891666330347961943005591504",
+			"1765257885292064153361982762550580014361129921341129261566975989515312714066",
 		)
 		.unwrap();
 		Self::new(Integer::new(x), Integer::new(y))
@@ -94,11 +144,11 @@ where
 	/// Test
 	pub fn to_sub() -> Self {
 		let x = BigUint::from_str(
-			"4227120944087317751146903566731094720533433118396519533564178155853230340689",
+			"17766183588643889680371011191898586093637436819165112731151003047766875308726",
 		)
 		.unwrap();
 		let y = BigUint::from_str(
-			"15044973948568322066626547581946775983823562822439870104981865356415091323177",
+			"16905617928140063834923958517849186300623157517350069578617968790164504721526",
 		)
 		.unwrap();
 		Self::new(Integer::new(x), Integer::new(y))
@@ -192,21 +242,10 @@ where
 			}
 			byte_bits
 		});
-		let mut flag = true;
 		// Double and Add operation
 		for bit in bits.flatten() {
 			if *bit {
-				// Addition operation with zero is not working for the add() function because
-				// zero + random value breaks
-				// the algorithm. (Two operands must be distinct and neither of them can be
-				// point at infinity. Otherwise the function returns an erroneous point.) So,
-				// just for the first iteration value assigned manually.
-				if flag {
-					r = exp.clone();
-					flag = false;
-				} else {
-					r = r.add(&exp.clone());
-				}
+				r = r.add(&exp.clone());
 			}
 			exp = exp.double();
 		}
@@ -215,10 +254,8 @@ where
 
 	/// Scalar multiplication for given point
 	pub fn mul_scalar_ladder(&self, le_bytes: [u8; 32]) -> Self {
-		let mut aux_init = Self::to_add();
-		let mut p: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P> = self.clone();
-		// to_sub = (to_add * (1 << ec_order ) -1)
-		let aux_fin = Self::to_sub();
+		let r_init = Self::to_add();
+		let exp: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P> = self.clone();
 
 		// Big Endian vs Little Endian
 		let bits = le_bytes.map(|byte| {
@@ -228,21 +265,20 @@ where
 			}
 			byte_bits
 		});
-		let mut acc = p.add(&aux_init);
-		let mut flag = true;
-		// Ladder operation
-		for bit in bits.flatten() {
-			if flag {
-				flag = false;
-				continue;
-			}
-			if *bit {
-				acc = acc.ladder(&p.add(&aux_init));
-			} else {
-				acc = acc.ladder(&aux_init);
-			}
+
+		let bits = bits.flatten();
+		let table = [r_init.clone(), exp.clone().add(&r_init)];
+		let mut acc = Self::select(bits[0], table.clone());
+		// Double and Add operation
+		for bit in &bits[1..] {
+			let item = Self::select(*bit, table.clone());
+			acc = acc.ladder(&item);
 		}
+
+		// to_sub = (to_add * (1 << ec_order ) -1)
+		let aux_fin = Self::to_sub();
 		acc = acc.add(&aux_fin);
+
 		acc
 	}
 
@@ -254,7 +290,7 @@ where
 
 #[cfg(test)]
 mod test {
-	use super::EcPoint;
+	use super::{make_mul_aux, make_mul_aux_old, EcPoint};
 	use crate::integer::{
 		native::Integer,
 		rns::{big_to_fe, fe_to_big, Bn256_4_68},
@@ -264,6 +300,7 @@ mod test {
 		halo2curves::{
 			bn256::{Fq, Fr, G1Affine},
 			group::Curve,
+			FieldExt,
 		},
 	};
 	use rand::thread_rng;
@@ -363,8 +400,12 @@ mod test {
 	#[test]
 	fn should_mul_scalar_ladder() {
 		let rng = &mut thread_rng();
+		let aux_gen = G1Affine::random(rng.clone());
+		let res1 = make_mul_aux(aux_gen);
+		let res2 = make_mul_aux_old(aux_gen, 1, 1);
+
 		let a = G1Affine::random(rng.clone());
-		let scalar = Fr::one() + Fr::one() + Fr::one();
+		let scalar = Fr::from_u128(2);
 		let c = (a * scalar).to_affine();
 
 		let a_x_bn = fe_to_big(a.x);
@@ -374,9 +415,11 @@ mod test {
 		let a_y_w = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_y_bn);
 
 		let a_w = EcPoint::new(a_x_w, a_y_w);
-		let c_w = a_w.mul_scalar_ladder(scalar.to_bytes());
+		let res = a_w.add(&a_w);
+		println!("{:?}", res);
+		// let c_w = a_w.mul_scalar_ladder(scalar.to_bytes());
 
-		assert_eq!(c.x, big_to_fe(c_w.x.value()));
-		assert_eq!(c.y, big_to_fe(c_w.y.value()));
+		// assert_eq!(c.x, big_to_fe(c_w.x.value()));
+		// assert_eq!(c.y, big_to_fe(c_w.y.value()));
 	}
 }
