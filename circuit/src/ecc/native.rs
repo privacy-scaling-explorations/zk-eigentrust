@@ -12,9 +12,37 @@
 // m_1 = m_0 + 2 * p_y / (f - p_x)
 // r_x = m_1 * m_1 - p_x - f
 // r_y = m_1 * (r_x - p_x) - p_y
+//
+//to_add AssignedPoint {
+//    xn: Value {
+//        inner: Some(
+//
+// 0x233e95ac04b25ce2c97d33de15b02725ab580f8b4fc8c6c1308845d3c581d100,        ),
+//    },
+//    yn: Value {
+//        inner: Some(
+//
+// 0x2a745d70bb31748cf7ffcdd2dfc61f859df4234b4b98e43f29300859b0567db2,        ),
+//    },
+//}
+//to_sub AssignedPoint {
+//    xn: Value {
+//        inner: Some(
+//
+// 0x0713b03ae8cd1cf21649071a75ffc7f4aa116c77eab36fb5af385e89f1df6546,        ),
+//    },
+//    yn: Value {
+//        inner: Some(
+//
+// 0x1b7814dcb397b736986cbad7aee91f37d1cb94c363caeb4e08d482a87ad9c400,        ),
+//    },
+//}
+
+use std::str::FromStr;
 
 use crate::integer::{native::Integer, rns::RnsParams};
 use halo2::arithmetic::FieldExt;
+use num_bigint::BigUint;
 
 /// Structure for the EcPoint
 #[derive(Clone, Debug)]
@@ -48,6 +76,32 @@ where
 	/// Create a new object with x = 1 and y = 1
 	pub fn one() -> Self {
 		Self::new(Integer::one(), Integer::one())
+	}
+
+	/// Test
+	pub fn to_add() -> Self {
+		let x = BigUint::from_str(
+			"11143412416519439331419640462670787706968393568080883579028635293413925809028",
+		)
+		.unwrap();
+		let y = BigUint::from_str(
+			"18705266499955353801688064566059223627556459445165891666330347961943005591504",
+		)
+		.unwrap();
+		Self::new(Integer::new(x), Integer::new(y))
+	}
+
+	/// Test
+	pub fn to_sub() -> Self {
+		let x = BigUint::from_str(
+			"4227120944087317751146903566731094720533433118396519533564178155853230340689",
+		)
+		.unwrap();
+		let y = BigUint::from_str(
+			"15044973948568322066626547581946775983823562822439870104981865356415091323177",
+		)
+		.unwrap();
+		Self::new(Integer::new(x), Integer::new(y))
 	}
 
 	/// Add one point to another
@@ -159,6 +213,39 @@ where
 		r
 	}
 
+	/// Scalar multiplication for given point
+	pub fn mul_scalar_ladder(&self, le_bytes: [u8; 32]) -> Self {
+		let mut aux_init = Self::to_add();
+		let mut p: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P> = self.clone();
+		// to_sub = (to_add * (1 << ec_order ) -1)
+		let aux_fin = Self::to_sub();
+
+		// Big Endian vs Little Endian
+		let bits = le_bytes.map(|byte| {
+			let mut byte_bits = [false; 8];
+			for i in (0..8).rev() {
+				byte_bits[i] = (byte >> i) & 1u8 != 0
+			}
+			byte_bits
+		});
+		let mut acc = p.add(&aux_init);
+		let mut flag = true;
+		// Ladder operation
+		for bit in bits.flatten() {
+			if flag {
+				flag = false;
+				continue;
+			}
+			if *bit {
+				acc = acc.ladder(&p.add(&aux_init));
+			} else {
+				acc = acc.ladder(&aux_init);
+			}
+		}
+		acc = acc.add(&aux_fin);
+		acc
+	}
+
 	/// Check if two points are equal
 	pub fn is_eq(&self, other: &Self) -> bool {
 		self.x.is_eq(&other.x) && self.y.is_eq(&other.y)
@@ -268,6 +355,26 @@ mod test {
 
 		let a_w = EcPoint::new(a_x_w, a_y_w);
 		let c_w = a_w.mul_scalar(scalar.to_bytes());
+
+		assert_eq!(c.x, big_to_fe(c_w.x.value()));
+		assert_eq!(c.y, big_to_fe(c_w.y.value()));
+	}
+
+	#[test]
+	fn should_mul_scalar_ladder() {
+		let rng = &mut thread_rng();
+		let a = G1Affine::random(rng.clone());
+		let scalar = Fr::one() + Fr::one() + Fr::one();
+		let c = (a * scalar).to_affine();
+
+		let a_x_bn = fe_to_big(a.x);
+		let a_y_bn = fe_to_big(a.y);
+
+		let a_x_w = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_x_bn);
+		let a_y_w = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_y_bn);
+
+		let a_w = EcPoint::new(a_x_w, a_y_w);
+		let c_w = a_w.mul_scalar_ladder(scalar.to_bytes());
 
 		assert_eq!(c.x, big_to_fe(c_w.x.value()));
 		assert_eq!(c.y, big_to_fe(c_w.y.value()));
