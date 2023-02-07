@@ -92,12 +92,15 @@ mod test {
 		calculate_message_hash,
 		eddsa::native::{sign, PublicKey, SecretKey},
 	};
+	use halo2::halo2curves::bn256::Fr;
 	use rand::thread_rng;
 
 	#[test]
 	fn test_add_member_in_initial_set() {}
+
 	#[test]
 	fn test_add_two_members_without_opinions() {}
+
 	#[test]
 	#[should_panic]
 	fn test_add_two_members_with_one_opinion() {
@@ -116,7 +119,8 @@ mod test {
 
 		let pks = [PublicKey::default(); NUM_NEIGHBOURS];
 		let scores = [Fr::zero(); NUM_NEIGHBOURS];
-		let (_, message_hashes) = calculate_message_hash(pks.to_vec(), vec![scores.to_vec()]);
+		let (_, message_hashes) =
+			calculate_message_hash::<NUM_NEIGHBOURS, 1>(pks.to_vec(), vec![scores.to_vec()]);
 		let sig = sign(&sk1, &pk1, message_hashes[0]);
 
 		let op = Opinion::new(sig, message_hashes[0], scores);
@@ -124,10 +128,15 @@ mod test {
 		set.update_op(pk1, op);
 		set.converge();
 	}
+
 	#[test]
 	fn test_add_two_members_with_opinions() {}
+
 	#[test]
 	fn test_add_three_members_with_opinions() {}
+
+	/// IDEA: Nullify participant that is not giving away any of his score, or
+	/// is giving them to neighbours not in the set
 	#[test]
 	fn test_add_three_members_with_two_opinions() {}
 }
