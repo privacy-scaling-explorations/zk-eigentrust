@@ -4,6 +4,7 @@
 use halo2::{
 	halo2curves::{
 		pairing::{Engine, MultiMillerLoop},
+		serde::SerdeObject,
 		FieldExt,
 	},
 	plonk::{
@@ -48,19 +49,31 @@ pub fn field_to_string<F: FieldExt>(f: &F) -> String {
 }
 
 /// Generate parameters with polynomial degere = `k`.
-pub fn generate_params<E: MultiMillerLoop + Debug>(k: u32) -> ParamsKZG<E> {
+pub fn generate_params<E: Engine + Debug>(k: u32) -> ParamsKZG<E>
+where
+	E::G1Affine: SerdeObject,
+	E::G2Affine: SerdeObject,
+{
 	ParamsKZG::<E>::new(k)
 }
 
 /// Write parameters to a file.
-pub fn write_params<E: MultiMillerLoop + Debug>(params: &ParamsKZG<E>, path: &str) {
+pub fn write_params<E: Engine + Debug>(params: &ParamsKZG<E>, path: &str)
+where
+	E::G1Affine: SerdeObject,
+	E::G2Affine: SerdeObject,
+{
 	let mut buffer: Vec<u8> = Vec::new();
 	params.write(&mut buffer).unwrap();
 	write(path, buffer).unwrap();
 }
 
 /// Read parameters from a file.
-pub fn read_params<E: MultiMillerLoop + Debug>(path: &str) -> ParamsKZG<E> {
+pub fn read_params<E: Engine + Debug>(path: &str) -> ParamsKZG<E>
+where
+	E::G1Affine: SerdeObject,
+	E::G2Affine: SerdeObject,
+{
 	let mut buffer: Vec<u8> = Vec::new();
 	let mut file = std::fs::File::open(path).unwrap();
 	file.read_to_end(&mut buffer).unwrap();
@@ -68,9 +81,13 @@ pub fn read_params<E: MultiMillerLoop + Debug>(path: &str) -> ParamsKZG<E> {
 }
 
 /// Proving/verifying key generation.
-pub fn keygen<E: MultiMillerLoop + Debug, C: Circuit<E::Scalar>>(
+pub fn keygen<E: Engine + Debug, C: Circuit<E::Scalar>>(
 	params: &ParamsKZG<E>, circuit: C,
-) -> Result<ProvingKey<<E as Engine>::G1Affine>, Error> {
+) -> Result<ProvingKey<<E as Engine>::G1Affine>, Error>
+where
+	E::G1Affine: SerdeObject,
+	E::G2Affine: SerdeObject,
+{
 	let vk = keygen_vk::<<E as Engine>::G1Affine, ParamsKZG<E>, _>(params, &circuit)?;
 	let pk = keygen_pk::<<E as Engine>::G1Affine, ParamsKZG<E>, _>(params, vk, &circuit)?;
 
@@ -85,16 +102,24 @@ pub fn finalize_verify<
 	V: VerificationStrategy<'a, KZGCommitmentScheme<E>, VerifierSHPLONK<'a, E>>,
 >(
 	v: V,
-) -> bool {
+) -> bool
+where
+	E::G1Affine: SerdeObject,
+	E::G2Affine: SerdeObject,
+{
 	v.finalize()
 }
 
 /// Make a proof for generic circuit.
-pub fn prove<E: MultiMillerLoop + Debug, C: Circuit<E::Scalar>, R: Rng + Clone>(
+pub fn prove<E: Engine + Debug, C: Circuit<E::Scalar>, R: Rng + Clone>(
 	params: &ParamsKZG<E>, circuit: C,
 	pub_inps: &[&[<KZGCommitmentScheme<E> as CommitmentScheme>::Scalar]],
 	pk: &ProvingKey<E::G1Affine>, rng: &mut R,
-) -> Result<Vec<u8>, Error> {
+) -> Result<Vec<u8>, Error>
+where
+	E::G1Affine: SerdeObject,
+	E::G2Affine: SerdeObject,
+{
 	let mut transcript = Blake2bWrite::<_, E::G1Affine, Challenge255<_>>::init(vec![]);
 	create_proof::<KZGCommitmentScheme<E>, ProverSHPLONK<_>, _, _, _, _>(
 		params,
@@ -113,7 +138,11 @@ pub fn prove<E: MultiMillerLoop + Debug, C: Circuit<E::Scalar>, R: Rng + Clone>(
 pub fn verify<E: MultiMillerLoop + Debug>(
 	params: &ParamsKZG<E>, pub_inps: &[&[<KZGCommitmentScheme<E> as CommitmentScheme>::Scalar]],
 	proof: &[u8], vk: &VerifyingKey<E::G1Affine>,
-) -> Result<bool, Error> {
+) -> Result<bool, Error>
+where
+	E::G1Affine: SerdeObject,
+	E::G2Affine: SerdeObject,
+{
 	let strategy = AccumulatorStrategy::<E>::new(params);
 	let mut transcript = Blake2bRead::<_, E::G1Affine, Challenge255<_>>::init(proof);
 	let output = verify_proof::<KZGCommitmentScheme<E>, VerifierSHPLONK<E>, _, _, _>(
@@ -128,14 +157,14 @@ pub fn verify<E: MultiMillerLoop + Debug>(
 }
 
 /// Helper function for doing proof and verification at the same time.
-pub fn prove_and_verify<
-	E: MultiMillerLoop + Debug,
-	C: Circuit<E::Scalar> + Clone,
-	R: Rng + Clone,
->(
+pub fn prove_and_verify<E: MultiMillerLoop + Debug, C: Circuit<E::Scalar> + Clone, R: Rng + Clone>(
 	params: ParamsKZG<E>, circuit: C,
 	pub_inps: &[&[<KZGCommitmentScheme<E> as CommitmentScheme>::Scalar]], rng: &mut R,
-) -> Result<bool, Error> {
+) -> Result<bool, Error>
+where
+	E::G1Affine: SerdeObject,
+	E::G2Affine: SerdeObject,
+{
 	let pk = keygen(&params, circuit.clone())?;
 	let start = Instant::now();
 	let proof = prove(&params, circuit, pub_inps, &pk, rng)?;
