@@ -12,7 +12,7 @@ use halo2::{
 		kzg::{
 			commitment::{KZGCommitmentScheme, ParamsKZG},
 			msm::{DualMSM, MSMKZG},
-			multiopen::construct_intermediate_sets,
+			multiopen::{construct_intermediate_sets, CommitmentData},
 			strategy::GuardKZG,
 		},
 		query::{CommitmentReference, Query},
@@ -23,6 +23,8 @@ use halo2::{
 
 use self::transcript::PoseidonRead;
 
+/// Some queries idk
+pub mod queries;
 /// Multi-scalar multiplication
 // pub mod msm;
 /// Poseidon transcript
@@ -32,6 +34,9 @@ pub mod transcript;
 struct U {}
 #[derive(Clone, Copy, Debug)]
 struct V {}
+
+type CommData<'com, E: Engine> =
+	CommitmentData<E::Scalar, VerifierQuery<'com, E::G1Affine, MSMKZG<E>>>;
 
 #[derive(Debug)]
 /// Concrete KZG verifier with GWC variant
@@ -50,15 +55,10 @@ where
 	}
 
 	fn verify_proof<'com, Ch: EncodedChallenge<E::G1Affine>, I>(
-		&self, transcript: &mut PoseidonRead<E::G1Affine>, queries: I,
+		&self, transcript: &mut PoseidonRead<E::G1Affine>, commitment_data: Vec<CommData<'com, E>>,
 		mut msm_accumulator: DualMSM<'params, E>,
-	) -> Result<GuardKZG<'params, E>, Error>
-	where
-		I: IntoIterator<Item = VerifierQuery<'com, E::G1Affine, MSMKZG<E>>> + Clone,
-	{
+	) -> Result<GuardKZG<'params, E>, Error> {
 		let v: ChallengeScalar<E::G1Affine, V> = transcript.squeeze_challenge_scalar();
-
-		let commitment_data = construct_intermediate_sets(queries);
 
 		let w: Vec<E::G1Affine> = (0..commitment_data.len())
 			.map(|_| transcript.read_point().map_err(|_| Error::SamplingError))
