@@ -16,8 +16,8 @@ use halo2::{
 use std::{fmt::Debug, iter};
 
 /// Returns a boolean indicating whether or not the proof is valid
-pub fn setup_verify_queries<'params, E: Engine + Debug>(
-	params: &ParamsKZG<E>, vk: &'params VerifyingKey<E::G1Affine>, instances: &[&[&[E::Scalar]]],
+pub fn setup_verify_queries<E: Engine + Debug>(
+	params: ParamsKZG<E>, vk: VerifyingKey<E::G1Affine>, instances: &[&[&[E::Scalar]]],
 	transcript: &mut PoseidonRead<E::G1Affine>,
 ) -> Result<(), Error>
 where
@@ -94,7 +94,7 @@ where
 	let permutations_committed = (0..num_proofs)
 		.map(|_| {
 			// Hash each permutation product commitment
-			vk.cs().permutation().read_product_commitments(vk, transcript)
+			vk.cs().permutation().read_product_commitments(&vk, transcript)
 		})
 		.collect::<Result<Vec<_>, _>>()?;
 
@@ -114,7 +114,7 @@ where
 	// Sample y challenge, which keeps the gates linearly independent.
 	let y: ChallengeY<_> = transcript.squeeze_challenge_scalar();
 
-	let vanishing = vanishing.read_commitments_after_y(vk, transcript)?;
+	let vanishing = vanishing.read_commitments_after_y(&vk, transcript)?;
 
 	// Sample x challenge, which is used to ensure the circuit is
 	// satisfied with high probability.
@@ -225,7 +225,7 @@ where
 						})
 					}))
 					.chain(permutation.expressions(
-						vk,
+						&vk,
 						&vk.cs().permutation(),
 						&permutations_common,
 						advice_evals,
@@ -252,7 +252,7 @@ where
 					)
 			});
 
-		vanishing.verify(params, expressions, y, xn)
+		vanishing.verify(&params, expressions, y, xn)
 	};
 
 	let mut queries: Vec<VerifierQuery<E::G1Affine, MSMKZG<E>>> = Vec::new();
@@ -269,7 +269,7 @@ where
 	}
 
 	for permutation in permutations_evaluated.iter() {
-		let qrs = permutation.queries(vk, x).clone();
+		let qrs = permutation.queries(&vk, x).clone();
 		for q in qrs {
 			queries.push(q);
 		}
@@ -277,7 +277,7 @@ where
 
 	for lookups in &lookups_evaluated {
 		for lookup in lookups {
-			let qrs = lookup.queries(vk, x).clone();
+			let qrs = lookup.queries(&vk, x).clone();
 			for q in qrs {
 				queries.push(q);
 			}
@@ -300,6 +300,9 @@ where
 	for q in vanishing.queries(x) {
 		queries.push(q);
 	}
+
+	let cloned_queries: Vec<VerifierQuery<E::G1Affine, MSMKZG<E>>> =
+		queries.into_iter().map(|v| v.clone()).clone().collect();
 
 	Ok(())
 }
