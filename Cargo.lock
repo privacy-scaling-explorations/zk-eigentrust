@@ -1700,7 +1700,7 @@ dependencies = [
 [[package]]
 name = "halo2_proofs"
 version = "0.2.0"
-source = "git+https://github.com/lazovicff/halo2?branch=expose-verifer-params#974ceb7b566754d7350f6a8bcc7aef0843acdde3"
+source = "git+https://github.com/lazovicff/halo2?branch=expose-verifer-params#8f9c795c092e97f6133bc4797ef0646c1319639a"
 dependencies = [
  "blake2b_simd",
  "ff",
@@ -3214,9 +3214,9 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.92"
+version = "1.0.93"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7434af0dc1cbd59268aa98b4c22c131c0584d2232f6fb166efb993e2832e896a"
+checksum = "cad406b69c91885b5107daf2c29572f6c8cdb3c66826821e286c533490c0bc76"
 dependencies = [
  "itoa 1.0.5",
  "ryu",
