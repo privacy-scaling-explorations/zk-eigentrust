@@ -1,25 +1,93 @@
 use super::transcript::PoseidonRead;
 use halo2::{
 	arithmetic::{compute_inner_product, Field, FieldExt},
-	halo2curves::{bn256::Bn256, pairing::Engine, serde::SerdeObject},
+	halo2curves::{pairing::Engine, serde::SerdeObject, CurveAffine},
 	plonk::{
 		vanishing, ChallengeBeta, ChallengeGamma, ChallengeTheta, ChallengeX, ChallengeY, Error,
 		VerifyingKey,
 	},
 	poly::{
-		commitment::{CommitmentScheme, Params, ParamsVerifier, Verifier},
+		commitment::{Params, MSM},
 		kzg::{commitment::ParamsKZG, msm::MSMKZG},
-		VerifierQuery,
+		query::{CommitmentReference, Query, VerifierQuery},
 	},
-	transcript::{read_n_scalars, EncodedChallenge, Transcript, TranscriptRead},
+	transcript::{read_n_scalars, Transcript, TranscriptRead},
 };
-use std::{fmt::Debug, iter};
+use std::fmt::Debug;
+
+/// CommitmentData
+#[derive(Debug)]
+pub struct CommitmentData<E: Engine + Debug> {
+	/// queries
+	pub queries: Vec<VerifierQueryOwned<E::G1Affine, MSMKZG<E>>>,
+	/// point
+	pub point: E::Scalar,
+}
+
+/// construct_intermediate_sets
+pub fn construct_intermediate_sets<E: Engine + Debug>(
+	queries: Vec<VerifierQueryOwned<E::G1Affine, MSMKZG<E>>>,
+) -> Vec<CommitmentData<E>> {
+	let mut point_query_map: Vec<(E::Scalar, Vec<VerifierQueryOwned<E::G1Affine, MSMKZG<E>>>)> =
+		Vec::new();
+	for query in queries {
+		if let Some(pos) = point_query_map.iter().position(|(point, _)| *point == query.get_point())
+		{
+			let (_, queries) = &mut point_query_map[pos];
+			queries.push(query);
+		} else {
+			point_query_map.push((query.get_point(), vec![query]));
+		}
+	}
+
+	point_query_map
+		.into_iter()
+		.map(|(point, queries)| CommitmentData { queries, point })
+		.collect()
+}
+
+#[derive(Clone, Debug)]
+/// CommitmentReference
+pub enum CommitmentReferenceOwned<C: CurveAffine, M: MSM<C>> {
+	/// Commitment
+	Commitment(C),
+	/// MSM
+	MSM(M),
+}
+
+#[derive(Debug, Clone)]
+/// A polynomial query at a point
+pub struct VerifierQueryOwned<C: CurveAffine, M: MSM<C>> {
+	/// point at which polynomial is queried
+	pub point: C::Scalar,
+	/// commitment to polynomial
+	pub commitment: CommitmentReferenceOwned<C, M>,
+	/// evaluation of polynomial at query point
+	pub eval: C::Scalar,
+}
+
+impl<C: CurveAffine, M: MSM<C>> VerifierQueryOwned<C, M> {
+	/// get_point
+	pub fn get_point(&self) -> C::Scalar {
+		self.point
+	}
+
+	/// get_point
+	pub fn get_commitment(&self) -> CommitmentReferenceOwned<C, M> {
+		self.commitment.clone()
+	}
+
+	/// get_eval
+	pub fn get_eval(&self) -> C::Scalar {
+		self.eval
+	}
+}
 
 /// Returns a boolean indicating whether or not the proof is valid
 pub fn setup_verify_queries<E: Engine + Debug>(
 	params: ParamsKZG<E>, vk: VerifyingKey<E::G1Affine>, instances: &[&[&[E::Scalar]]],
 	transcript: &mut PoseidonRead<E::G1Affine>,
-) -> Result<(), Error>
+) -> Result<Vec<VerifierQueryOwned<E::G1Affine, MSMKZG<E>>>, Error>
 where
 	E::G1Affine: SerdeObject,
 	E::G2Affine: SerdeObject,
@@ -301,8 +369,20 @@ where
 		queries.push(q);
 	}
 
-	let cloned_queries: Vec<VerifierQuery<E::G1Affine, MSMKZG<E>>> =
-		queries.into_iter().map(|v| v.clone()).clone().collect();
+	let mut owned_queries = Vec::new();
+	for vq in queries {
+		let point = vq.get_point();
+		let eval = vq.get_eval();
+		let comm = vq.get_commitment();
 
-	Ok(())
+		let comm_owned = match comm {
+			CommitmentReference::Commitment(c) => CommitmentReferenceOwned::Commitment(c.clone()),
+			CommitmentReference::MSM(msm) => CommitmentReferenceOwned::MSM(msm.clone()),
+		};
+
+		let vq_owned = VerifierQueryOwned { point, eval, commitment: comm_owned };
+		owned_queries.push(vq_owned);
+	}
+
+	Ok(owned_queries)
 }

@@ -1,27 +1,25 @@
-use std::{fmt::Debug, marker::PhantomData};
+use std::fmt::Debug;
 
+use crate::verifier::queries::CommitmentReferenceOwned;
+
+use self::{queries::CommitmentData, transcript::PoseidonRead};
 use halo2::{
 	arithmetic::{powers, Field},
 	halo2curves::{
 		pairing::{Engine, MultiMillerLoop},
 		serde::SerdeObject,
-		FieldExt,
 	},
 	poly::{
 		commitment::{ParamsProver, MSM},
 		kzg::{
-			commitment::{KZGCommitmentScheme, ParamsKZG},
+			commitment::ParamsKZG,
 			msm::{DualMSM, MSMKZG},
-			multiopen::{construct_intermediate_sets, CommitmentData},
 			strategy::GuardKZG,
 		},
-		query::{CommitmentReference, Query},
-		Error, VerifierQuery,
+		Error,
 	},
-	transcript::{Challenge255, ChallengeScalar, EncodedChallenge, Transcript, TranscriptRead},
+	transcript::{ChallengeScalar, EncodedChallenge, Transcript, TranscriptRead},
 };
-
-use self::transcript::PoseidonRead;
 
 /// Some queries idk
 pub mod queries;
@@ -34,9 +32,6 @@ pub mod transcript;
 struct U {}
 #[derive(Clone, Copy, Debug)]
 struct V {}
-
-type CommData<'com, E: Engine> =
-	CommitmentData<E::Scalar, VerifierQuery<'com, E::G1Affine, MSMKZG<E>>>;
 
 #[derive(Debug)]
 /// Concrete KZG verifier with GWC variant
@@ -54,8 +49,8 @@ where
 		Self { params }
 	}
 
-	fn verify_proof<'com, Ch: EncodedChallenge<E::G1Affine>, I>(
-		&self, transcript: &mut PoseidonRead<E::G1Affine>, commitment_data: Vec<CommData<'com, E>>,
+	fn verify_proof<Ch: EncodedChallenge<E::G1Affine>, I>(
+		&self, transcript: &mut PoseidonRead<E::G1Affine>, commitment_data: Vec<CommitmentData<E>>,
 		mut msm_accumulator: DualMSM<'params, E>,
 	) -> Result<GuardKZG<'params, E>, Error> {
 		let v: ChallengeScalar<E::G1Affine, V> = transcript.squeeze_challenge_scalar();
@@ -86,12 +81,12 @@ where
 					assert_eq!(query.get_point(), z);
 
 					let commitment = match query.get_commitment() {
-						CommitmentReference::Commitment(c) => {
+						CommitmentReferenceOwned::Commitment(c) => {
 							let mut msm = MSMKZG::<E>::new();
-							msm.append_term(power_of_v, (*c).into());
+							msm.append_term(power_of_v, c.into());
 							msm
 						},
-						CommitmentReference::MSM(msm) => {
+						CommitmentReferenceOwned::MSM(msm) => {
 							let mut msm = msm.clone();
 							msm.scale(power_of_v);
 							msm
