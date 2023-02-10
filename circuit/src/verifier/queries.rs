@@ -198,15 +198,18 @@ where
 				(min, max)
 			}
 		});
-	let max_instance_len = instances
+	let max_instance_len: usize = instances
 		.iter()
 		.flat_map(|instance| instance.iter().map(|instance| instance.len()))
 		.max_by(Ord::cmp)
 		.unwrap_or_default();
+	let max_instance_len_bytes = max_instance_len.to_be_bytes();
+	let max_instance_len_bytes_short: [u8; 4] = max_instance_len_bytes[..4].try_into().unwrap();
+	let max_instance_len_i32 = i32::from_be_bytes(max_instance_len_bytes_short);
 	let l_i_s = &vk.get_domain().l_i_range(
 		*x,
 		xn,
-		-max_rotation..max_instance_len as i32 + min_rotation.abs(),
+		-max_rotation..max_instance_len_i32 + min_rotation.abs(),
 	);
 	let instance_evals = instances
 		.iter()
@@ -254,10 +257,13 @@ where
 	// commitments open to the correct values.
 	let vanishing = {
 		// x^n
-		let xn = x.pow(&[params.n() as u64, 0, 0, 0]);
+		let xn = x.pow(&[params.n(), 0, 0, 0]);
 
 		let blinding_factors = vk.cs().blinding_factors();
-		let l_evals = vk.get_domain().l_i_range(*x, xn, (-((blinding_factors + 1) as i32))..=0);
+		let blinding_factors_bytes = blinding_factors.to_be_bytes();
+		let blinding_factors_bytes_short: [u8; 4] = blinding_factors_bytes[..4].try_into().unwrap();
+		let blinding_factors_i32 = i32::from_be_bytes(blinding_factors_bytes_short);
+		let l_evals = vk.get_domain().l_i_range(*x, xn, (-(blinding_factors_i32 + 1))..=0);
 		assert_eq!(l_evals.len(), 2 + blinding_factors);
 		let l_last = l_evals[0];
 		let l_blind: E::Scalar = l_evals[1..(1 + blinding_factors)]
@@ -280,6 +286,7 @@ where
 						gate.polynomials().iter().map(move |poly| {
 							poly.evaluate(
 								&|scalar| scalar,
+								#[allow(clippy::panic)]
 								&|_| panic!("virtual selectors are removed during optimization"),
 								&|query| fixed_evals[query.index()],
 								&|query| advice_evals[query.index()],
