@@ -89,7 +89,7 @@ impl EigenTrustSet {
 				// filtered set, normalize each score inside their opinion by:
 				// score / TRUE_SUM
 
-				// set =      [(1, 100), (2, 100), (3, 100)]
+				// set = [(1, 100), (2, 100), (3, 100)]
 
 				// peer1_op = [(5, 10),  (6, 10),  (7, 10)]
 				// peer1_op_filterd = [(null, 0),  (null, 0),  (null, 0)]
@@ -119,6 +119,7 @@ impl EigenTrustSet {
 			}
 		}
 
+		// By this point we should use filtered_set and filtered_opinions
 		let mut s = self.set.map(|item| item.1);
 		for _ in 0..NUM_ITERATIONS {
 			let mut distributions = [[Fr::zero(); NUM_NEIGHBOURS]; NUM_NEIGHBOURS];
