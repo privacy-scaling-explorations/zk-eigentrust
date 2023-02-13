@@ -1,4 +1,3 @@
-use super::transcript::PoseidonRead;
 use halo2::{
 	arithmetic::{compute_inner_product, Field, FieldExt},
 	halo2curves::{pairing::Engine, serde::SerdeObject, CurveAffine},
@@ -11,7 +10,7 @@ use halo2::{
 		kzg::{commitment::ParamsKZG, msm::MSMKZG},
 		query::{CommitmentReference, Query, VerifierQuery},
 	},
-	transcript::{read_n_scalars, Transcript, TranscriptRead},
+	transcript::{read_n_scalars, EncodedChallenge, TranscriptRead},
 };
 use std::fmt::Debug;
 
@@ -84,9 +83,13 @@ impl<C: CurveAffine, M: MSM<C>> VerifierQueryOwned<C, M> {
 }
 
 /// Returns a boolean indicating whether or not the proof is valid
-pub fn setup_verify_queries<E: Engine + Debug>(
+pub fn setup_verify_queries<
+	E: Engine + Debug,
+	Ch: EncodedChallenge<E::G1Affine>,
+	T: TranscriptRead<E::G1Affine, Ch>,
+>(
 	params: ParamsKZG<E>, vk: VerifyingKey<E::G1Affine>, instances: &[&[&[E::Scalar]]],
-	transcript: &mut PoseidonRead<E::G1Affine>,
+	transcript: &mut T,
 ) -> Result<Vec<VerifierQueryOwned<E::G1Affine, MSMKZG<E>>>, Error>
 where
 	E::G1Affine: SerdeObject,

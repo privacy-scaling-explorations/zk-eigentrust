@@ -2,7 +2,7 @@ use std::fmt::Debug;
 
 use crate::verifier::queries::CommitmentReferenceOwned;
 
-use self::{queries::CommitmentData, transcript::PoseidonRead};
+use self::queries::CommitmentData;
 use halo2::{
 	arithmetic::{powers, Field},
 	halo2curves::{
@@ -18,7 +18,7 @@ use halo2::{
 		},
 		Error,
 	},
-	transcript::{ChallengeScalar, EncodedChallenge, Transcript, TranscriptRead},
+	transcript::{ChallengeScalar, EncodedChallenge, TranscriptRead},
 };
 
 /// Some queries idk
@@ -49,8 +49,8 @@ where
 		Self { params }
 	}
 
-	fn verify_proof<Ch: EncodedChallenge<E::G1Affine>, I>(
-		&self, transcript: &mut PoseidonRead<E::G1Affine>, commitment_data: Vec<CommitmentData<E>>,
+	fn verify_proof<Ch: EncodedChallenge<E::G1Affine>, T: TranscriptRead<E::G1Affine, Ch>>(
+		&self, transcript: &mut T, commitment_data: Vec<CommitmentData<E>>,
 		mut msm_accumulator: DualMSM<'params, E>,
 	) -> Result<GuardKZG<'params, E>, Error> {
 		let v: ChallengeScalar<E::G1Affine, V> = transcript.squeeze_challenge_scalar();
