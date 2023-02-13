@@ -12,57 +12,15 @@
 // m_1 = m_0 + 2 * p_y / (f - p_x)
 // r_x = m_1 * m_1 - p_x - f
 // r_y = m_1 * (r_x - p_x) - p_y
-//
-//to_add AssignedPoint {
-//    xn: Value {
-//        inner: Some(
-//
-// 0x233e95ac04b25ce2c97d33de15b02725ab580f8b4fc8c6c1308845d3c581d100,        ),
-//    },
-//    yn: Value {
-//        inner: Some(
-//
-// 0x2a745d70bb31748cf7ffcdd2dfc61f859df4234b4b98e43f29300859b0567db2,        ),
-//    },
-//}
-//to_sub AssignedPoint {
-//    xn: Value {
-//        inner: Some(
-//
-// 0x0713b03ae8cd1cf21649071a75ffc7f4aa116c77eab36fb5af385e89f1df6546,        ),
-//    },
-//    yn: Value {
-//        inner: Some(
-//
-// 0x1b7814dcb397b736986cbad7aee91f37d1cb94c363caeb4e08d482a87ad9c400,        ),
-//    },
-//}
 
 use std::str::FromStr;
 
-use crate::integer::{
-	native::Integer,
-	rns::{big_to_fe, fe_to_big, RnsParams},
+use crate::{
+	gadgets::bits2num::to_bits,
+	integer::{native::Integer, rns::RnsParams},
 };
-use halo2::{
-	arithmetic::FieldExt,
-	halo2curves::{
-		group::{ff::PrimeField, Curve},
-		CurveAffine,
-	},
-};
+use halo2::{self, arithmetic::FieldExt};
 use num_bigint::BigUint;
-use num_traits::One;
-
-pub(crate) fn make_mul_aux<C: CurveAffine>(aux_to_add: C) -> C {
-	let n = C::Scalar::NUM_BITS as usize;
-	let mut k0 = BigUint::one();
-	let one = BigUint::one();
-	for i in 0..3 {
-		k0 |= &one << i;
-	}
-	(-aux_to_add * big_to_fe::<C::Scalar>(k0)).to_affine()
-}
 
 /// Structure for the EcPoint
 #[derive(Clone, Debug)]
@@ -98,14 +56,7 @@ where
 		Self::new(Integer::one(), Integer::one())
 	}
 
-	/// Performs the unary `-` operation
-	pub fn neg(self) -> Self {
-		let y = P::compose(self.y.limbs);
-		let neg_y = N::zero().sub(y);
-		let neg_y = Integer::new(fe_to_big(neg_y));
-		Self { x: self.x, y: neg_y }
-	}
-
+	/// Selection function for the table
 	fn select(bit: bool, table: [Self; 2]) -> Self {
 		if bit {
 			table[1].clone()
@@ -114,7 +65,7 @@ where
 		}
 	}
 
-	/// Test
+	/// AuxInit
 	pub fn to_add() -> Self {
 		let x = BigUint::from_str(
 			"16674715582331070136933915527288889019778094566732803816939061043898457168778",
@@ -127,7 +78,7 @@ where
 		Self::new(Integer::new(x), Integer::new(y))
 	}
 
-	/// Test
+	/// AuxFin
 	pub fn to_sub() -> Self {
 		let x = BigUint::from_str(
 			"13309346756614635333825509300060708409153440696756098989763444826124962874203",
@@ -239,21 +190,15 @@ where
 		r
 	}
 
-	/// Scalar multiplication for given point
-	pub fn mul_scalar_ladder(&self, le_bytes: [u8; 254]) -> Self {
+	/// Scalar multiplication for given point with using ladder
+	pub fn mul_scalar_ladder(&self, le_bytes: [u8; 32]) -> Self {
 		let r_init = Self::to_add();
 		let exp: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P> = self.clone();
 
-		// Big Endian vs Little Endian
-		let bits = le_bytes.map(|byte| {
-			let mut byte_bits = [false; 1];
-			for i in 0..1 {
-				byte_bits[i] = (byte >> i) & 1u8 != 0
-			}
-			byte_bits
-		});
+		// Converts given input to its bit by Scalar Field's bit size
+		let mut bits = to_bits::<254>(le_bytes);
+		bits.reverse();
 
-		let bits = bits.flatten();
 		let table = [r_init.clone(), exp.clone().add(&r_init)];
 		let mut acc = Self::select(bits[0], table.clone());
 
@@ -283,9 +228,7 @@ where
 
 #[cfg(test)]
 mod test {
-	use std::str::FromStr;
-
-	use super::{make_mul_aux, EcPoint};
+	use super::EcPoint;
 	use crate::integer::{
 		native::Integer,
 		rns::{big_to_fe, fe_to_big, Bn256_4_68},
@@ -295,14 +238,13 @@ mod test {
 		halo2curves::{
 			bn256::{Fq, Fr, G1Affine},
 			group::Curve,
-			FieldExt,
 		},
 	};
-	use num_bigint::BigUint;
 	use rand::thread_rng;
 
 	#[test]
 	fn should_add_two_points() {
+		// ECC Add test
 		let rng = &mut thread_rng();
 
 		let a = G1Affine::random(rng.clone());
@@ -329,6 +271,7 @@ mod test {
 
 	#[test]
 	fn should_double_point() {
+		// ECC Double test
 		let rng = &mut thread_rng();
 
 		let a = G1Affine::random(rng.clone());
@@ -349,6 +292,7 @@ mod test {
 
 	#[test]
 	fn should_ladder() {
+		// ECC Ladder test
 		let rng = &mut thread_rng();
 
 		let a = G1Affine::random(rng.clone());
@@ -375,6 +319,7 @@ mod test {
 
 	#[test]
 	fn should_mul_scalar() {
+		// ECC Mul Scalar test
 		let rng = &mut thread_rng();
 		let a = G1Affine::random(rng.clone());
 		let scalar = Fr::random(rng);
@@ -395,41 +340,10 @@ mod test {
 
 	#[test]
 	fn should_mul_scalar_ladder() {
+		// ECC Mul Scalar with Ladder test
 		let rng = &mut thread_rng();
-		let aux_gen = G1Affine::random(rng.clone());
-		let _res1 = make_mul_aux(aux_gen);
-
-		let scalar_bytes_test: [u8; 254] = [
-			0, 1, 1, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 0, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1,
-			0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0, 0, 0, 0, 1, 0, 1, 0, 1, 1, 0, 0, 0, 1, 1, 1,
-			1, 1, 1, 0, 1, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 1, 0, 0, 0, 1, 1, 0, 1, 0, 1, 0,
-			1, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 0, 0, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 0,
-			1, 1, 0, 0, 1, 0, 1, 0, 1, 0, 1, 1, 1, 0, 0, 1, 0, 1, 1, 1, 0, 0, 1, 0, 1, 0, 1, 0, 1,
-			0, 1, 0, 0, 1, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0,
-			0, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1,
-			0, 0, 1, 0, 1, 0, 0, 1, 1, 0, 1, 1, 0, 0, 1, 0, 1, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 1, 1,
-			1, 1, 1, 0, 0, 1, 1, 1, 0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 0, 1, 1,
-		];
-		let scalar_test = BigUint::from_str(
-			"11350831874673312041585092088721162570863122638136378782700070131451626642019",
-		)
-		.unwrap();
-		let scalar_test = big_to_fe::<Fr>(scalar_test);
-
-		let scalar_bytes: [u8; 254] = [
-			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1,
-		];
-
 		let a = G1Affine::random(rng.clone());
-		let scalar = Fr::from_u128(3);
+		let scalar = Fr::random(rng);
 		let c = (a * scalar).to_affine();
 
 		let a_x_bn = fe_to_big(a.x);
@@ -438,7 +352,8 @@ mod test {
 		let a_x_w = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_x_bn);
 		let a_y_w = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_y_bn);
 		let a_w = EcPoint::new(a_x_w, a_y_w);
-		let c_w = a_w.mul_scalar_ladder(scalar_bytes);
+
+		let c_w = a_w.mul_scalar_ladder(scalar.to_bytes());
 
 		assert_eq!(c.x, big_to_fe(c_w.x.value()));
 		assert_eq!(c.y, big_to_fe(c_w.y.value()));
