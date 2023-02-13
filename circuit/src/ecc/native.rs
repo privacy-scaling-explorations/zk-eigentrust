@@ -167,7 +167,7 @@ where
 	}
 
 	/// Scalar multiplication for given point with using ladder
-	pub fn mul_scalar_ladder(&self, le_bytes: [u8; 32]) -> Self {
+	pub fn mul_scalar(&self, le_bytes: [u8; 32]) -> Self {
 		let r_init = Self::to_add();
 		let exp: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P> = self.clone();
 
@@ -185,7 +185,7 @@ where
 		} else {
 			acc = acc.add(&table[0]);
 		}
-		// Double and Add operation
+		// Double and Add operation with ladder
 		for bit in &bits[2..] {
 			let item = Self::select(*bit, table.clone());
 			acc = acc.ladder(&item);
@@ -294,7 +294,7 @@ mod test {
 	}
 
 	#[test]
-	fn should_mul_scalar_ladder() {
+	fn should_mul_scalar() {
 		// ECC Mul Scalar with Ladder test
 		let rng = &mut thread_rng();
 		let a = G1Affine::random(rng.clone());
@@ -308,7 +308,7 @@ mod test {
 		let a_y_w = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_y_bn);
 		let a_w = EcPoint::new(a_x_w, a_y_w);
 
-		let c_w = a_w.mul_scalar_ladder(scalar.to_bytes());
+		let c_w = a_w.mul_scalar(scalar.to_bytes());
 
 		assert_eq!(c.x, big_to_fe(c_w.x.value()));
 		assert_eq!(c.y, big_to_fe(c_w.y.value()));
