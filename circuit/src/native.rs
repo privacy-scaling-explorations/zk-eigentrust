@@ -13,12 +13,20 @@ const INITIAL_SCORE: u128 = 1000;
 struct Opinion {
 	sig: Signature,
 	message_hash: Fr,
-	scores: [Fr; NUM_NEIGHBOURS],
+	scores: [(PublicKey, Fr); NUM_NEIGHBOURS],
 }
 
 impl Opinion {
 	pub fn new(sig: Signature, message_hash: Fr, scores: [Fr; NUM_NEIGHBOURS]) -> Self {
 		Self { sig, message_hash, scores }
+	}
+}
+
+impl Default for Opinion {
+	fn default() -> Self {
+		let sig = Signature::new(Fr::zero(), Fr::zero(), Fr::zero());
+		let message_hash = Fr::zero();
+		let scores = [(PublicKey::default(), Fr::zero()); NUM_NEIGHBOURS];
 	}
 }
 
@@ -50,12 +58,75 @@ impl EigenTrustSet {
 	}
 
 	pub fn converge(&self) -> [Fr; NUM_NEIGHBOURS] {
+		let initial_score = Fr::from_u128(INITIAL_SCORE);
+
+		for i in 0..NUM_NEIGHBOURS {
+			let pk = self.set[i].0;
+			let ops_i = self.ops.get_mut(&pk).unwrap_or_default();
+
+			// let mut filtered_set = ...
+			// let filtered_opinions = ...
+			// Validity checks
+			if pk == PublicKey::default() {
+				assert!(ops_i.scores == [Fr::zero(); NUM_NEIGHBOURS]);
+			} else {
+				assert!(ops_i.scores[i] == Fr::zero());
+
+				// Nullify scores that are given to wrong member at specific index
+				for (idx, (&pk_j, &score)) in ops_i.scores.iter().enumerate() {
+					let true_score = if self.set[idx].0 == pk_j { score } else { Fr::zero() };
+					ops_i.scores[idx] = true_score;
+				}
+
+				// First we need filtered set -- set after we invalidated
+				// invalid peers:
+				// - Peers that dont have at least one valid score
+
+				// Normalize the scores
+				// Take the sum of all initial score of valid peers
+				// Take from filtered set -- num_filtered_peers == 3, The sum is
+				// 3 * INITIAL_SCORE = TRUE_SUM Go through each peer from
+				// filtered set, normalize each score inside their opinion by:
+				// score / TRUE_SUM
+
+				// set =      [(1, 100), (2, 100), (3, 100)]
+
+				// peer1_op = [(5, 10),  (6, 10),  (7, 10)]
+				// peer1_op_filterd = [(null, 0),  (null, 0),  (null, 0)]
+
+				// filtered_set = [(null, 0), (2, 100), (3, 100)]
+
+				// peer2_op = [(1, 10),  (2, 10),  (3, 10)]
+				// peer2_op_filterd = [(null, 0),  (null, 0),  (3, 10)]
+
+				// filtered_set = [(null, 0), (2, 100), (3, 100)]
+
+				// peer3_op = [(1, 10),  (2, 10),  (3, 10)]
+				// peer3_op_filterd = [(null, 0),  (2, 10),  (null, 0)]
+
+				// final_filtered_set = [(null, 0), (2, 100), (3, 100)]
+
+				// score = [(null, 0), (2, 100), (3, 100)]
+				
+				/// NORMALIZATION:
+				// total_available_credit = 1000;
+				// set = [10, 20, 50]
+				// sum = 10 + 20 + 50 = 80
+				// set = [10 / 80, 20 / 80, 50 / 80];
+				// set = [0.125, 0.25, 0.625]
+				// distributed_credit = [0.125 * 1000, 0.25 * 1000, 0.625 * 1000];
+				// distributed_credit = [125, 250, 625];
+			}
+		}
+
 		let mut s = self.set.map(|item| item.1);
 		for _ in 0..NUM_ITERATIONS {
 			let mut distributions = [[Fr::zero(); NUM_NEIGHBOURS]; NUM_NEIGHBOURS];
 			for i in 0..NUM_NEIGHBOURS {
 				let mut local_distr = [Fr::zero(); NUM_NEIGHBOURS];
-				let ops_i = self.ops.get(&self.set[i].0).unwrap();
+				let pk = self.set[i].0;
+				let ops_i = self.ops.get_mut(&pk).unwrap_or_default();
+
 				for j in 0..NUM_NEIGHBOURS {
 					let op = ops_i.scores[j] * s[i];
 					local_distr[j] = op;
