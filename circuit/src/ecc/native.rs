@@ -166,30 +166,6 @@ where
 		Self { x: r_x.result, y: r_y.result }
 	}
 
-	/// Scalar multiplication for given point
-	pub fn mul_scalar(&self, le_bytes: [u8; 32]) -> Self {
-		let mut exp: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P> = self.clone();
-
-		// Big Endian vs Little Endian
-		let bits = le_bytes.map(|byte| {
-			let mut byte_bits = [false; 8];
-			for i in (0..8).rev() {
-				byte_bits[i] = (byte >> i) & 1u8 != 0
-			}
-			byte_bits
-		});
-		let bits = bits.flatten();
-		let mut r = exp.clone();
-		// Double and Add operation
-		for bit in &bits[1..] {
-			exp = exp.double();
-			if *bit {
-				r = r.add(&exp.clone());
-			}
-		}
-		r
-	}
-
 	/// Scalar multiplication for given point with using ladder
 	pub fn mul_scalar_ladder(&self, le_bytes: [u8; 32]) -> Self {
 		let r_init = Self::to_add();
@@ -312,27 +288,6 @@ mod test {
 		let a_w = EcPoint::new(a_x_w, a_y_w);
 		let b_w = EcPoint::new(b_x_w, b_y_w);
 		let c_w = a_w.ladder(&b_w);
-
-		assert_eq!(c.x, big_to_fe(c_w.x.value()));
-		assert_eq!(c.y, big_to_fe(c_w.y.value()));
-	}
-
-	#[test]
-	fn should_mul_scalar() {
-		// ECC Mul Scalar test
-		let rng = &mut thread_rng();
-		let a = G1Affine::random(rng.clone());
-		let scalar = Fr::random(rng);
-		let c = (a * scalar).to_affine();
-
-		let a_x_bn = fe_to_big(a.x);
-		let a_y_bn = fe_to_big(a.y);
-
-		let a_x_w = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_x_bn);
-		let a_y_w = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_y_bn);
-
-		let a_w = EcPoint::new(a_x_w, a_y_w);
-		let c_w = a_w.mul_scalar(scalar.to_bytes());
 
 		assert_eq!(c.x, big_to_fe(c_w.x.value()));
 		assert_eq!(c.y, big_to_fe(c_w.y.value()));
