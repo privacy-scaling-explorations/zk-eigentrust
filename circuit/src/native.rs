@@ -33,7 +33,7 @@ impl EigenTrustSet {
 	}
 
 	pub fn add_member(&mut self, pk: PublicKey) {
-		let pos = self.set.iter().position(|&(x, _)| x == PublicKey::default());
+		let pos = self.set.iter().position(|&(x, _)| x == pk);
 		let first_available = self.set.iter().position(|&(x, _)| x == PublicKey::default());
 		// Make sure not already in the set
 		assert!(pos.is_none());
@@ -96,10 +96,39 @@ mod test {
 	use rand::thread_rng;
 
 	#[test]
-	fn test_add_member_in_initial_set() {}
+	#[should_panic]
+	fn test_add_member_in_initial_set() {
+		let mut set = EigenTrustSet::new();
+
+		let rng = &mut thread_rng();
+
+		let sk1 = SecretKey::random(rng);
+		let pk1 = sk1.public();
+
+		set.add_member(pk1);
+
+		// Re-adding the member should panic
+		set.add_member(pk1);
+	}
 
 	#[test]
-	fn test_add_two_members_without_opinions() {}
+	#[should_panic]
+	fn test_add_two_members_without_opinions() {
+		let mut set = EigenTrustSet::new();
+
+		let rng = &mut thread_rng();
+
+		let sk1 = SecretKey::random(rng);
+		let sk2 = SecretKey::random(rng);
+
+		let pk1 = sk1.public();
+		let pk2 = sk2.public();
+
+		set.add_member(pk1);
+		set.add_member(pk2);
+
+		set.converge();
+	}
 
 	#[test]
 	#[should_panic]
@@ -117,6 +146,7 @@ mod test {
 		set.add_member(pk1);
 		set.add_member(pk2);
 
+		// Peer1(pk1) signs the opinion
 		let pks = [PublicKey::default(); NUM_NEIGHBOURS];
 		let scores = [Fr::zero(); NUM_NEIGHBOURS];
 		let (_, message_hashes) =
@@ -126,17 +156,160 @@ mod test {
 		let op = Opinion::new(sig, message_hashes[0], scores);
 
 		set.update_op(pk1, op);
+
 		set.converge();
 	}
 
 	#[test]
-	fn test_add_two_members_with_opinions() {}
+	fn test_add_two_members_with_opinions() {
+		let mut set = EigenTrustSet::new();
+
+		let rng = &mut thread_rng();
+
+		let sk1 = SecretKey::random(rng);
+		let sk2 = SecretKey::random(rng);
+
+		let pk1 = sk1.public();
+		let pk2 = sk2.public();
+
+		set.add_member(pk1);
+		set.add_member(pk2);
+
+		// Peer1(pk1) signs the opinion
+		let pks = [
+			pk1,
+			pk2,
+			PublicKey::default(),
+			PublicKey::default(),
+			PublicKey::default(),
+			PublicKey::default(),
+		];
+		let scores = [Fr::zero(), Fr::from(1000), Fr::zero(), Fr::zero(), Fr::zero(), Fr::zero()];
+		let (_, message_hashes) =
+			calculate_message_hash::<NUM_NEIGHBOURS, 1>(pks.to_vec(), vec![scores.to_vec()]);
+		let sig = sign(&sk1, &pk1, message_hashes[0]);
+
+		let op = Opinion::new(sig, message_hashes[0], scores);
+
+		set.update_op(pk1, op);
+
+		// Peer2(pk2) signs the opinion
+		let pks = [
+			pk1,
+			pk2,
+			PublicKey::default(),
+			PublicKey::default(),
+			PublicKey::default(),
+			PublicKey::default(),
+		];
+		let scores = [Fr::from(1000), Fr::zero(), Fr::zero(), Fr::zero(), Fr::zero(), Fr::zero()];
+		let (_, message_hashes) =
+			calculate_message_hash::<NUM_NEIGHBOURS, 1>(pks.to_vec(), vec![scores.to_vec()]);
+		let sig = sign(&sk2, &pk2, message_hashes[0]);
+
+		let op = Opinion::new(sig, message_hashes[0], scores);
+
+		set.update_op(pk2, op);
+
+		set.converge();
+	}
 
 	#[test]
-	fn test_add_three_members_with_opinions() {}
+	fn test_add_three_members_with_opinions() {
+		let mut set = EigenTrustSet::new();
+
+		let rng = &mut thread_rng();
+
+		let sk1 = SecretKey::random(rng);
+		let sk2 = SecretKey::random(rng);
+		let sk3 = SecretKey::random(rng);
+
+		let pk1 = sk1.public();
+		let pk2 = sk2.public();
+		let pk3 = sk3.public();
+
+		set.add_member(pk1);
+		set.add_member(pk2);
+		set.add_member(pk3);
+
+		// Peer1(pk1) signs the opinion
+		let pks = [pk1, pk2, pk3, PublicKey::default(), PublicKey::default(), PublicKey::default()];
+		let scores = [Fr::zero(), Fr::from(300), Fr::from(700), Fr::zero(), Fr::zero(), Fr::zero()];
+		let (_, message_hashes) =
+			calculate_message_hash::<NUM_NEIGHBOURS, 1>(pks.to_vec(), vec![scores.to_vec()]);
+		let sig = sign(&sk1, &pk1, message_hashes[0]);
+
+		let op = Opinion::new(sig, message_hashes[0], scores);
+
+		set.update_op(pk1, op);
+
+		// Peer2(pk2) signs the opinion
+		let pks = [pk1, pk2, pk3, PublicKey::default(), PublicKey::default(), PublicKey::default()];
+		let scores = [Fr::from(600), Fr::zero(), Fr::from(400), Fr::zero(), Fr::zero(), Fr::zero()];
+		let (_, message_hashes) =
+			calculate_message_hash::<NUM_NEIGHBOURS, 1>(pks.to_vec(), vec![scores.to_vec()]);
+		let sig = sign(&sk2, &pk2, message_hashes[0]);
+
+		let op = Opinion::new(sig, message_hashes[0], scores);
+
+		set.update_op(pk2, op);
+
+		// Peer3(pk3) signs the opinion
+		let pks = [pk1, pk2, pk3, PublicKey::default(), PublicKey::default(), PublicKey::default()];
+		let scores = [Fr::from(600), Fr::from(400), Fr::zero(), Fr::zero(), Fr::zero(), Fr::zero()];
+		let (_, message_hashes) =
+			calculate_message_hash::<NUM_NEIGHBOURS, 1>(pks.to_vec(), vec![scores.to_vec()]);
+		let sig = sign(&sk3, &pk3, message_hashes[0]);
+
+		let op = Opinion::new(sig, message_hashes[0], scores);
+
+		set.update_op(pk3, op);
+
+		set.converge();
+	}
 
 	/// IDEA: Nullify participant that is not giving away any of his score, or
 	/// is giving them to neighbours not in the set
 	#[test]
-	fn test_add_three_members_with_two_opinions() {}
+	fn test_add_three_members_with_two_opinions() {
+		let mut set = EigenTrustSet::new();
+
+		let rng = &mut thread_rng();
+
+		let sk1 = SecretKey::random(rng);
+		let sk2 = SecretKey::random(rng);
+		let sk3 = SecretKey::random(rng);
+
+		let pk1 = sk1.public();
+		let pk2 = sk2.public();
+		let pk3 = sk3.public();
+
+		set.add_member(pk1);
+		set.add_member(pk2);
+		set.add_member(pk3);
+
+		// Peer1(pk1) signs the opinion
+		let pks = [pk1, pk2, pk3, PublicKey::default(), PublicKey::default(), PublicKey::default()];
+		let scores = [Fr::zero(), Fr::from(300), Fr::from(700), Fr::zero(), Fr::zero(), Fr::zero()];
+		let (_, message_hashes) =
+			calculate_message_hash::<NUM_NEIGHBOURS, 1>(pks.to_vec(), vec![scores.to_vec()]);
+		let sig = sign(&sk1, &pk1, message_hashes[0]);
+
+		let op = Opinion::new(sig, message_hashes[0], scores);
+
+		set.update_op(pk1, op);
+
+		// Peer2(pk2) signs the opinion
+		let pks = [pk1, pk2, pk3, PublicKey::default(), PublicKey::default(), PublicKey::default()];
+		let scores = [Fr::from(600), Fr::zero(), Fr::from(400), Fr::zero(), Fr::zero(), Fr::zero()];
+		let (_, message_hashes) =
+			calculate_message_hash::<NUM_NEIGHBOURS, 1>(pks.to_vec(), vec![scores.to_vec()]);
+		let sig = sign(&sk2, &pk2, message_hashes[0]);
+
+		let op = Opinion::new(sig, message_hashes[0], scores);
+
+		set.update_op(pk2, op);
+
+		set.converge();
+	}
 }
