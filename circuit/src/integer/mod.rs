@@ -15,72 +15,70 @@ use native::{Quotient, ReductionWitness};
 use rns::RnsParams;
 use std::marker::PhantomData;
 
-/// Chip structure for the IntegerAssign.
-pub struct IntegerAssign<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
+/// Assigns given values and their reduction witnesses
+pub fn assign<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>(
+	x: &[AssignedCell<N, N>; NUM_LIMBS], y_opt: Option<&[AssignedCell<N, N>; NUM_LIMBS]>,
+	reduction_witness: &ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>, common: &CommonConfig,
+	ctx: &mut RegionCtx<N>,
+) -> Result<AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>, Error>
 where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 {
-	/// Constructs phantom datas for the variables.
-	_native: PhantomData<N>,
-	_wrong: PhantomData<W>,
-	_rns: PhantomData<P>,
-}
-impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
-	IntegerAssign<W, N, NUM_LIMBS, NUM_BITS, P>
-where
-	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
-{
-	/// Assigns given values and their reduction witnesses
-	pub fn assign(
-		x_opt: Option<&[AssignedCell<N, N>; NUM_LIMBS]>, y: &[AssignedCell<N, N>; NUM_LIMBS],
-		reduction_witness: &ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>, common: &CommonConfig,
-		ctx: &mut RegionCtx<N>,
-	) -> Result<AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>, Error> {
-		for i in 0..NUM_LIMBS {
-			if x_opt.is_some() {
-				let x = x_opt.unwrap();
-				ctx.copy_assign(common.advice[i + NUM_LIMBS], x[i].clone())?;
-			}
-			ctx.copy_assign(common.advice[i], y[i].clone())?;
+	// Assign limbs
+	for i in 0..NUM_LIMBS {
+		ctx.copy_assign(common.advice[i], x[i].clone())?;
+		if y_opt.is_some() {
+			let y = y_opt.unwrap();
+			ctx.copy_assign(common.advice[i + NUM_LIMBS], y[i].clone())?;
 		}
-		ctx.next();
-
-		match &reduction_witness.quotient {
-			Quotient::Short(n) => {
-				ctx.assign_advice(common.advice[NUM_LIMBS], Value::known(*n))?;
-			},
-			Quotient::Long(n) => {
-				for i in 0..NUM_LIMBS {
-					ctx.assign_advice(common.advice[i + NUM_LIMBS], Value::known(n.limbs[i]))?;
-				}
-			},
-		}
-		for i in 0..reduction_witness.residues.len() {
-			ctx.assign_advice(
-				common.advice[i],
-				Value::known(reduction_witness.residues[i]),
-			)?;
-		}
-
-		ctx.next();
-		let mut assigned_result: [Option<AssignedCell<N, N>>; NUM_LIMBS] =
-			[(); NUM_LIMBS].map(|_| None);
-		for i in 0..NUM_LIMBS {
-			ctx.assign_advice(
-				common.advice[i],
-				Value::known(reduction_witness.intermediate[i]),
-			)?;
-			assigned_result[i] = Some(ctx.assign_advice(
-				common.advice[i + NUM_LIMBS],
-				Value::known(reduction_witness.result.limbs[i]),
-			)?);
-		}
-		let assigned_result = AssignedInteger::new(
-			reduction_witness.result.clone(),
-			assigned_result.map(|x| x.unwrap()),
-		);
-		Ok(assigned_result)
 	}
+	ctx.next();
+
+	// Assign intermediate values
+	for i in 0..NUM_LIMBS {
+		ctx.assign_advice(
+			common.advice[i],
+			Value::known(reduction_witness.intermediate[i]),
+		)?;
+	}
+
+	// Assign quotient
+	match &reduction_witness.quotient {
+		Quotient::Short(n) => {
+			ctx.assign_advice(common.advice[NUM_LIMBS], Value::known(*n))?;
+		},
+		Quotient::Long(n) => {
+			for i in 0..NUM_LIMBS {
+				ctx.assign_advice(common.advice[i + NUM_LIMBS], Value::known(n.limbs[i]))?;
+			}
+		},
+	}
+
+	ctx.next();
+
+	// Assign result
+	let mut assigned_result: [Option<AssignedCell<N, N>>; NUM_LIMBS] =
+		[(); NUM_LIMBS].map(|_| None);
+	for i in 0..NUM_LIMBS {
+		assigned_result[i] = Some(ctx.assign_advice(
+			common.advice[i],
+			Value::known(reduction_witness.result.limbs[i]),
+		)?);
+	}
+
+	// Assign residues
+	for i in 0..reduction_witness.residues.len() {
+		ctx.assign_advice(
+			common.advice[i + NUM_LIMBS],
+			Value::known(reduction_witness.residues[i]),
+		)?;
+	}
+
+	let assigned_result = AssignedInteger::new(
+		reduction_witness.result.clone(),
+		assigned_result.map(|x| x.unwrap()),
+	);
+	Ok(assigned_result)
 }
 
 /// Chip structure for the IntegerReduce.
@@ -125,24 +123,33 @@ where
 		let p_in_n = P::wrong_modulus_in_native_modulus();
 
 		meta.create_gate("reduce", |v_cells| {
-			let s = v_cells.query_selector(selector);
 			let mut t_exp = [(); NUM_LIMBS].map(|_| None);
 			let mut limbs_exp = [(); NUM_LIMBS].map(|_| None);
-			let mut residues_exp = Vec::new();
 			let mut result_exp = [(); NUM_LIMBS].map(|_| None);
+
 			for i in 0..NUM_LIMBS {
-				limbs_exp[i] = Some(v_cells.query_advice(common.advice[i], Rotation::cur()));
-				t_exp[i] = Some(v_cells.query_advice(common.advice[i], Rotation(2)));
-				result_exp[i] =
-					Some(v_cells.query_advice(common.advice[i + NUM_LIMBS], Rotation(2)));
+				let limbs_exp_i = v_cells.query_advice(common.advice[i], Rotation::cur());
+				let t_exp_i = v_cells.query_advice(common.advice[i], Rotation::next());
+				let result_exp_i = v_cells.query_advice(common.advice[i], Rotation(2));
+
+				limbs_exp[i] = Some(limbs_exp_i);
+				t_exp[i] = Some(t_exp_i);
+				result_exp[i] = Some(result_exp_i);
 			}
-			for i in 0..NUM_LIMBS / 2 {
-				residues_exp.push(v_cells.query_advice(common.advice[i], Rotation::next()));
-			}
-			let reduce_q_exp = v_cells.query_advice(common.advice[NUM_LIMBS], Rotation::next());
+
 			let t_exp = t_exp.map(|x| x.unwrap());
 			let limbs_exp = limbs_exp.map(|x| x.unwrap());
 			let result_exp = result_exp.map(|x| x.unwrap());
+
+			let reduce_q_exp = v_cells.query_advice(common.advice[NUM_LIMBS], Rotation::next());
+
+			let mut residues_exp = Vec::new();
+			for i in 0..NUM_LIMBS / 2 {
+				let res_exp_i = v_cells.query_advice(common.advice[i + NUM_LIMBS], Rotation(2));
+				residues_exp.push(res_exp_i);
+			}
+
+			let s = v_cells.query_selector(selector);
 
 			// REDUCTION CONSTRAINTS
 			let mut constraints =
@@ -167,9 +174,8 @@ where
 			|region: Region<'_, N>| {
 				let mut ctx = RegionCtx::new(region, 0);
 				ctx.enable(selector.clone())?;
-				IntegerAssign::assign(
-					None, &self.assigned_integer.integer_limbs, &reduction_witness, &common,
-					&mut ctx,
+				assign(
+					&self.assigned_integer.limbs, None, &reduction_witness, &common, &mut ctx,
 				)
 			},
 		)
@@ -221,29 +227,34 @@ where
 	fn configure(common: &CommonConfig, meta: &mut ConstraintSystem<N>) -> Selector {
 		let selector = meta.selector();
 		meta.create_gate("add", |v_cells| {
-			let s = v_cells.query_selector(selector);
 			let mut t_exp = [(); NUM_LIMBS].map(|_| None);
 			let mut x_limbs_exp = [(); NUM_LIMBS].map(|_| None);
 			let mut y_limbs_exp = [(); NUM_LIMBS].map(|_| None);
-			let mut residues_exp = Vec::new();
 			let mut result_exp = [(); NUM_LIMBS].map(|_| None);
+
 			for i in 0..NUM_LIMBS {
-				x_limbs_exp[i] =
-					Some(v_cells.query_advice(common.advice[i + NUM_LIMBS], Rotation::cur()));
-				y_limbs_exp[i] = Some(v_cells.query_advice(common.advice[i], Rotation::cur()));
-				t_exp[i] = Some(v_cells.query_advice(common.advice[i], Rotation(2)));
-				result_exp[i] =
-					Some(v_cells.query_advice(common.advice[i + NUM_LIMBS], Rotation(2)));
+				let x_exp_i = v_cells.query_advice(common.advice[i], Rotation::cur());
+				let y_exp_i = v_cells.query_advice(common.advice[i + NUM_LIMBS], Rotation::cur());
+				let t_exp_i = v_cells.query_advice(common.advice[i], Rotation::next());
+				let result_exp_i = v_cells.query_advice(common.advice[i], Rotation(2));
+
+				x_limbs_exp[i] = Some(x_exp_i);
+				y_limbs_exp[i] = Some(y_exp_i);
+				t_exp[i] = Some(t_exp_i);
+				result_exp[i] = Some(result_exp_i);
 			}
-			for i in 0..NUM_LIMBS / 2 {
-				residues_exp.push(v_cells.query_advice(common.advice[i], Rotation::next()));
-			}
-			let _add_q_exp = v_cells.query_advice(common.advice[NUM_LIMBS], Rotation::next());
 
 			let t_exp = t_exp.map(|x| x.unwrap());
 			let x_limbs_exp = x_limbs_exp.map(|x| x.unwrap());
 			let y_limbs_exp = y_limbs_exp.map(|x| x.unwrap());
 			let result_exp = result_exp.map(|x| x.unwrap());
+
+			let mut residues_exp = Vec::new();
+			for i in 0..NUM_LIMBS / 2 {
+				residues_exp.push(v_cells.query_advice(common.advice[i + NUM_LIMBS], Rotation(2)));
+			}
+
+			let s = v_cells.query_selector(selector);
 
 			// REDUCTION CONSTRAINTS
 			let mut constraints =
@@ -268,9 +279,9 @@ where
 			|region: Region<'_, N>| {
 				let mut ctx = RegionCtx::new(region, 0);
 				ctx.enable(selector.clone())?;
-				IntegerAssign::assign(
-					Some(&self.x.integer_limbs),
-					&self.y.integer_limbs,
+				assign(
+					&self.x.limbs,
+					Some(&self.y.limbs),
 					&reduction_witness,
 					&common,
 					&mut ctx,
@@ -327,29 +338,36 @@ where
 		let p_in_n = P::wrong_modulus_in_native_modulus();
 
 		meta.create_gate("sub", |v_cells| {
-			let s = v_cells.query_selector(selector);
 			let mut t_exp = [(); NUM_LIMBS].map(|_| None);
 			let mut x_limbs_exp = [(); NUM_LIMBS].map(|_| None);
 			let mut y_limbs_exp = [(); NUM_LIMBS].map(|_| None);
-			let mut residues_exp = Vec::new();
 			let mut result_exp = [(); NUM_LIMBS].map(|_| None);
+
 			for i in 0..NUM_LIMBS {
-				x_limbs_exp[i] =
-					Some(v_cells.query_advice(common.advice[i + NUM_LIMBS], Rotation::cur()));
-				y_limbs_exp[i] = Some(v_cells.query_advice(common.advice[i], Rotation::cur()));
-				t_exp[i] = Some(v_cells.query_advice(common.advice[i], Rotation(2)));
-				result_exp[i] =
-					Some(v_cells.query_advice(common.advice[i + NUM_LIMBS], Rotation(2)));
+				let x_exp_i = v_cells.query_advice(common.advice[i], Rotation::cur());
+				let y_exp_i = v_cells.query_advice(common.advice[i + NUM_LIMBS], Rotation::cur());
+				let t_exp_i = v_cells.query_advice(common.advice[i], Rotation::next());
+				let result_exp_i = v_cells.query_advice(common.advice[i], Rotation(2));
+
+				x_limbs_exp[i] = Some(x_exp_i);
+				y_limbs_exp[i] = Some(y_exp_i);
+				t_exp[i] = Some(t_exp_i);
+				result_exp[i] = Some(result_exp_i);
 			}
-			for i in 0..NUM_LIMBS / 2 {
-				residues_exp.push(v_cells.query_advice(common.advice[i], Rotation::next()));
-			}
-			let sub_q_exp = v_cells.query_advice(common.advice[NUM_LIMBS], Rotation::next());
 
 			let t_exp = t_exp.map(|x| x.unwrap());
 			let x_limbs_exp = x_limbs_exp.map(|x| x.unwrap());
 			let y_limbs_exp = y_limbs_exp.map(|x| x.unwrap());
 			let result_exp = result_exp.map(|x| x.unwrap());
+
+			let sub_q_exp = v_cells.query_advice(common.advice[NUM_LIMBS], Rotation::next());
+
+			let mut residues_exp = Vec::new();
+			for i in 0..NUM_LIMBS / 2 {
+				residues_exp.push(v_cells.query_advice(common.advice[i + NUM_LIMBS], Rotation(2)));
+			}
+
+			let s = v_cells.query_selector(selector);
 
 			// REDUCTION CONSTRAINTS
 			let mut constraints =
@@ -375,9 +393,9 @@ where
 			|region: Region<'_, N>| {
 				let mut ctx = RegionCtx::new(region, 0);
 				ctx.enable(selector.clone())?;
-				IntegerAssign::assign(
-					Some(&self.x.integer_limbs),
-					&self.y.integer_limbs,
+				assign(
+					&self.x.limbs,
+					Some(&self.y.limbs),
 					&reduction_witness,
 					&common,
 					&mut ctx,
@@ -434,31 +452,39 @@ where
 		let p_in_n = P::wrong_modulus_in_native_modulus();
 
 		meta.create_gate("mul", |v_cells| {
-			let s = v_cells.query_selector(selector);
 			let mut t_exp = [(); NUM_LIMBS].map(|_| None);
 			let mut mul_q_exp = [(); NUM_LIMBS].map(|_| None);
 			let mut x_limbs_exp = [(); NUM_LIMBS].map(|_| None);
 			let mut y_limbs_exp = [(); NUM_LIMBS].map(|_| None);
-			let mut residues_exp = Vec::new();
 			let mut result_exp = [(); NUM_LIMBS].map(|_| None);
+
 			for i in 0..NUM_LIMBS {
-				x_limbs_exp[i] =
-					Some(v_cells.query_advice(common.advice[i + NUM_LIMBS], Rotation::cur()));
-				y_limbs_exp[i] = Some(v_cells.query_advice(common.advice[i], Rotation::cur()));
-				mul_q_exp[i] =
-					Some(v_cells.query_advice(common.advice[i + NUM_LIMBS], Rotation::next()));
-				t_exp[i] = Some(v_cells.query_advice(common.advice[i], Rotation(2)));
-				result_exp[i] =
-					Some(v_cells.query_advice(common.advice[i + NUM_LIMBS], Rotation(2)));
+				let x_exp_i = v_cells.query_advice(common.advice[i], Rotation::cur());
+				let y_exp_i = v_cells.query_advice(common.advice[i + NUM_LIMBS], Rotation::cur());
+				let t_exp_i = v_cells.query_advice(common.advice[i], Rotation::next());
+				let q_exp_i = v_cells.query_advice(common.advice[i + NUM_LIMBS], Rotation::next());
+				let result_exp_i = v_cells.query_advice(common.advice[i], Rotation(2));
+
+				x_limbs_exp[i] = Some(x_exp_i);
+				y_limbs_exp[i] = Some(y_exp_i);
+				t_exp[i] = Some(t_exp_i);
+				mul_q_exp[i] = Some(q_exp_i);
+				result_exp[i] = Some(result_exp_i);
 			}
-			for i in 0..NUM_LIMBS / 2 {
-				residues_exp.push(v_cells.query_advice(common.advice[i], Rotation::next()));
-			}
+
 			let t_exp = t_exp.map(|x| x.unwrap());
 			let mul_q_exp = mul_q_exp.map(|x| x.unwrap());
 			let x_limbs_exp = x_limbs_exp.map(|x| x.unwrap());
 			let y_limbs_exp = y_limbs_exp.map(|x| x.unwrap());
 			let result_exp = result_exp.map(|x| x.unwrap());
+
+			let mut residues_exp = Vec::new();
+			for i in 0..NUM_LIMBS / 2 {
+				let res_exp_i = v_cells.query_advice(common.advice[i + NUM_LIMBS], Rotation(2));
+				residues_exp.push(res_exp_i);
+			}
+
+			let s = v_cells.query_selector(selector);
 
 			// REDUCTION CONSTRAINTS
 			let mut constraints =
@@ -484,9 +510,9 @@ where
 			|region: Region<'_, N>| {
 				let mut ctx = RegionCtx::new(region, 0);
 				ctx.enable(selector.clone())?;
-				IntegerAssign::assign(
-					Some(&self.x.integer_limbs),
-					&self.y.integer_limbs,
+				assign(
+					&self.x.limbs,
+					Some(&self.y.limbs),
 					&reduction_witness,
 					&common,
 					&mut ctx,
@@ -543,31 +569,39 @@ where
 		let p_in_n = P::wrong_modulus_in_native_modulus();
 
 		meta.create_gate("div", |v_cells| {
-			let s = v_cells.query_selector(selector);
 			let mut t_exp = [(); NUM_LIMBS].map(|_| None);
 			let mut div_q_exp = [(); NUM_LIMBS].map(|_| None);
 			let mut x_limbs_exp = [(); NUM_LIMBS].map(|_| None);
 			let mut y_limbs_exp = [(); NUM_LIMBS].map(|_| None);
-			let mut residues_exp = Vec::new();
 			let mut result_exp = [(); NUM_LIMBS].map(|_| None);
+
 			for i in 0..NUM_LIMBS {
-				x_limbs_exp[i] =
-					Some(v_cells.query_advice(common.advice[i + NUM_LIMBS], Rotation::cur()));
-				y_limbs_exp[i] = Some(v_cells.query_advice(common.advice[i], Rotation::cur()));
-				div_q_exp[i] =
-					Some(v_cells.query_advice(common.advice[i + NUM_LIMBS], Rotation::next()));
-				t_exp[i] = Some(v_cells.query_advice(common.advice[i], Rotation(2)));
-				result_exp[i] =
-					Some(v_cells.query_advice(common.advice[i + NUM_LIMBS], Rotation(2)));
+				let x_exp_i = v_cells.query_advice(common.advice[i], Rotation::cur());
+				let y_exp_i = v_cells.query_advice(common.advice[i + NUM_LIMBS], Rotation::cur());
+				let t_exp_i = v_cells.query_advice(common.advice[i], Rotation::next());
+				let q_exp_i = v_cells.query_advice(common.advice[i + NUM_LIMBS], Rotation::next());
+				let result_exp_i = v_cells.query_advice(common.advice[i], Rotation(2));
+
+				x_limbs_exp[i] = Some(x_exp_i);
+				y_limbs_exp[i] = Some(y_exp_i);
+				t_exp[i] = Some(t_exp_i);
+				div_q_exp[i] = Some(q_exp_i);
+				result_exp[i] = Some(result_exp_i);
 			}
-			for i in 0..NUM_LIMBS / 2 {
-				residues_exp.push(v_cells.query_advice(common.advice[i], Rotation::next()));
-			}
+
 			let t_exp = t_exp.map(|x| x.unwrap());
 			let div_q_exp = div_q_exp.map(|x| x.unwrap());
 			let x_limbs_exp = x_limbs_exp.map(|x| x.unwrap());
 			let y_limbs_exp = y_limbs_exp.map(|x| x.unwrap());
 			let result_exp = result_exp.map(|x| x.unwrap());
+
+			let mut residues_exp = Vec::new();
+			for i in 0..NUM_LIMBS / 2 {
+				let res_exp_i = v_cells.query_advice(common.advice[i + NUM_LIMBS], Rotation(2));
+				residues_exp.push(res_exp_i);
+			}
+
+			let s = v_cells.query_selector(selector);
 
 			// REDUCTION CONSTRAINTS
 			let mut constraints =
@@ -593,9 +627,9 @@ where
 			|region: Region<'_, N>| {
 				let mut ctx = RegionCtx::new(region, 0);
 				ctx.enable(selector.clone())?;
-				IntegerAssign::assign(
-					Some(&self.x.integer_limbs),
-					&self.y.integer_limbs,
+				assign(
+					&self.x.limbs,
+					Some(&self.y.limbs),
 					&reduction_witness,
 					&common,
 					&mut ctx,
@@ -619,7 +653,7 @@ pub struct AssignedInteger<
 	// Original value of the assigned integer.
 	pub(crate) integer: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
 	// Limbs of the assigned integer.
-	pub(crate) integer_limbs: [AssignedCell<N, N>; NUM_LIMBS],
+	pub(crate) limbs: [AssignedCell<N, N>; NUM_LIMBS],
 }
 
 impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
@@ -629,10 +663,9 @@ where
 {
 	/// Returns a new `AssignedInteger` given its values
 	pub fn new(
-		integer: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
-		integer_limbs: [AssignedCell<N, N>; NUM_LIMBS],
+		integer: Integer<W, N, NUM_LIMBS, NUM_BITS, P>, limbs: [AssignedCell<N, N>; NUM_LIMBS],
 	) -> Self {
-		Self { integer, integer_limbs }
+		Self { integer, limbs }
 	}
 }
 
@@ -830,7 +863,7 @@ mod test {
 			};
 			for i in 0..NUM_LIMBS {
 				layouter.constrain_instance(
-					result.clone().unwrap().integer_limbs[i].cell(),
+					result.clone().unwrap().limbs[i].cell(),
 					config.common.instance,
 					i,
 				)?;

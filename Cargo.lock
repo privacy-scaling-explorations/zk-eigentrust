@@ -282,10 +282,20 @@ version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c0940dc441f31689269e10ac70eb1002a3a1d3ad1390e030043662eb7fe4688b"
 dependencies = [
- "block-padding",
+ "block-padding 0.1.5",
  "byte-tools",
  "byteorder",
  "generic-array 0.12.4",
+]
+
+[[package]]
+name = "block-buffer"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4152116fd6e9dadb291ae18fc1ec3575ed6d84c29642d97890f4b4a3417297e4"
+dependencies = [
+ "block-padding 0.2.1",
+ "generic-array 0.14.6",
 ]
 
 [[package]]
@@ -305,6 +315,12 @@ checksum = "fa79dedbb091f449f1f39e53edf88d5dbe95f895dae6135a8d7b881fb5af73f5"
 dependencies = [
  "byte-tools",
 ]
+
+[[package]]
+name = "block-padding"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8d696c370c750c948ada61c69a0ee2cbbb9c50b1019ddb86d9317157a99c2cae"
 
 [[package]]
 name = "borsh"
@@ -536,22 +552,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "client"
-version = "0.1.0"
-dependencies = [
- "bs58",
- "clap",
- "csv",
- "eigen-trust-circuit",
- "eigen-trust-protocol",
- "ethers",
- "rand 0.8.5",
- "serde",
- "serde_json",
- "tokio",
-]
-
-[[package]]
 name = "cloudabi"
 version = "0.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -622,7 +622,7 @@ dependencies = [
  "serde",
  "serde_derive",
  "sha2 0.10.6",
- "sha3",
+ "sha3 0.10.6",
  "thiserror",
 ]
 
@@ -872,6 +872,15 @@ dependencies = [
 
 [[package]]
 name = "digest"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d3dd60d1080a57a05ab032377049e0591415d2b31afd7028356dbf3cc6dcb066"
+dependencies = [
+ "generic-array 0.14.6",
+]
+
+[[package]]
+name = "digest"
 version = "0.10.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8168378f4e5023e7218c89c891c0fd8ecdb5e5e4f18cb78f38cf245dd021e76f"
@@ -953,6 +962,22 @@ dependencies = [
  "num-traits",
  "plotters",
  "rand 0.8.5",
+]
+
+[[package]]
+name = "eigen-trust-client"
+version = "0.1.0"
+dependencies = [
+ "bs58",
+ "clap",
+ "csv",
+ "eigen-trust-circuit",
+ "eigen-trust-protocol",
+ "ethers",
+ "rand 0.8.5",
+ "serde",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]
@@ -1056,7 +1081,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.6",
- "sha3",
+ "sha3 0.10.6",
  "thiserror",
  "uuid",
 ]
@@ -1073,7 +1098,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
- "sha3",
+ "sha3 0.10.6",
  "thiserror",
  "uint",
 ]
@@ -1702,7 +1727,7 @@ dependencies = [
 [[package]]
 name = "halo2_proofs"
 version = "0.2.0"
-source = "git+https://github.com/privacy-scaling-explorations/halo2?tag=v2022_10_22#5fc8ce89ef3235d8eefeb8994173ac706e89e4ec"
+source = "git+https://github.com/privacy-scaling-explorations/halo2?tag=v2023_02_02#0a8646b78286a13d320759b1c585262d6536dce4"
 dependencies = [
  "blake2b_simd",
  "ff",
@@ -1710,13 +1735,14 @@ dependencies = [
  "halo2curves",
  "rand_core 0.6.4",
  "rayon",
+ "sha3 0.9.1",
  "tracing",
 ]
 
 [[package]]
 name = "halo2curves"
-version = "0.2.1"
-source = "git+https://github.com/privacy-scaling-explorations/halo2curves?tag=0.3.0#83c72d49762343ffc9576ca11a2aa615efe1029b"
+version = "0.3.1"
+source = "git+https://github.com/privacy-scaling-explorations/halo2curves.git?tag=0.3.1#9b67e19bca30a35208b0c1b41c1723771e2c9f49"
 dependencies = [
  "ff",
  "group",
@@ -2063,7 +2089,7 @@ dependencies = [
  "ecdsa",
  "elliptic-curve",
  "sha2 0.10.6",
- "sha3",
+ "sha3 0.10.6",
 ]
 
 [[package]]
@@ -2285,6 +2311,12 @@ name = "opaque-debug"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2839e79665f131bdb5782e51f2c6c9599c133c6098982a54c794358bf432529c"
+
+[[package]]
+name = "opaque-debug"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "624a8340c38c1b80fd549087862da4ba43e08858af025b236e509b6649fc13d5"
 
 [[package]]
 name = "open-fastrlp"
@@ -3311,7 +3343,7 @@ dependencies = [
  "block-buffer 0.7.3",
  "digest 0.8.1",
  "fake-simd",
- "opaque-debug",
+ "opaque-debug 0.2.3",
 ]
 
 [[package]]
@@ -3323,6 +3355,18 @@ dependencies = [
  "cfg-if",
  "cpufeatures",
  "digest 0.10.6",
+]
+
+[[package]]
+name = "sha3"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f81199417d4e5de3f04b1e871023acea7389672c4135918f05aa9cbf2f2fa809"
+dependencies = [
+ "block-buffer 0.9.0",
+ "digest 0.9.0",
+ "keccak",
+ "opaque-debug 0.3.0",
 ]
 
 [[package]]

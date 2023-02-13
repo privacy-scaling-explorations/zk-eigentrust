@@ -1,3 +1,5 @@
+/// Absorb the rescue-poseidon hash sponge
+pub mod absorb;
 /// Convert bits to number
 pub mod bits2num;
 /// Check if a number is less than or equal to a value
