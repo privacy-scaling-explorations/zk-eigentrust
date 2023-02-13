@@ -42,12 +42,11 @@ use std::str::FromStr;
 
 use crate::integer::{
 	native::Integer,
-	rns::{big_to_fe, RnsParams},
+	rns::{big_to_fe, fe_to_big, RnsParams},
 };
 use halo2::{
 	arithmetic::FieldExt,
 	halo2curves::{
-		bn256::Fr,
 		group::{ff::PrimeField, Curve},
 		CurveAffine,
 	},
@@ -59,32 +58,10 @@ pub(crate) fn make_mul_aux<C: CurveAffine>(aux_to_add: C) -> C {
 	let n = C::Scalar::NUM_BITS as usize;
 	let mut k0 = BigUint::one();
 	let one = BigUint::one();
-	for i in 0..n - 1 {
+	for i in 0..3 {
 		k0 |= &one << i;
 	}
 	(-aux_to_add * big_to_fe::<C::Scalar>(k0)).to_affine()
-}
-
-fn make_mul_aux_old<C: CurveAffine>(
-	aux_to_add: C, window_size: usize, number_of_pairs: usize,
-) -> C {
-	assert!(window_size > 0);
-	assert!(number_of_pairs > 0);
-
-	let n = C::Scalar::NUM_BITS as usize;
-	let mut number_of_selectors = n / window_size;
-	if n % window_size != 0 {
-		number_of_selectors += 1;
-	}
-	let mut k0 = BigUint::one();
-	let one = BigUint::one();
-	for i in 0..number_of_selectors {
-		k0 |= &one << (i * window_size);
-	}
-	let k1 = (one << number_of_pairs) - 1usize;
-	// k = k0* 2^n_pairs
-	let k = k0 * k1;
-	(-aux_to_add * big_to_fe::<C::Scalar>(k)).to_affine()
 }
 
 /// Structure for the EcPoint
@@ -121,6 +98,14 @@ where
 		Self::new(Integer::one(), Integer::one())
 	}
 
+	/// Performs the unary `-` operation
+	pub fn neg(self) -> Self {
+		let y = P::compose(self.y.limbs);
+		let neg_y = N::zero().sub(y);
+		let neg_y = Integer::new(fe_to_big(neg_y));
+		Self { x: self.x, y: neg_y }
+	}
+
 	fn select(bit: bool, table: [Self; 2]) -> Self {
 		if bit {
 			table[1].clone()
@@ -132,11 +117,11 @@ where
 	/// Test
 	pub fn to_add() -> Self {
 		let x = BigUint::from_str(
-			"1025389013226514519632353278017320480435469671263900652059493789374121978352",
+			"16674715582331070136933915527288889019778094566732803816939061043898457168778",
 		)
 		.unwrap();
 		let y = BigUint::from_str(
-			"1765257885292064153361982762550580014361129921341129261566975989515312714066",
+			"6463266180564494723216328990756243248194282857153665680958564348491911026035",
 		)
 		.unwrap();
 		Self::new(Integer::new(x), Integer::new(y))
@@ -145,11 +130,11 @@ where
 	/// Test
 	pub fn to_sub() -> Self {
 		let x = BigUint::from_str(
-			"17766183588643889680371011191898586093637436819165112731151003047766875308726",
+			"13309346756614635333825509300060708409153440696756098989763444826124962874203",
 		)
 		.unwrap();
 		let y = BigUint::from_str(
-			"16905617928140063834923958517849186300623157517350069578617968790164504721526",
+			"19567858517750281949071914889393977810091135383309479881360435638939337926797",
 		)
 		.unwrap();
 		Self::new(Integer::new(x), Integer::new(y))
@@ -232,7 +217,6 @@ where
 
 	/// Scalar multiplication for given point
 	pub fn mul_scalar(&self, le_bytes: [u8; 32]) -> Self {
-		let mut r = Self::zero();
 		let mut exp: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P> = self.clone();
 
 		// Big Endian vs Little Endian
@@ -244,7 +228,7 @@ where
 			byte_bits
 		});
 		let bits = bits.flatten();
-		r = exp.clone();
+		let mut r = exp.clone();
 		// Double and Add operation
 		for bit in &bits[1..] {
 			exp = exp.double();
@@ -256,14 +240,14 @@ where
 	}
 
 	/// Scalar multiplication for given point
-	pub fn mul_scalar_ladder(&self, le_bytes: [u8; 32]) -> Self {
+	pub fn mul_scalar_ladder(&self, le_bytes: [u8; 254]) -> Self {
 		let r_init = Self::to_add();
 		let exp: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P> = self.clone();
 
 		// Big Endian vs Little Endian
 		let bits = le_bytes.map(|byte| {
-			let mut byte_bits = [false; 8];
-			for i in (0..8).rev() {
+			let mut byte_bits = [false; 1];
+			for i in 0..1 {
 				byte_bits[i] = (byte >> i) & 1u8 != 0
 			}
 			byte_bits
@@ -272,28 +256,21 @@ where
 		let bits = bits.flatten();
 		let table = [r_init.clone(), exp.clone().add(&r_init)];
 		let mut acc = Self::select(bits[0], table.clone());
-		//let mut acc = r_init.double();
-		//acc = acc.add(&r_init);
-		//let mut acc = r_init.clone();
-		// Double and Add operation
-		for bit in &bits[1..254] {
-			//let item = Self::select(*bit, table.clone());
-			//acc = acc.ladder(&item);
-			acc = acc.double();
-			if *bit {
-				acc = acc.add(&table[1]);
-			} else {
-				acc = acc.add(&table[0]);
-			}
-		}
 
-		// to_sub = (to_add * (1 << ec_order ) -1)
+		// To avoid P_0 == P_1
+		acc = acc.double();
+		if bits[1] {
+			acc = acc.add(&table[1]);
+		} else {
+			acc = acc.add(&table[0]);
+		}
+		// Double and Add operation
+		for bit in &bits[2..] {
+			let item = Self::select(*bit, table.clone());
+			acc = acc.ladder(&item);
+		}
 		let aux_fin = Self::to_sub();
-		//acc = acc.add(&aux_fin);
-		println!("{:#?}", P::compose(acc.x.limbs));
-		println!("{:#?}", P::compose(aux_fin.x.limbs));
-		println!("{:#?}", P::compose(acc.y.limbs));
-		println!("{:#?}", P::compose(aux_fin.y.limbs));
+		acc = acc.add(&aux_fin);
 
 		acc
 	}
@@ -306,7 +283,9 @@ where
 
 #[cfg(test)]
 mod test {
-	use super::{make_mul_aux, make_mul_aux_old, EcPoint};
+	use std::str::FromStr;
+
+	use super::{make_mul_aux, EcPoint};
 	use crate::integer::{
 		native::Integer,
 		rns::{big_to_fe, fe_to_big, Bn256_4_68},
@@ -319,6 +298,7 @@ mod test {
 			FieldExt,
 		},
 	};
+	use num_bigint::BigUint;
 	use rand::thread_rng;
 
 	#[test]
@@ -418,10 +398,38 @@ mod test {
 		let rng = &mut thread_rng();
 		let aux_gen = G1Affine::random(rng.clone());
 		let _res1 = make_mul_aux(aux_gen);
-		let _res2 = make_mul_aux_old(aux_gen, 1, 1);
+
+		let scalar_bytes_test: [u8; 254] = [
+			0, 1, 1, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 0, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1,
+			0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0, 0, 0, 0, 1, 0, 1, 0, 1, 1, 0, 0, 0, 1, 1, 1,
+			1, 1, 1, 0, 1, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 1, 0, 0, 0, 1, 1, 0, 1, 0, 1, 0,
+			1, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 0, 0, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 0,
+			1, 1, 0, 0, 1, 0, 1, 0, 1, 0, 1, 1, 1, 0, 0, 1, 0, 1, 1, 1, 0, 0, 1, 0, 1, 0, 1, 0, 1,
+			0, 1, 0, 0, 1, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0,
+			0, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1,
+			0, 0, 1, 0, 1, 0, 0, 1, 1, 0, 1, 1, 0, 0, 1, 0, 1, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 1, 1,
+			1, 1, 1, 0, 0, 1, 1, 1, 0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 0, 1, 1,
+		];
+		let scalar_test = BigUint::from_str(
+			"11350831874673312041585092088721162570863122638136378782700070131451626642019",
+		)
+		.unwrap();
+		let scalar_test = big_to_fe::<Fr>(scalar_test);
+
+		let scalar_bytes: [u8; 254] = [
+			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1,
+		];
 
 		let a = G1Affine::random(rng.clone());
-		let scalar = Fr::from_u128(0);
+		let scalar = Fr::from_u128(3);
 		let c = (a * scalar).to_affine();
 
 		let a_x_bn = fe_to_big(a.x);
@@ -429,11 +437,10 @@ mod test {
 
 		let a_x_w = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_x_bn);
 		let a_y_w = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_y_bn);
-
 		let a_w = EcPoint::new(a_x_w, a_y_w);
-		let c_w = a_w.mul_scalar_ladder(scalar.to_bytes());
+		let c_w = a_w.mul_scalar_ladder(scalar_bytes);
 
 		assert_eq!(c.x, big_to_fe(c_w.x.value()));
-		//assert_eq!(c.y, big_to_fe(c_w.y.value()));
+		assert_eq!(c.y, big_to_fe(c_w.y.value()));
 	}
 }
