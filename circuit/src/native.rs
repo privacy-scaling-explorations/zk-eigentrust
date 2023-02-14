@@ -87,42 +87,15 @@ impl EigenTrustSet {
 				// - Peers that dont have at least one valid score
 				if score_sum == Fr::zero() {
 					self.set[i] = (PublicKey::default(), Fr::zero());
+				} else {
+					// Normalize the scores
+					// Distribute the credits(INITIAL_SCORE) to the valid opinion values
+					// We assume that the initial credits of peer is constant(INITIAL_SCORE)
+					for j in 0..NUM_NEIGHBOURS {
+						let (_, op_score) = ops_i.scores[j].clone();
+						ops_i.scores[j].1 = op_score * score_sum.invert().unwrap() * initial_score;
+					}
 				}
-
-				// Normalize the scores
-				// Take the sum of all initial score of valid peers
-				// Take from filtered set -- num_filtered_peers == 3, The sum is
-				// 3 * INITIAL_SCORE = TRUE_SUM Go through each peer from
-				// filtered set, normalize each score inside their opinion by:
-				// score / TRUE_SUM
-
-				// set = [(1, 100), (2, 100), (3, 100)]
-
-				// peer1_op = [(5, 10),  (6, 10),  (7, 10)]
-				// peer1_op_filterd = [(null, 0),  (null, 0),  (null, 0)]
-
-				// filtered_set = [(null, 0), (2, 100), (3, 100)]
-
-				// peer2_op = [(1, 10),  (2, 10),  (3, 10)]
-				// peer2_op_filterd = [(null, 0),  (null, 0),  (3, 10)]
-
-				// filtered_set = [(null, 0), (2, 100), (3, 100)]
-
-				// peer3_op = [(1, 10),  (2, 10),  (3, 10)]
-				// peer3_op_filterd = [(null, 0),  (2, 10),  (null, 0)]
-
-				// final_filtered_set = [(null, 0), (2, 100), (3, 100)]
-
-				// score = [(null, 0), (2, 100), (3, 100)]
-
-				// NORMALIZATION:
-				// total_available_credit = 1000;
-				// set = [10, 20, 50]
-				// sum = 10 + 20 + 50 = 80
-				// set = [10 / 80, 20 / 80, 50 / 80];
-				// set = [0.125, 0.25, 0.625]
-				// distributed_credit = [0.125 * 1000, 0.25 * 1000, 0.625 *
-				// 1000]; distributed_credit = [125, 250, 625];
 			}
 		}
 
@@ -382,9 +355,8 @@ mod test {
 		set.converge();
 	}
 
-	/// IDEA: Nullify participant that is not giving away any of his score, or
-	/// is giving them to neighbours not in the set
 	#[test]
+	#[should_panic]
 	fn test_add_three_members_with_two_opinions() {
 		let mut set = EigenTrustSet::new();
 
