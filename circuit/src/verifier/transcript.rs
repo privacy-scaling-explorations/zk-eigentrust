@@ -1,3 +1,4 @@
+use crate::{params::RoundParams, poseidon::native::sponge::PoseidonSponge, utils::to_wide};
 use halo2::{
 	arithmetic::FieldExt,
 	halo2curves::{group::ff::PrimeField, Coordinates, CurveAffine},
@@ -7,8 +8,6 @@ use halo2::{
 	},
 };
 use std::io::{self, Read, Write};
-
-use crate::{params::RoundParams, poseidon::native::sponge::PoseidonSponge, utils::to_wide};
 
 const WIDTH: usize = 5;
 

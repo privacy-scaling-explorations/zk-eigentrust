@@ -45,7 +45,7 @@ pub mod poseidon;
 pub mod rescue_prime;
 /// Utilities for proving and verifying
 pub mod utils;
-/// PLONK verifier
+/// PLONK verifier and aggregator
 pub mod verifier;
 
 #[derive(Debug)]
