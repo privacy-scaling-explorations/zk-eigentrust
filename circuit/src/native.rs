@@ -60,67 +60,71 @@ impl EigenTrustSet {
 		self.ops.insert(from, op);
 	}
 
-	pub fn converge(&self) -> [Fr; NUM_NEIGHBOURS] {
+	pub fn converge(&mut self) -> [Fr; NUM_NEIGHBOURS] {
 		let initial_score = Fr::from_u128(INITIAL_SCORE);
 
-		// for i in 0..NUM_NEIGHBOURS {
-		// 	let pk = self.set[i].0;
-		// 	let ops_i = self.ops.get_mut(&pk).unwrap_or_default();
+		for i in 0..NUM_NEIGHBOURS {
+			let pk = self.set[i].0;
 
-		// 	// let mut filtered_set = ...
-		// 	// let filtered_opinions = ...
-		// 	// Validity checks
-		// 	if pk == PublicKey::default() {
-		// 		assert!(ops_i.scores == [Fr::zero(); NUM_NEIGHBOURS]);
-		// 	} else {
-		// 		assert!(ops_i.scores[i] == Fr::zero());
+			// Validity checks
+			if pk == PublicKey::default() {
+				assert!(self.ops.get_mut(&pk).is_none());
+			} else {
+				let mut ops_i = self.ops.get_mut(&pk).unwrap();
 
-		// 		// Nullify scores that are given to wrong member at specific index
-		// 		for (idx, (&pk_j, &score)) in ops_i.scores.iter().enumerate() {
-		// 			let true_score = if self.set[idx].0 == pk_j { score } else { Fr::zero() };
-		// 			ops_i.scores[idx] = true_score;
-		// 		}
+				// Nullify scores that are given to wrong member at specific index
+				let mut score_sum = Fr::zero();
+				for j in 0..NUM_NEIGHBOURS {
+					let (pk_j, score) = ops_i.scores[j].clone();
+					let true_score =
+						if j != i && self.set[j].0 == pk_j { score } else { Fr::zero() };
+					ops_i.scores[j].1 = true_score;
+					score_sum += true_score;
+				}
 
-		// 		// First we need filtered set -- set after we invalidated
-		// 		// invalid peers:
-		// 		// - Peers that dont have at least one valid score
+				// First we need filtered set -- set after we invalidated
+				// invalid peers:
+				// - Peers that dont have at least one valid score
+				if score_sum == Fr::zero() {
+					self.set[i] = (PublicKey::default(), Fr::zero());
+				}
 
-		// 		// Normalize the scores
-		// 		// Take the sum of all initial score of valid peers
-		// 		// Take from filtered set -- num_filtered_peers == 3, The sum is
-		// 		// 3 * INITIAL_SCORE = TRUE_SUM Go through each peer from
-		// 		// filtered set, normalize each score inside their opinion by:
-		// 		// score / TRUE_SUM
+				// Normalize the scores
+				// Take the sum of all initial score of valid peers
+				// Take from filtered set -- num_filtered_peers == 3, The sum is
+				// 3 * INITIAL_SCORE = TRUE_SUM Go through each peer from
+				// filtered set, normalize each score inside their opinion by:
+				// score / TRUE_SUM
 
-		// 		// set = [(1, 100), (2, 100), (3, 100)]
+				// set = [(1, 100), (2, 100), (3, 100)]
 
-		// 		// peer1_op = [(5, 10),  (6, 10),  (7, 10)]
-		// 		// peer1_op_filterd = [(null, 0),  (null, 0),  (null, 0)]
+				// peer1_op = [(5, 10),  (6, 10),  (7, 10)]
+				// peer1_op_filterd = [(null, 0),  (null, 0),  (null, 0)]
 
-		// 		// filtered_set = [(null, 0), (2, 100), (3, 100)]
+				// filtered_set = [(null, 0), (2, 100), (3, 100)]
 
-		// 		// peer2_op = [(1, 10),  (2, 10),  (3, 10)]
-		// 		// peer2_op_filterd = [(null, 0),  (null, 0),  (3, 10)]
+				// peer2_op = [(1, 10),  (2, 10),  (3, 10)]
+				// peer2_op_filterd = [(null, 0),  (null, 0),  (3, 10)]
 
-		// 		// filtered_set = [(null, 0), (2, 100), (3, 100)]
+				// filtered_set = [(null, 0), (2, 100), (3, 100)]
 
-		// 		// peer3_op = [(1, 10),  (2, 10),  (3, 10)]
-		// 		// peer3_op_filterd = [(null, 0),  (2, 10),  (null, 0)]
+				// peer3_op = [(1, 10),  (2, 10),  (3, 10)]
+				// peer3_op_filterd = [(null, 0),  (2, 10),  (null, 0)]
 
-		// 		// final_filtered_set = [(null, 0), (2, 100), (3, 100)]
+				// final_filtered_set = [(null, 0), (2, 100), (3, 100)]
 
-		// 		// score = [(null, 0), (2, 100), (3, 100)]
+				// score = [(null, 0), (2, 100), (3, 100)]
 
-		// 		// NORMALIZATION:
-		// 		// total_available_credit = 1000;
-		// 		// set = [10, 20, 50]
-		// 		// sum = 10 + 20 + 50 = 80
-		// 		// set = [10 / 80, 20 / 80, 50 / 80];
-		// 		// set = [0.125, 0.25, 0.625]
-		// 		// distributed_credit = [0.125 * 1000, 0.25 * 1000, 0.625 *
-		// 		// 1000]; distributed_credit = [125, 250, 625];
-		// 	}
-		// }
+				// NORMALIZATION:
+				// total_available_credit = 1000;
+				// set = [10, 20, 50]
+				// sum = 10 + 20 + 50 = 80
+				// set = [10 / 80, 20 / 80, 50 / 80];
+				// set = [0.125, 0.25, 0.625]
+				// distributed_credit = [0.125 * 1000, 0.25 * 1000, 0.625 *
+				// 1000]; distributed_credit = [125, 250, 625];
+			}
+		}
 
 		// By this point we should use filtered_set and filtered_opinions
 		let mut s = self.set.map(|item| item.1);
