@@ -17,7 +17,9 @@ struct Opinion {
 }
 
 impl Opinion {
-	pub fn new(sig: Signature, message_hash: Fr, scores: [Fr; NUM_NEIGHBOURS]) -> Self {
+	pub fn new(
+		sig: Signature, message_hash: Fr, scores: [(PublicKey, Fr); NUM_NEIGHBOURS],
+	) -> Self {
 		Self { sig, message_hash, scores }
 	}
 }
@@ -27,6 +29,7 @@ impl Default for Opinion {
 		let sig = Signature::new(Fr::zero(), Fr::zero(), Fr::zero());
 		let message_hash = Fr::zero();
 		let scores = [(PublicKey::default(), Fr::zero()); NUM_NEIGHBOURS];
+		Self { sig, message_hash, scores }
 	}
 }
 
@@ -60,76 +63,77 @@ impl EigenTrustSet {
 	pub fn converge(&self) -> [Fr; NUM_NEIGHBOURS] {
 		let initial_score = Fr::from_u128(INITIAL_SCORE);
 
-		for i in 0..NUM_NEIGHBOURS {
-			let pk = self.set[i].0;
-			let ops_i = self.ops.get_mut(&pk).unwrap_or_default();
+		// for i in 0..NUM_NEIGHBOURS {
+		// 	let pk = self.set[i].0;
+		// 	let ops_i = self.ops.get_mut(&pk).unwrap_or_default();
 
-			// let mut filtered_set = ...
-			// let filtered_opinions = ...
-			// Validity checks
-			if pk == PublicKey::default() {
-				assert!(ops_i.scores == [Fr::zero(); NUM_NEIGHBOURS]);
-			} else {
-				assert!(ops_i.scores[i] == Fr::zero());
+		// 	// let mut filtered_set = ...
+		// 	// let filtered_opinions = ...
+		// 	// Validity checks
+		// 	if pk == PublicKey::default() {
+		// 		assert!(ops_i.scores == [Fr::zero(); NUM_NEIGHBOURS]);
+		// 	} else {
+		// 		assert!(ops_i.scores[i] == Fr::zero());
 
-				// Nullify scores that are given to wrong member at specific index
-				for (idx, (&pk_j, &score)) in ops_i.scores.iter().enumerate() {
-					let true_score = if self.set[idx].0 == pk_j { score } else { Fr::zero() };
-					ops_i.scores[idx] = true_score;
-				}
+		// 		// Nullify scores that are given to wrong member at specific index
+		// 		for (idx, (&pk_j, &score)) in ops_i.scores.iter().enumerate() {
+		// 			let true_score = if self.set[idx].0 == pk_j { score } else { Fr::zero() };
+		// 			ops_i.scores[idx] = true_score;
+		// 		}
 
-				// First we need filtered set -- set after we invalidated
-				// invalid peers:
-				// - Peers that dont have at least one valid score
+		// 		// First we need filtered set -- set after we invalidated
+		// 		// invalid peers:
+		// 		// - Peers that dont have at least one valid score
 
-				// Normalize the scores
-				// Take the sum of all initial score of valid peers
-				// Take from filtered set -- num_filtered_peers == 3, The sum is
-				// 3 * INITIAL_SCORE = TRUE_SUM Go through each peer from
-				// filtered set, normalize each score inside their opinion by:
-				// score / TRUE_SUM
+		// 		// Normalize the scores
+		// 		// Take the sum of all initial score of valid peers
+		// 		// Take from filtered set -- num_filtered_peers == 3, The sum is
+		// 		// 3 * INITIAL_SCORE = TRUE_SUM Go through each peer from
+		// 		// filtered set, normalize each score inside their opinion by:
+		// 		// score / TRUE_SUM
 
-				// set = [(1, 100), (2, 100), (3, 100)]
+		// 		// set = [(1, 100), (2, 100), (3, 100)]
 
-				// peer1_op = [(5, 10),  (6, 10),  (7, 10)]
-				// peer1_op_filterd = [(null, 0),  (null, 0),  (null, 0)]
+		// 		// peer1_op = [(5, 10),  (6, 10),  (7, 10)]
+		// 		// peer1_op_filterd = [(null, 0),  (null, 0),  (null, 0)]
 
-				// filtered_set = [(null, 0), (2, 100), (3, 100)]
+		// 		// filtered_set = [(null, 0), (2, 100), (3, 100)]
 
-				// peer2_op = [(1, 10),  (2, 10),  (3, 10)]
-				// peer2_op_filterd = [(null, 0),  (null, 0),  (3, 10)]
+		// 		// peer2_op = [(1, 10),  (2, 10),  (3, 10)]
+		// 		// peer2_op_filterd = [(null, 0),  (null, 0),  (3, 10)]
 
-				// filtered_set = [(null, 0), (2, 100), (3, 100)]
+		// 		// filtered_set = [(null, 0), (2, 100), (3, 100)]
 
-				// peer3_op = [(1, 10),  (2, 10),  (3, 10)]
-				// peer3_op_filterd = [(null, 0),  (2, 10),  (null, 0)]
+		// 		// peer3_op = [(1, 10),  (2, 10),  (3, 10)]
+		// 		// peer3_op_filterd = [(null, 0),  (2, 10),  (null, 0)]
 
-				// final_filtered_set = [(null, 0), (2, 100), (3, 100)]
+		// 		// final_filtered_set = [(null, 0), (2, 100), (3, 100)]
 
-				// score = [(null, 0), (2, 100), (3, 100)]
-				
-				/// NORMALIZATION:
-				// total_available_credit = 1000;
-				// set = [10, 20, 50]
-				// sum = 10 + 20 + 50 = 80
-				// set = [10 / 80, 20 / 80, 50 / 80];
-				// set = [0.125, 0.25, 0.625]
-				// distributed_credit = [0.125 * 1000, 0.25 * 1000, 0.625 * 1000];
-				// distributed_credit = [125, 250, 625];
-			}
-		}
+		// 		// score = [(null, 0), (2, 100), (3, 100)]
+
+		// 		// NORMALIZATION:
+		// 		// total_available_credit = 1000;
+		// 		// set = [10, 20, 50]
+		// 		// sum = 10 + 20 + 50 = 80
+		// 		// set = [10 / 80, 20 / 80, 50 / 80];
+		// 		// set = [0.125, 0.25, 0.625]
+		// 		// distributed_credit = [0.125 * 1000, 0.25 * 1000, 0.625 *
+		// 		// 1000]; distributed_credit = [125, 250, 625];
+		// 	}
+		// }
 
 		// By this point we should use filtered_set and filtered_opinions
 		let mut s = self.set.map(|item| item.1);
+		let default_op = Opinion::default();
 		for _ in 0..NUM_ITERATIONS {
 			let mut distributions = [[Fr::zero(); NUM_NEIGHBOURS]; NUM_NEIGHBOURS];
 			for i in 0..NUM_NEIGHBOURS {
 				let mut local_distr = [Fr::zero(); NUM_NEIGHBOURS];
 				let pk = self.set[i].0;
-				let ops_i = self.ops.get_mut(&pk).unwrap_or_default();
+				let ops_i = self.ops.get(&pk).unwrap_or_else(|| &default_op);
 
 				for j in 0..NUM_NEIGHBOURS {
-					let op = ops_i.scores[j] * s[i];
+					let op = ops_i.scores[j].1 * s[i];
 					local_distr[j] = op;
 				}
 				distributions[i] = local_distr;
@@ -159,12 +163,12 @@ impl EigenTrustSet {
 
 #[cfg(test)]
 mod test {
-	use super::{EigenTrustSet, Opinion, NUM_NEIGHBOURS};
+	use super::{EigenTrustSet, Opinion, INITIAL_SCORE, NUM_NEIGHBOURS};
 	use crate::{
 		calculate_message_hash,
 		eddsa::native::{sign, PublicKey, SecretKey},
 	};
-	use halo2::halo2curves::bn256::Fr;
+	use halo2::halo2curves::{bn256::Fr, FieldExt};
 	use rand::thread_rng;
 
 	#[test]
@@ -219,12 +223,27 @@ mod test {
 		set.add_member(pk2);
 
 		// Peer1(pk1) signs the opinion
-		let pks = [PublicKey::default(); NUM_NEIGHBOURS];
-		let scores = [Fr::zero(); NUM_NEIGHBOURS];
+		let pks = [
+			pk1,
+			pk2,
+			PublicKey::default(),
+			PublicKey::default(),
+			PublicKey::default(),
+			PublicKey::default(),
+		];
+		let scores = [
+			Fr::zero(),
+			Fr::from_u128(INITIAL_SCORE),
+			Fr::zero(),
+			Fr::zero(),
+			Fr::zero(),
+			Fr::zero(),
+		];
 		let (_, message_hashes) =
 			calculate_message_hash::<NUM_NEIGHBOURS, 1>(pks.to_vec(), vec![scores.to_vec()]);
 		let sig = sign(&sk1, &pk1, message_hashes[0]);
 
+		let scores = pks.zip(scores);
 		let op = Opinion::new(sig, message_hashes[0], scores);
 
 		set.update_op(pk1, op);
@@ -256,11 +275,19 @@ mod test {
 			PublicKey::default(),
 			PublicKey::default(),
 		];
-		let scores = [Fr::zero(), Fr::from(1000), Fr::zero(), Fr::zero(), Fr::zero(), Fr::zero()];
+		let scores = [
+			Fr::zero(),
+			Fr::from_u128(INITIAL_SCORE),
+			Fr::zero(),
+			Fr::zero(),
+			Fr::zero(),
+			Fr::zero(),
+		];
 		let (_, message_hashes) =
 			calculate_message_hash::<NUM_NEIGHBOURS, 1>(pks.to_vec(), vec![scores.to_vec()]);
 		let sig = sign(&sk1, &pk1, message_hashes[0]);
 
+		let scores = pks.zip(scores);
 		let op = Opinion::new(sig, message_hashes[0], scores);
 
 		set.update_op(pk1, op);
@@ -274,11 +301,19 @@ mod test {
 			PublicKey::default(),
 			PublicKey::default(),
 		];
-		let scores = [Fr::from(1000), Fr::zero(), Fr::zero(), Fr::zero(), Fr::zero(), Fr::zero()];
+		let scores = [
+			Fr::from_u128(INITIAL_SCORE),
+			Fr::zero(),
+			Fr::zero(),
+			Fr::zero(),
+			Fr::zero(),
+			Fr::zero(),
+		];
 		let (_, message_hashes) =
 			calculate_message_hash::<NUM_NEIGHBOURS, 1>(pks.to_vec(), vec![scores.to_vec()]);
 		let sig = sign(&sk2, &pk2, message_hashes[0]);
 
+		let scores = pks.zip(scores);
 		let op = Opinion::new(sig, message_hashes[0], scores);
 
 		set.update_op(pk2, op);
@@ -311,6 +346,7 @@ mod test {
 			calculate_message_hash::<NUM_NEIGHBOURS, 1>(pks.to_vec(), vec![scores.to_vec()]);
 		let sig = sign(&sk1, &pk1, message_hashes[0]);
 
+		let scores = pks.zip(scores);
 		let op = Opinion::new(sig, message_hashes[0], scores);
 
 		set.update_op(pk1, op);
@@ -322,6 +358,7 @@ mod test {
 			calculate_message_hash::<NUM_NEIGHBOURS, 1>(pks.to_vec(), vec![scores.to_vec()]);
 		let sig = sign(&sk2, &pk2, message_hashes[0]);
 
+		let scores = pks.zip(scores);
 		let op = Opinion::new(sig, message_hashes[0], scores);
 
 		set.update_op(pk2, op);
@@ -333,6 +370,7 @@ mod test {
 			calculate_message_hash::<NUM_NEIGHBOURS, 1>(pks.to_vec(), vec![scores.to_vec()]);
 		let sig = sign(&sk3, &pk3, message_hashes[0]);
 
+		let scores = pks.zip(scores);
 		let op = Opinion::new(sig, message_hashes[0], scores);
 
 		set.update_op(pk3, op);
@@ -367,6 +405,7 @@ mod test {
 			calculate_message_hash::<NUM_NEIGHBOURS, 1>(pks.to_vec(), vec![scores.to_vec()]);
 		let sig = sign(&sk1, &pk1, message_hashes[0]);
 
+		let scores = pks.zip(scores);
 		let op = Opinion::new(sig, message_hashes[0], scores);
 
 		set.update_op(pk1, op);
@@ -378,6 +417,7 @@ mod test {
 			calculate_message_hash::<NUM_NEIGHBOURS, 1>(pks.to_vec(), vec![scores.to_vec()]);
 		let sig = sign(&sk2, &pk2, message_hashes[0]);
 
+		let scores = pks.zip(scores);
 		let op = Opinion::new(sig, message_hashes[0], scores);
 
 		set.update_op(pk2, op);
