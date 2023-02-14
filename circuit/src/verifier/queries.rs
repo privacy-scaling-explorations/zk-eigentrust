@@ -2,8 +2,13 @@ use halo2::{
 	arithmetic::{compute_inner_product, Field, FieldExt},
 	halo2curves::{pairing::Engine, serde::SerdeObject, CurveAffine},
 	plonk::{
-		vanishing, ChallengeBeta, ChallengeGamma, ChallengeTheta, ChallengeX, ChallengeY, Error,
-		VerifyingKey,
+		lookup::verifier::Evaluated as LookupEvaluated,
+		permutation::verifier::{CommonEvaluated, Evaluated as PermEvaluated},
+		vanishing::{
+			self,
+			verifier::{Committed, Evaluated, PartiallyEvaluated},
+		},
+		ChallengeBeta, ChallengeGamma, ChallengeTheta, ChallengeX, ChallengeY, Error, VerifyingKey,
 	},
 	poly::{
 		commitment::{Params, MSM},
@@ -82,6 +87,93 @@ impl<C: CurveAffine, M: MSM<C>> VerifierQueryOwned<C, M> {
 	}
 }
 
+/// calculate_vanishing
+pub fn calculate_vanishing<E: Engine + Debug>(
+	params: ParamsKZG<E>, x: ChallengeX<E::G1Affine>, y: ChallengeY<E::G1Affine>,
+	vk: &VerifyingKey<E::G1Affine>, advice_evals: &Vec<Vec<E::Scalar>>,
+	instance_evals: Vec<Vec<E::Scalar>>, permutations_evaluated: &Vec<PermEvaluated<E::G1Affine>>,
+	lookups_evaluated: &Vec<Vec<LookupEvaluated<E::G1Affine>>>, challenges: Vec<E::Scalar>,
+	fixed_evals: &Vec<E::Scalar>, permutations_common: &CommonEvaluated<E::G1Affine>,
+	beta: ChallengeBeta<E::G1Affine>, gamma: ChallengeGamma<E::G1Affine>,
+	theta: ChallengeTheta<E::G1Affine>, vanishing: PartiallyEvaluated<E::G1Affine>,
+) -> Evaluated<E::G1Affine, MSMKZG<E>>
+where
+	E::G1Affine: SerdeObject,
+	E::G2Affine: SerdeObject,
+{
+	// x^n
+	let xn = x.pow(&[params.n(), 0, 0, 0]);
+
+	let blinding_factors = vk.cs().blinding_factors();
+	let blinding_factors_bytes = blinding_factors.to_be_bytes();
+	let blinding_factors_bytes_short: [u8; 4] = blinding_factors_bytes[..4].try_into().unwrap();
+	let blinding_factors_i32 = i32::from_be_bytes(blinding_factors_bytes_short);
+	let l_evals = vk.get_domain().l_i_range(*x, xn, (-(blinding_factors_i32 + 1))..=0);
+	assert_eq!(l_evals.len(), 2 + blinding_factors);
+	let l_last = l_evals[0];
+	let l_blind: E::Scalar =
+		l_evals[1..(1 + blinding_factors)].iter().fold(E::Scalar::zero(), |acc, eval| acc + eval);
+	let l_0 = l_evals[1 + blinding_factors];
+
+	// Compute the expected value of h(x)
+	let expressions = advice_evals
+		.iter()
+		.zip(instance_evals.iter())
+		.zip(permutations_evaluated.iter())
+		.zip(lookups_evaluated.iter())
+		.flat_map(|(((advice_evals, instance_evals), permutation), lookups)| {
+			let challenges = &challenges;
+			let fixed_evals = &fixed_evals;
+			std::iter::empty()
+				// Evaluate the circuit using the custom gates provided
+				.chain(vk.cs().gates().iter().flat_map(move |gate| {
+					gate.polynomials().iter().map(move |poly| {
+						poly.evaluate(
+							&|scalar| scalar,
+							#[allow(clippy::panic)]
+							&|_| panic!("virtual selectors are removed during optimization"),
+							&|query| fixed_evals[query.index()],
+							&|query| advice_evals[query.index()],
+							&|query| instance_evals[query.index()],
+							&|challenge| challenges[challenge.index()],
+							&|a| -a,
+							&|a, b| a + &b,
+							&|a, b| a * &b,
+							&|a, scalar| a * &scalar,
+						)
+					})
+				}))
+				.chain(permutation.expressions(
+					&vk,
+					&vk.cs().permutation(),
+					&permutations_common,
+					advice_evals,
+					fixed_evals,
+					instance_evals,
+					l_0,
+					l_last,
+					l_blind,
+					beta,
+					gamma,
+					x,
+				))
+				.chain(
+					lookups
+						.iter()
+						.zip(vk.cs().lookups().iter())
+						.flat_map(move |(p, argument)| {
+							p.expressions(
+								l_0, l_last, l_blind, argument, theta, beta, gamma, advice_evals,
+								fixed_evals, instance_evals, challenges,
+							)
+						})
+						.into_iter(),
+				)
+		});
+
+	vanishing.verify(&params, expressions, y, xn)
+}
+
 /// Returns a boolean indicating whether or not the proof is valid
 pub fn setup_verify_queries<
 	E: Engine + Debug,
@@ -122,10 +214,12 @@ where
 			vec![vec![E::G1Affine::default(); vk.cs().num_advice_columns()]; num_proofs];
 		let mut challenges = vec![E::Scalar::zero(); vk.cs().num_challenges()];
 
+		let adv_column_phase = vk.cs().advice_column_phase();
+
 		for current_phase in vk.cs().phases() {
 			for advice_commitments in advice_commitments.iter_mut() {
 				for (phase, commitment) in
-					vk.cs().advice_column_phase().iter().zip(advice_commitments.iter_mut())
+					adv_column_phase.iter().zip(advice_commitments.iter_mut())
 				{
 					if current_phase.0 == *phase {
 						*commitment = transcript.read_point()?;
@@ -258,80 +352,11 @@ where
 
 	// This check ensures the circuit is satisfied so long as the polynomial
 	// commitments open to the correct values.
-	let vanishing = {
-		// x^n
-		let xn = x.pow(&[params.n(), 0, 0, 0]);
-
-		let blinding_factors = vk.cs().blinding_factors();
-		let blinding_factors_bytes = blinding_factors.to_be_bytes();
-		let blinding_factors_bytes_short: [u8; 4] = blinding_factors_bytes[..4].try_into().unwrap();
-		let blinding_factors_i32 = i32::from_be_bytes(blinding_factors_bytes_short);
-		let l_evals = vk.get_domain().l_i_range(*x, xn, (-(blinding_factors_i32 + 1))..=0);
-		assert_eq!(l_evals.len(), 2 + blinding_factors);
-		let l_last = l_evals[0];
-		let l_blind: E::Scalar = l_evals[1..(1 + blinding_factors)]
-			.iter()
-			.fold(E::Scalar::zero(), |acc, eval| acc + eval);
-		let l_0 = l_evals[1 + blinding_factors];
-
-		// Compute the expected value of h(x)
-		let expressions = advice_evals
-			.iter()
-			.zip(instance_evals.iter())
-			.zip(permutations_evaluated.iter())
-			.zip(lookups_evaluated.iter())
-			.flat_map(|(((advice_evals, instance_evals), permutation), lookups)| {
-				let challenges = &challenges;
-				let fixed_evals = &fixed_evals;
-				std::iter::empty()
-					// Evaluate the circuit using the custom gates provided
-					.chain(vk.cs().gates().iter().flat_map(move |gate| {
-						gate.polynomials().iter().map(move |poly| {
-							poly.evaluate(
-								&|scalar| scalar,
-								#[allow(clippy::panic)]
-								&|_| panic!("virtual selectors are removed during optimization"),
-								&|query| fixed_evals[query.index()],
-								&|query| advice_evals[query.index()],
-								&|query| instance_evals[query.index()],
-								&|challenge| challenges[challenge.index()],
-								&|a| -a,
-								&|a, b| a + &b,
-								&|a, b| a * &b,
-								&|a, scalar| a * &scalar,
-							)
-						})
-					}))
-					.chain(permutation.expressions(
-						&vk,
-						&vk.cs().permutation(),
-						&permutations_common,
-						advice_evals,
-						fixed_evals,
-						instance_evals,
-						l_0,
-						l_last,
-						l_blind,
-						beta,
-						gamma,
-						x,
-					))
-					.chain(
-						lookups
-							.iter()
-							.zip(vk.cs().lookups().iter())
-							.flat_map(move |(p, argument)| {
-								p.expressions(
-									l_0, l_last, l_blind, argument, theta, beta, gamma,
-									advice_evals, fixed_evals, instance_evals, challenges,
-								)
-							})
-							.into_iter(),
-					)
-			});
-
-		vanishing.verify(&params, expressions, y, xn)
-	};
+	let vanishing = calculate_vanishing(
+		params, x, y, &vk, &advice_evals, instance_evals, &permutations_evaluated,
+		&lookups_evaluated, challenges, &fixed_evals, &permutations_common, beta, gamma, theta,
+		vanishing,
+	);
 
 	let mut queries: Vec<VerifierQuery<E::G1Affine, MSMKZG<E>>> = Vec::new();
 
