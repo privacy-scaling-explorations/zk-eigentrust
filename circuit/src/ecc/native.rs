@@ -13,14 +13,11 @@
 // r_x = m_1 * m_1 - p_x - f
 // r_y = m_1 * (r_x - p_x) - p_y
 
-use std::str::FromStr;
-
 use crate::{
 	gadgets::bits2num::to_bits,
 	integer::{native::Integer, rns::RnsParams},
 };
 use halo2::{self, arithmetic::FieldExt};
-use num_bigint::BigUint;
 
 /// Structure for the EcPoint
 #[derive(Clone, Debug)]
@@ -67,28 +64,16 @@ where
 
 	/// AuxInit
 	pub fn to_add() -> Self {
-		let x = BigUint::from_str(
-			"16674715582331070136933915527288889019778094566732803816939061043898457168778",
-		)
-		.unwrap();
-		let y = BigUint::from_str(
-			"6463266180564494723216328990756243248194282857153665680958564348491911026035",
-		)
-		.unwrap();
-		Self::new(Integer::new(x), Integer::new(y))
+		let x_limbs = P::to_add_x();
+		let y_limbs = P::to_add_y();
+		Self::new(Integer::from_limbs(x_limbs), Integer::from_limbs(y_limbs))
 	}
 
 	/// AuxFin
 	pub fn to_sub() -> Self {
-		let x = BigUint::from_str(
-			"13309346756614635333825509300060708409153440696756098989763444826124962874203",
-		)
-		.unwrap();
-		let y = BigUint::from_str(
-			"19567858517750281949071914889393977810091135383309479881360435638939337926797",
-		)
-		.unwrap();
-		Self::new(Integer::new(x), Integer::new(y))
+		let x_limbs = P::to_sub_x();
+		let y_limbs = P::to_sub_y();
+		Self::new(Integer::from_limbs(x_limbs), Integer::from_limbs(y_limbs))
 	}
 
 	/// Add one point to another
@@ -168,28 +153,26 @@ where
 
 	/// Scalar multiplication for given point with using ladder
 	pub fn mul_scalar(&self, le_bytes: [u8; 32]) -> Self {
-		let r_init = Self::to_add();
+		let aux_init = Self::to_add();
 		let exp: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P> = self.clone();
 
 		// Converts given input to its bit by Scalar Field's bit size
 		let mut bits = to_bits::<254>(le_bytes);
 		bits.reverse();
 
-		let table = [r_init.clone(), exp.clone().add(&r_init)];
+		let table = [aux_init.clone(), exp.clone().add(&aux_init)];
 		let mut acc = Self::select(bits[0], table.clone());
 
 		// To avoid P_0 == P_1
 		acc = acc.double();
-		if bits[1] {
-			acc = acc.add(&table[1]);
-		} else {
-			acc = acc.add(&table[0]);
-		}
+		acc = acc.add(&Self::select(bits[1], table.clone()));
+
 		// Double and Add operation with ladder
 		for bit in &bits[2..] {
 			let item = Self::select(*bit, table.clone());
 			acc = acc.ladder(&item);
 		}
+
 		let aux_fin = Self::to_sub();
 		acc = acc.add(&aux_fin);
 
