@@ -84,16 +84,86 @@ fn gen_evm_verifier(
 
 #[cfg(test)]
 mod test {
-	use halo2::halo2curves::{bn256::Fr, FieldExt};
+	use crate::RegionCtx;
+
+	use super::{gen_evm_verifier, gen_pk, gen_proof, gen_srs};
+	use halo2::{
+		circuit::{Chip, Layouter, Region, SimpleFloorPlanner, Value},
+		halo2curves::{bn256::Fr, FieldExt},
+		plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Instance, Selector},
+		poly::Rotation,
+	};
 	use rand::thread_rng;
 	use snark_verifier::loader::evm::{encode_calldata, Address, ExecutorBuilder};
 
-	use crate::{
-		circuit::{native, EigenTrust, PoseidonNativeHasher, PoseidonNativeSponge},
-		eddsa::native::{sign, SecretKey, Signature},
-	};
+	#[derive(Clone)]
+	struct TestConfig {
+		a: Column<Advice>,
+		b: Column<Advice>,
+		selector: Selector,
+	}
 
-	use super::{gen_evm_verifier, gen_pk, gen_proof, gen_srs};
+	#[derive(Clone)]
+	struct TestCircuit<F: FieldExt> {
+		a: Value<F>,
+		b: Value<F>,
+	}
+
+	impl<F: FieldExt> TestCircuit<F> {
+		fn new(a: F, b: F) -> Self {
+			Self { a: Value::known(a), b: Value::known(b) }
+		}
+	}
+
+	impl<F: FieldExt> Circuit<F> for TestCircuit<F> {
+		type Config = TestConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			Self { a: Value::unknown(), b: Value::unknown() }
+		}
+
+		fn configure(meta: &mut ConstraintSystem<F>) -> TestConfig {
+			let a = meta.advice_column();
+			let b = meta.advice_column();
+			let s = meta.selector();
+
+			meta.create_gate("add", |v_cells| {
+				let s_exp = v_cells.query_selector(s);
+				let a_exp = v_cells.query_advice(a, Rotation::cur());
+				let b_exp = v_cells.query_advice(b, Rotation::cur());
+				let c_exp = v_cells.query_advice(a, Rotation::next());
+
+				let c_exp = c_exp - (a_exp + b_exp);
+
+				vec![s_exp * c_exp]
+			});
+
+			TestConfig { a, b, selector: s }
+		}
+
+		fn synthesize(
+			&self, config: TestConfig, mut layouter: impl Layouter<F>,
+		) -> Result<(), Error> {
+			layouter.assign_region(
+				|| "add",
+				|region: Region<'_, F>| {
+					let mut ctx = RegionCtx::new(region, 0);
+					ctx.enable(config.selector)?;
+
+					ctx.assign_advice(config.a, self.a)?;
+					ctx.assign_advice(config.b, self.b)?;
+
+					ctx.next();
+
+					let c = self.a + self.b;
+					ctx.assign_advice(config.a, c)?;
+
+					Ok(())
+				},
+			)
+		}
+	}
 
 	fn evm_verify(deployment_code: Vec<u8>, instances: Vec<Vec<Fr>>, proof: Vec<u8>) {
 		let calldata = encode_calldata(&instances, &proof);
@@ -106,81 +176,30 @@ mod test {
 			let verifier_address = deployment_result.address.unwrap();
 			let result = evm.call_raw(caller, verifier_address, calldata.into(), 0.into());
 
+			let reverted = result.reverted;
 			dbg!(result.gas_used);
+			dbg!(result);
 
-			!result.reverted
+			!reverted
 		};
 		assert!(success);
 	}
 
-	pub const NUM_ITER: usize = 10;
-	pub const NUM_NEIGHBOURS: usize = 5;
-	pub const INITIAL_SCORE: u128 = 1000;
-	pub const SCALE: u128 = 1000;
-
 	#[test]
-	#[ignore = "SmartContract size too big"]
+	// #[ignore = "SmartContract size too big"]
 	fn verify_eigen_trust_evm() {
-		let s = vec![Fr::from_u128(INITIAL_SCORE); NUM_NEIGHBOURS];
-		let ops: Vec<Vec<Fr>> = vec![
-			vec![0, 200, 300, 500, 0],
-			vec![100, 0, 100, 100, 700],
-			vec![400, 100, 0, 200, 300],
-			vec![100, 100, 700, 0, 100],
-			vec![300, 100, 400, 200, 0],
-		]
-		.into_iter()
-		.map(|arr| arr.into_iter().map(|x| Fr::from_u128(x)).collect())
-		.collect();
-		let res = native::<Fr, NUM_NEIGHBOURS, NUM_ITER, SCALE>(s, ops.clone());
+		let a = Fr::one();
+		let b = Fr::one();
 
-		let rng = &mut thread_rng();
-		let secret_keys = [(); NUM_NEIGHBOURS].map(|_| SecretKey::random(rng));
-		let pub_keys = secret_keys.clone().map(|x| x.public());
-
-		let pk_x = pub_keys.clone().map(|pk| pk.0.x);
-		let pk_y = pub_keys.clone().map(|pk| pk.0.y);
-		let mut sponge = PoseidonNativeSponge::new();
-		sponge.update(&pk_x);
-		sponge.update(&pk_y);
-		let keys_message_hash = sponge.squeeze();
-
-		let messages: Vec<Fr> = ops
-			.iter()
-			.map(|scores| {
-				let mut sponge = PoseidonNativeSponge::new();
-				sponge.update(&scores);
-				let scores_message_hash = sponge.squeeze();
-
-				let m_inputs =
-					[keys_message_hash, scores_message_hash, Fr::zero(), Fr::zero(), Fr::zero()];
-				let poseidon = PoseidonNativeHasher::new(m_inputs);
-				let res = poseidon.permute()[0];
-				res
-			})
-			.collect();
-
-		let signatures: Vec<Signature> = secret_keys
-			.into_iter()
-			.zip(pub_keys.clone())
-			.zip(messages.clone())
-			.map(|((sk, pk), msg)| sign(&sk, &pk, msg))
-			.collect();
-
-		let et = EigenTrust::<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, SCALE>::new(
-			pub_keys.to_vec(),
-			signatures,
-			ops,
-			messages,
-		);
+		let circuit = TestCircuit::new(a, b);
 
 		let k = 14;
 		let params = gen_srs(k);
-		let pk = gen_pk(&params, &et);
-		let deployment_code = gen_evm_verifier(&params, pk.get_vk(), vec![NUM_NEIGHBOURS]);
+		let pk = gen_pk(&params, &circuit);
+		let deployment_code = gen_evm_verifier(&params, pk.get_vk(), vec![5]);
 		dbg!(deployment_code.len());
 
-		let proof = gen_proof(&params, &pk, et.clone(), vec![res.clone()]);
-		evm_verify(deployment_code, vec![res], proof);
+		let proof = gen_proof(&params, &pk, circuit.clone(), vec![]);
+		evm_verify(deployment_code, vec![], proof);
 	}
 }
