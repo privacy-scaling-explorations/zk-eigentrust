@@ -103,6 +103,8 @@ fn evm_verify(deployment_code: Vec<u8>, instances: Vec<Vec<Fr>>, proof: Vec<u8>)
 
 #[cfg(test)]
 mod test {
+	use std::usize;
+
 	use super::{gen_evm_verifier, gen_pk, gen_proof, gen_srs};
 	use crate::{
 		utils::{generate_params, prove_and_verify},
@@ -116,191 +118,111 @@ mod test {
 			bn256::{Bn256, Fr},
 			FieldExt,
 		},
-		plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Instance, Selector},
+		plonk::{
+			Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, Instance, Selector,
+		},
 		poly::Rotation,
 	};
 
-	#[derive(Clone)]
-	struct TestConfig {
-		a: Column<Advice>,
-		b: Column<Advice>,
-		c: Column<Advice>,
-		selector: Selector,
-	}
-
-	#[derive(Clone)]
-	struct TestCircuit<F: FieldExt> {
-		a: Value<F>,
-		b: Value<F>,
-	}
-
-	impl<F: FieldExt> TestCircuit<F> {
-		fn new(a: F, b: F) -> Self {
-			Self { a: Value::known(a), b: Value::known(b) }
-		}
-	}
-
-	impl<F: FieldExt> Circuit<F> for TestCircuit<F> {
-		type Config = TestConfig;
-		type FloorPlanner = SimpleFloorPlanner;
-
-		fn without_witnesses(&self) -> Self {
-			Self { a: Value::unknown(), b: Value::unknown() }
-		}
-
-		fn configure(meta: &mut ConstraintSystem<F>) -> TestConfig {
-			let a = meta.advice_column();
-			let b = meta.advice_column();
-			let c = meta.advice_column();
-			let s = meta.selector();
-
-			meta.create_gate("add", |v_cells| {
-				let s_exp = v_cells.query_selector(s);
-				let a_exp = v_cells.query_advice(a, Rotation::cur());
-				let b_exp = v_cells.query_advice(b, Rotation::cur());
-				let c_exp = v_cells.query_advice(c, Rotation::cur());
-
-				let res = c_exp - (a_exp + b_exp);
-
-				vec![s_exp * res]
-			});
-
-			TestConfig { a, b, c, selector: s }
-		}
-
-		fn synthesize(
-			&self, config: TestConfig, mut layouter: impl Layouter<F>,
-		) -> Result<(), Error> {
-			layouter.assign_region(
-				|| "add",
-				|region: Region<'_, F>| {
-					let mut ctx = RegionCtx::new(region, 0);
-					ctx.enable(config.selector)?;
-
-					ctx.assign_advice(config.a, self.a)?;
-					ctx.assign_advice(config.b, self.b)?;
-
-					let c = self.a + self.b;
-					ctx.assign_advice(config.c, c)?;
-
-					Ok(())
-				},
-			)
-		}
-	}
-
-	#[test]
-	fn verify_dummy_dev() {
-		let a = Fr::one();
-		let b = Fr::one();
-		let circuit = TestCircuit::new(a, b);
-		let k = 6;
-		let prover = MockProver::run(k, &circuit, vec![]).unwrap();
-		assert_eq!(prover.verify(), Ok(()));
-	}
-
-	#[test]
-	fn verify_dummy_prod() {
-		let rng = &mut rand::thread_rng();
-		let a = Fr::one();
-		let b = Fr::one();
-		let circuit = TestCircuit::new(a, b);
-
-		let k = 6;
-		let params = generate_params(k);
-		let res = prove_and_verify::<Bn256, _, _>(params, circuit, &[], rng).unwrap();
-		assert!(res);
-	}
-
-	#[test]
-	fn verify_dummy_evm() {
-		let a = Fr::one();
-		let b = Fr::one();
-		let circuit = TestCircuit::new(a, b);
-
-		let k = 6;
-		let params = gen_srs(k);
-		let pk = gen_pk(&params, &circuit);
-		let deployment_code = gen_evm_verifier(&params, pk.get_vk(), vec![]);
-		dbg!(deployment_code.len());
-
-		let proof = gen_proof(&params, &pk, circuit.clone(), vec![]);
-		evm_verify(deployment_code, vec![], proof);
-	}
+	const NUM_ADVICE: usize = 8;
+	const NUM_FIXED: usize = 10;
+	const VERTICAL_SIZE: usize = 10;
 
 	#[derive(Clone)]
 	struct TestConfigPi {
-		a: Column<Advice>,
-		b: Column<Advice>,
-		c: Column<Advice>,
+		advice: [Column<Advice>; NUM_ADVICE],
+		fixed: [Column<Fixed>; NUM_FIXED],
 		pi: Column<Instance>,
 		selector: Selector,
 	}
 
 	#[derive(Clone)]
-	struct TestCircuitPi<F: FieldExt> {
-		a: Value<F>,
-		b: Value<F>,
+	struct TestCircuitPi<F: FieldExt, const S: usize> {
+		advice: [Value<F>; NUM_ADVICE],
+		fixed: [F; NUM_FIXED],
 	}
 
-	impl<F: FieldExt> TestCircuitPi<F> {
-		fn new(a: F, b: F) -> Self {
-			Self { a: Value::known(a), b: Value::known(b) }
+	impl<F: FieldExt, const S: usize> TestCircuitPi<F, S> {
+		fn new(advice: [F; NUM_ADVICE], fixed: [F; NUM_FIXED]) -> Self {
+			Self { advice: advice.map(|x| Value::known(x)), fixed }
 		}
 	}
 
-	impl<F: FieldExt> Circuit<F> for TestCircuitPi<F> {
+	impl<F: FieldExt, const S: usize> Circuit<F> for TestCircuitPi<F, S> {
 		type Config = TestConfigPi;
 		type FloorPlanner = SimpleFloorPlanner;
 
 		fn without_witnesses(&self) -> Self {
-			Self { a: Value::unknown(), b: Value::unknown() }
+			Self { advice: [(); NUM_ADVICE].map(|_| Value::unknown()), fixed: self.fixed.clone() }
 		}
 
 		fn configure(meta: &mut ConstraintSystem<F>) -> TestConfigPi {
-			let a = meta.advice_column();
-			let b = meta.advice_column();
-			let c = meta.advice_column();
+			let advice = [(); NUM_ADVICE].map(|_| meta.advice_column());
+			let fixed = [(); NUM_FIXED].map(|_| meta.fixed_column());
 			let pi = meta.instance_column();
 			let s = meta.selector();
 
-			meta.enable_equality(c);
+			advice.map(|c| meta.enable_equality(c));
+			fixed.map(|c| meta.enable_equality(c));
 			meta.enable_equality(pi);
 
 			meta.create_gate("add", |v_cells| {
 				let s_exp = v_cells.query_selector(s);
-				let a_exp = v_cells.query_advice(a, Rotation::cur());
-				let b_exp = v_cells.query_advice(b, Rotation::cur());
-				let c_exp = v_cells.query_advice(c, Rotation::cur());
+				let advice_set_exp = advice.map(|c| v_cells.query_advice(c, Rotation::cur()));
+				let fixed_set_exp = fixed.map(|c| v_cells.query_fixed(c, Rotation::cur()));
 
-				let res = c_exp - (a_exp + b_exp);
+				let mut sum = Expression::Constant(F::zero());
+				for i in 0..advice_set_exp.len() {
+					sum = sum + advice_set_exp[i].clone();
+				}
+				for i in 0..fixed_set_exp.len() {
+					sum = sum + fixed_set_exp[i].clone();
+				}
+
+				let c_exp = v_cells.query_advice(advice[0], Rotation::next());
+
+				let res = c_exp - sum;
 
 				vec![s_exp * res]
 			});
 
-			TestConfigPi { a, b, c, pi, selector: s }
+			TestConfigPi { advice, fixed, pi, selector: s }
 		}
 
 		fn synthesize(
 			&self, config: TestConfigPi, mut layouter: impl Layouter<F>,
 		) -> Result<(), Error> {
-			let res = layouter.assign_region(
-				|| "add",
-				|region: Region<'_, F>| {
-					let mut ctx = RegionCtx::new(region, 0);
-					ctx.enable(config.selector)?;
+			for s in 0..S {
+				let res = layouter.assign_region(
+					|| "add",
+					|region: Region<'_, F>| {
+						let mut ctx = RegionCtx::new(region, 0);
+						ctx.enable(config.selector)?;
 
-					ctx.assign_advice(config.a, self.a)?;
-					ctx.assign_advice(config.b, self.b)?;
+						for i in 0..self.advice.len() {
+							ctx.assign_advice(config.advice[i], self.advice[i])?;
+						}
+						for i in 0..self.fixed.len() {
+							ctx.assign_fixed(config.fixed[i], self.fixed[i])?;
+						}
 
-					let c = self.a + self.b;
-					let c_cell = ctx.assign_advice(config.c, c)?;
+						let mut sum = Value::known(F::zero());
+						for i in 0..self.advice.len() {
+							sum = sum + self.advice[i];
+						}
+						for i in 0..self.fixed.len() {
+							sum = sum + Value::known(self.fixed[i]);
+						}
 
-					Ok(c_cell)
-				},
-			)?;
+						ctx.next();
 
-			layouter.constrain_instance(res.cell(), config.pi, 0)?;
+						let c_cell = ctx.assign_advice(config.advice[0], sum)?;
+						Ok(c_cell)
+					},
+				)?;
+
+				layouter.constrain_instance(res.cell(), config.pi, s)?;
+			}
 
 			Ok(())
 		}
@@ -308,43 +230,67 @@ mod test {
 
 	#[test]
 	fn verify_dummy_pi_dev() {
-		let a = Fr::one();
-		let b = Fr::one();
-		let c = a + b;
-		let circuit = TestCircuitPi::new(a, b);
-		let k = 6;
-		let prover = MockProver::run(k, &circuit, vec![vec![c]]).unwrap();
+		let advice = [Fr::one(); NUM_ADVICE];
+		let fixed = [Fr::one(); NUM_FIXED];
+		let mut sum = Fr::zero();
+		for i in 0..advice.len() {
+			sum += advice[i];
+		}
+		for i in 0..fixed.len() {
+			sum += fixed[i];
+		}
+
+		let circuit = TestCircuitPi::<_, VERTICAL_SIZE>::new(advice, fixed);
+		let k = 9;
+
+		let pub_ins = vec![sum; VERTICAL_SIZE];
+		let prover = MockProver::run(k, &circuit, vec![pub_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
 	}
 
 	#[test]
 	fn verify_dummy_pi_prod() {
 		let rng = &mut rand::thread_rng();
-		let a = Fr::one();
-		let b = Fr::one();
-		let c = a + b;
-		let circuit = TestCircuitPi::new(a, b);
+		let advice = [Fr::one(); NUM_ADVICE];
+		let fixed = [Fr::one(); NUM_FIXED];
+		let mut sum = Fr::zero();
+		for i in 0..advice.len() {
+			sum += advice[i];
+		}
+		for i in 0..fixed.len() {
+			sum += fixed[i];
+		}
+		let circuit = TestCircuitPi::<_, VERTICAL_SIZE>::new(advice, fixed);
 
-		let k = 6;
+		let k = 9;
 		let params = generate_params(k);
-		let res = prove_and_verify::<Bn256, _, _>(params, circuit, &[&[c]], rng).unwrap();
+
+		let pub_ins = vec![sum; VERTICAL_SIZE];
+		let res = prove_and_verify::<Bn256, _, _>(params, circuit, &[&pub_ins], rng).unwrap();
 		assert!(res);
 	}
 
 	#[test]
 	fn verify_dummy_pi_evm() {
-		let a = Fr::one();
-		let b = Fr::one();
-		let c = a + b;
-		let circuit = TestCircuitPi::new(a, b);
+		let advice = [Fr::one(); NUM_ADVICE];
+		let fixed = [Fr::one(); NUM_FIXED];
+		let mut sum = Fr::zero();
+		for i in 0..advice.len() {
+			sum += advice[i];
+		}
+		for i in 0..fixed.len() {
+			sum += fixed[i];
+		}
+		let circuit = TestCircuitPi::<_, VERTICAL_SIZE>::new(advice, fixed);
 
-		let k = 6;
+		let k = 9;
 		let params = gen_srs(k);
 		let pk = gen_pk(&params, &circuit);
-		let deployment_code = gen_evm_verifier(&params, pk.get_vk(), vec![1]);
+		let deployment_code = gen_evm_verifier(&params, pk.get_vk(), vec![VERTICAL_SIZE]);
 		dbg!(deployment_code.len());
 
-		let proof = gen_proof(&params, &pk, circuit.clone(), vec![vec![c]]);
-		evm_verify(deployment_code, vec![vec![c]], proof);
+		let pub_ins = vec![sum; VERTICAL_SIZE];
+		let proof = gen_proof(&params, &pk, circuit.clone(), vec![pub_ins.clone()]);
+		evm_verify(deployment_code, vec![pub_ins], proof);
 	}
 }
