@@ -28,16 +28,19 @@ pub mod transcript;
 
 type PlonkVerifier = verifier::plonk::PlonkVerifier<KzgAs<Bn256, Gwc19>>;
 
-fn gen_srs(k: u32) -> ParamsKZG<Bn256> {
+/// Generate SRS
+pub fn gen_srs(k: u32) -> ParamsKZG<Bn256> {
 	ParamsKZG::<Bn256>::setup(k, OsRng)
 }
 
-fn gen_pk<C: Circuit<Fr>>(params: &ParamsKZG<Bn256>, circuit: &C) -> ProvingKey<G1Affine> {
+/// Generate Public Key
+pub fn gen_pk<C: Circuit<Fr>>(params: &ParamsKZG<Bn256>, circuit: &C) -> ProvingKey<G1Affine> {
 	let vk = keygen_vk(params, circuit).unwrap();
 	keygen_pk(params, vk, circuit).unwrap()
 }
 
-fn gen_proof<C: Circuit<Fr>>(
+/// Generate proof
+pub fn gen_proof<C: Circuit<Fr>>(
 	params: &ParamsKZG<Bn256>, pk: &ProvingKey<G1Affine>, circuit: C, instances: Vec<Vec<Fr>>,
 ) -> Vec<u8> {
 	MockProver::run(params.k(), &circuit, instances.clone()).unwrap().assert_satisfied();
@@ -60,7 +63,8 @@ fn gen_proof<C: Circuit<Fr>>(
 	proof
 }
 
-fn gen_evm_verifier(
+/// Generate solidity verifier
+pub fn gen_evm_verifier(
 	params: &ParamsKZG<Bn256>, vk: &VerifyingKey<G1Affine>, num_instance: Vec<usize>,
 ) -> Vec<u8> {
 	let protocol = compile(
@@ -82,7 +86,8 @@ fn gen_evm_verifier(
 	evm::compile_yul(&loader.yul_code())
 }
 
-fn evm_verify(deployment_code: Vec<u8>, instances: Vec<Vec<Fr>>, proof: Vec<u8>) {
+/// Verify proof inside the smart contract
+pub fn evm_verify(deployment_code: Vec<u8>, instances: Vec<Vec<Fr>>, proof: Vec<u8>) {
 	let calldata = encode_calldata(&instances, &proof);
 	let mut evm = ExecutorBuilder::default().with_gas_limit(u64::MAX.into()).build();
 

@@ -42,7 +42,7 @@ where
 
 /// Configuration elements for the circuit are defined here.
 #[derive(Debug, Clone)]
-struct EccAddConfig {
+pub struct EccAddConfig {
 	/// Constructs selectors from different circuits.
 	integer_reduce_selector: Selector,
 	integer_sub_selector: Selector,
@@ -213,7 +213,7 @@ where
 
 /// Configuration elements for the circuit are defined here.
 #[derive(Debug, Clone)]
-struct EccDoubleConfig {
+pub struct EccDoubleConfig {
 	/// Constructs selectors from different circuits.
 	integer_reduce_selector: Selector,
 	integer_add_selector: Selector,
@@ -383,7 +383,7 @@ where
 
 /// Configuration elements for the circuit are defined here.
 #[derive(Debug, Clone)]
-struct EccUnreducedLadderConfig {
+pub struct EccUnreducedLadderConfig {
 	/// Constructs selectors from different circuits.
 	integer_add_selector: Selector,
 	integer_sub_selector: Selector,
