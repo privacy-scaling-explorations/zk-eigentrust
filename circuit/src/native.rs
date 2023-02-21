@@ -55,6 +55,17 @@ impl EigenTrustSet {
 		self.set[index] = (pk, Fr::zero());
 	}
 
+	pub fn remove_member(&mut self, pk: PublicKey) {
+		let pos = self.set.iter().position(|&(x, _)| x == pk);
+		// Make sure already in the set
+		assert!(pos.is_some());
+
+		let index = pos.unwrap();
+		self.set[index] = (PublicKey::default(), Fr::zero());
+
+		self.ops.remove(&pk);
+	}
+
 	pub fn update_op(&mut self, from: PublicKey, op: Opinion) {
 		let pos_from = self.set.iter().position(|&(x, _)| x == from);
 		assert!(pos_from.is_some());
@@ -77,7 +88,6 @@ impl EigenTrustSet {
 			// we exclude it from validation.
 			if pk == PublicKey::default() || initial_score == Fr::zero() {
 				assert!(self.ops.get_mut(&pk).is_none());
-				self.set[i] = (PublicKey::default(), Fr::zero());
 			} else {
 				let mut ops_i = self.ops.get_mut(&pk).unwrap();
 
@@ -95,7 +105,7 @@ impl EigenTrustSet {
 				// invalid peers:
 				// - Peers that dont have at least one valid score
 				if score_sum == Fr::zero() {
-					self.set[i] = (PublicKey::default(), Fr::zero());
+					self.set[i] = (pk, Fr::zero());
 					self.ops.remove(&pk);
 				} else {
 					// Normalize the scores
@@ -110,9 +120,8 @@ impl EigenTrustSet {
 		}
 
 		// There should be at least 2 valid peers(valid opinions) for calculation
-		if self.set.iter().filter(|(pk, score)| pk != &PublicKey::default()).count() < 2 {
-			panic!("Insufficient peers for calculation!");
-		}
+		let valid_peers = self.set.iter().filter(|(_, score)| score != &Fr::zero()).count();
+		assert!(valid_peers >= 2, "Insufficient peers for calculation!");
 
 		// By this point we should use filtered_set and filtered_opinions
 		let mut s = self.set.map(|item| item.1);
@@ -411,6 +420,119 @@ mod test {
 		let op = Opinion::new(sig, message_hashes[0], scores);
 
 		set.update_op(pk2, op);
+
+		set.converge();
+	}
+
+	#[test]
+	fn test_add_3_members_with_3_ops_quit_1_member() {
+		let mut set = EigenTrustSet::new();
+
+		let rng = &mut thread_rng();
+
+		let sk1 = SecretKey::random(rng);
+		let sk2 = SecretKey::random(rng);
+		let sk3 = SecretKey::random(rng);
+
+		let pk1 = sk1.public();
+		let pk2 = sk2.public();
+		let pk3 = sk3.public();
+
+		set.add_member(pk1);
+		set.add_member(pk2);
+		set.add_member(pk3);
+
+		// Peer1(pk1) signs the opinion
+		let pks = [pk1, pk2, pk3, PublicKey::default(), PublicKey::default(), PublicKey::default()];
+		let scores = [Fr::zero(), Fr::from(300), Fr::from(700), Fr::zero(), Fr::zero(), Fr::zero()];
+		let (_, message_hashes) =
+			calculate_message_hash::<NUM_NEIGHBOURS, 1>(pks.to_vec(), vec![scores.to_vec()]);
+		let sig = sign(&sk1, &pk1, message_hashes[0]);
+
+		let scores = pks.zip(scores);
+		let op = Opinion::new(sig, message_hashes[0], scores);
+
+		set.update_op(pk1, op);
+
+		// Peer2(pk2) signs the opinion
+		let pks = [pk1, pk2, pk3, PublicKey::default(), PublicKey::default(), PublicKey::default()];
+		let scores = [Fr::from(600), Fr::zero(), Fr::from(400), Fr::zero(), Fr::zero(), Fr::zero()];
+		let (_, message_hashes) =
+			calculate_message_hash::<NUM_NEIGHBOURS, 1>(pks.to_vec(), vec![scores.to_vec()]);
+		let sig = sign(&sk2, &pk2, message_hashes[0]);
+
+		let scores = pks.zip(scores);
+		let op = Opinion::new(sig, message_hashes[0], scores);
+
+		set.update_op(pk2, op);
+
+		// Peer3(pk3) signs the opinion
+		let pks = [pk1, pk2, pk3, PublicKey::default(), PublicKey::default(), PublicKey::default()];
+		let scores = [Fr::from(600), Fr::from(400), Fr::zero(), Fr::zero(), Fr::zero(), Fr::zero()];
+		let (_, message_hashes) =
+			calculate_message_hash::<NUM_NEIGHBOURS, 1>(pks.to_vec(), vec![scores.to_vec()]);
+		let sig = sign(&sk3, &pk3, message_hashes[0]);
+
+		let scores = pks.zip(scores);
+		let op = Opinion::new(sig, message_hashes[0], scores);
+
+		set.update_op(pk3, op);
+
+		set.converge();
+
+		// Peer2 quits
+		set.remove_member(pk2);
+
+		set.converge();
+	}
+
+	#[test]
+	#[should_panic]
+	fn test_add_3_members_with_2_ops_quit_1_member_1_op() {
+		let mut set = EigenTrustSet::new();
+
+		let rng = &mut thread_rng();
+
+		let sk1 = SecretKey::random(rng);
+		let sk2 = SecretKey::random(rng);
+		let sk3 = SecretKey::random(rng);
+
+		let pk1 = sk1.public();
+		let pk2 = sk2.public();
+		let pk3 = sk3.public();
+
+		set.add_member(pk1);
+		set.add_member(pk2);
+		set.add_member(pk3);
+
+		// Peer1(pk1) signs the opinion
+		let pks = [pk1, pk2, pk3, PublicKey::default(), PublicKey::default(), PublicKey::default()];
+		let scores = [Fr::zero(), Fr::from(300), Fr::from(700), Fr::zero(), Fr::zero(), Fr::zero()];
+		let (_, message_hashes) =
+			calculate_message_hash::<NUM_NEIGHBOURS, 1>(pks.to_vec(), vec![scores.to_vec()]);
+		let sig = sign(&sk1, &pk1, message_hashes[0]);
+
+		let scores = pks.zip(scores);
+		let op = Opinion::new(sig, message_hashes[0], scores);
+
+		set.update_op(pk1, op);
+
+		// Peer2(pk2) signs the opinion
+		let pks = [pk1, pk2, pk3, PublicKey::default(), PublicKey::default(), PublicKey::default()];
+		let scores = [Fr::from(600), Fr::zero(), Fr::from(400), Fr::zero(), Fr::zero(), Fr::zero()];
+		let (_, message_hashes) =
+			calculate_message_hash::<NUM_NEIGHBOURS, 1>(pks.to_vec(), vec![scores.to_vec()]);
+		let sig = sign(&sk2, &pk2, message_hashes[0]);
+
+		let scores = pks.zip(scores);
+		let op = Opinion::new(sig, message_hashes[0], scores);
+
+		set.update_op(pk2, op);
+
+		set.converge();
+
+		// Peer1 quits
+		set.remove_member(pk1);
 
 		set.converge();
 	}
