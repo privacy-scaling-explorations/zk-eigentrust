@@ -2,6 +2,10 @@
 pub mod native;
 
 use crate::{
+	gadgets::{
+		bits2num::Bits2NumChip,
+		main::{MainConfig, SelectChipset},
+	},
 	integer::{
 		rns::RnsParams, AssignedInteger, IntegerAddChip, IntegerDivChip, IntegerMulChip,
 		IntegerReduceChip, IntegerSubChip,
@@ -10,12 +14,12 @@ use crate::{
 };
 use halo2::{
 	arithmetic::FieldExt,
-	circuit::Layouter,
+	circuit::{AssignedCell, Layouter},
 	plonk::{Error, Selector},
 };
 
 /// Structure for the AssignedPoint.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct AssignedPoint<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
 where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
@@ -582,158 +586,279 @@ where
 	}
 }
 
-/*
-pub fn mul_scalar(
-	// Assigns a cell for the r_x.
-	exp_x: [AssignedCell<N, N>; NUM_LIMBS],
-	// Assigns a cell for the r_y.
-	exp_y: [AssignedCell<N, N>; NUM_LIMBS],
-	// Reduction witness for exp_x -- make sure exp_x is in the W field before being passed
-	exp_x_rw: ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>,
-	// Reduction witness for exp_y -- make sure exp_y is in the W field before being passed
-	exp_y_rw: ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>,
-	// Assigns a cell for the value.
+/// Configuration elements for the circuit are defined here.
+#[derive(Debug, Clone)]
+struct EccMulConfig {
+	/// Constructs selectors from different circuits.
+	ladder: EccUnreducedLadderConfig,
+	add: EccAddConfig,
+	double: EccDoubleConfig,
+	bits2num: Selector,
+	main: MainConfig,
+}
+
+impl EccMulConfig {
+	/// Construct a new config given the selector of child chips
+	pub fn new(
+		ladder: EccUnreducedLadderConfig, add: EccAddConfig, double: EccDoubleConfig,
+		bits2num: Selector, main: MainConfig,
+	) -> Self {
+		Self { ladder, add, double, bits2num, main }
+	}
+}
+
+/// Chipset structure for the EccMul.
+struct EccMulChipset<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
+where
+	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
+{
+	// Assigned point p
+	p: AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
+	// Scalar value as bits
+	scalar_bits: [N; 254],
 	value: AssignedCell<N, N>,
-	// Constructs an array for the value bits.
-	value_bits: [N; 256],
-	// Reduction witnesses for mul scalar add operation
-	reduction_witnesses_add: [Vec<ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>>; 256],
-	// Reduction witnesses for mul scalar double operation
-	reduction_witnesses_double: [Vec<ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>>; 256],
-	// Ecc Config
-	config: EccConfig<NUM_LIMBS>,
-	// Layouter
-	mut layouter: impl Layouter<N>,
-) -> Result<
-	(
-		[AssignedCell<N, N>; NUM_LIMBS],
-		[AssignedCell<N, N>; NUM_LIMBS],
-	),
-	Error,
-> {
-	// Check that `value_bits` are decomposed from `value`
-	// for i in 0..value_bits.len() {
-	//    if value_bits[i] == 1 {
-	//        add selector - row i
-	//    }
-	//    double selector - row i
-	// }
-	let bits2num = Bits2NumChip::new(value.clone(), value_bits.to_vec());
-	let bits = bits2num.synthesize(
-		&config.common,
-		&config.bits2num_selector,
-		layouter.namespace(|| "bits2num"),
-	)?;
-	let mut exp_x = IntegerChip::reduce(
-		exp_x,
-		exp_x_rw,
-		config.integer.clone(),
-		layouter.namespace(|| "reduce_exp_x"),
-	)?;
-	let mut exp_y = IntegerChip::reduce(
-		exp_y,
-		exp_y_rw,
-		config.integer.clone(),
-		layouter.namespace(|| "reduce_exp_y"),
-	)?;
-	let mut exps = Vec::new();
-	for i in 0..bits.len() {
-		(exp_x, exp_y) = Self::double_unreduced(
-			exp_x.clone(),
-			exp_y.clone(),
-			reduction_witnesses_double[i].clone(),
-			config.clone(),
-			layouter.namespace(|| "doubling"),
-		)?;
-		exps.push((exp_x.clone(), exp_y.clone()));
-	}
-	// Find first positive bit
-	let first_bit = Self::find_first_positive_bit(value_bits);
-	let mut r_x = exps[first_bit].0.clone();
-	let mut r_y = exps[first_bit].1.clone();
-	let mut flag = true;
-
-			for i in (first_bit + 1)..bits.len() {
-				// Here we pass this checks because we assigned(exp_x, exp_y) to (r_x,
-				// r_y) and we already constraint them when we calculate double operation. After
-				// we hit second positive bit we start to check addition constraints as well.
-				if (value_bits[i] == N::zero()) && flag {
-					continue;
-				} else {
-					flag = false;
-					let (new_r_x, new_r_y) = Self::add_unreduced(
-						r_x.clone(),
-						r_y.clone(),
-						exps[i].0.clone(),
-						exps[i].1.clone(),
-						reduction_witnesses_add[i].clone(),
-						config.clone(),
-						layouter.namespace(|| "add"),
-					)?;
-
-	for i in (first_bit + 1)..bits.len() {
-		let (new_r_x, new_r_y) = Self::add_unreduced(
-			r_x.clone(),
-			r_y.clone(),
-			exps[i].0.clone(),
-			exps[i].1.clone(),
-			reduction_witnesses_add[i].clone(),
-			config.clone(),
-			layouter.namespace(|| "add"),
-		)?;
-		for j in 0..NUM_LIMBS {
-			// r_x
-			let select = SelectChip::new(bits[i].clone(), new_r_x[j].clone(), r_x[j].clone());
-			r_x[j] = select.synthesize(
-				&config.common,
-				&config.select_selector,
-				layouter.namespace(|| format!("select_r_x_{}", j)),
-			)?;
-
-			// r_y
-			let select = SelectChip::new(bits[i].clone(), new_r_y[j].clone(), r_y[j].clone());
-			r_y[j] = select.synthesize(
-				&config.common,
-				&config.select_selector,
-				layouter.namespace(|| format!("select_r_y_{}", j)),
-			)?;
-		}
-	}
-	Ok((r_x, r_y))
+	aux_init: AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
+	aux_fin: AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
 }
-fn find_first_positive_bit(input: [N; 256]) -> usize {
-	let mut counter = 0;
-	for i in 0..256 {
-		if input[i] == N::one() {
-			break;
-		}
-		counter += 1;
+
+impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
+	EccMulChipset<W, N, NUM_LIMBS, NUM_BITS, P>
+where
+	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
+{
+	/// Creates a new ecc mul chipset.
+	pub fn new(
+		p: AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>, scalar_bits: [N; 254],
+		value: AssignedCell<N, N>, aux_init: AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
+		aux_fin: AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
+	) -> Self {
+		Self { p, scalar_bits, value, aux_init, aux_fin }
 	}
-	counter
 }
-*/
+
+impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P> Chipset<N>
+	for EccMulChipset<W, N, NUM_LIMBS, NUM_BITS, P>
+where
+	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
+{
+	type Config = EccMulConfig;
+	type Output = AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>;
+
+	/// Synthesize the circuit.
+	fn synthesize(
+		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<N>,
+	) -> Result<Self::Output, Error> {
+		let aux_init_plus_scalar_chip = EccAddChipset::<W, N, NUM_LIMBS, NUM_BITS, P>::new(
+			self.p.clone(),
+			self.aux_init.clone(),
+		);
+		let aux_init_plus_scalar = aux_init_plus_scalar_chip.synthesize(
+			common,
+			&config.add,
+			layouter.namespace(|| "aux_init_plus_scalar"),
+		)?;
+		let bits = Bits2NumChip::new(self.value, self.scalar_bits.to_vec());
+		let mut bits = bits.synthesize(common, &config.bits2num, layouter.namespace(|| "bits"))?;
+		bits.reverse();
+		let mut scalar_bits = self.scalar_bits;
+		scalar_bits.reverse();
+		let mut acc_x: [Option<AssignedCell<N, N>>; NUM_LIMBS] = [(); NUM_LIMBS].map(|_| None);
+		let mut acc_y: [Option<AssignedCell<N, N>>; NUM_LIMBS] = [(); NUM_LIMBS].map(|_| None);
+		let mut carry_x: [Option<AssignedCell<N, N>>; NUM_LIMBS] = [(); NUM_LIMBS].map(|_| None);
+		let mut carry_y: [Option<AssignedCell<N, N>>; NUM_LIMBS] = [(); NUM_LIMBS].map(|_| None);
+		let mut acc_point: Option<AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>> = None;
+		let mut carry_point: Option<AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>> = None;
+
+		for i in 0..NUM_LIMBS {
+			// acc_x
+			let select = SelectChipset::new(
+				bits[0].clone(),
+				aux_init_plus_scalar.x.limbs[i].clone(),
+				self.aux_init.x.limbs[i].clone(),
+			);
+			acc_x[i] =
+				Some(select.synthesize(&common, &config.main, layouter.namespace(|| "acc_x"))?);
+
+			// acc_y
+			let select = SelectChipset::new(
+				bits[0].clone(),
+				aux_init_plus_scalar.y.limbs[i].clone(),
+				self.aux_init.y.limbs[i].clone(),
+			);
+			acc_y[i] =
+				Some(select.synthesize(&common, &config.main, layouter.namespace(|| "acc_y"))?);
+		}
+		if scalar_bits[0] == N::zero() {
+			let acc_x_integer =
+				AssignedInteger::new(self.aux_init.x.integer.clone(), acc_x.map(|x| x.unwrap()));
+			let acc_y_integer =
+				AssignedInteger::new(self.aux_init.y.integer.clone(), acc_y.map(|x| x.unwrap()));
+			acc_point = Some(AssignedPoint::new(acc_x_integer, acc_y_integer));
+		} else {
+			let acc_x_integer = AssignedInteger::new(
+				aux_init_plus_scalar.x.integer.clone(),
+				acc_x.map(|x| x.unwrap()),
+			);
+			let acc_y_integer = AssignedInteger::new(
+				aux_init_plus_scalar.y.integer.clone(),
+				acc_y.map(|x| x.unwrap()),
+			);
+			acc_point = Some(AssignedPoint::new(acc_x_integer, acc_y_integer));
+		}
+		for i in 0..NUM_LIMBS {
+			// carry_x
+			let select = SelectChipset::new(
+				bits[1].clone(),
+				aux_init_plus_scalar.x.limbs[i].clone(),
+				self.aux_init.x.limbs[i].clone(),
+			);
+			carry_x[i] =
+				Some(select.synthesize(&common, &config.main, layouter.namespace(|| "carry_x"))?);
+
+			// carry_y
+			let select = SelectChipset::new(
+				bits[1].clone(),
+				aux_init_plus_scalar.y.limbs[i].clone(),
+				self.aux_init.y.limbs[i].clone(),
+			);
+			carry_y[i] =
+				Some(select.synthesize(&common, &config.main, layouter.namespace(|| "carry_y"))?);
+		}
+		if scalar_bits[1] == N::zero() {
+			let carry_x_integer = AssignedInteger::new(
+				self.aux_init.x.integer.clone(),
+				carry_x.clone().map(|x| x.unwrap()),
+			);
+			let carry_y_integer = AssignedInteger::new(
+				self.aux_init.y.integer.clone(),
+				carry_y.clone().map(|x| x.unwrap()),
+			);
+			carry_point = Some(AssignedPoint::new(carry_x_integer, carry_y_integer));
+		} else {
+			let carry_x_integer = AssignedInteger::new(
+				aux_init_plus_scalar.x.integer.clone(),
+				carry_x.clone().map(|x| x.unwrap()),
+			);
+			let carry_y_integer = AssignedInteger::new(
+				aux_init_plus_scalar.y.integer.clone(),
+				carry_y.clone().map(|x| x.unwrap()),
+			);
+			carry_point = Some(AssignedPoint::new(carry_x_integer, carry_y_integer));
+		}
+
+		let acc_double_chip = EccDoubleChipset::new(acc_point.unwrap());
+		acc_point = Some(acc_double_chip.synthesize(
+			common,
+			&config.double,
+			layouter.namespace(|| "acc_double"),
+		)?);
+		let acc_add_chip = EccAddChipset::new(acc_point.unwrap(), carry_point.clone().unwrap());
+		acc_point =
+			Some(acc_add_chip.synthesize(common, &config.add, layouter.namespace(|| "acc_add"))?);
+
+		for i in 2..bits.len() {
+			for j in 0..NUM_LIMBS {
+				// carry_x
+				let select = SelectChipset::new(
+					bits[i].clone(),
+					aux_init_plus_scalar.x.limbs[j].clone(),
+					self.aux_init.x.limbs[j].clone(),
+				);
+				carry_x[j] = Some(select.synthesize(
+					&common,
+					&config.main,
+					layouter.namespace(|| "carry_x"),
+				)?);
+
+				// carry_y
+				let select = SelectChipset::new(
+					bits[i].clone(),
+					aux_init_plus_scalar.y.limbs[j].clone(),
+					self.aux_init.y.limbs[j].clone(),
+				);
+				carry_y[j] = Some(select.synthesize(
+					&common,
+					&config.main,
+					layouter.namespace(|| "carry_y"),
+				)?);
+			}
+			if scalar_bits[i] == N::zero() {
+				let carry_x_integer = AssignedInteger::new(
+					self.aux_init.x.integer.clone(),
+					carry_x.clone().map(|x| x.unwrap()),
+				);
+				let carry_y_integer = AssignedInteger::new(
+					self.aux_init.y.integer.clone(),
+					carry_y.clone().map(|x| x.unwrap()),
+				);
+				let carry_point = AssignedPoint::new(carry_x_integer, carry_y_integer);
+				let acc_ladder_chip =
+					EccUnreducedLadderChipset::new(acc_point.unwrap(), carry_point.clone());
+				acc_point = Some(acc_ladder_chip.synthesize(
+					common,
+					&config.ladder,
+					layouter.namespace(|| "acc_ladder"),
+				)?);
+			} else {
+				let carry_x_integer = AssignedInteger::new(
+					aux_init_plus_scalar.x.integer.clone(),
+					carry_x.clone().map(|x| x.unwrap()),
+				);
+				let carry_y_integer = AssignedInteger::new(
+					aux_init_plus_scalar.y.integer.clone(),
+					carry_y.clone().map(|x| x.unwrap()),
+				);
+				let carry_point = AssignedPoint::new(carry_x_integer, carry_y_integer);
+				let acc_ladder_chip =
+					EccUnreducedLadderChipset::new(acc_point.unwrap(), carry_point.clone());
+				acc_point = Some(acc_ladder_chip.synthesize(
+					common,
+					&config.ladder,
+					layouter.namespace(|| "acc_ladder"),
+				)?);
+			}
+		}
+
+		let acc_add_chip = EccAddChipset::new(acc_point.unwrap(), self.aux_fin);
+		acc_point = Some(acc_add_chip.synthesize(
+			common,
+			&config.add,
+			layouter.namespace(|| "acc_add_aux_fin"),
+		)?);
+
+		Ok(acc_point.unwrap())
+	}
+}
 
 #[cfg(test)]
 mod test {
 	use super::{
 		AssignedPoint, EccAddChipset, EccAddConfig, EccDoubleChipset, EccDoubleConfig,
-		EccUnreducedLadderChipset, EccUnreducedLadderConfig,
+		EccMulChipset, EccMulConfig, EccUnreducedLadderChipset, EccUnreducedLadderConfig,
 	};
 	use crate::{
 		ecc::native::EcPoint,
+		gadgets::{
+			bits2num::Bits2NumChip,
+			main::{MainChip, MainConfig},
+		},
 		integer::{
-			native::Integer, rns::Bn256_4_68, AssignedInteger, IntegerAddChip, IntegerDivChip,
-			IntegerMulChip, IntegerReduceChip, IntegerSubChip,
+			native::Integer,
+			rns::{Bn256_4_68, RnsParams},
+			AssignedInteger, IntegerAddChip, IntegerDivChip, IntegerMulChip, IntegerReduceChip,
+			IntegerSubChip,
 		},
 		Chip, Chipset, CommonConfig, RegionCtx,
 	};
 	use halo2::{
+		arithmetic::Field,
 		circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner, Value},
 		dev::MockProver,
 		halo2curves::bn256::{Fq, Fr},
 		plonk::{Circuit, ConstraintSystem, Error},
 	};
 	use num_bigint::BigUint;
+	use rand::thread_rng;
 	use std::str::FromStr;
 
 	type W = Fq;
@@ -747,7 +872,7 @@ mod test {
 		Add,
 		Double,
 		Ladder,
-		//Mul,
+		Mul,
 	}
 
 	#[derive(Clone, Debug)]
@@ -756,6 +881,7 @@ mod test {
 		ecc_add: EccAddConfig,
 		ecc_double: EccDoubleConfig,
 		ecc_ladder: EccUnreducedLadderConfig,
+		ecc_mul: EccMulConfig,
 	}
 
 	#[derive(Clone)]
@@ -763,7 +889,7 @@ mod test {
 		p: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
 		q: Option<EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>>,
 		value: Option<N>,
-		value_bits: Option<[N; 256]>,
+		value_bits: Option<[N; 254]>,
 		gadget: Gadgets,
 	}
 
@@ -771,7 +897,7 @@ mod test {
 		fn new(
 			p: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
 			q: Option<EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>>, value: Option<N>,
-			value_bits: Option<[N; 256]>, gadget: Gadgets,
+			value_bits: Option<[N; 254]>, gadget: Gadgets,
 		) -> Self {
 			Self { p, q, value, value_bits, gadget }
 		}
@@ -787,7 +913,9 @@ mod test {
 
 		fn configure(meta: &mut ConstraintSystem<N>) -> TestConfig {
 			let common = CommonConfig::new(meta);
+			let main = MainConfig::new(MainChip::configure(&common, meta));
 
+			let bits2num_selector = Bits2NumChip::configure(&common, meta);
 			let integer_reduce_selector =
 				IntegerReduceChip::<W, N, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
 			let integer_add_selector =
@@ -814,27 +942,33 @@ mod test {
 				integer_div_selector,
 			);
 
-			TestConfig { common, ecc_add, ecc_double, ecc_ladder }
+			let ecc_mul = EccMulConfig::new(
+				ecc_ladder.clone(),
+				ecc_add.clone(),
+				ecc_double.clone(),
+				bits2num_selector,
+				main,
+			);
+
+			TestConfig { common, ecc_add, ecc_double, ecc_ladder, ecc_mul }
 		}
 
 		fn synthesize(
 			&self, config: TestConfig, mut layouter: impl Layouter<N>,
 		) -> Result<(), Error> {
-			/*
 			let value = layouter.assign_region(
 				|| "scalar_mul_values",
-				|mut region: Region<'_, N>| {
-					let value = region.assign_advice(
-						|| "value",
-						config.common.advice[0],
-						0,
-						|| Value::known(self.value.unwrap_or(N::zero())),
-					)?;
+				|region: Region<'_, N>| {
+					let mut ctx = RegionCtx::new(region, 0);
 
+					let value = ctx.assign_advice(
+						config.common.advice[0],
+						Value::known(self.value.unwrap_or(N::zero())),
+					)?;
+					ctx.next();
 					Ok(value)
 				},
 			)?;
-			*/
 
 			let (p_x_limbs, p_y_limbs) = layouter.assign_region(
 				|| "p_temp",
@@ -865,35 +999,77 @@ mod test {
 
 			let (q_x_limbs, q_y_limbs) = layouter.assign_region(
 				|| "q_temp",
-				|mut region: Region<'_, N>| {
+				|region: Region<'_, N>| {
+					let mut ctx = RegionCtx::new(region, 0);
 					let mut x_limbs: [Option<AssignedCell<N, N>>; NUM_LIMBS] =
 						[(); NUM_LIMBS].map(|_| None);
 					let mut y_limbs: [Option<AssignedCell<N, N>>; NUM_LIMBS] =
 						[(); NUM_LIMBS].map(|_| None);
 					for i in 0..NUM_LIMBS {
-						let x = region.assign_advice(
-							|| "temp_x",
+						let x = ctx.assign_advice(config.common.advice[0], {
+							Value::known(self.q.clone().map(|p| p.x.limbs[i]).unwrap_or(N::zero()))
+						})?;
+						let y = ctx.assign_advice(config.common.advice[1], {
+							Value::known(self.q.clone().map(|p| p.y.limbs[i]).unwrap_or(N::zero()))
+						})?;
+
+						x_limbs[i] = Some(x);
+						y_limbs[i] = Some(y);
+						ctx.next();
+					}
+
+					Ok((x_limbs.map(|x| x.unwrap()), y_limbs.map(|x| x.unwrap())))
+				},
+			)?;
+
+			let (to_add_x_limbs, to_add_y_limbs) = layouter.assign_region(
+				|| "to_add_temp",
+				|region: Region<'_, N>| {
+					let mut ctx = RegionCtx::new(region, 0);
+					let mut x_limbs: [Option<AssignedCell<N, N>>; NUM_LIMBS] =
+						[(); NUM_LIMBS].map(|_| None);
+					let mut y_limbs: [Option<AssignedCell<N, N>>; NUM_LIMBS] =
+						[(); NUM_LIMBS].map(|_| None);
+					for i in 0..NUM_LIMBS {
+						let x = ctx.assign_advice(
 							config.common.advice[0],
-							i,
-							|| {
-								Value::known(
-									self.q.clone().map(|p| p.x.limbs[i]).unwrap_or(N::zero()),
-								)
-							},
+							Value::known(P::to_add_x()[i]),
 						)?;
-						let y = region.assign_advice(
-							|| "temp_y",
-							config.common.advice[0],
-							i + NUM_LIMBS,
-							|| {
-								Value::known(
-									self.q.clone().map(|p| p.y.limbs[i]).unwrap_or(N::zero()),
-								)
-							},
+						let y = ctx.assign_advice(
+							config.common.advice[1],
+							Value::known(P::to_add_y()[i]),
 						)?;
 
 						x_limbs[i] = Some(x);
 						y_limbs[i] = Some(y);
+						ctx.next();
+					}
+
+					Ok((x_limbs.map(|x| x.unwrap()), y_limbs.map(|x| x.unwrap())))
+				},
+			)?;
+
+			let (to_sub_x_limbs, to_sub_y_limbs) = layouter.assign_region(
+				|| "to_sub_temp",
+				|region: Region<'_, N>| {
+					let mut ctx = RegionCtx::new(region, 0);
+					let mut x_limbs: [Option<AssignedCell<N, N>>; NUM_LIMBS] =
+						[(); NUM_LIMBS].map(|_| None);
+					let mut y_limbs: [Option<AssignedCell<N, N>>; NUM_LIMBS] =
+						[(); NUM_LIMBS].map(|_| None);
+					for i in 0..NUM_LIMBS {
+						let x = ctx.assign_advice(
+							config.common.advice[0],
+							Value::known(P::to_sub_x()[i]),
+						)?;
+						let y = ctx.assign_advice(
+							config.common.advice[1],
+							Value::known(P::to_sub_y()[i]),
+						)?;
+
+						x_limbs[i] = Some(x);
+						y_limbs[i] = Some(y);
+						ctx.next();
 					}
 
 					Ok((x_limbs.map(|x| x.unwrap()), y_limbs.map(|x| x.unwrap())))
@@ -941,20 +1117,37 @@ mod test {
 						layouter.namespace(|| "ecc_ladder"),
 					)?);
 				},
-				/*
-				Gadgets::Mul => EccChip::mul_scalar(
-					p_x_limbs,
-					p_y_limbs,
-					self.p_x_rw.clone(),
-					self.p_y_rw.clone(),
-					value,
-					self.value_bits.unwrap(),
-					self.reduction_witnesses_add.clone().unwrap(),
-					self.reduction_witnesses_double.clone().unwrap(),
-					config.ecc.clone(),
-					layouter.namespace(|| "scalar_mul"),
-				)?,
-				*/
+
+				Gadgets::Mul => {
+					let to_add_x_int =
+						Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::from_limbs(P::to_add_x());
+					let to_add_y_int =
+						Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::from_limbs(P::to_add_y());
+					let to_add_x = AssignedInteger::new(to_add_x_int, to_add_x_limbs);
+					let to_add_y = AssignedInteger::new(to_add_y_int, to_add_y_limbs);
+					let to_add = AssignedPoint::new(to_add_x, to_add_y);
+
+					let to_sub_x_int =
+						Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::from_limbs(P::to_sub_x());
+					let to_sub_y_int =
+						Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::from_limbs(P::to_sub_y());
+					let to_sub_x = AssignedInteger::new(to_sub_x_int, to_sub_x_limbs);
+					let to_sub_y = AssignedInteger::new(to_sub_y_int, to_sub_y_limbs);
+					let to_sub = AssignedPoint::new(to_sub_x, to_sub_y);
+
+					let chip = EccMulChipset::new(
+						p.clone(),
+						self.value_bits.unwrap(),
+						value.clone(),
+						to_add,
+						to_sub,
+					);
+					result = Some(chip.synthesize(
+						&config.common,
+						&config.ecc_mul,
+						layouter.namespace(|| "ecc_mul"),
+					)?);
+				},
 			};
 
 			for i in 0..NUM_LIMBS {
@@ -1039,61 +1232,35 @@ mod test {
 		assert_eq!(prover.verify(), Ok(()));
 	}
 
-	/*
 	#[test]
-	#[ignore = "Mul scalar broken"]
-	fn should_mul_with_scalar() {
-		// Testing scalar multiplication.
+	fn should_mul_scalar_ecc() {
+		// Testing ecc mul.
 		let rng = &mut thread_rng();
-		let scalar = Fr::from_u128(30);
-
-		let zero = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::zero();
-		let a_big = BigUint::from_str("2342342453654645641233").unwrap();
-		let b_big = BigUint::from_str("1231231231234235346457675685645454").unwrap();
-		let a = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_big);
-		let b = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(b_big);
-		let p_point = EcPoint::<Fq, Fr, 4, 68, Bn256_4_68>::new(a.clone(), b.clone());
-		let p_point = p_point.double();
-		let rw_p_x = p_point.x.add(&zero);
-		let rw_p_y = p_point.y.add(&zero);
-
-		let bits = scalar.to_bytes().map(|byte| {
-			let mut byte_bits = [false; 8];
-			for i in (0..8).rev() {
-				byte_bits[i] = (byte >> i) & 1u8 != 0
+		let scalar = Fr::random(rng);
+		let mut value_bits = [Fr::zero(); 254];
+		for i in 0..254 {
+			let bool = scalar.to_bytes()[i / 8] & (1 << (i % 8)) != 0;
+			if bool {
+				value_bits[i] = Fr::one();
 			}
-			byte_bits
-		});
-		let mut bits_fr = [Fr::zero(); 256];
-		for i in 0..256 {
-			bits_fr[i] = Fr::from_u128(bits.flatten()[i].into())
 		}
+
+		let a_big = BigUint::from_str("23423423525345345").unwrap();
+		let b_big = BigUint::from_str("65464575675").unwrap();
+		let a = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(a_big);
+		let b = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(b_big);
+		let p_point = EcPoint::<W, N, NUM_LIMBS, NUM_BITS, P>::new(a.clone(), b.clone());
 
 		let res = p_point.mul_scalar(scalar.to_bytes());
-		let test_chip = TestCircuit::<Fq, Fr, 4, 68, Bn256_4_68>::new(
-			p_point.clone(),
-			rw_p_x.clone(),
-			rw_p_y.clone(),
-			Some(p_point.clone()),
-			Some(rw_p_x.clone()),
-			Some(rw_p_y.clone()),
-			None,
-			Some(res.1.clone()),
-			Some(res.2.clone()),
-			Some(scalar.clone()),
-			Some(bits_fr),
-			Gadgets::Mul,
-		);
-		let k = 13;
+		let test_chip =
+			TestCircuit::new(p_point, None, Some(scalar), Some(value_bits), Gadgets::Mul);
+
+		let k = 15;
 		let mut p_ins = Vec::new();
-		p_ins.extend(res.0.x.limbs);
-		p_ins.extend(res.0.y.limbs);
-		let prover = MockProver::run(k, &test_chip, vec![vec![], p_ins]).unwrap();
-		let errs = prover.verify().err().unwrap();
-		for err in errs {
-			println!("{:?}", err);
-		}
-		//assert_eq!(prover.verify(), Ok(()));
+		p_ins.extend(res.x.limbs);
+		p_ins.extend(res.y.limbs);
+
+		let prover = MockProver::run(k, &test_chip, vec![p_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
 	}
-	*/
 }
