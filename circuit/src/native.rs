@@ -45,30 +45,39 @@ impl EigenTrustSet {
 
 	pub fn add_member(&mut self, pk: PublicKey) {
 		let pos = self.set.iter().position(|&(x, _)| x == pk);
-		let first_available = self.set.iter().position(|&(x, _)| x == PublicKey::default());
 		// Make sure not already in the set
 		assert!(pos.is_none());
 
-		let initial_score = Fr::from_u128(INITIAL_SCORE);
+		let first_available = self.set.iter().position(|&(x, _)| x == PublicKey::default());
 		let index = first_available.unwrap();
-		self.set[index] = (pk, initial_score);
+
+		// Initial score for new member is zero.
+		self.set[index] = (pk, Fr::zero());
 	}
 
 	pub fn update_op(&mut self, from: PublicKey, op: Opinion) {
 		let pos_from = self.set.iter().position(|&(x, _)| x == from);
 		assert!(pos_from.is_some());
+
+		// Initial score is updated only when the opinion is given/signed.
+		let initial_score = Fr::from_u128(INITIAL_SCORE);
+		let index = pos_from.unwrap();
+		self.set[index] = (from, initial_score);
+
 		self.ops.insert(from, op);
 	}
 
 	pub fn converge(&mut self) -> [Fr; NUM_NEIGHBOURS] {
-		let initial_score = Fr::from_u128(INITIAL_SCORE);
-
 		for i in 0..NUM_NEIGHBOURS {
-			let pk = self.set[i].0;
+			let (pk, initial_score) = self.set[i];
 
 			// Validity checks
-			if pk == PublicKey::default() {
+			//
+			// If the "pk" is default or its initial score is zero(NO opinion),
+			// we exclude it from validation.
+			if pk == PublicKey::default() || initial_score == Fr::zero() {
 				assert!(self.ops.get_mut(&pk).is_none());
+				self.set[i] = (PublicKey::default(), Fr::zero());
 			} else {
 				let mut ops_i = self.ops.get_mut(&pk).unwrap();
 
@@ -87,6 +96,7 @@ impl EigenTrustSet {
 				// - Peers that dont have at least one valid score
 				if score_sum == Fr::zero() {
 					self.set[i] = (PublicKey::default(), Fr::zero());
+					self.ops.remove(&pk);
 				} else {
 					// Normalize the scores
 					// Distribute the credits(INITIAL_SCORE) to the valid opinion values
@@ -97,6 +107,11 @@ impl EigenTrustSet {
 					}
 				}
 			}
+		}
+
+		// There should be at least 2 valid peers(valid opinions) for calculation
+		if self.set.iter().filter(|(pk, score)| pk != &PublicKey::default()).count() < 2 {
+			panic!("Insufficient peers for calculation!");
 		}
 
 		// By this point we should use filtered_set and filtered_opinions
@@ -356,7 +371,6 @@ mod test {
 	}
 
 	#[test]
-	#[should_panic]
 	fn test_add_three_members_with_two_opinions() {
 		let mut set = EigenTrustSet::new();
 
