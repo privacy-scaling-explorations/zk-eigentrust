@@ -69,11 +69,11 @@ use halo2::{
 use num_bigint::BigUint;
 use num_integer::Integer as BigInteger;
 use num_traits::{FromPrimitive, Num, Zero};
-use std::{ops::Shl, str::FromStr};
+use std::{fmt::Debug, ops::Shl, str::FromStr};
 
 /// This trait is for the dealing with RNS operations.
 pub trait RnsParams<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize>:
-	Clone
+	Clone + Debug + PartialEq + Default
 {
 	/// Returns Scalar (Native) Field modulus [`Fr`] from Bn256.
 	fn native_modulus() -> BigUint;
@@ -158,7 +158,7 @@ pub fn compose_big<const NUM_LIMBS: usize, const NUM_BITS: usize>(
 }
 
 /// Structure for the Bn256_4_68
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct Bn256_4_68;
 
 impl RnsParams<Fq, Fr, 4, 68> for Bn256_4_68 {

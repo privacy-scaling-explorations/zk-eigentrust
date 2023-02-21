@@ -1,77 +1,55 @@
-use crate::{
-	ecc::{EccAddConfig, EccDoubleConfig, EccUnreducedLadderConfig},
-	gadgets::main::MainConfig,
-	CommonConfig,
-};
-use halo2::{
-	arithmetic::Field,
-	circuit::{AssignedCell, Layouter},
-	halo2curves::FieldExt,
-};
+use crate::{ecc::native::EcPoint, integer::rns::RnsParams};
+use halo2::halo2curves::CurveAffine;
 use snark_verifier::{
 	loader::{EcPointLoader, LoadedEcPoint, LoadedScalar, Loader, ScalarLoader},
-	util::arithmetic::{FieldOps, PrimeField},
+	util::arithmetic::FieldOps,
 	Error as VerifierError,
 };
 use std::{
-	fmt::{Debug, Error, Formatter, Write},
+	fmt::Debug,
 	marker::PhantomData,
 	ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
-	rc::Rc,
 };
 
-#[derive(Clone)]
-struct Halo2LoaderConfig {
-	common: CommonConfig,
-	main_config: MainConfig,
-	ecc_add_config: EccAddConfig,
-	ecc_double_config: EccDoubleConfig,
-	ecc_ladder_config: EccUnreducedLadderConfig,
+/// NUM_LIMBS
+pub const NUM_LIMBS: usize = 4;
+/// NUM_BITS
+pub const NUM_BITS: usize = 68;
+
+#[derive(Debug, Default, Clone, PartialEq)]
+/// NativeLoader
+pub struct NativeLoader<C: CurveAffine, P>
+where
+	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+{
+	_c: PhantomData<C>,
+	_p: PhantomData<P>,
 }
 
-struct Halo2ScalarLoader<F: Field, L: Layouter<F>> {
-	layouter: Rc<L>,
-	config: Halo2LoaderConfig,
-	_f: PhantomData<F>,
+#[derive(Debug, Default, Clone, PartialEq)]
+/// LScalar
+pub struct LScalar<C: CurveAffine, P>
+where
+	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+{
+	inner: C::Scalar,
+	loader: NativeLoader<C, P>,
 }
 
-impl<F: Field, L: Layouter<F>> Clone for Halo2ScalarLoader<F, L> {
-	fn clone(&self) -> Self {
-		Self { layouter: self.layouter.clone(), config: self.config.clone(), _f: PhantomData }
+impl<C: CurveAffine, P> LScalar<C, P>
+where
+	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+{
+	/// new
+	pub fn new(value: C::Scalar, loader: NativeLoader<C, P>) -> Self {
+		Self { inner: value, loader }
 	}
 }
 
-struct AssignedScalar<F: Field, L: Layouter<F>> {
-	inner: AssignedCell<F, F>,
-	loader: Halo2ScalarLoader<F, L>,
-}
-
-impl<F: Field, L: Layouter<F>> Clone for AssignedScalar<F, L> {
-	fn clone(&self) -> Self {
-		Self { inner: self.inner.clone(), loader: self.loader.clone() }
-	}
-}
-
-impl<F: Field, L: Layouter<F>> Debug for AssignedScalar<F, L> {
-	fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
-		self.inner.fmt(f)?;
-		Ok(())
-	}
-}
-
-impl<F: Field, L: Layouter<F>> PartialEq for AssignedScalar<F, L> {
-	fn eq(&self, other: &AssignedScalar<F, L>) -> bool {
-		false
-	}
-}
-
-impl<F: Field, L: Layouter<F>> AssignedScalar<F, L> {
-	pub fn new(cell: AssignedCell<F, F>, loader: Halo2ScalarLoader<F, L>) -> Self {
-		Self { inner: cell, loader }
-	}
-}
-
-impl<F: Field, L: Layouter<F>> FieldOps for AssignedScalar<F, L> {
+impl<C: CurveAffine, P> FieldOps for LScalar<C, P>
+where
+	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+{
 	fn invert(&self) -> Option<Self> {
 		// TODO: InvertChip, TIP: Extract from MainGate.IsZeroChipset
 		None
@@ -80,103 +58,142 @@ impl<F: Field, L: Layouter<F>> FieldOps for AssignedScalar<F, L> {
 
 // ---- ADD ----
 
-impl<'a, F: Field, L: Layouter<F>> Add<&'a AssignedScalar<F, L>> for AssignedScalar<F, L> {
-	type Output = AssignedScalar<F, L>;
+impl<'a, C: CurveAffine, P> Add<&'a LScalar<C, P>> for LScalar<C, P>
+where
+	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+{
+	type Output = LScalar<C, P>;
 
-	fn add(self, rhs: &'a AssignedScalar<F, L>) -> Self::Output {
+	fn add(self, rhs: &'a LScalar<C, P>) -> Self::Output {
 		// TODO: AddChip
 		self
 	}
 }
 
-impl<F: Field, L: Layouter<F>> Add<AssignedScalar<F, L>> for AssignedScalar<F, L> {
-	type Output = AssignedScalar<F, L>;
+impl<C: CurveAffine, P> Add<LScalar<C, P>> for LScalar<C, P>
+where
+	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+{
+	type Output = LScalar<C, P>;
 
-	fn add(self, rhs: AssignedScalar<F, L>) -> Self::Output {
+	fn add(self, rhs: LScalar<C, P>) -> Self::Output {
 		// TODO: AddChip -- reuse from above: add(self, rhs: &'a other)
 		self
 	}
 }
 
-impl<'a, F: Field, L: Layouter<F>> AddAssign<&'a AssignedScalar<F, L>> for AssignedScalar<F, L> {
-	fn add_assign(&mut self, rhs: &'a AssignedScalar<F, L>) {
+impl<'a, C: CurveAffine, P> AddAssign<&'a LScalar<C, P>> for LScalar<C, P>
+where
+	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+{
+	fn add_assign(&mut self, rhs: &'a LScalar<C, P>) {
 		// TODO: AddChip -- reuse from above: add(self, rhs: &'a other)
 	}
 }
 
-impl<F: Field, L: Layouter<F>> AddAssign<AssignedScalar<F, L>> for AssignedScalar<F, L> {
-	fn add_assign(&mut self, rhs: AssignedScalar<F, L>) {
+impl<C: CurveAffine, P> AddAssign<LScalar<C, P>> for LScalar<C, P>
+where
+	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+{
+	fn add_assign(&mut self, rhs: LScalar<C, P>) {
 		// TODO: AddChip -- reuse from above: add(self, rhs: &'a other)
 	}
 }
 
 // ---- MUL ----
 
-impl<'a, F: Field, L: Layouter<F>> Mul<&'a AssignedScalar<F, L>> for AssignedScalar<F, L> {
-	type Output = AssignedScalar<F, L>;
+impl<'a, C: CurveAffine, P> Mul<&'a LScalar<C, P>> for LScalar<C, P>
+where
+	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+{
+	type Output = LScalar<C, P>;
 
-	fn mul(self, rhs: &'a AssignedScalar<F, L>) -> Self::Output {
+	fn mul(self, rhs: &'a LScalar<C, P>) -> Self::Output {
 		// TODO: MulChip
 		self
 	}
 }
 
-impl<F: Field, L: Layouter<F>> Mul<AssignedScalar<F, L>> for AssignedScalar<F, L> {
-	type Output = AssignedScalar<F, L>;
+impl<C: CurveAffine, P> Mul<LScalar<C, P>> for LScalar<C, P>
+where
+	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+{
+	type Output = LScalar<C, P>;
 
-	fn mul(self, rhs: AssignedScalar<F, L>) -> Self::Output {
+	fn mul(self, rhs: LScalar<C, P>) -> Self::Output {
 		// TODO: MulChip -- reuse from above: mul(self, rhs: &'a other)
 		self
 	}
 }
 
-impl<'a, F: Field, L: Layouter<F>> MulAssign<&'a AssignedScalar<F, L>> for AssignedScalar<F, L> {
-	fn mul_assign(&mut self, rhs: &'a AssignedScalar<F, L>) {
+impl<'a, C: CurveAffine, P> MulAssign<&'a LScalar<C, P>> for LScalar<C, P>
+where
+	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+{
+	fn mul_assign(&mut self, rhs: &'a LScalar<C, P>) {
 		// TODO: MulChip -- reuse from above: mul(self, rhs: &'a other)
 	}
 }
 
-impl<F: Field, L: Layouter<F>> MulAssign<AssignedScalar<F, L>> for AssignedScalar<F, L> {
-	fn mul_assign(&mut self, rhs: AssignedScalar<F, L>) {
+impl<C: CurveAffine, P> MulAssign<LScalar<C, P>> for LScalar<C, P>
+where
+	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+{
+	fn mul_assign(&mut self, rhs: LScalar<C, P>) {
 		// TODO: MulChip -- reuse from above: mul(self, rhs: &'a other)
 	}
 }
 
 // ---- SUB ----
 
-impl<'a, F: Field, L: Layouter<F>> Sub<&'a AssignedScalar<F, L>> for AssignedScalar<F, L> {
-	type Output = AssignedScalar<F, L>;
+impl<'a, C: CurveAffine, P> Sub<&'a LScalar<C, P>> for LScalar<C, P>
+where
+	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+{
+	type Output = LScalar<C, P>;
 
-	fn sub(self, rhs: &'a AssignedScalar<F, L>) -> Self::Output {
+	fn sub(self, rhs: &'a LScalar<C, P>) -> Self::Output {
 		// TODO: SubChip
 		self
 	}
 }
 
-impl<F: Field, L: Layouter<F>> Sub<AssignedScalar<F, L>> for AssignedScalar<F, L> {
-	type Output = AssignedScalar<F, L>;
+impl<C: CurveAffine, P> Sub<LScalar<C, P>> for LScalar<C, P>
+where
+	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+{
+	type Output = LScalar<C, P>;
 
-	fn sub(self, rhs: AssignedScalar<F, L>) -> Self::Output {
+	fn sub(self, rhs: LScalar<C, P>) -> Self::Output {
 		// TODO: SubChip -- reuse from above: sub(self, rhs: &'a other)
 		self
 	}
 }
 
-impl<'a, F: Field, L: Layouter<F>> SubAssign<&'a AssignedScalar<F, L>> for AssignedScalar<F, L> {
-	fn sub_assign(&mut self, rhs: &'a AssignedScalar<F, L>) {
+impl<'a, C: CurveAffine, P> SubAssign<&'a LScalar<C, P>> for LScalar<C, P>
+where
+	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+{
+	fn sub_assign(&mut self, rhs: &'a LScalar<C, P>) {
 		// TODO: SubChip -- reuse from above: sub(self, rhs: &'a other)
 	}
 }
 
-impl<F: Field, L: Layouter<F>> SubAssign<AssignedScalar<F, L>> for AssignedScalar<F, L> {
-	fn sub_assign(&mut self, rhs: AssignedScalar<F, L>) {
+impl<C: CurveAffine, P> SubAssign<LScalar<C, P>> for LScalar<C, P>
+where
+	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+{
+	fn sub_assign(&mut self, rhs: LScalar<C, P>) {
 		// TODO: SubChip -- reuse from above: sub(self, rhs: &'a other)
 	}
 }
 
 // ---- NEG ----
 
-impl<F: Field, L: Layouter<F>> Neg for AssignedScalar<F, L> {
+impl<C: CurveAffine, P> Neg for LScalar<C, P>
+where
+	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+{
 	type Output = Self;
 
 	fn neg(self) -> Self::Output {
@@ -185,30 +202,91 @@ impl<F: Field, L: Layouter<F>> Neg for AssignedScalar<F, L> {
 	}
 }
 
-// impl<F: FieldExt, L: Layouter<F>> LoadedScalar<F> for AssignedScalar<F, L> {
-// 	/// [`Loader`].
-// 	type Loader = Halo2ScalarLoader<F, L>;
+impl<C: CurveAffine, P> LoadedScalar<C::Scalar> for LScalar<C, P>
+where
+	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+{
+	/// [`Loader`].
+	type Loader = NativeLoader<C, P>;
 
-// 	/// Returns [`Loader`].
-// 	fn loader(&self) -> &Self::Loader {
-// 		&self.loader
-// 	}
-// }
+	/// Returns [`Loader`].
+	fn loader(&self) -> &Self::Loader {
+		&self.loader
+	}
+}
 
-// impl<F: FieldExt, L: Layouter<F>> ScalarLoader<F> for Halo2ScalarLoader<F, L>
-// { 	/// [`LoadedScalar`].
-// 	type LoadedScalar = AssignedScalar<F, L>;
+impl<C: CurveAffine, P> ScalarLoader<C::Scalar> for NativeLoader<C, P>
+where
+	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+{
+	/// [`LoadedScalar`].
+	type LoadedScalar = LScalar<C, P>;
 
-// 	/// Load a constant field element.
-// 	fn load_const(&self, value: &F) -> Self::LoadedScalar {
-// 		// TODO: Assign a value inside a new region and constrain it to be eq to
-// 		// constant
-// 	}
+	/// Load a constant field element.
+	fn load_const(&self, value: &C::Scalar) -> Self::LoadedScalar {
+		// TODO: Assign a value inside a new region and constrain it to be eq to
+		// constant
+		LScalar::default()
+	}
 
-// 	/// Assert lhs and rhs field elements are equal.
-// 	fn assert_eq(
-// 		&self, annotation: &str, lhs: &Self::LoadedScalar, rhs: &Self::LoadedScalar,
-// 	) -> Result<(), VerifierError> {
-// 		Ok(())
-// 	}
-// }
+	/// Assert lhs and rhs field elements are equal.
+	fn assert_eq(
+		&self, annotation: &str, lhs: &Self::LoadedScalar, rhs: &Self::LoadedScalar,
+	) -> Result<(), VerifierError> {
+		Ok(())
+	}
+}
+
+#[derive(Debug, Default, Clone, PartialEq)]
+/// LEcPoint
+pub struct LEcPoint<C: CurveAffine, P>
+where
+	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+{
+	inner: EcPoint<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS, P>,
+	loader: NativeLoader<C, P>,
+}
+
+impl<C: CurveAffine, P> LoadedEcPoint<C> for LEcPoint<C, P>
+where
+	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+{
+	type Loader = NativeLoader<C, P>;
+
+	/// Returns [`Loader`].
+	fn loader(&self) -> &Self::Loader {
+		&self.loader
+	}
+}
+
+impl<C: CurveAffine, P> EcPointLoader<C> for NativeLoader<C, P>
+where
+	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+{
+	type LoadedEcPoint = LEcPoint<C, P>;
+
+	fn ec_point_load_const(&self, value: &C) -> Self::LoadedEcPoint {
+		LEcPoint::default()
+	}
+
+	fn ec_point_assert_eq(
+		&self, annotation: &str, lhs: &Self::LoadedEcPoint, rhs: &Self::LoadedEcPoint,
+	) -> Result<(), VerifierError> {
+		Ok(())
+	}
+
+	/// Perform multi-scalar multiplication.
+	fn multi_scalar_multiplication(
+		pairs: &[(
+			&<Self as ScalarLoader<C::Scalar>>::LoadedScalar,
+			&Self::LoadedEcPoint,
+		)],
+	) -> Self::LoadedEcPoint {
+		LEcPoint::default()
+	}
+}
+
+impl<C: CurveAffine, P> Loader<C> for NativeLoader<C, P> where
+	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>
+{
+}

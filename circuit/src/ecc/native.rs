@@ -17,7 +17,7 @@ use crate::integer::{native::Integer, rns::RnsParams};
 use halo2::arithmetic::FieldExt;
 
 /// Structure for the EcPoint
-#[derive(Clone, Debug)]
+#[derive(Clone, Default, Debug, PartialEq)]
 pub struct EcPoint<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
 where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,

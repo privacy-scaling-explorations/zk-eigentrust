@@ -1,154 +1,115 @@
-use crate::{params::RoundParams, poseidon::native::sponge::PoseidonSponge, utils::to_wide};
-use halo2::{
-	arithmetic::FieldExt,
-	halo2curves::{group::ff::PrimeField, Coordinates, CurveAffine},
-	transcript::{
-		Challenge255, EncodedChallenge, Transcript, TranscriptRead, TranscriptReadBuffer,
-		TranscriptWrite, TranscriptWriterBuffer,
-	},
+use super::loader::{LEcPoint, LScalar, NativeLoader, NUM_BITS, NUM_LIMBS};
+use crate::{
+	integer::rns::RnsParams, params::RoundParams, poseidon::native::sponge::PoseidonSponge,
 };
-use std::io::{self, Read, Write};
+use halo2::halo2curves::CurveAffine;
+use snark_verifier::{
+	loader::native::NativeLoader as NativeSVLoader,
+	util::transcript::{Transcript, TranscriptRead, TranscriptWrite},
+	Error as VerifierError,
+};
+use std::io::{Read, Write};
 
 const WIDTH: usize = 5;
 
 /// PoseidonRead
-pub struct PoseidonRead<R: Read, C: CurveAffine, P: RoundParams<C::Scalar, WIDTH>> {
-	reader: R,
-	state: PoseidonSponge<C::Scalar, WIDTH, P>,
+pub struct PoseidonRead<RD: Read, C: CurveAffine, P, R>
+where
+	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	R: RoundParams<C::Scalar, WIDTH>,
+{
+	reader: RD,
+	state: PoseidonSponge<C::Scalar, WIDTH, R>,
+	loader: NativeLoader<C, P>,
 }
 
-impl<R: Read, C: CurveAffine, P: RoundParams<C::Scalar, WIDTH>> TranscriptRead<C, Challenge255<C>>
-	for PoseidonRead<R, C, P>
+impl<RD: Read, C: CurveAffine, P, R> Transcript<C, NativeLoader<C, P>> for PoseidonRead<RD, C, P, R>
+where
+	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	R: RoundParams<C::Scalar, WIDTH>,
 {
-	fn read_point(&mut self) -> io::Result<C> {
-		let mut compressed = C::Repr::default();
-		self.reader.read_exact(compressed.as_mut())?;
-
-		let point: C = Option::from(C::from_bytes(&compressed)).ok_or_else(|| {
-			io::Error::new(io::ErrorKind::Other, "invalid point encoding in proof")
-		})?;
-		self.common_point(point)?;
-
-		Ok(point)
+	/// Returns [`Loader`].
+	fn loader(&self) -> &NativeLoader<C, P> {
+		&self.loader
 	}
 
-	fn read_scalar(&mut self) -> io::Result<C::Scalar> {
-		let mut data = <C::Scalar as PrimeField>::Repr::default();
-		self.reader.read_exact(data.as_mut())?;
-
-		let scalar: C::Scalar = Option::from(C::Scalar::from_repr(data)).ok_or_else(|| {
-			io::Error::new(
-				io::ErrorKind::Other,
-				"invalid field element encoding in proof",
-			)
-		})?;
-		self.common_scalar(scalar)?;
-
-		Ok(scalar)
-	}
-}
-
-impl<R: Read, C: CurveAffine, P: RoundParams<C::Scalar, WIDTH>> Transcript<C, Challenge255<C>>
-	for PoseidonRead<R, C, P>
-{
-	fn squeeze_challenge(&mut self) -> Challenge255<C> {
-		let res = self.state.squeeze();
-		let result = to_wide(res.to_repr().as_ref());
-		Challenge255::<C>::new(&result)
+	/// Squeeze a challenge.
+	fn squeeze_challenge(&mut self) -> LScalar<C, P> {
+		LScalar::default()
 	}
 
-	fn common_point(&mut self, point: C) -> io::Result<()> {
-		let coords: Coordinates<C> = Option::from(point.coordinates()).ok_or_else(|| {
-			io::Error::new(
-				io::ErrorKind::Other,
-				"cannot write points at infinity to the transcript",
-			)
-		})?;
-		let x = to_wide(coords.x().to_repr().as_ref());
-		let y = to_wide(coords.y().to_repr().as_ref());
-		let x_f = C::ScalarExt::from_bytes_wide(&x);
-		let y_f = C::ScalarExt::from_bytes_wide(&y);
-		self.state.update(&[x_f, y_f]);
+	/// Update with an elliptic curve point.
+	fn common_ec_point(&mut self, ec_point: &LEcPoint<C, P>) -> Result<(), VerifierError> {
 		Ok(())
 	}
 
-	fn common_scalar(&mut self, scalar: C::Scalar) -> io::Result<()> {
-		self.state.update(&[scalar]);
+	/// Update with a scalar.
+	fn common_scalar(&mut self, scalar: &LScalar<C, P>) -> Result<(), VerifierError> {
 		Ok(())
 	}
 }
 
-impl<R: Read, C: CurveAffine, P: RoundParams<C::Scalar, WIDTH>>
-	TranscriptReadBuffer<R, C, Challenge255<C>> for PoseidonRead<R, C, P>
+impl<RD: Read, C: CurveAffine, P, R> TranscriptRead<C, NativeLoader<C, P>>
+	for PoseidonRead<RD, C, P, R>
+where
+	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	R: RoundParams<C::Scalar, WIDTH>,
 {
-	fn init(reader: R) -> Self {
-		let poseidon_state = PoseidonSponge::new();
-		Self { reader, state: poseidon_state }
+	fn read_scalar(&mut self) -> Result<LScalar<C, P>, VerifierError> {
+		Err(VerifierError::InvalidInstances)
+	}
+
+	fn read_ec_point(&mut self) -> Result<LEcPoint<C, P>, VerifierError> {
+		Err(VerifierError::InvalidInstances)
 	}
 }
 
-/// PoseidonRead
-pub struct PoseidonWrite<W: Write, C: CurveAffine, P: RoundParams<C::Scalar, WIDTH>> {
+/// PoseidonWrite
+pub struct PoseidonWrite<W: Write, C: CurveAffine, R>
+where
+	R: RoundParams<C::Scalar, WIDTH>,
+{
 	writer: W,
-	state: PoseidonSponge<C::Scalar, WIDTH, P>,
+	state: PoseidonSponge<C::Scalar, WIDTH, R>,
+	loader: NativeSVLoader,
 }
 
-impl<W: Write, C: CurveAffine, P: RoundParams<C::Scalar, WIDTH>> Transcript<C, Challenge255<C>>
-	for PoseidonWrite<W, C, P>
+impl<W: Write, C: CurveAffine, R> Transcript<C, NativeSVLoader> for PoseidonWrite<W, C, R>
+where
+	R: RoundParams<C::Scalar, WIDTH>,
 {
-	fn squeeze_challenge(&mut self) -> Challenge255<C> {
-		let res = self.state.squeeze();
-		let result = to_wide(res.to_repr().as_ref());
-		Challenge255::<C>::new(&result)
+	/// Returns [`Loader`].
+	fn loader(&self) -> &NativeSVLoader {
+		&self.loader
 	}
 
-	fn common_point(&mut self, point: C) -> io::Result<()> {
-		let coords: Coordinates<C> = Option::from(point.coordinates()).ok_or_else(|| {
-			io::Error::new(
-				io::ErrorKind::Other,
-				"cannot write points at infinity to the transcript",
-			)
-		})?;
-		let x = to_wide(coords.x().to_repr().as_ref());
-		let y = to_wide(coords.y().to_repr().as_ref());
-		let x_f = C::ScalarExt::from_bytes_wide(&x);
-		let y_f = C::ScalarExt::from_bytes_wide(&y);
-		self.state.update(&[x_f, y_f]);
+	/// Squeeze a challenge.
+	fn squeeze_challenge(&mut self) -> C::ScalarExt {
+		C::ScalarExt::default()
+	}
+
+	/// Update with an elliptic curve point.
+	fn common_ec_point(&mut self, ec_point: &C) -> Result<(), VerifierError> {
 		Ok(())
 	}
 
-	fn common_scalar(&mut self, scalar: C::Scalar) -> io::Result<()> {
-		self.state.update(&[scalar]);
+	/// Update with a scalar.
+	fn common_scalar(&mut self, scalar: &C::ScalarExt) -> Result<(), VerifierError> {
 		Ok(())
 	}
 }
 
-impl<W: Write, C: CurveAffine, P: RoundParams<C::Scalar, WIDTH>>
-	TranscriptWriterBuffer<W, C, Challenge255<C>> for PoseidonWrite<W, C, P>
+impl<W: Write, C: CurveAffine, R> TranscriptWrite<C> for PoseidonWrite<W, C, R>
+where
+	R: RoundParams<C::Scalar, WIDTH>,
 {
-	fn init(writer: W) -> Self {
-		let poseidon = PoseidonSponge::new();
-		Self { writer, state: poseidon }
+	/// Write a scalar.
+	fn write_scalar(&mut self, scalar: C::Scalar) -> Result<(), VerifierError> {
+		Ok(())
 	}
 
-	/// Conclude the interaction and return the output buffer (writer).
-	fn finalize(self) -> W {
-		self.writer
-	}
-}
-
-impl<W: Write, C: CurveAffine, P: RoundParams<C::Scalar, WIDTH>> TranscriptWrite<C, Challenge255<C>>
-	for PoseidonWrite<W, C, P>
-{
-	fn write_point(&mut self, point: C) -> io::Result<()> {
-		self.common_point(point)?;
-		let compressed = point.to_bytes();
-		self.writer.write_all(compressed.as_ref())
-	}
-
-	fn write_scalar(&mut self, scalar: C::Scalar) -> io::Result<()> {
-		self.common_scalar(scalar)?;
-		let data = scalar.to_repr();
-		self.writer.write_all(data.as_ref())
+	/// Write a elliptic curve point.
+	fn write_ec_point(&mut self, ec_point: C) -> Result<(), VerifierError> {
+		Ok(())
 	}
 }
