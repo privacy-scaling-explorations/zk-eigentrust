@@ -5,3 +5,7 @@ else
     source $HOME/.cargo/env
     export PATH=$HOME/.cargo/bin:$PATH
 fi
+
+sudo add-apt-repository ppa:ethereum/ethereum
+sudo apt-get update
+sudo apt-get install solc
