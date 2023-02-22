@@ -752,7 +752,7 @@ where
 			&config.double,
 			layouter.namespace(|| "acc_double"),
 		)?);
-		let acc_add_chip = EccAddChipset::new(acc_point.unwrap(), carry_point.clone().unwrap());
+		let acc_add_chip = EccAddChipset::new(acc_point.unwrap(), carry_point.unwrap());
 		acc_point =
 			Some(acc_add_chip.synthesize(common, &config.add, layouter.namespace(|| "acc_add"))?);
 
@@ -791,9 +791,9 @@ where
 					self.aux_init.y.integer.clone(),
 					carry_y.clone().map(|x| x.unwrap()),
 				);
-				let carry_point = AssignedPoint::new(carry_x_integer, carry_y_integer);
+				carry_point = Some(AssignedPoint::new(carry_x_integer, carry_y_integer));
 				let acc_ladder_chip =
-					EccUnreducedLadderChipset::new(acc_point.unwrap(), carry_point.clone());
+					EccUnreducedLadderChipset::new(acc_point.unwrap(), carry_point.unwrap());
 				acc_point = Some(acc_ladder_chip.synthesize(
 					common,
 					&config.ladder,
@@ -808,9 +808,9 @@ where
 					aux_init_plus_scalar.y.integer.clone(),
 					carry_y.clone().map(|x| x.unwrap()),
 				);
-				let carry_point = AssignedPoint::new(carry_x_integer, carry_y_integer);
+				carry_point = Some(AssignedPoint::new(carry_x_integer, carry_y_integer));
 				let acc_ladder_chip =
-					EccUnreducedLadderChipset::new(acc_point.unwrap(), carry_point.clone());
+					EccUnreducedLadderChipset::new(acc_point.unwrap(), carry_point.unwrap());
 				acc_point = Some(acc_ladder_chip.synthesize(
 					common,
 					&config.ladder,
@@ -1245,8 +1245,8 @@ mod test {
 			}
 		}
 
-		let a_big = BigUint::from_str("23423423525345345").unwrap();
-		let b_big = BigUint::from_str("65464575675").unwrap();
+		let a_big = BigUint::from_str("2342876324689764345467879012938433459867545345").unwrap();
+		let b_big = BigUint::from_str("6546457298123794342352534089237495253453455675").unwrap();
 		let a = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(a_big);
 		let b = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(b_big);
 		let p_point = EcPoint::<W, N, NUM_LIMBS, NUM_BITS, P>::new(a.clone(), b.clone());
