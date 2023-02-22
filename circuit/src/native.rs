@@ -128,8 +128,7 @@ impl EigenTrustSet {
 		// We assume that the initial credit of peer is constant(INITIAL_SCORE)
 		for i in 0..NUM_NEIGHBOURS {
 			let (pk, credits) = filtered_set[i];
-
-			if !(pk == PublicKey::default()) {
+			if !(pk == PublicKey::default() || credits == Fr::zero()) {
 				let mut ops_i = filtered_ops.get_mut(&pk).unwrap();
 
 				let op_score_sum =
