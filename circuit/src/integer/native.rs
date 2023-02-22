@@ -63,7 +63,7 @@ pub struct ReductionWitness<
 /// Structure for the Integer.
 // TODO: Add ReductionWitness as a part of Integer
 // TODO: Add `add_add`, `mul2`, `mul3`, `sub_sub`
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Integer<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
 where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
@@ -74,6 +74,16 @@ where
 	_wrong_field: PhantomData<W>,
 	/// Phantom data for the RnsParams.
 	_rns: PhantomData<P>,
+}
+
+impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P> Default
+	for Integer<W, N, NUM_LIMBS, NUM_BITS, P>
+where
+	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
+{
+	fn default() -> Self {
+		Self::zero()
+	}
 }
 
 impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>

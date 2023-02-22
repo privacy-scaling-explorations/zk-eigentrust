@@ -20,7 +20,7 @@ use crate::{
 use halo2::{self, arithmetic::FieldExt};
 
 /// Structure for the EcPoint
-#[derive(Clone, Debug)]
+#[derive(Clone, Default, Debug, PartialEq)]
 pub struct EcPoint<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
 where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,

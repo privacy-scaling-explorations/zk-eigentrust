@@ -526,6 +526,7 @@ mod test {
 	use crate::{
 		eddsa::native::{sign, SecretKey},
 		utils::{generate_params, prove_and_verify},
+		verifier::{evm_verify, gen_evm_verifier, gen_pk, gen_proof, gen_srs},
 	};
 	use halo2::{dev::MockProver, halo2curves::bn256::Bn256};
 	use rand::thread_rng;
@@ -588,7 +589,6 @@ mod test {
 			.map(|((sk, pk), msg)| sign(&sk, &pk, msg))
 			.collect();
 
-		let k = 14;
 		let et = EigenTrust::<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, SCALE>::new(
 			pub_keys.to_vec(),
 			signatures,
@@ -596,6 +596,7 @@ mod test {
 			messages,
 		);
 
+		let k = 14;
 		let prover = match MockProver::<Scalar>::run(k, &et, vec![res.to_vec()]) {
 			Ok(prover) => prover,
 			Err(e) => panic!("{}", e),
@@ -662,7 +663,6 @@ mod test {
 			.map(|((sk, pk), msg)| sign(&sk, &pk, msg))
 			.collect();
 
-		let k = 14;
 		let et = EigenTrust::<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, SCALE>::new(
 			pub_keys.to_vec(),
 			signatures,
@@ -670,9 +670,81 @@ mod test {
 			messages,
 		);
 
+		let k = 14;
 		let rng = &mut rand::thread_rng();
 		let params = generate_params(k);
 		let res = prove_and_verify::<Bn256, _, _>(params, et, &[&res], rng).unwrap();
 		assert!(res);
+	}
+
+	#[test]
+	#[ignore = "Circuit too big"]
+	fn test_closed_graph_circut_evm() {
+		let s = vec![Scalar::from_u128(INITIAL_SCORE); NUM_NEIGHBOURS];
+		let ops: Vec<Vec<Scalar>> = vec![
+			vec![0, 200, 300, 500, 0],
+			vec![100, 0, 100, 100, 700],
+			vec![400, 100, 0, 200, 300],
+			vec![100, 100, 700, 0, 100],
+			vec![300, 100, 400, 200, 0],
+		]
+		.into_iter()
+		.map(|arr| arr.into_iter().map(|x| Scalar::from_u128(x)).collect())
+		.collect();
+		let res = native::<Scalar, NUM_NEIGHBOURS, NUM_ITER, SCALE>(s, ops.clone());
+
+		let rng = &mut thread_rng();
+		let secret_keys = [(); NUM_NEIGHBOURS].map(|_| SecretKey::random(rng));
+		let pub_keys = secret_keys.clone().map(|x| x.public());
+
+		let pk_x = pub_keys.clone().map(|pk| pk.0.x);
+		let pk_y = pub_keys.clone().map(|pk| pk.0.y);
+		let mut sponge = PoseidonNativeSponge::new();
+		sponge.update(&pk_x);
+		sponge.update(&pk_y);
+		let keys_message_hash = sponge.squeeze();
+
+		let messages: Vec<Scalar> = ops
+			.iter()
+			.map(|scores| {
+				let mut sponge = PoseidonNativeSponge::new();
+				sponge.update(&scores);
+				let scores_message_hash = sponge.squeeze();
+
+				let m_inputs = [
+					keys_message_hash,
+					scores_message_hash,
+					Scalar::zero(),
+					Scalar::zero(),
+					Scalar::zero(),
+				];
+				let poseidon = PoseidonNativeHasher::new(m_inputs);
+				let res = poseidon.permute()[0];
+				res
+			})
+			.collect();
+
+		let signatures: Vec<Signature> = secret_keys
+			.into_iter()
+			.zip(pub_keys.clone())
+			.zip(messages.clone())
+			.map(|((sk, pk), msg)| sign(&sk, &pk, msg))
+			.collect();
+
+		let et = EigenTrust::<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, SCALE>::new(
+			pub_keys.to_vec(),
+			signatures,
+			ops,
+			messages,
+		);
+
+		let k = 14;
+		let params = gen_srs(k);
+		let pk = gen_pk(&params, &et);
+		let deployment_code = gen_evm_verifier(&params, pk.get_vk(), vec![NUM_NEIGHBOURS]);
+		dbg!(deployment_code.len());
+
+		let proof = gen_proof(&params, &pk, et.clone(), vec![res.clone()]);
+		evm_verify(deployment_code, vec![res], proof);
 	}
 }
