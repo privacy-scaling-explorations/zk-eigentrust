@@ -10,6 +10,7 @@ const NUM_NEIGHBOURS: usize = 6;
 const NUM_ITERATIONS: usize = 20;
 const INITIAL_SCORE: u128 = 1000;
 
+#[derive(Debug, Clone)]
 struct Opinion {
 	sig: Signature,
 	message_hash: Fr,
@@ -79,59 +80,81 @@ impl EigenTrustSet {
 	}
 
 	pub fn converge(&mut self) -> [Fr; NUM_NEIGHBOURS] {
+		let mut filtered_set = self.set.clone();
+		let mut filtered_ops: HashMap<PublicKey, Opinion> = HashMap::new();
+
+		// Validity checks
+
+		// Nullify opinion scores that are given to wrong member at specific index
 		for i in 0..NUM_NEIGHBOURS {
-			let (pk, initial_score) = self.set[i];
+			let (pk, credits) = filtered_set[i];
 
-			// Validity checks
-			//
-			// If the "pk" is default or its initial score is zero(NO opinion),
-			// we exclude it from validation.
-			if pk == PublicKey::default() || initial_score == Fr::zero() {
-				assert!(self.ops.get_mut(&pk).is_none());
+			if pk == PublicKey::default() || credits == Fr::zero() {
+				assert!(self.ops.get(&pk).is_none());
 			} else {
-				let mut ops_i = self.ops.get_mut(&pk).unwrap();
+				let mut ops_i = self.ops.get(&pk).unwrap().clone();
 
-				// Nullify scores that are given to wrong member at specific index
-				let mut score_sum = Fr::zero();
 				for j in 0..NUM_NEIGHBOURS {
 					let (pk_j, score) = ops_i.scores[j].clone();
 					let true_score =
 						if j != i && self.set[j].0 == pk_j { score } else { Fr::zero() };
 					ops_i.scores[j].1 = true_score;
-					score_sum += true_score;
 				}
 
-				// First we need filtered set -- set after we invalidated
-				// invalid peers:
-				// - Peers that dont have at least one valid score
-				if score_sum == Fr::zero() {
-					self.set[i] = (pk, Fr::zero());
-					self.ops.remove(&pk);
-				} else {
-					// Normalize the scores
-					// Distribute the credits(INITIAL_SCORE) to the valid opinion values
-					// We assume that the initial credits of peer is constant(INITIAL_SCORE)
-					for j in 0..NUM_NEIGHBOURS {
-						let (_, op_score) = ops_i.scores[j].clone();
-						ops_i.scores[j].1 = op_score * score_sum.invert().unwrap() * initial_score;
-					}
+				filtered_ops.insert(pk, ops_i);
+			}
+		}
+
+		//  Filter the set -- set after we invalidated invalid peers:
+		// 		- Peers that dont have at least one valid score
+		for i in 0..NUM_NEIGHBOURS {
+			let (pk, credits) = filtered_set[i];
+
+			if !(pk == PublicKey::default() || credits == Fr::zero()) {
+				let ops_i = filtered_ops.get(&pk).unwrap();
+
+				let op_score_sum =
+					ops_i.scores.iter().fold(Fr::zero(), |acc, &(_, score)| acc + score);
+
+				if op_score_sum == Fr::zero() {
+					filtered_set[i] = (PublicKey::default(), Fr::zero());
+					filtered_ops.remove(&pk);
+				}
+			}
+		}
+
+		// Normalize the opinion scores
+		// Distribute the credits(INITIAL_SCORE) to the valid opinion values
+		// We assume that the initial credit of peer is constant(INITIAL_SCORE)
+		for i in 0..NUM_NEIGHBOURS {
+			let (pk, credits) = filtered_set[i];
+
+			if !(pk == PublicKey::default()) {
+				let mut ops_i = filtered_ops.get_mut(&pk).unwrap();
+
+				let op_score_sum =
+					ops_i.scores.iter().fold(Fr::zero(), |acc, &(_, score)| acc + score);
+
+				for j in 0..NUM_NEIGHBOURS {
+					let (_, op_score) = ops_i.scores[j].clone();
+					ops_i.scores[j].1 = op_score * op_score_sum.invert().unwrap() * credits;
 				}
 			}
 		}
 
 		// There should be at least 2 valid peers(valid opinions) for calculation
-		let valid_peers = self.set.iter().filter(|(_, score)| score != &Fr::zero()).count();
+		let valid_peers = filtered_set.iter().filter(|(_, credits)| credits != &Fr::zero()).count();
 		assert!(valid_peers >= 2, "Insufficient peers for calculation!");
 
 		// By this point we should use filtered_set and filtered_opinions
-		let mut s = self.set.map(|item| item.1);
+		let mut s = filtered_set.map(|item| item.1);
 		let default_op = Opinion::default();
 		for _ in 0..NUM_ITERATIONS {
 			let mut distributions = [[Fr::zero(); NUM_NEIGHBOURS]; NUM_NEIGHBOURS];
 			for i in 0..NUM_NEIGHBOURS {
 				let mut local_distr = [Fr::zero(); NUM_NEIGHBOURS];
-				let pk = self.set[i].0;
-				let ops_i = self.ops.get(&pk).unwrap_or_else(|| &default_op);
+				let pk = filtered_set[i].0;
+				let ops_i = filtered_ops.get(&pk).unwrap_or_else(|| &default_op);
 
 				for j in 0..NUM_NEIGHBOURS {
 					let op = ops_i.scores[j].1 * s[i];
