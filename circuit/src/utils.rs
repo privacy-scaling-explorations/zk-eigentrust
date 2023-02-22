@@ -14,7 +14,7 @@ use halo2::{
 		commitment::{CommitmentScheme, Params, ParamsProver},
 		kzg::{
 			commitment::{KZGCommitmentScheme, ParamsKZG},
-			multiopen::{ProverSHPLONK, VerifierSHPLONK},
+			multiopen::{ProverGWC, VerifierGWC},
 			strategy::AccumulatorStrategy,
 		},
 		VerificationStrategy,
@@ -99,7 +99,7 @@ where
 pub fn finalize_verify<
 	'a,
 	E: MultiMillerLoop + Debug,
-	V: VerificationStrategy<'a, KZGCommitmentScheme<E>, VerifierSHPLONK<'a, E>>,
+	V: VerificationStrategy<'a, KZGCommitmentScheme<E>, VerifierGWC<'a, E>>,
 >(
 	v: V,
 ) -> bool
@@ -121,7 +121,7 @@ where
 	E::G2Affine: SerdeObject,
 {
 	let mut transcript = Blake2bWrite::<_, E::G1Affine, Challenge255<_>>::init(vec![]);
-	create_proof::<KZGCommitmentScheme<E>, ProverSHPLONK<_>, _, _, _, _>(
+	create_proof::<KZGCommitmentScheme<E>, ProverGWC<_>, _, _, _, _>(
 		params,
 		pk,
 		&[circuit],
@@ -145,7 +145,7 @@ where
 {
 	let strategy = AccumulatorStrategy::<E>::new(params);
 	let mut transcript = Blake2bRead::<_, E::G1Affine, Challenge255<_>>::init(proof);
-	let output = verify_proof::<KZGCommitmentScheme<E>, VerifierSHPLONK<E>, _, _, _>(
+	let output = verify_proof::<KZGCommitmentScheme<E>, VerifierGWC<E>, _, _, _>(
 		params,
 		vk,
 		strategy,
@@ -169,7 +169,7 @@ where
 	let start = Instant::now();
 	let proof = prove(&params, circuit, pub_inps, &pk, rng)?;
 	let end = start.elapsed();
-	print!("Proving time: {:?}", end);
+	println!("Proving time: {:?}", end);
 	let res = verify(&params, pub_inps, &proof[..], pk.get_vk())?;
 
 	Ok(res)
