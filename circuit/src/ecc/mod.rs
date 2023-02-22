@@ -13,7 +13,7 @@ use crate::{
 	Chip, Chipset, CommonConfig,
 };
 use halo2::{
-	arithmetic::FieldExt,
+	arithmetic::{Field, FieldExt},
 	circuit::{AssignedCell, Layouter},
 	plonk::{Error, Selector},
 };
@@ -276,7 +276,7 @@ where
 		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<N>,
 	) -> Result<Self::Output, Error> {
 		// Reduce p_x
-		let p_x = IntegerReduceChip::new(self.p.x);
+		let p_x = IntegerReduceChip::new(self.p.x.clone());
 		let p_x_reduced = p_x.synthesize(
 			&common,
 			&config.integer_reduce_selector,
@@ -284,7 +284,7 @@ where
 		)?;
 
 		// Reduce p_y
-		let p_y = IntegerReduceChip::new(self.p.y);
+		let p_y = IntegerReduceChip::new(self.p.y.clone());
 		let p_y_reduced = p_y.synthesize(
 			&common,
 			&config.integer_reduce_selector,

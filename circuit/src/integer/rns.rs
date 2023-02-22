@@ -326,7 +326,7 @@ impl RnsParams<Fq, Fr, 4, 68> for Bn256_4_68 {
 			let res = t_lo + t_hi * lsh_one - r_lo - r_hi * lsh_one - residues[i / 2] * lsh_two + v;
 			v = residues[i / 2];
 			let res_is_zero: bool = res.is_zero().into();
-			is_satisfied = is_satisfied | res_is_zero;
+			is_satisfied = is_satisfied & res_is_zero;
 		}
 		is_satisfied
 	}
