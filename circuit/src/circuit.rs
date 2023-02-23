@@ -678,7 +678,7 @@ mod test {
 	}
 
 	#[test]
-	#[ignore = "Circuit too big"]
+	// #[ignore = "Circuit too big"]
 	fn test_closed_graph_circut_evm() {
 		let s = vec![Scalar::from_u128(INITIAL_SCORE); NUM_NEIGHBOURS];
 		let ops: Vec<Vec<Scalar>> = vec![
