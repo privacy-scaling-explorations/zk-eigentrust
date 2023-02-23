@@ -1,7 +1,7 @@
 [workspace]
 members = [
-	"protocol",
+	"server",
 	"circuit",
 	"client",
 ]
-default-members = ["protocol"]
+default-members = ["server"]

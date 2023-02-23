@@ -947,7 +947,7 @@ dependencies = [
  "clap",
  "csv",
  "eigen-trust-circuit",
- "eigen-trust-protocol",
+ "eigen-trust-server",
  "ethers",
  "rand 0.8.5",
  "serde",
@@ -956,7 +956,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "eigen-trust-protocol"
+name = "eigen-trust-server"
 version = "0.2.0"
 dependencies = [
  "async-trait",
