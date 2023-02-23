@@ -267,15 +267,8 @@ where
 		let p_prime = P::negative_wrong_modulus_decomposed();
 		let p_in_n = P::wrong_modulus_in_native_modulus();
 		let a = self.value();
-		let b = other.value();
-		// TODO: do inside P::construct_div_qr
-		let b_invert = P::invert(other.clone()).unwrap();
-		let result = b_invert.value() * a.clone() % P::wrong_modulus();
-		let (quotient, reduced_self) = (result.clone() * b).div_rem(&P::wrong_modulus());
-		let (k, must_be_zero) = (a - reduced_self).div_rem(&P::wrong_modulus());
-		assert_eq!(must_be_zero, BigUint::zero());
-		let q = decompose_big::<N, NUM_LIMBS, NUM_BITS>(quotient - k);
-		let res = decompose_big::<N, NUM_LIMBS, NUM_BITS>(result);
+		let b = other.clone();
+		let (q, res) = P::construct_div_qr(a, b);
 
 		// Calculate the intermediate values for the ReductionWitness.
 		let mut t: [N; NUM_LIMBS] = [N::zero(); NUM_LIMBS];
