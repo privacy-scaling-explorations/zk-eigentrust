@@ -16,4 +16,4 @@ csv = "1.1"
 bs58 = "0.4.0"
 
 eigen-trust-circuit = { path = "../circuit" }
-eigen-trust-protocol = { path = "../protocol" }
+eigen-trust-server = { path = "../server" }

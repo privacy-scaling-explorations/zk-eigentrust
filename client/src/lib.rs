@@ -8,7 +8,7 @@ use eigen_trust_circuit::{
 	halo2::halo2curves::{bn256::Fr as Scalar, FieldExt},
 	utils::to_short,
 };
-use eigen_trust_protocol::manager::{
+use eigen_trust_server::manager::{
 	attestation::{Attestation, AttestationData},
 	NUM_NEIGHBOURS,
 };
@@ -116,7 +116,7 @@ impl EigenTrustClient {
 #[cfg(test)]
 mod test {
 	use crate::{utils::deploy, ClientConfig, EigenTrustClient};
-	use eigen_trust_protocol::manager::NUM_NEIGHBOURS;
+	use eigen_trust_server::manager::NUM_NEIGHBOURS;
 	use ethers::utils::Anvil;
 
 	#[tokio::test]
