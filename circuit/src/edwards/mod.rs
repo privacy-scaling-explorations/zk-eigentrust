@@ -13,6 +13,17 @@ use halo2::{
 use params::EdwardsParams;
 use std::marker::PhantomData;
 
+/// Returns boolean value from the assigned cell value
+pub fn assigned_as_bool<F: FieldExt>(bit: AssignedCell<F, F>) -> bool {
+	let bit_value = bit.value();
+	let mut is_one = false;
+	bit_value.map(|f| {
+		is_one = F::one() == *f;
+		f
+	});
+	is_one
+}
+
 /// Assigned point from the circuit
 #[derive(Clone)]
 pub struct AssignedPoint<F: FieldExt> {

@@ -2,6 +2,7 @@
 pub mod native;
 
 use crate::{
+	edwards::assigned_as_bool,
 	gadgets::{
 		bits2num::Bits2NumChip,
 		main::{MainConfig, SelectChipset},
@@ -612,8 +613,6 @@ struct EccTableSelectChipset<
 {
 	// Assigned bit
 	bit: AssignedCell<N, N>,
-	// Non-assigned bit
-	scalar_bit: N,
 	// Assigned point p
 	p: AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
 	// Assigned point q
@@ -627,10 +626,10 @@ where
 {
 	/// Creates a new ecc table select chipset.
 	pub fn new(
-		bit: AssignedCell<N, N>, scalar_bit: N, p: AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
+		bit: AssignedCell<N, N>, p: AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
 		q: AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
 	) -> Self {
-		Self { bit, scalar_bit, p, q }
+		Self { bit, p, q }
 	}
 }
 
@@ -649,7 +648,7 @@ where
 		let mut selected_x: [Option<AssignedCell<N, N>>; NUM_LIMBS] = [(); NUM_LIMBS].map(|_| None);
 		let mut selected_y: [Option<AssignedCell<N, N>>; NUM_LIMBS] = [(); NUM_LIMBS].map(|_| None);
 		for i in 0..NUM_LIMBS {
-			// acc_x
+			// x coordinate select
 			let select = SelectChipset::new(
 				self.bit.clone(),
 				self.p.x.limbs[i].clone(),
@@ -658,7 +657,7 @@ where
 			selected_x[i] =
 				Some(select.synthesize(&common, &config.main, layouter.namespace(|| "acc_x"))?);
 
-			// acc_y
+			// y coordinate select
 			let select = SelectChipset::new(
 				self.bit.clone(),
 				self.p.y.limbs[i].clone(),
@@ -669,17 +668,17 @@ where
 		}
 		let mut selected_point: Option<AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>> = None;
 
-		if self.scalar_bit == N::zero() {
-			let selected_x_integer =
-				AssignedInteger::new(self.q.x.integer.clone(), selected_x.map(|x| x.unwrap()));
-			let selected_y_integer =
-				AssignedInteger::new(self.q.y.integer.clone(), selected_y.map(|x| x.unwrap()));
-			selected_point = Some(AssignedPoint::new(selected_x_integer, selected_y_integer));
-		} else {
+		if assigned_as_bool(self.bit) {
 			let selected_x_integer =
 				AssignedInteger::new(self.p.x.integer.clone(), selected_x.map(|x| x.unwrap()));
 			let selected_y_integer =
 				AssignedInteger::new(self.p.y.integer.clone(), selected_y.map(|x| x.unwrap()));
+			selected_point = Some(AssignedPoint::new(selected_x_integer, selected_y_integer));
+		} else {
+			let selected_x_integer =
+				AssignedInteger::new(self.q.x.integer.clone(), selected_x.map(|x| x.unwrap()));
+			let selected_y_integer =
+				AssignedInteger::new(self.q.y.integer.clone(), selected_y.map(|x| x.unwrap()));
 			selected_point = Some(AssignedPoint::new(selected_x_integer, selected_y_integer));
 		}
 
@@ -717,8 +716,11 @@ where
 	p: AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
 	// Scalar value as bits
 	scalar_bits: [N; 254],
+	// Assigned scalar value
 	value: AssignedCell<N, N>,
+	// AuxInitial (to_add)
 	aux_init: AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
+	// AuxFinish (to_sub)
 	aux_fin: AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
 }
 
@@ -761,12 +763,9 @@ where
 		let bits = Bits2NumChip::new(self.value, self.scalar_bits.to_vec());
 		let mut bits = bits.synthesize(common, &config.bits2num, layouter.namespace(|| "bits"))?;
 		bits.reverse();
-		let mut scalar_bits = self.scalar_bits;
-		scalar_bits.reverse();
 
 		let acc_point_chip = EccTableSelectChipset::new(
 			bits[0].clone(),
-			scalar_bits[0],
 			aux_init_plus_scalar.clone(),
 			self.aux_init.clone(),
 		);
@@ -778,7 +777,6 @@ where
 
 		let carry_point_chip = EccTableSelectChipset::new(
 			bits[1].clone(),
-			scalar_bits[1],
 			aux_init_plus_scalar.clone(),
 			self.aux_init.clone(),
 		);
@@ -788,6 +786,7 @@ where
 			layouter.namespace(|| "carry_select"),
 		)?;
 
+		// To avoid P_0 == P_1
 		let acc_double_chip = EccDoubleChipset::new(acc_point);
 		acc_point = acc_double_chip.synthesize(
 			common,
@@ -801,7 +800,6 @@ where
 		for i in 2..bits.len() {
 			let carry_point_chip = EccTableSelectChipset::new(
 				bits[i].clone(),
-				scalar_bits[i],
 				aux_init_plus_scalar.clone(),
 				self.aux_init.clone(),
 			);
