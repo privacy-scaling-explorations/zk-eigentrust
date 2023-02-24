@@ -35,7 +35,7 @@ jobs:
         run: cargo install grcov
 
       - name: Run Tests
-        run: cargo test -p eigen-trust-protocol --verbose -- --nocapture
+        run: cargo test -p eigen-trust-server --verbose -- --nocapture
         env:
           RUSTFLAGS: "-Zinstrument-coverage"
           LLVM_PROFILE_FILE: "coverage-%p-%m.profraw"
