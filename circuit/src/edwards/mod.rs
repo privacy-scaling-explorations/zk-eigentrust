@@ -333,12 +333,8 @@ impl<F: FieldExt, P: EdwardsParams<F>> Chip<F> for ScalarMulChip<F, P> {
 						e_z.value().cloned(),
 					);
 
-					let bit_value = self.value_bits[i].value().cloned();
-					let mut is_one = false;
-					bit_value.map(|f| {
-						is_one = F::one() == f;
-						f
-					});
+					let is_one = assigned_as_bool(self.value_bits[i].clone());
+
 					let (r_x_next, r_y_next, r_z_next) = if is_one {
 						(r_x3, r_y3, r_z3)
 					} else {

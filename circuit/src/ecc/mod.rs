@@ -14,7 +14,7 @@ use crate::{
 	Chip, Chipset, CommonConfig,
 };
 use halo2::{
-	arithmetic::{Field, FieldExt},
+	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter},
 	plonk::{Error, Selector},
 };
