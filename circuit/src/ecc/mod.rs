@@ -381,7 +381,6 @@ where
 		)?;
 
 		let r = AssignedPoint::new(r_x, r_y);
-
 		Ok(r)
 	}
 }
@@ -582,6 +581,7 @@ where
 			&config.integer_sub_selector,
 			layouter.namespace(|| "r_y"),
 		)?;
+
 		let r = AssignedPoint::new(r_x, r_y);
 		Ok(r)
 	}
@@ -648,7 +648,7 @@ where
 		let mut selected_x: [Option<AssignedCell<N, N>>; NUM_LIMBS] = [(); NUM_LIMBS].map(|_| None);
 		let mut selected_y: [Option<AssignedCell<N, N>>; NUM_LIMBS] = [(); NUM_LIMBS].map(|_| None);
 		for i in 0..NUM_LIMBS {
-			// x coordinate select
+			// Select x coordinate limbs
 			let select = SelectChipset::new(
 				self.bit.clone(),
 				self.p.x.limbs[i].clone(),
@@ -657,7 +657,7 @@ where
 			selected_x[i] =
 				Some(select.synthesize(&common, &config.main, layouter.namespace(|| "acc_x"))?);
 
-			// y coordinate select
+			// Select y coordinate limbs
 			let select = SelectChipset::new(
 				self.bit.clone(),
 				self.p.y.limbs[i].clone(),
@@ -666,8 +666,8 @@ where
 			selected_y[i] =
 				Some(select.synthesize(&common, &config.main, layouter.namespace(|| "acc_y"))?);
 		}
-		let mut selected_point: Option<AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>> = None;
 
+		let mut selected_point: Option<AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>> = None;
 		if assigned_as_bool(self.bit) {
 			let selected_x_integer =
 				AssignedInteger::new(self.p.x.integer.clone(), selected_x.map(|x| x.unwrap()));
@@ -760,6 +760,7 @@ where
 			&config.add,
 			layouter.namespace(|| "aux_init_plus_scalar"),
 		)?;
+
 		let bits = Bits2NumChip::new(self.value, self.scalar_bits.to_vec());
 		let mut bits = bits.synthesize(common, &config.bits2num, layouter.namespace(|| "bits"))?;
 		bits.reverse();
@@ -793,6 +794,7 @@ where
 			&config.double,
 			layouter.namespace(|| "acc_double"),
 		)?;
+
 		let acc_add_chip = EccAddChipset::new(acc_point, carry_point);
 		acc_point =
 			acc_add_chip.synthesize(common, &config.add, layouter.namespace(|| "acc_add"))?;
