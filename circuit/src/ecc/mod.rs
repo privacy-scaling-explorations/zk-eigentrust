@@ -588,22 +588,123 @@ where
 
 /// Configuration elements for the circuit are defined here.
 #[derive(Debug, Clone)]
+pub struct EccTableSelectConfig {
+	/// Constructs config from main circuit.
+	main: MainConfig,
+}
+
+impl EccTableSelectConfig {
+	/// Construct a new config given the selector of child chips
+	pub fn new(main: MainConfig) -> Self {
+		Self { main }
+	}
+}
+
+/// Chipset structure for the EccTableSelectChipset.
+struct EccTableSelectChipset<
+	W: FieldExt,
+	N: FieldExt,
+	const NUM_LIMBS: usize,
+	const NUM_BITS: usize,
+	P,
+> where
+	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
+{
+	// Assigned bit
+	bit: AssignedCell<N, N>,
+	// Non-assigned bit
+	scalar_bit: N,
+	// Assigned point p
+	p: AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
+	// Assigned point q
+	q: AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
+}
+
+impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
+	EccTableSelectChipset<W, N, NUM_LIMBS, NUM_BITS, P>
+where
+	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
+{
+	/// Creates a new ecc table select chipset.
+	pub fn new(
+		bit: AssignedCell<N, N>, scalar_bit: N, p: AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
+		q: AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
+	) -> Self {
+		Self { bit, scalar_bit, p, q }
+	}
+}
+
+impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P> Chipset<N>
+	for EccTableSelectChipset<W, N, NUM_LIMBS, NUM_BITS, P>
+where
+	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
+{
+	type Config = EccTableSelectConfig;
+	type Output = AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>;
+
+	/// Synthesize the circuit.
+	fn synthesize(
+		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<N>,
+	) -> Result<Self::Output, Error> {
+		let mut selected_x: [Option<AssignedCell<N, N>>; NUM_LIMBS] = [(); NUM_LIMBS].map(|_| None);
+		let mut selected_y: [Option<AssignedCell<N, N>>; NUM_LIMBS] = [(); NUM_LIMBS].map(|_| None);
+		for i in 0..NUM_LIMBS {
+			// acc_x
+			let select = SelectChipset::new(
+				self.bit.clone(),
+				self.p.x.limbs[i].clone(),
+				self.q.x.limbs[i].clone(),
+			);
+			selected_x[i] =
+				Some(select.synthesize(&common, &config.main, layouter.namespace(|| "acc_x"))?);
+
+			// acc_y
+			let select = SelectChipset::new(
+				self.bit.clone(),
+				self.p.y.limbs[i].clone(),
+				self.q.y.limbs[i].clone(),
+			);
+			selected_y[i] =
+				Some(select.synthesize(&common, &config.main, layouter.namespace(|| "acc_y"))?);
+		}
+		let mut selected_point: Option<AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>> = None;
+
+		if self.scalar_bit == N::zero() {
+			let selected_x_integer =
+				AssignedInteger::new(self.q.x.integer.clone(), selected_x.map(|x| x.unwrap()));
+			let selected_y_integer =
+				AssignedInteger::new(self.q.y.integer.clone(), selected_y.map(|x| x.unwrap()));
+			selected_point = Some(AssignedPoint::new(selected_x_integer, selected_y_integer));
+		} else {
+			let selected_x_integer =
+				AssignedInteger::new(self.p.x.integer.clone(), selected_x.map(|x| x.unwrap()));
+			let selected_y_integer =
+				AssignedInteger::new(self.p.y.integer.clone(), selected_y.map(|x| x.unwrap()));
+			selected_point = Some(AssignedPoint::new(selected_x_integer, selected_y_integer));
+		}
+
+		Ok(selected_point.unwrap())
+	}
+}
+
+/// Configuration elements for the circuit are defined here.
+#[derive(Debug, Clone)]
 struct EccMulConfig {
-	/// Constructs selectors from different circuits.
+	/// Constructs configs and selector from different circuits.
 	ladder: EccUnreducedLadderConfig,
 	add: EccAddConfig,
 	double: EccDoubleConfig,
+	table_select: EccTableSelectConfig,
 	bits2num: Selector,
-	main: MainConfig,
 }
 
 impl EccMulConfig {
 	/// Construct a new config given the selector of child chips
 	pub fn new(
 		ladder: EccUnreducedLadderConfig, add: EccAddConfig, double: EccDoubleConfig,
-		bits2num: Selector, main: MainConfig,
+		table_select: EccTableSelectConfig, bits2num: Selector,
 	) -> Self {
-		Self { ladder, add, double, bits2num, main }
+		Self { ladder, add, double, table_select, bits2num }
 	}
 }
 
@@ -662,171 +763,69 @@ where
 		bits.reverse();
 		let mut scalar_bits = self.scalar_bits;
 		scalar_bits.reverse();
-		let mut acc_x: [Option<AssignedCell<N, N>>; NUM_LIMBS] = [(); NUM_LIMBS].map(|_| None);
-		let mut acc_y: [Option<AssignedCell<N, N>>; NUM_LIMBS] = [(); NUM_LIMBS].map(|_| None);
-		let mut carry_x: [Option<AssignedCell<N, N>>; NUM_LIMBS] = [(); NUM_LIMBS].map(|_| None);
-		let mut carry_y: [Option<AssignedCell<N, N>>; NUM_LIMBS] = [(); NUM_LIMBS].map(|_| None);
-		let mut acc_point: Option<AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>> = None;
-		let mut carry_point: Option<AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>> = None;
 
-		for i in 0..NUM_LIMBS {
-			// acc_x
-			let select = SelectChipset::new(
-				bits[0].clone(),
-				aux_init_plus_scalar.x.limbs[i].clone(),
-				self.aux_init.x.limbs[i].clone(),
-			);
-			acc_x[i] =
-				Some(select.synthesize(&common, &config.main, layouter.namespace(|| "acc_x"))?);
+		let acc_point_chip = EccTableSelectChipset::new(
+			bits[0].clone(),
+			scalar_bits[0],
+			aux_init_plus_scalar.clone(),
+			self.aux_init.clone(),
+		);
+		let mut acc_point = acc_point_chip.synthesize(
+			common,
+			&config.table_select,
+			layouter.namespace(|| "acc_select"),
+		)?;
 
-			// acc_y
-			let select = SelectChipset::new(
-				bits[0].clone(),
-				aux_init_plus_scalar.y.limbs[i].clone(),
-				self.aux_init.y.limbs[i].clone(),
-			);
-			acc_y[i] =
-				Some(select.synthesize(&common, &config.main, layouter.namespace(|| "acc_y"))?);
-		}
-		if scalar_bits[0] == N::zero() {
-			let acc_x_integer =
-				AssignedInteger::new(self.aux_init.x.integer.clone(), acc_x.map(|x| x.unwrap()));
-			let acc_y_integer =
-				AssignedInteger::new(self.aux_init.y.integer.clone(), acc_y.map(|x| x.unwrap()));
-			acc_point = Some(AssignedPoint::new(acc_x_integer, acc_y_integer));
-		} else {
-			let acc_x_integer = AssignedInteger::new(
-				aux_init_plus_scalar.x.integer.clone(),
-				acc_x.map(|x| x.unwrap()),
-			);
-			let acc_y_integer = AssignedInteger::new(
-				aux_init_plus_scalar.y.integer.clone(),
-				acc_y.map(|x| x.unwrap()),
-			);
-			acc_point = Some(AssignedPoint::new(acc_x_integer, acc_y_integer));
-		}
-		for i in 0..NUM_LIMBS {
-			// carry_x
-			let select = SelectChipset::new(
-				bits[1].clone(),
-				aux_init_plus_scalar.x.limbs[i].clone(),
-				self.aux_init.x.limbs[i].clone(),
-			);
-			carry_x[i] =
-				Some(select.synthesize(&common, &config.main, layouter.namespace(|| "carry_x"))?);
+		let carry_point_chip = EccTableSelectChipset::new(
+			bits[1].clone(),
+			scalar_bits[1],
+			aux_init_plus_scalar.clone(),
+			self.aux_init.clone(),
+		);
+		let carry_point = carry_point_chip.synthesize(
+			common,
+			&config.table_select,
+			layouter.namespace(|| "carry_select"),
+		)?;
 
-			// carry_y
-			let select = SelectChipset::new(
-				bits[1].clone(),
-				aux_init_plus_scalar.y.limbs[i].clone(),
-				self.aux_init.y.limbs[i].clone(),
-			);
-			carry_y[i] =
-				Some(select.synthesize(&common, &config.main, layouter.namespace(|| "carry_y"))?);
-		}
-		if scalar_bits[1] == N::zero() {
-			let carry_x_integer = AssignedInteger::new(
-				self.aux_init.x.integer.clone(),
-				carry_x.clone().map(|x| x.unwrap()),
-			);
-			let carry_y_integer = AssignedInteger::new(
-				self.aux_init.y.integer.clone(),
-				carry_y.clone().map(|x| x.unwrap()),
-			);
-			carry_point = Some(AssignedPoint::new(carry_x_integer, carry_y_integer));
-		} else {
-			let carry_x_integer = AssignedInteger::new(
-				aux_init_plus_scalar.x.integer.clone(),
-				carry_x.clone().map(|x| x.unwrap()),
-			);
-			let carry_y_integer = AssignedInteger::new(
-				aux_init_plus_scalar.y.integer.clone(),
-				carry_y.clone().map(|x| x.unwrap()),
-			);
-			carry_point = Some(AssignedPoint::new(carry_x_integer, carry_y_integer));
-		}
-
-		let acc_double_chip = EccDoubleChipset::new(acc_point.unwrap());
-		acc_point = Some(acc_double_chip.synthesize(
+		let acc_double_chip = EccDoubleChipset::new(acc_point);
+		acc_point = acc_double_chip.synthesize(
 			common,
 			&config.double,
 			layouter.namespace(|| "acc_double"),
-		)?);
-		let acc_add_chip = EccAddChipset::new(acc_point.unwrap(), carry_point.unwrap());
+		)?;
+		let acc_add_chip = EccAddChipset::new(acc_point, carry_point);
 		acc_point =
-			Some(acc_add_chip.synthesize(common, &config.add, layouter.namespace(|| "acc_add"))?);
+			acc_add_chip.synthesize(common, &config.add, layouter.namespace(|| "acc_add"))?;
 
 		for i in 2..bits.len() {
-			for j in 0..NUM_LIMBS {
-				// carry_x
-				let select = SelectChipset::new(
-					bits[i].clone(),
-					aux_init_plus_scalar.x.limbs[j].clone(),
-					self.aux_init.x.limbs[j].clone(),
-				);
-				carry_x[j] = Some(select.synthesize(
-					&common,
-					&config.main,
-					layouter.namespace(|| "carry_x"),
-				)?);
-
-				// carry_y
-				let select = SelectChipset::new(
-					bits[i].clone(),
-					aux_init_plus_scalar.y.limbs[j].clone(),
-					self.aux_init.y.limbs[j].clone(),
-				);
-				carry_y[j] = Some(select.synthesize(
-					&common,
-					&config.main,
-					layouter.namespace(|| "carry_y"),
-				)?);
-			}
-			if scalar_bits[i] == N::zero() {
-				let carry_x_integer = AssignedInteger::new(
-					self.aux_init.x.integer.clone(),
-					carry_x.clone().map(|x| x.unwrap()),
-				);
-				let carry_y_integer = AssignedInteger::new(
-					self.aux_init.y.integer.clone(),
-					carry_y.clone().map(|x| x.unwrap()),
-				);
-				carry_point = Some(AssignedPoint::new(carry_x_integer, carry_y_integer));
-				let acc_ladder_chip =
-					EccUnreducedLadderChipset::new(acc_point.unwrap(), carry_point.unwrap());
-				acc_point = Some(acc_ladder_chip.synthesize(
-					common,
-					&config.ladder,
-					layouter.namespace(|| "acc_ladder"),
-				)?);
-			} else {
-				let carry_x_integer = AssignedInteger::new(
-					aux_init_plus_scalar.x.integer.clone(),
-					carry_x.clone().map(|x| x.unwrap()),
-				);
-				let carry_y_integer = AssignedInteger::new(
-					aux_init_plus_scalar.y.integer.clone(),
-					carry_y.clone().map(|x| x.unwrap()),
-				);
-				carry_point = Some(AssignedPoint::new(carry_x_integer, carry_y_integer));
-				let acc_ladder_chip =
-					EccUnreducedLadderChipset::new(acc_point.unwrap(), carry_point.unwrap());
-				acc_point = Some(acc_ladder_chip.synthesize(
-					common,
-					&config.ladder,
-					layouter.namespace(|| "acc_ladder"),
-				)?);
-			}
+			let carry_point_chip = EccTableSelectChipset::new(
+				bits[i].clone(),
+				scalar_bits[i],
+				aux_init_plus_scalar.clone(),
+				self.aux_init.clone(),
+			);
+			let carry_point = carry_point_chip.synthesize(
+				common,
+				&config.table_select,
+				layouter.namespace(|| "carry_select"),
+			)?;
+			let acc_ladder_chip = EccUnreducedLadderChipset::new(acc_point, carry_point);
+			acc_point = acc_ladder_chip.synthesize(
+				common,
+				&config.ladder,
+				layouter.namespace(|| "acc_ladder"),
+			)?;
 		}
 
-		let acc_add_chip = EccAddChipset::new(acc_point.unwrap(), self.aux_fin);
-		acc_point = Some(acc_add_chip.synthesize(
+		let acc_add_chip = EccAddChipset::new(acc_point, self.aux_fin);
+		acc_point = acc_add_chip.synthesize(
 			common,
 			&config.add,
 			layouter.namespace(|| "acc_add_aux_fin"),
-		)?);
+		)?;
 
-		Ok(acc_point.unwrap())
+		Ok(acc_point)
 	}
 }
 
@@ -834,7 +833,8 @@ where
 mod test {
 	use super::{
 		AssignedPoint, EccAddChipset, EccAddConfig, EccDoubleChipset, EccDoubleConfig,
-		EccMulChipset, EccMulConfig, EccUnreducedLadderChipset, EccUnreducedLadderConfig,
+		EccMulChipset, EccMulConfig, EccTableSelectConfig, EccUnreducedLadderChipset,
+		EccUnreducedLadderConfig,
 	};
 	use crate::{
 		ecc::native::EcPoint,
@@ -942,12 +942,14 @@ mod test {
 				integer_div_selector,
 			);
 
+			let ecc_table_select = EccTableSelectConfig::new(main);
+
 			let ecc_mul = EccMulConfig::new(
 				ecc_ladder.clone(),
 				ecc_add.clone(),
 				ecc_double.clone(),
+				ecc_table_select,
 				bits2num_selector,
-				main,
 			);
 
 			TestConfig { common, ecc_add, ecc_double, ecc_ladder, ecc_mul }

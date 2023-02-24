@@ -1,7 +1,6 @@
 use super::rns::{compose_big, decompose_big, fe_to_big, RnsParams};
 use halo2::arithmetic::FieldExt;
 use num_bigint::BigUint;
-use num_integer::Integer as BigI;
 use num_traits::{One, Zero};
 use std::marker::PhantomData;
 
