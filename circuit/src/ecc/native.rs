@@ -13,11 +13,14 @@
 // r_x = m_1 * m_1 - p_x - f
 // r_y = m_1 * (r_x - p_x) - p_y
 
-use crate::integer::{native::Integer, rns::RnsParams};
-use halo2::arithmetic::FieldExt;
+use crate::{
+	gadgets::bits2num::to_bits,
+	integer::{native::Integer, rns::RnsParams},
+};
+use halo2::{self, arithmetic::FieldExt};
 
 /// Structure for the EcPoint
-#[derive(Clone, Debug)]
+#[derive(Clone, Default, Debug, PartialEq)]
 pub struct EcPoint<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
 where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
@@ -48,6 +51,29 @@ where
 	/// Create a new object with x = 1 and y = 1
 	pub fn one() -> Self {
 		Self::new(Integer::one(), Integer::one())
+	}
+
+	/// Selection function for the table
+	fn select(bit: bool, table: [Self; 2]) -> Self {
+		if bit {
+			table[1].clone()
+		} else {
+			table[0].clone()
+		}
+	}
+
+	/// AuxInit
+	pub fn to_add() -> Self {
+		let x_limbs = P::to_add_x();
+		let y_limbs = P::to_add_y();
+		Self::new(Integer::from_limbs(x_limbs), Integer::from_limbs(y_limbs))
+	}
+
+	/// AuxFin
+	pub fn to_sub() -> Self {
+		let x_limbs = P::to_sub_x();
+		let y_limbs = P::to_sub_y();
+		Self::new(Integer::from_limbs(x_limbs), Integer::from_limbs(y_limbs))
 	}
 
 	/// Add one point to another
@@ -125,38 +151,32 @@ where
 		Self { x: r_x.result, y: r_y.result }
 	}
 
-	/// Scalar multiplication for given point
+	/// Scalar multiplication for given point with using ladder
 	pub fn mul_scalar(&self, le_bytes: [u8; 32]) -> Self {
-		let mut r = Self::zero();
-		let mut exp: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P> = self.clone();
+		let aux_init = Self::to_add();
+		let exp: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P> = self.clone();
 
-		// Big Endian vs Little Endian
-		let bits = le_bytes.map(|byte| {
-			let mut byte_bits = [false; 8];
-			for i in (0..8).rev() {
-				byte_bits[i] = (byte >> i) & 1u8 != 0
-			}
-			byte_bits
-		});
-		let mut flag = true;
-		// Double and Add operation
-		for bit in bits.flatten() {
-			if *bit {
-				// Addition operation with zero is not working for the add() function because
-				// zero + random value breaks
-				// the algorithm. (Two operands must be distinct and neither of them can be
-				// point at infinity. Otherwise the function returns an erroneous point.) So,
-				// just for the first iteration value assigned manually.
-				if flag {
-					r = exp.clone();
-					flag = false;
-				} else {
-					r = r.add(&exp.clone());
-				}
-			}
-			exp = exp.double();
+		// Converts given input to its bit by Scalar Field's bit size
+		let mut bits = to_bits::<254>(le_bytes);
+		bits.reverse();
+
+		let table = [aux_init.clone(), exp.clone().add(&aux_init)];
+		let mut acc = Self::select(bits[0], table.clone());
+
+		// To avoid P_0 == P_1
+		acc = acc.double();
+		acc = acc.add(&Self::select(bits[1], table.clone()));
+
+		// Double and Add operation with ladder
+		for bit in &bits[2..] {
+			let item = Self::select(*bit, table.clone());
+			acc = acc.ladder(&item);
 		}
-		r
+
+		let aux_fin = Self::to_sub();
+		acc = acc.add(&aux_fin);
+
+		acc
 	}
 
 	/// Check if two points are equal
@@ -183,6 +203,7 @@ mod test {
 
 	#[test]
 	fn should_add_two_points() {
+		// ECC Add test
 		let rng = &mut thread_rng();
 
 		let a = G1Affine::random(rng.clone());
@@ -209,6 +230,7 @@ mod test {
 
 	#[test]
 	fn should_double_point() {
+		// ECC Double test
 		let rng = &mut thread_rng();
 
 		let a = G1Affine::random(rng.clone());
@@ -229,6 +251,7 @@ mod test {
 
 	#[test]
 	fn should_ladder() {
+		// ECC Ladder test
 		let rng = &mut thread_rng();
 
 		let a = G1Affine::random(rng.clone());
@@ -255,6 +278,7 @@ mod test {
 
 	#[test]
 	fn should_mul_scalar() {
+		// ECC Mul Scalar with Ladder test
 		let rng = &mut thread_rng();
 		let a = G1Affine::random(rng.clone());
 		let scalar = Fr::random(rng);
@@ -265,8 +289,8 @@ mod test {
 
 		let a_x_w = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_x_bn);
 		let a_y_w = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_y_bn);
-
 		let a_w = EcPoint::new(a_x_w, a_y_w);
+
 		let c_w = a_w.mul_scalar(scalar.to_bytes());
 
 		assert_eq!(c.x, big_to_fe(c_w.x.value()));

@@ -9,8 +9,14 @@ edition = "2021"
 plotters = { version = "0.3.0" }
 rand = "0.8"
 hex = { version = "0.4", default-features = false, features = ["alloc"] }
-halo2 = { package = "halo2_proofs", git = "https://github.com/privacy-scaling-explorations/halo2", tag = "v2022_10_22" }
+halo2 = { package = "halo2_proofs", git = "https://github.com/privacy-scaling-explorations/halo2", tag = "v2023_02_02" }
 blake = "2.0.2"
+itertools = "0.10.3"
 num-bigint = {version = "0.2.2", features = ["rand"]}
 num-integer = "0.1.45"
 num-traits = "0.2"
+
+[dependencies.snark-verifier]
+git = "https://github.com/privacy-scaling-explorations/snark-verifier"
+default-features = false
+features = ["loader_evm", "system_halo2"]

@@ -230,8 +230,8 @@ impl<
 	fn synthesize(
 		&self, config: EigenTrustConfig, mut layouter: impl Layouter<Scalar>,
 	) -> Result<(), Error> {
-		let (zero, pk_x, pk_y, big_r_x, big_r_y, s, scale, ops, init_score, passed_s) = layouter
-			.assign_region(
+		let (zero, pk_x, pk_y, big_r_x, big_r_y, s, scale, ops, init_score, total_score, passed_s) =
+			layouter.assign_region(
 				|| "temp",
 				|region: Region<'_, Scalar>| {
 					let mut ctx = RegionCtx::new(region, 0);
@@ -246,6 +246,11 @@ impl<
 					let assigned_initial_score = ctx.assign_from_constant(
 						config.common.advice[2],
 						Scalar::from_u128(INITIAL_SCORE),
+					)?;
+
+					let assigned_total_score = ctx.assign_from_constant(
+						config.common.advice[3],
+						Scalar::from_u128(INITIAL_SCORE * NUM_NEIGHBOURS as u128),
 					)?;
 
 					// Move to the next row
@@ -335,7 +340,8 @@ impl<
 
 					Ok((
 						zero, assigned_pk_x, assigned_pk_y, assigned_big_r_x, assigned_big_r_y,
-						assigned_s, scale, assigned_ops, assigned_initial_score, passed_s,
+						assigned_s, scale, assigned_ops, assigned_initial_score,
+						assigned_total_score, passed_s,
 					))
 				},
 			)?;
@@ -433,6 +439,16 @@ impl<
 			passed_scaled.push(res);
 		}
 
+		let mut sum = zero.clone();
+		for i in 0..NUM_NEIGHBOURS {
+			let add_chipset = AddChipset::new(sum.clone(), passed_s[i].clone());
+			sum = add_chipset.synthesize(
+				&config.common,
+				&config.main,
+				layouter.namespace(|| "s_sum"),
+			)?;
+		}
+
 		layouter.assign_region(
 			|| "unscaled_res",
 			|region: Region<'_, Scalar>| {
@@ -444,6 +460,10 @@ impl<
 					ctx.constrain_equal(passed_s, s)?;
 					ctx.next();
 				}
+				// Constrain the total reputation in the set
+				let sum = ctx.copy_assign(config.common.advice[0], sum.clone())?;
+				let total_score = ctx.copy_assign(config.common.advice[1], total_score.clone())?;
+				ctx.constrain_equal(sum, total_score)?;
 				Ok(())
 			},
 		)?;
@@ -506,6 +526,7 @@ mod test {
 	use crate::{
 		eddsa::native::{sign, SecretKey},
 		utils::{generate_params, prove_and_verify},
+		verifier::{evm_verify, gen_evm_verifier, gen_pk, gen_proof, gen_srs},
 	};
 	use halo2::{dev::MockProver, halo2curves::bn256::Bn256};
 	use rand::thread_rng;
@@ -568,7 +589,6 @@ mod test {
 			.map(|((sk, pk), msg)| sign(&sk, &pk, msg))
 			.collect();
 
-		let k = 14;
 		let et = EigenTrust::<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, SCALE>::new(
 			pub_keys.to_vec(),
 			signatures,
@@ -576,6 +596,7 @@ mod test {
 			messages,
 		);
 
+		let k = 14;
 		let prover = match MockProver::<Scalar>::run(k, &et, vec![res.to_vec()]) {
 			Ok(prover) => prover,
 			Err(e) => panic!("{}", e),
@@ -642,7 +663,6 @@ mod test {
 			.map(|((sk, pk), msg)| sign(&sk, &pk, msg))
 			.collect();
 
-		let k = 14;
 		let et = EigenTrust::<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, SCALE>::new(
 			pub_keys.to_vec(),
 			signatures,
@@ -650,9 +670,80 @@ mod test {
 			messages,
 		);
 
+		let k = 14;
 		let rng = &mut rand::thread_rng();
 		let params = generate_params(k);
 		let res = prove_and_verify::<Bn256, _, _>(params, et, &[&res], rng).unwrap();
 		assert!(res);
+	}
+
+	#[test]
+	fn test_closed_graph_circut_evm() {
+		let s = vec![Scalar::from_u128(INITIAL_SCORE); NUM_NEIGHBOURS];
+		let ops: Vec<Vec<Scalar>> = vec![
+			vec![0, 200, 300, 500, 0],
+			vec![100, 0, 100, 100, 700],
+			vec![400, 100, 0, 200, 300],
+			vec![100, 100, 700, 0, 100],
+			vec![300, 100, 400, 200, 0],
+		]
+		.into_iter()
+		.map(|arr| arr.into_iter().map(|x| Scalar::from_u128(x)).collect())
+		.collect();
+		let res = native::<Scalar, NUM_NEIGHBOURS, NUM_ITER, SCALE>(s, ops.clone());
+
+		let rng = &mut thread_rng();
+		let secret_keys = [(); NUM_NEIGHBOURS].map(|_| SecretKey::random(rng));
+		let pub_keys = secret_keys.clone().map(|x| x.public());
+
+		let pk_x = pub_keys.clone().map(|pk| pk.0.x);
+		let pk_y = pub_keys.clone().map(|pk| pk.0.y);
+		let mut sponge = PoseidonNativeSponge::new();
+		sponge.update(&pk_x);
+		sponge.update(&pk_y);
+		let keys_message_hash = sponge.squeeze();
+
+		let messages: Vec<Scalar> = ops
+			.iter()
+			.map(|scores| {
+				let mut sponge = PoseidonNativeSponge::new();
+				sponge.update(&scores);
+				let scores_message_hash = sponge.squeeze();
+
+				let m_inputs = [
+					keys_message_hash,
+					scores_message_hash,
+					Scalar::zero(),
+					Scalar::zero(),
+					Scalar::zero(),
+				];
+				let poseidon = PoseidonNativeHasher::new(m_inputs);
+				let res = poseidon.permute()[0];
+				res
+			})
+			.collect();
+
+		let signatures: Vec<Signature> = secret_keys
+			.into_iter()
+			.zip(pub_keys.clone())
+			.zip(messages.clone())
+			.map(|((sk, pk), msg)| sign(&sk, &pk, msg))
+			.collect();
+
+		let et = EigenTrust::<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, SCALE>::new(
+			pub_keys.to_vec(),
+			signatures,
+			ops,
+			messages,
+		);
+
+		let k = 14;
+		let params = gen_srs(k);
+		let pk = gen_pk(&params, &et);
+		let deployment_code = gen_evm_verifier(&params, pk.get_vk(), vec![NUM_NEIGHBOURS]);
+		dbg!(deployment_code.len());
+
+		let proof = gen_proof(&params, &pk, et.clone(), vec![res.clone()]);
+		evm_verify(deployment_code, vec![res], proof);
 	}
 }
