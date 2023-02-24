@@ -14,12 +14,14 @@ use halo2::{
 use itertools::Itertools;
 use rand::rngs::OsRng;
 use snark_verifier::{
-	loader::evm::{self, encode_calldata, Address, EvmLoader, ExecutorBuilder},
+	loader::evm::{self, Address, EvmLoader, ExecutorBuilder},
 	pcs::kzg::{Gwc19, KzgAs},
 	system::halo2::{compile, transcript::evm::EvmTranscript, Config},
 	verifier::{self, SnarkVerifier},
 };
 use std::rc::Rc;
+
+pub use snark_verifier::loader::evm::encode_calldata;
 
 /// Halo2 loader
 pub mod loader;

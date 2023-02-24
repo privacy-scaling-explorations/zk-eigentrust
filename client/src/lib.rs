@@ -28,6 +28,7 @@ pub struct ClientConfig {
 	pub ops: [u128; NUM_NEIGHBOURS],
 	pub secret_key: [String; 2],
 	pub as_address: String,
+	pub et_verifier_address: String,
 	pub mnemonic: String,
 	pub ethereum_node_url: String,
 }
@@ -115,7 +116,10 @@ impl EigenTrustClient {
 
 #[cfg(test)]
 mod test {
-	use crate::{utils::deploy, ClientConfig, EigenTrustClient};
+	use crate::{
+		utils::{deploy_as, deploy_et_verifier},
+		ClientConfig, EigenTrustClient,
+	};
 	use eigen_trust_protocol::manager::NUM_NEIGHBOURS;
 	use ethers::utils::Anvil;
 
@@ -124,8 +128,10 @@ mod test {
 		let anvil = Anvil::new().spawn();
 		let mnemonic = "test test test test test test test test test test test junk".to_string();
 		let node_url = anvil.endpoint();
-		let address = deploy(&mnemonic, &node_url).await.unwrap();
-		let address_string = format!("{:?}", address);
+		let as_address = deploy_as(&mnemonic, &node_url).await.unwrap();
+		let et_verifier_address = deploy_et_verifier(&mnemonic, &node_url).await.unwrap();
+		let as_address_string = format!("{:?}", as_address);
+		let et_verifier_address_string = format!("{:?}", et_verifier_address);
 
 		let dummy_user = [
 			"Alice".to_string(),
@@ -140,7 +146,8 @@ mod test {
 				"2L9bbXNEayuRMMbrWFynPtgkrXH1iBdfryRH9Soa8M67".to_string(),
 				"9rBeBVtbN2MkHDTpeAouqkMWNFJC6Bxb6bXH9jUueWaF".to_string(),
 			],
-			as_address: address_string,
+			as_address: as_address_string,
+			et_verifier_address: et_verifier_address_string,
 			mnemonic,
 			ethereum_node_url: node_url,
 		};

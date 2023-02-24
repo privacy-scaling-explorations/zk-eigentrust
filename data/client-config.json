@@ -11,6 +11,7 @@
         "9rBeBVtbN2MkHDTpeAouqkMWNFJC6Bxb6bXH9jUueWaF"
     ],
     "as_address": "0x851356ae760d987e095750cceb3bc6014560891c",
+    "et_verifier_address": "0x851356ae760d987e095750cceb3bc6014560891c",
     "mnemonic": "test test test test test test test test test test test junk",
     "ethereum_node_url": "http://localhost:8545"
 }

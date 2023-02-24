@@ -1,7 +1,6 @@
 use clap::{Args, Parser, Subcommand};
-use csv::Reader as CsvReader;
 use eigen_trust_client::{
-	utils::{compile, deploy},
+	utils::{compile, deploy_as, deploy_et_verifier, read_csv_file, write_json_file},
 	ClientConfig, EigenTrustClient,
 };
 use ethers::{
@@ -10,29 +9,7 @@ use ethers::{
 	signers::coins_bip39::{English, Mnemonic},
 	solc::utils::read_json_file,
 };
-use serde::{de::DeserializeOwned, Serialize};
-use std::{env, fs, io::Error, path::Path, str::FromStr};
-
-/// Reads the json file and deserialize it into the provided type
-pub fn read_csv_file<T: DeserializeOwned>(path: impl AsRef<Path>) -> Result<Vec<T>, Error> {
-	let path = path.as_ref();
-	let file = std::fs::File::open(path)?;
-	let file = std::io::BufReader::new(file);
-	let mut reader = CsvReader::from_reader(file);
-	let mut records = Vec::new();
-	for result in reader.deserialize() {
-		let record: T = result?;
-		records.push(record);
-	}
-	Ok(records)
-}
-
-/// Reads the json file and deserialize it into the provided type
-pub fn write_json_file<T: Serialize>(json: T, path: impl AsRef<Path>) -> Result<(), Error> {
-	let bytes = serde_json::to_vec(&json)?;
-	fs::write(path, bytes)?;
-	Ok(())
-}
+use std::{env, str::FromStr};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -45,7 +22,8 @@ struct Cli {
 enum Mode {
 	Show,
 	Compile,
-	Deploy,
+	DeployAs,
+	DeployEtVerifier,
 	Attest,
 	Update(UpdateData),
 }
@@ -78,8 +56,17 @@ async fn main() {
 			compile();
 			println!("Finished compiling!");
 		},
-		Mode::Deploy => {
-			let deploy_res = deploy(&config.mnemonic, &config.ethereum_node_url).await;
+		Mode::DeployAs => {
+			let deploy_res = deploy_as(&config.mnemonic, &config.ethereum_node_url).await;
+			if let Err(e) = deploy_res {
+				eprintln!("Failed to deploy the AttestationStation contract: {:?}", e);
+				return;
+			}
+			let address = deploy_res.unwrap();
+			println!("AttestationStation contract deployed. Address: {}", address);
+		},
+		Mode::DeployEtVerifier => {
+			let deploy_res = deploy_et_verifier(&config.mnemonic, &config.ethereum_node_url).await;
 			if let Err(e) = deploy_res {
 				eprintln!("Failed to deploy the AttestationStation contract: {:?}", e);
 				return;
