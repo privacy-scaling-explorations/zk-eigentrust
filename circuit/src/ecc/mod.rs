@@ -667,19 +667,18 @@ where
 				Some(select.synthesize(&common, &config.main, layouter.namespace(|| "acc_y"))?);
 		}
 
-		let mut selected_point: Option<AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>> = None;
-		if assigned_as_bool(self.bit) {
+		let selected_point = if assigned_as_bool(self.bit) {
 			let selected_x_integer =
 				AssignedInteger::new(self.p.x.integer.clone(), selected_x.map(|x| x.unwrap()));
 			let selected_y_integer =
 				AssignedInteger::new(self.p.y.integer.clone(), selected_y.map(|x| x.unwrap()));
-			selected_point = Some(AssignedPoint::new(selected_x_integer, selected_y_integer));
+			AssignedPoint::new(selected_x_integer, selected_y_integer)
 		} else {
 			let selected_x_integer =
 				AssignedInteger::new(self.q.x.integer.clone(), selected_x.map(|x| x.unwrap()));
 			let selected_y_integer =
 				AssignedInteger::new(self.q.y.integer.clone(), selected_y.map(|x| x.unwrap()));
-			selected_point = Some(AssignedPoint::new(selected_x_integer, selected_y_integer));
+			AssignedPoint::new(selected_x_integer, selected_y_integer)
 		}
 
 		Ok(selected_point.unwrap())
