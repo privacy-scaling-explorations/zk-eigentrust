@@ -679,9 +679,9 @@ where
 			let selected_y_integer =
 				AssignedInteger::new(self.q.y.integer.clone(), selected_y.map(|x| x.unwrap()));
 			AssignedPoint::new(selected_x_integer, selected_y_integer)
-		}
+		};
 
-		Ok(selected_point.unwrap())
+		Ok(selected_point)
 	}
 }
 
