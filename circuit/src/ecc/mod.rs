@@ -2,7 +2,6 @@
 pub mod native;
 
 use crate::{
-	edwards::assigned_as_bool,
 	gadgets::{
 		bits2num::Bits2NumChip,
 		main::{MainConfig, SelectChipset},
@@ -11,6 +10,7 @@ use crate::{
 		rns::RnsParams, AssignedInteger, IntegerAddChip, IntegerDivChip, IntegerMulChip,
 		IntegerReduceChip, IntegerSubChip,
 	},
+	utils::assigned_as_bool,
 	Chip, Chipset, CommonConfig,
 };
 use halo2::{
@@ -667,7 +667,7 @@ where
 				Some(select.synthesize(&common, &config.main, layouter.namespace(|| "acc_y"))?);
 		}
 
-		let selected_point = if assigned_as_bool(self.bit) {
+		let selected_point = if assigned_as_bool::<N>(self.bit) {
 			let selected_x_integer =
 				AssignedInteger::new(self.p.x.integer.clone(), selected_x.map(|x| x.unwrap()));
 			let selected_y_integer =
