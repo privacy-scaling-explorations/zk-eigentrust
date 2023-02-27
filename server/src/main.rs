@@ -32,7 +32,7 @@ use eigen_trust_circuit::{
 	},
 	utils::{keygen, to_short},
 };
-use eigen_trust_protocol::{
+use eigen_trust_server::{
 	epoch::Epoch,
 	error::EigenError,
 	ethereum::{setup_client, AttestationCreatedFilter},

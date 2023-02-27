@@ -8,7 +8,7 @@ use eigen_trust_circuit::{
 	halo2::halo2curves::{bn256::Fr as Scalar, FieldExt},
 	utils::to_short,
 };
-use eigen_trust_protocol::manager::{
+use eigen_trust_server::manager::{
 	attestation::{Attestation, AttestationData},
 	NUM_NEIGHBOURS,
 };
