@@ -178,8 +178,8 @@ impl<F: FieldExt> Chipset<F> for LessEqualChipset<F> {
 mod test {
 	use super::*;
 	use crate::{
-		gadgets::{bits2num::to_bits, main::MainChip},
-		utils::{generate_params, prove_and_verify},
+		gadgets::main::MainChip,
+		utils::{generate_params, prove_and_verify, to_bits},
 	};
 	use halo2::{
 		circuit::{SimpleFloorPlanner, Value},

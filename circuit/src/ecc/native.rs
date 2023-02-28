@@ -14,8 +14,8 @@
 // r_y = m_1 * (r_x - p_x) - p_y
 
 use crate::{
-	gadgets::bits2num::to_bits,
 	integer::{native::Integer, rns::RnsParams},
+	utils::to_bits,
 };
 use halo2::{self, arithmetic::FieldExt};
 
