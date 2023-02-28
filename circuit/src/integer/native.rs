@@ -267,7 +267,7 @@ where
 		let p_in_n = P::wrong_modulus_in_native_modulus();
 		let a = self.value();
 		let b = other.value();
-		let b_invert = P::invert(other.clone()).unwrap();
+		let b_invert = P::invert(other.clone()).unwrap().value();
 		let (q, res) = P::construct_div_qr(a, b, b_invert);
 
 		// Calculate the intermediate values for the ReductionWitness.

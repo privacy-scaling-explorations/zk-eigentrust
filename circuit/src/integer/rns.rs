@@ -107,7 +107,7 @@ pub trait RnsParams<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_
 	fn construct_mul_qr(a_bn: BigUint, b_bn: BigUint) -> ([N; NUM_LIMBS], [N; NUM_LIMBS]);
 	/// Returns `quotient` and `remainder` for the div operation.
 	fn construct_div_qr(
-		a_bn: BigUint, b_bn: BigUint, b_invert: Integer<W, N, NUM_LIMBS, NUM_BITS, Self>,
+		a_bn: BigUint, b_bn: BigUint, b_invert: BigUint,
 	) -> ([N; NUM_LIMBS], [N; NUM_LIMBS]);
 	/// Constraint for the binary part of `Chinese Remainder Theorem`.
 	fn constrain_binary_crt(t: [N; NUM_LIMBS], result: [N; NUM_LIMBS], residues: Vec<N>) -> bool;
@@ -317,12 +317,10 @@ impl RnsParams<Fq, Fr, 4, 68> for Bn256_4_68 {
 		(q, result)
 	}
 
-	fn construct_div_qr(
-		a_bn: BigUint, b_bn: BigUint, b_invert: Integer<Fq, Fr, 4, 68, Self>,
-	) -> ([Fr; 4], [Fr; 4]) {
-		let should_be_one = b_invert.value() * b_bn.clone() % Self::wrong_modulus();
+	fn construct_div_qr(a_bn: BigUint, b_bn: BigUint, b_invert: BigUint) -> ([Fr; 4], [Fr; 4]) {
+		let should_be_one = b_invert.clone() * b_bn.clone() % Self::wrong_modulus();
 		assert!(should_be_one == BigUint::one());
-		let result = b_invert.value() * a_bn.clone() % Self::wrong_modulus();
+		let result = b_invert * a_bn.clone() % Self::wrong_modulus();
 		let (quotient, reduced_self) = (result.clone() * b_bn).div_rem(&Self::wrong_modulus());
 		let (k, must_be_zero) = (a_bn - reduced_self).div_rem(&Self::wrong_modulus());
 		assert_eq!(must_be_zero, BigUint::zero());
