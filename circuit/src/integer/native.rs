@@ -267,8 +267,7 @@ where
 		let p_in_n = P::wrong_modulus_in_native_modulus();
 		let a = self.value();
 		let b = other.value();
-		let b_invert = P::invert(other.clone()).unwrap();
-		let (q, res) = P::construct_div_qr(a, b, b_invert);
+		let (q, res) = P::construct_div_qr(a, b);
 
 		// Calculate the intermediate values for the ReductionWitness.
 		let mut t: [N; NUM_LIMBS] = [N::zero(); NUM_LIMBS];
