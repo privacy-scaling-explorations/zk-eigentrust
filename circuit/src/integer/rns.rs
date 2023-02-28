@@ -106,9 +106,7 @@ pub trait RnsParams<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_
 	/// Returns `quotient` and `remainder` for the mul operation.
 	fn construct_mul_qr(a_bn: BigUint, b_bn: BigUint) -> ([N; NUM_LIMBS], [N; NUM_LIMBS]);
 	/// Returns `quotient` and `remainder` for the div operation.
-	fn construct_div_qr(
-		a_bn: BigUint, b_bn: BigUint, b_invert: BigUint,
-	) -> ([N; NUM_LIMBS], [N; NUM_LIMBS]);
+	fn construct_div_qr(a_bn: BigUint, b_bn: BigUint) -> ([N; NUM_LIMBS], [N; NUM_LIMBS]);
 	/// Constraint for the binary part of `Chinese Remainder Theorem`.
 	fn constrain_binary_crt(t: [N; NUM_LIMBS], result: [N; NUM_LIMBS], residues: Vec<N>) -> bool;
 	/// Constraint for the binary part of `Chinese Remainder Theorem` using
@@ -122,9 +120,7 @@ pub trait RnsParams<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_
 	/// Composes integer limbs as Expressions into single Expression value.
 	fn compose_exp(input: [Expression<N>; NUM_LIMBS]) -> Expression<N>;
 	/// Inverts given Integer.
-	fn invert(
-		input: Integer<W, N, NUM_LIMBS, NUM_BITS, Self>,
-	) -> Option<Integer<W, N, NUM_LIMBS, NUM_BITS, Self>>;
+	fn invert(input: BigUint) -> Option<Integer<W, N, NUM_LIMBS, NUM_BITS, Self>>;
 }
 
 /// Returns modulus of the [`FieldExt`] as [`BigUint`].
@@ -317,7 +313,8 @@ impl RnsParams<Fq, Fr, 4, 68> for Bn256_4_68 {
 		(q, result)
 	}
 
-	fn construct_div_qr(a_bn: BigUint, b_bn: BigUint, b_invert: BigUint) -> ([Fr; 4], [Fr; 4]) {
+	fn construct_div_qr(a_bn: BigUint, b_bn: BigUint) -> ([Fr; 4], [Fr; 4]) {
+		let b_invert = Self::invert(b_bn.clone()).unwrap().value();
 		let should_be_one = b_invert.clone() * b_bn.clone() % Self::wrong_modulus();
 		assert!(should_be_one == BigUint::one());
 		let result = b_invert * a_bn.clone() % Self::wrong_modulus();
@@ -387,14 +384,11 @@ impl RnsParams<Fq, Fr, 4, 68> for Bn256_4_68 {
 		sum
 	}
 
-	// TODO: Move outside Rns -- Use just BigUint as input and output
-	/// Computes the inverse of the [`Integer`] as an element of the Wrong
+	// TODO: Move outside Rns -- Use just BigUint as output
+	/// Computes the inverse of the [`BigUint`] as an element of the Wrong
 	/// field. Returns `None` if the value cannot be inverted.
-	fn invert(
-		input: Integer<Fq, Fr, 4, 68, Bn256_4_68>,
-	) -> Option<Integer<Fq, Fr, 4, 68, Bn256_4_68>> {
-		let a_biguint = input.value();
-		let a_w = big_to_fe::<Fq>(a_biguint);
+	fn invert(input: BigUint) -> Option<Integer<Fq, Fr, 4, 68, Bn256_4_68>> {
+		let a_w = big_to_fe::<Fq>(input);
 		let inv_w = a_w.invert();
 		inv_w.map(|inv| Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(fe_to_big(inv))).into()
 	}
