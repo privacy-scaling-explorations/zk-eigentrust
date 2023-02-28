@@ -224,13 +224,13 @@ mod test {
 			IntoAffineChip, PointAddChip, ScalarMulChip, StrictScalarMulConfig,
 		},
 		gadgets::{
-			bits2num::{to_bits, Bits2NumChip},
+			bits2num::Bits2NumChip,
 			lt_eq::{LessEqualConfig, NShiftedChip, N_SHIFTED},
 			main::{MainChip, MainConfig},
 		},
 		params::poseidon_bn254_5x5::Params,
 		poseidon::{native::Poseidon, FullRoundChip, PartialRoundChip, PoseidonConfig},
-		utils::{generate_params, prove_and_verify},
+		utils::{generate_params, prove_and_verify, to_bits},
 		Chip, Chipset, CommonConfig, RegionCtx,
 	};
 	use halo2::{

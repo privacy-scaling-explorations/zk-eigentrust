@@ -2,6 +2,7 @@
 //! proofs, etc.
 
 use halo2::{
+	circuit::AssignedCell,
 	halo2curves::{
 		pairing::{Engine, MultiMillerLoop},
 		serde::SerdeObject,
@@ -27,6 +28,26 @@ use num_bigint::BigUint;
 use rand::Rng;
 use std::{fmt::Debug, fs::write, io::Read, time::Instant};
 
+/// Returns boolean value from the assigned cell value
+pub fn assigned_as_bool<F: FieldExt>(bit: AssignedCell<F, F>) -> bool {
+	let bit_value = bit.value();
+	let mut is_one = false;
+	bit_value.map(|f| {
+		is_one = F::one() == *f;
+		f
+	});
+	is_one
+}
+
+/// Converts given bytes to the bits.
+pub fn to_bits<const B: usize>(num: [u8; 32]) -> [bool; B] {
+	let mut bits = [false; B];
+	for i in 0..B {
+		bits[i] = num[i / 8] & (1 << (i % 8)) != 0;
+	}
+	bits
+}
+
 /// Convert bytes array to a wide representation of 64 bytes
 pub fn to_wide(b: &[u8]) -> [u8; 64] {
 	let mut bytes = [0u8; 64];
@@ -48,7 +69,7 @@ pub fn field_to_string<F: FieldExt>(f: &F) -> String {
 	bn_f.to_string()
 }
 
-/// Generate parameters with polynomial degere = `k`.
+/// Generate parameters with polynomial degree = `k`.
 pub fn generate_params<E: Engine + Debug>(k: u32) -> ParamsKZG<E>
 where
 	E::G1Affine: SerdeObject,

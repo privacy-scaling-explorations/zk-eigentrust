@@ -226,6 +226,8 @@ where
 	/// Make the circuit config.
 	fn configure(common: &CommonConfig, meta: &mut ConstraintSystem<N>) -> Selector {
 		let selector = meta.selector();
+		let p_in_n = P::wrong_modulus_in_native_modulus();
+
 		meta.create_gate("add", |v_cells| {
 			let mut t_exp = [(); NUM_LIMBS].map(|_| None);
 			let mut x_limbs_exp = [(); NUM_LIMBS].map(|_| None);
@@ -249,9 +251,12 @@ where
 			let y_limbs_exp = y_limbs_exp.map(|x| x.unwrap());
 			let result_exp = result_exp.map(|x| x.unwrap());
 
+			let add_q_exp = v_cells.query_advice(common.advice[NUM_LIMBS], Rotation::next());
+
 			let mut residues_exp = Vec::new();
 			for i in 0..NUM_LIMBS / 2 {
-				residues_exp.push(v_cells.query_advice(common.advice[i + NUM_LIMBS], Rotation(2)));
+				let residue = v_cells.query_advice(common.advice[i + NUM_LIMBS], Rotation(2));
+				residues_exp.push(residue);
 			}
 
 			let s = v_cells.query_selector(selector);
@@ -261,6 +266,7 @@ where
 				P::constrain_binary_crt_exp(t_exp, result_exp.clone(), residues_exp);
 			// NATIVE CONSTRAINTS
 			let native_constraint = P::compose_exp(x_limbs_exp) + P::compose_exp(y_limbs_exp)
+				- add_q_exp * p_in_n
 				- P::compose_exp(result_exp);
 			constraints.push(native_constraint);
 
