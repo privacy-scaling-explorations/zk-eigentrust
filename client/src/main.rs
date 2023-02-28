@@ -1,8 +1,11 @@
 use clap::{Args, Parser, Subcommand};
 use eigen_trust_client::{
-	utils::{compile, deploy_as, deploy_et_verifier, read_csv_file, write_json_file},
+	utils::{
+		call_et_verifier, compile, deploy_as, deploy_et_verifier, read_csv_file, write_json_file,
+	},
 	ClientConfig, EigenTrustClient,
 };
+use eigen_trust_server::manager::{Proof, ProofRaw};
 use ethers::{
 	abi::Address,
 	providers::Http,
@@ -26,6 +29,7 @@ enum Mode {
 	DeployEtVerifier,
 	Attest,
 	Update(UpdateData),
+	Prove,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Args)]
@@ -68,15 +72,25 @@ async fn main() {
 		Mode::DeployEtVerifier => {
 			let deploy_res = deploy_et_verifier(&config.mnemonic, &config.ethereum_node_url).await;
 			if let Err(e) = deploy_res {
-				eprintln!("Failed to deploy the AttestationStation contract: {:?}", e);
+				eprintln!("Failed to deploy the EigenTrustVerifier contract: {:?}", e);
 				return;
 			}
 			let address = deploy_res.unwrap();
-			println!("AttestationStation contract deployed. Address: {}", address);
+			println!("EigenTrustVerifier contract deployed. Address: {}", address);
 		},
 		Mode::Attest => {
 			let client = EigenTrustClient::new(config, user_secrets_raw);
 			client.attest().await.unwrap();
+		},
+		Mode::Prove => {
+			let et_verifier_address = Address::from_str(&config.et_verifier_address).unwrap();
+			let url = format!("{}/score", config.server_url);
+			let proof_raw: ProofRaw = reqwest::get(url).await.unwrap().json().await.unwrap();
+			let proof: Proof = proof_raw.into();
+			call_et_verifier(
+				&config.mnemonic, &config.ethereum_node_url, et_verifier_address, proof,
+			)
+			.await;
 		},
 		Mode::Update(data) => {
 			let UpdateData { name, score, sk, as_address, mnemonic, node_url } = data;

@@ -1,4 +1,6 @@
 use csv::Reader as CsvReader;
+use eigen_trust_circuit::{halo2::halo2curves::bn256::Fr as Scalar, verifier::encode_calldata};
+use eigen_trust_server::manager::Proof;
 use ethers::{
 	abi::Address,
 	middleware::SignerMiddleware,
@@ -6,7 +8,7 @@ use ethers::{
 	providers::{Http, Middleware, Provider},
 	signers::{coins_bip39::English, LocalWallet, MnemonicBuilder, Signer},
 	solc::Solc,
-	types::TransactionRequest,
+	types::{transaction::eip2718::TypedTransaction, TransactionRequest},
 };
 use serde::{de::DeserializeOwned, Serialize};
 use std::{
@@ -87,7 +89,25 @@ pub async fn deploy_et_verifier(
 
 	let res = tx.unwrap();
 	let rec = res.unwrap();
-	Ok(rec.contract_address.unwrap())
+	let addr = rec.contract_address.unwrap();
+	println!("Deployed contract address: {:?}", addr);
+	Ok(addr)
+}
+
+pub async fn call_et_verifier(
+	mnemonic_phrase: &str, node_url: &str, verifier_address: Address, proof: Proof,
+) {
+	let calldata = encode_calldata::<Scalar>(&[proof.pub_ins], &proof.proof);
+	let client = setup_client(mnemonic_phrase, node_url);
+	let code_res = client.get_code(verifier_address, None).await.unwrap();
+	println!("verifier_code_len: {}", code_res.len());
+	println!("verifier_addr: {:?}", verifier_address);
+
+	let tx = TransactionRequest::default().data(calldata).to(verifier_address);
+	let pen_tx = client.send_transaction(tx, None).await.unwrap();
+
+	let res = pen_tx.await.unwrap();
+	println!("{:#?}", res);
 }
 
 pub fn compile() {

@@ -12,7 +12,6 @@ use rand::thread_rng;
 use serde::Deserialize;
 use serde_json::to_string;
 use std::{
-	collections::HashMap,
 	env,
 	mem::drop,
 	net::SocketAddr,
@@ -26,11 +25,8 @@ use tokio::{
 
 use eigen_trust_circuit::{
 	circuit::EigenTrust,
-	halo2::{
-		halo2curves::{bn256::Fr as Scalar, group::ff::PrimeField},
-		poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
-	},
-	utils::{keygen, to_short},
+	halo2::poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
+	utils::keygen,
 };
 use eigen_trust_server::{
 	epoch::Epoch,
@@ -38,7 +34,7 @@ use eigen_trust_server::{
 	ethereum::{setup_client, AttestationCreatedFilter},
 	manager::{
 		attestation::{Attestation, AttestationData},
-		Manager, Proof, INITIAL_SCORE, NUM_ITER, NUM_NEIGHBOURS, SCALE,
+		Manager, ProofRaw, INITIAL_SCORE, NUM_ITER, NUM_NEIGHBOURS, SCALE,
 	},
 };
 
@@ -56,7 +52,7 @@ const INTERNAL_SERVER_ERROR: u16 = 500;
 
 #[derive(Debug)]
 enum ResponseBody {
-	Score(Proof),
+	Score(ProofRaw),
 	LockError,
 	InvalidQuery,
 	InvalidRequest,
@@ -70,49 +66,6 @@ impl ToString for ResponseBody {
 			ResponseBody::InvalidQuery => "InvalidQuery".to_string(),
 			ResponseBody::InvalidRequest => "InvalidRequest".to_string(),
 		}
-	}
-}
-
-struct Query {
-	pk: Scalar,
-	epoch: Epoch,
-}
-
-impl Query {
-	pub fn parse(query_string: &str) -> Option<Query> {
-		let parts: Vec<&str> = query_string.split("&").into_iter().collect();
-		if parts.len() != 2 {
-			return None;
-		}
-
-		let mut map = HashMap::new();
-		for part in parts {
-			let pair: Vec<&str> = part.split("=").into_iter().collect();
-			if pair.len() != 2 {
-				return None;
-			}
-			map.insert(pair[0], pair[1]);
-		}
-
-		let pk = map.get("pk");
-		let epoch = map.get("epoch");
-		if pk.is_none() || epoch.is_none() {
-			return None;
-		}
-
-		let pk_bytes = bs58::decode(pk.unwrap()).into_vec();
-		if pk_bytes.is_err() {
-			return None;
-		}
-		let pk_bytes = to_short(&pk_bytes.unwrap());
-		let pk_scalar = Scalar::from_repr(pk_bytes).unwrap();
-		let epoch_res: Result<u64, _> = epoch.unwrap().parse();
-		if epoch_res.is_err() {
-			return None;
-		}
-		let epoch = Epoch(epoch_res.unwrap());
-
-		Some(Query { pk: pk_scalar, epoch })
 	}
 }
 
@@ -135,24 +88,6 @@ async fn handle_request(
 ) -> Result<Response<String>, EigenError> {
 	match (req.method(), req.uri().path()) {
 		(&Method::GET, "/score") => {
-			let q = req.uri().query();
-			if q.is_none() {
-				let res = Response::builder()
-					.status(BAD_REQUEST)
-					.body(ResponseBody::InvalidQuery.to_string())
-					.unwrap();
-				return Ok(res);
-			}
-			let query_string = q.unwrap();
-			let query = Query::parse(query_string);
-			if query.is_none() {
-				let res = Response::builder()
-					.status(BAD_REQUEST)
-					.body(ResponseBody::InvalidQuery.to_string())
-					.unwrap();
-				return Ok(res);
-			}
-			let query = query.unwrap();
 			let manager = arc_manager.lock();
 			if manager.is_err() {
 				let res = Response::builder()
@@ -162,7 +97,7 @@ async fn handle_request(
 				return Ok(res);
 			}
 			let m = manager.unwrap();
-			let proof = m.get_proof(query.epoch);
+			let proof = m.get_last_proof();
 			if proof.is_err() {
 				println!("{:?}", proof.err().unwrap());
 				let res = Response::builder()
@@ -171,7 +106,7 @@ async fn handle_request(
 					.unwrap();
 				return Ok(res);
 			}
-			let proof = proof.unwrap();
+			let proof = ProofRaw::from(proof.unwrap());
 			let res = Response::new(ResponseBody::Score(proof).to_string());
 			return Ok(res);
 		},
@@ -380,6 +315,7 @@ mod test {
 		.unwrap();
 
 		let res = handle_request(req, arc_manager).await.unwrap();
-		assert_eq!(*res.body(), to_string(&real_proof).unwrap());
+		let proof_raw = ProofRaw::from(real_proof);
+		assert_eq!(*res.body(), to_string(&proof_raw).unwrap());
 	}
 }

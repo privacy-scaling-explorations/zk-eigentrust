@@ -22,10 +22,10 @@ use eigen_trust_circuit::{
 		plonk::ProvingKey,
 		poly::kzg::commitment::ParamsKZG,
 	},
-	utils::{field_to_string, prove, to_short, verify},
+	utils::{prove, to_short, verify},
 };
 use rand::thread_rng;
-use serde::{ser::SerializeStruct, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Number of iterations to run the eigen trust algorithm
@@ -71,20 +71,34 @@ pub const PUBLIC_KEYS: [&str; NUM_NEIGHBOURS] = [
 #[derive(Debug, Clone)]
 /// Structure for holding the ZK proof and public inputs needed for verification
 pub struct Proof {
-	pub(crate) pub_ins: Vec<Scalar>,
+	/// Public inputs
+	pub pub_ins: Vec<Scalar>,
+	/// Proof bytes
+	pub proof: Vec<u8>,
+}
+
+impl From<ProofRaw> for Proof {
+	fn from(value: ProofRaw) -> Self {
+		let pub_ins = value.pub_ins.iter().map(|x| Scalar::from_bytes(x).unwrap()).collect();
+		let proof = value.proof;
+
+		Self { pub_ins, proof }
+	}
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Structure for holding the ZK proof and raw public inputs
+pub struct ProofRaw {
+	pub(crate) pub_ins: Vec<[u8; 32]>,
 	pub(crate) proof: Vec<u8>,
 }
 
-impl Serialize for Proof {
-	fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-	where
-		S: Serializer,
-	{
-		let values: Vec<String> = self.pub_ins.iter().map(|x| field_to_string(x)).collect();
-		let mut state = serializer.serialize_struct("Proof", 2)?;
-		state.serialize_field("pub_ins", &values)?;
-		state.serialize_field("proof", &self.proof)?;
-		state.end()
+impl From<Proof> for ProofRaw {
+	fn from(value: Proof) -> Self {
+		let pub_ins = value.pub_ins.iter().map(|x| x.to_bytes()).collect();
+		let proof = value.proof;
+
+		ProofRaw { pub_ins, proof }
 	}
 }
 
@@ -245,6 +259,24 @@ impl Manager {
 	/// Query the proof for a given epoch
 	pub fn get_proof(&self, epoch: Epoch) -> Result<Proof, EigenError> {
 		self.cached_proofs.get(&epoch).ok_or(EigenError::ProofNotFound).cloned()
+	}
+
+	/// Query the proof for the last epoch
+	pub fn get_last_proof(&self) -> Result<Proof, EigenError> {
+		let mut epoch = None;
+		for &curr_epoch in self.cached_proofs.keys() {
+			match epoch {
+				Some(e) => {
+					if curr_epoch > e {
+						epoch = Some(curr_epoch);
+					}
+				},
+				None => {
+					epoch = Some(curr_epoch);
+				},
+			}
+		}
+		self.get_proof(epoch.unwrap())
 	}
 }
 
