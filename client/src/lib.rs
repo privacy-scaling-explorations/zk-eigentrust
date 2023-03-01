@@ -118,9 +118,10 @@ impl EigenTrustClient {
 #[cfg(test)]
 mod test {
 	use crate::{
-		utils::{deploy_as, deploy_et_verifier},
+		utils::{deploy_as, deploy_verifier},
 		ClientConfig, EigenTrustClient,
 	};
+	use eigen_trust_circuit::utils::read_bytes_data;
 	use eigen_trust_server::manager::NUM_NEIGHBOURS;
 	use ethers::utils::Anvil;
 
@@ -130,7 +131,8 @@ mod test {
 		let mnemonic = "test test test test test test test test test test test junk".to_string();
 		let node_url = anvil.endpoint();
 		let as_address = deploy_as(&mnemonic, &node_url).await.unwrap();
-		let et_verifier_address = deploy_et_verifier(&mnemonic, &node_url).await.unwrap();
+		let et_contract = read_bytes_data("et_verifier");
+		let et_verifier_address = deploy_verifier(&mnemonic, &node_url, et_contract).await.unwrap();
 		let as_address_string = format!("{:?}", as_address);
 		let et_verifier_address_string = format!("{:?}", et_verifier_address);
 

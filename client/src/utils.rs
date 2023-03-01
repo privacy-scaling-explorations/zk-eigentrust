@@ -1,6 +1,7 @@
 use csv::Reader as CsvReader;
-use eigen_trust_circuit::{halo2::halo2curves::bn256::Fr as Scalar, verifier::encode_calldata};
-use eigen_trust_server::manager::Proof;
+use eigen_trust_circuit::{
+	halo2::halo2curves::bn256::Fr as Scalar, verifier::encode_calldata, Proof,
+};
 use ethers::{
 	abi::Address,
 	middleware::SignerMiddleware,
@@ -8,13 +9,13 @@ use ethers::{
 	providers::{Http, Middleware, Provider},
 	signers::{coins_bip39::English, LocalWallet, MnemonicBuilder, Signer},
 	solc::Solc,
-	types::{transaction::eip2718::TypedTransaction, TransactionRequest},
+	types::TransactionRequest,
 };
-use serde::{de::DeserializeOwned, Serialize};
+use serde::de::DeserializeOwned;
 use std::{
 	env,
 	fs::{write, File},
-	io::{BufReader, Error, Read},
+	io::{BufReader, Error},
 	path::Path,
 	sync::Arc,
 };
@@ -33,23 +34,19 @@ pub fn read_csv_file<T: DeserializeOwned>(path: impl AsRef<Path>) -> Result<Vec<
 	Ok(records)
 }
 
-/// Reads raw bytes from the file
-pub fn read_bytes(path: impl AsRef<Path>) -> Vec<u8> {
-	let f = File::open(path).unwrap();
-	let mut reader = BufReader::new(f);
-	let mut buffer = Vec::new();
-
-	// Read file into vector.
-	reader.read_to_end(&mut buffer).unwrap();
-
-	buffer
-}
-
 /// Reads the json file and deserialize it into the provided type
-pub fn write_json_file<T: Serialize>(json: T, path: impl AsRef<Path>) -> Result<(), Error> {
-	let bytes = serde_json::to_vec(&json)?;
-	write(path, bytes)?;
-	Ok(())
+pub fn read_csv_data<T: DeserializeOwned>(name: &str) -> Result<Vec<T>, Error> {
+	let current_dir = env::current_dir().unwrap();
+	let path = current_dir.join(format!("../data/{}.csv", name));
+	let file = File::open(path)?;
+	let file = BufReader::new(file);
+	let mut reader = CsvReader::from_reader(file);
+	let mut records = Vec::new();
+	for result in reader.deserialize() {
+		let record: T = result?;
+		records.push(record);
+	}
+	Ok(records)
 }
 
 abigen!(AttestationStation, "../contracts/AttestationStation.json");
@@ -74,16 +71,11 @@ pub async fn deploy_as(mnemonic_phrase: &str, node_url: &str) -> Result<Address,
 	Ok(addr)
 }
 
-pub async fn deploy_et_verifier(
-	mnemonic_phrase: &str, node_url: &str,
+pub async fn deploy_verifier(
+	mnemonic_phrase: &str, node_url: &str, contract_bytes: Vec<u8>,
 ) -> Result<Address, CntrError> {
-	let curr_dir = env::current_dir().unwrap();
-	println!("{:?}", curr_dir);
-	let contracts_dir = curr_dir.join("../data/et_verifier.bin");
-	println!("{:?}", contracts_dir);
 	let client = setup_client(mnemonic_phrase, node_url);
-	let contract = read_bytes(contracts_dir);
-	let tx = TransactionRequest::default().data(contract);
+	let tx = TransactionRequest::default().data(contract_bytes);
 	let pen_tx = client.send_transaction(tx, None).await.unwrap();
 	let tx = pen_tx.await;
 
@@ -94,14 +86,11 @@ pub async fn deploy_et_verifier(
 	Ok(addr)
 }
 
-pub async fn call_et_verifier(
+pub async fn call_verifier(
 	mnemonic_phrase: &str, node_url: &str, verifier_address: Address, proof: Proof,
 ) {
 	let calldata = encode_calldata::<Scalar>(&[proof.pub_ins], &proof.proof);
 	let client = setup_client(mnemonic_phrase, node_url);
-	let code_res = client.get_code(verifier_address, None).await.unwrap();
-	println!("verifier_code_len: {}", code_res.len());
-	println!("verifier_addr: {:?}", verifier_address);
 
 	let tx = TransactionRequest::default().data(calldata).to(verifier_address);
 	let pen_tx = client.send_transaction(tx, None).await.unwrap();
@@ -110,34 +99,34 @@ pub async fn call_et_verifier(
 	println!("{:#?}", res);
 }
 
-pub fn compile() {
+pub fn compile(contract_name: &str) {
 	let curr_dir = env::current_dir().unwrap();
 	let contracts_dir = curr_dir.join("../contracts/");
-	println!("{:?}", contracts_dir);
+
+	// construct paths
+	let att_path = contracts_dir.join(format!("{}.sol", contract_name));
+	let bindings_path = contracts_dir.join(format!("{}.rs", contract_name));
+	let cntr_path = contracts_dir.join(format!("{}.json", contract_name));
 
 	// compile it
 	let contracts = Solc::default().compile_source(&contracts_dir).unwrap();
-	let att_path = contracts_dir.join("AttestationStation.sol");
-	let att_path_str = att_path.to_str().unwrap();
-	let contract_name = "AttestationStation";
-	let contract = contracts.get(att_path_str, contract_name).unwrap();
-	let abi = contract.abi.unwrap();
-	let abi_json = serde_json::to_string(abi).unwrap();
+	let contract = contracts.get(att_path.to_str().unwrap(), contract_name).unwrap();
+	let abi_json = serde_json::to_string(contract.abi.unwrap()).unwrap();
 	let contract_json = serde_json::to_string(&contract).unwrap();
-
 	let bindings = Abigen::new(&contract_name, abi_json.clone()).unwrap().generate().unwrap();
 
-	// print to stdout if no output arg is given
-	let bindings_dest = contracts_dir.join("AttestationStation.rs");
-	let cntr_dest = contracts_dir.join("AttestationStation.json");
-
-	bindings.write_to_file(bindings_dest).unwrap();
-	write(cntr_dest, contract_json).unwrap();
+	// write to /contract folder
+	bindings.write_to_file(bindings_path).unwrap();
+	write(cntr_path, contract_json).unwrap();
 }
 
 #[cfg(test)]
 mod test {
-	use crate::utils::{deploy_as, deploy_et_verifier};
+	use super::*;
+	use eigen_trust_circuit::{
+		utils::{read_bytes_data, read_json_data},
+		Proof, ProofRaw,
+	};
 	use ethers::utils::Anvil;
 
 	#[tokio::test]
@@ -156,8 +145,28 @@ mod test {
 		let anvil = Anvil::new().spawn();
 		let mnemonic = "test test test test test test test test test test test junk";
 		let node_endpoint = anvil.endpoint();
-		let res = deploy_et_verifier(mnemonic, &node_endpoint).await;
+		let et_contract = read_bytes_data("et_verifier");
+		let res = deploy_verifier(mnemonic, &node_endpoint, et_contract).await;
 		assert!(res.is_ok());
+
+		drop(anvil);
+	}
+
+	#[tokio::test]
+	async fn should_call_test_verifier_contract() {
+		let anvil = Anvil::new().spawn();
+		let mnemonic = "test test test test test test test test test test test junk";
+		// let config: ClientConfig = read_json_data("client-config").unwrap();
+		let node_endpoint = anvil.endpoint();
+
+		let bytecode = read_bytes_data("test_verifier");
+		let addr = deploy_verifier(mnemonic, &node_endpoint, bytecode).await.unwrap();
+
+		let proof_raw: ProofRaw = read_json_data("test_proof").unwrap();
+		let proof = Proof::from(proof_raw);
+		call_verifier(mnemonic, &node_endpoint, addr, proof).await;
+
+		// compile("TestVerifier");
 
 		drop(anvil);
 	}

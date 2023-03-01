@@ -25,7 +25,91 @@ use halo2::{
 };
 use num_bigint::BigUint;
 use rand::Rng;
-use std::{fmt::Debug, fs::write, io::Read, time::Instant};
+use serde::{de::DeserializeOwned, Serialize};
+use std::{
+	env::current_dir,
+	fmt::Debug,
+	fs::{write, File},
+	io::{BufReader, Error as IoError, Read},
+	path::Path,
+	time::Instant,
+};
+
+/// Reads raw bytes from the file
+pub fn read_bytes(path: impl AsRef<Path>) -> Vec<u8> {
+	let f = File::open(path).unwrap();
+	let mut reader = BufReader::new(f);
+	let mut buffer = Vec::new();
+
+	// Read file into vector.
+	reader.read_to_end(&mut buffer).unwrap();
+
+	buffer
+}
+
+/// Reads raw bytes from the file
+pub fn read_bytes_data(name: &str) -> Vec<u8> {
+	let current_dir = current_dir().unwrap();
+	let bin_path = current_dir.join(format!("../data/{}.bin", name));
+	let f = File::open(bin_path).unwrap();
+	let mut reader = BufReader::new(f);
+	let mut buffer = Vec::new();
+
+	// Read file into vector.
+	reader.read_to_end(&mut buffer).unwrap();
+
+	buffer
+}
+
+/// Write bytes to a file
+pub fn write_bytes(bytes: Vec<u8>, path: impl AsRef<Path>) -> Result<(), IoError> {
+	write(path, bytes)
+}
+
+/// Write bytes to data directory
+pub fn write_bytes_data(bytes: Vec<u8>, name: &str) -> Result<(), IoError> {
+	let current_dir = current_dir().unwrap();
+	let bin_path = current_dir.join(format!("../data/{}.bin", name));
+	write(bin_path, bytes)
+}
+
+/// Reads yul to file
+pub fn write_yul_data(code: String, name: &str) -> Result<(), IoError> {
+	let current_dir = current_dir().unwrap();
+	let bin_path = current_dir.join(format!("../data/{}.yul", name));
+	write(bin_path, code)
+}
+
+/// Writes json to fule
+pub fn write_json_file<T: Serialize>(json: T, path: impl AsRef<Path>) -> Result<(), IoError> {
+	let bytes = serde_json::to_vec(&json)?;
+	write(path, bytes)?;
+	Ok(())
+}
+
+/// Reads the json file and deserialize it into the provided type
+pub fn write_json_data<T: Serialize>(json: T, name: &str) -> Result<(), IoError> {
+	let current_dir = current_dir()?;
+	let json_path = current_dir.join(format!("../data/{}.json", name));
+	write_json_file(json, json_path)?;
+	Ok(())
+}
+
+/// Reads the json file and deserialize it into the provided type
+pub fn read_json_file<T: DeserializeOwned>(path: impl AsRef<Path>) -> Result<T, IoError> {
+	let path = path.as_ref();
+	let file = std::fs::File::open(path)?;
+	let file = std::io::BufReader::new(file);
+	let val: T = serde_json::from_reader(file)?;
+	Ok(val)
+}
+
+/// Reads the json file and deserialize it into the provided type
+pub fn read_json_data<T: DeserializeOwned>(name: &str) -> Result<T, IoError> {
+	let current_dir = current_dir()?;
+	let json_path = current_dir.join(format!("../data/{}.json", name));
+	read_json_file(json_path)
+}
 
 /// Convert bytes array to a wide representation of 64 bytes
 pub fn to_wide(b: &[u8]) -> [u8; 64] {

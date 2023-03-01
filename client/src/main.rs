@@ -1,18 +1,18 @@
 use clap::{Args, Parser, Subcommand};
+use eigen_trust_circuit::{
+	utils::{read_bytes_data, read_json_data, write_json_data},
+	Proof, ProofRaw,
+};
 use eigen_trust_client::{
-	utils::{
-		call_et_verifier, compile, deploy_as, deploy_et_verifier, read_csv_file, write_json_file,
-	},
+	utils::{call_verifier, compile, deploy_as, deploy_verifier, read_csv_data},
 	ClientConfig, EigenTrustClient,
 };
-use eigen_trust_server::manager::{Proof, ProofRaw};
 use ethers::{
 	abi::Address,
 	providers::Http,
 	signers::coins_bip39::{English, Mnemonic},
-	solc::utils::read_json_file,
 };
-use std::{env, str::FromStr};
+use std::str::FromStr;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -24,7 +24,7 @@ struct Cli {
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Subcommand)]
 enum Mode {
 	Show,
-	Compile,
+	CompileAs,
 	DeployAs,
 	DeployEtVerifier,
 	Attest,
@@ -45,19 +45,15 @@ struct UpdateData {
 #[tokio::main]
 async fn main() {
 	let cli = Cli::parse();
-
-	let root = env::current_dir().unwrap();
-	let boostrap_path = root.join("../data/bootstrap-nodes.csv");
-	let config_path = root.join("../data/client-config.json");
-	let user_secrets_raw: Vec<[String; 3]> = read_csv_file(boostrap_path).unwrap();
-	let config: ClientConfig = read_json_file(config_path.clone()).unwrap();
+	let user_secrets_raw: Vec<[String; 3]> = read_csv_data("bootstrap-nodes").unwrap();
+	let config: ClientConfig = read_json_data("client-config").unwrap();
 
 	let pos = user_secrets_raw.iter().position(|x| &config.secret_key == &x[1..]);
 	assert!(pos.is_some());
 
 	match cli.mode {
-		Mode::Compile => {
-			compile();
+		Mode::CompileAs => {
+			compile("AttestationStation");
 			println!("Finished compiling!");
 		},
 		Mode::DeployAs => {
@@ -70,7 +66,9 @@ async fn main() {
 			println!("AttestationStation contract deployed. Address: {}", address);
 		},
 		Mode::DeployEtVerifier => {
-			let deploy_res = deploy_et_verifier(&config.mnemonic, &config.ethereum_node_url).await;
+			let et_contract = read_bytes_data("et_verifier");
+			let deploy_res =
+				deploy_verifier(&config.mnemonic, &config.ethereum_node_url, et_contract).await;
 			if let Err(e) = deploy_res {
 				eprintln!("Failed to deploy the EigenTrustVerifier contract: {:?}", e);
 				return;
@@ -86,8 +84,9 @@ async fn main() {
 			let et_verifier_address = Address::from_str(&config.et_verifier_address).unwrap();
 			let url = format!("{}/score", config.server_url);
 			let proof_raw: ProofRaw = reqwest::get(url).await.unwrap().json().await.unwrap();
+			write_json_data(proof_raw.clone(), "et_proof").unwrap();
 			let proof: Proof = proof_raw.into();
-			call_et_verifier(
+			call_verifier(
 				&config.mnemonic, &config.ethereum_node_url, et_verifier_address, proof,
 			)
 			.await;
@@ -163,7 +162,7 @@ async fn main() {
 				client_config_updated.ethereum_node_url = node_url;
 			}
 
-			let res = write_json_file(client_config_updated, config_path);
+			let res = write_json_data(client_config_updated, "client-config");
 			if res.is_err() {
 				println!("Failed to same updated config!");
 			}

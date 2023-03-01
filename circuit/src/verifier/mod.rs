@@ -1,6 +1,9 @@
 use halo2::{
 	dev::MockProver,
-	halo2curves::bn256::{Bn256, Fq, Fr, G1Affine},
+	halo2curves::{
+		bn256::{Bn256, Fq, Fr, G1Affine},
+		group::ff::PrimeField,
+	},
 	plonk::{create_proof, keygen_pk, keygen_vk, Circuit, ProvingKey, VerifyingKey},
 	poly::{
 		commitment::{Params, ParamsProver},
@@ -21,14 +24,30 @@ use snark_verifier::{
 };
 use std::rc::Rc;
 
-pub use snark_verifier::loader::evm::encode_calldata;
-
 /// Halo2 loader
 pub mod loader;
 /// Poseidon transcript
 pub mod transcript;
 
 type PlonkVerifier = verifier::plonk::PlonkVerifier<KzgAs<Bn256, Gwc19>>;
+
+/// Encode instances and proof into calldata.
+pub fn encode_calldata<F>(instances: &[Vec<F>], proof: &[u8]) -> Vec<u8>
+where
+	F: PrimeField<Repr = [u8; 32]>,
+{
+	let mut calldata = Vec::new();
+	for inst_row in instances {
+		for value in inst_row {
+			let mut bytes = value.to_repr();
+			bytes.reverse();
+			calldata.extend(bytes);
+		}
+	}
+	calldata.extend(proof);
+
+	calldata
+}
 
 /// Generate SRS
 pub fn gen_srs(k: u32) -> ParamsKZG<Bn256> {
@@ -69,6 +88,14 @@ pub fn gen_proof<C: Circuit<Fr>>(
 pub fn gen_evm_verifier(
 	params: &ParamsKZG<Bn256>, vk: &VerifyingKey<G1Affine>, num_instance: Vec<usize>,
 ) -> Vec<u8> {
+	let code = gen_evm_verifier_code(params, vk, num_instance);
+	evm::compile_yul(&code)
+}
+
+/// Generate solidity verifier
+pub fn gen_evm_verifier_code(
+	params: &ParamsKZG<Bn256>, vk: &VerifyingKey<G1Affine>, num_instance: Vec<usize>,
+) -> String {
 	let protocol = compile(
 		params,
 		vk,
@@ -85,7 +112,7 @@ pub fn gen_evm_verifier(
 	let proof = PlonkVerifier::read_proof(&vk, &protocol, &instances, &mut transcript).unwrap();
 	PlonkVerifier::verify(&vk, &protocol, &instances, &proof).unwrap();
 
-	evm::compile_yul(&loader.yul_code())
+	loader.yul_code()
 }
 
 /// Verify proof inside the smart contract
@@ -114,9 +141,11 @@ mod test {
 
 	use super::{gen_evm_verifier, gen_pk, gen_proof, gen_srs};
 	use crate::{
-		utils::{generate_params, prove_and_verify},
-		verifier::evm_verify,
-		RegionCtx,
+		utils::{
+			generate_params, prove_and_verify, write_bytes_data, write_json_data, write_yul_data,
+		},
+		verifier::{evm_verify, gen_evm_verifier_code},
+		Proof, ProofRaw, RegionCtx,
 	};
 	use halo2::{
 		circuit::{Layouter, Region, SimpleFloorPlanner, Value},
@@ -131,9 +160,9 @@ mod test {
 		poly::Rotation,
 	};
 
-	const NUM_ADVICE: usize = 8;
-	const NUM_FIXED: usize = 10;
-	const VERTICAL_SIZE: usize = 10;
+	const NUM_ADVICE: usize = 2;
+	const NUM_FIXED: usize = 2;
+	const VERTICAL_SIZE: usize = 1;
 
 	#[derive(Clone)]
 	struct TestConfigPi {
@@ -298,6 +327,19 @@ mod test {
 
 		let pub_ins = vec![sum; VERTICAL_SIZE];
 		let proof = gen_proof(&params, &pk, circuit.clone(), vec![pub_ins.clone()]);
-		evm_verify(deployment_code, vec![pub_ins], proof);
+		evm_verify(deployment_code, vec![pub_ins.clone()], proof.clone());
+
+		let k = 14;
+		let params = gen_srs(k);
+		let pk = gen_pk(&params, &circuit);
+		let deployment_code = gen_evm_verifier(&params, pk.get_vk(), vec![VERTICAL_SIZE]);
+		let contract_code = gen_evm_verifier_code(&params, pk.get_vk(), vec![VERTICAL_SIZE]);
+		write_bytes_data(deployment_code, "test_verifier").unwrap();
+		write_yul_data(contract_code, "test_verifier").unwrap();
+
+		let proof = Proof { pub_ins, proof };
+		let proof_raw: ProofRaw = proof.into();
+
+		write_json_data(proof_raw, "test_proof").unwrap();
 	}
 }

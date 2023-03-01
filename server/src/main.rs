@@ -3,7 +3,6 @@
 use ethers::{
 	contract::EthEvent,
 	providers::StreamExt,
-	solc::utils::read_json_file,
 	types::{Address, Filter, ValueOrArray},
 };
 use hyper::{server::conn::Http, service::service_fn, Body, Method, Request, Response};
@@ -12,7 +11,6 @@ use rand::thread_rng;
 use serde::Deserialize;
 use serde_json::to_string;
 use std::{
-	env,
 	mem::drop,
 	net::SocketAddr,
 	sync::{Arc, Mutex},
@@ -26,7 +24,8 @@ use tokio::{
 use eigen_trust_circuit::{
 	circuit::EigenTrust,
 	halo2::poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
-	utils::keygen,
+	utils::{keygen, read_json_data},
+	ProofRaw,
 };
 use eigen_trust_server::{
 	epoch::Epoch,
@@ -34,7 +33,7 @@ use eigen_trust_server::{
 	ethereum::{setup_client, AttestationCreatedFilter},
 	manager::{
 		attestation::{Attestation, AttestationData},
-		Manager, ProofRaw, INITIAL_SCORE, NUM_ITER, NUM_NEIGHBOURS, SCALE,
+		Manager, INITIAL_SCORE, NUM_ITER, NUM_NEIGHBOURS, SCALE,
 	},
 };
 
@@ -121,9 +120,7 @@ async fn handle_request(
 
 #[tokio::main]
 async fn main() -> Result<(), EigenError> {
-	let root = env::current_dir().unwrap();
-	let source = root.join("../data/protocol-config.json");
-	let config: ProtocolConfig = read_json_file(source).unwrap();
+	let config: ProtocolConfig = read_json_data("protocol-config").unwrap();
 
 	let addr: SocketAddr = config.endpoint.into();
 	let listener = TcpListener::bind(addr).await.map_err(|_| EigenError::ListenError)?;
