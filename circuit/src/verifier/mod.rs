@@ -16,6 +16,7 @@ use halo2::{
 };
 use itertools::Itertools;
 use rand::rngs::OsRng;
+pub use snark_verifier::loader::evm::compile_yul;
 use snark_verifier::{
 	loader::evm::{self, Address, EvmLoader, ExecutorBuilder},
 	pcs::kzg::{Gwc19, KzgAs},

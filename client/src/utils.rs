@@ -1,6 +1,9 @@
 use csv::Reader as CsvReader;
 use eigen_trust_circuit::{
-	halo2::halo2curves::bn256::Fr as Scalar, verifier::encode_calldata, Proof,
+	halo2::halo2curves::bn256::Fr as Scalar,
+	utils::{read_yul_data, write_bytes_data},
+	verifier::{compile_yul, encode_calldata},
+	Proof,
 };
 use ethers::{
 	abi::Address,
@@ -120,6 +123,13 @@ pub fn compile(contract_name: &str) {
 	write(cntr_path, contract_json).unwrap();
 }
 
+pub fn compile_yul_contract(contract_name: &str) {
+	// compile it
+	let code = read_yul_data(contract_name);
+	let compiled_contract = compile_yul(&code);
+	write_bytes_data(compiled_contract, contract_name).unwrap();
+}
+
 #[cfg(test)]
 mod test {
 	use super::*;
@@ -156,17 +166,16 @@ mod test {
 	async fn should_call_test_verifier_contract() {
 		let anvil = Anvil::new().spawn();
 		let mnemonic = "test test test test test test test test test test test junk";
-		// let config: ClientConfig = read_json_data("client-config").unwrap();
 		let node_endpoint = anvil.endpoint();
 
-		let bytecode = read_bytes_data("test_verifier");
+		compile_yul_contract("test_verifier_temp");
+
+		let bytecode = read_bytes_data("test_verifier_temp");
 		let addr = deploy_verifier(mnemonic, &node_endpoint, bytecode).await.unwrap();
 
 		let proof_raw: ProofRaw = read_json_data("test_proof").unwrap();
 		let proof = Proof::from(proof_raw);
 		call_verifier(mnemonic, &node_endpoint, addr, proof).await;
-
-		// compile("TestVerifier");
 
 		drop(anvil);
 	}

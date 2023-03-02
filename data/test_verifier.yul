@@ -337,6 +337,7 @@ object "plonk_verifier" {
             mstore(0x1000, addmod(mload(0xfe0), mload(0x4c0), f_q))
             mstore(0x1020, addmod(mload(0x1000), mload(0x500), f_q))
             mstore(0x1040, addmod(mload(0x1020), mload(0x520), f_q))
+
             mstore(0x1060, addmod(mload(0x4e0), sub(f_q, mload(0x1040)), f_q))
             mstore(0x1080, mulmod(mload(0x1060), mload(0x540), f_q))
             mstore(0x10a0, mulmod(mload(0x380), mload(0x1080), f_q))
@@ -345,22 +346,27 @@ object "plonk_verifier" {
             mstore(0x1100, addmod(mload(0x10a0), mload(0x10e0), f_q))
             mstore(0x1120, mulmod(mload(0x380), mload(0x1100), f_q))
             mstore(0x1140, mulmod(mload(0x7a0), mload(0x7a0), f_q))
+
             mstore(0x1160, addmod(mload(0x1140), sub(f_q, mload(0x7a0)), f_q))
             mstore(0x1180, mulmod(mload(0x1160), mload(0xee0), f_q))
             mstore(0x11a0, addmod(mload(0x1120), mload(0x1180), f_q))
             mstore(0x11c0, mulmod(mload(0x380), mload(0x11a0), f_q))
+
             mstore(0x11e0, addmod(mload(0x680), sub(f_q, mload(0x660)), f_q))
             mstore(0x1200, mulmod(mload(0x11e0), mload(0xfa0), f_q))
             mstore(0x1220, addmod(mload(0x11c0), mload(0x1200), f_q))
             mstore(0x1240, mulmod(mload(0x380), mload(0x1220), f_q))
+
             mstore(0x1260, addmod(mload(0x6e0), sub(f_q, mload(0x6c0)), f_q))
             mstore(0x1280, mulmod(mload(0x1260), mload(0xfa0), f_q))
             mstore(0x12a0, addmod(mload(0x1240), mload(0x1280), f_q))
             mstore(0x12c0, mulmod(mload(0x380), mload(0x12a0), f_q))
+
             mstore(0x12e0, addmod(mload(0x740), sub(f_q, mload(0x720)), f_q))
             mstore(0x1300, mulmod(mload(0x12e0), mload(0xfa0), f_q))
             mstore(0x1320, addmod(mload(0x12c0), mload(0x1300), f_q))
             mstore(0x1340, mulmod(mload(0x380), mload(0x1320), f_q))
+
             mstore(0x1360, addmod(mload(0x7a0), sub(f_q, mload(0x780)), f_q))
             mstore(0x1380, mulmod(mload(0x1360), mload(0xfa0), f_q))
             mstore(0x13a0, addmod(mload(0x1340), mload(0x1380), f_q))
@@ -370,6 +376,7 @@ object "plonk_verifier" {
             mstore(0x1420, addmod(mload(0x1400), mload(0xf40), f_q))
             mstore(0x1440, addmod(mload(0x1420), mload(0xf60), f_q))
             mstore(0x1460, addmod(mload(0x1440), mload(0xf80), f_q))
+
             mstore(0x1480, addmod(mload(0x13e0), sub(f_q, mload(0x1460)), f_q))
             mstore(0x14a0, mulmod(mload(0x580), mload(0x140), f_q))
             mstore(0x14c0, addmod(mload(0x4a0), mload(0x14a0), f_q))
@@ -380,6 +387,7 @@ object "plonk_verifier" {
             mstore(0x1560, addmod(mload(0x4a0), mload(0x1540), f_q))
             mstore(0x1580, addmod(mload(0x1560), mload(0x1a0), f_q))
             mstore(0x15a0, mulmod(mload(0x1580), mload(0x620), f_q))
+
             mstore(0x15c0, addmod(mload(0x1500), sub(f_q, mload(0x15a0)), f_q))
             mstore(0x15e0, mulmod(mload(0x15c0), mload(0x1480), f_q))
             mstore(0x1600, addmod(mload(0x13c0), mload(0x15e0), f_q))
@@ -388,6 +396,7 @@ object "plonk_verifier" {
             mstore(0x1660, addmod(mload(0x4c0), mload(0x1640), f_q))
             mstore(0x1680, addmod(mload(0x1660), mload(0x1a0), f_q))
             mstore(0x16a0, mulmod(mload(0x1680), mload(0x6a0), f_q))
+
             mstore(0x16c0, mulmod(4131629893567559867359510883348571134090853742863529169391034518566172092834, mload(0x140), f_q))
             mstore(0x16e0, mulmod(mload(0x460), mload(0x16c0), f_q))
             mstore(0x1700, addmod(mload(0x4c0), mload(0x16e0), f_q))
@@ -401,6 +410,7 @@ object "plonk_verifier" {
             mstore(0x1800, addmod(mload(0x500), mload(0x17e0), f_q))
             mstore(0x1820, addmod(mload(0x1800), mload(0x1a0), f_q))
             mstore(0x1840, mulmod(mload(0x1820), mload(0x700), f_q))
+
             mstore(0x1860, mulmod(8910878055287538404433155982483128285667088683464058436815641868457422632747, mload(0x140), f_q))
             mstore(0x1880, mulmod(mload(0x460), mload(0x1860), f_q))
             mstore(0x18a0, addmod(mload(0x500), mload(0x1880), f_q))
@@ -414,6 +424,7 @@ object "plonk_verifier" {
             mstore(0x19a0, addmod(mload(0x520), mload(0x1980), f_q))
             mstore(0x19c0, addmod(mload(0x19a0), mload(0x1a0), f_q))
             mstore(0x19e0, mulmod(mload(0x19c0), mload(0x760), f_q))
+
             mstore(0x1a00, mulmod(11166246659983828508719468090013646171463329086121580628794302409516816350802, mload(0x140), f_q))
             mstore(0x1a20, mulmod(mload(0x460), mload(0x1a00), f_q))
             mstore(0x1a40, addmod(mload(0x520), mload(0x1a20), f_q))
@@ -427,6 +438,7 @@ object "plonk_verifier" {
             mstore(0x1b40, addmod(mload(0xfc0), mload(0x1b20), f_q))
             mstore(0x1b60, addmod(mload(0x1b40), mload(0x1a0), f_q))
             mstore(0x1b80, mulmod(mload(0x1b60), mload(0x7c0), f_q))
+
             mstore(0x1ba0, mulmod(284840088355319032285349970403338060113257071685626700086398481893096618818, mload(0x140), f_q))
             mstore(0x1bc0, mulmod(mload(0x460), mload(0x1ba0), f_q))
             mstore(0x1be0, addmod(mload(0xfc0), mload(0x1bc0), f_q))
@@ -436,6 +448,7 @@ object "plonk_verifier" {
             mstore(0x1c60, mulmod(mload(0x1c40), mload(0x1480), f_q))
             mstore(0x1c80, addmod(mload(0x1b00), mload(0x1c60), f_q))
             mstore(0x1ca0, mulmod(mload(0xb00), mload(0xb00), f_q))
+
             mstore(0x1cc0, mulmod(1, mload(0xb00), f_q))
             mstore(0x1ce0, mulmod(mload(0x1c80), mload(0xb20), f_q))
             mstore(0x1d00, mulmod(mload(0x920), mload(0x920), f_q))
@@ -456,6 +469,7 @@ object "plonk_verifier" {
             mstore(0x1ee0, mulmod(mload(0x1ec0), mload(0x800), f_q))
             mstore(0x1f00, mulmod(mload(0x1ee0), mload(0x800), f_q))
             mstore(0x1f20, mulmod(mload(0x1f00), mload(0x800), f_q))
+
             mstore(0x1f40, mulmod(sub(f_q, mload(0x4a0)), 1, f_q))
             mstore(0x1f60, mulmod(sub(f_q, mload(0x4c0)), mload(0x800), f_q))
             mstore(0x1f80, mulmod(1, mload(0x800), f_q))
@@ -508,6 +522,7 @@ object "plonk_verifier" {
             mstore(0x2560, mulmod(sub(f_q, mload(0x560)), mload(0x1f00), f_q))
             mstore(0x2580, mulmod(1, mload(0x1f00), f_q))
             mstore(0x25a0, addmod(mload(0x2540), mload(0x2560), f_q))
+
             mstore(0x25c0, mulmod(mload(0x25a0), 1, f_q))
             mstore(0x25e0, mulmod(mload(0x1f80), 1, f_q))
             mstore(0x2600, mulmod(mload(0x1fe0), 1, f_q))
@@ -524,6 +539,7 @@ object "plonk_verifier" {
             mstore(0x2760, mulmod(mload(0x2500), 1, f_q))
             mstore(0x2780, mulmod(mload(0x2520), 1, f_q))
             mstore(0x27a0, mulmod(mload(0x2580), 1, f_q))
+
             mstore(0x27c0, mulmod(sub(f_q, mload(0x4e0)), 1, f_q))
             mstore(0x27e0, mulmod(sub(f_q, mload(0x640)), mload(0x800), f_q))
             mstore(0x2800, addmod(mload(0x27c0), mload(0x27e0), f_q))
@@ -537,6 +553,7 @@ object "plonk_verifier" {
             mstore(0x2900, addmod(mload(0x28c0), mload(0x28e0), f_q))
             mstore(0x2920, mulmod(mload(0x2900), mload(0x920), f_q))
             mstore(0x2940, mulmod(1, mload(0x920), f_q))
+
             mstore(0x2960, mulmod(mload(0x1f80), mload(0x920), f_q))
             mstore(0x2980, mulmod(mload(0x1fe0), mload(0x920), f_q))
             mstore(0x29a0, mulmod(mload(0x2040), mload(0x920), f_q))
@@ -544,6 +561,7 @@ object "plonk_verifier" {
             mstore(0x29e0, mulmod(mload(0x2100), mload(0x920), f_q))
             mstore(0x2a00, addmod(mload(0x25c0), mload(0x2920), f_q))
             mstore(0x2a20, addmod(1, mload(0x2940), f_q))
+
             mstore(0x2a40, addmod(mload(0x2600), mload(0x2960), f_q))
             mstore(0x2a60, addmod(mload(0x2620), mload(0x2980), f_q))
             mstore(0x2a80, addmod(mload(0x2640), mload(0x29a0), f_q))
@@ -568,6 +586,7 @@ object "plonk_verifier" {
             mstore(0x2ce0, addmod(mload(0x2a40), mload(0x2c40), f_q))
             mstore(0x2d00, mulmod(1, mload(0x460), f_q))
             mstore(0x2d20, mulmod(1, mload(0x2d00), f_q))
+
             mstore(0x2d40, mulmod(15929319040748925786993503352261583814540822795415523916919259682053529746604, mload(0x460), f_q))
             mstore(0x2d60, mulmod(mload(0x2940), mload(0x2d40), f_q))
             mstore(0x2d80, mulmod(19994456137444606010007221842186606174874761508830279822119839964321394586494, mload(0x460), f_q))
@@ -575,6 +594,7 @@ object "plonk_verifier" {
             mstore(0x2dc0, 0x0000000000000000000000000000000000000000000000000000000000000001)
             mstore(0x2de0, 0x0000000000000000000000000000000000000000000000000000000000000002)
             mstore(0x2e00, mload(0x2c60))
+
             success := and(eq(staticcall(gas(), 0x7, 0x2dc0, 0x60, 0x2dc0, 0x40), 1), success)
             mstore(0x2e20, mload(0x40))
             mstore(0x2e40, mload(0x60))
@@ -588,6 +608,7 @@ object "plonk_verifier" {
             mstore(0x2f00, mload(0x80))
             mstore(0x2f20, mload(0xa0))
             mstore(0x2f40, mload(0x25e0))
+
             success := and(eq(staticcall(gas(), 0x7, 0x2f00, 0x60, 0x2f00, 0x40), 1), success)
             mstore(0x2f60, mload(0x2e80))
             mstore(0x2f80, mload(0x2ea0))
@@ -602,6 +623,7 @@ object "plonk_verifier" {
             mstore(0x3060, mload(0x2f80))
             mstore(0x3080, mload(0x2fe0))
             mstore(0x30a0, mload(0x3000))
+
             success := and(eq(staticcall(gas(), 0x6, 0x3040, 0x80, 0x3040, 0x40), 1), success)
             mstore(0x30c0, mload(0x220))
             mstore(0x30e0, mload(0x240))
@@ -620,6 +642,7 @@ object "plonk_verifier" {
             mstore(0x3220, mload(0x3140))
             mstore(0x3240, mload(0x31a0))
             mstore(0x3260, mload(0x31c0))
+
             success := and(eq(staticcall(gas(), 0x6, 0x3200, 0x80, 0x3200, 0x40), 1), success)
             mstore(0x3280, mload(0x2a0))
             mstore(0x32a0, mload(0x2c0))
@@ -638,6 +661,7 @@ object "plonk_verifier" {
             mstore(0x33e0, mload(0x3300))
             mstore(0x3400, mload(0x3360))
             mstore(0x3420, mload(0x3380))
+
             success := and(eq(staticcall(gas(), 0x6, 0x33c0, 0x80, 0x33c0, 0x40), 1), success)
             mstore(0x3440, 0x1e47100a0d96343afc095e5a635338fed517c4f1790bea3834642ccc93897f53)
             mstore(0x3460, 0x202452ad70418f80b6212178472c31752e4002bd1a8797c241dc105f0a37176d)
@@ -647,6 +671,7 @@ object "plonk_verifier" {
             mstore(0x34c0, mload(0x33e0))
             mstore(0x34e0, mload(0x3440))
             mstore(0x3500, mload(0x3460))
+
             success := and(eq(staticcall(gas(), 0x6, 0x34a0, 0x80, 0x34a0, 0x40), 1), success)
             mstore(0x3520, 0x07c56bd9ab3d51b3d8198b40064632136235cceddfb790bd0aa58e0d9ffcd579)
             mstore(0x3540, 0x0b216cdf0e07a8c63e647f041cb3e84e6c5d47ba55e14daf53df1cb012103509)
@@ -656,6 +681,7 @@ object "plonk_verifier" {
             mstore(0x35a0, mload(0x34c0))
             mstore(0x35c0, mload(0x3520))
             mstore(0x35e0, mload(0x3540))
+
             success := and(eq(staticcall(gas(), 0x6, 0x3580, 0x80, 0x3580, 0x40), 1), success)
             mstore(0x3600, 0x13d5cc4fe597809538a15ec435485a1031ef5431a29c1b5af8781d78c5b5ebfa)
             mstore(0x3620, 0x0bbba45e63a639f656fd0c1f5b926dc9d7db7cbc033c9fe8a84cae10353df876)
@@ -665,6 +691,7 @@ object "plonk_verifier" {
             mstore(0x3680, mload(0x35a0))
             mstore(0x36a0, mload(0x3600))
             mstore(0x36c0, mload(0x3620))
+
             success := and(eq(staticcall(gas(), 0x6, 0x3660, 0x80, 0x3660, 0x40), 1), success)
             mstore(0x36e0, 0x2e7114271b38e339228e753d8f3d84ffdd9e768cb18c77c59feffd844eca1ece)
             mstore(0x3700, 0x2468c4ad05f3d1f2b1d9b6bbcbd019df5001504db50dc653bdfd2f9d4eeb575d)
@@ -674,6 +701,7 @@ object "plonk_verifier" {
             mstore(0x3760, mload(0x3680))
             mstore(0x3780, mload(0x36e0))
             mstore(0x37a0, mload(0x3700))
+
             success := and(eq(staticcall(gas(), 0x6, 0x3740, 0x80, 0x3740, 0x40), 1), success)
             mstore(0x37c0, 0x149bb97491457482072d3cd13c9d9b772da2cebea6bc4c9825c228010695d48f)
             mstore(0x37e0, 0x28c77e67ef264ff5ce9768979fa2f7ca10a2e4eb9471f7f4d51459930f5d5240)
@@ -683,6 +711,7 @@ object "plonk_verifier" {
             mstore(0x3840, mload(0x3760))
             mstore(0x3860, mload(0x37c0))
             mstore(0x3880, mload(0x37e0))
+
             success := and(eq(staticcall(gas(), 0x6, 0x3820, 0x80, 0x3820, 0x40), 1), success)
             mstore(0x38a0, 0x25cab12abecc3c0359f0a7a6e10fb09287b2a4d6a405d3311106c3c43842d4b3)
             mstore(0x38c0, 0x289bc89f12715a1d3d05ce0e320dba4c52184e916b99d8d21d7f8ffed9042713)
@@ -692,6 +721,7 @@ object "plonk_verifier" {
             mstore(0x3920, mload(0x3840))
             mstore(0x3940, mload(0x38a0))
             mstore(0x3960, mload(0x38c0))
+
             success := and(eq(staticcall(gas(), 0x6, 0x3900, 0x80, 0x3900, 0x40), 1), success)
             mstore(0x3980, mload(0x3c0))
             mstore(0x39a0, mload(0x3e0))
@@ -705,6 +735,7 @@ object "plonk_verifier" {
             mstore(0x3a60, mload(0x400))
             mstore(0x3a80, mload(0x420))
             mstore(0x3aa0, mload(0x2780))
+
             success := and(eq(staticcall(gas(), 0x7, 0x3a60, 0x60, 0x3a60, 0x40), 1), success)
             mstore(0x3ac0, mload(0x39e0))
             mstore(0x3ae0, mload(0x3a00))
@@ -714,6 +745,7 @@ object "plonk_verifier" {
             mstore(0x3b40, mload(0x320))
             mstore(0x3b60, mload(0x340))
             mstore(0x3b80, mload(0x27a0))
+
             success := and(eq(staticcall(gas(), 0x7, 0x3b40, 0x60, 0x3b40, 0x40), 1), success)
             mstore(0x3ba0, mload(0x3ac0))
             mstore(0x3bc0, mload(0x3ae0))
@@ -723,6 +755,7 @@ object "plonk_verifier" {
             mstore(0x3c20, mload(0x840))
             mstore(0x3c40, mload(0x860))
             mstore(0x3c60, mload(0x2d20))
+
             success := and(eq(staticcall(gas(), 0x7, 0x3c20, 0x60, 0x3c20, 0x40), 1), success)
             mstore(0x3c80, mload(0x3ba0))
             mstore(0x3ca0, mload(0x3bc0))
@@ -732,6 +765,7 @@ object "plonk_verifier" {
             mstore(0x3d00, mload(0x880))
             mstore(0x3d20, mload(0x8a0))
             mstore(0x3d40, mload(0x2d60))
+
             success := and(eq(staticcall(gas(), 0x7, 0x3d00, 0x60, 0x3d00, 0x40), 1), success)
             mstore(0x3d60, mload(0x3c80))
             mstore(0x3d80, mload(0x3ca0))
@@ -741,6 +775,7 @@ object "plonk_verifier" {
             mstore(0x3de0, mload(0x8c0))
             mstore(0x3e00, mload(0x8e0))
             mstore(0x3e20, mload(0x2da0))
+
             success := and(eq(staticcall(gas(), 0x7, 0x3de0, 0x60, 0x3de0, 0x40), 1), success)
             mstore(0x3e40, mload(0x3d60))
             mstore(0x3e60, mload(0x3d80))
@@ -750,6 +785,7 @@ object "plonk_verifier" {
             mstore(0x3ec0, mload(0x880))
             mstore(0x3ee0, mload(0x8a0))
             mstore(0x3f00, mload(0x2940))
+
             success := and(eq(staticcall(gas(), 0x7, 0x3ec0, 0x60, 0x3ec0, 0x40), 1), success)
             mstore(0x3f20, mload(0x840))
             mstore(0x3f40, mload(0x860))
@@ -759,6 +795,7 @@ object "plonk_verifier" {
             mstore(0x3fa0, mload(0x8c0))
             mstore(0x3fc0, mload(0x8e0))
             mstore(0x3fe0, mload(0x2be0))
+
             success := and(eq(staticcall(gas(), 0x7, 0x3fa0, 0x60, 0x3fa0, 0x40), 1), success)
             mstore(0x4000, mload(0x3f20))
             mstore(0x4020, mload(0x3f40))
@@ -767,12 +804,14 @@ object "plonk_verifier" {
             success := and(eq(staticcall(gas(), 0x6, 0x4000, 0x80, 0x4000, 0x40), 1), success)
             mstore(0x4080, mload(0x3e40))
             mstore(0x40a0, mload(0x3e60))
+
             mstore(0x40c0, 0x198e9393920d483a7260bfb731fb5d25f1aa493335a9e71297e485b7aef312c2)
             mstore(0x40e0, 0x1800deef121f1e76426a00665e5c4479674322d4f75edadd46debd5cd992f6ed)
             mstore(0x4100, 0x090689d0585ff075ec9e99ad690c3395bc4b313370b38ef355acdadcd122975b)
             mstore(0x4120, 0x12c85ea5db8c6deb4aab71808dcb408fe3d1e7690c43d37b4ce6cc0166fa7daa)
             mstore(0x4140, mload(0x4000))
             mstore(0x4160, mload(0x4020))
+
             mstore(0x4180, 0x0532d9750afb45e51e77cf2a37fbc3441e7aa8b95f4ae5e97b121c5fc6e7e8e3)
             mstore(0x41a0, 0x2591facacaca245e85c02f03f4f6e02279604d94255119fb84ea5e1df5403778)
             mstore(0x41c0, 0x1e63cd5271efef1492f22fe17065f6df44b8a342b2f93faa03e16426e3d87c6b)

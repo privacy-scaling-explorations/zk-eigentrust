@@ -47,18 +47,23 @@ pub fn read_bytes(path: impl AsRef<Path>) -> Vec<u8> {
 	buffer
 }
 
+/// Reads string from the file
+pub fn read_string(path: impl AsRef<Path>) -> String {
+	let f = File::open(path).unwrap();
+	let mut reader = BufReader::new(f);
+	let mut buffer = String::new();
+
+	// Read file into string.
+	reader.read_to_string(&mut buffer).unwrap();
+
+	buffer
+}
+
 /// Reads raw bytes from the file
 pub fn read_bytes_data(name: &str) -> Vec<u8> {
 	let current_dir = current_dir().unwrap();
 	let bin_path = current_dir.join(format!("../data/{}.bin", name));
-	let f = File::open(bin_path).unwrap();
-	let mut reader = BufReader::new(f);
-	let mut buffer = Vec::new();
-
-	// Read file into vector.
-	reader.read_to_end(&mut buffer).unwrap();
-
-	buffer
+	read_bytes(bin_path)
 }
 
 /// Write bytes to a file
@@ -73,11 +78,19 @@ pub fn write_bytes_data(bytes: Vec<u8>, name: &str) -> Result<(), IoError> {
 	write(bin_path, bytes)
 }
 
-/// Reads yul to file
+/// Writes yul to file
 pub fn write_yul_data(code: String, name: &str) -> Result<(), IoError> {
 	let current_dir = current_dir().unwrap();
 	let bin_path = current_dir.join(format!("../data/{}.yul", name));
 	write(bin_path, code)
+}
+
+/// Read yul file
+pub fn read_yul_data(name: &str) -> String {
+	let current_dir = current_dir().unwrap();
+	let str_path = current_dir.join(format!("../data/{}.yul", name));
+	let code = read_string(str_path);
+	code
 }
 
 /// Writes json to fule
