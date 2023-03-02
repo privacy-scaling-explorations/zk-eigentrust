@@ -335,6 +335,7 @@ mod test {
 		let pk = gen_pk(&params, &circuit);
 		let deployment_code = gen_evm_verifier(&params, pk.get_vk(), vec![VERTICAL_SIZE]);
 		let contract_code = gen_evm_verifier_code(&params, pk.get_vk(), vec![VERTICAL_SIZE]);
+
 		write_bytes_data(deployment_code, "test_verifier").unwrap();
 		write_yul_data(contract_code, "test_verifier").unwrap();
 
