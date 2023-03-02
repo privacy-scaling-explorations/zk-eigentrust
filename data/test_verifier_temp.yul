@@ -820,7 +820,7 @@ object "plonk_verifier" {
             // COMMENT OUT THIS LINE FOR DEBUGGING
             // Contract at 0x8 is EcPairing contract, which returns 0, meaning the pairing check fails
 
-            // success := and(eq(staticcall(gas(), 0x8, 0x4080, 0x180, 0x4080, 0x20), 1), success)
+            success := and(eq(staticcall(gas(), 0x8, 0x4080, 0x180, 0x4080, 0x20), 1), success)
             // success := and(eq(mload(0x4080), 1), success)
 
             if not(success) { revert(0, 0) }

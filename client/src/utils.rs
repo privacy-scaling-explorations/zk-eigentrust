@@ -52,7 +52,7 @@ pub fn read_csv_data<T: DeserializeOwned>(name: &str) -> Result<Vec<T>, Error> {
 	Ok(records)
 }
 
-abigen!(AttestationStation, "../contracts/AttestationStation.json");
+abigen!(AttestationStation, "../data/AttestationStation.json");
 pub type SignerMiddlewareArc = Arc<SignerMiddleware<Provider<Http>, LocalWallet>>;
 pub type CntrError = ContractError<SignerMiddleware<Provider<Http>, LocalWallet>>;
 
@@ -104,7 +104,7 @@ pub async fn call_verifier(
 
 pub fn compile(contract_name: &str) {
 	let curr_dir = env::current_dir().unwrap();
-	let contracts_dir = curr_dir.join("../contracts/");
+	let contracts_dir = curr_dir.join("../data/");
 
 	// construct paths
 	let att_path = contracts_dir.join(format!("{}.sol", contract_name));
