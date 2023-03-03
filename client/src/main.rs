@@ -4,7 +4,7 @@ use eigen_trust_circuit::{
 	Proof, ProofRaw,
 };
 use eigen_trust_client::{
-	utils::{call_verifier, compile, deploy_as, deploy_verifier, read_csv_data},
+	utils::{call_verifier, compile_sol_contract, deploy_as, deploy_verifier, read_csv_data},
 	ClientConfig, EigenTrustClient,
 };
 use ethers::{
@@ -25,6 +25,7 @@ struct Cli {
 enum Mode {
 	Show,
 	CompileAs,
+	CompileEt,
 	DeployAs,
 	DeployEtVerifier,
 	Attest,
@@ -53,7 +54,11 @@ async fn main() {
 
 	match cli.mode {
 		Mode::CompileAs => {
-			compile("AttestationStation");
+			compile_sol_contract("attestation_station", "AttestationStation");
+			println!("Finished compiling!");
+		},
+		Mode::CompileEt => {
+			compile_sol_contract("et_verifier_wrapper", "EtVerifierWrapper");
 			println!("Finished compiling!");
 		},
 		Mode::DeployAs => {

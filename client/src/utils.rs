@@ -52,7 +52,7 @@ pub fn read_csv_data<T: DeserializeOwned>(name: &str) -> Result<Vec<T>, Error> {
 	Ok(records)
 }
 
-abigen!(AttestationStation, "../data/AttestationStation.json");
+abigen!(AttestationStation, "../data/attestation_station.json");
 pub type SignerMiddlewareArc = Arc<SignerMiddleware<Provider<Http>, LocalWallet>>;
 pub type CntrError = ContractError<SignerMiddleware<Provider<Http>, LocalWallet>>;
 
@@ -102,18 +102,21 @@ pub async fn call_verifier(
 	println!("{:#?}", res);
 }
 
-pub fn compile(contract_name: &str) {
+pub fn compile_sol_contract(file_name: &str, contract_name: &str) {
 	let curr_dir = env::current_dir().unwrap();
 	let contracts_dir = curr_dir.join("../data/");
+	println!("{:?}", contracts_dir);
 
 	// construct paths
-	let att_path = contracts_dir.join(format!("{}.sol", contract_name));
-	let bindings_path = contracts_dir.join(format!("{}.rs", contract_name));
-	let cntr_path = contracts_dir.join(format!("{}.json", contract_name));
+	let contract_path = contracts_dir.join(format!("{}.sol", file_name));
+	let bindings_path = contracts_dir.join(format!("{}.rs", file_name));
+	let cntr_path = contracts_dir.join(format!("{}.json", file_name));
 
 	// compile it
 	let contracts = Solc::default().compile_source(&contracts_dir).unwrap();
-	let contract = contracts.get(att_path.to_str().unwrap(), contract_name).unwrap();
+	println!("{:?}", contracts.contracts_iter().collect::<Vec<_>>());
+	println!("{:#?}", contracts);
+	let contract = contracts.get(contract_path.to_str().unwrap(), contract_name).unwrap();
 	let abi_json = serde_json::to_string(contract.abi.unwrap()).unwrap();
 	let contract_json = serde_json::to_string(&contract).unwrap();
 	let bindings = Abigen::new(&contract_name, abi_json.clone()).unwrap().generate().unwrap();
@@ -174,6 +177,24 @@ mod test {
 		let addr = deploy_verifier(mnemonic, &node_endpoint, bytecode).await.unwrap();
 
 		let proof_raw: ProofRaw = read_json_data("test_proof").unwrap();
+		let proof = Proof::from(proof_raw);
+		call_verifier(mnemonic, &node_endpoint, addr, proof).await;
+
+		drop(anvil);
+	}
+
+	#[tokio::test]
+	async fn should_call_et_verifier_contract() {
+		let anvil = Anvil::new().spawn();
+		let mnemonic = "test test test test test test test test test test test junk";
+		let node_endpoint = anvil.endpoint();
+
+		compile_yul_contract("et_verifier");
+
+		let bytecode = read_bytes_data("et_verifier");
+		let addr = deploy_verifier(mnemonic, &node_endpoint, bytecode).await.unwrap();
+
+		let proof_raw: ProofRaw = read_json_data("et_proof").unwrap();
 		let proof = Proof::from(proof_raw);
 		call_verifier(mnemonic, &node_endpoint, addr, proof).await;
 
