@@ -8,3 +8,6 @@ pub mod lt_eq;
 pub mod main;
 /// Set membership gadget
 pub mod set;
+
+/// Range check gadget
+pub mod range;
