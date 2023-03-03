@@ -109,7 +109,32 @@ impl<F: FieldExt + PrimeFieldBits, const K: usize, const N: usize> Chip<F>
 	fn configure(
 		common: &crate::CommonConfig, meta: &mut halo2::plonk::ConstraintSystem<F>,
 	) -> Selector {
-		todo!()
+		let q_running = meta.complex_selector();
+
+		let running_sum = common.advice[0];
+
+		meta.lookup("running_sum check", |meta| {
+			let q_running = meta.query_selector(q_running);
+			let z_cur = meta.query_advice(running_sum, Rotation::cur());
+
+			// In the case of a running sum decomposition, we recover the word from
+			// the difference of the running sums:
+			//    z_i = 2^{K}⋅z_{i + 1} + a_i
+			// => a_i = z_i - 2^{K}⋅z_{i + 1}
+			let running_sum_lookup = {
+				let running_sum_word = {
+					let z_next = meta.query_advice(running_sum, Rotation::next());
+					z_cur.clone() - z_next * F::from(1 << K)
+				};
+
+				q_running.clone() * running_sum_word
+			};
+
+			// Combine the running sum and short lookups:
+			vec![(running_sum_lookup, common.table)]
+		});
+
+		q_running
 	}
 
 	fn synthesize(
@@ -142,66 +167,6 @@ impl<F: FieldExt + PrimeFieldBits, const K: usize> LookupRangeCheckChipset<F, K>
 impl<F: FieldExt + PrimeFieldBits, const K: usize> Chipset<F> for LookupRangeCheckChipset<F, K> {
 	type Config = LookupRangeCheckChipsetConfig;
 	type Output = AssignedCell<F, F>;
-
-	// fn configure(
-	// 	common: &crate::CommonConfig, meta: &mut halo2::plonk::ConstraintSystem<F>,
-	// ) -> Selector {
-	// 	let q_lookup = meta.complex_selector();
-	// 	let q_running = meta.complex_selector();
-	// 	let q_bitshift = meta.selector();
-
-	// 	let running_sum = common.advice[0];
-
-	// 	meta.lookup("running_sum check", |meta| {
-	// 		let q_lookup = meta.query_selector(q_lookup);
-	// 		let q_running = meta.query_selector(q_running);
-	// 		let z_cur = meta.query_advice(running_sum, Rotation::cur());
-
-	// 		// In the case of a running sum decomposition, we recover the word from
-	// 		// the difference of the running sums:
-	// 		//    z_i = 2^{K}⋅z_{i + 1} + a_i
-	// 		// => a_i = z_i - 2^{K}⋅z_{i + 1}
-	// 		let running_sum_lookup = {
-	// 			let running_sum_word = {
-	// 				let z_next = meta.query_advice(running_sum, Rotation::next());
-	// 				z_cur.clone() - z_next * F::from(1 << K)
-	// 			};
-
-	// 			q_running.clone() * running_sum_word
-	// 		};
-
-	// 		// In the short range check, the word is directly witnessed.
-	// 		let short_lookup = {
-	// 			let short_word = z_cur;
-	// 			let q_short = Expression::Constant(F::one()) - q_running;
-
-	// 			q_short * short_word
-	// 		};
-
-	// 		// Combine the running sum and short lookups:
-	// 		vec![(q_lookup * (running_sum_lookup + short_lookup), common.table)]
-	// 	});
-
-	// 	// For short lookups, check that the word has been shifted by the correct
-	// number 	// of bits. https://p.z.cash/halo2-0.1:decompose-short-lookup
-	// 	meta.create_gate("Short lookup bitshift", |meta| {
-	// 		let q_bitshift = meta.query_selector(q_bitshift);
-	// 		let word = meta.query_advice(running_sum, Rotation::prev());
-	// 		let shifted_word = meta.query_advice(running_sum, Rotation::cur());
-	// 		let inv_two_pow_s = meta.query_advice(running_sum, Rotation::next());
-
-	// 		let two_pow_k = F::from(1 << K);
-
-	// 		// shifted_word = word * 2^{K-s}
-	// 		//              = word * 2^K * inv_two_pow_s
-	// 		Constraints::with_selector(
-	// 			q_bitshift,
-	// 			Some(word * two_pow_k * inv_two_pow_s - shifted_word),
-	// 		)
-	// 	});
-
-	// 	q_lookup
-	// }
 
 	fn synthesize(
 		self, common: &crate::CommonConfig, config: &LookupRangeCheckChipsetConfig,
