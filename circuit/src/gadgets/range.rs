@@ -51,9 +51,30 @@ impl<F: FieldExt + PrimeFieldBits, const K: usize, const S: usize> Chip<F>
 	}
 
 	fn synthesize(
-		self, common: &crate::CommonConfig, selector: &Selector, layouter: impl Layouter<F>,
+		self, common: &crate::CommonConfig, selector: &Selector, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, halo2::plonk::Error> {
-		todo!()
+		layouter.assign_region(
+			|| "check short word",
+			|region| {
+				let mut ctx = RegionCtx::new(region, 0);
+
+				// Assign original value
+				let assigned_x = ctx.copy_assign(common.advice[0], self.x.clone())?;
+
+				// Assign shifted value
+				ctx.next();
+				let shiftted_word = self.x.value().into_field() * F::from(1 << (K - S));
+				ctx.assign_advice(common.advice[0], shiftted_word.evaluate())?;
+				ctx.enable(selector.clone())?;
+
+				// Assign 2^{-S} from a fixed column.
+				ctx.next();
+				let inv_two_pow_s = F::from(1 << S).invert().unwrap();
+				ctx.assign_from_constant(common.advice[0], inv_two_pow_s)?;
+
+				Ok(assigned_x)
+			},
+		)
 	}
 }
 
