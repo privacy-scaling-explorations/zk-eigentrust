@@ -17,7 +17,7 @@ use halo2::{
 	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region, Value},
 	halo2curves::bn256::Fr as Scalar,
-	plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Instance, Selector},
+	plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Instance, Selector, TableColumn},
 };
 
 pub use halo2;
@@ -173,6 +173,8 @@ pub struct CommonConfig {
 	fixed: [Column<Fixed>; FIXED],
 	/// Instance column
 	instance: Column<Instance>,
+	/// Lookup Table column
+	table: TableColumn,
 }
 
 impl CommonConfig {
@@ -181,12 +183,13 @@ impl CommonConfig {
 		let advice = [(); ADVICE].map(|_| meta.advice_column());
 		let fixed = [(); FIXED].map(|_| meta.fixed_column());
 		let instance = meta.instance_column();
+		let table = meta.lookup_table_column();
 
 		advice.map(|c| meta.enable_equality(c));
 		fixed.map(|c| meta.enable_constant(c));
 		meta.enable_equality(instance);
 
-		Self { advice, fixed, instance }
+		Self { advice, fixed, instance, table }
 	}
 }
 
