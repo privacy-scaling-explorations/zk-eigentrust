@@ -23,7 +23,31 @@ impl<F: FieldExt + PrimeFieldBits, const K: usize, const S: usize> Chip<F>
 	fn configure(
 		common: &crate::CommonConfig, meta: &mut halo2::plonk::ConstraintSystem<F>,
 	) -> Selector {
-		todo!()
+		assert!(S < K, "Word bits should be less than target bits.");
+
+		let q_bitshift = meta.selector();
+
+		let word_column = common.advice[0];
+
+		// For short lookups, check that the word has been shifted by the correct number
+		// of bits. https://p.z.cash/halo2-0.1:decompose-short-lookup
+		meta.create_gate("Short lookup bitshift", |meta| {
+			let q_bitshift = meta.query_selector(q_bitshift);
+			let word = meta.query_advice(word_column, Rotation::prev());
+			let shifted_word = meta.query_advice(word_column, Rotation::cur());
+			let inv_two_pow_s = meta.query_advice(word_column, Rotation::next());
+
+			let two_pow_k = F::from(1 << K);
+
+			// shifted_word = word * 2^{K-s}
+			//              = word * 2^K * inv_two_pow_s
+			Constraints::with_selector(
+				q_bitshift,
+				Some(word * two_pow_k * inv_two_pow_s - shifted_word),
+			)
+		});
+
+		q_bitshift
 	}
 
 	fn synthesize(
