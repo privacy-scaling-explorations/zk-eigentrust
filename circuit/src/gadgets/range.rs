@@ -15,6 +15,15 @@ pub struct LookupShortWordCheckChip<F: FieldExt + PrimeFieldBits, const K: usize
 	x: AssignedCell<F, F>,
 }
 
+impl<F: FieldExt + PrimeFieldBits, const K: usize, const S: usize>
+	LookupShortWordCheckChip<F, K, S>
+{
+	/// Construct new instance
+	pub fn new(x: AssignedCell<F, F>) -> Self {
+		Self { x }
+	}
+}
+
 impl<F: FieldExt + PrimeFieldBits, const K: usize, const S: usize> Chip<F>
 	for LookupShortWordCheckChip<F, K, S>
 {
@@ -23,15 +32,22 @@ impl<F: FieldExt + PrimeFieldBits, const K: usize, const S: usize> Chip<F>
 	fn configure(
 		common: &crate::CommonConfig, meta: &mut halo2::plonk::ConstraintSystem<F>,
 	) -> Selector {
-		assert!(S < K, "Word bits should be less than target bits.");
+		assert!(0 < S && S < K, "Word bits should be less than target bits.");
 
-		let q_bitshift = meta.selector();
+		let q_bitshift = meta.complex_selector();
 
 		let word_column = common.advice[0];
 
+		meta.lookup("Check K bits limit", |meta| {
+			let q_bit_shift = meta.query_selector(q_bitshift);
+			let shifted_word = meta.query_advice(word_column, Rotation::cur());
+
+			vec![(q_bit_shift * shifted_word, common.table)]
+		});
+
 		// For short lookups, check that the word has been shifted by the correct number
 		// of bits. https://p.z.cash/halo2-0.1:decompose-short-lookup
-		meta.create_gate("Short lookup bitshift", |meta| {
+		meta.create_gate("Short word S bits limit", |meta| {
 			let q_bitshift = meta.query_selector(q_bitshift);
 			let word = meta.query_advice(word_column, Rotation::prev());
 			let shifted_word = meta.query_advice(word_column, Rotation::cur());
@@ -63,12 +79,14 @@ impl<F: FieldExt + PrimeFieldBits, const K: usize, const S: usize> Chip<F>
 
 				// Assign shifted value
 				ctx.next();
+
 				let shiftted_word = self.x.value().into_field() * F::from(1 << (K - S));
 				ctx.assign_advice(common.advice[0], shiftted_word.evaluate())?;
 				ctx.enable(selector.clone())?;
 
 				// Assign 2^{-S} from a fixed column.
 				ctx.next();
+
 				let inv_two_pow_s = F::from(1 << S).invert().unwrap();
 				ctx.assign_from_constant(common.advice[0], inv_two_pow_s)?;
 
@@ -189,23 +207,115 @@ impl<F: FieldExt + PrimeFieldBits, const K: usize> Chipset<F> for LookupRangeChe
 		self, common: &crate::CommonConfig, config: &LookupRangeCheckChipsetConfig,
 		mut layouter: impl halo2::circuit::Layouter<F>,
 	) -> Result<Self::Output, halo2::plonk::Error> {
-		// Loads the values [0..2^K) into `common.table`.
-		layouter.assign_table(
-			|| "table_column",
-			|mut table| {
-				// We generate the row values lazily (we only need them during keygen).
-				for index in 0..(1 << K) {
-					table.assign_cell(
-						|| "table_column",
-						common.table,
-						index,
-						|| Value::known(F::from(index as u64)),
-					)?;
-				}
-				Ok(())
-			},
-		)?;
-
 		todo!()
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use crate::CommonConfig;
+
+	use super::*;
+
+	use halo2::{
+		circuit::{Region, SimpleFloorPlanner, Value},
+		dev::MockProver,
+		halo2curves::pasta::Fp as Fr,
+		plonk::{Circuit, ConstraintSystem, Error},
+	};
+
+	#[derive(Clone)]
+	struct TestConfig {
+		common: CommonConfig,
+		q_bitshift: Selector,
+	}
+
+	#[derive(Clone)]
+	struct TestCircuit {
+		x: Fr,
+	}
+
+	impl TestCircuit {
+		fn new(x: Fr) -> Self {
+			Self { x }
+		}
+	}
+
+	impl Circuit<Fr> for TestCircuit {
+		type Config = TestConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			self.clone()
+		}
+
+		fn configure(meta: &mut ConstraintSystem<Fr>) -> TestConfig {
+			let common = CommonConfig::new(meta);
+			let q_bitshift = LookupShortWordCheckChip::<Fr, 8, 3>::configure(&common, meta);
+
+			TestConfig { common, q_bitshift }
+		}
+
+		fn synthesize(
+			&self, config: TestConfig, mut layouter: impl Layouter<Fr>,
+		) -> Result<(), Error> {
+			// Loads the values [0..2^K) into `common.table`.
+			layouter.assign_table(
+				|| "table_column",
+				|mut table| {
+					// We generate the row values lazily (we only need them during keygen).
+					for index in 0..(1 << 8) {
+						table.assign_cell(
+							|| "table_column",
+							config.common.table,
+							index,
+							|| Value::known(Fr::from(index as u64)),
+						)?;
+					}
+					Ok(())
+				},
+			)?;
+
+			let x = layouter.assign_region(
+				|| "temp",
+				|region: Region<'_, Fr>| {
+					let mut ctx = RegionCtx::new(region, 0);
+					let x_val = Value::known(self.x);
+					let x = ctx.assign_advice(config.common.advice[0], x_val)?;
+					Ok(x)
+				},
+			)?;
+
+			let short_word_check_chip = LookupShortWordCheckChip::<Fr, 8, 3>::new(x);
+			let _ = short_word_check_chip.synthesize(
+				&config.common,
+				&config.q_bitshift,
+				layouter.namespace(|| "short word check"),
+			)?;
+
+			Ok(())
+		}
+	}
+
+	#[test]
+	fn test_short_word_case() {
+		// Testing x is 3 bits
+		let x = Fr::from(0b111);
+
+		let test_chip = TestCircuit::new(x);
+
+		let k = 9;
+		let pub_ins = vec![];
+		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+		prover.assert_satisfied();
+
+		// Should fail since x is 4 bits
+		let x = Fr::from(0b1000);
+
+		let test_chip = TestCircuit::new(x);
+
+		let k = 4;
+		let pub_ins = vec![];
+		let _err = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap_err();
 	}
 }
