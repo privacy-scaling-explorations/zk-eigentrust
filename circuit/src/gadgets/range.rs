@@ -80,8 +80,8 @@ impl<F: FieldExt + PrimeFieldBits, const K: usize, const S: usize> Chip<F>
 				// Assign shifted value
 				ctx.next();
 
-				let shiftted_word = self.x.value().into_field() * F::from(1 << (K - S));
-				ctx.assign_advice(common.advice[0], shiftted_word.evaluate())?;
+				let shifted_word = self.x.value().cloned() * Value::known(F::from(1 << (K - S)));
+				ctx.assign_advice(common.advice[0], shifted_word)?;
 				ctx.enable(selector.clone())?;
 
 				// Assign 2^{-S} from a fixed column.
@@ -152,6 +152,7 @@ impl<F: FieldExt + PrimeFieldBits, const K: usize, const N: usize> Chip<F>
 			|| "range check",
 			|region| {
 				let mut ctx = RegionCtx::new(region, 0);
+				let x = ctx.copy_assign(common.advice[0], self.x.clone())?;
 
 				let num_bits = K * N;
 
@@ -170,7 +171,7 @@ impl<F: FieldExt + PrimeFieldBits, const K: usize, const N: usize> Chip<F>
 					.transpose_vec(N)
 				};
 
-				let mut zs = vec![self.x.clone()];
+				let mut zs = vec![x.clone()];
 
 				// Assign cumulative sum such that
 				//          z_i = 2^{K}⋅z_{i + 1} + a_i
@@ -178,7 +179,7 @@ impl<F: FieldExt + PrimeFieldBits, const K: usize, const N: usize> Chip<F>
 				//
 				// For `element` = a_0 + 2^10 a_1 + ... + 2^{120} a_{12}}, initialize z_0 =
 				// `element`. If `element` fits in 130 bits, we end up with z_{13} = 0.
-				let mut z = self.x.clone();
+				let mut z = x.clone();
 				let inv_two_pow_k = F::from(1u64 << K).invert().unwrap();
 				for word in words {
 					// Enable q_lookup on this row
@@ -190,12 +191,11 @@ impl<F: FieldExt + PrimeFieldBits, const K: usize, const N: usize> Chip<F>
 							z.value().zip(word).map(|(z, word)| (*z - word) * inv_two_pow_k);
 
 						// Assign z_next
+						ctx.next();
 						ctx.assign_advice(common.advice[0], z_val)?
 					};
 
 					zs.push(z.clone());
-
-					ctx.next();
 				}
 
 				ctx.constrain_to_constant(zs.last().unwrap().clone(), F::zero())?;
@@ -251,6 +251,10 @@ mod tests {
 		plonk::{Circuit, ConstraintSystem, Error},
 	};
 
+	const K: usize = 8;
+	const S: usize = 3;
+	const N: usize = 2;
+
 	#[derive(Debug, Clone)]
 	enum Gadget {
 		ShortWordCheck,
@@ -286,8 +290,8 @@ mod tests {
 
 		fn configure(meta: &mut ConstraintSystem<Fr>) -> TestConfig {
 			let common = CommonConfig::new(meta);
-			let q_bitshift = LookupShortWordCheckChip::<Fr, 8, 3>::configure(&common, meta);
-			let q_running_sum = LookupRangeCheckChip::<Fr, 8, 16>::configure(&common, meta);
+			let q_bitshift = LookupShortWordCheckChip::<Fr, K, S>::configure(&common, meta);
+			let q_running_sum = LookupRangeCheckChip::<Fr, K, N>::configure(&common, meta);
 
 			TestConfig { common, q_bitshift, q_running_sum }
 		}
@@ -300,7 +304,7 @@ mod tests {
 				|| "table_column",
 				|mut table| {
 					// We generate the row values lazily (we only need them during keygen).
-					for index in 0..(1 << 8) {
+					for index in 0..(1 << K) {
 						table.assign_cell(
 							|| "table_column",
 							config.common.table,
@@ -324,7 +328,7 @@ mod tests {
 
 			match self.gadget {
 				Gadget::ShortWordCheck => {
-					let short_word_check_chip = LookupShortWordCheckChip::<Fr, 8, 3>::new(x);
+					let short_word_check_chip = LookupShortWordCheckChip::<Fr, K, S>::new(x);
 					let _ = short_word_check_chip.synthesize(
 						&config.common,
 						&config.q_bitshift,
@@ -332,7 +336,7 @@ mod tests {
 					)?;
 				},
 				Gadget::RangeCheck => {
-					let range_check_chip = LookupRangeCheckChip::<Fr, 8, 16>::new(x);
+					let range_check_chip = LookupRangeCheckChip::<Fr, K, N>::new(x);
 					let _ = range_check_chip.synthesize(
 						&config.common,
 						&config.q_running_sum,
@@ -355,37 +359,39 @@ mod tests {
 		let k = 9;
 		let pub_ins = vec![];
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
-		prover.assert_satisfied();
+		assert!(prover.verify().is_ok());
 
 		// Should fail since x is 4 bits
-		let x = Fr::from(0b1000);
+		let x = Fr::from(0b1001);
 
 		let test_chip = TestCircuit::new(x, Gadget::ShortWordCheck);
 
 		let k = 9;
 		let pub_ins = vec![];
-		let _err = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap_err();
+		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+		assert!(prover.verify().is_err());
 	}
 
 	#[test]
 	fn test_range_check() {
 		// Testing x is 16 bits
-		let x = Fr::from(0b1111111111111111);
+		let x = Fr::from(0b1111111111111100);
 
 		let test_chip = TestCircuit::new(x, Gadget::RangeCheck);
 
 		let k = 9;
 		let pub_ins = vec![];
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
-		prover.assert_satisfied();
+		assert!(prover.verify().is_ok());
 
-		// Should fail since x is 17 bits
-		let x = Fr::from(0b1111111111111111000);
+		// Should fail since x is 15 bits
+		let x = Fr::from(0b11111111111111111);
 
 		let test_chip = TestCircuit::new(x, Gadget::RangeCheck);
 
 		let k = 9;
 		let pub_ins = vec![];
-		let _err = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap_err();
+		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+		assert!(prover.verify().is_err());
 	}
 }
