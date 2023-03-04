@@ -7,7 +7,7 @@ use halo2::{
 	poly::Rotation,
 };
 
-use crate::{Chip, Chipset, RegionCtx};
+use crate::{utils::lebs2ip, Chip, Chipset, RegionCtx};
 
 /// Lookup short word check chip
 #[derive(Debug, Clone)]
@@ -138,9 +138,66 @@ impl<F: FieldExt + PrimeFieldBits, const K: usize, const N: usize> Chip<F>
 	}
 
 	fn synthesize(
-		self, common: &crate::CommonConfig, selector: &Selector, layouter: impl Layouter<F>,
+		self, common: &crate::CommonConfig, selector: &Selector, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, halo2::plonk::Error> {
-		todo!()
+		layouter.assign_region(
+			|| "range check",
+			|region| {
+				let mut ctx = RegionCtx::new(region, 0);
+
+				let x = ctx.copy_assign(common.advice[0], self.x.clone())?;
+				ctx.next();
+
+				let num_bits = K * N;
+
+				// Chunk the first num_bits bits into K-bit words.
+				let words = {
+					// Take first num_bits bits of `element`.
+					let bits = self.x.value().map(|element| {
+						element.to_le_bits().into_iter().take(num_bits).collect::<Vec<_>>()
+					});
+
+					bits.map(|bits| {
+						bits.chunks_exact(K)
+							.map(|word| F::from(lebs2ip::<K>(&(word.try_into().unwrap()))))
+							.collect::<Vec<_>>()
+					})
+					.transpose_vec(N)
+				};
+
+				let mut zs = vec![x];
+
+				// Assign cumulative sum such that
+				//          z_i = 2^{K}⋅z_{i + 1} + a_i
+				// => z_{i + 1} = (z_i - a_i) / (2^K)
+				//
+				// For `element` = a_0 + 2^10 a_1 + ... + 2^{120} a_{12}}, initialize z_0 =
+				// `element`. If `element` fits in 130 bits, we end up with z_{13} = 0.
+				let mut z = self.x.clone();
+				let inv_two_pow_k = F::from(1u64 << K).invert().unwrap();
+				for word in words {
+					// Enable q_lookup on this row
+					ctx.enable(selector.clone())?;
+
+					// z_next = (z_cur - m_cur) / 2^K
+					z = {
+						let z_val =
+							z.value().zip(word).map(|(z, word)| (*z - word) * inv_two_pow_k);
+
+						// Assign z_next
+						ctx.assign_advice(common.advice[0], z_val)?
+					};
+
+					zs.push(z.clone());
+
+					ctx.next();
+				}
+
+				ctx.constrain_to_constant(zs.last().unwrap().clone(), F::zero())?;
+
+				Ok(self.x.clone())
+			},
+		)
 	}
 }
 

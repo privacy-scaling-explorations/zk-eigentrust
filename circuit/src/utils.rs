@@ -195,3 +195,13 @@ where
 
 	Ok(res)
 }
+
+/// The u64 integer represented by an L-bit little-endian bitstring.
+///
+/// # Panics
+///
+/// Panics if the bitstring is longer than 64 bits.
+pub fn lebs2ip<const L: usize>(bits: &[bool; L]) -> u64 {
+	assert!(L <= 64);
+	bits.iter().enumerate().fold(0u64, |acc, (i, b)| acc + if *b { 1 << i } else { 0 })
+}
