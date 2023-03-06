@@ -9,6 +9,11 @@ use halo2::{
 
 use crate::{utils::lebs2ip, Chip, Chipset, RegionCtx};
 
+// Check 252 bit number
+const K: usize = 8;
+const N: usize = 32;
+const S: usize = 4;
+
 /// Lookup short word check chip
 #[derive(Debug, Clone)]
 pub struct LookupShortWordCheckChip<F: FieldExt + PrimeFieldBits, const K: usize, const S: usize> {
@@ -234,7 +239,48 @@ impl<F: FieldExt + PrimeFieldBits, const K: usize> Chipset<F> for LookupRangeChe
 		self, common: &crate::CommonConfig, config: &LookupRangeCheckChipsetConfig,
 		mut layouter: impl halo2::circuit::Layouter<F>,
 	) -> Result<Self::Output, halo2::plonk::Error> {
-		todo!()
+		// First, check if x is less than 256 bits
+		let range_chip = LookupRangeCheckChip::<F, K, N>::new(self.x.clone());
+		let x = range_chip.synthesize(
+			common,
+			&config.q_running_sum,
+			layouter.namespace(|| "x long range check"),
+		)?;
+
+		// Rip the last word of "x" & chek if it is 4 bit
+		let last_word = {
+			let num_bits = K * N;
+			// Take first num_bits bits of `element`.
+			let bits = x
+				.value()
+				.map(|element| element.to_le_bits().into_iter().take(num_bits).collect::<Vec<_>>());
+
+			let words = bits
+				.map(|bits| {
+					bits.chunks_exact(K)
+						.map(|word| F::from(lebs2ip::<K>(&(word.try_into().unwrap()))))
+						.collect::<Vec<_>>()
+				})
+				.transpose_vec(N);
+
+			words[N - 1]
+		};
+
+		let last_word_cell = layouter.assign_region(
+			|| "last word of x",
+			|region| {
+				let mut ctx = RegionCtx::new(region, 0);
+				ctx.assign_advice(common.advice[0], last_word)
+			},
+		)?;
+		let short_word_chip = LookupShortWordCheckChip::<F, K, S>::new(last_word_cell);
+		let _ = short_word_chip.synthesize(
+			common,
+			&config.q_short_word,
+			layouter.namespace(|| "x last word check"),
+		)?;
+
+		Ok(x)
 	}
 }
 
