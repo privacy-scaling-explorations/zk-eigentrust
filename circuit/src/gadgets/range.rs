@@ -1,32 +1,29 @@
-use std::marker::PhantomData;
-
 use halo2::{
 	circuit::{AssignedCell, Layouter, Value},
-	halo2curves::{group::ff::PrimeFieldBits, FieldExt},
-	plonk::{Constraints, Expression, Selector},
+	halo2curves::FieldExt,
+	plonk::{Constraints, Selector},
 	poly::Rotation,
 };
 
-use crate::{utils::lebs2ip, Chip, Chipset, RegionCtx};
+use crate::{
+	utils::{fe_to_le_bits, lebs2ip},
+	Chip, Chipset, RegionCtx,
+};
 
 /// Lookup short word check chip
 #[derive(Debug, Clone)]
-pub struct LookupShortWordCheckChip<F: FieldExt + PrimeFieldBits, const K: usize, const S: usize> {
+pub struct LookupShortWordCheckChip<F: FieldExt, const K: usize, const S: usize> {
 	x: AssignedCell<F, F>,
 }
 
-impl<F: FieldExt + PrimeFieldBits, const K: usize, const S: usize>
-	LookupShortWordCheckChip<F, K, S>
-{
+impl<F: FieldExt, const K: usize, const S: usize> LookupShortWordCheckChip<F, K, S> {
 	/// Construct new instance
 	pub fn new(x: AssignedCell<F, F>) -> Self {
 		Self { x }
 	}
 }
 
-impl<F: FieldExt + PrimeFieldBits, const K: usize, const S: usize> Chip<F>
-	for LookupShortWordCheckChip<F, K, S>
-{
+impl<F: FieldExt, const K: usize, const S: usize> Chip<F> for LookupShortWordCheckChip<F, K, S> {
 	type Output = AssignedCell<F, F>;
 
 	fn configure(
@@ -98,20 +95,18 @@ impl<F: FieldExt + PrimeFieldBits, const K: usize, const S: usize> Chip<F>
 
 /// Lookup range check chip
 #[derive(Debug, Clone)]
-pub struct LookupRangeCheckChip<F: FieldExt + PrimeFieldBits, const K: usize, const N: usize> {
+pub struct LookupRangeCheckChip<F: FieldExt, const K: usize, const N: usize> {
 	x: AssignedCell<F, F>,
 }
 
-impl<F: FieldExt + PrimeFieldBits, const K: usize, const N: usize> LookupRangeCheckChip<F, K, N> {
+impl<F: FieldExt, const K: usize, const N: usize> LookupRangeCheckChip<F, K, N> {
 	/// Construct a new instance
 	pub fn new(x: AssignedCell<F, F>) -> Self {
 		Self { x }
 	}
 }
 
-impl<F: FieldExt + PrimeFieldBits, const K: usize, const N: usize> Chip<F>
-	for LookupRangeCheckChip<F, K, N>
-{
+impl<F: FieldExt, const K: usize, const N: usize> Chip<F> for LookupRangeCheckChip<F, K, N> {
 	type Output = AssignedCell<F, F>;
 
 	fn configure(
@@ -158,9 +153,13 @@ impl<F: FieldExt + PrimeFieldBits, const K: usize, const N: usize> Chip<F>
 
 				// Chunk the first num_bits bits into K-bit words.
 				let words = {
+					let temp = self.x.value().map(|element| element.to_repr());
 					// Take first num_bits bits of `element`.
 					let bits = self.x.value().map(|element| {
-						element.to_le_bits().into_iter().take(num_bits).collect::<Vec<_>>()
+						fe_to_le_bits(element.clone())
+							.into_iter()
+							.take(num_bits)
+							.collect::<Vec<_>>()
 					});
 
 					bits.map(|bits| {
@@ -222,16 +221,11 @@ impl LookupRangeCheckChipsetConfig {
 
 /// LookupRangeCheckChipset
 #[derive(Debug, Clone)]
-pub struct LookupRangeCheckChipset<
-	F: FieldExt + PrimeFieldBits,
-	const K: usize,
-	const N: usize,
-	const S: usize,
-> {
+pub struct LookupRangeCheckChipset<F: FieldExt, const K: usize, const N: usize, const S: usize> {
 	x: AssignedCell<F, F>,
 }
 
-impl<F: FieldExt + PrimeFieldBits, const K: usize, const N: usize, const S: usize>
+impl<F: FieldExt, const K: usize, const N: usize, const S: usize>
 	LookupRangeCheckChipset<F, K, N, S>
 {
 	/// Constructs new chipset
@@ -240,7 +234,7 @@ impl<F: FieldExt + PrimeFieldBits, const K: usize, const N: usize, const S: usiz
 	}
 }
 
-impl<F: FieldExt + PrimeFieldBits, const K: usize, const N: usize, const S: usize> Chipset<F>
+impl<F: FieldExt, const K: usize, const N: usize, const S: usize> Chipset<F>
 	for LookupRangeCheckChipset<F, K, N, S>
 {
 	type Config = LookupRangeCheckChipsetConfig;
@@ -262,9 +256,9 @@ impl<F: FieldExt + PrimeFieldBits, const K: usize, const N: usize, const S: usiz
 		let last_word = {
 			let num_bits = K * N;
 			// Take first num_bits bits of `element`.
-			let bits = x
-				.value()
-				.map(|element| element.to_le_bits().into_iter().take(num_bits).collect::<Vec<_>>());
+			let bits = x.value().map(|element| {
+				fe_to_le_bits(element.clone()).into_iter().take(num_bits).collect::<Vec<_>>()
+			});
 
 			let words = bits
 				.map(|bits| {
