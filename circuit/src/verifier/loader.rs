@@ -1,8 +1,8 @@
 use crate::{ecc::native::EcPoint, integer::rns::RnsParams};
-use halo2::halo2curves::CurveAffine;
+use halo2::{arithmetic::Field, halo2curves::CurveAffine};
 use snark_verifier::{
 	loader::{EcPointLoader, LoadedEcPoint, LoadedScalar, Loader, ScalarLoader},
-	util::arithmetic::FieldOps,
+	util::arithmetic::{FieldOps, PrimeField},
 	Error as VerifierError,
 };
 use std::{
@@ -51,8 +51,9 @@ where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 {
 	fn invert(&self) -> Option<Self> {
-		// TODO: InvertChip, TIP: Extract from MainGate.IsZeroChipset
-		None
+		let inv = Field::invert(&self.inner.clone());
+		let inv_op: Option<C::Scalar> = inv.into();
+		inv_op.map(|x| Self { inner: x, loader: self.loader.clone() })
 	}
 }
 
@@ -65,8 +66,8 @@ where
 	type Output = LScalar<C, P>;
 
 	fn add(self, rhs: &'a LScalar<C, P>) -> Self::Output {
-		// TODO: AddChip
-		self
+		let res = self.inner + rhs.inner;
+		Self { inner: res, loader: self.loader.clone() }
 	}
 }
 
