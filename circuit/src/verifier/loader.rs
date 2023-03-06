@@ -2,7 +2,7 @@ use crate::{ecc::native::EcPoint, integer::rns::RnsParams};
 use halo2::{arithmetic::Field, halo2curves::CurveAffine};
 use snark_verifier::{
 	loader::{EcPointLoader, LoadedEcPoint, LoadedScalar, Loader, ScalarLoader},
-	util::arithmetic::{FieldOps, PrimeField},
+	util::arithmetic::FieldOps,
 	Error as VerifierError,
 };
 use std::{
@@ -78,8 +78,7 @@ where
 	type Output = LScalar<C, P>;
 
 	fn add(self, rhs: LScalar<C, P>) -> Self::Output {
-		// TODO: AddChip -- reuse from above: add(self, rhs: &'a other)
-		self
+		self.add(&rhs)
 	}
 }
 
