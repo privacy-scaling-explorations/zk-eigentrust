@@ -9,11 +9,6 @@ use halo2::{
 
 use crate::{utils::lebs2ip, Chip, Chipset, RegionCtx};
 
-// Check 252 bit number
-const K: usize = 8;
-const N: usize = 32;
-const S: usize = 4;
-
 /// Lookup short word check chip
 #[derive(Debug, Clone)]
 pub struct LookupShortWordCheckChip<F: FieldExt + PrimeFieldBits, const K: usize, const S: usize> {
@@ -218,20 +213,36 @@ pub struct LookupRangeCheckChipsetConfig {
 	q_short_word: Selector,
 }
 
+impl LookupRangeCheckChipsetConfig {
+	/// Construct a new instance
+	pub fn new(q_running_sum: Selector, q_short_word: Selector) -> Self {
+		Self { q_running_sum, q_short_word }
+	}
+}
+
 /// LookupRangeCheckChipset
 #[derive(Debug, Clone)]
-pub struct LookupRangeCheckChipset<F: FieldExt + PrimeFieldBits, const K: usize> {
+pub struct LookupRangeCheckChipset<
+	F: FieldExt + PrimeFieldBits,
+	const K: usize,
+	const N: usize,
+	const S: usize,
+> {
 	x: AssignedCell<F, F>,
 }
 
-impl<F: FieldExt + PrimeFieldBits, const K: usize> LookupRangeCheckChipset<F, K> {
+impl<F: FieldExt + PrimeFieldBits, const K: usize, const N: usize, const S: usize>
+	LookupRangeCheckChipset<F, K, N, S>
+{
 	/// Constructs new chipset
 	pub fn new(x: AssignedCell<F, F>) -> Self {
 		Self { x }
 	}
 }
 
-impl<F: FieldExt + PrimeFieldBits, const K: usize> Chipset<F> for LookupRangeCheckChipset<F, K> {
+impl<F: FieldExt + PrimeFieldBits, const K: usize, const N: usize, const S: usize> Chipset<F>
+	for LookupRangeCheckChipset<F, K, N, S>
+{
 	type Config = LookupRangeCheckChipsetConfig;
 	type Output = AssignedCell<F, F>;
 
@@ -298,13 +309,14 @@ mod tests {
 	};
 
 	const K: usize = 8;
-	const S: usize = 3;
 	const N: usize = 2;
+	const S: usize = 3;
 
 	#[derive(Debug, Clone)]
 	enum Gadget {
 		ShortWordCheck,
 		RangeCheck,
+		LookupRangeCheckChipset,
 	}
 
 	#[derive(Clone)]
@@ -312,6 +324,7 @@ mod tests {
 		common: CommonConfig,
 		q_bitshift: Selector,
 		q_running_sum: Selector,
+		lookup_range_check: LookupRangeCheckChipsetConfig,
 	}
 
 	#[derive(Clone)]
@@ -338,8 +351,9 @@ mod tests {
 			let common = CommonConfig::new(meta);
 			let q_bitshift = LookupShortWordCheckChip::<Fr, K, S>::configure(&common, meta);
 			let q_running_sum = LookupRangeCheckChip::<Fr, K, N>::configure(&common, meta);
+			let lookup_range_check = LookupRangeCheckChipsetConfig::new(q_running_sum, q_bitshift);
 
-			TestConfig { common, q_bitshift, q_running_sum }
+			TestConfig { common, q_bitshift, q_running_sum, lookup_range_check }
 		}
 
 		fn synthesize(
@@ -389,6 +403,14 @@ mod tests {
 						layouter.namespace(|| "range check"),
 					)?;
 				},
+				Gadget::LookupRangeCheckChipset => {
+					let lookup_range_check_chipset = LookupRangeCheckChipset::<Fr, K, N, S>::new(x);
+					let _ = lookup_range_check_chipset.synthesize(
+						&config.common,
+						&config.lookup_range_check,
+						layouter.namespace(|| "lookup range check chipset"),
+					)?;
+				},
 			}
 
 			Ok(())
@@ -430,10 +452,33 @@ mod tests {
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
 		assert!(prover.verify().is_ok());
 
-		// Should fail since x is 15 bits
+		// Should fail since x is 17 bits
 		let x = Fr::from(0b11111111111111111);
 
 		let test_chip = TestCircuit::new(x, Gadget::RangeCheck);
+
+		let k = 9;
+		let pub_ins = vec![];
+		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+		assert!(prover.verify().is_err());
+	}
+
+	#[test]
+	fn test_lookup_range_check_chipset() {
+		// Testing x is 11 bits
+		let x = Fr::from(0b11111111111);
+
+		let test_chip = TestCircuit::new(x, Gadget::LookupRangeCheckChipset);
+
+		let k = 9;
+		let pub_ins = vec![];
+		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+		assert!(prover.verify().is_ok());
+
+		// Should fail since x is 17 bits
+		let x = Fr::from(0b11111111111111111);
+
+		let test_chip = TestCircuit::new(x, Gadget::LookupRangeCheckChipset);
 
 		let k = 9;
 		let pub_ins = vec![];
