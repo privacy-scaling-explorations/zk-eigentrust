@@ -1,4 +1,8 @@
-use super::{bits2num::Bits2NumChip, main::MainConfig};
+use super::{
+	bits2num::Bits2NumChip,
+	main::MainConfig,
+	range::{LookupRangeCheckChipset, LookupRangeCheckChipsetConfig},
+};
 use crate::{gadgets::main::IsZeroChipset, utils::to_wide, Chip, Chipset, CommonConfig, RegionCtx};
 use halo2::{
 	arithmetic::FieldExt,
@@ -16,6 +20,10 @@ pub const N_SHIFTED: [u8; 32] = [
 pub const NUM_BITS: usize = 252;
 /// Same number of bits as N_SHIFTED, since NUM + N_SHIFTED is the operation.
 pub const DIFF_BITS: usize = 253;
+
+const K: usize = 8;
+const N: usize = 32;
+const S: usize = 4;
 
 /// Chip for finding the difference between 2 numbers shifted 252 bits
 pub struct NShiftedChip<F: FieldExt> {
@@ -91,6 +99,7 @@ impl<F: FieldExt> Chip<F> for NShiftedChip<F> {
 /// Selectors for LessEqualChipset
 pub struct LessEqualConfig {
 	main: MainConfig,
+	lookup_range_check: LookupRangeCheckChipsetConfig,
 	bits_2_num_selector: Selector,
 	n_shifted_selector: Selector,
 }
@@ -98,9 +107,10 @@ pub struct LessEqualConfig {
 impl LessEqualConfig {
 	/// Constructs new config
 	pub fn new(
-		main: MainConfig, bits_2_num_selector: Selector, n_shifted_selector: Selector,
+		main: MainConfig, lookup_range_check: LookupRangeCheckChipsetConfig,
+		bits_2_num_selector: Selector, n_shifted_selector: Selector,
 	) -> Self {
-		Self { main, bits_2_num_selector, n_shifted_selector }
+		Self { main, lookup_range_check, bits_2_num_selector, n_shifted_selector }
 	}
 }
 
@@ -132,21 +142,23 @@ impl<F: FieldExt> Chipset<F> for LessEqualChipset<F> {
 	fn synthesize(
 		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
-		let x_b2n = Bits2NumChip::new(self.x.clone(), self.x_bits.to_vec());
-		let _ = x_b2n.synthesize(
+		let lookup_range_check_chipset = LookupRangeCheckChipset::<F, K, N, S>::new(self.x.clone());
+		let x = lookup_range_check_chipset.synthesize(
 			common,
-			&config.bits_2_num_selector,
-			layouter.namespace(|| "x_b2n"),
+			&config.lookup_range_check,
+			layouter.namespace(|| "x range check"),
 		)?;
+		println!("x: {:?}", x);
 
-		let y_b2n = Bits2NumChip::new(self.y.clone(), self.y_bits.to_vec());
-		let _ = y_b2n.synthesize(
+		let lookup_range_check_chipset = LookupRangeCheckChipset::<F, K, N, S>::new(self.y.clone());
+		let y = lookup_range_check_chipset.synthesize(
 			common,
-			&config.bits_2_num_selector,
-			layouter.namespace(|| "y_b2n"),
+			&config.lookup_range_check,
+			layouter.namespace(|| "y range check"),
 		)?;
+		println!("y: {:?}", y);
 
-		let n_shifted_chip = NShiftedChip::new(self.x, self.y);
+		let n_shifted_chip = NShiftedChip::new(x, y);
 		let inp = n_shifted_chip.synthesize(
 			common,
 			&config.n_shifted_selector,
@@ -178,7 +190,10 @@ impl<F: FieldExt> Chipset<F> for LessEqualChipset<F> {
 mod test {
 	use super::*;
 	use crate::{
-		gadgets::main::MainChip,
+		gadgets::{
+			main::MainChip,
+			range::{LookupRangeCheckChip, LookupShortWordCheckChip},
+		},
 		utils::{generate_params, prove_and_verify, to_bits},
 	};
 	use halo2::{
@@ -218,9 +233,16 @@ mod test {
 			let common = CommonConfig::new(meta);
 			let main = MainConfig::new(MainChip::configure(&common, meta));
 
+			let range_check_selector = LookupRangeCheckChip::<Fr, K, N>::configure(&common, meta);
+			let short_word_check_selector =
+				LookupShortWordCheckChip::<Fr, K, S>::configure(&common, meta);
+			let lookup_range_check =
+				LookupRangeCheckChipsetConfig::new(range_check_selector, short_word_check_selector);
+
 			let b2n_selector = Bits2NumChip::configure(&common, meta);
 			let ns_selector = NShiftedChip::configure(&common, meta);
-			let lt_eq = LessEqualConfig::new(main, b2n_selector, ns_selector);
+
+			let lt_eq = LessEqualConfig::new(main, lookup_range_check, b2n_selector, ns_selector);
 
 			TestConfig { common, lt_eq }
 		}
@@ -228,6 +250,23 @@ mod test {
 		fn synthesize(
 			&self, config: TestConfig, mut layouter: impl Layouter<Fr>,
 		) -> Result<(), Error> {
+			// Loads the values [0..2^K) into `common.table`.
+			layouter.assign_table(
+				|| "table_column",
+				|mut table| {
+					// We generate the row values lazily (we only need them during keygen).
+					for index in 0..(1 << K) {
+						table.assign_cell(
+							|| "table_column",
+							config.common.table,
+							index,
+							|| Value::known(Fr::from(index as u64)),
+						)?;
+					}
+					Ok(())
+				},
+			)?;
+
 			let (x, y) = layouter.assign_region(
 				|| "temp",
 				|region: Region<'_, Fr>| {
@@ -259,8 +298,8 @@ mod test {
 	#[test]
 	fn test_less_than_y_x() {
 		// Testing x > y.
-		let x = Fr::from(8);
-		let y = Fr::from(4);
+		let x = Fr::from_raw([0, 0, 0, 2_u64.pow(60) - 1]);
+		let y = Fr::from_raw([0, 0, 0, 2_u64.pow(60) - 3]);
 
 		let test_chip = TestCircuit::new(x, y);
 
@@ -268,6 +307,14 @@ mod test {
 		let pub_ins = vec![Fr::from(0)];
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
+
+		// use plotters::prelude::*;
+
+		// let root = BitMapBackend::new("decompose-layout.png", (1536,
+		// 1024)).into_drawing_area(); root.fill(&WHITE).unwrap();
+		// let root = root.titled("Decompose Range Check Layout", ("sans-serif",
+		// 60)).unwrap(); halo2::dev::CircuitLayout::default().render(k,
+		// &test_chip, &root).unwrap();
 	}
 
 	#[test]

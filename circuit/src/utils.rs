@@ -207,30 +207,35 @@ pub fn lebs2ip<const L: usize>(bits: &[bool; L]) -> u64 {
 	bits.iter().enumerate().fold(0u64, |acc, (i, b)| acc + if *b { 1 << i } else { 0 })
 }
 
+/// Get the modulus of field as [`BigUint`].
 pub fn modulus<F: FieldExt>() -> BigUint {
 	BigUint::from_str_radix(&F::MODULUS[2..], 16).unwrap()
 }
 
+/// Get the field element of `2 ^ n`
 pub fn power_of_two<F: FieldExt>(n: usize) -> F {
 	big_to_fe(BigUint::one() << n)
 }
 
+/// Convert the [`BigUint`] value to [`Field`] element.
 pub fn big_to_fe<F: FieldExt>(e: BigUint) -> F {
 	let modulus = modulus::<F>();
 	let e = e % modulus;
 	F::from_str_vartime(&e.to_str_radix(10)[..]).unwrap()
 }
 
+/// Conver the [`Field`] element to [`BigUint`] value
 pub fn fe_to_big<F: FieldExt>(fe: F) -> BigUint {
 	BigUint::from_bytes_le(fe.to_repr().as_ref())
 }
 
+/// Get the little-endian bits array of [`Field`] element
 pub fn fe_to_le_bits<F: FieldExt>(e: F) -> Vec<bool> {
 	let le_bytes = fe_to_big(e).to_bytes_le();
 
 	let short_le_bytes = to_short(&le_bytes);
 
-	let le_bits = to_bits(short_le_bytes);
+	let le_bits: [bool; 32] = to_bits(short_le_bytes);
 
 	le_bits.to_vec()
 }
