@@ -87,7 +87,7 @@ where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 {
 	fn add_assign(&mut self, rhs: &'a LScalar<C, P>) {
-		// TODO: AddChip -- reuse from above: add(self, rhs: &'a other)
+		*self = self.clone().add(rhs);
 	}
 }
 
@@ -96,7 +96,7 @@ where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 {
 	fn add_assign(&mut self, rhs: LScalar<C, P>) {
-		// TODO: AddChip -- reuse from above: add(self, rhs: &'a other)
+		self.add_assign(&rhs)
 	}
 }
 
@@ -109,8 +109,8 @@ where
 	type Output = LScalar<C, P>;
 
 	fn mul(self, rhs: &'a LScalar<C, P>) -> Self::Output {
-		// TODO: MulChip
-		self
+		let res = self.inner * rhs.inner;
+		Self { inner: res, loader: self.loader.clone() }
 	}
 }
 
@@ -121,8 +121,7 @@ where
 	type Output = LScalar<C, P>;
 
 	fn mul(self, rhs: LScalar<C, P>) -> Self::Output {
-		// TODO: MulChip -- reuse from above: mul(self, rhs: &'a other)
-		self
+		self.mul(&rhs)
 	}
 }
 
@@ -131,7 +130,7 @@ where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 {
 	fn mul_assign(&mut self, rhs: &'a LScalar<C, P>) {
-		// TODO: MulChip -- reuse from above: mul(self, rhs: &'a other)
+		*self = self.clone().mul(rhs);
 	}
 }
 
@@ -140,7 +139,7 @@ where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 {
 	fn mul_assign(&mut self, rhs: LScalar<C, P>) {
-		// TODO: MulChip -- reuse from above: mul(self, rhs: &'a other)
+		self.mul_assign(&rhs)
 	}
 }
 
@@ -153,8 +152,8 @@ where
 	type Output = LScalar<C, P>;
 
 	fn sub(self, rhs: &'a LScalar<C, P>) -> Self::Output {
-		// TODO: SubChip
-		self
+		let res = self.inner - rhs.inner;
+		Self { inner: res, loader: self.loader.clone() }
 	}
 }
 
@@ -165,8 +164,7 @@ where
 	type Output = LScalar<C, P>;
 
 	fn sub(self, rhs: LScalar<C, P>) -> Self::Output {
-		// TODO: SubChip -- reuse from above: sub(self, rhs: &'a other)
-		self
+		self.sub(&rhs)
 	}
 }
 
@@ -175,7 +173,7 @@ where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 {
 	fn sub_assign(&mut self, rhs: &'a LScalar<C, P>) {
-		// TODO: SubChip -- reuse from above: sub(self, rhs: &'a other)
+		*self = self.clone().sub(rhs);
 	}
 }
 
@@ -184,7 +182,7 @@ where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 {
 	fn sub_assign(&mut self, rhs: LScalar<C, P>) {
-		// TODO: SubChip -- reuse from above: sub(self, rhs: &'a other)
+		self.sub_assign(&rhs)
 	}
 }
 
@@ -197,8 +195,8 @@ where
 	type Output = Self;
 
 	fn neg(self) -> Self::Output {
-		// TODO: MulChip: multiplication with -1
-		self
+		let res = C::Scalar::neg(self.inner.clone());
+		Self { inner: res, loader: self.loader.clone() }
 	}
 }
 
@@ -226,6 +224,7 @@ where
 	fn load_const(&self, value: &C::Scalar) -> Self::LoadedScalar {
 		// TODO: Assign a value inside a new region and constrain it to be eq to
 		// constant
+
 		LScalar::default()
 	}
 
