@@ -44,11 +44,22 @@ where
 
 	/// Update with an elliptic curve point.
 	fn common_ec_point(&mut self, ec_point: &LEcPoint<C, P>) -> Result<(), VerifierError> {
+		let default = C::Scalar::default();
+		self.state.update(&[default]);
+		// ASK THIS: IS THIS NOT IMPORTANT TO DO LIKE THIS
+		for i in 0..NUM_LIMBS {
+			self.state.update(&[ec_point.inner.x.limbs[i]]);
+			self.state.update(&[ec_point.inner.y.limbs[i]]);
+		}
 		Ok(())
 	}
 
 	/// Update with a scalar.
 	fn common_scalar(&mut self, scalar: &LScalar<C, P>) -> Result<(), VerifierError> {
+		let default = C::Scalar::default();
+		self.state.update(&[default]);
+		self.state.update(&[scalar.inner]);
+
 		Ok(())
 	}
 }

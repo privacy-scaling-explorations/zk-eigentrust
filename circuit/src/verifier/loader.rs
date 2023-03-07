@@ -32,8 +32,8 @@ pub struct LScalar<C: CurveAffine, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 {
-	inner: C::Scalar,
-	loader: NativeLoader<C, P>,
+	pub(crate) inner: C::Scalar,
+	pub(crate) loader: NativeLoader<C, P>,
 }
 
 impl<C: CurveAffine, P> LScalar<C, P>
@@ -242,8 +242,8 @@ pub struct LEcPoint<C: CurveAffine, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 {
-	inner: EcPoint<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS, P>,
-	loader: NativeLoader<C, P>,
+	pub(crate) inner: EcPoint<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS, P>,
+	pub(crate) loader: NativeLoader<C, P>,
 }
 
 impl<C: CurveAffine, P> LoadedEcPoint<C> for LEcPoint<C, P>
