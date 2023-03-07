@@ -1,5 +1,5 @@
 use halo2::{
-	circuit::{AssignedCell, Layouter, Value},
+	circuit::{AssignedCell, Layouter, Region, Value},
 	halo2curves::FieldExt,
 	plonk::{Constraints, Selector},
 	poly::Rotation,
@@ -145,7 +145,7 @@ impl<F: FieldExt, const K: usize, const N: usize> Chip<F> for LookupRangeCheckCh
 	) -> Result<Self::Output, halo2::plonk::Error> {
 		layouter.assign_region(
 			|| "range check",
-			|region| {
+			|region: Region<'_, F>| {
 				let mut ctx = RegionCtx::new(region, 0);
 				let x = ctx.copy_assign(common.advice[0], self.x.clone())?;
 
@@ -153,9 +153,8 @@ impl<F: FieldExt, const K: usize, const N: usize> Chip<F> for LookupRangeCheckCh
 
 				// Chunk the first num_bits bits into K-bit words.
 				let words = {
-					let temp = self.x.value().map(|element| element.to_repr());
 					// Take first num_bits bits of `element`.
-					let bits = self.x.value().map(|element| {
+					let bits = x.value().map(|element| {
 						fe_to_le_bits(element.clone())
 							.into_iter()
 							.take(num_bits)
@@ -437,7 +436,7 @@ mod tests {
 	#[test]
 	fn test_range_check() {
 		// Testing x is 16 bits
-		let x = Fr::from(0b1111111111111100);
+		let x = Fr::from(0xffff);
 
 		let test_chip = TestCircuit::new(x, Gadget::RangeCheck);
 
@@ -447,7 +446,7 @@ mod tests {
 		assert!(prover.verify().is_ok());
 
 		// Should fail since x is 17 bits
-		let x = Fr::from(0b11111111111111111);
+		let x = Fr::from(0x10000);
 
 		let test_chip = TestCircuit::new(x, Gadget::RangeCheck);
 

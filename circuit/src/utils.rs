@@ -235,7 +235,7 @@ pub fn fe_to_le_bits<F: FieldExt>(e: F) -> Vec<bool> {
 
 	let short_le_bytes = to_short(&le_bytes);
 
-	let le_bits: [bool; 32] = to_bits(short_le_bytes);
+	let le_bits: [bool; 256] = to_bits(short_le_bytes);
 
 	le_bits.to_vec()
 }

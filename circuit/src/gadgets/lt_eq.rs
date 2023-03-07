@@ -148,7 +148,6 @@ impl<F: FieldExt> Chipset<F> for LessEqualChipset<F> {
 			&config.lookup_range_check,
 			layouter.namespace(|| "x range check"),
 		)?;
-		println!("x: {:?}", x);
 
 		let lookup_range_check_chipset = LookupRangeCheckChipset::<F, K, N, S>::new(self.y.clone());
 		let y = lookup_range_check_chipset.synthesize(
@@ -156,7 +155,6 @@ impl<F: FieldExt> Chipset<F> for LessEqualChipset<F> {
 			&config.lookup_range_check,
 			layouter.namespace(|| "y range check"),
 		)?;
-		println!("y: {:?}", y);
 
 		let n_shifted_chip = NShiftedChip::new(x, y);
 		let inp = n_shifted_chip.synthesize(
@@ -298,8 +296,8 @@ mod test {
 	#[test]
 	fn test_less_than_y_x() {
 		// Testing x > y.
-		let x = Fr::from_raw([0, 0, 0, 2_u64.pow(60) - 1]);
-		let y = Fr::from_raw([0, 0, 0, 2_u64.pow(60) - 3]);
+		let x = Fr::from(8);
+		let y = Fr::from(4);
 
 		let test_chip = TestCircuit::new(x, y);
 
@@ -307,14 +305,6 @@ mod test {
 		let pub_ins = vec![Fr::from(0)];
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
-
-		// use plotters::prelude::*;
-
-		// let root = BitMapBackend::new("decompose-layout.png", (1536,
-		// 1024)).into_drawing_area(); root.fill(&WHITE).unwrap();
-		// let root = root.titled("Decompose Range Check Layout", ("sans-serif",
-		// 60)).unwrap(); halo2::dev::CircuitLayout::default().render(k,
-		// &test_chip, &root).unwrap();
 	}
 
 	#[test]
