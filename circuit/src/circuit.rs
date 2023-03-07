@@ -9,7 +9,7 @@ use crate::{
 	},
 	gadgets::{
 		absorb::AbsorbChip,
-		bits2num::{to_bits, Bits2NumChip},
+		bits2num::Bits2NumChip,
 		lt_eq::{LessEqualConfig, NShiftedChip, N_SHIFTED},
 		main::{AddChipset, MainChip, MainConfig, MulChipset},
 	},
@@ -19,6 +19,7 @@ use crate::{
 		sponge::{PoseidonSpongeChipset, PoseidonSpongeConfig},
 		FullRoundChip, PartialRoundChip, PoseidonChipset, PoseidonConfig,
 	},
+	utils::to_bits,
 	Chip, Chipset, CommonConfig, RegionCtx, ADVICE,
 };
 use halo2::{

@@ -68,7 +68,7 @@ use halo2::{
 };
 use num_bigint::BigUint;
 use num_integer::Integer as BigInteger;
-use num_traits::{FromPrimitive, Num, Zero};
+use num_traits::{FromPrimitive, Num, One, Zero};
 use std::{fmt::Debug, ops::Shl, str::FromStr};
 
 /// This trait is for the dealing with RNS operations.
@@ -99,12 +99,14 @@ pub trait RnsParams<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_
 	fn residues(n: &[N; NUM_LIMBS], t: &[N; NUM_LIMBS]) -> Vec<N>;
 	/// Returns `quotient` and `remainder` for the reduce operation.
 	fn construct_reduce_qr(a_bn: BigUint) -> (N, [N; NUM_LIMBS]);
-	/// Returns `quotient` and `remainder` for the mul operation.
-	fn construct_mul_qr(a_bn: BigUint, b_bn: BigUint) -> ([N; NUM_LIMBS], [N; NUM_LIMBS]);
 	/// Returns `quotient` and `remainder` for the add operation.
 	fn construct_add_qr(a_bn: BigUint, b_bn: BigUint) -> (N, [N; NUM_LIMBS]);
 	/// Returns `quotient` and `remainder` for the sub operation.
 	fn construct_sub_qr(a_bn: BigUint, b_bn: BigUint) -> (N, [N; NUM_LIMBS]);
+	/// Returns `quotient` and `remainder` for the mul operation.
+	fn construct_mul_qr(a_bn: BigUint, b_bn: BigUint) -> ([N; NUM_LIMBS], [N; NUM_LIMBS]);
+	/// Returns `quotient` and `remainder` for the div operation.
+	fn construct_div_qr(a_bn: BigUint, b_bn: BigUint) -> ([N; NUM_LIMBS], [N; NUM_LIMBS]);
 	/// Constraint for the binary part of `Chinese Remainder Theorem`.
 	fn constrain_binary_crt(t: [N; NUM_LIMBS], result: [N; NUM_LIMBS], residues: Vec<N>) -> bool;
 	/// Constraint for the binary part of `Chinese Remainder Theorem` using
@@ -118,9 +120,7 @@ pub trait RnsParams<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_
 	/// Composes integer limbs as Expressions into single Expression value.
 	fn compose_exp(input: [Expression<N>; NUM_LIMBS]) -> Expression<N>;
 	/// Inverts given Integer.
-	fn invert(
-		input: Integer<W, N, NUM_LIMBS, NUM_BITS, Self>,
-	) -> Option<Integer<W, N, NUM_LIMBS, NUM_BITS, Self>>;
+	fn invert(input: BigUint) -> Option<Integer<W, N, NUM_LIMBS, NUM_BITS, Self>>;
 }
 
 /// Returns modulus of the [`FieldExt`] as [`BigUint`].
@@ -275,14 +275,6 @@ impl RnsParams<Fq, Fr, 4, 68> for Bn256_4_68 {
 		(q, result)
 	}
 
-	fn construct_mul_qr(a_bn: BigUint, b_bn: BigUint) -> ([Fr; 4], [Fr; 4]) {
-		let wrong_mod_bn = Self::wrong_modulus();
-		let (quotient, result_bn) = (a_bn * b_bn).div_rem(&wrong_mod_bn);
-		let q = decompose_big::<Fr, 4, 68>(quotient);
-		let result = decompose_big::<Fr, 4, 68>(result_bn);
-		(q, result)
-	}
-
 	fn construct_add_qr(a_bn: BigUint, b_bn: BigUint) -> (Fr, [Fr; 4]) {
 		let wrong_mod_bn = Self::wrong_modulus();
 		let (quotient, result_bn) = (a_bn + b_bn).div_rem(&wrong_mod_bn);
@@ -313,6 +305,27 @@ impl RnsParams<Fq, Fr, 4, 68> for Bn256_4_68 {
 		(q, result)
 	}
 
+	fn construct_mul_qr(a_bn: BigUint, b_bn: BigUint) -> ([Fr; 4], [Fr; 4]) {
+		let wrong_mod_bn = Self::wrong_modulus();
+		let (quotient, result_bn) = (a_bn * b_bn).div_rem(&wrong_mod_bn);
+		let q = decompose_big::<Fr, 4, 68>(quotient);
+		let result = decompose_big::<Fr, 4, 68>(result_bn);
+		(q, result)
+	}
+
+	fn construct_div_qr(a_bn: BigUint, b_bn: BigUint) -> ([Fr; 4], [Fr; 4]) {
+		let b_invert = Self::invert(b_bn.clone()).unwrap().value();
+		let should_be_one = b_invert.clone() * b_bn.clone() % Self::wrong_modulus();
+		assert!(should_be_one == BigUint::one());
+		let result = b_invert * a_bn.clone() % Self::wrong_modulus();
+		let (quotient, reduced_self) = (result.clone() * b_bn).div_rem(&Self::wrong_modulus());
+		let (k, must_be_zero) = (a_bn - reduced_self).div_rem(&Self::wrong_modulus());
+		assert_eq!(must_be_zero, BigUint::zero());
+		let q = decompose_big::<Fr, 4, 68>(quotient - k);
+		let result = decompose_big::<Fr, 4, 68>(result);
+		(q, result)
+	}
+
 	fn constrain_binary_crt(t: [Fr; 4], result: [Fr; 4], residues: Vec<Fr>) -> bool {
 		let lsh_one = Self::left_shifters()[1];
 		let lsh_two = Self::left_shifters()[2];
@@ -326,7 +339,7 @@ impl RnsParams<Fq, Fr, 4, 68> for Bn256_4_68 {
 			let res = t_lo + t_hi * lsh_one - r_lo - r_hi * lsh_one - residues[i / 2] * lsh_two + v;
 			v = residues[i / 2];
 			let res_is_zero: bool = res.is_zero().into();
-			is_satisfied = is_satisfied | res_is_zero;
+			is_satisfied = is_satisfied & res_is_zero;
 		}
 		is_satisfied
 	}
@@ -371,14 +384,11 @@ impl RnsParams<Fq, Fr, 4, 68> for Bn256_4_68 {
 		sum
 	}
 
-	// TODO: Move outside Rns -- Use just BigUint as input and output
-	/// Computes the inverse of the [`Integer`] as an element of the Wrong
+	// TODO: Move outside Rns -- Use just BigUint as output
+	/// Computes the inverse of the [`BigUint`] as an element of the Wrong
 	/// field. Returns `None` if the value cannot be inverted.
-	fn invert(
-		input: Integer<Fq, Fr, 4, 68, Bn256_4_68>,
-	) -> Option<Integer<Fq, Fr, 4, 68, Bn256_4_68>> {
-		let a_biguint = input.value();
-		let a_w = big_to_fe::<Fq>(a_biguint);
+	fn invert(input: BigUint) -> Option<Integer<Fq, Fr, 4, 68, Bn256_4_68>> {
+		let a_w = big_to_fe::<Fq>(input);
 		let inv_w = a_w.invert();
 		inv_w.map(|inv| Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(fe_to_big(inv))).into()
 	}
