@@ -126,15 +126,12 @@ impl EigenTrustClient {
 
 		let mut pub_ins: [U256; 5] = [U256::default(); 5];
 		for (i, x) in proof_raw.pub_ins.iter().enumerate() {
-			let mut x_be = x.clone();
-			x_be.reverse();
-			pub_ins[i] = U256::from(x_be);
+			pub_ins[i] = U256::from(x);
 		}
 		let proof_bytes: Bytes = Bytes::from(proof_raw.proof.clone());
 
 		let tx_call = et_wrapper_contract.verify(pub_ins, proof_bytes);
 		let calldata = tx_call.calldata();
-		println!("calldata: {:?}", calldata);
 		let tx_res = tx_call.send();
 		let tx = tx_res.await.map_err(|e| {
 			eprintln!("{:?}", e);
@@ -240,8 +237,7 @@ mod test {
 		let et_client = EigenTrustClient::new(config, user_secrets_raw);
 		let proof_raw: ProofRaw = read_json_data("et_proof").unwrap();
 		let res = et_client.verify(proof_raw).await;
-		println!("{:?}", res);
-		// assert!(res.is_ok());
+		assert!(res.is_ok());
 
 		drop(anvil);
 	}

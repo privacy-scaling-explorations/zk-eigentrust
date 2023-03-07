@@ -4,7 +4,10 @@ use eigen_trust_circuit::{
 	Proof, ProofRaw,
 };
 use eigen_trust_client::{
-	utils::{call_verifier, compile_sol_contract, deploy_as, deploy_verifier, read_csv_data},
+	utils::{
+		call_verifier, compile_sol_contract, compile_yul_contracts, deploy_as, deploy_verifier,
+		read_csv_data,
+	},
 	ClientConfig, EigenTrustClient,
 };
 use ethers::{
@@ -54,6 +57,7 @@ async fn main() {
 	match cli.mode {
 		Mode::CompileContracts => {
 			compile_sol_contract();
+			compile_yul_contracts();
 			println!("Finished compiling!");
 		},
 		Mode::DeployAs => {

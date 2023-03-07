@@ -40,11 +40,12 @@ contract EtVerifierWrapper {
             let proof_size := sub(calldatasize(), calldata_proof)
             let total_size := add(pub_ins_size, proof_size)
             
-            let pub_ins_pos := mload(0x40)
-            let proof_pos := add(pub_ins_pos, pub_ins_size)
             // Copy the public inputs
+            let pub_ins_pos := mload(0x40)
             calldatacopy(pub_ins_pos, calldata_pub_ins, pub_ins_size)
+
             // Copy the proof bytes
+            let proof_pos := add(pub_ins_pos, pub_ins_size)
             calldatacopy(proof_pos, calldata_proof, proof_size)
 
             let success := staticcall(gas(), addr, pub_ins_pos, total_size, 0, 0)
