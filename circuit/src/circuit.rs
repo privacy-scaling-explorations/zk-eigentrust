@@ -242,6 +242,23 @@ impl<
 	fn synthesize(
 		&self, config: EigenTrustConfig, mut layouter: impl Layouter<Scalar>,
 	) -> Result<(), Error> {
+		// Loads the values [0..2^8) into table column for lookup range check.
+		layouter.assign_table(
+			|| "table_column",
+			|mut table| {
+				// We generate the row values lazily (we only need them during keygen).
+				for index in 0..(1 << 8) {
+					table.assign_cell(
+						|| "table_column",
+						config.common.table,
+						index,
+						|| Value::known(Scalar::from(index as u64)),
+					)?;
+				}
+				Ok(())
+			},
+		)?;
+
 		let (zero, pk_x, pk_y, big_r_x, big_r_y, s, scale, ops, init_score, total_score, passed_s) =
 			layouter.assign_region(
 				|| "temp",

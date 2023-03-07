@@ -318,6 +318,23 @@ mod test {
 		fn synthesize(
 			&self, config: TestConfig, mut layouter: impl Layouter<Fr>,
 		) -> Result<(), Error> {
+			// Loads the values [0..2^8) into table column for lookup range check.
+			layouter.assign_table(
+				|| "table_column",
+				|mut table| {
+					// We generate the row values lazily (we only need them during keygen).
+					for index in 0..(1 << 8) {
+						table.assign_cell(
+							|| "table_column",
+							config.common.table,
+							index,
+							|| Value::known(Fr::from(index as u64)),
+						)?;
+					}
+					Ok(())
+				},
+			)?;
+
 			let (big_r_x, big_r_y, s, pk_x, pk_y, m) = layouter.assign_region(
 				|| "temp",
 				|region: Region<'_, Fr>| {
