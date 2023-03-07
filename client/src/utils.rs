@@ -3,7 +3,7 @@ use eigen_trust_circuit::{
 	halo2::halo2curves::bn256::Fr as Scalar,
 	utils::{read_yul_data, write_bytes_data},
 	verifier::{compile_yul, encode_calldata},
-	Proof,
+	Proof as NativeProof,
 };
 use ethers::{
 	abi::Address,
@@ -11,13 +11,13 @@ use ethers::{
 	prelude::{abigen, Abigen, ContractError},
 	providers::{Http, Middleware, Provider},
 	signers::{coins_bip39::English, LocalWallet, MnemonicBuilder, Signer},
-	solc::Solc,
+	solc::{artifacts::ContractBytecode, Solc},
 	types::TransactionRequest,
 };
 use serde::de::DeserializeOwned;
 use std::{
 	env,
-	fs::{write, File},
+	fs::{self, write, File},
 	io::{BufReader, Error},
 	path::Path,
 	sync::Arc,
@@ -52,7 +52,8 @@ pub fn read_csv_data<T: DeserializeOwned>(name: &str) -> Result<Vec<T>, Error> {
 	Ok(records)
 }
 
-abigen!(AttestationStation, "../data/attestation_station.json");
+abigen!(AttestationStation, "../data/AttestationStation.json");
+abigen!(EtVerifierWrapper, "../data/EtVerifierWrapper.json");
 pub type SignerMiddlewareArc = Arc<SignerMiddleware<Provider<Http>, LocalWallet>>;
 pub type CntrError = ContractError<SignerMiddleware<Provider<Http>, LocalWallet>>;
 
@@ -67,6 +68,18 @@ pub fn setup_client(mnemonic_phrase: &str, node_url: &str) -> SignerMiddlewareAr
 pub async fn deploy_as(mnemonic_phrase: &str, node_url: &str) -> Result<Address, CntrError> {
 	let client = setup_client(mnemonic_phrase, node_url);
 	let contract = AttestationStation::deploy(client, ())?.send().await?;
+	let addr = contract.address();
+
+	println!("Deployed contract address: {:?}", addr);
+
+	Ok(addr)
+}
+
+pub async fn deploy_et_wrapper(
+	mnemonic_phrase: &str, node_url: &str, verifier_address: Address,
+) -> Result<Address, CntrError> {
+	let client = setup_client(mnemonic_phrase, node_url);
+	let contract = EtVerifierWrapper::deploy(client, verifier_address)?.send().await?;
 	let addr = contract.address();
 
 	println!("Deployed contract address: {:?}", addr);
@@ -90,9 +103,10 @@ pub async fn deploy_verifier(
 }
 
 pub async fn call_verifier(
-	mnemonic_phrase: &str, node_url: &str, verifier_address: Address, proof: Proof,
+	mnemonic_phrase: &str, node_url: &str, verifier_address: Address, proof: NativeProof,
 ) {
 	let calldata = encode_calldata::<Scalar>(&[proof.pub_ins], &proof.proof);
+	println!("{:?}", calldata);
 	let client = setup_client(mnemonic_phrase, node_url);
 
 	let tx = TransactionRequest::default().data(calldata).to(verifier_address);
@@ -102,40 +116,47 @@ pub async fn call_verifier(
 	println!("{:#?}", res);
 }
 
-pub fn compile_sol_contract(file_name: &str, contract_name: &str) {
+pub fn compile_sol_contract() {
 	let curr_dir = env::current_dir().unwrap();
 	let contracts_dir = curr_dir.join("../data/");
 	println!("{:?}", contracts_dir);
 
-	// construct paths
-	let contract_path = contracts_dir.join(format!("{}.sol", file_name));
-	let bindings_path = contracts_dir.join(format!("{}.rs", file_name));
-	let cntr_path = contracts_dir.join(format!("{}.json", file_name));
-
 	// compile it
 	let contracts = Solc::default().compile_source(&contracts_dir).unwrap();
-	println!("{:?}", contracts.contracts_iter().collect::<Vec<_>>());
-	println!("{:#?}", contracts);
-	let contract = contracts.get(contract_path.to_str().unwrap(), contract_name).unwrap();
-	let abi_json = serde_json::to_string(contract.abi.unwrap()).unwrap();
-	let contract_json = serde_json::to_string(&contract).unwrap();
-	let bindings = Abigen::new(&contract_name, abi_json.clone()).unwrap().generate().unwrap();
+	for (name, contr) in contracts.contracts_iter() {
+		let bindings_path = contracts_dir.join(format!("{}.rs", name));
+		let cntr_path = contracts_dir.join(format!("{}.json", name));
+		println!("{:?}", name);
+		let contract: ContractBytecode = contr.clone().into();
+		let abi = contract.clone().abi.unwrap();
+		let abi_json = serde_json::to_string(&abi).unwrap();
+		let contract_json = serde_json::to_string(&contract).unwrap();
+		let bindings = Abigen::new(&name, abi_json.clone()).unwrap().generate().unwrap();
 
-	// write to /contract folder
-	bindings.write_to_file(bindings_path).unwrap();
-	write(cntr_path, contract_json).unwrap();
+		// write to /data folder
+		bindings.write_to_file(bindings_path.clone()).unwrap();
+		write(cntr_path.clone(), contract_json).unwrap();
+	}
 }
 
-pub fn compile_yul_contract(contract_name: &str) {
-	// compile it
-	let code = read_yul_data(contract_name);
-	let compiled_contract = compile_yul(&code);
-	write_bytes_data(compiled_contract, contract_name).unwrap();
+pub fn compile_yul_contracts() {
+	let paths = fs::read_dir("./").unwrap();
+
+	for path in paths {
+		let name = path.unwrap().path().display().to_string();
+		if !name.ends_with(".yul") {
+			continue;
+		}
+		// compile it
+		let code = read_yul_data(&name);
+		let compiled_contract = compile_yul(&code);
+		write_bytes_data(compiled_contract, &name).unwrap();
+	}
 }
 
 #[cfg(test)]
 mod test {
-	use super::*;
+	use super::{call_verifier, deploy_as, deploy_verifier};
 	use eigen_trust_circuit::{
 		utils::{read_bytes_data, read_json_data},
 		Proof, ProofRaw,
@@ -171,8 +192,6 @@ mod test {
 		let mnemonic = "test test test test test test test test test test test junk";
 		let node_endpoint = anvil.endpoint();
 
-		compile_yul_contract("test_verifier_temp");
-
 		let bytecode = read_bytes_data("test_verifier_temp");
 		let addr = deploy_verifier(mnemonic, &node_endpoint, bytecode).await.unwrap();
 
@@ -188,8 +207,6 @@ mod test {
 		let anvil = Anvil::new().spawn();
 		let mnemonic = "test test test test test test test test test test test junk";
 		let node_endpoint = anvil.endpoint();
-
-		compile_yul_contract("et_verifier");
 
 		let bytecode = read_bytes_data("et_verifier");
 		let addr = deploy_verifier(mnemonic, &node_endpoint, bytecode).await.unwrap();

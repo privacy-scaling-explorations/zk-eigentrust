@@ -274,8 +274,10 @@ impl From<ProofRaw> for Proof {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 /// Structure for holding the ZK proof and raw public inputs
 pub struct ProofRaw {
-	pub(crate) pub_ins: Vec<[u8; 32]>,
-	pub(crate) proof: Vec<u8>,
+	/// Public inputs
+	pub pub_ins: Vec<[u8; 32]>,
+	/// Proof bytes
+	pub proof: Vec<u8>,
 }
 
 impl From<Proof> for ProofRaw {

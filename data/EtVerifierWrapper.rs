@@ -18,7 +18,7 @@ pub mod et_verifier_wrapper {
 	};
 	#[doc = "EtVerifierWrapper was auto-generated with ethers-rs Abigen. More information at: https://github.com/gakonst/ethers-rs"]
 	use std::sync::Arc;
-	# [rustfmt :: skip] const __ABI : & str = "[{\"type\":\"constructor\",\"inputs\":[{\"internalType\":\"address\",\"name\":\"vaddr\",\"type\":\"address\"}]},{\"type\":\"function\",\"name\":\"verify\",\"inputs\":[{\"internalType\":\"struct EtVerifierWrapper.Proof\",\"name\":\"proof\",\"type\":\"tuple\",\"components\":[{\"type\":\"uint256[]\"},{\"type\":\"bytes\"}]}],\"outputs\":[],\"stateMutability\":\"nonpayable\"}]" ;
+	# [rustfmt :: skip] const __ABI : & str = "[{\"type\":\"constructor\",\"inputs\":[{\"internalType\":\"address\",\"name\":\"vaddr\",\"type\":\"address\"}]},{\"type\":\"function\",\"name\":\"verify\",\"inputs\":[{\"internalType\":\"uint256[5]\",\"name\":\"pub_ins\",\"type\":\"uint256[5]\"},{\"internalType\":\"bytes\",\"name\":\"proof\",\"type\":\"bytes\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"}]" ;
 	#[doc = r" The parsed JSON-ABI of the contract."]
 	pub static ETVERIFIERWRAPPER_ABI: ethers::contract::Lazy<ethers::core::abi::Abi> =
 		ethers::contract::Lazy::new(|| {
@@ -53,10 +53,12 @@ pub mod et_verifier_wrapper {
 				.into()
 		}
 
-		#[doc = "Calls the contract's `verify` (0xc713d9cd) function"]
-		pub fn verify(&self, proof: Proof) -> ethers::contract::builders::ContractCall<M, ()> {
+		#[doc = "Calls the contract's `verify` (0x839ded65) function"]
+		pub fn verify(
+			&self, pub_ins: [ethers::core::types::U256; 5usize], proof: ethers::core::types::Bytes,
+		) -> ethers::contract::builders::ContractCall<M, ()> {
 			self.0
-				.method_hash([199, 19, 217, 205], (proof,))
+				.method_hash([131, 157, 237, 101], (pub_ins, proof))
 				.expect("method not found (this should never happen)")
 		}
 	}
@@ -67,7 +69,7 @@ pub mod et_verifier_wrapper {
 			Self(contract)
 		}
 	}
-	#[doc = "Container type for all input parameters for the `verify` function with signature `verify((uint256[],bytes))` and selector `[199, 19, 217, 205]`"]
+	#[doc = "Container type for all input parameters for the `verify` function with signature `verify(uint256[5],bytes)` and selector `[131, 157, 237, 101]`"]
 	#[derive(
 		Clone,
 		Debug,
@@ -77,19 +79,9 @@ pub mod et_verifier_wrapper {
 		ethers :: contract :: EthDisplay,
 		Default,
 	)]
-	#[ethcall(name = "verify", abi = "verify((uint256[],bytes))")]
+	#[ethcall(name = "verify", abi = "verify(uint256[5],bytes)")]
 	pub struct VerifyCall {
-		pub proof: Proof,
+		pub pub_ins: [ethers::core::types::U256; 5usize],
+		pub proof: ethers::core::types::Bytes,
 	}
-	#[doc = "`Proof(uint256[],bytes)`"]
-	#[derive(
-		Clone,
-		Debug,
-		Default,
-		Eq,
-		PartialEq,
-		ethers :: contract :: EthAbiType,
-		ethers :: contract :: EthAbiCodec,
-	)]
-	pub struct Proof(Vec<ethers::core::types::U256>, ethers::core::types::Bytes);
 }

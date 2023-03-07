@@ -192,86 +192,6 @@ mod test {
 	use hyper::Uri;
 
 	#[tokio::test]
-	async fn should_fail_without_query() {
-		let mut rng = thread_rng();
-		let params = ParamsKZG::new(14);
-		let random_circuit =
-			EigenTrust::<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, SCALE>::random(&mut rng);
-		let proving_key = keygen(&params, random_circuit).unwrap();
-
-		let manager = Manager::new(params, proving_key);
-		let arc_manager = Arc::new(Mutex::new(manager));
-
-		let req = Request::get(Uri::from_static("http://localhost:3000/score"))
-			.body(Body::default())
-			.unwrap();
-
-		let res = handle_request(req, arc_manager).await.unwrap();
-		assert_eq!(*res.body(), ResponseBody::InvalidQuery.to_string());
-	}
-
-	#[tokio::test]
-	async fn should_fail_with_wrong_public_key() {
-		let mut rng = thread_rng();
-		let params = ParamsKZG::new(14);
-		let random_circuit =
-			EigenTrust::<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, SCALE>::random(&mut rng);
-		let proving_key = keygen(&params, random_circuit).unwrap();
-
-		let manager = Manager::new(params, proving_key);
-		let arc_manager = Arc::new(Mutex::new(manager));
-
-		let req = Request::get(Uri::from_static(
-			"http://localhost:3000/score?pk=abcd__123&epoch=123",
-		))
-		.body(Body::default())
-		.unwrap();
-
-		let res = handle_request(req, arc_manager).await.unwrap();
-		assert_eq!(*res.body(), ResponseBody::InvalidQuery.to_string());
-	}
-
-	#[tokio::test]
-	async fn should_fail_with_wrong_epoch() {
-		let mut rng = thread_rng();
-		let params = ParamsKZG::new(14);
-		let random_circuit =
-			EigenTrust::<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, SCALE>::random(&mut rng);
-		let proving_key = keygen(&params, random_circuit).unwrap();
-
-		let manager = Manager::new(params, proving_key);
-		let arc_manager = Arc::new(Mutex::new(manager));
-
-		let req = Request::get(Uri::from_static(
-			"http://localhost:3000/score?pk=abcd123&epoch=abc",
-		))
-		.body(Body::default())
-		.unwrap();
-
-		let res = handle_request(req, arc_manager).await.unwrap();
-		assert_eq!(*res.body(), ResponseBody::InvalidQuery.to_string());
-	}
-
-	#[tokio::test]
-	async fn should_fail_with_incomplete_query() {
-		let mut rng = thread_rng();
-		let params = ParamsKZG::new(14);
-		let random_circuit =
-			EigenTrust::<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, SCALE>::random(&mut rng);
-		let proving_key = keygen(&params, random_circuit).unwrap();
-
-		let manager = Manager::new(params, proving_key);
-		let arc_manager = Arc::new(Mutex::new(manager));
-
-		let req = Request::get(Uri::from_static("http://localhost:3000/score?pk=abcd123"))
-			.body(Body::default())
-			.unwrap();
-
-		let res = handle_request(req, arc_manager).await.unwrap();
-		assert_eq!(*res.body(), ResponseBody::InvalidQuery.to_string());
-	}
-
-	#[tokio::test]
 	async fn should_fail_if_route_is_not_found() {
 		let mut rng = thread_rng();
 		let params = ParamsKZG::new(14);
@@ -305,11 +225,9 @@ mod test {
 		let real_proof = manager.get_proof(epoch).unwrap();
 		let arc_manager = Arc::new(Mutex::new(manager));
 
-		let req = Request::get(Uri::from_static(
-			"http://localhost:3000/score?pk=92tZdMN2SjXbT9byaHHt7hDDNXUphjwRt5UB3LDbgSmR&epoch=0",
-		))
-		.body(Body::default())
-		.unwrap();
+		let req = Request::get(Uri::from_static("http://localhost:3000/score"))
+			.body(Body::default())
+			.unwrap();
 
 		let res = handle_request(req, arc_manager).await.unwrap();
 		let proof_raw = ProofRaw::from(real_proof);

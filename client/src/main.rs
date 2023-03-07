@@ -24,8 +24,7 @@ struct Cli {
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Subcommand)]
 enum Mode {
 	Show,
-	CompileAs,
-	CompileEt,
+	CompileContracts,
 	DeployAs,
 	DeployEtVerifier,
 	Attest,
@@ -53,12 +52,8 @@ async fn main() {
 	assert!(pos.is_some());
 
 	match cli.mode {
-		Mode::CompileAs => {
-			compile_sol_contract("attestation_station", "AttestationStation");
-			println!("Finished compiling!");
-		},
-		Mode::CompileEt => {
-			compile_sol_contract("et_verifier_wrapper", "EtVerifierWrapper");
+		Mode::CompileContracts => {
+			compile_sol_contract();
 			println!("Finished compiling!");
 		},
 		Mode::DeployAs => {
@@ -86,7 +81,8 @@ async fn main() {
 			client.attest().await.unwrap();
 		},
 		Mode::Prove => {
-			let et_verifier_address = Address::from_str(&config.et_verifier_address).unwrap();
+			let et_verifier_address =
+				config.et_verifier_wrapper_address.parse::<Address>().unwrap();
 			let url = format!("{}/score", config.server_url);
 			let proof_raw: ProofRaw = reqwest::get(url).await.unwrap().json().await.unwrap();
 			write_json_data(proof_raw.clone(), "et_proof").unwrap();
