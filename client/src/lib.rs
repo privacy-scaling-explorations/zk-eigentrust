@@ -232,7 +232,7 @@ mod test {
 		};
 
 		let et_client = EigenTrustClient::new(config, user_secrets_raw);
-		let proof_raw: ProofRaw = read_json_data("et_proof").unwrap();
+		let proof_raw: ProofRaw = read_json_data("et_proof_test").unwrap();
 		let res = et_client.verify(proof_raw).await;
 		assert!(res.is_ok());
 

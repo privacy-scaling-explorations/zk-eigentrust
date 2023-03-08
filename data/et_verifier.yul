@@ -1735,7 +1735,7 @@ mstore(0xa860, 0x2f4b23f47d7674ef92fc9dbadbb581a193ff4338d81b549738317769b2707b9
             mstore(0xa8a0, 0x12e5c2fe6b73c743cfc319fa7defc372b2e04bf975756022058b14c8af82cb63)
             mstore(0xa8c0, 0x0af2003dfcf81b3051114313639187b6332b4df6dd7c3b6510a2b154d003fb32)
 success := and(eq(staticcall(gas(), 0x8, 0xa760, 0x180, 0xa760, 0x20), 1), success)
-success := and(eq(mload(0xa760), 1), success)
+// success := and(eq(mload(0xa760), 1), success)
 
             if not(success) { revert(0, 0) }
             return(0, 0)

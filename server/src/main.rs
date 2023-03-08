@@ -23,7 +23,8 @@ use tokio::{
 
 use eigen_trust_circuit::{
 	circuit::EigenTrust,
-	utils::{keygen, read_json_data, read_params},
+	halo2::{halo2curves::bn256::G1Affine, plonk::ProvingKey, SerdeFormat},
+	utils::{keygen, read_bytes_data, read_json_data, read_params},
 	ProofRaw,
 };
 use eigen_trust_server::{
@@ -70,14 +71,15 @@ impl ToString for ResponseBody {
 static MANAGER_STORE: Lazy<Arc<Mutex<Manager>>> = Lazy::new(|| {
 	let k = 14;
 	let params = read_params(k);
+	let pk_bytes = read_bytes_data("pk_bytes");
 
 	const NN: usize = NUM_NEIGHBOURS;
 	const NI: usize = NUM_ITER;
 	const IS: u128 = INITIAL_SCORE;
 	const S: u128 = SCALE;
-	let mut rng = thread_rng();
-	let random_circuit = EigenTrust::<NN, NI, IS, S>::random(&mut rng);
-	let proving_key = keygen(&params, random_circuit).unwrap();
+	let proving_key: ProvingKey<G1Affine> =
+		ProvingKey::from_bytes::<EigenTrust<NN, NI, IS, S>>(&pk_bytes, SerdeFormat::Processed)
+			.unwrap();
 
 	Arc::new(Mutex::new(Manager::new(params, proving_key)))
 });

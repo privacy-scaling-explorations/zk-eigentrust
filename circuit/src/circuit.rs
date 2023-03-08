@@ -607,11 +607,6 @@ mod test {
 			Err(e) => panic!("{}", e),
 		};
 
-		// let errs = prover.verify().err().unwrap();
-		// for err in errs {
-		// 	println!("{:#?}", err);
-		// }
-
 		assert_eq!(prover.verify(), Ok(()));
 	}
 

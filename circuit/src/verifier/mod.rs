@@ -137,12 +137,9 @@ mod test {
 
 	use super::{gen_evm_verifier, gen_pk, gen_proof};
 	use crate::{
-		utils::{
-			generate_params, prove_and_verify, read_params, write_bytes_data, write_json_data,
-			write_yul_data,
-		},
-		verifier::{evm_verify, gen_evm_verifier_code},
-		Proof, ProofRaw, RegionCtx,
+		utils::{generate_params, prove_and_verify, read_params},
+		verifier::evm_verify,
+		RegionCtx,
 	};
 	use halo2::{
 		circuit::{Layouter, Region, SimpleFloorPlanner, Value},

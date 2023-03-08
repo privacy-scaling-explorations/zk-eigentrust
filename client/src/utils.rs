@@ -106,7 +106,6 @@ pub async fn call_verifier(
 	mnemonic_phrase: &str, node_url: &str, verifier_address: Address, proof: NativeProof,
 ) {
 	let calldata = encode_calldata::<Scalar>(&[proof.pub_ins], &proof.proof);
-	println!("{:?}", calldata);
 	let client = setup_client(mnemonic_phrase, node_url);
 
 	let tx = TransactionRequest::default().data(calldata).to(verifier_address);
@@ -140,14 +139,18 @@ pub fn compile_sol_contract() {
 }
 
 pub fn compile_yul_contracts() {
-	let paths = fs::read_dir("./").unwrap();
+	let curr_dir = env::current_dir().unwrap();
+	let contracts_dir = curr_dir.join("../data/");
+	let paths = fs::read_dir(contracts_dir).unwrap();
 
 	for path in paths {
-		let name = path.unwrap().path().display().to_string();
-		if !name.ends_with(".yul") {
+		let path = path.unwrap().path();
+		let name_with_suffix = path.file_name().unwrap().to_str().unwrap();
+		if !name_with_suffix.ends_with(".yul") {
 			continue;
 		}
-		// compile it
+		let name = name_with_suffix.strip_suffix(".yul").unwrap();
+		// // compile it
 		let code = read_yul_data(&name);
 		let compiled_contract = compile_yul(&code);
 		write_bytes_data(compiled_contract, &name).unwrap();
@@ -195,7 +198,7 @@ mod test {
 		let bytecode = read_bytes_data("et_verifier");
 		let addr = deploy_verifier(mnemonic, &node_endpoint, bytecode).await.unwrap();
 
-		let proof_raw: ProofRaw = read_json_data("et_proof").unwrap();
+		let proof_raw: ProofRaw = read_json_data("et_proof_test").unwrap();
 		let proof = Proof::from(proof_raw);
 		call_verifier(mnemonic, &node_endpoint, addr, proof).await;
 

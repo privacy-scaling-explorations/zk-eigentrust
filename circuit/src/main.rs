@@ -1,17 +1,17 @@
 use eigen_trust_circuit::{
 	circuit::EigenTrust,
-	utils::{generate_params, read_params, write_bytes_data, write_params},
-	verifier::{gen_evm_verifier, gen_pk},
+	utils::{generate_params, read_params, write_bytes_data, write_params, write_yul_data},
+	verifier::{gen_evm_verifier_code, gen_pk},
 };
-use halo2::halo2curves::bn256::Bn256;
+use halo2::{halo2curves::bn256::Bn256, SerdeFormat};
 use rand::thread_rng;
 
 /// Generate params for the circuit.
 fn main() {
-	for k in 9..18 {
-		generate_params_and_write(k);
-	}
-	// generate_et_verifier();
+	// for k in 9..18 {
+	// 	generate_params_and_write(k);
+	// }
+	generate_et_verifier();
 }
 
 fn generate_params_and_write(k: u32) {
@@ -31,6 +31,9 @@ pub fn generate_et_verifier() {
 	let k = 14;
 	let params = read_params(k);
 	let pk = gen_pk(&params, &et);
-	let deployment_code = gen_evm_verifier(&params, pk.get_vk(), vec![NUM_NEIGHBOURS]);
-	write_bytes_data(deployment_code, "et_verifier").unwrap();
+	let contract_code = gen_evm_verifier_code(&params, pk.get_vk(), vec![NUM_NEIGHBOURS]);
+	write_yul_data(contract_code, "et_verifier").unwrap();
+
+	let pk_bytes = pk.to_bytes(SerdeFormat::Processed);
+	write_bytes_data(pk_bytes, "pk_bytes").unwrap();
 }
