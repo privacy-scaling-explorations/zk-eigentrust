@@ -325,19 +325,5 @@ mod test {
 		let pub_ins = vec![sum; VERTICAL_SIZE];
 		let proof = gen_proof(&params, &pk, circuit.clone(), vec![pub_ins.clone()]);
 		evm_verify(deployment_code, vec![pub_ins.clone()], proof.clone());
-
-		let k = 14;
-		let params = read_params(k);
-		let pk = gen_pk(&params, &circuit);
-		let deployment_code = gen_evm_verifier(&params, pk.get_vk(), vec![VERTICAL_SIZE]);
-		let contract_code = gen_evm_verifier_code(&params, pk.get_vk(), vec![VERTICAL_SIZE]);
-
-		write_bytes_data(deployment_code, "test_verifier").unwrap();
-		write_yul_data(contract_code, "test_verifier").unwrap();
-
-		let proof = Proof { pub_ins, proof };
-		let proof_raw: ProofRaw = proof.into();
-
-		write_json_data(proof_raw, "test_proof").unwrap();
 	}
 }

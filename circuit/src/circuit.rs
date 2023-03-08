@@ -751,11 +751,11 @@ mod test {
 		let proof = gen_proof(&params, &pk, et.clone(), vec![res.clone()]);
 		evm_verify(deployment_code.clone(), vec![res.clone()], proof.clone());
 
-		// let contract_code = gen_evm_verifier_code(&params, pk.get_vk(),
-		// vec![NUM_NEIGHBOURS]); write_bytes_data(deployment_code,
-		// "et_verifier").unwrap(); write_yul_data(contract_code,
-		// "et_verifier").unwrap(); let proof = Proof { pub_ins: res, proof };
-		// let proof_raw: ProofRaw = proof.into();
-		// write_json_data(proof_raw, "et_proof").unwrap();
+		let contract_code = gen_evm_verifier_code(&params, pk.get_vk(), vec![NUM_NEIGHBOURS]);
+		write_bytes_data(deployment_code, "et_verifier").unwrap();
+		write_yul_data(contract_code, "et_verifier").unwrap();
+		let proof = Proof { pub_ins: res, proof };
+		let proof_raw: ProofRaw = proof.into();
+		write_json_data(proof_raw, "et_proof").unwrap();
 	}
 }
