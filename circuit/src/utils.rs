@@ -176,25 +176,24 @@ where
 }
 
 /// Write parameters to a file.
-pub fn write_params<E: Engine + Debug>(params: &ParamsKZG<E>, path: &str)
+pub fn write_params<E: Engine + Debug>(params: &ParamsKZG<E>)
 where
 	E::G1Affine: SerdeObject,
 	E::G2Affine: SerdeObject,
 {
 	let mut buffer: Vec<u8> = Vec::new();
 	params.write(&mut buffer).unwrap();
-	write(path, buffer).unwrap();
+	let name = format!("params-{}", params.k());
+	write_bytes_data(buffer, &name).unwrap();
 }
 
 /// Read parameters from a file.
-pub fn read_params<E: Engine + Debug>(path: &str) -> ParamsKZG<E>
+pub fn read_params<E: Engine + Debug>(k: u32) -> ParamsKZG<E>
 where
 	E::G1Affine: SerdeObject,
 	E::G2Affine: SerdeObject,
 {
-	let mut buffer: Vec<u8> = Vec::new();
-	let mut file = std::fs::File::open(path).unwrap();
-	file.read_to_end(&mut buffer).unwrap();
+	let buffer: Vec<u8> = read_bytes_data(&format!("params-{}", k));
 	ParamsKZG::<E>::read(&mut &buffer[..]).unwrap()
 }
 

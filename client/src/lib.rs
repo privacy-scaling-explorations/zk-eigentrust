@@ -124,14 +124,13 @@ impl EigenTrustClient {
 		let addr = addr_res.map_err(|_| ClientError::ParseError)?;
 		let et_wrapper_contract = EtVerifierWrapper::new(addr, self.client.clone());
 
-		let mut pub_ins: [U256; 5] = [U256::default(); 5];
+		let mut pub_ins = [U256::default(); NUM_NEIGHBOURS];
 		for (i, x) in proof_raw.pub_ins.iter().enumerate() {
 			pub_ins[i] = U256::from(x);
 		}
-		let proof_bytes: Bytes = Bytes::from(proof_raw.proof.clone());
+		let proof_bytes = Bytes::from(proof_raw.proof.clone());
 
 		let tx_call = et_wrapper_contract.verify(pub_ins, proof_bytes);
-		let calldata = tx_call.calldata();
 		let tx_res = tx_call.send();
 		let tx = tx_res.await.map_err(|e| {
 			eprintln!("{:?}", e);
@@ -161,7 +160,7 @@ mod test {
 		ProofRaw,
 	};
 	use eigen_trust_server::manager::NUM_NEIGHBOURS;
-	use ethers::utils::Anvil;
+	use ethers::{abi::Address, utils::Anvil};
 
 	#[tokio::test]
 	async fn should_add_attestation() {
@@ -206,12 +205,10 @@ mod test {
 		let anvil = Anvil::new().spawn();
 		let mnemonic = "test test test test test test test test test test test junk".to_string();
 		let node_url = anvil.endpoint();
-		let as_address = deploy_as(&mnemonic, &node_url).await.unwrap();
 		let et_contract = read_bytes_data("et_verifier");
 		let et_verifier_address = deploy_verifier(&mnemonic, &node_url, et_contract).await.unwrap();
 		let et_verifier_wr =
 			deploy_et_wrapper(&mnemonic, &node_url, et_verifier_address).await.unwrap();
-		let as_address_string = format!("{:?}", as_address);
 		let et_verifier_address_string = format!("{:?}", et_verifier_wr);
 
 		let dummy_user = [
@@ -227,7 +224,7 @@ mod test {
 				"2L9bbXNEayuRMMbrWFynPtgkrXH1iBdfryRH9Soa8M67".to_string(),
 				"9rBeBVtbN2MkHDTpeAouqkMWNFJC6Bxb6bXH9jUueWaF".to_string(),
 			],
-			as_address: as_address_string,
+			as_address: format!("{:?}", Address::default()),
 			et_verifier_wrapper_address: et_verifier_address_string,
 			mnemonic,
 			ethereum_node_url: node_url,

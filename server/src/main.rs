@@ -23,8 +23,7 @@ use tokio::{
 
 use eigen_trust_circuit::{
 	circuit::EigenTrust,
-	halo2::poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
-	utils::{keygen, read_json_data},
+	utils::{keygen, read_json_data, read_params},
 	ProofRaw,
 };
 use eigen_trust_server::{
@@ -69,13 +68,14 @@ impl ToString for ResponseBody {
 }
 
 static MANAGER_STORE: Lazy<Arc<Mutex<Manager>>> = Lazy::new(|| {
-	let mut rng = thread_rng();
-	let params = ParamsKZG::new(14);
+	let k = 14;
+	let params = read_params(k);
 
 	const NN: usize = NUM_NEIGHBOURS;
 	const NI: usize = NUM_ITER;
 	const IS: u128 = INITIAL_SCORE;
 	const S: u128 = SCALE;
+	let mut rng = thread_rng();
 	let random_circuit = EigenTrust::<NN, NI, IS, S>::random(&mut rng);
 	let proving_key = keygen(&params, random_circuit).unwrap();
 
@@ -194,7 +194,7 @@ mod test {
 	#[tokio::test]
 	async fn should_fail_if_route_is_not_found() {
 		let mut rng = thread_rng();
-		let params = ParamsKZG::new(14);
+		let params = read_params(14);
 		let random_circuit =
 			EigenTrust::<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, SCALE>::random(&mut rng);
 		let proving_key = keygen(&params, random_circuit).unwrap();
@@ -213,7 +213,7 @@ mod test {
 	#[tokio::test]
 	async fn should_query_score() {
 		let mut rng = thread_rng();
-		let params = ParamsKZG::new(14);
+		let params = read_params(14);
 		let random_circuit =
 			EigenTrust::<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, SCALE>::random(&mut rng);
 		let proving_key = keygen(&params, random_circuit).unwrap();

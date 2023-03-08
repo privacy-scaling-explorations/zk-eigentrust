@@ -527,11 +527,10 @@ mod test {
 	use crate::{
 		eddsa::native::{sign, SecretKey},
 		utils::{
-			generate_params, prove_and_verify, write_bytes_data, write_json_data, write_yul_data,
+			generate_params, prove_and_verify, read_params, write_bytes_data, write_json_data,
+			write_yul_data,
 		},
-		verifier::{
-			evm_verify, gen_evm_verifier, gen_evm_verifier_code, gen_pk, gen_proof, gen_srs,
-		},
+		verifier::{evm_verify, gen_evm_verifier, gen_evm_verifier_code, gen_pk, gen_proof},
 		Proof, ProofRaw,
 	};
 	use halo2::{dev::MockProver, halo2curves::bn256::Bn256};
@@ -744,19 +743,19 @@ mod test {
 		);
 
 		let k = 14;
-		let params = gen_srs(k);
+		let params = read_params(k);
 		let pk = gen_pk(&params, &et);
 		let deployment_code = gen_evm_verifier(&params, pk.get_vk(), vec![NUM_NEIGHBOURS]);
-		let contract_code = gen_evm_verifier_code(&params, pk.get_vk(), vec![NUM_NEIGHBOURS]);
 		dbg!(deployment_code.len());
 
 		let proof = gen_proof(&params, &pk, et.clone(), vec![res.clone()]);
 		evm_verify(deployment_code.clone(), vec![res.clone()], proof.clone());
 
-		write_bytes_data(deployment_code, "et_verifier").unwrap();
-		write_yul_data(contract_code, "et_verifier").unwrap();
-		let proof = Proof { pub_ins: res, proof };
-		let proof_raw: ProofRaw = proof.into();
-		write_json_data(proof_raw, "et_proof").unwrap();
+		// let contract_code = gen_evm_verifier_code(&params, pk.get_vk(),
+		// vec![NUM_NEIGHBOURS]); write_bytes_data(deployment_code,
+		// "et_verifier").unwrap(); write_yul_data(contract_code,
+		// "et_verifier").unwrap(); let proof = Proof { pub_ins: res, proof };
+		// let proof_raw: ProofRaw = proof.into();
+		// write_json_data(proof_raw, "et_proof").unwrap();
 	}
 }

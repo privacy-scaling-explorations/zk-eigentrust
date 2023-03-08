@@ -50,11 +50,6 @@ where
 	calldata
 }
 
-/// Generate SRS
-pub fn gen_srs(k: u32) -> ParamsKZG<Bn256> {
-	ParamsKZG::<Bn256>::setup(k, OsRng)
-}
-
 /// Generate Public Key
 pub fn gen_pk<C: Circuit<Fr>>(params: &ParamsKZG<Bn256>, circuit: &C) -> ProvingKey<G1Affine> {
 	let vk = keygen_vk(params, circuit).unwrap();
@@ -140,10 +135,11 @@ pub fn evm_verify(deployment_code: Vec<u8>, instances: Vec<Vec<Fr>>, proof: Vec<
 mod test {
 	use std::usize;
 
-	use super::{gen_evm_verifier, gen_pk, gen_proof, gen_srs};
+	use super::{gen_evm_verifier, gen_pk, gen_proof};
 	use crate::{
 		utils::{
-			generate_params, prove_and_verify, write_bytes_data, write_json_data, write_yul_data,
+			generate_params, prove_and_verify, read_params, write_bytes_data, write_json_data,
+			write_yul_data,
 		},
 		verifier::{evm_verify, gen_evm_verifier_code},
 		Proof, ProofRaw, RegionCtx,
@@ -321,7 +317,7 @@ mod test {
 		let circuit = TestCircuitPi::<_, VERTICAL_SIZE>::new(advice, fixed);
 
 		let k = 9;
-		let params = gen_srs(k);
+		let params = read_params(k);
 		let pk = gen_pk(&params, &circuit);
 		let deployment_code = gen_evm_verifier(&params, pk.get_vk(), vec![VERTICAL_SIZE]);
 		dbg!(deployment_code.len());
@@ -331,7 +327,7 @@ mod test {
 		evm_verify(deployment_code, vec![pub_ins.clone()], proof.clone());
 
 		let k = 14;
-		let params = gen_srs(k);
+		let params = read_params(k);
 		let pk = gen_pk(&params, &circuit);
 		let deployment_code = gen_evm_verifier(&params, pk.get_vk(), vec![VERTICAL_SIZE]);
 		let contract_code = gen_evm_verifier_code(&params, pk.get_vk(), vec![VERTICAL_SIZE]);

@@ -1,11 +1,11 @@
 use clap::{Args, Parser, Subcommand};
 use eigen_trust_circuit::{
 	utils::{read_bytes_data, read_json_data, write_json_data},
-	Proof, ProofRaw,
+	ProofRaw,
 };
 use eigen_trust_client::{
 	utils::{
-		call_verifier, compile_sol_contract, compile_yul_contracts, deploy_as, deploy_verifier,
+		compile_sol_contract, compile_yul_contracts, deploy_as, deploy_et_wrapper, deploy_verifier,
 		read_csv_data,
 	},
 	ClientConfig, EigenTrustClient,
@@ -28,11 +28,10 @@ struct Cli {
 enum Mode {
 	Show,
 	CompileContracts,
-	DeployAs,
-	DeployEtVerifier,
+	DeployContracts,
 	Attest,
 	Update(UpdateData),
-	Prove,
+	Verify,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Args)]
@@ -60,7 +59,7 @@ async fn main() {
 			compile_yul_contracts();
 			println!("Finished compiling!");
 		},
-		Mode::DeployAs => {
+		Mode::DeployContracts => {
 			let deploy_res = deploy_as(&config.mnemonic, &config.ethereum_node_url).await;
 			if let Err(e) = deploy_res {
 				eprintln!("Failed to deploy the AttestationStation contract: {:?}", e);
@@ -68,8 +67,7 @@ async fn main() {
 			}
 			let address = deploy_res.unwrap();
 			println!("AttestationStation contract deployed. Address: {}", address);
-		},
-		Mode::DeployEtVerifier => {
+
 			let et_contract = read_bytes_data("et_verifier");
 			let deploy_res =
 				deploy_verifier(&config.mnemonic, &config.ethereum_node_url, et_contract).await;
@@ -78,23 +76,22 @@ async fn main() {
 				return;
 			}
 			let address = deploy_res.unwrap();
-			println!("EigenTrustVerifier contract deployed. Address: {}", address);
+			let wrapper_res =
+				deploy_et_wrapper(&config.mnemonic, &config.ethereum_node_url, address).await;
+			let w_addr = wrapper_res.unwrap();
+			println!("EtVerifierWrapper contract deployed. Address: {}", w_addr);
 		},
 		Mode::Attest => {
 			let client = EigenTrustClient::new(config, user_secrets_raw);
 			client.attest().await.unwrap();
 		},
-		Mode::Prove => {
-			let et_verifier_address =
-				config.et_verifier_wrapper_address.parse::<Address>().unwrap();
+		Mode::Verify => {
 			let url = format!("{}/score", config.server_url);
 			let proof_raw: ProofRaw = reqwest::get(url).await.unwrap().json().await.unwrap();
 			write_json_data(proof_raw.clone(), "et_proof").unwrap();
-			let proof: Proof = proof_raw.into();
-			call_verifier(
-				&config.mnemonic, &config.ethereum_node_url, et_verifier_address, proof,
-			)
-			.await;
+			let client = EigenTrustClient::new(config, user_secrets_raw);
+			client.verify(proof_raw).await.unwrap();
+			println!("Successful verification!");
 		},
 		Mode::Update(data) => {
 			let UpdateData { name, score, sk, as_address, mnemonic, node_url } = data;

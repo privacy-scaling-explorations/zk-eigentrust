@@ -187,22 +187,6 @@ mod test {
 	}
 
 	#[tokio::test]
-	async fn should_call_test_verifier_contract() {
-		let anvil = Anvil::new().spawn();
-		let mnemonic = "test test test test test test test test test test test junk";
-		let node_endpoint = anvil.endpoint();
-
-		let bytecode = read_bytes_data("test_verifier_temp");
-		let addr = deploy_verifier(mnemonic, &node_endpoint, bytecode).await.unwrap();
-
-		let proof_raw: ProofRaw = read_json_data("test_proof").unwrap();
-		let proof = Proof::from(proof_raw);
-		call_verifier(mnemonic, &node_endpoint, addr, proof).await;
-
-		drop(anvil);
-	}
-
-	#[tokio::test]
 	async fn should_call_et_verifier_contract() {
 		let anvil = Anvil::new().spawn();
 		let mnemonic = "test test test test test test test test test test test junk";
