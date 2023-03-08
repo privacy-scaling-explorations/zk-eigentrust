@@ -10,9 +10,9 @@ use crate::{
 	gadgets::{
 		absorb::AbsorbChip,
 		bits2num::Bits2NumChip,
-		lt_eq::{LessEqualConfig, NShiftedChip, N_SHIFTED},
+		lt_eq::{LessEqualConfig, NShiftedChip, K, N, N_SHIFTED},
 		main::{AddChipset, MainChip, MainConfig, MulChipset},
-		range::{LookupRangeCheckChip, LookupRangeCheckChipsetConfig, LookupShortWordCheckChip},
+		range::{LookupRangeCheckChip, LookupShortWordCheckChip, RangeChipsetConfig},
 	},
 	params::poseidon_bn254_5x5::Params,
 	poseidon::{
@@ -210,11 +210,11 @@ impl<
 
 		let bits2num_selector = Bits2NumChip::configure(&common, meta);
 		let n_shifted_selector = NShiftedChip::configure(&common, meta);
-		let running_sum_selector = LookupRangeCheckChip::<Scalar, 8, 32>::configure(&common, meta);
+		let running_sum_selector = LookupRangeCheckChip::<Scalar, K, N>::configure(&common, meta);
 		let lookup_short_word_selector =
 			LookupShortWordCheckChip::<Scalar, 8, 4>::configure(&common, meta);
 		let lookup_range_check_config =
-			LookupRangeCheckChipsetConfig::new(running_sum_selector, lookup_short_word_selector);
+			RangeChipsetConfig::new(running_sum_selector, lookup_short_word_selector);
 		let lt_eq = LessEqualConfig::new(
 			main.clone(),
 			lookup_range_check_config,

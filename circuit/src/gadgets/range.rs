@@ -10,7 +10,9 @@ use crate::{
 	Chip, Chipset, RegionCtx,
 };
 
-/// Lookup short word check chip
+/// Short length bits check chip using lookup table.
+///
+/// Checks if the target value is `S` bits long.
 #[derive(Debug, Clone)]
 pub struct LookupShortWordCheckChip<F: FieldExt, const K: usize, const S: usize> {
 	x: AssignedCell<F, F>,
@@ -31,21 +33,21 @@ impl<F: FieldExt, const K: usize, const S: usize> Chip<F> for LookupShortWordChe
 	) -> Selector {
 		assert!(0 < S && S < K, "Word bits should be less than target bits.");
 
-		let q_bitshift = meta.complex_selector();
+		let bitshift_selector = meta.complex_selector();
 
 		let word_column = common.advice[0];
 
 		meta.lookup("Check K bits limit", |meta| {
-			let q_bit_shift = meta.query_selector(q_bitshift);
+			let bitshift_selector = meta.query_selector(bitshift_selector);
 			let shifted_word = meta.query_advice(word_column, Rotation::cur());
 
-			vec![(q_bit_shift * shifted_word, common.table)]
+			vec![(bitshift_selector * shifted_word, common.table)]
 		});
 
 		// For short lookups, check that the word has been shifted by the correct number
 		// of bits. https://p.z.cash/halo2-0.1:decompose-short-lookup
 		meta.create_gate("Short word S bits limit", |meta| {
-			let q_bitshift = meta.query_selector(q_bitshift);
+			let bitshift_selector = meta.query_selector(bitshift_selector);
 			let word = meta.query_advice(word_column, Rotation::prev());
 			let shifted_word = meta.query_advice(word_column, Rotation::cur());
 			let inv_two_pow_s = meta.query_advice(word_column, Rotation::next());
@@ -55,35 +57,35 @@ impl<F: FieldExt, const K: usize, const S: usize> Chip<F> for LookupShortWordChe
 			// shifted_word = word * 2^{K-s}
 			//              = word * 2^K * inv_two_pow_s
 			Constraints::with_selector(
-				q_bitshift,
+				bitshift_selector,
 				Some(word * two_pow_k * inv_two_pow_s - shifted_word),
 			)
 		});
 
-		q_bitshift
+		bitshift_selector
 	}
 
 	fn synthesize(
 		self, common: &crate::CommonConfig, selector: &Selector, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, halo2::plonk::Error> {
 		layouter.assign_region(
-			|| "check short word",
+			|| "short word check chip",
 			|region| {
 				let mut ctx = RegionCtx::new(region, 0);
 
 				// Assign original value
 				let assigned_x = ctx.copy_assign(common.advice[0], self.x.clone())?;
 
-				// Assign shifted value
 				ctx.next();
 
+				// Assign shifted value
 				let shifted_word = self.x.value().cloned() * Value::known(F::from(1 << (K - S)));
 				ctx.assign_advice(common.advice[0], shifted_word)?;
 				ctx.enable(selector.clone())?;
 
-				// Assign 2^{-S} from a fixed column.
 				ctx.next();
 
+				// Assign 2^{-S} from a fixed column.
 				let inv_two_pow_s = F::from(1 << S).invert().unwrap();
 				ctx.assign_from_constant(common.advice[0], inv_two_pow_s)?;
 
@@ -93,7 +95,9 @@ impl<F: FieldExt, const K: usize, const S: usize> Chip<F> for LookupShortWordChe
 	}
 }
 
-/// Lookup range check chip
+/// Range check chip using lookup table.
+///
+/// Check if the target value is `K * N` bits long.
 #[derive(Debug, Clone)]
 pub struct LookupRangeCheckChip<F: FieldExt, const K: usize, const N: usize> {
 	x: AssignedCell<F, F>,
@@ -112,12 +116,12 @@ impl<F: FieldExt, const K: usize, const N: usize> Chip<F> for LookupRangeCheckCh
 	fn configure(
 		common: &crate::CommonConfig, meta: &mut halo2::plonk::ConstraintSystem<F>,
 	) -> Selector {
-		let q_running = meta.complex_selector();
+		let running_sum_selector = meta.complex_selector();
 
 		let running_sum = common.advice[0];
 
 		meta.lookup("running_sum check", |meta| {
-			let q_running = meta.query_selector(q_running);
+			let running_sum_selector = meta.query_selector(running_sum_selector);
 			let z_cur = meta.query_advice(running_sum, Rotation::cur());
 
 			// In the case of a running sum decomposition, we recover the word from
@@ -130,21 +134,21 @@ impl<F: FieldExt, const K: usize, const N: usize> Chip<F> for LookupRangeCheckCh
 					z_cur.clone() - z_next * F::from(1 << K)
 				};
 
-				q_running.clone() * running_sum_word
+				running_sum_selector.clone() * running_sum_word
 			};
 
 			// Combine the running sum and short lookups:
 			vec![(running_sum_lookup, common.table)]
 		});
 
-		q_running
+		running_sum_selector
 	}
 
 	fn synthesize(
 		self, common: &crate::CommonConfig, selector: &Selector, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, halo2::plonk::Error> {
 		layouter.assign_region(
-			|| "range check",
+			|| "range check chip",
 			|region: Region<'_, F>| {
 				let mut ctx = RegionCtx::new(region, 0);
 				let x = ctx.copy_assign(common.advice[0], self.x.clone())?;
@@ -204,29 +208,27 @@ impl<F: FieldExt, const K: usize, const N: usize> Chip<F> for LookupRangeCheckCh
 	}
 }
 
-/// LookupRangeCheckChipsetConfig
+/// RangeChipsetConfig
 #[derive(Debug, Clone)]
-pub struct LookupRangeCheckChipsetConfig {
-	q_running_sum: Selector,
-	q_short_word: Selector,
+pub struct RangeChipsetConfig {
+	running_sum_selector: Selector,
+	short_word_selecor: Selector,
 }
 
-impl LookupRangeCheckChipsetConfig {
+impl RangeChipsetConfig {
 	/// Construct a new instance
-	pub fn new(q_running_sum: Selector, q_short_word: Selector) -> Self {
-		Self { q_running_sum, q_short_word }
+	pub fn new(running_sum_selector: Selector, short_word_selecor: Selector) -> Self {
+		Self { running_sum_selector, short_word_selecor }
 	}
 }
 
-/// LookupRangeCheckChipset
+/// RangeChipset
 #[derive(Debug, Clone)]
-pub struct LookupRangeCheckChipset<F: FieldExt, const K: usize, const N: usize, const S: usize> {
+pub struct RangeChipset<F: FieldExt, const K: usize, const N: usize, const S: usize> {
 	x: AssignedCell<F, F>,
 }
 
-impl<F: FieldExt, const K: usize, const N: usize, const S: usize>
-	LookupRangeCheckChipset<F, K, N, S>
-{
+impl<F: FieldExt, const K: usize, const N: usize, const S: usize> RangeChipset<F, K, N, S> {
 	/// Constructs new chipset
 	pub fn new(x: AssignedCell<F, F>) -> Self {
 		Self { x }
@@ -234,21 +236,21 @@ impl<F: FieldExt, const K: usize, const N: usize, const S: usize>
 }
 
 impl<F: FieldExt, const K: usize, const N: usize, const S: usize> Chipset<F>
-	for LookupRangeCheckChipset<F, K, N, S>
+	for RangeChipset<F, K, N, S>
 {
-	type Config = LookupRangeCheckChipsetConfig;
+	type Config = RangeChipsetConfig;
 	type Output = AssignedCell<F, F>;
 
 	fn synthesize(
-		self, common: &crate::CommonConfig, config: &LookupRangeCheckChipsetConfig,
+		self, common: &crate::CommonConfig, config: &RangeChipsetConfig,
 		mut layouter: impl halo2::circuit::Layouter<F>,
 	) -> Result<Self::Output, halo2::plonk::Error> {
 		// First, check if x is less than 256 bits
 		let range_chip = LookupRangeCheckChip::<F, K, N>::new(self.x.clone());
 		let x = range_chip.synthesize(
 			common,
-			&config.q_running_sum,
-			layouter.namespace(|| "x long range check"),
+			&config.running_sum_selector,
+			layouter.namespace(|| "range check"),
 		)?;
 
 		// Rip the last word of "x" & chek if it is 4 bit
@@ -280,8 +282,8 @@ impl<F: FieldExt, const K: usize, const N: usize, const S: usize> Chipset<F>
 		let short_word_chip = LookupShortWordCheckChip::<F, K, S>::new(last_word_cell);
 		let _ = short_word_chip.synthesize(
 			common,
-			&config.q_short_word,
-			layouter.namespace(|| "x last word check"),
+			&config.short_word_selecor,
+			layouter.namespace(|| "last word check"),
 		)?;
 
 		Ok(x)
@@ -309,15 +311,15 @@ mod tests {
 	enum Gadget {
 		ShortWordCheck,
 		RangeCheck,
-		LookupRangeCheckChipset,
+		RangeChipset,
 	}
 
 	#[derive(Clone)]
 	struct TestConfig {
 		common: CommonConfig,
-		q_bitshift: Selector,
-		q_running_sum: Selector,
-		lookup_range_check: LookupRangeCheckChipsetConfig,
+		short_word_selector: Selector,
+		running_sum_selector: Selector,
+		lookup_range_check: RangeChipsetConfig,
 	}
 
 	#[derive(Clone)]
@@ -342,11 +344,13 @@ mod tests {
 
 		fn configure(meta: &mut ConstraintSystem<Fr>) -> TestConfig {
 			let common = CommonConfig::new(meta);
-			let q_bitshift = LookupShortWordCheckChip::<Fr, K, S>::configure(&common, meta);
-			let q_running_sum = LookupRangeCheckChip::<Fr, K, N>::configure(&common, meta);
-			let lookup_range_check = LookupRangeCheckChipsetConfig::new(q_running_sum, q_bitshift);
+			let short_word_selector =
+				LookupShortWordCheckChip::<Fr, K, S>::configure(&common, meta);
+			let running_sum_selector = LookupRangeCheckChip::<Fr, K, N>::configure(&common, meta);
+			let lookup_range_check =
+				RangeChipsetConfig::new(running_sum_selector, short_word_selector);
 
-			TestConfig { common, q_bitshift, q_running_sum, lookup_range_check }
+			TestConfig { common, short_word_selector, running_sum_selector, lookup_range_check }
 		}
 
 		fn synthesize(
@@ -384,7 +388,7 @@ mod tests {
 					let short_word_check_chip = LookupShortWordCheckChip::<Fr, K, S>::new(x);
 					let _ = short_word_check_chip.synthesize(
 						&config.common,
-						&config.q_bitshift,
+						&config.short_word_selector,
 						layouter.namespace(|| "short word check"),
 					)?;
 				},
@@ -392,12 +396,12 @@ mod tests {
 					let range_check_chip = LookupRangeCheckChip::<Fr, K, N>::new(x);
 					let _ = range_check_chip.synthesize(
 						&config.common,
-						&config.q_running_sum,
+						&config.running_sum_selector,
 						layouter.namespace(|| "range check"),
 					)?;
 				},
-				Gadget::LookupRangeCheckChipset => {
-					let lookup_range_check_chipset = LookupRangeCheckChipset::<Fr, K, N, S>::new(x);
+				Gadget::RangeChipset => {
+					let lookup_range_check_chipset = RangeChipset::<Fr, K, N, S>::new(x);
 					let _ = lookup_range_check_chipset.synthesize(
 						&config.common,
 						&config.lookup_range_check,
@@ -412,69 +416,60 @@ mod tests {
 
 	#[test]
 	fn test_short_word_case() {
-		// Testing x is 3 bits
-		let x = Fr::from(0b111);
-
-		let test_chip = TestCircuit::new(x, Gadget::ShortWordCheck);
-
 		let k = 9;
 		let pub_ins = vec![];
-		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+
+		// Testing x is 3 bits
+		let x = Fr::from(0x07); // 0b111
+
+		let test_chip = TestCircuit::new(x, Gadget::ShortWordCheck);
+		let prover = MockProver::run(k, &test_chip, vec![pub_ins.clone()]).unwrap();
 		assert!(prover.verify().is_ok());
 
 		// Should fail since x is 4 bits
-		let x = Fr::from(0b1001);
+		let x = Fr::from(0x09); // 0b1001
 
 		let test_chip = TestCircuit::new(x, Gadget::ShortWordCheck);
-
-		let k = 9;
-		let pub_ins = vec![];
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
 		assert!(prover.verify().is_err());
 	}
 
 	#[test]
 	fn test_range_check() {
-		// Testing x is 16 bits
-		let x = Fr::from(0xffff);
-
-		let test_chip = TestCircuit::new(x, Gadget::RangeCheck);
-
 		let k = 9;
 		let pub_ins = vec![];
-		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+
+		// Testing x is 16 bits
+		let x = Fr::from(0xffff); // 0b1111111111111111
+
+		let test_chip = TestCircuit::new(x, Gadget::RangeCheck);
+		let prover = MockProver::run(k, &test_chip, vec![pub_ins.clone()]).unwrap();
 		assert!(prover.verify().is_ok());
 
 		// Should fail since x is 17 bits
-		let x = Fr::from(0x10000);
+		let x = Fr::from(0x10000); // 0b10000000000000000
 
 		let test_chip = TestCircuit::new(x, Gadget::RangeCheck);
-
-		let k = 9;
-		let pub_ins = vec![];
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
 		assert!(prover.verify().is_err());
 	}
 
 	#[test]
 	fn test_lookup_range_check_chipset() {
-		// Testing x is 11 bits
-		let x = Fr::from(0b11111111111);
-
-		let test_chip = TestCircuit::new(x, Gadget::LookupRangeCheckChipset);
-
 		let k = 9;
 		let pub_ins = vec![];
-		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+
+		// Testing x is 11 bits
+		let x = Fr::from(0x7ff); // 0b11111111111
+
+		let test_chip = TestCircuit::new(x, Gadget::RangeChipset);
+		let prover = MockProver::run(k, &test_chip, vec![pub_ins.clone()]).unwrap();
 		assert!(prover.verify().is_ok());
 
-		// Should fail since x is 17 bits
-		let x = Fr::from(0b11111111111111111);
+		// Should fail since x is 12 bits
+		let x = Fr::from(0xfff); // 0b111111111111
 
-		let test_chip = TestCircuit::new(x, Gadget::LookupRangeCheckChipset);
-
-		let k = 9;
-		let pub_ins = vec![];
+		let test_chip = TestCircuit::new(x, Gadget::RangeChipset);
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
 		assert!(prover.verify().is_err());
 	}

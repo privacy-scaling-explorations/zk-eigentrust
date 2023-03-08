@@ -1,7 +1,7 @@
 use super::{
 	bits2num::Bits2NumChip,
 	main::MainConfig,
-	range::{LookupRangeCheckChipset, LookupRangeCheckChipsetConfig},
+	range::{RangeChipset, RangeChipsetConfig},
 };
 use crate::{gadgets::main::IsZeroChipset, utils::to_wide, Chip, Chipset, CommonConfig, RegionCtx};
 use halo2::{
@@ -21,9 +21,12 @@ pub const NUM_BITS: usize = 252;
 /// Same number of bits as N_SHIFTED, since NUM + N_SHIFTED is the operation.
 pub const DIFF_BITS: usize = 253;
 
-const K: usize = 8;
-const N: usize = 32;
-const S: usize = 4;
+/// Numbers range check uses 8-bit limb for lookup
+pub const K: usize = 8;
+/// Numbers range check uses 32(256 / 8) limbs for lookup
+pub const N: usize = 32;
+/// Numbers range check uses 4 bits, since it checks 252(256 - 4) bits long
+pub const S: usize = 4;
 
 /// Chip for finding the difference between 2 numbers shifted 252 bits
 pub struct NShiftedChip<F: FieldExt> {
@@ -99,7 +102,7 @@ impl<F: FieldExt> Chip<F> for NShiftedChip<F> {
 /// Selectors for LessEqualChipset
 pub struct LessEqualConfig {
 	main: MainConfig,
-	lookup_range_check: LookupRangeCheckChipsetConfig,
+	lookup_range_check: RangeChipsetConfig,
 	bits_2_num_selector: Selector,
 	n_shifted_selector: Selector,
 }
@@ -107,8 +110,8 @@ pub struct LessEqualConfig {
 impl LessEqualConfig {
 	/// Constructs new config
 	pub fn new(
-		main: MainConfig, lookup_range_check: LookupRangeCheckChipsetConfig,
-		bits_2_num_selector: Selector, n_shifted_selector: Selector,
+		main: MainConfig, lookup_range_check: RangeChipsetConfig, bits_2_num_selector: Selector,
+		n_shifted_selector: Selector,
 	) -> Self {
 		Self { main, lookup_range_check, bits_2_num_selector, n_shifted_selector }
 	}
@@ -142,14 +145,14 @@ impl<F: FieldExt> Chipset<F> for LessEqualChipset<F> {
 	fn synthesize(
 		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
-		let lookup_range_check_chipset = LookupRangeCheckChipset::<F, K, N, S>::new(self.x.clone());
+		let lookup_range_check_chipset = RangeChipset::<F, K, N, S>::new(self.x.clone());
 		let x = lookup_range_check_chipset.synthesize(
 			common,
 			&config.lookup_range_check,
 			layouter.namespace(|| "x range check"),
 		)?;
 
-		let lookup_range_check_chipset = LookupRangeCheckChipset::<F, K, N, S>::new(self.y.clone());
+		let lookup_range_check_chipset = RangeChipset::<F, K, N, S>::new(self.y.clone());
 		let y = lookup_range_check_chipset.synthesize(
 			common,
 			&config.lookup_range_check,
@@ -235,7 +238,7 @@ mod test {
 			let short_word_check_selector =
 				LookupShortWordCheckChip::<Fr, K, S>::configure(&common, meta);
 			let lookup_range_check =
-				LookupRangeCheckChipsetConfig::new(range_check_selector, short_word_check_selector);
+				RangeChipsetConfig::new(range_check_selector, short_word_check_selector);
 
 			let b2n_selector = Bits2NumChip::configure(&common, meta);
 			let ns_selector = NShiftedChip::configure(&common, meta);

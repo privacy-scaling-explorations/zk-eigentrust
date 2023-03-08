@@ -227,9 +227,7 @@ mod test {
 			bits2num::Bits2NumChip,
 			lt_eq::{LessEqualConfig, NShiftedChip, N_SHIFTED},
 			main::{MainChip, MainConfig},
-			range::{
-				LookupRangeCheckChip, LookupRangeCheckChipsetConfig, LookupShortWordCheckChip,
-			},
+			range::{LookupRangeCheckChip, LookupShortWordCheckChip, RangeChipsetConfig},
 		},
 		params::poseidon_bn254_5x5::Params,
 		poseidon::{native::Poseidon, FullRoundChip, PartialRoundChip, PoseidonConfig},
@@ -294,9 +292,8 @@ mod test {
 			let running_sum_selector = LookupRangeCheckChip::<Fr, 8, 32>::configure(&common, meta);
 			let lookup_short_word_selector =
 				LookupShortWordCheckChip::<Fr, 8, 4>::configure(&common, meta);
-			let lookup_range_check_config = LookupRangeCheckChipsetConfig::new(
-				running_sum_selector, lookup_short_word_selector,
-			);
+			let lookup_range_check_config =
+				RangeChipsetConfig::new(running_sum_selector, lookup_short_word_selector);
 			let lt_eq = LessEqualConfig::new(
 				main, lookup_range_check_config, bits2num_selector, n_shifted_selector,
 			);
