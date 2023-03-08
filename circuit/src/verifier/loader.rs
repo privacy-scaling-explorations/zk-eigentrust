@@ -1,5 +1,11 @@
-use crate::{ecc::native::EcPoint, integer::rns::RnsParams};
-use halo2::{arithmetic::Field, halo2curves::CurveAffine};
+use crate::{
+	ecc::native::EcPoint,
+	integer::{native::Integer, rns::RnsParams},
+};
+use halo2::{
+	arithmetic::Field,
+	halo2curves::{Coordinates, CurveAffine},
+};
 use snark_verifier::{
 	loader::{EcPointLoader, LoadedEcPoint, LoadedScalar, Loader, ScalarLoader},
 	util::arithmetic::FieldOps,
@@ -7,6 +13,7 @@ use snark_verifier::{
 };
 use std::{
 	fmt::Debug,
+	io,
 	marker::PhantomData,
 	ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
@@ -222,17 +229,16 @@ where
 
 	/// Load a constant field element.
 	fn load_const(&self, value: &C::Scalar) -> Self::LoadedScalar {
-		// TODO: Assign a value inside a new region and constrain it to be eq to
-		// constant
-
-		LScalar::default()
+		LScalar::new(value.clone(), self.clone())
 	}
 
 	/// Assert lhs and rhs field elements are equal.
 	fn assert_eq(
 		&self, annotation: &str, lhs: &Self::LoadedScalar, rhs: &Self::LoadedScalar,
 	) -> Result<(), VerifierError> {
-		Ok(())
+		lhs.eq(rhs)
+			.then_some(())
+			.ok_or_else(|| VerifierError::AssertionFailure(annotation.to_string()))
 	}
 }
 
@@ -265,13 +271,39 @@ where
 	type LoadedEcPoint = LEcPoint<C, P>;
 
 	fn ec_point_load_const(&self, value: &C) -> Self::LoadedEcPoint {
-		LEcPoint::default()
+		let coords: Coordinates<C> = Option::from(value.coordinates())
+			.ok_or_else(|| {
+				io::Error::new(
+					io::ErrorKind::Other,
+					"cannot write points at infinity to the transcript",
+				)
+			})
+			.unwrap();
+		let x = Integer::<
+			<C as CurveAffine>::Base,
+			<C as CurveAffine>::ScalarExt,
+			NUM_LIMBS,
+			NUM_BITS,
+			P,
+		>::from_w(coords.x().clone());
+		let y = Integer::<
+			<C as CurveAffine>::Base,
+			<C as CurveAffine>::ScalarExt,
+			NUM_LIMBS,
+			NUM_BITS,
+			P,
+		>::from_w(coords.y().clone());
+		let point = EcPoint::new(x, y);
+
+		LEcPoint { inner: point, loader: self.clone() }
 	}
 
 	fn ec_point_assert_eq(
 		&self, annotation: &str, lhs: &Self::LoadedEcPoint, rhs: &Self::LoadedEcPoint,
 	) -> Result<(), VerifierError> {
-		Ok(())
+		lhs.eq(rhs)
+			.then_some(())
+			.ok_or_else(|| VerifierError::AssertionFailure(annotation.to_string()))
 	}
 
 	/// Perform multi-scalar multiplication.
@@ -281,6 +313,16 @@ where
 			&Self::LoadedEcPoint,
 		)],
 	) -> Self::LoadedEcPoint {
+		// TODO:  Find a way to_bytes
+		pairs
+		.iter()
+		.cloned()
+		.map(|(scalar, base)| {
+			let bytes = scalar.inner
+			base.inner.mul_scalar()
+		})
+		.reduce(|acc, value| acc.add(&value))
+		.unwrap();
 		LEcPoint::default()
 	}
 }

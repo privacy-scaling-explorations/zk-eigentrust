@@ -89,7 +89,7 @@ where
 		let scalar = LScalar::new(scalar, self.loader.clone());
 		self.common_scalar(&scalar)?;
 
-		Err(VerifierError::InvalidInstances)
+		Ok(scalar)
 	}
 
 	fn read_ec_point(&mut self) -> Result<LEcPoint<C, P>, VerifierError> {
@@ -120,7 +120,7 @@ where
 		let point = LEcPoint { inner: ec_point, loader: self.loader.clone() };
 		self.common_ec_point(&point)?;
 
-		Err(VerifierError::InvalidInstances)
+		Ok(point)
 	}
 }
 
@@ -211,13 +211,17 @@ where
 	fn write_scalar(&mut self, scalar: C::Scalar) -> Result<(), VerifierError> {
 		self.common_scalar(&scalar)?;
 		let data = scalar.to_repr();
-		Ok(self.writer.write_all(data.as_ref()).unwrap())
+		self.writer.write_all(data.as_ref()).unwrap();
+
+		Ok(())
 	}
 
 	/// Write a elliptic curve point.
 	fn write_ec_point(&mut self, ec_point: C) -> Result<(), VerifierError> {
 		self.common_ec_point(&ec_point)?;
 		let compressed = ec_point.to_bytes();
-		Ok(self.writer.write_all(compressed.as_ref()).unwrap())
+		self.writer.write_all(compressed.as_ref()).unwrap();
+
+		Ok(())
 	}
 }
