@@ -1,4 +1,4 @@
-name: Set-Up & Fmt & Clippy & Build & Test & Test Docs
+name: Test Circuits
 
 # Controls when the action will run.
 on:
@@ -36,4 +36,4 @@ jobs:
         run: ./scripts/build.sh && ./scripts/diff.sh
 
       - name: Test
-        run: ./scripts/test.sh
+        run: cargo test -p eigen-trust-circuit --release
