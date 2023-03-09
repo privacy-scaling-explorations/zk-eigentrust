@@ -169,11 +169,6 @@ impl<
 
 		EigenTrust::new(pks, sigs, ops, messages)
 	}
-
-	/// Unique identifier for the circuit
-	pub fn id() -> usize {
-		0
-	}
 }
 
 impl<
