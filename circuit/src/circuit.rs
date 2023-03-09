@@ -744,6 +744,6 @@ mod test {
 		dbg!(deployment_code.len());
 
 		let proof = gen_proof(&params, &pk, et.clone(), vec![res.clone()]);
-		evm_verify(deployment_code.clone(), vec![res.clone()], proof.clone());
+		evm_verify(deployment_code, vec![res], proof);
 	}
 }
