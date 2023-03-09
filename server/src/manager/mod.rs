@@ -23,7 +23,7 @@ use eigen_trust_circuit::{
 		poly::kzg::commitment::ParamsKZG,
 	},
 	utils::to_short,
-	verifier::gen_proof,
+	verifier::{evm_verify, gen_evm_verifier, gen_proof},
 	Proof,
 };
 use std::collections::HashMap;
@@ -74,16 +74,19 @@ pub struct Manager {
 	pub(crate) attestations: HashMap<Scalar, Attestation>,
 	params: ParamsKZG<Bn256>,
 	proving_key: ProvingKey<G1Affine>,
+	verifier_code: Vec<u8>,
 }
 
 impl Manager {
 	/// Creates a new peer.
 	pub fn new(params: ParamsKZG<Bn256>, pk: ProvingKey<G1Affine>) -> Self {
+		let verifier_code = gen_evm_verifier(&params, &pk.get_vk(), vec![NUM_NEIGHBOURS]);
 		Self {
 			cached_proofs: HashMap::new(),
 			attestations: HashMap::new(),
 			params,
 			proving_key: pk,
+			verifier_code,
 		}
 	}
 
@@ -197,6 +200,14 @@ impl Manager {
 		let pub_ins = native::<Scalar, NUM_NEIGHBOURS, NUM_ITER, SCALE>(init_score, ops);
 
 		let proof_bytes = gen_proof(&self.params, &self.proving_key, et, vec![pub_ins.clone()]);
+
+		// --- SANITY CHECK VERIFICATION ---
+		evm_verify(
+			self.verifier_code.clone(),
+			vec![pub_ins.clone()],
+			proof_bytes.clone(),
+		);
+		// --- END ---
 
 		let proof = Proof { pub_ins, proof: proof_bytes };
 		self.cached_proofs.insert(epoch, proof);
