@@ -1,14 +1,79 @@
 use halo2::{
 	circuit::{AssignedCell, Layouter, Region, Value},
 	halo2curves::FieldExt,
-	plonk::{Constraints, Selector},
+	plonk::{
+		Advice, Column, ConstraintSystem, Constraints, Error, Fixed, Instance, Selector,
+		TableColumn,
+	},
 	poly::Rotation,
 };
 
 use crate::{
 	utils::{fe_to_le_bits, lebs2ip},
-	Chip, Chipset, RegionCtx,
+	RegionCtx,
 };
+
+/// Number of advice columns in common config
+const ADVICE: usize = 3;
+/// Number of fixed columns in common config
+const FIXED: usize = 1;
+
+/// Common config for the whole circuit
+#[derive(Clone, Debug)]
+pub struct MockCommonConfig {
+	/// Advice columns
+	advice: [Column<Advice>; ADVICE],
+	/// Fixed columns
+	fixed: [Column<Fixed>; FIXED],
+	/// Instance column
+	instance: Column<Instance>,
+	/// Lookup table column
+	table: TableColumn,
+}
+
+impl MockCommonConfig {
+	/// Create a new `MockCommonConfig` columns
+	pub fn new<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
+		let advice = [(); ADVICE].map(|_| meta.advice_column());
+		let fixed = [(); FIXED].map(|_| meta.fixed_column());
+		let instance = meta.instance_column();
+		let table = meta.lookup_table_column();
+
+		advice.map(|c| meta.enable_equality(c));
+		fixed.map(|c| meta.enable_constant(c));
+		meta.enable_equality(instance);
+
+		Self { advice, fixed, instance, table }
+	}
+}
+
+/// Trait for an atomic chip implementation
+/// Each chip uses common config columns, but has its own selector
+pub trait MockChip<F: FieldExt> {
+	/// Output of the synthesis
+	type Output: Clone;
+	/// Gate configuration, using common config columns
+	fn configure(common: &MockCommonConfig, meta: &mut ConstraintSystem<F>) -> Selector;
+	/// Chip synthesis. This function can return an assigned cell to be used
+	/// elsewhere in the circuit
+	fn synthesize(
+		self, common: &MockCommonConfig, selector: &Selector, layouter: impl Layouter<F>,
+	) -> Result<Self::Output, Error>;
+}
+
+/// Chipset uses a collection of chips as primitives to build more abstract
+/// circuits
+pub trait MockChipset<F: FieldExt> {
+	/// Config used for synthesis
+	type Config: Clone;
+	/// Output of the synthesis
+	type Output: Clone;
+	/// Chipset synthesis. This function can have multiple smaller chips
+	/// synthesised inside. Also can returns an assigned cell.
+	fn synthesize(
+		self, common: &MockCommonConfig, config: &Self::Config, layouter: impl Layouter<F>,
+	) -> Result<Self::Output, Error>;
+}
 
 /// Short length bits check chip using lookup table.
 ///
@@ -25,11 +90,13 @@ impl<F: FieldExt, const K: usize, const S: usize> LookupShortWordCheckChip<F, K,
 	}
 }
 
-impl<F: FieldExt, const K: usize, const S: usize> Chip<F> for LookupShortWordCheckChip<F, K, S> {
+impl<F: FieldExt, const K: usize, const S: usize> MockChip<F>
+	for LookupShortWordCheckChip<F, K, S>
+{
 	type Output = AssignedCell<F, F>;
 
 	fn configure(
-		common: &crate::CommonConfig, meta: &mut halo2::plonk::ConstraintSystem<F>,
+		common: &MockCommonConfig, meta: &mut halo2::plonk::ConstraintSystem<F>,
 	) -> Selector {
 		assert!(0 < S && S < K, "Word bits should be less than target bits.");
 
@@ -66,7 +133,7 @@ impl<F: FieldExt, const K: usize, const S: usize> Chip<F> for LookupShortWordChe
 	}
 
 	fn synthesize(
-		self, common: &crate::CommonConfig, selector: &Selector, mut layouter: impl Layouter<F>,
+		self, common: &MockCommonConfig, selector: &Selector, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, halo2::plonk::Error> {
 		layouter.assign_region(
 			|| "short word check chip",
@@ -110,11 +177,11 @@ impl<F: FieldExt, const K: usize, const N: usize> LookupRangeCheckChip<F, K, N> 
 	}
 }
 
-impl<F: FieldExt, const K: usize, const N: usize> Chip<F> for LookupRangeCheckChip<F, K, N> {
+impl<F: FieldExt, const K: usize, const N: usize> MockChip<F> for LookupRangeCheckChip<F, K, N> {
 	type Output = AssignedCell<F, F>;
 
 	fn configure(
-		common: &crate::CommonConfig, meta: &mut halo2::plonk::ConstraintSystem<F>,
+		common: &MockCommonConfig, meta: &mut halo2::plonk::ConstraintSystem<F>,
 	) -> Selector {
 		let running_sum_selector = meta.complex_selector();
 
@@ -145,7 +212,7 @@ impl<F: FieldExt, const K: usize, const N: usize> Chip<F> for LookupRangeCheckCh
 	}
 
 	fn synthesize(
-		self, common: &crate::CommonConfig, selector: &Selector, mut layouter: impl Layouter<F>,
+		self, common: &MockCommonConfig, selector: &Selector, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, halo2::plonk::Error> {
 		layouter.assign_region(
 			|| "range check chip",
@@ -235,14 +302,14 @@ impl<F: FieldExt, const K: usize, const N: usize, const S: usize> RangeChipset<F
 	}
 }
 
-impl<F: FieldExt, const K: usize, const N: usize, const S: usize> Chipset<F>
+impl<F: FieldExt, const K: usize, const N: usize, const S: usize> MockChipset<F>
 	for RangeChipset<F, K, N, S>
 {
 	type Config = RangeChipsetConfig;
 	type Output = AssignedCell<F, F>;
 
 	fn synthesize(
-		self, common: &crate::CommonConfig, config: &RangeChipsetConfig,
+		self, common: &MockCommonConfig, config: &RangeChipsetConfig,
 		mut layouter: impl halo2::circuit::Layouter<F>,
 	) -> Result<Self::Output, halo2::plonk::Error> {
 		// First, check if x is less than 256 bits
@@ -292,7 +359,7 @@ impl<F: FieldExt, const K: usize, const N: usize, const S: usize> Chipset<F>
 
 #[cfg(test)]
 mod tests {
-	use crate::CommonConfig;
+	use MockCommonConfig;
 
 	use super::*;
 
@@ -316,7 +383,7 @@ mod tests {
 
 	#[derive(Clone)]
 	struct TestConfig {
-		common: CommonConfig,
+		common: MockCommonConfig,
 		short_word_selector: Selector,
 		running_sum_selector: Selector,
 		lookup_range_check: RangeChipsetConfig,
@@ -343,7 +410,7 @@ mod tests {
 		}
 
 		fn configure(meta: &mut ConstraintSystem<Fr>) -> TestConfig {
-			let common = CommonConfig::new(meta);
+			let common = MockCommonConfig::new(meta);
 			let short_word_selector =
 				LookupShortWordCheckChip::<Fr, K, S>::configure(&common, meta);
 			let running_sum_selector = LookupRangeCheckChip::<Fr, K, N>::configure(&common, meta);

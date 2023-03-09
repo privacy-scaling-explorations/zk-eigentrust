@@ -16,5 +16,5 @@ pub mod set;
 */
 // /// Check if a number is less than or equal to a value (using lookup table)
 // pub mod lt_eq_lookup;
-// /// Range check gadget (using lookup table)
-// pub mod range;
+/// Range check gadget (using lookup table)
+pub mod range;
