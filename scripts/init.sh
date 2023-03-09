@@ -10,6 +10,4 @@ sudo add-apt-repository ppa:ethereum/ethereum
 sudo apt-get update
 sudo apt-get install solc
 
-git clone https://github.com/foundry-rs/foundry
-cd foundry
-cargo install --path ./anvil --bins --locked --force
+curl -L https://foundry.paradigm.xyz | bash
