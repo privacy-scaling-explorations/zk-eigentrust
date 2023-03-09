@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use super::NUM_NEIGHBOURS;
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 /// Raw data for the attestation
 pub struct AttestationData {
 	sig_r_x: [u8; 32],

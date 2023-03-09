@@ -6,7 +6,7 @@ use ethers::{
 };
 use std::{convert::TryFrom, sync::Arc};
 
-abigen!(AttestationStation, "./contracts/AttestationStation.json");
+abigen!(AttestationStation, "data/AttestationStation.json");
 
 /// Set up a client for interacting with ethereum node
 pub fn setup_client(url: &str) -> Arc<Provider<Http>> {

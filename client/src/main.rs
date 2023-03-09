@@ -1,38 +1,21 @@
 use clap::{Args, Parser, Subcommand};
-use csv::Reader as CsvReader;
+use eigen_trust_circuit::{
+	utils::{read_bytes_data, read_json_data, write_json_data},
+	ProofRaw,
+};
 use eigen_trust_client::{
-	utils::{compile, deploy},
+	utils::{
+		compile_sol_contract, compile_yul_contracts, deploy_as, deploy_et_wrapper, deploy_verifier,
+		read_csv_data,
+	},
 	ClientConfig, EigenTrustClient,
 };
 use ethers::{
 	abi::Address,
 	providers::Http,
 	signers::coins_bip39::{English, Mnemonic},
-	solc::utils::read_json_file,
 };
-use serde::{de::DeserializeOwned, Serialize};
-use std::{env, fs, io::Error, path::Path, str::FromStr};
-
-/// Reads the json file and deserialize it into the provided type
-pub fn read_csv_file<T: DeserializeOwned>(path: impl AsRef<Path>) -> Result<Vec<T>, Error> {
-	let path = path.as_ref();
-	let file = std::fs::File::open(path)?;
-	let file = std::io::BufReader::new(file);
-	let mut reader = CsvReader::from_reader(file);
-	let mut records = Vec::new();
-	for result in reader.deserialize() {
-		let record: T = result?;
-		records.push(record);
-	}
-	Ok(records)
-}
-
-/// Reads the json file and deserialize it into the provided type
-pub fn write_json_file<T: Serialize>(json: T, path: impl AsRef<Path>) -> Result<(), Error> {
-	let bytes = serde_json::to_vec(&json)?;
-	fs::write(path, bytes)?;
-	Ok(())
-}
+use std::str::FromStr;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -44,10 +27,11 @@ struct Cli {
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Subcommand)]
 enum Mode {
 	Show,
-	Compile,
-	Deploy,
+	CompileContracts,
+	DeployContracts,
 	Attest,
 	Update(UpdateData),
+	Verify,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Args)]
@@ -63,33 +47,50 @@ struct UpdateData {
 #[tokio::main]
 async fn main() {
 	let cli = Cli::parse();
-
-	let root = env::current_dir().unwrap();
-	let boostrap_path = root.join("../data/bootstrap-nodes.csv");
-	let config_path = root.join("../data/client-config.json");
-	let user_secrets_raw: Vec<[String; 3]> = read_csv_file(boostrap_path).unwrap();
-	let config: ClientConfig = read_json_file(config_path.clone()).unwrap();
+	let user_secrets_raw: Vec<[String; 3]> = read_csv_data("bootstrap-nodes").unwrap();
+	let config: ClientConfig = read_json_data("client-config").unwrap();
 
 	let pos = user_secrets_raw.iter().position(|x| &config.secret_key == &x[1..]);
 	assert!(pos.is_some());
 
 	match cli.mode {
-		Mode::Compile => {
-			compile();
+		Mode::CompileContracts => {
+			compile_sol_contract();
+			compile_yul_contracts();
 			println!("Finished compiling!");
 		},
-		Mode::Deploy => {
-			let deploy_res = deploy(&config.mnemonic, &config.ethereum_node_url).await;
+		Mode::DeployContracts => {
+			let deploy_res = deploy_as(&config.mnemonic, &config.ethereum_node_url).await;
 			if let Err(e) = deploy_res {
 				eprintln!("Failed to deploy the AttestationStation contract: {:?}", e);
 				return;
 			}
 			let address = deploy_res.unwrap();
 			println!("AttestationStation contract deployed. Address: {}", address);
+
+			let et_contract = read_bytes_data("et_verifier");
+			let deploy_res =
+				deploy_verifier(&config.mnemonic, &config.ethereum_node_url, et_contract).await;
+			if let Err(e) = deploy_res {
+				eprintln!("Failed to deploy the EigenTrustVerifier contract: {:?}", e);
+				return;
+			}
+			let address = deploy_res.unwrap();
+			let wrapper_res =
+				deploy_et_wrapper(&config.mnemonic, &config.ethereum_node_url, address).await;
+			let w_addr = wrapper_res.unwrap();
+			println!("EtVerifierWrapper contract deployed. Address: {}", w_addr);
 		},
 		Mode::Attest => {
 			let client = EigenTrustClient::new(config, user_secrets_raw);
 			client.attest().await.unwrap();
+		},
+		Mode::Verify => {
+			let url = format!("{}/score", config.server_url);
+			let proof_raw: ProofRaw = reqwest::get(url).await.unwrap().json().await.unwrap();
+			let client = EigenTrustClient::new(config, user_secrets_raw);
+			client.verify(proof_raw).await.unwrap();
+			println!("Successful verification!");
 		},
 		Mode::Update(data) => {
 			let UpdateData { name, score, sk, as_address, mnemonic, node_url } = data;
@@ -162,7 +163,7 @@ async fn main() {
 				client_config_updated.ethereum_node_url = node_url;
 			}
 
-			let res = write_json_file(client_config_updated, config_path);
+			let res = write_json_data(client_config_updated, "client-config");
 			if res.is_err() {
 				println!("Failed to same updated config!");
 			}
