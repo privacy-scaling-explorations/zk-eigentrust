@@ -25,6 +25,9 @@ jobs:
 
       - name: Set-Up
         run: ./scripts/init.sh
+        
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
 
       - name: Fmt Check
         run: ./scripts/fmt-check.sh
