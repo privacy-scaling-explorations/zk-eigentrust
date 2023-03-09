@@ -38,9 +38,9 @@ pub fn read_csv_file<T: DeserializeOwned>(path: impl AsRef<Path>) -> Result<Vec<
 }
 
 /// Reads the json file and deserialize it into the provided type
-pub fn read_csv_data<T: DeserializeOwned>(name: &str) -> Result<Vec<T>, Error> {
+pub fn read_csv_data<T: DeserializeOwned>(file_name: &str) -> Result<Vec<T>, Error> {
 	let current_dir = env::current_dir().unwrap();
-	let path = current_dir.join(format!("../data/{}.csv", name));
+	let path = current_dir.join(format!("../data/{}.csv", file_name));
 	let file = File::open(path)?;
 	let file = BufReader::new(file);
 	let mut reader = CsvReader::from_reader(file);

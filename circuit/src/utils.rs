@@ -61,9 +61,9 @@ pub fn read_string(path: impl AsRef<Path>) -> String {
 }
 
 /// Reads raw bytes from the file
-pub fn read_bytes_data(name: &str) -> Vec<u8> {
+pub fn read_bytes_data(file_name: &str) -> Vec<u8> {
 	let current_dir = current_dir().unwrap();
-	let bin_path = current_dir.join(format!("../data/{}.bin", name));
+	let bin_path = current_dir.join(format!("../data/{}.bin", file_name));
 	read_bytes(bin_path)
 }
 
@@ -73,23 +73,23 @@ pub fn write_bytes(bytes: Vec<u8>, path: impl AsRef<Path>) -> Result<(), IoError
 }
 
 /// Write bytes to data directory
-pub fn write_bytes_data(bytes: Vec<u8>, name: &str) -> Result<(), IoError> {
+pub fn write_bytes_data(bytes: Vec<u8>, file_name: &str) -> Result<(), IoError> {
 	let current_dir = current_dir().unwrap();
-	let bin_path = current_dir.join(format!("../data/{}.bin", name));
+	let bin_path = current_dir.join(format!("../data/{}.bin", file_name));
 	write(bin_path, bytes)
 }
 
 /// Writes yul to file
-pub fn write_yul_data(code: String, name: &str) -> Result<(), IoError> {
+pub fn write_yul_data(code: String, file_name: &str) -> Result<(), IoError> {
 	let current_dir = current_dir().unwrap();
-	let bin_path = current_dir.join(format!("../data/{}.yul", name));
+	let bin_path = current_dir.join(format!("../data/{}.yul", file_name));
 	write(bin_path, code)
 }
 
 /// Read yul file
-pub fn read_yul_data(name: &str) -> String {
+pub fn read_yul_data(file_name: &str) -> String {
 	let current_dir = current_dir().unwrap();
-	let str_path = current_dir.join(format!("../data/{}.yul", name));
+	let str_path = current_dir.join(format!("../data/{}.yul", file_name));
 	let code = read_string(str_path);
 	code
 }
@@ -102,9 +102,9 @@ pub fn write_json_file<T: Serialize>(json: T, path: impl AsRef<Path>) -> Result<
 }
 
 /// Reads the json file and deserialize it into the provided type
-pub fn write_json_data<T: Serialize>(json: T, name: &str) -> Result<(), IoError> {
+pub fn write_json_data<T: Serialize>(json: T, file_name: &str) -> Result<(), IoError> {
 	let current_dir = current_dir()?;
-	let json_path = current_dir.join(format!("../data/{}.json", name));
+	let json_path = current_dir.join(format!("../data/{}.json", file_name));
 	write_json_file(json, json_path)?;
 	Ok(())
 }
@@ -119,9 +119,9 @@ pub fn read_json_file<T: DeserializeOwned>(path: impl AsRef<Path>) -> Result<T, 
 }
 
 /// Reads the json file and deserialize it into the provided type
-pub fn read_json_data<T: DeserializeOwned>(name: &str) -> Result<T, IoError> {
+pub fn read_json_data<T: DeserializeOwned>(file_name: &str) -> Result<T, IoError> {
 	let current_dir = current_dir()?;
-	let json_path = current_dir.join(format!("../data/{}.json", name));
+	let json_path = current_dir.join(format!("../data/{}.json", file_name));
 	read_json_file(json_path)
 }
 
