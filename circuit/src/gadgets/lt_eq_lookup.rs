@@ -1,4 +1,8 @@
-use super::{bits2num::Bits2NumChip, main::MainConfig};
+use super::{
+	bits2num::Bits2NumChip,
+	main::MainConfig,
+	range::{RangeChipset, RangeChipsetConfig},
+};
 use crate::{gadgets::main::IsZeroChipset, utils::to_wide, Chip, Chipset, CommonConfig, RegionCtx};
 use halo2::{
 	arithmetic::FieldExt,
@@ -9,23 +13,30 @@ use halo2::{
 use std::vec;
 
 /// 1 << 252
-pub const N_SHIFTED: [u8; 32] = [
+const N_SHIFTED: [u8; 32] = [
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 16,
 ];
 /// Numbers are limited to 252 to avoid overflow
-pub const NUM_BITS: usize = 252;
+const NUM_BITS: usize = 252;
 /// Same number of bits as N_SHIFTED, since NUM + N_SHIFTED is the operation.
-pub const DIFF_BITS: usize = 253;
+const DIFF_BITS: usize = 253;
+
+/// Numbers range check uses 8-bit limb for lookup
+const K: usize = 8;
+/// Numbers range check uses 32(256 / 8) limbs for lookup
+const N: usize = 32;
+/// Numbers range check uses 4 bits, since it checks 252(256 - 4) bits long
+const S: usize = 4;
 
 /// Chip for finding the difference between 2 numbers shifted 252 bits
-pub struct NShiftedChip<F: FieldExt> {
+struct NShiftedChip<F: FieldExt> {
 	x: AssignedCell<F, F>,
 	y: AssignedCell<F, F>,
 }
 
 impl<F: FieldExt> NShiftedChip<F> {
 	/// Constructs a new chip
-	pub fn new(x: AssignedCell<F, F>, y: AssignedCell<F, F>) -> Self {
+	fn new(x: AssignedCell<F, F>, y: AssignedCell<F, F>) -> Self {
 		Self { x, y }
 	}
 }
@@ -89,23 +100,25 @@ impl<F: FieldExt> Chip<F> for NShiftedChip<F> {
 
 #[derive(Clone, Debug)]
 /// Selectors for LessEqualChipset
-pub struct LessEqualConfig {
+struct LessEqualConfig {
 	main: MainConfig,
+	lookup_range_check: RangeChipsetConfig,
 	bits_2_num_selector: Selector,
 	n_shifted_selector: Selector,
 }
 
 impl LessEqualConfig {
 	/// Constructs new config
-	pub fn new(
-		main: MainConfig, bits_2_num_selector: Selector, n_shifted_selector: Selector,
+	fn new(
+		main: MainConfig, lookup_range_check: RangeChipsetConfig, bits_2_num_selector: Selector,
+		n_shifted_selector: Selector,
 	) -> Self {
-		Self { main, bits_2_num_selector, n_shifted_selector }
+		Self { main, lookup_range_check, bits_2_num_selector, n_shifted_selector }
 	}
 }
 
 /// A chip for checking if number is in range
-pub struct LessEqualChipset<F: FieldExt> {
+struct LessEqualChipset<F: FieldExt> {
 	x: AssignedCell<F, F>,
 	y: AssignedCell<F, F>,
 	/// Bits of x and y and their difference
@@ -116,7 +129,7 @@ pub struct LessEqualChipset<F: FieldExt> {
 
 impl<F: FieldExt> LessEqualChipset<F> {
 	/// Constructs a new chipset
-	pub fn new(
+	fn new(
 		x: AssignedCell<F, F>, y: AssignedCell<F, F>, x_bits: [F; NUM_BITS], y_bits: [F; NUM_BITS],
 		diff_bits: [F; DIFF_BITS],
 	) -> Self {
@@ -132,21 +145,21 @@ impl<F: FieldExt> Chipset<F> for LessEqualChipset<F> {
 	fn synthesize(
 		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
-		let x_b2n = Bits2NumChip::new(self.x.clone(), self.x_bits.to_vec());
-		let _ = x_b2n.synthesize(
+		let lookup_range_check_chipset = RangeChipset::<F, K, N, S>::new(self.x.clone());
+		let x = lookup_range_check_chipset.synthesize(
 			common,
-			&config.bits_2_num_selector,
-			layouter.namespace(|| "x_b2n"),
+			&config.lookup_range_check,
+			layouter.namespace(|| "x range check"),
 		)?;
 
-		let y_b2n = Bits2NumChip::new(self.y.clone(), self.y_bits.to_vec());
-		let _ = y_b2n.synthesize(
+		let lookup_range_check_chipset = RangeChipset::<F, K, N, S>::new(self.y.clone());
+		let y = lookup_range_check_chipset.synthesize(
 			common,
-			&config.bits_2_num_selector,
-			layouter.namespace(|| "y_b2n"),
+			&config.lookup_range_check,
+			layouter.namespace(|| "y range check"),
 		)?;
 
-		let n_shifted_chip = NShiftedChip::new(self.x, self.y);
+		let n_shifted_chip = NShiftedChip::new(x, y);
 		let inp = n_shifted_chip.synthesize(
 			common,
 			&config.n_shifted_selector,
@@ -178,7 +191,10 @@ impl<F: FieldExt> Chipset<F> for LessEqualChipset<F> {
 mod test {
 	use super::*;
 	use crate::{
-		gadgets::main::MainChip,
+		gadgets::{
+			main::MainChip,
+			range::{LookupRangeCheckChip, LookupShortWordCheckChip},
+		},
 		utils::{generate_params, prove_and_verify, to_bits},
 	};
 	use halo2::{
@@ -218,9 +234,16 @@ mod test {
 			let common = CommonConfig::new(meta);
 			let main = MainConfig::new(MainChip::configure(&common, meta));
 
+			let range_check_selector = LookupRangeCheckChip::<Fr, K, N>::configure(&common, meta);
+			let short_word_check_selector =
+				LookupShortWordCheckChip::<Fr, K, S>::configure(&common, meta);
+			let lookup_range_check =
+				RangeChipsetConfig::new(range_check_selector, short_word_check_selector);
+
 			let b2n_selector = Bits2NumChip::configure(&common, meta);
 			let ns_selector = NShiftedChip::configure(&common, meta);
-			let lt_eq = LessEqualConfig::new(main, b2n_selector, ns_selector);
+
+			let lt_eq = LessEqualConfig::new(main, lookup_range_check, b2n_selector, ns_selector);
 
 			TestConfig { common, lt_eq }
 		}
@@ -228,6 +251,23 @@ mod test {
 		fn synthesize(
 			&self, config: TestConfig, mut layouter: impl Layouter<Fr>,
 		) -> Result<(), Error> {
+			// Loads the values [0..2^K) into `common.table`.
+			layouter.assign_table(
+				|| "table_column",
+				|mut table| {
+					// We generate the row values lazily (we only need them during keygen).
+					for index in 0..(1 << K) {
+						table.assign_cell(
+							|| "table_column",
+							config.common.table,
+							index,
+							|| Value::known(Fr::from(index as u64)),
+						)?;
+					}
+					Ok(())
+				},
+			)?;
+
 			let (x, y) = layouter.assign_region(
 				|| "temp",
 				|region: Region<'_, Fr>| {

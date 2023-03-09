@@ -227,7 +227,6 @@ mod test {
 			bits2num::Bits2NumChip,
 			lt_eq::{LessEqualConfig, NShiftedChip, N_SHIFTED},
 			main::{MainChip, MainConfig},
-			range::{LookupRangeCheckChip, LookupShortWordCheckChip, RangeChipsetConfig},
 		},
 		params::poseidon_bn254_5x5::Params,
 		poseidon::{native::Poseidon, FullRoundChip, PartialRoundChip, PoseidonConfig},
@@ -289,14 +288,7 @@ mod test {
 
 			let bits2num_selector = Bits2NumChip::configure(&common, meta);
 			let n_shifted_selector = NShiftedChip::configure(&common, meta);
-			let running_sum_selector = LookupRangeCheckChip::<Fr, 8, 32>::configure(&common, meta);
-			let lookup_short_word_selector =
-				LookupShortWordCheckChip::<Fr, 8, 4>::configure(&common, meta);
-			let lookup_range_check_config =
-				RangeChipsetConfig::new(running_sum_selector, lookup_short_word_selector);
-			let lt_eq = LessEqualConfig::new(
-				main, lookup_range_check_config, bits2num_selector, n_shifted_selector,
-			);
+			let lt_eq = LessEqualConfig::new(main, bits2num_selector, n_shifted_selector);
 
 			let scalar_mul_selector = ScalarMulChip::<_, BabyJubJub>::configure(&common, meta);
 			let strict_scalar_mul =
@@ -315,23 +307,6 @@ mod test {
 		fn synthesize(
 			&self, config: TestConfig, mut layouter: impl Layouter<Fr>,
 		) -> Result<(), Error> {
-			// Loads the values [0..2^8) into table column for lookup range check.
-			layouter.assign_table(
-				|| "table_column",
-				|mut table| {
-					// We generate the row values lazily (we only need them during keygen).
-					for index in 0..(1 << 8) {
-						table.assign_cell(
-							|| "table_column",
-							config.common.table,
-							index,
-							|| Value::known(Fr::from(index as u64)),
-						)?;
-					}
-					Ok(())
-				},
-			)?;
-
 			let (big_r_x, big_r_y, s, pk_x, pk_y, m) = layouter.assign_region(
 				|| "temp",
 				|region: Region<'_, Fr>| {

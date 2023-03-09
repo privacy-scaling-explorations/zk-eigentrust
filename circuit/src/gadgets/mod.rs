@@ -9,5 +9,12 @@ pub mod main;
 /// Set membership gadget
 pub mod set;
 
-/// Range check gadget
-pub mod range;
+/* NOTE:
+   Following chipsets are not used atm because of column limits.
+   Currently, the maximum columns for EigenTrust circuit is 8 advice + 5 fixed.
+   We plan to use them when lookup table can be used in circuit.
+*/
+// /// Check if a number is less than or equal to a value (using lookup table)
+// pub mod lt_eq_lookup;
+// /// Range check gadget (using lookup table)
+// pub mod range;

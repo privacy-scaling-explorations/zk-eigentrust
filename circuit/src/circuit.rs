@@ -10,9 +10,8 @@ use crate::{
 	gadgets::{
 		absorb::AbsorbChip,
 		bits2num::Bits2NumChip,
-		lt_eq::{LessEqualConfig, NShiftedChip, K, N, N_SHIFTED},
+		lt_eq::{LessEqualConfig, NShiftedChip, N_SHIFTED},
 		main::{AddChipset, MainChip, MainConfig, MulChipset},
-		range::{LookupRangeCheckChip, LookupShortWordCheckChip, RangeChipsetConfig},
 	},
 	params::poseidon_bn254_5x5::Params,
 	poseidon::{
@@ -210,17 +209,7 @@ impl<
 
 		let bits2num_selector = Bits2NumChip::configure(&common, meta);
 		let n_shifted_selector = NShiftedChip::configure(&common, meta);
-		let running_sum_selector = LookupRangeCheckChip::<Scalar, K, N>::configure(&common, meta);
-		let lookup_short_word_selector =
-			LookupShortWordCheckChip::<Scalar, 8, 4>::configure(&common, meta);
-		let lookup_range_check_config =
-			RangeChipsetConfig::new(running_sum_selector, lookup_short_word_selector);
-		let lt_eq = LessEqualConfig::new(
-			main.clone(),
-			lookup_range_check_config,
-			bits2num_selector,
-			n_shifted_selector,
-		);
+		let lt_eq = LessEqualConfig::new(main.clone(), bits2num_selector, n_shifted_selector);
 
 		let scalar_mul_selector = ScalarMulChip::<_, BabyJubJub>::configure(&common, meta);
 		let strict_scalar_mul = StrictScalarMulConfig::new(bits2num_selector, scalar_mul_selector);
@@ -242,23 +231,6 @@ impl<
 	fn synthesize(
 		&self, config: EigenTrustConfig, mut layouter: impl Layouter<Scalar>,
 	) -> Result<(), Error> {
-		// Loads the values [0..2^8) into table column for lookup range check.
-		layouter.assign_table(
-			|| "table_column",
-			|mut table| {
-				// We generate the row values lazily (we only need them during keygen).
-				for index in 0..(1 << 8) {
-					table.assign_cell(
-						|| "table_column",
-						config.common.table,
-						index,
-						|| Value::known(Scalar::from(index as u64)),
-					)?;
-				}
-				Ok(())
-			},
-		)?;
-
 		let (zero, pk_x, pk_y, big_r_x, big_r_y, s, scale, ops, init_score, total_score, passed_s) =
 			layouter.assign_region(
 				|| "temp",
