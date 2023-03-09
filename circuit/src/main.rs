@@ -1,3 +1,5 @@
+use std::env::current_dir;
+
 use eigen_trust_circuit::{
 	circuit::EigenTrust,
 	utils::{generate_params, read_params, write_bytes_data, write_params, write_yul_data},
@@ -8,15 +10,21 @@ use rand::thread_rng;
 
 /// Generate params for the circuit.
 fn main() {
-	// for k in 9..18 {
-	// 	generate_params_and_write(k);
-	// }
+	generate_params_and_write();
 	generate_et_verifier();
 }
 
-fn generate_params_and_write(k: u32) {
-	let params = generate_params::<Bn256>(k);
-	write_params(&params);
+fn generate_params_and_write() {
+	let curr_dir = current_dir().unwrap();
+	let contracts_dir = curr_dir.join("../data/");
+	for k in 9..18 {
+		let path = contracts_dir.join(format!("params-{}.bin", k));
+		if path.exists() {
+			continue;
+		}
+		let params = generate_params::<Bn256>(k);
+		write_params(&params);
+	}
 }
 
 pub fn generate_et_verifier() {
