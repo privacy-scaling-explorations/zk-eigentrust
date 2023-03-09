@@ -1,5 +1,6 @@
 use super::{
 	bits2num::Bits2NumChip,
+	lt_eq::NShiftedChip,
 	main::MainConfig,
 	range::{RangeChipset, RangeChipsetConfig},
 };
@@ -7,10 +8,57 @@ use crate::{gadgets::main::IsZeroChipset, utils::to_wide, Chip, Chipset, CommonC
 use halo2::{
 	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region, Value},
-	plonk::{ConstraintSystem, Error, Expression, Selector},
+	plonk::{ConstraintSystem, Error, Expression, Selector, TableColumn},
 	poly::Rotation,
 };
 use std::vec;
+
+/// Common config for the whole circuit
+#[derive(Clone, Debug)]
+pub struct MockCommonConfig {
+	/// Common config
+	pub common: CommonConfig,
+	/// Table column
+	pub table: TableColumn,
+}
+
+impl MockCommonConfig {
+	/// Create a new `MockCommonConfig` columns
+	pub fn new<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
+		let common = CommonConfig::new(meta);
+		let table = meta.lookup_table_column();
+
+		Self { common, table }
+	}
+}
+
+/// Trait for an atomic chip implementation
+/// Each chip uses common config columns, but has its own selector
+pub trait MockChip<F: FieldExt> {
+	/// Output of the synthesis
+	type Output: Clone;
+	/// Gate configuration, using common config columns
+	fn configure(common: &MockCommonConfig, meta: &mut ConstraintSystem<F>) -> Selector;
+	/// Chip synthesis. This function can return an assigned cell to be used
+	/// elsewhere in the circuit
+	fn synthesize(
+		self, common: &MockCommonConfig, selector: &Selector, layouter: impl Layouter<F>,
+	) -> Result<Self::Output, Error>;
+}
+
+/// Chipset uses a collection of chips as primitives to build more abstract
+/// circuits
+pub trait MockChipset<F: FieldExt> {
+	/// Config used for synthesis
+	type Config: Clone;
+	/// Output of the synthesis
+	type Output: Clone;
+	/// Chipset synthesis. This function can have multiple smaller chips
+	/// synthesised inside. Also can returns an assigned cell.
+	fn synthesize(
+		self, common: &MockCommonConfig, config: &Self::Config, layouter: impl Layouter<F>,
+	) -> Result<Self::Output, Error>;
+}
 
 /// 1 << 252
 const N_SHIFTED: [u8; 32] = [
@@ -27,76 +75,6 @@ const K: usize = 8;
 const N: usize = 32;
 /// Numbers range check uses 4 bits, since it checks 252(256 - 4) bits long
 const S: usize = 4;
-
-/// Chip for finding the difference between 2 numbers shifted 252 bits
-struct NShiftedChip<F: FieldExt> {
-	x: AssignedCell<F, F>,
-	y: AssignedCell<F, F>,
-}
-
-impl<F: FieldExt> NShiftedChip<F> {
-	/// Constructs a new chip
-	fn new(x: AssignedCell<F, F>, y: AssignedCell<F, F>) -> Self {
-		Self { x, y }
-	}
-}
-
-impl<F: FieldExt> Chip<F> for NShiftedChip<F> {
-	type Output = AssignedCell<F, F>;
-
-	fn configure(common: &CommonConfig, meta: &mut ConstraintSystem<F>) -> Selector {
-		let selector = meta.selector();
-		let n_shifted = F::from_bytes_wide(&to_wide(&N_SHIFTED));
-
-		meta.create_gate("x + n_shifted - y", |v_cells| {
-			let n_shifted_exp = Expression::Constant(n_shifted);
-
-			let s_exp = v_cells.query_selector(selector);
-			let x_exp = v_cells.query_advice(common.advice[0], Rotation::cur());
-			let y_exp = v_cells.query_advice(common.advice[1], Rotation::cur());
-			let res_exp = v_cells.query_advice(common.advice[2], Rotation::cur());
-
-			vec![
-				// (x + n_shifted - y) - z == 0
-				// n_shifted value is equal to smallest 253 bit number.
-				// Because of that calculations will be done in between the 252 to 254-bit range.
-				// That range can hold 252-bit number calculations without overflowing.
-				// Example:
-				// x = 5;
-				// y = 3;
-				// z = (x + n_shifted - y);
-				// z = (5 - 3) + n_shifted = 2 + n_shifted =>
-				// diff_bits holds (x + n_shifted - y) as bits.
-				// After that, checking the constraint diff_bits - z = 0.
-				s_exp * ((x_exp + n_shifted_exp - y_exp) - res_exp),
-			]
-		});
-
-		selector
-	}
-
-	fn synthesize(
-		self, common: &CommonConfig, selector: &Selector, mut layouter: impl Layouter<F>,
-	) -> Result<Self::Output, Error> {
-		layouter.assign_region(
-			|| "less_than_equal",
-			|region: Region<'_, F>| {
-				let mut ctx = RegionCtx::new(region, 0);
-				ctx.enable(selector.clone())?;
-
-				let assigned_x = ctx.copy_assign(common.advice[0], self.x.clone())?;
-				let assigned_y = ctx.copy_assign(common.advice[1], self.y.clone())?;
-
-				let n_shifted = Value::known(F::from_bytes_wide(&to_wide(&N_SHIFTED)));
-				let res = assigned_x.value().cloned() + n_shifted - assigned_y.value();
-
-				let assigned_res = ctx.assign_advice(common.advice[2], res)?;
-
-				Ok(assigned_res)
-			},
-		)
-	}
-}
 
 #[derive(Clone, Debug)]
 /// Selectors for LessEqualChipset
@@ -137,38 +115,38 @@ impl<F: FieldExt> LessEqualChipset<F> {
 	}
 }
 
-impl<F: FieldExt> Chipset<F> for LessEqualChipset<F> {
+impl<F: FieldExt> MockChipset<F> for LessEqualChipset<F> {
 	type Config = LessEqualConfig;
 	type Output = AssignedCell<F, F>;
 
 	/// Synthesize the circuit.
 	fn synthesize(
-		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<F>,
+		self, mock_common: &MockCommonConfig, config: &Self::Config, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
 		let lookup_range_check_chipset = RangeChipset::<F, K, N, S>::new(self.x.clone());
 		let x = lookup_range_check_chipset.synthesize(
-			common,
+			mock_common,
 			&config.lookup_range_check,
 			layouter.namespace(|| "x range check"),
 		)?;
 
 		let lookup_range_check_chipset = RangeChipset::<F, K, N, S>::new(self.y.clone());
 		let y = lookup_range_check_chipset.synthesize(
-			common,
+			mock_common,
 			&config.lookup_range_check,
 			layouter.namespace(|| "y range check"),
 		)?;
 
 		let n_shifted_chip = NShiftedChip::new(x, y);
 		let inp = n_shifted_chip.synthesize(
-			common,
+			&mock_common.common,
 			&config.n_shifted_selector,
 			layouter.namespace(|| "n_shifted_diff"),
 		)?;
 
 		let diff_b2n = Bits2NumChip::new(inp, self.diff_bits.to_vec());
 		let bits = diff_b2n.synthesize(
-			common,
+			&mock_common.common,
 			&config.bits_2_num_selector,
 			layouter.namespace(|| "bits2num"),
 		)?;
@@ -181,8 +159,11 @@ impl<F: FieldExt> Chipset<F> for LessEqualChipset<F> {
 		// If both are equal last bit still will be 1 and the number will be exactly 253
 		// bits. In that case, is_zero will return 0 as well.
 		let is_zero_chip = IsZeroChipset::new(bits[DIFF_BITS - 1].clone());
-		let res =
-			is_zero_chip.synthesize(common, &config.main, layouter.namespace(|| "is_zero"))?;
+		let res = is_zero_chip.synthesize(
+			&mock_common.common,
+			&config.main,
+			layouter.namespace(|| "is_zero"),
+		)?;
 		Ok(res)
 	}
 }
@@ -206,7 +187,7 @@ mod test {
 
 	#[derive(Clone)]
 	struct TestConfig {
-		common: CommonConfig,
+		mock_common: MockCommonConfig,
 		lt_eq: LessEqualConfig,
 	}
 
@@ -231,21 +212,22 @@ mod test {
 		}
 
 		fn configure(meta: &mut ConstraintSystem<Fr>) -> TestConfig {
-			let common = CommonConfig::new(meta);
-			let main = MainConfig::new(MainChip::configure(&common, meta));
+			let mock_common = MockCommonConfig::new(meta);
+			let main = MainConfig::new(MainChip::configure(&mock_common.common, meta));
 
-			let range_check_selector = LookupRangeCheckChip::<Fr, K, N>::configure(&common, meta);
+			let range_check_selector =
+				LookupRangeCheckChip::<Fr, K, N>::configure(&mock_common, meta);
 			let short_word_check_selector =
-				LookupShortWordCheckChip::<Fr, K, S>::configure(&common, meta);
+				LookupShortWordCheckChip::<Fr, K, S>::configure(&mock_common, meta);
 			let lookup_range_check =
 				RangeChipsetConfig::new(range_check_selector, short_word_check_selector);
 
-			let b2n_selector = Bits2NumChip::configure(&common, meta);
-			let ns_selector = NShiftedChip::configure(&common, meta);
+			let b2n_selector = Bits2NumChip::configure(&mock_common.common, meta);
+			let ns_selector = NShiftedChip::configure(&mock_common.common, meta);
 
 			let lt_eq = LessEqualConfig::new(main, lookup_range_check, b2n_selector, ns_selector);
 
-			TestConfig { common, lt_eq }
+			TestConfig { mock_common, lt_eq }
 		}
 
 		fn synthesize(
@@ -259,7 +241,7 @@ mod test {
 					for index in 0..(1 << K) {
 						table.assign_cell(
 							|| "table_column",
-							config.common.table,
+							config.mock_common.table,
 							index,
 							|| Value::known(Fr::from(index as u64)),
 						)?;
@@ -274,8 +256,8 @@ mod test {
 					let mut ctx = RegionCtx::new(region, 0);
 					let x_val = Value::known(self.x);
 					let y_val = Value::known(self.y);
-					let x = ctx.assign_advice(config.common.advice[0], x_val)?;
-					let y = ctx.assign_advice(config.common.advice[1], y_val)?;
+					let x = ctx.assign_advice(config.mock_common.common.advice[0], x_val)?;
+					let y = ctx.assign_advice(config.mock_common.common.advice[1], y_val)?;
 					Ok((x, y))
 				},
 			)?;
@@ -286,12 +268,12 @@ mod test {
 			let y_bits = to_bits(self.y.to_bytes()).map(Fr::from);
 			let lt_eq_chip = LessEqualChipset::<Fr>::new(x, y, x_bits, y_bits, diff_bits);
 			let res = lt_eq_chip.synthesize(
-				&config.common,
+				&config.mock_common,
 				&config.lt_eq,
 				layouter.namespace(|| "less_eq"),
 			)?;
 
-			layouter.constrain_instance(res.cell(), config.common.instance, 0)?;
+			layouter.constrain_instance(res.cell(), config.mock_common.common.instance, 0)?;
 			Ok(())
 		}
 	}

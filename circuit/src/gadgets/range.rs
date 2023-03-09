@@ -1,79 +1,15 @@
+use crate::{
+	utils::{fe_to_le_bits, lebs2ip},
+	CommonConfig, RegionCtx,
+};
 use halo2::{
 	circuit::{AssignedCell, Layouter, Region, Value},
 	halo2curves::FieldExt,
-	plonk::{
-		Advice, Column, ConstraintSystem, Constraints, Error, Fixed, Instance, Selector,
-		TableColumn,
-	},
+	plonk::{ConstraintSystem, Constraints, Error, Selector, TableColumn},
 	poly::Rotation,
 };
 
-use crate::{
-	utils::{fe_to_le_bits, lebs2ip},
-	RegionCtx,
-};
-
-/// Number of advice columns in common config
-const ADVICE: usize = 3;
-/// Number of fixed columns in common config
-const FIXED: usize = 1;
-
-/// Common config for the whole circuit
-#[derive(Clone, Debug)]
-pub struct MockCommonConfig {
-	/// Advice columns
-	advice: [Column<Advice>; ADVICE],
-	/// Fixed columns
-	fixed: [Column<Fixed>; FIXED],
-	/// Instance column
-	instance: Column<Instance>,
-	/// Lookup table column
-	table: TableColumn,
-}
-
-impl MockCommonConfig {
-	/// Create a new `MockCommonConfig` columns
-	pub fn new<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
-		let advice = [(); ADVICE].map(|_| meta.advice_column());
-		let fixed = [(); FIXED].map(|_| meta.fixed_column());
-		let instance = meta.instance_column();
-		let table = meta.lookup_table_column();
-
-		advice.map(|c| meta.enable_equality(c));
-		fixed.map(|c| meta.enable_constant(c));
-		meta.enable_equality(instance);
-
-		Self { advice, fixed, instance, table }
-	}
-}
-
-/// Trait for an atomic chip implementation
-/// Each chip uses common config columns, but has its own selector
-pub trait MockChip<F: FieldExt> {
-	/// Output of the synthesis
-	type Output: Clone;
-	/// Gate configuration, using common config columns
-	fn configure(common: &MockCommonConfig, meta: &mut ConstraintSystem<F>) -> Selector;
-	/// Chip synthesis. This function can return an assigned cell to be used
-	/// elsewhere in the circuit
-	fn synthesize(
-		self, common: &MockCommonConfig, selector: &Selector, layouter: impl Layouter<F>,
-	) -> Result<Self::Output, Error>;
-}
-
-/// Chipset uses a collection of chips as primitives to build more abstract
-/// circuits
-pub trait MockChipset<F: FieldExt> {
-	/// Config used for synthesis
-	type Config: Clone;
-	/// Output of the synthesis
-	type Output: Clone;
-	/// Chipset synthesis. This function can have multiple smaller chips
-	/// synthesised inside. Also can returns an assigned cell.
-	fn synthesize(
-		self, common: &MockCommonConfig, config: &Self::Config, layouter: impl Layouter<F>,
-	) -> Result<Self::Output, Error>;
-}
+use super::lt_eq_lookup::{MockChip, MockChipset, MockCommonConfig};
 
 /// Short length bits check chip using lookup table.
 ///
@@ -96,19 +32,19 @@ impl<F: FieldExt, const K: usize, const S: usize> MockChip<F>
 	type Output = AssignedCell<F, F>;
 
 	fn configure(
-		common: &MockCommonConfig, meta: &mut halo2::plonk::ConstraintSystem<F>,
+		mock_common: &MockCommonConfig, meta: &mut halo2::plonk::ConstraintSystem<F>,
 	) -> Selector {
 		assert!(0 < S && S < K, "Word bits should be less than target bits.");
 
 		let bitshift_selector = meta.complex_selector();
 
-		let word_column = common.advice[0];
+		let word_column = mock_common.common.advice[0];
 
 		meta.lookup("Check K bits limit", |meta| {
 			let bitshift_selector = meta.query_selector(bitshift_selector);
 			let shifted_word = meta.query_advice(word_column, Rotation::cur());
 
-			vec![(bitshift_selector * shifted_word, common.table)]
+			vec![(bitshift_selector * shifted_word, mock_common.table)]
 		});
 
 		// For short lookups, check that the word has been shifted by the correct number
@@ -133,7 +69,7 @@ impl<F: FieldExt, const K: usize, const S: usize> MockChip<F>
 	}
 
 	fn synthesize(
-		self, common: &MockCommonConfig, selector: &Selector, mut layouter: impl Layouter<F>,
+		self, mock_common: &MockCommonConfig, selector: &Selector, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, halo2::plonk::Error> {
 		layouter.assign_region(
 			|| "short word check chip",
@@ -141,20 +77,20 @@ impl<F: FieldExt, const K: usize, const S: usize> MockChip<F>
 				let mut ctx = RegionCtx::new(region, 0);
 
 				// Assign original value
-				let assigned_x = ctx.copy_assign(common.advice[0], self.x.clone())?;
+				let assigned_x = ctx.copy_assign(mock_common.common.advice[0], self.x.clone())?;
 
 				ctx.next();
 
 				// Assign shifted value
 				let shifted_word = self.x.value().cloned() * Value::known(F::from(1 << (K - S)));
-				ctx.assign_advice(common.advice[0], shifted_word)?;
+				ctx.assign_advice(mock_common.common.advice[0], shifted_word)?;
 				ctx.enable(selector.clone())?;
 
 				ctx.next();
 
 				// Assign 2^{-S} from a fixed column.
 				let inv_two_pow_s = F::from(1 << S).invert().unwrap();
-				ctx.assign_from_constant(common.advice[0], inv_two_pow_s)?;
+				ctx.assign_from_constant(mock_common.common.advice[0], inv_two_pow_s)?;
 
 				Ok(assigned_x)
 			},
@@ -181,11 +117,11 @@ impl<F: FieldExt, const K: usize, const N: usize> MockChip<F> for LookupRangeChe
 	type Output = AssignedCell<F, F>;
 
 	fn configure(
-		common: &MockCommonConfig, meta: &mut halo2::plonk::ConstraintSystem<F>,
+		mock_common: &MockCommonConfig, meta: &mut halo2::plonk::ConstraintSystem<F>,
 	) -> Selector {
 		let running_sum_selector = meta.complex_selector();
 
-		let running_sum = common.advice[0];
+		let running_sum = mock_common.common.advice[0];
 
 		meta.lookup("running_sum check", |meta| {
 			let running_sum_selector = meta.query_selector(running_sum_selector);
@@ -205,20 +141,20 @@ impl<F: FieldExt, const K: usize, const N: usize> MockChip<F> for LookupRangeChe
 			};
 
 			// Combine the running sum and short lookups:
-			vec![(running_sum_lookup, common.table)]
+			vec![(running_sum_lookup, mock_common.table)]
 		});
 
 		running_sum_selector
 	}
 
 	fn synthesize(
-		self, common: &MockCommonConfig, selector: &Selector, mut layouter: impl Layouter<F>,
+		self, mock_common: &MockCommonConfig, selector: &Selector, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, halo2::plonk::Error> {
 		layouter.assign_region(
 			|| "range check chip",
 			|region: Region<'_, F>| {
 				let mut ctx = RegionCtx::new(region, 0);
-				let x = ctx.copy_assign(common.advice[0], self.x.clone())?;
+				let x = ctx.copy_assign(mock_common.common.advice[0], self.x.clone())?;
 
 				let num_bits = K * N;
 
@@ -261,7 +197,7 @@ impl<F: FieldExt, const K: usize, const N: usize> MockChip<F> for LookupRangeChe
 
 						// Assign z_next
 						ctx.next();
-						ctx.assign_advice(common.advice[0], z_val)?
+						ctx.assign_advice(mock_common.common.advice[0], z_val)?
 					};
 
 					zs.push(z.clone());
@@ -309,13 +245,13 @@ impl<F: FieldExt, const K: usize, const N: usize, const S: usize> MockChipset<F>
 	type Output = AssignedCell<F, F>;
 
 	fn synthesize(
-		self, common: &MockCommonConfig, config: &RangeChipsetConfig,
+		self, mock_common: &MockCommonConfig, config: &RangeChipsetConfig,
 		mut layouter: impl halo2::circuit::Layouter<F>,
 	) -> Result<Self::Output, halo2::plonk::Error> {
 		// First, check if x is less than 256 bits
 		let range_chip = LookupRangeCheckChip::<F, K, N>::new(self.x.clone());
 		let x = range_chip.synthesize(
-			common,
+			mock_common,
 			&config.running_sum_selector,
 			layouter.namespace(|| "range check"),
 		)?;
@@ -343,12 +279,12 @@ impl<F: FieldExt, const K: usize, const N: usize, const S: usize> MockChipset<F>
 			|| "last word of x",
 			|region| {
 				let mut ctx = RegionCtx::new(region, 0);
-				ctx.assign_advice(common.advice[0], last_word)
+				ctx.assign_advice(mock_common.common.advice[0], last_word)
 			},
 		)?;
 		let short_word_chip = LookupShortWordCheckChip::<F, K, S>::new(last_word_cell);
 		let _ = short_word_chip.synthesize(
-			common,
+			mock_common,
 			&config.short_word_selecor,
 			layouter.namespace(|| "last word check"),
 		)?;
@@ -383,7 +319,7 @@ mod tests {
 
 	#[derive(Clone)]
 	struct TestConfig {
-		common: MockCommonConfig,
+		mock_common: MockCommonConfig,
 		short_word_selector: Selector,
 		running_sum_selector: Selector,
 		lookup_range_check: RangeChipsetConfig,
@@ -410,14 +346,20 @@ mod tests {
 		}
 
 		fn configure(meta: &mut ConstraintSystem<Fr>) -> TestConfig {
-			let common = MockCommonConfig::new(meta);
+			let mock_common = MockCommonConfig::new(meta);
 			let short_word_selector =
-				LookupShortWordCheckChip::<Fr, K, S>::configure(&common, meta);
-			let running_sum_selector = LookupRangeCheckChip::<Fr, K, N>::configure(&common, meta);
+				LookupShortWordCheckChip::<Fr, K, S>::configure(&mock_common, meta);
+			let running_sum_selector =
+				LookupRangeCheckChip::<Fr, K, N>::configure(&mock_common, meta);
 			let lookup_range_check =
 				RangeChipsetConfig::new(running_sum_selector, short_word_selector);
 
-			TestConfig { common, short_word_selector, running_sum_selector, lookup_range_check }
+			TestConfig {
+				mock_common,
+				short_word_selector,
+				running_sum_selector,
+				lookup_range_check,
+			}
 		}
 
 		fn synthesize(
@@ -431,7 +373,7 @@ mod tests {
 					for index in 0..(1 << K) {
 						table.assign_cell(
 							|| "table_column",
-							config.common.table,
+							config.mock_common.table,
 							index,
 							|| Value::known(Fr::from(index as u64)),
 						)?;
@@ -445,7 +387,7 @@ mod tests {
 				|region: Region<'_, Fr>| {
 					let mut ctx = RegionCtx::new(region, 0);
 					let x_val = Value::known(self.x);
-					let x = ctx.assign_advice(config.common.advice[0], x_val)?;
+					let x = ctx.assign_advice(config.mock_common.common.advice[0], x_val)?;
 					Ok(x)
 				},
 			)?;
@@ -454,7 +396,7 @@ mod tests {
 				Gadget::ShortWordCheck => {
 					let short_word_check_chip = LookupShortWordCheckChip::<Fr, K, S>::new(x);
 					let _ = short_word_check_chip.synthesize(
-						&config.common,
+						&config.mock_common,
 						&config.short_word_selector,
 						layouter.namespace(|| "short word check"),
 					)?;
@@ -462,7 +404,7 @@ mod tests {
 				Gadget::RangeCheck => {
 					let range_check_chip = LookupRangeCheckChip::<Fr, K, N>::new(x);
 					let _ = range_check_chip.synthesize(
-						&config.common,
+						&config.mock_common,
 						&config.running_sum_selector,
 						layouter.namespace(|| "range check"),
 					)?;
@@ -470,7 +412,7 @@ mod tests {
 				Gadget::RangeChipset => {
 					let lookup_range_check_chipset = RangeChipset::<Fr, K, N, S>::new(x);
 					let _ = lookup_range_check_chipset.synthesize(
-						&config.common,
+						&config.mock_common,
 						&config.lookup_range_check,
 						layouter.namespace(|| "lookup range check chipset"),
 					)?;

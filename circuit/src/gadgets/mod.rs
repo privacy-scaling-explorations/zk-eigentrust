@@ -14,7 +14,7 @@ pub mod set;
    Currently, the maximum columns for EigenTrust circuit is 8 advice + 5 fixed.
    We plan to use them when lookup table can be used in circuit.
 */
-// /// Check if a number is less than or equal to a value (using lookup table)
-// pub mod lt_eq_lookup;
+/// Check if a number is less than or equal to a value (using lookup table)
+pub mod lt_eq_lookup;
 /// Range check gadget (using lookup table)
 pub mod range;
