@@ -18,5 +18,6 @@ num-traits = "0.2"
 
 [dependencies.snark-verifier]
 git = "https://github.com/privacy-scaling-explorations/snark-verifier"
+rev = "54452c7"
 default-features = false
 features = ["loader_evm", "system_halo2"]

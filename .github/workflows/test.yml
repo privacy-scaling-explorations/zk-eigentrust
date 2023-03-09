@@ -1,4 +1,4 @@
-name: Set-Up & Fmt & Clippy & Build & Test & Test Docs
+name: Build & Test Circuits, Server, Client
 
 # Controls when the action will run.
 on:
@@ -25,6 +25,9 @@ jobs:
 
       - name: Set-Up
         run: ./scripts/init.sh
+        
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
 
       - name: Fmt Check
         run: ./scripts/fmt-check.sh
@@ -34,6 +37,7 @@ jobs:
 
       - name: Build
         run: ./scripts/build.sh && ./scripts/diff.sh
-
+        
       - name: Test
         run: ./scripts/test.sh
+      
