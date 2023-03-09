@@ -22,10 +22,10 @@ use eigen_trust_circuit::{
 		plonk::ProvingKey,
 		poly::kzg::commitment::ParamsKZG,
 	},
-	utils::{prove, to_short, verify},
+	utils::to_short,
+	verifier::gen_proof,
 	Proof,
 };
-use rand::thread_rng;
 use std::collections::HashMap;
 
 /// Number of iterations to run the eigen trust algorithm
@@ -187,7 +187,6 @@ impl Manager {
 		const N: usize = NUM_NEIGHBOURS;
 		let (_, messages) = calculate_message_hash::<N, N>(pks.clone(), ops.clone());
 
-		let mut rng = thread_rng();
 		let et = EigenTrust::<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, SCALE>::new(
 			pks,
 			sigs,
@@ -197,24 +196,7 @@ impl Manager {
 		let init_score = vec![Scalar::from_u128(INITIAL_SCORE); NUM_NEIGHBOURS];
 		let pub_ins = native::<Scalar, NUM_NEIGHBOURS, NUM_ITER, SCALE>(init_score, ops);
 
-		let proof_bytes = prove(&self.params, et, &[&pub_ins], &self.proving_key, &mut rng)
-			.map_err(|e| {
-				println!("{:?}", e);
-				EigenError::ProvingError
-			})?;
-
-		// Sanity check
-		let proof_res = verify(
-			&self.params,
-			&[&pub_ins],
-			&proof_bytes,
-			self.proving_key.get_vk(),
-		)
-		.map_err(|e| {
-			println!("{:?}", e);
-			EigenError::VerificationError
-		})?;
-		assert!(proof_res);
+		let proof_bytes = gen_proof(&self.params, &self.proving_key, et, vec![pub_ins.clone()]);
 
 		let proof = Proof { pub_ins, proof: proof_bytes };
 		self.cached_proofs.insert(epoch, proof);
@@ -250,6 +232,7 @@ impl Manager {
 mod test {
 	use super::*;
 	use eigen_trust_circuit::{halo2::poly::commitment::ParamsProver, utils::keygen};
+	use rand::thread_rng;
 
 	#[test]
 	fn should_calculate_proof() {

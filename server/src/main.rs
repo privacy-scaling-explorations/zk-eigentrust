@@ -7,7 +7,6 @@ use ethers::{
 };
 use hyper::{server::conn::Http, service::service_fn, Body, Method, Request, Response};
 use once_cell::sync::Lazy;
-use rand::thread_rng;
 use serde::Deserialize;
 use serde_json::to_string;
 use std::{
@@ -24,7 +23,7 @@ use tokio::{
 use eigen_trust_circuit::{
 	circuit::EigenTrust,
 	halo2::{halo2curves::bn256::G1Affine, plonk::ProvingKey, SerdeFormat},
-	utils::{keygen, read_bytes_data, read_json_data, read_params},
+	utils::{read_bytes_data, read_json_data, read_params},
 	ProofRaw,
 };
 use eigen_trust_server::{
@@ -191,7 +190,9 @@ async fn main() -> Result<(), EigenError> {
 #[cfg(test)]
 mod test {
 	use super::*;
+	use eigen_trust_circuit::utils::keygen;
 	use hyper::Uri;
+	use rand::thread_rng;
 
 	#[tokio::test]
 	async fn should_fail_if_route_is_not_found() {

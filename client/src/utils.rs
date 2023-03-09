@@ -198,7 +198,7 @@ mod test {
 		let bytecode = read_bytes_data("et_verifier");
 		let addr = deploy_verifier(mnemonic, &node_endpoint, bytecode).await.unwrap();
 
-		let proof_raw: ProofRaw = read_json_data("et_proof_test").unwrap();
+		let proof_raw: ProofRaw = read_json_data("et_proof").unwrap();
 		let proof = Proof::from(proof_raw);
 		call_verifier(mnemonic, &node_endpoint, addr, proof).await;
 
