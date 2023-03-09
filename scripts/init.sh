@@ -11,3 +11,4 @@ sudo apt-get update
 sudo apt-get install solc
 
 curl -L https://foundry.paradigm.xyz | bash
+foundryup
