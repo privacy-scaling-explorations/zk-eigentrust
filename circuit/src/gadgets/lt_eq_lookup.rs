@@ -4,14 +4,12 @@ use super::{
 	main::MainConfig,
 	range::{RangeChipset, RangeChipsetConfig},
 };
-use crate::{gadgets::main::IsZeroChipset, utils::to_wide, Chip, Chipset, CommonConfig, RegionCtx};
+use crate::{gadgets::main::IsZeroChipset, Chip, Chipset, CommonConfig};
 use halo2::{
 	arithmetic::FieldExt,
-	circuit::{AssignedCell, Layouter, Region, Value},
-	plonk::{ConstraintSystem, Error, Expression, Selector, TableColumn},
-	poly::Rotation,
+	circuit::{AssignedCell, Layouter},
+	plonk::{ConstraintSystem, Error, Selector, TableColumn},
 };
-use std::vec;
 
 /// Common config for the whole circuit
 #[derive(Clone, Debug)]
@@ -176,10 +174,11 @@ mod test {
 			main::MainChip,
 			range::{LookupRangeCheckChip, LookupShortWordCheckChip},
 		},
-		utils::{generate_params, prove_and_verify, to_bits},
+		utils::{generate_params, prove_and_verify, to_bits, to_wide},
+		RegionCtx,
 	};
 	use halo2::{
-		circuit::{SimpleFloorPlanner, Value},
+		circuit::{Region, SimpleFloorPlanner, Value},
 		dev::MockProver,
 		halo2curves::bn256::{Bn256, Fr},
 		plonk::Circuit,

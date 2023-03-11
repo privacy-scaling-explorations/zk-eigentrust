@@ -1,4 +1,5 @@
-use super::rns::{compose_big, decompose_big, fe_to_big, RnsParams};
+use super::rns::{compose_big, decompose_big, RnsParams};
+use crate::utils::fe_to_big;
 use halo2::arithmetic::FieldExt;
 use num_bigint::BigUint;
 use num_traits::{One, Zero};

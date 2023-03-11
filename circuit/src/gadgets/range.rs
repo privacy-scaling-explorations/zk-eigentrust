@@ -1,11 +1,11 @@
 use crate::{
-	utils::{fe_to_le_bits, lebs2ip},
-	CommonConfig, RegionCtx,
+	utils::{fe_to_le_bits, le_bits_to_u64},
+	RegionCtx,
 };
 use halo2::{
 	circuit::{AssignedCell, Layouter, Region, Value},
 	halo2curves::FieldExt,
-	plonk::{ConstraintSystem, Constraints, Error, Selector, TableColumn},
+	plonk::{Constraints, Selector},
 	poly::Rotation,
 };
 
@@ -131,14 +131,11 @@ impl<F: FieldExt, const K: usize, const N: usize> MockChip<F> for LookupRangeChe
 			// the difference of the running sums:
 			//    z_i = 2^{K}⋅z_{i + 1} + a_i
 			// => a_i = z_i - 2^{K}⋅z_{i + 1}
-			let running_sum_lookup = {
-				let running_sum_word = {
-					let z_next = meta.query_advice(running_sum, Rotation::next());
-					z_cur.clone() - z_next * F::from(1 << K)
-				};
-
-				running_sum_selector.clone() * running_sum_word
+			let running_sum_word = {
+				let z_next = meta.query_advice(running_sum, Rotation::next());
+				z_cur.clone() - z_next * F::from(1 << K)
 			};
+			let running_sum_lookup = running_sum_selector.clone() * running_sum_word;
 
 			// Combine the running sum and short lookups:
 			vec![(running_sum_lookup, mock_common.table)]
@@ -156,25 +153,20 @@ impl<F: FieldExt, const K: usize, const N: usize> MockChip<F> for LookupRangeChe
 				let mut ctx = RegionCtx::new(region, 0);
 				let x = ctx.copy_assign(mock_common.common.advice[0], self.x.clone())?;
 
+				// Take first "num_bits" bits of `element`.
 				let num_bits = K * N;
+				let bits = x.value().map(|element| {
+					fe_to_le_bits(element.clone()).into_iter().take(num_bits).collect::<Vec<_>>()
+				});
 
-				// Chunk the first num_bits bits into K-bit words.
-				let words = {
-					// Take first num_bits bits of `element`.
-					let bits = x.value().map(|element| {
-						fe_to_le_bits(element.clone())
-							.into_iter()
-							.take(num_bits)
-							.collect::<Vec<_>>()
-					});
-
-					bits.map(|bits| {
+				// Chunk the "bits" into K-bit words.
+				let words = bits
+					.map(|bits| {
 						bits.chunks_exact(K)
-							.map(|word| F::from(lebs2ip::<K>(&(word.try_into().unwrap()))))
+							.map(|word| F::from(le_bits_to_u64::<K>(&(word.try_into().unwrap()))))
 							.collect::<Vec<_>>()
 					})
-					.transpose_vec(N)
-				};
+					.transpose_vec(N);
 
 				let mut zs = vec![x.clone()];
 
@@ -191,14 +183,11 @@ impl<F: FieldExt, const K: usize, const N: usize> MockChip<F> for LookupRangeChe
 					ctx.enable(selector.clone())?;
 
 					// z_next = (z_cur - m_cur) / 2^K
-					z = {
-						let z_val =
-							z.value().zip(word).map(|(z, word)| (*z - word) * inv_two_pow_k);
+					let z_next = z.value().zip(word).map(|(z, word)| (*z - word) * inv_two_pow_k);
 
-						// Assign z_next
-						ctx.next();
-						ctx.assign_advice(mock_common.common.advice[0], z_val)?
-					};
+					// Assign z_next
+					ctx.next();
+					z = ctx.assign_advice(mock_common.common.advice[0], z_next)?;
 
 					zs.push(z.clone());
 				}
@@ -256,24 +245,23 @@ impl<F: FieldExt, const K: usize, const N: usize, const S: usize> MockChipset<F>
 			layouter.namespace(|| "range check"),
 		)?;
 
-		// Rip the last word of "x" & chek if it is 4 bit
-		let last_word = {
-			let num_bits = K * N;
-			// Take first num_bits bits of `element`.
-			let bits = x.value().map(|element| {
-				fe_to_le_bits(element.clone()).into_iter().take(num_bits).collect::<Vec<_>>()
-			});
+		// Take first "num_bits" bits of `element`.
+		let num_bits = K * N;
+		let bits = x.value().map(|element| {
+			fe_to_le_bits(element.clone()).into_iter().take(num_bits).collect::<Vec<_>>()
+		});
 
-			let words = bits
-				.map(|bits| {
-					bits.chunks_exact(K)
-						.map(|word| F::from(lebs2ip::<K>(&(word.try_into().unwrap()))))
-						.collect::<Vec<_>>()
-				})
-				.transpose_vec(N);
+		// Chunk the "bits" into K-bit words.
+		let words = bits
+			.map(|bits| {
+				bits.chunks_exact(K)
+					.map(|word| F::from(le_bits_to_u64::<K>(&(word.try_into().unwrap()))))
+					.collect::<Vec<_>>()
+			})
+			.transpose_vec(N);
 
-			words[N - 1]
-		};
+		// Take away the last word of `element`(x) & check if it is 4 bit
+		let last_word = words[N - 1];
 
 		let last_word_cell = layouter.assign_region(
 			|| "last word of x",
