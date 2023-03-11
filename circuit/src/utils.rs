@@ -25,8 +25,11 @@ use halo2::{
 	},
 };
 use num_bigint::BigUint;
+use num_traits::{One, Zero};
 use rand::Rng;
 use std::{fmt::Debug, fs::write, io::Read, time::Instant};
+
+use crate::integer::rns::fe_to_big;
 
 /// Returns boolean value from the assigned cell value
 pub fn assigned_as_bool<F: FieldExt>(bit: AssignedCell<F, F>) -> bool {
@@ -44,6 +47,16 @@ pub fn to_bits<const B: usize>(num: [u8; 32]) -> [bool; B] {
 	let mut bits = [false; B];
 	for i in 0..B {
 		bits[i] = num[i / 8] & (1 << (i % 8)) != 0;
+	}
+	bits
+}
+
+/// Converts given bytes to the bits.
+pub fn to_bits_field<const B: usize, F: FieldExt>(num: F) -> [bool; B] {
+	let mut bits = [false; B];
+	let big = fe_to_big(num);
+	for i in 0..B {
+		bits[i] = big.clone() & (BigUint::one() << i) != BigUint::zero();
 	}
 	bits
 }

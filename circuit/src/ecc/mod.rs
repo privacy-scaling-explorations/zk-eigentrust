@@ -1252,7 +1252,7 @@ mod test {
 		let b = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(b_big);
 		let p_point = EcPoint::<W, N, NUM_LIMBS, NUM_BITS, P>::new(a.clone(), b.clone());
 
-		let res = p_point.mul_scalar(scalar.to_bytes());
+		let res = p_point.mul_scalar(scalar);
 		let test_chip =
 			TestCircuit::new(p_point, None, Some(scalar), Some(value_bits), Gadgets::Mul);
 

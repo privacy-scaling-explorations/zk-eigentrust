@@ -207,7 +207,6 @@ where
 	R: RoundParams<C::Scalar, WIDTH>,
 {
 	/// Write a scalar.
-	// TODO: Ask return type
 	fn write_scalar(&mut self, scalar: C::Scalar) -> Result<(), VerifierError> {
 		self.common_scalar(&scalar)?;
 		let data = scalar.to_repr();

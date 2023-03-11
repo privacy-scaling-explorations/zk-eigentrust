@@ -313,17 +313,17 @@ where
 			&Self::LoadedEcPoint,
 		)],
 	) -> Self::LoadedEcPoint {
-		// TODO:  Find a way to_bytes
-		pairs
-		.iter()
-		.cloned()
-		.map(|(scalar, base)| {
-			let bytes = scalar.inner
-			base.inner.mul_scalar()
-		})
-		.reduce(|acc, value| acc.add(&value))
-		.unwrap();
-		LEcPoint::default()
+		let point = pairs
+			.iter()
+			.cloned()
+			.map(|(scalar, base)| {
+				let new = scalar.clone();
+				base.inner.mul_scalar(new.inner)
+			})
+			.reduce(|acc, value| acc.add(&value))
+			.unwrap();
+
+		LEcPoint { inner: point, loader: pairs[0].1.loader.clone() }
 	}
 }
 
