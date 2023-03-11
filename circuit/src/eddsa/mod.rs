@@ -230,7 +230,7 @@ mod test {
 		},
 		params::poseidon_bn254_5x5::Params,
 		poseidon::{native::Poseidon, FullRoundChip, PartialRoundChip, PoseidonConfig},
-		utils::{generate_params, prove_and_verify, to_bits},
+		utils::{field_to_bits, generate_params, prove_and_verify},
 		Chip, Chipset, CommonConfig, RegionCtx,
 	};
 	use halo2::{
@@ -330,14 +330,14 @@ mod test {
 				},
 			)?;
 
-			let s_bits = to_bits(self.s.to_bytes()).map(Fr::from);
+			let s_bits = field_to_bits(self.s).map(Fr::from);
 			let suborder = BabyJubJub::suborder();
-			let suborder_bits = to_bits(suborder.to_bytes()).map(Fr::from);
+			let suborder_bits = field_to_bits(suborder).map(Fr::from);
 			let diff = self.s + Fr::from_bytes(&N_SHIFTED).unwrap() - suborder;
-			let diff_bits = to_bits(diff.to_bytes()).map(Fr::from);
+			let diff_bits = field_to_bits(diff).map(Fr::from);
 			let h_inputs = [self.big_r_x, self.big_r_y, self.pk_x, self.pk_y, self.m];
 			let res = PoseidonHasher::new(h_inputs).permute()[0];
-			let m_hash_bits = to_bits(res.to_bytes()).map(Fr::from);
+			let m_hash_bits = field_to_bits(res).map(Fr::from);
 			let eddsa = EddsaChipset::<Fr, BabyJubJub, Params>::new(
 				big_r_x, big_r_y, s, pk_x, pk_y, m, s_bits, suborder_bits, diff_bits, m_hash_bits,
 			);

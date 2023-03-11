@@ -179,7 +179,7 @@ mod test {
 	use super::*;
 	use crate::{
 		gadgets::main::MainChip,
-		utils::{generate_params, prove_and_verify, to_bits},
+		utils::{field_to_bits, generate_params, prove_and_verify},
 	};
 	use halo2::{
 		circuit::{SimpleFloorPlanner, Value},
@@ -241,9 +241,9 @@ mod test {
 			)?;
 			let n_shifted = Fr::from_bytes(&N_SHIFTED).unwrap();
 			let b = self.x + n_shifted - self.y;
-			let diff_bits = to_bits(b.to_bytes()).map(Fr::from);
-			let x_bits = to_bits(self.x.to_bytes()).map(Fr::from);
-			let y_bits = to_bits(self.y.to_bytes()).map(Fr::from);
+			let diff_bits = field_to_bits(b).map(Fr::from);
+			let x_bits = field_to_bits(self.x).map(Fr::from);
+			let y_bits = field_to_bits(self.y).map(Fr::from);
 			let lt_eq_chip = LessEqualChipset::<Fr>::new(x, y, x_bits, y_bits, diff_bits);
 			let res = lt_eq_chip.synthesize(
 				&config.common,

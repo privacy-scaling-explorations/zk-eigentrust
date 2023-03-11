@@ -51,8 +51,8 @@ pub fn to_bits<const B: usize>(num: [u8; 32]) -> [bool; B] {
 	bits
 }
 
-/// Converts given bytes to the bits.
-pub fn to_bits_field<const B: usize, F: FieldExt>(num: F) -> [bool; B] {
+/// Converts given field element to the bits.
+pub fn field_to_bits<const B: usize, F: FieldExt>(num: F) -> [bool; B] {
 	let mut bits = [false; B];
 	let big = fe_to_big(num);
 	for i in 0..B {

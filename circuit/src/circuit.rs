@@ -19,7 +19,7 @@ use crate::{
 		sponge::{PoseidonSpongeChipset, PoseidonSpongeConfig},
 		FullRoundChip, PartialRoundChip, PoseidonChipset, PoseidonConfig,
 	},
-	utils::to_bits,
+	utils::field_to_bits,
 	Chip, Chipset, CommonConfig, RegionCtx, ADVICE,
 };
 use halo2::{
@@ -107,14 +107,14 @@ impl<
 
 		let s_bits = signatures
 			.iter()
-			.map(|sig| sig.s.to_bytes())
-			.map(|s| to_bits(s).map(Scalar::from))
+			.map(|sig| sig.s)
+			.map(|s| field_to_bits(s).map(Scalar::from))
 			.collect();
 		let suborder = BabyJubJub::suborder();
-		let suborder_bits = to_bits(suborder.to_bytes()).map(Scalar::from);
+		let suborder_bits = field_to_bits(suborder).map(Scalar::from);
 		let diffs =
 			signatures.iter().map(|sig| sig.s + Scalar::from_bytes(&N_SHIFTED).unwrap() - suborder);
-		let diff_bits = diffs.map(|diff| to_bits(diff.to_bytes()).map(Scalar::from)).collect();
+		let diff_bits = diffs.map(|diff| field_to_bits(diff).map(Scalar::from)).collect();
 
 		let m_hash_bits = pks
 			.iter()
@@ -123,7 +123,7 @@ impl<
 			.map(|((pk, sig), msg)| {
 				let h_inputs = [sig.big_r.x, sig.big_r.y, pk.0.x, pk.0.y, msg];
 				let res = PoseidonNativeHasher::new(h_inputs).permute()[0];
-				let m_hash_bits = to_bits(res.to_bytes()).map(Scalar::from);
+				let m_hash_bits = field_to_bits(res).map(Scalar::from);
 				m_hash_bits
 			})
 			.collect();
