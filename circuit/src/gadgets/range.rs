@@ -131,10 +131,8 @@ impl<F: FieldExt, const K: usize, const N: usize> MockChip<F> for LookupRangeChe
 			// the difference of the running sums:
 			//    z_i = 2^{K}⋅z_{i + 1} + a_i
 			// => a_i = z_i - 2^{K}⋅z_{i + 1}
-			let running_sum_word = {
-				let z_next = meta.query_advice(running_sum, Rotation::next());
-				z_cur.clone() - z_next * F::from(1 << K)
-			};
+			let z_next = meta.query_advice(running_sum, Rotation::next());
+			let running_sum_word = z_cur.clone() - z_next * F::from(1 << K);
 			let running_sum_lookup = running_sum_selector.clone() * running_sum_word;
 
 			// Combine the running sum and short lookups:
