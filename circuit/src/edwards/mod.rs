@@ -217,17 +217,14 @@ impl<F: FieldExt> Chip<F> for IntoAffineChip<F> {
 pub struct ScalarMulChip<F: FieldExt, P: EdwardsParams<F>> {
 	e: AssignedPoint<F>,
 	// Constructs an array for the value bits.
-	scalar: AssignedCell<F, F>,
-	bits2num_selector: Selector,
+	value_bits: Vec<AssignedCell<F, F>>,
 	_params: PhantomData<P>,
 }
 
 impl<F: FieldExt, P: EdwardsParams<F>> ScalarMulChip<F, P> {
 	/// Construct a new chip
-	pub fn new(
-		e: AssignedPoint<F>, scalar: AssignedCell<F, F>, bits2num_selector: Selector,
-	) -> Self {
-		Self { e, scalar, bits2num_selector, _params: PhantomData }
+	pub fn new(e: AssignedPoint<F>, value_bits: Vec<AssignedCell<F, F>>) -> Self {
+		Self { e, value_bits, _params: PhantomData }
 	}
 }
 
@@ -295,12 +292,6 @@ impl<F: FieldExt, P: EdwardsParams<F>> Chip<F> for ScalarMulChip<F, P> {
 	fn synthesize(
 		self, common: &CommonConfig, selector: &Selector, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
-		let bits2num_chip = Bits2NumChip::new(self.scalar.clone());
-		let assigned_bits = bits2num_chip.synthesize(
-			common,
-			&self.bits2num_selector,
-			layouter.namespace(|| "scalar_bits"),
-		)?;
 		layouter.assign_region(
 			|| "scalar_mul",
 			|region: Region<'_, F>| {
@@ -313,9 +304,9 @@ impl<F: FieldExt, P: EdwardsParams<F>> Chip<F> for ScalarMulChip<F, P> {
 				let mut e_z = ctx.copy_assign(common.advice[6], self.e.z.clone())?;
 
 				// Double and add operation.
-				for i in 0..assigned_bits.len() {
+				for i in 0..self.value_bits.len() {
 					ctx.enable(selector.clone())?;
-					ctx.copy_assign(common.advice[0], assigned_bits[i].clone())?;
+					ctx.copy_assign(common.advice[0], self.value_bits[i].clone())?;
 
 					// Add `r` and `e`.
 					let (r_x3, r_y3, r_z3) = P::add_value(
@@ -334,7 +325,7 @@ impl<F: FieldExt, P: EdwardsParams<F>> Chip<F> for ScalarMulChip<F, P> {
 						e_z.value().cloned(),
 					);
 
-					let is_one = assigned_as_bool(assigned_bits[i].clone());
+					let is_one = assigned_as_bool(self.value_bits[i].clone());
 
 					let (r_x_next, r_y_next, r_z_next) = if is_one {
 						(r_x3, r_y3, r_z3)
@@ -399,7 +390,14 @@ impl<F: FieldExt, P: EdwardsParams<F>> Chipset<F> for StrictScalarMulChipset<F, 
 	fn synthesize(
 		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
-		let scalar_chip = ScalarMulChip::<F, P>::new(self.e, self.value, config.bits2num_selector);
+		let bits2num_chip = Bits2NumChip::new(self.value);
+		let bits = bits2num_chip.synthesize(
+			common,
+			&config.bits2num_selector,
+			layouter.namespace(|| "scalar_bits"),
+		)?;
+
+		let scalar_chip = ScalarMulChip::<F, P>::new(self.e, bits);
 		let res = scalar_chip.synthesize(
 			common,
 			&config.scalar_mul_selector,
@@ -415,7 +413,7 @@ mod test {
 	use super::*;
 	use crate::{
 		edwards::{native::Point, params::BabyJubJub},
-		utils::{generate_params, prove_and_verify},
+		utils::{field_to_bits, generate_params, prove_and_verify},
 		CommonConfig,
 	};
 	use halo2::{
@@ -438,7 +436,6 @@ mod test {
 		point_add_selector: Selector,
 		into_affine_selector: Selector,
 		scalar_mul_selector: Selector,
-		bits2num_selector: Selector,
 	}
 
 	#[derive(Clone)]
@@ -466,15 +463,8 @@ mod test {
 			let point_add_selector = PointAddChip::<Fr, BabyJubJub>::configure(&common, meta);
 			let into_affine_selector = IntoAffineChip::configure(&common, meta);
 			let scalar_mul_selector = ScalarMulChip::<Fr, BabyJubJub>::configure(&common, meta);
-			let bits2num_selector = Bits2NumChip::configure(&common, meta);
 
-			TestConfig {
-				common,
-				point_add_selector,
-				into_affine_selector,
-				scalar_mul_selector,
-				bits2num_selector,
-			}
+			TestConfig { common, point_add_selector, into_affine_selector, scalar_mul_selector }
 		}
 
 		fn synthesize(
@@ -526,11 +516,23 @@ mod test {
 				Gadgets::ScalarMul => {
 					let e =
 						AssignedPoint::new(items[0].clone(), items[1].clone(), items[2].clone());
-					let chip = ScalarMulChip::<_, BabyJubJub>::new(
-						e,
-						items[3].clone(),
-						config.bits2num_selector,
-					);
+					let assigned_bits = layouter.assign_region(
+						|| "temp",
+						|region: Region<'_, Fr>| {
+							let mut ctx = RegionCtx::new(region, 0);
+							const NUM_BITS: usize = 256;
+							let bits = field_to_bits::<Fr, NUM_BITS>(self.inputs[3]).map(Fr::from);
+							let mut items = Vec::new();
+							for i in 0..NUM_BITS {
+								let val = Value::known(bits[i]);
+								let x = ctx.assign_advice(config.common.advice[0], val)?;
+								ctx.next();
+								items.push(x);
+							}
+							Ok(items)
+						},
+					)?;
+					let chip = ScalarMulChip::<_, BabyJubJub>::new(e, assigned_bits);
 					let res = chip.synthesize(
 						&config.common,
 						&config.scalar_mul_selector,
