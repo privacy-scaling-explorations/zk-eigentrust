@@ -526,12 +526,8 @@ mod test {
 	use super::*;
 	use crate::{
 		eddsa::native::{sign, SecretKey},
-		utils::{
-			generate_params, prove_and_verify, read_params, write_bytes_data, write_json_data,
-			write_yul_data,
-		},
-		verifier::{evm_verify, gen_evm_verifier, gen_evm_verifier_code, gen_pk, gen_proof},
-		Proof, ProofRaw,
+		utils::{generate_params, prove_and_verify, read_params},
+		verifier::{evm_verify, gen_evm_verifier, gen_pk, gen_proof},
 	};
 	use halo2::{dev::MockProver, halo2curves::bn256::Bn256};
 	use rand::thread_rng;
