@@ -69,7 +69,7 @@ use halo2::{
 };
 use num_bigint::BigUint;
 use num_integer::Integer as BigInteger;
-use num_traits::{FromPrimitive, Num, One, Zero};
+use num_traits::{FromPrimitive, One, Zero};
 use std::{fmt::Debug, ops::Shl, str::FromStr};
 
 /// This trait is for the dealing with RNS operations.
