@@ -522,7 +522,7 @@ mod test {
 						|region: Region<'_, Fr>| {
 							let mut ctx = RegionCtx::new(region, 0);
 							const NUM_BITS: usize = 256;
-							let bits = field_to_bits::<NUM_BITS, Fr>(self.inputs[3]).map(Fr::from);
+							let bits = field_to_bits::<Fr, NUM_BITS>(self.inputs[3]).map(Fr::from);
 							let mut items = Vec::new();
 							for i in 0..NUM_BITS {
 								let val = Value::known(bits[i]);

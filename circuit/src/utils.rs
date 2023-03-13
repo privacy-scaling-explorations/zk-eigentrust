@@ -42,6 +42,16 @@ pub fn assigned_as_bool<F: FieldExt>(bit: AssignedCell<F, F>) -> bool {
 	is_one
 }
 
+/// Returns field value from the assigned cell value
+pub fn assigned_to_field<F: FieldExt>(cell: AssignedCell<F, F>) -> F {
+	let cell_value = cell.value();
+	let mut arr = F::zero();
+	cell_value.map(|f| {
+		arr = *f;
+	});
+	arr
+}
+
 /// Converts given bytes to the bits.
 pub fn to_bits<const B: usize>(num: [u8; 32]) -> [bool; B] {
 	let mut bits = [false; B];
@@ -51,8 +61,22 @@ pub fn to_bits<const B: usize>(num: [u8; 32]) -> [bool; B] {
 	bits
 }
 
+/// Converts given field element to the booleans.
+pub fn to_field_bits<F: FieldExt, const B: usize>(num: F) -> [F; B] {
+	let mut bool = [false; B];
+	let mut bits = [F::zero(); B];
+	let big = fe_to_big(num);
+	for i in 0..B {
+		bool[i] = big.clone() & (BigUint::one() << i) != BigUint::zero();
+		if bool[i] {
+			bits[i] = F::one();
+		}
+	}
+	bits
+}
+
 /// Converts given field element to the bits.
-pub fn field_to_bits<const B: usize, F: FieldExt>(num: F) -> [bool; B] {
+pub fn field_to_bits<F: FieldExt, const B: usize>(num: F) -> [bool; B] {
 	let mut bits = [false; B];
 	let big = fe_to_big(num);
 	for i in 0..B {

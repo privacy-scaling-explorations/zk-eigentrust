@@ -156,7 +156,7 @@ where
 		let aux_init = Self::to_add();
 		let exp: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P> = self.clone();
 		// Converts given input to its bit by Scalar Field's bit size
-		let mut bits = field_to_bits::<254, N>(scalar);
+		let mut bits = field_to_bits::<N, 254>(scalar);
 		bits.reverse();
 
 		let table = [aux_init.clone(), exp.clone().add(&aux_init)];
