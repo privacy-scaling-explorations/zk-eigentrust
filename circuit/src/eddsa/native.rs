@@ -59,7 +59,7 @@ impl SecretKey {
 	pub fn public(&self) -> PublicKey {
 		let (b8_x, b8_y) = BabyJubJub::b8();
 		let b8_point = Point::new(b8_x, b8_y);
-		let a = b8_point.mul_scalar(self.0.to_repr().as_ref());
+		let a = b8_point.mul_scalar(self.0);
 		PublicKey(a.affine())
 	}
 }
@@ -111,7 +111,7 @@ pub fn sign(sk: &SecretKey, pk: &PublicKey, m: Fr) -> Signature {
 	// R = B8 * r
 	let (b8_x, b8_y) = BabyJubJub::b8();
 	let b8_point = Point::new(b8_x, b8_y);
-	let big_r = b8_point.mul_scalar(&r.to_bytes()).affine();
+	let big_r = b8_point.mul_scalar(r).affine();
 	// H(R || PK || M)
 	let m_hash_input = [big_r.x, big_r.y, pk.0.x, pk.0.y, m];
 	let m_hash = Hasher::new(m_hash_input).permute()[0];
@@ -136,11 +136,11 @@ pub fn verify(sig: &Signature, pk: &PublicKey, m: Fr) -> bool {
 	// Cl = s * G
 	let (b8_x, b8_y) = BabyJubJub::b8();
 	let b8_point = Point::new(b8_x, b8_y);
-	let cl = b8_point.mul_scalar(&sig.s.to_bytes());
+	let cl = b8_point.mul_scalar(sig.s);
 	// H(R || PK || M)
 	let m_hash_input = [sig.big_r.x, sig.big_r.y, pk.0.x, pk.0.y, m];
 	let m_hash = Hasher::new(m_hash_input).permute()[0];
-	let pk_h = pk.0.mul_scalar(&m_hash.to_bytes());
+	let pk_h = pk.0.mul_scalar(m_hash);
 	// Cr = R + H(R || PK || M) * PK
 	let cr = sig.big_r.projective().add(&pk_h);
 	cr.affine().equals(cl.affine())
@@ -183,7 +183,7 @@ mod test {
 
 		let (b8_x, b8_y) = BabyJubJub::b8();
 		let b8_point = Point::new(b8_x, b8_y);
-		sig.big_r = b8_point.mul_scalar(&different_r.to_bytes()).affine();
+		sig.big_r = b8_point.mul_scalar(different_r).affine();
 		let res = verify(&sig, &pk, m);
 
 		assert_eq!(res, false);

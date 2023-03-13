@@ -43,7 +43,6 @@ where
 	}
 
 	/// Squeeze a challenge.
-	// TODO: CHECK THE CORRECTNESS
 	fn squeeze_challenge(&mut self) -> LScalar<C, P> {
 		let default = C::Scalar::default();
 		self.state.update(&[default]);
@@ -152,8 +151,8 @@ where
 	fn squeeze_challenge(&mut self) -> C::ScalarExt {
 		let default = C::Scalar::default();
 		self.state.update(&[default]);
-		let hasher = self.state.squeeze();
-		hasher
+		let mut hasher = self.state.clone();
+		hasher.squeeze()
 	}
 
 	/// Update with an elliptic curve point.

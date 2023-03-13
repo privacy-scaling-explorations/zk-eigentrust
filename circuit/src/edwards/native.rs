@@ -1,3 +1,5 @@
+use crate::utils::to_bits;
+
 use super::params::EdwardsParams;
 use halo2::halo2curves::FieldExt;
 use std::marker::PhantomData;
@@ -69,13 +71,14 @@ impl<F: FieldExt, P: EdwardsParams<F>> Point<F, P> {
 	}
 
 	/// Returns scalar multiplication of the element.
-	pub fn mul_scalar(&self, b: &[u8]) -> PointProjective<F, P> {
+	pub fn mul_scalar(&self, scalar: F) -> PointProjective<F, P> {
 		let mut r: PointProjective<F, P> =
 			PointProjective { x: F::zero(), y: F::one(), z: F::one(), _p: PhantomData };
 		let mut exp: PointProjective<F, P> = self.projective();
+		let scalar_bits = to_bits(scalar.to_repr().as_ref());
 		// Double and add operation.
-		for i in 0..b.len() * 8 {
-			if test_bit(b, i) {
+		for i in 0..scalar_bits.len() {
+			if scalar_bits[i] {
 				r = r.add(&exp);
 			}
 			exp = exp.double();
@@ -87,11 +90,6 @@ impl<F: FieldExt, P: EdwardsParams<F>> Point<F, P> {
 	pub fn equals(&self, p: Self) -> bool {
 		self.x == p.x && self.y == p.y
 	}
-}
-
-/// Performs bitwise AND to test bits.
-pub fn test_bit(b: &[u8], i: usize) -> bool {
-	b[i / 8] & (1 << (i % 8)) != 0
 }
 
 #[cfg(test)]
@@ -206,7 +204,7 @@ mod tests {
 			.unwrap(),
 			_p: PhantomData,
 		};
-		let res_m = p.mul_scalar(&Fr::from(3).to_bytes()).affine();
+		let res_m = p.mul_scalar(Fr::from(3)).affine();
 		let res_a = p.projective().add(&p.projective());
 		let res_a = res_a.add(&p.projective()).affine();
 		assert_eq!(res_m.x, res_a.x);
@@ -230,7 +228,7 @@ mod tests {
 			"14035240266687799601661095864649209771790948434046947201833777492504781204499",
 		)
 		.unwrap();
-		let res2 = p.mul_scalar(&n.to_bytes()).affine();
+		let res2 = p.mul_scalar(n).affine();
 		assert_eq!(
 			res2.x,
 			Fr::from_str_vartime(

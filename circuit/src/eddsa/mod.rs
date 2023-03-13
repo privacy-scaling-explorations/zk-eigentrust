@@ -339,7 +339,7 @@ mod test {
 		let mut sig = sign(&sk, &pk, m);
 		let (b8_x, b8_y) = BabyJubJub::b8();
 		let b8 = Point::new(b8_x, b8_y);
-		sig.big_r = b8.mul_scalar(&different_r.to_bytes()).affine();
+		sig.big_r = b8.mul_scalar(different_r).affine();
 		let circuit = TestCircuit::new(sig.big_r.x, sig.big_r.y, sig.s, pk.0.x, pk.0.y, m);
 
 		let k = 11;

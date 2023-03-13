@@ -757,7 +757,7 @@ where
 			&config.add,
 			layouter.namespace(|| "aux_init_plus_scalar"),
 		)?;
-		let bits = Bits2NumChip::<N>::new(self.scalar);
+		let bits = Bits2NumChip::new(self.scalar);
 		let mut bits = bits.synthesize(common, &config.bits2num, layouter.namespace(|| "bits"))?;
 		bits.reverse();
 
