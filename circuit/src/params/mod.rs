@@ -8,7 +8,7 @@ pub mod rescue_prime_bn254_5x5;
 use halo2::{arithmetic::FieldExt, circuit::Value, plonk::Expression};
 
 /// Trait definition of Round parameters of Poseidon
-pub trait RoundParams<F: FieldExt, const WIDTH: usize>: Sbox {
+pub trait RoundParams<F: FieldExt, const WIDTH: usize>: Sbox + Clone {
 	/// Returns a number of full rounds.
 	fn full_rounds() -> usize;
 	/// Returns a number of partial rounds.

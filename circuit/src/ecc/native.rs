@@ -15,7 +15,7 @@
 
 use crate::{
 	integer::{native::Integer, rns::RnsParams},
-	utils::{to_bits},
+	utils::to_bits,
 };
 use halo2::{self, arithmetic::FieldExt};
 

@@ -47,7 +47,8 @@ where
 	fn squeeze_challenge(&mut self) -> LScalar<C, P> {
 		let default = C::Scalar::default();
 		self.state.update(&[default]);
-		let hasher = self.state.squeeze();
+		let mut hasher = self.state.clone();
+		let hasher = hasher.squeeze();
 		LScalar::new(hasher, self.loader.clone())
 	}
 
