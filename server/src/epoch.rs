@@ -11,7 +11,7 @@ use std::{
 
 /// Epoch struct, which is a wrapper around epoch number and timestamp.
 // TODO: add epoch_number and timestamp as private fields
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd)]
 pub struct Epoch(pub u64);
 
 impl Display for Epoch {

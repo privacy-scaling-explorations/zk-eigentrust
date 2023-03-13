@@ -22,10 +22,10 @@ use eigen_trust_circuit::{
 		plonk::ProvingKey,
 		poly::kzg::commitment::ParamsKZG,
 	},
-	utils::{field_to_string, prove, to_short, verify},
+	utils::to_short,
+	verifier::{evm_verify, gen_evm_verifier, gen_proof},
+	Proof,
 };
-use rand::thread_rng;
-use serde::{ser::SerializeStruct, Serialize, Serializer};
 use std::collections::HashMap;
 
 /// Number of iterations to run the eigen trust algorithm
@@ -68,42 +68,25 @@ pub const PUBLIC_KEYS: [&str; NUM_NEIGHBOURS] = [
 	"Gz4dAnn3ex5Pq2vZQyJ94EqDdxpFaY74GJDFuuALvD6b",
 ];
 
-#[derive(Debug, Clone)]
-/// Structure for holding the ZK proof and public inputs needed for verification
-pub struct Proof {
-	pub(crate) pub_ins: Vec<Scalar>,
-	pub(crate) proof: Vec<u8>,
-}
-
-impl Serialize for Proof {
-	fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-	where
-		S: Serializer,
-	{
-		let values: Vec<String> = self.pub_ins.iter().map(|x| field_to_string(x)).collect();
-		let mut state = serializer.serialize_struct("Proof", 2)?;
-		state.serialize_field("pub_ins", &values)?;
-		state.serialize_field("proof", &self.proof)?;
-		state.end()
-	}
-}
-
 /// The peer struct.
 pub struct Manager {
 	pub(crate) cached_proofs: HashMap<Epoch, Proof>,
 	pub(crate) attestations: HashMap<Scalar, Attestation>,
 	params: ParamsKZG<Bn256>,
 	proving_key: ProvingKey<G1Affine>,
+	verifier_code: Vec<u8>,
 }
 
 impl Manager {
 	/// Creates a new peer.
 	pub fn new(params: ParamsKZG<Bn256>, pk: ProvingKey<G1Affine>) -> Self {
+		let verifier_code = gen_evm_verifier(&params, &pk.get_vk(), vec![NUM_NEIGHBOURS]);
 		Self {
 			cached_proofs: HashMap::new(),
 			attestations: HashMap::new(),
 			params,
 			proving_key: pk,
+			verifier_code,
 		}
 	}
 
@@ -204,7 +187,6 @@ impl Manager {
 			sigs.push(att.sig.clone());
 		}
 
-		let mut rng = thread_rng();
 		let et = EigenTrust::<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, SCALE>::new(
 			pks,
 			sigs,
@@ -213,24 +195,15 @@ impl Manager {
 		let init_score = vec![Scalar::from_u128(INITIAL_SCORE); NUM_NEIGHBOURS];
 		let pub_ins = native::<Scalar, NUM_NEIGHBOURS, NUM_ITER, SCALE>(init_score, ops);
 
-		let proof_bytes = prove(&self.params, et, &[&pub_ins], &self.proving_key, &mut rng)
-			.map_err(|e| {
-				println!("{:?}", e);
-				EigenError::ProvingError
-			})?;
+		let proof_bytes = gen_proof(&self.params, &self.proving_key, et, vec![pub_ins.clone()]);
 
-		// Sanity check
-		let proof_res = verify(
-			&self.params,
-			&[&pub_ins],
-			&proof_bytes,
-			self.proving_key.get_vk(),
-		)
-		.map_err(|e| {
-			println!("{:?}", e);
-			EigenError::VerificationError
-		})?;
-		assert!(proof_res);
+		// --- SANITY CHECK VERIFICATION ---
+		evm_verify(
+			self.verifier_code.clone(),
+			vec![pub_ins.clone()],
+			proof_bytes.clone(),
+		);
+		// --- END ---
 
 		let proof = Proof { pub_ins, proof: proof_bytes };
 		self.cached_proofs.insert(epoch, proof);
@@ -242,12 +215,31 @@ impl Manager {
 	pub fn get_proof(&self, epoch: Epoch) -> Result<Proof, EigenError> {
 		self.cached_proofs.get(&epoch).ok_or(EigenError::ProofNotFound).cloned()
 	}
+
+	/// Query the proof for the last epoch
+	pub fn get_last_proof(&self) -> Result<Proof, EigenError> {
+		let mut epoch = None;
+		for &curr_epoch in self.cached_proofs.keys() {
+			match epoch {
+				Some(e) => {
+					if curr_epoch > e {
+						epoch = Some(curr_epoch);
+					}
+				},
+				None => {
+					epoch = Some(curr_epoch);
+				},
+			}
+		}
+		self.get_proof(epoch.unwrap())
+	}
 }
 
 #[cfg(test)]
 mod test {
 	use super::*;
 	use eigen_trust_circuit::{halo2::poly::commitment::ParamsProver, utils::keygen};
+	use rand::thread_rng;
 
 	#[test]
 	fn should_calculate_proof() {

@@ -7,14 +7,19 @@ use eigen_trust_circuit::{
 	eddsa::native::{sign, SecretKey},
 	halo2::halo2curves::{bn256::Fr as Scalar, FieldExt},
 	utils::to_short,
+	ProofRaw,
 };
 use eigen_trust_server::manager::{
 	attestation::{Attestation, AttestationData},
 	NUM_NEIGHBOURS,
 };
-use ethers::{abi::Address, prelude::EthDisplay, types::Bytes};
+use ethers::{
+	abi::Address,
+	prelude::EthDisplay,
+	types::{Bytes, U256},
+};
 use serde::{Deserialize, Serialize};
-use utils::{setup_client, SignerMiddlewareArc};
+use utils::{setup_client, EtVerifierWrapper, SignerMiddlewareArc};
 
 #[derive(Debug)]
 pub enum ClientError {
@@ -28,8 +33,10 @@ pub struct ClientConfig {
 	pub ops: [u128; NUM_NEIGHBOURS],
 	pub secret_key: [String; 2],
 	pub as_address: String,
+	pub et_verifier_wrapper_address: String,
 	pub mnemonic: String,
 	pub ethereum_node_url: String,
+	pub server_url: String,
 }
 
 pub struct EigenTrustClient {
@@ -111,21 +118,60 @@ impl EigenTrustClient {
 
 		Ok(())
 	}
+
+	pub async fn verify(&self, proof_raw: ProofRaw) -> Result<(), ClientError> {
+		let addr_res = self.config.et_verifier_wrapper_address.parse::<Address>();
+		let addr = addr_res.map_err(|_| ClientError::ParseError)?;
+		let et_wrapper_contract = EtVerifierWrapper::new(addr, self.client.clone());
+
+		let mut pub_ins = [U256::default(); NUM_NEIGHBOURS];
+		for (i, x) in proof_raw.pub_ins.iter().enumerate() {
+			pub_ins[i] = U256::from(x);
+		}
+		let proof_bytes = Bytes::from(proof_raw.proof.clone());
+
+		let tx_call = et_wrapper_contract.verify(pub_ins, proof_bytes);
+		let tx_res = tx_call.send();
+		let tx = tx_res.await.map_err(|e| {
+			eprintln!("{:?}", e);
+			ClientError::TxError
+		})?;
+		let res = tx.await.map_err(|e| {
+			eprintln!("{:?}", e);
+			ClientError::TxError
+		})?;
+
+		if let Some(receipt) = res {
+			println!("Transaction status: {:?}", receipt.status);
+		}
+
+		Ok(())
+	}
 }
 
 #[cfg(test)]
 mod test {
-	use crate::{utils::deploy, ClientConfig, EigenTrustClient};
+	use crate::{
+		utils::{deploy_as, deploy_et_wrapper, deploy_verifier},
+		ClientConfig, EigenTrustClient,
+	};
+	use eigen_trust_circuit::{
+		utils::{read_bytes_data, read_json_data},
+		ProofRaw,
+	};
 	use eigen_trust_server::manager::NUM_NEIGHBOURS;
-	use ethers::utils::Anvil;
+	use ethers::{abi::Address, utils::Anvil};
 
 	#[tokio::test]
 	async fn should_add_attestation() {
 		let anvil = Anvil::new().spawn();
 		let mnemonic = "test test test test test test test test test test test junk".to_string();
 		let node_url = anvil.endpoint();
-		let address = deploy(&mnemonic, &node_url).await.unwrap();
-		let address_string = format!("{:?}", address);
+		let as_address = deploy_as(&mnemonic, &node_url).await.unwrap();
+		let et_contract = read_bytes_data("et_verifier");
+		let et_verifier_address = deploy_verifier(&mnemonic, &node_url, et_contract).await.unwrap();
+		let as_address_string = format!("{:?}", as_address);
+		let et_verifier_address_string = format!("{:?}", et_verifier_address);
 
 		let dummy_user = [
 			"Alice".to_string(),
@@ -140,13 +186,54 @@ mod test {
 				"2L9bbXNEayuRMMbrWFynPtgkrXH1iBdfryRH9Soa8M67".to_string(),
 				"9rBeBVtbN2MkHDTpeAouqkMWNFJC6Bxb6bXH9jUueWaF".to_string(),
 			],
-			as_address: address_string,
+			as_address: as_address_string,
+			et_verifier_wrapper_address: et_verifier_address_string,
 			mnemonic,
 			ethereum_node_url: node_url,
+			server_url: String::new(),
 		};
 
 		let et_client = EigenTrustClient::new(config, user_secrets_raw);
 		let res = et_client.attest().await;
+		assert!(res.is_ok());
+
+		drop(anvil);
+	}
+
+	#[tokio::test]
+	async fn should_verify_proof() {
+		let anvil = Anvil::new().spawn();
+		let mnemonic = "test test test test test test test test test test test junk".to_string();
+		let node_url = anvil.endpoint();
+		let et_contract = read_bytes_data("et_verifier");
+		let et_verifier_address = deploy_verifier(&mnemonic, &node_url, et_contract).await.unwrap();
+		let et_verifier_wr =
+			deploy_et_wrapper(&mnemonic, &node_url, et_verifier_address).await.unwrap();
+		let et_verifier_address_string = format!("{:?}", et_verifier_wr);
+
+		let dummy_user = [
+			"Alice".to_string(),
+			"2L9bbXNEayuRMMbrWFynPtgkrXH1iBdfryRH9Soa8M67".to_string(),
+			"9rBeBVtbN2MkHDTpeAouqkMWNFJC6Bxb6bXH9jUueWaF".to_string(),
+		];
+		let user_secrets_raw = vec![dummy_user; NUM_NEIGHBOURS];
+
+		let config = ClientConfig {
+			ops: [200, 200, 200, 200, 200],
+			secret_key: [
+				"2L9bbXNEayuRMMbrWFynPtgkrXH1iBdfryRH9Soa8M67".to_string(),
+				"9rBeBVtbN2MkHDTpeAouqkMWNFJC6Bxb6bXH9jUueWaF".to_string(),
+			],
+			as_address: format!("{:?}", Address::default()),
+			et_verifier_wrapper_address: et_verifier_address_string,
+			mnemonic,
+			ethereum_node_url: node_url,
+			server_url: String::new(),
+		};
+
+		let et_client = EigenTrustClient::new(config, user_secrets_raw);
+		let proof_raw: ProofRaw = read_json_data("et_proof").unwrap();
+		let res = et_client.verify(proof_raw).await;
 		assert!(res.is_ok());
 
 		drop(anvil);

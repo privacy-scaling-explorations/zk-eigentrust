@@ -474,8 +474,8 @@ mod test {
 	use super::*;
 	use crate::{
 		eddsa::native::{sign, SecretKey},
-		utils::{generate_params, prove_and_verify},
-		verifier::{evm_verify, gen_evm_verifier, gen_pk, gen_proof, gen_srs},
+		utils::{generate_params, prove_and_verify, read_params},
+		verifier::{evm_verify, gen_evm_verifier, gen_pk, gen_proof},
 	};
 	use halo2::{dev::MockProver, halo2curves::bn256::Bn256};
 	use rand::thread_rng;
@@ -549,11 +549,6 @@ mod test {
 			Ok(prover) => prover,
 			Err(e) => panic!("{}", e),
 		};
-
-		// let errs = prover.verify().err().unwrap();
-		// for err in errs {
-		// 	println!("{:#?}", err);
-		// }
 
 		assert_eq!(prover.verify(), Ok(()));
 	}
@@ -684,7 +679,7 @@ mod test {
 		);
 
 		let k = 14;
-		let params = gen_srs(k);
+		let params = read_params(k);
 		let pk = gen_pk(&params, &et);
 		let deployment_code = gen_evm_verifier(&params, pk.get_vk(), vec![NUM_NEIGHBOURS]);
 		dbg!(deployment_code.len());

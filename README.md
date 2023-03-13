@@ -19,16 +19,6 @@ To build the project:
 ./scripts/build.sh
 ```
 
-To run the tests:
-```bash
-./scripts/test.sh
-```
-
-To run the simulation:
-```bash
-./scripts/run-simulations.sh
-```
-
 To build the documentation:
 ```bash
 ./scripts/build-docs.sh
