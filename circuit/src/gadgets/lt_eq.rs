@@ -17,7 +17,7 @@ pub const NUM_BITS: usize = 252;
 /// Same number of bits as N_SHIFTED, since NUM + N_SHIFTED is the operation.
 pub const DIFF_BITS: usize = 253;
 
-/// Chip for finding the difference between 2 numbers shifted 252 bits
+/// Chip for finding the difference between 2 numbers with size of 252 bits
 pub struct NShiftedChip<F: FieldExt> {
 	x: AssignedCell<F, F>,
 	y: AssignedCell<F, F>,
@@ -108,19 +108,12 @@ impl LessEqualConfig {
 pub struct LessEqualChipset<F: FieldExt> {
 	x: AssignedCell<F, F>,
 	y: AssignedCell<F, F>,
-	/// Bits of x and y and their difference
-	x_bits: [F; NUM_BITS],
-	y_bits: [F; NUM_BITS],
-	diff_bits: [F; DIFF_BITS],
 }
 
 impl<F: FieldExt> LessEqualChipset<F> {
 	/// Constructs a new chipset
-	pub fn new(
-		x: AssignedCell<F, F>, y: AssignedCell<F, F>, x_bits: [F; NUM_BITS], y_bits: [F; NUM_BITS],
-		diff_bits: [F; DIFF_BITS],
-	) -> Self {
-		Self { x, y, x_bits, y_bits, diff_bits }
+	pub fn new(x: AssignedCell<F, F>, y: AssignedCell<F, F>) -> Self {
+		Self { x, y }
 	}
 }
 
@@ -132,14 +125,14 @@ impl<F: FieldExt> Chipset<F> for LessEqualChipset<F> {
 	fn synthesize(
 		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
-		let x_b2n = Bits2NumChip::new(self.x.clone(), self.x_bits.to_vec());
+		let x_b2n = Bits2NumChip::new_exact::<NUM_BITS>(self.x.clone());
 		let _ = x_b2n.synthesize(
 			common,
 			&config.bits_2_num_selector,
 			layouter.namespace(|| "x_b2n"),
 		)?;
 
-		let y_b2n = Bits2NumChip::new(self.y.clone(), self.y_bits.to_vec());
+		let y_b2n = Bits2NumChip::new_exact::<NUM_BITS>(self.y.clone());
 		let _ = y_b2n.synthesize(
 			common,
 			&config.bits_2_num_selector,
@@ -153,7 +146,7 @@ impl<F: FieldExt> Chipset<F> for LessEqualChipset<F> {
 			layouter.namespace(|| "n_shifted_diff"),
 		)?;
 
-		let diff_b2n = Bits2NumChip::new(inp, self.diff_bits.to_vec());
+		let diff_b2n = Bits2NumChip::new_exact::<DIFF_BITS>(inp);
 		let bits = diff_b2n.synthesize(
 			common,
 			&config.bits_2_num_selector,
@@ -179,7 +172,7 @@ mod test {
 	use super::*;
 	use crate::{
 		gadgets::main::MainChip,
-		utils::{field_to_bits, generate_params, prove_and_verify},
+		utils::{generate_params, prove_and_verify},
 	};
 	use halo2::{
 		circuit::{SimpleFloorPlanner, Value},
@@ -239,12 +232,7 @@ mod test {
 					Ok((x, y))
 				},
 			)?;
-			let n_shifted = Fr::from_bytes(&N_SHIFTED).unwrap();
-			let b = self.x + n_shifted - self.y;
-			let diff_bits = field_to_bits(b).map(Fr::from);
-			let x_bits = field_to_bits(self.x).map(Fr::from);
-			let y_bits = field_to_bits(self.y).map(Fr::from);
-			let lt_eq_chip = LessEqualChipset::<Fr>::new(x, y, x_bits, y_bits, diff_bits);
+			let lt_eq_chip = LessEqualChipset::<Fr>::new(x, y);
 			let res = lt_eq_chip.synthesize(
 				&config.common,
 				&config.lt_eq,

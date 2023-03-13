@@ -10,7 +10,7 @@ use crate::{
 		rns::RnsParams, AssignedInteger, IntegerAddChip, IntegerDivChip, IntegerMulChip,
 		IntegerReduceChip, IntegerSubChip,
 	},
-	utils::{assigned_as_bool, assigned_to_field, to_field_bits},
+	utils::assigned_as_bool,
 	Chip, Chipset, CommonConfig,
 };
 use halo2::{
@@ -757,9 +757,7 @@ where
 			&config.add,
 			layouter.namespace(|| "aux_init_plus_scalar"),
 		)?;
-		let scalar = assigned_to_field(self.scalar.clone());
-		let scalar_bits = to_field_bits::<N, 254>(scalar);
-		let bits = Bits2NumChip::new(self.scalar, scalar_bits.to_vec());
+		let bits = Bits2NumChip::<N>::new(self.scalar);
 		let mut bits = bits.synthesize(common, &config.bits2num, layouter.namespace(|| "bits"))?;
 		bits.reverse();
 

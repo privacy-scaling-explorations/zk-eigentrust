@@ -4,13 +4,12 @@ use crate::{
 		EddsaChipset, EddsaConfig,
 	},
 	edwards::{
-		params::{BabyJubJub, EdwardsParams},
-		IntoAffineChip, PointAddChip, ScalarMulChip, StrictScalarMulConfig,
+		params::BabyJubJub, IntoAffineChip, PointAddChip, ScalarMulChip, StrictScalarMulConfig,
 	},
 	gadgets::{
 		absorb::AbsorbChip,
 		bits2num::Bits2NumChip,
-		lt_eq::{LessEqualConfig, NShiftedChip, N_SHIFTED},
+		lt_eq::{LessEqualConfig, NShiftedChip},
 		main::{AddChipset, MainChip, MainConfig, MulChipset},
 	},
 	params::poseidon_bn254_5x5::Params,
@@ -19,7 +18,6 @@ use crate::{
 		sponge::{PoseidonSpongeChipset, PoseidonSpongeConfig},
 		FullRoundChip, PartialRoundChip, PoseidonChipset, PoseidonConfig,
 	},
-	utils::field_to_bits,
 	Chip, Chipset, CommonConfig, RegionCtx, ADVICE,
 };
 use halo2::{
@@ -73,11 +71,6 @@ pub struct EigenTrust<
 	s: Vec<Value<Scalar>>,
 	// Opinions
 	ops: Vec<Vec<Value<Scalar>>>,
-	// Bits
-	s_bits: Vec<[Scalar; 252]>,
-	suborder_bits: [Scalar; 252],
-	s_suborder_diff_bits: Vec<[Scalar; 253]>,
-	m_hash_bits: Vec<[Scalar; 256]>,
 }
 
 impl<
@@ -88,10 +81,7 @@ impl<
 	> EigenTrust<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, SCALE>
 {
 	/// Constructs a new EigenTrust circuit
-	pub fn new(
-		pks: Vec<PublicKey>, signatures: Vec<Signature>, ops: Vec<Vec<Scalar>>,
-		messages: Vec<Scalar>,
-	) -> Self {
+	pub fn new(pks: Vec<PublicKey>, signatures: Vec<Signature>, ops: Vec<Vec<Scalar>>) -> Self {
 		// Pubkey values
 		let pk_x = pks.iter().map(|pk| Value::known(pk.0.x.clone())).collect();
 		let pk_y = pks.iter().map(|pk| Value::known(pk.0.y.clone())).collect();
@@ -105,41 +95,7 @@ impl<
 		let ops =
 			ops.iter().map(|vals| vals.iter().map(|x| Value::known(x.clone())).collect()).collect();
 
-		let s_bits = signatures
-			.iter()
-			.map(|sig| sig.s)
-			.map(|s| field_to_bits(s).map(Scalar::from))
-			.collect();
-		let suborder = BabyJubJub::suborder();
-		let suborder_bits = field_to_bits(suborder).map(Scalar::from);
-		let diffs =
-			signatures.iter().map(|sig| sig.s + Scalar::from_bytes(&N_SHIFTED).unwrap() - suborder);
-		let diff_bits = diffs.map(|diff| field_to_bits(diff).map(Scalar::from)).collect();
-
-		let m_hash_bits = pks
-			.iter()
-			.zip(signatures)
-			.zip(messages)
-			.map(|((pk, sig), msg)| {
-				let h_inputs = [sig.big_r.x, sig.big_r.y, pk.0.x, pk.0.y, msg];
-				let res = PoseidonNativeHasher::new(h_inputs).permute()[0];
-				let m_hash_bits = field_to_bits(res).map(Scalar::from);
-				m_hash_bits
-			})
-			.collect();
-
-		Self {
-			pk_x,
-			pk_y,
-			big_r_x,
-			big_r_y,
-			s,
-			ops,
-			s_bits,
-			suborder_bits,
-			s_suborder_diff_bits: diff_bits,
-			m_hash_bits,
-		}
+		Self { pk_x, pk_y, big_r_x, big_r_y, s, ops }
 	}
 
 	/// Make a new circuit with the inputs being random values.
@@ -167,7 +123,7 @@ impl<
 			ops.push(neighbour_ops);
 		}
 
-		EigenTrust::new(pks, sigs, ops, messages)
+		EigenTrust::new(pks, sigs, ops)
 	}
 }
 
@@ -189,10 +145,6 @@ impl<
 			big_r_y: vec![Value::unknown(); NUM_NEIGHBOURS],
 			s: vec![Value::unknown(); NUM_NEIGHBOURS],
 			ops: vec![vec![Value::unknown(); NUM_NEIGHBOURS]; NUM_NEIGHBOURS],
-			s_bits: vec![[Scalar::zero(); 252]; NUM_NEIGHBOURS],
-			suborder_bits: [Scalar::zero(); 252],
-			s_suborder_diff_bits: vec![[Scalar::zero(); 253]; NUM_NEIGHBOURS],
-			m_hash_bits: vec![[Scalar::zero(); 256]; NUM_NEIGHBOURS],
 		}
 	}
 
@@ -384,10 +336,6 @@ impl<
 				pk_x[i].clone(),
 				pk_y[i].clone(),
 				res[0].clone(),
-				self.s_bits[i],
-				self.suborder_bits,
-				self.s_suborder_diff_bits[i],
-				self.m_hash_bits[i],
 			);
 			eddsa.synthesize(
 				&config.common,
@@ -594,7 +542,6 @@ mod test {
 			pub_keys.to_vec(),
 			signatures,
 			ops,
-			messages,
 		);
 
 		let k = 14;
@@ -668,7 +615,6 @@ mod test {
 			pub_keys.to_vec(),
 			signatures,
 			ops,
-			messages,
 		);
 
 		let k = 14;
@@ -735,7 +681,6 @@ mod test {
 			pub_keys.to_vec(),
 			signatures,
 			ops,
-			messages,
 		);
 
 		let k = 14;

@@ -55,14 +55,6 @@ where
 	pk_y: AssignedCell<F, F>,
 	/// Assigns a cell for the m.
 	m: AssignedCell<F, F>,
-	/// Constructs an array for the s_bits.
-	s_bits: [F; 252],
-	/// Constructs an array for the suborder_bits.
-	suborder_bits: [F; 252],
-	/// Constructs an array for the s_suborder_diff_bits.
-	s_suborder_diff_bits: [F; 253],
-	/// Constructs an array for the m_hash_bits.
-	m_hash_bits: [F; 256],
 	_p: PhantomData<P>,
 	_r: PhantomData<R>,
 }
@@ -75,23 +67,8 @@ where
 	pub fn new(
 		big_r_x: AssignedCell<F, F>, big_r_y: AssignedCell<F, F>, s: AssignedCell<F, F>,
 		pk_x: AssignedCell<F, F>, pk_y: AssignedCell<F, F>, m: AssignedCell<F, F>,
-		s_bits: [F; 252], suborder_bits: [F; 252], s_suborder_diff_bits: [F; 253],
-		m_hash_bits: [F; 256],
 	) -> Self {
-		Self {
-			big_r_x,
-			big_r_y,
-			s,
-			pk_x,
-			pk_y,
-			m,
-			s_bits,
-			suborder_bits,
-			s_suborder_diff_bits,
-			m_hash_bits,
-			_p: PhantomData,
-			_r: PhantomData,
-		}
+		Self { big_r_x, big_r_y, s, pk_x, pk_y, m, _p: PhantomData, _r: PhantomData }
 	}
 }
 
@@ -119,13 +96,7 @@ where
 		)?;
 
 		// s cannot be higher than the suborder.
-		let lt_eq_chipset = LessEqualChipset::new(
-			self.s.clone(),
-			suborder,
-			self.s_bits,
-			self.suborder_bits,
-			self.s_suborder_diff_bits,
-		);
+		let lt_eq_chipset = LessEqualChipset::new(self.s.clone(), suborder);
 		let is_lt_eq = lt_eq_chipset.synthesize(
 			common,
 			&config.lt_eq,
@@ -134,8 +105,7 @@ where
 
 		// Cl = s * G
 		let e = AssignedPoint::new(b8_x, b8_y, one.clone());
-		let cl_chipset =
-			StrictScalarMulChipset::<F, P>::new(e, self.s.clone(), self.s_bits.to_vec());
+		let cl_chipset = StrictScalarMulChipset::<F, P>::new(e, self.s.clone());
 		let cl =
 			cl_chipset.synthesize(common, &config.scalar_mul, layouter.namespace(|| "b_8 * s"))?;
 
@@ -155,11 +125,7 @@ where
 		// H(R || PK || M) * PK
 		// Scalar multiplication for the public key and hash.
 		let e = AssignedPoint::new(self.pk_x.clone(), self.pk_y.clone(), one.clone());
-		let pk_h_chipset = StrictScalarMulChipset::<F, P>::new(
-			e,
-			m_hash_res[0].clone(),
-			self.m_hash_bits.to_vec(),
-		);
+		let pk_h_chipset = StrictScalarMulChipset::<F, P>::new(e, m_hash_res[0].clone());
 		let pk_h = pk_h_chipset.synthesize(
 			common,
 			&config.scalar_mul,
@@ -225,12 +191,12 @@ mod test {
 		},
 		gadgets::{
 			bits2num::Bits2NumChip,
-			lt_eq::{LessEqualConfig, NShiftedChip, N_SHIFTED},
+			lt_eq::{LessEqualConfig, NShiftedChip},
 			main::{MainChip, MainConfig},
 		},
 		params::poseidon_bn254_5x5::Params,
 		poseidon::{native::Poseidon, FullRoundChip, PartialRoundChip, PoseidonConfig},
-		utils::{field_to_bits, generate_params, prove_and_verify},
+		utils::{generate_params, prove_and_verify},
 		Chip, Chipset, CommonConfig, RegionCtx,
 	};
 	use halo2::{
@@ -330,17 +296,8 @@ mod test {
 				},
 			)?;
 
-			let s_bits = field_to_bits(self.s).map(Fr::from);
-			let suborder = BabyJubJub::suborder();
-			let suborder_bits = field_to_bits(suborder).map(Fr::from);
-			let diff = self.s + Fr::from_bytes(&N_SHIFTED).unwrap() - suborder;
-			let diff_bits = field_to_bits(diff).map(Fr::from);
-			let h_inputs = [self.big_r_x, self.big_r_y, self.pk_x, self.pk_y, self.m];
-			let res = PoseidonHasher::new(h_inputs).permute()[0];
-			let m_hash_bits = field_to_bits(res).map(Fr::from);
-			let eddsa = EddsaChipset::<Fr, BabyJubJub, Params>::new(
-				big_r_x, big_r_y, s, pk_x, pk_y, m, s_bits, suborder_bits, diff_bits, m_hash_bits,
-			);
+			let eddsa =
+				EddsaChipset::<Fr, BabyJubJub, Params>::new(big_r_x, big_r_y, s, pk_x, pk_y, m);
 			eddsa.synthesize(
 				&config.common,
 				&config.eddsa,

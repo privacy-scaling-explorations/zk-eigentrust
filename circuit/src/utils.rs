@@ -25,11 +25,8 @@ use halo2::{
 	},
 };
 use num_bigint::BigUint;
-use num_traits::{One, Zero};
 use rand::Rng;
 use std::{fmt::Debug, fs::write, io::Read, time::Instant};
-
-use crate::integer::rns::fe_to_big;
 
 /// Returns boolean value from the assigned cell value
 pub fn assigned_as_bool<F: FieldExt>(bit: AssignedCell<F, F>) -> bool {
@@ -53,36 +50,29 @@ pub fn assigned_to_field<F: FieldExt>(cell: AssignedCell<F, F>) -> F {
 }
 
 /// Converts given bytes to the bits.
-pub fn to_bits<const B: usize>(num: [u8; 32]) -> [bool; B] {
-	let mut bits = [false; B];
-	for i in 0..B {
-		bits[i] = num[i / 8] & (1 << (i % 8)) != 0;
-	}
-	bits
-}
-
-/// Converts given field element to the booleans.
-pub fn to_field_bits<F: FieldExt, const B: usize>(num: F) -> [F; B] {
-	let mut bool = [false; B];
-	let mut bits = [F::zero(); B];
-	let big = fe_to_big(num);
-	for i in 0..B {
-		bool[i] = big.clone() & (BigUint::one() << i) != BigUint::zero();
-		if bool[i] {
-			bits[i] = F::one();
-		}
+pub fn to_bits(num: &[u8]) -> Vec<bool> {
+	let len = num.len() * 8;
+	let mut bits = Vec::new();
+	for i in 0..len {
+		let bit = num[i / 8] & (1 << (i % 8)) != 0;
+		bits.push(bit);
 	}
 	bits
 }
 
 /// Converts given field element to the bits.
-pub fn field_to_bits<F: FieldExt, const B: usize>(num: F) -> [bool; B] {
-	let mut bits = [false; B];
-	let big = fe_to_big(num);
-	for i in 0..B {
-		bits[i] = big.clone() & (BigUint::one() << i) != BigUint::zero();
-	}
-	bits
+pub fn field_to_bits_vec<F: FieldExt>(num: F) -> Vec<F> {
+	let bits = to_bits(num.to_repr().as_ref());
+	let sliced_bits = bits[..F::NUM_BITS as usize].to_vec();
+	sliced_bits.iter().map(|&x| F::from(x)).collect()
+}
+
+/// Converts given field element to the bits.
+pub fn field_to_bits<F: FieldExt, const B: usize>(num: F) -> [F; B] {
+	let bits = to_bits(num.to_repr().as_ref());
+	let sliced_bits = bits[..B].to_vec();
+	let vec: Vec<F> = sliced_bits.iter().map(|&x| F::from(x)).collect();
+	vec.try_into().unwrap()
 }
 
 /// Convert bytes array to a wide representation of 64 bytes

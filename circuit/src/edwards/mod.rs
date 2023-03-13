@@ -373,14 +373,13 @@ impl StrictScalarMulConfig {
 pub struct StrictScalarMulChipset<F: FieldExt, P: EdwardsParams<F>> {
 	e: AssignedPoint<F>,
 	value: AssignedCell<F, F>,
-	value_bits: Vec<F>,
 	_params: PhantomData<P>,
 }
 
 impl<F: FieldExt, P: EdwardsParams<F>> StrictScalarMulChipset<F, P> {
 	/// Construct a new chipset
-	pub fn new(e: AssignedPoint<F>, value: AssignedCell<F, F>, value_bits: Vec<F>) -> Self {
-		Self { e, value, value_bits, _params: PhantomData }
+	pub fn new(e: AssignedPoint<F>, value: AssignedCell<F, F>) -> Self {
+		Self { e, value, _params: PhantomData }
 	}
 }
 
@@ -391,7 +390,7 @@ impl<F: FieldExt, P: EdwardsParams<F>> Chipset<F> for StrictScalarMulChipset<F, 
 	fn synthesize(
 		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
-		let bits2num_chip = Bits2NumChip::new(self.value, self.value_bits);
+		let bits2num_chip = Bits2NumChip::new(self.value);
 		let bits = bits2num_chip.synthesize(
 			common,
 			&config.bits2num_selector,

@@ -15,7 +15,7 @@
 
 use crate::{
 	integer::{native::Integer, rns::RnsParams},
-	utils::field_to_bits,
+	utils::{to_bits},
 };
 use halo2::{self, arithmetic::FieldExt};
 
@@ -156,7 +156,8 @@ where
 		let aux_init = Self::to_add();
 		let exp: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P> = self.clone();
 		// Converts given input to its bit by Scalar Field's bit size
-		let mut bits = field_to_bits::<N, 254>(scalar);
+		let mut bits = to_bits(scalar.to_repr().as_ref());
+		bits = bits[..N::NUM_BITS as usize].to_vec();
 		bits.reverse();
 
 		let table = [aux_init.clone(), exp.clone().add(&aux_init)];
