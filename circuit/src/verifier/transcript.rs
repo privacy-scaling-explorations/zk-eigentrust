@@ -15,7 +15,7 @@ use snark_verifier::{
 	Error as VerifierError,
 };
 use std::{
-	io::{self, Read, Write},
+	io::{self, ErrorKind, Read, Write},
 	marker::PhantomData,
 };
 
@@ -55,7 +55,6 @@ where
 	fn common_ec_point(&mut self, ec_point: &LEcPoint<C, P>) -> Result<(), VerifierError> {
 		let default = C::Scalar::default();
 		self.state.update(&[default]);
-		// ASK THIS: IS THIS NOT IMPORTANT TO DO LIKE THIS
 		let x_scalar = P::compose(ec_point.inner.x.limbs);
 		let y_scalar = P::compose(ec_point.inner.y.limbs);
 
@@ -83,9 +82,18 @@ where
 {
 	fn read_scalar(&mut self) -> Result<LScalar<C, P>, VerifierError> {
 		let mut data = <C::Scalar as PrimeField>::Repr::default();
-		// No ?
-		let _ = self.reader.read_exact(data.as_mut());
-		let scalar = C::Scalar::from_repr(data).unwrap();
+		self.reader.read_exact(data.as_mut()).map_err(|err| {
+			VerifierError::Transcript(
+				err.kind(),
+				"invalid field element encoding in proof".to_string(),
+			)
+		})?;
+		let scalar = Option::from(C::Scalar::from_repr(data)).ok_or_else(|| {
+			VerifierError::Transcript(
+				ErrorKind::Other,
+				"invalid field element encoding in proof".to_string(),
+			)
+		})?;
 		let scalar = LScalar::new(scalar, self.loader.clone());
 		self.common_scalar(&scalar)?;
 
@@ -94,7 +102,7 @@ where
 
 	fn read_ec_point(&mut self) -> Result<LEcPoint<C, P>, VerifierError> {
 		let mut compressed = C::Repr::default();
-		let _ = self.reader.read_exact(compressed.as_mut());
+		self.reader.read_exact(compressed.as_mut()).unwrap();
 		let point: C = Option::from(C::from_bytes(&compressed))
 			.ok_or_else(|| io::Error::new(io::ErrorKind::Other, "invalid point encoding in proof"))
 			.unwrap();
@@ -147,7 +155,6 @@ where
 	}
 
 	/// Squeeze a challenge.
-	// TODO: Ask return type of this function
 	fn squeeze_challenge(&mut self) -> C::ScalarExt {
 		let default = C::Scalar::default();
 		self.state.update(&[default]);
