@@ -127,10 +127,23 @@ impl<F: FieldExt, const K: usize, const N: usize> MockChip<F> for LookupRangeChe
 			let running_sum_selector = meta.query_selector(running_sum_selector);
 			let z_cur = meta.query_advice(running_sum, Rotation::cur());
 
-			// In the case of a running sum decomposition, we recover the word from
-			// the difference of the running sums:
-			//    z_i = 2^{K}⋅z_{i + 1} + a_i
-			// => a_i = z_i - 2^{K}⋅z_{i + 1}
+			/*
+				Example of 16 bits number:
+				2 = 16 / 8
+				0x01ff
+
+				z_0 1111111100000001 (little-endian)
+
+				z_1 00000001  		11111111 = 1111111100000001 - 00000001 * (000000001)
+									a_0      = z_0 				- z_1 	   * (1 << 8)
+				z_2 00000000   		00000001 = 00000001 - 0   * (000000001)
+									a_1 	 = z_1 		- z_2 * (1 << 8)
+
+				In the case of a running sum decomposition, we recover the word from
+				the difference of the running sums:
+					z_i = 2^{K}⋅z_{i + 1} + a_i
+					=> a_i = z_i - 2^{K}⋅z_{i + 1}
+			*/
 			let z_next = meta.query_advice(running_sum, Rotation::next());
 			let running_sum_word = z_cur.clone() - z_next * F::from(1 << K);
 			let running_sum_lookup = running_sum_selector.clone() * running_sum_word;
@@ -166,6 +179,17 @@ impl<F: FieldExt, const K: usize, const N: usize> MockChip<F> for LookupRangeChe
 					})
 					.transpose_vec(N);
 
+				//
+				// x:   1111111100000001
+				// a_0: 11111111
+				// a_1: 00000001
+				//
+				// z_0 = x
+				// z_1 = (z_0 - a_0) / (2 ^ K)
+				// z_2 = (z_1 - a_1) / (2 ^ K)
+				//
+				// [1111111100000001, 00000001, 0]
+				//
 				let mut zs = vec![x.clone()];
 
 				// Assign cumulative sum such that
