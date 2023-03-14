@@ -13,7 +13,6 @@ use snark_verifier::{
 };
 use std::{
 	fmt::Debug,
-	io,
 	marker::PhantomData,
 	ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
@@ -271,28 +270,9 @@ where
 	type LoadedEcPoint = LEcPoint<C, P>;
 
 	fn ec_point_load_const(&self, value: &C) -> Self::LoadedEcPoint {
-		let coords: Coordinates<C> = Option::from(value.coordinates())
-			.ok_or_else(|| {
-				io::Error::new(
-					io::ErrorKind::Other,
-					"cannot write points at infinity to the transcript",
-				)
-			})
-			.unwrap();
-		let x = Integer::<
-			<C as CurveAffine>::Base,
-			<C as CurveAffine>::ScalarExt,
-			NUM_LIMBS,
-			NUM_BITS,
-			P,
-		>::from_w(coords.x().clone());
-		let y = Integer::<
-			<C as CurveAffine>::Base,
-			<C as CurveAffine>::ScalarExt,
-			NUM_LIMBS,
-			NUM_BITS,
-			P,
-		>::from_w(coords.y().clone());
+		let coords: Coordinates<C> = Option::from(value.coordinates()).unwrap();
+		let x = Integer::from_w(coords.x().clone());
+		let y = Integer::from_w(coords.y().clone());
 		let point = EcPoint::new(x, y);
 
 		LEcPoint { inner: point, loader: self.clone() }

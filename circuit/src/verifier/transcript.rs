@@ -15,9 +15,11 @@ use snark_verifier::{
 	Error as VerifierError,
 };
 use std::{
-	io::{self, ErrorKind, Read, Write},
+	io::{ErrorKind, Read, Write},
 	marker::PhantomData,
 };
+
+// TODO: Implement PoseidonRead with NativeSVLoader from snark-verifier
 
 const WIDTH: usize = 5;
 
@@ -30,6 +32,17 @@ where
 	reader: RD,
 	state: PoseidonSponge<C::Scalar, WIDTH, R>,
 	loader: NativeLoader<C, P>,
+}
+
+impl<RD: Read, C: CurveAffine, P, R> PoseidonRead<RD, C, P, R>
+where
+	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	R: RoundParams<C::Scalar, WIDTH>,
+{
+	/// Create new PoseidonRead transcript
+	pub fn new(reader: RD, loader: NativeLoader<C, P>) -> Self {
+		Self { reader, state: PoseidonSponge::new(), loader }
+	}
 }
 
 impl<RD: Read, C: CurveAffine, P, R> Transcript<C, NativeLoader<C, P>> for PoseidonRead<RD, C, P, R>
@@ -47,19 +60,17 @@ where
 		let default = C::Scalar::default();
 		self.state.update(&[default]);
 		let mut hasher = self.state.clone();
-		let hasher = hasher.squeeze();
-		LScalar::new(hasher, self.loader.clone())
+		let val = hasher.squeeze();
+		LScalar::new(val, self.loader.clone())
 	}
 
 	/// Update with an elliptic curve point.
 	fn common_ec_point(&mut self, ec_point: &LEcPoint<C, P>) -> Result<(), VerifierError> {
 		let default = C::Scalar::default();
 		self.state.update(&[default]);
-		let x_scalar = P::compose(ec_point.inner.x.limbs);
-		let y_scalar = P::compose(ec_point.inner.y.limbs);
 
-		self.state.update(&[x_scalar]);
-		self.state.update(&[y_scalar]);
+		self.state.update(&ec_point.inner.x.limbs);
+		self.state.update(&ec_point.inner.y.limbs);
 
 		Ok(())
 	}
@@ -67,8 +78,7 @@ where
 	/// Update with a scalar.
 	fn common_scalar(&mut self, scalar: &LScalar<C, P>) -> Result<(), VerifierError> {
 		let default = C::Scalar::default();
-		self.state.update(&[default]);
-		self.state.update(&[scalar.inner]);
+		self.state.update(&[default, scalar.inner]);
 
 		Ok(())
 	}
@@ -102,27 +112,23 @@ where
 
 	fn read_ec_point(&mut self) -> Result<LEcPoint<C, P>, VerifierError> {
 		let mut compressed = C::Repr::default();
-		self.reader.read_exact(compressed.as_mut()).unwrap();
-		let point: C = Option::from(C::from_bytes(&compressed))
-			.ok_or_else(|| io::Error::new(io::ErrorKind::Other, "invalid point encoding in proof"))
-			.unwrap();
+		self.reader.read_exact(compressed.as_mut()).map_err(|err| {
+			VerifierError::Transcript(
+				err.kind(),
+				"invalid field element encoding in proof".to_string(),
+			)
+		})?;
+		let point: C = Option::from(C::from_bytes(&compressed)).ok_or_else(|| {
+			VerifierError::Transcript(
+				ErrorKind::Other,
+				"invalid point encoding in proof".to_string(),
+			)
+		})?;
 		let coordinates = point.coordinates().unwrap();
 		let x_coordinate = coordinates.x();
 		let y_coordinate = coordinates.y();
-		let x = Integer::<
-			<C as CurveAffine>::Base,
-			<C as CurveAffine>::ScalarExt,
-			NUM_LIMBS,
-			NUM_BITS,
-			P,
-		>::from_w(x_coordinate.clone());
-		let y = Integer::<
-			<C as CurveAffine>::Base,
-			<C as CurveAffine>::ScalarExt,
-			NUM_LIMBS,
-			NUM_BITS,
-			P,
-		>::from_w(y_coordinate.clone());
+		let x = Integer::from_w(x_coordinate.clone());
+		let y = Integer::from_w(y_coordinate.clone());
 
 		let ec_point = EcPoint::new(x, y);
 		let point = LEcPoint { inner: ec_point, loader: self.loader.clone() };
@@ -142,6 +148,17 @@ where
 	state: PoseidonSponge<C::Scalar, WIDTH, R>,
 	loader: NativeSVLoader,
 	_p: PhantomData<P>,
+}
+
+impl<W: Write, C: CurveAffine, P, R> PoseidonWrite<W, C, P, R>
+where
+	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	R: RoundParams<C::Scalar, WIDTH>,
+{
+	/// Create a new poseidon transcript writer
+	pub fn new(writer: W) -> Self {
+		Self { writer, state: PoseidonSponge::new(), loader: NativeSVLoader, _p: PhantomData }
+	}
 }
 
 impl<W: Write, C: CurveAffine, P, R> Transcript<C, NativeSVLoader> for PoseidonWrite<W, C, P, R>
@@ -168,31 +185,18 @@ where
 		self.state.update(&[default]);
 		let coords: Coordinates<C> = Option::from(ec_point.coordinates())
 			.ok_or_else(|| {
-				io::Error::new(
-					io::ErrorKind::Other,
-					"cannot write points at infinity to the transcript",
+				VerifierError::Transcript(
+					ErrorKind::Other,
+					"cannot write points at infinity to the transcript".to_string(),
 				)
 			})
 			.unwrap();
-		let x = Integer::<
-			<C as CurveAffine>::Base,
-			<C as CurveAffine>::ScalarExt,
-			NUM_LIMBS,
-			NUM_BITS,
-			P,
-		>::from_w(coords.x().clone());
-		let y = Integer::<
-			<C as CurveAffine>::Base,
-			<C as CurveAffine>::ScalarExt,
-			NUM_LIMBS,
-			NUM_BITS,
-			P,
-		>::from_w(coords.y().clone());
-		let x_scalar = P::compose(x.limbs);
-		let y_scalar = P::compose(y.limbs);
 
-		self.state.update(&[x_scalar]);
-		self.state.update(&[y_scalar]);
+		let x: Integer<_, _, NUM_LIMBS, NUM_BITS, P> = Integer::from_w(coords.x().clone());
+		let y: Integer<_, _, NUM_LIMBS, NUM_BITS, P> = Integer::from_w(coords.y().clone());
+
+		self.state.update(&x.limbs);
+		self.state.update(&y.limbs);
 
 		Ok(())
 	}
@@ -200,8 +204,7 @@ where
 	/// Update with a scalar.
 	fn common_scalar(&mut self, scalar: &C::ScalarExt) -> Result<(), VerifierError> {
 		let default = C::Scalar::default();
-		self.state.update(&[default]);
-		self.state.update(&[scalar.clone()]);
+		self.state.update(&[default, scalar.clone()]);
 
 		Ok(())
 	}
