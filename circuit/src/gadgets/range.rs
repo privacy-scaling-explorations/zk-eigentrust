@@ -112,7 +112,7 @@ impl<F: FieldExt, const K: usize, const N: usize> LookupRangeCheckChip<F, K, N> 
 }
 
 impl<F: FieldExt, const K: usize, const N: usize> MockChip<F> for LookupRangeCheckChip<F, K, N> {
-	type Output = AssignedCell<F, F>;
+	type Output = (AssignedCell<F, F>, AssignedCell<F, F>);
 
 	fn configure(mock_common: &MockCommonConfig, meta: &mut ConstraintSystem<F>) -> Selector {
 		let running_sum_selector = meta.complex_selector();
@@ -194,10 +194,16 @@ impl<F: FieldExt, const K: usize, const N: usize> MockChip<F> for LookupRangeChe
 				// For `element` = a_0 + 2^10 a_1 + ... + 2^{120} a_{12}}, initialize z_0 =
 				// `element`. If `element` fits in 130 bits, we end up with z_{13} = 0.
 				let mut z = x.clone();
+				let mut last_word_cell = x.clone();
+				let words_len = words.len();
 				let inv_two_pow_k = F::from(1u64 << K).invert().unwrap();
-				for word in words {
+				for (id, word) in words.into_iter().enumerate() {
 					// Enable q_lookup on this row
 					ctx.enable(selector.clone())?;
+
+					if id == words_len - 1 {
+						last_word_cell = z.clone();
+					}
 
 					// z_next = (z_cur - m_cur) / 2^K
 					let z_next = z.value().zip(word).map(|(z, word)| (*z - word) * inv_two_pow_k);
@@ -209,7 +215,7 @@ impl<F: FieldExt, const K: usize, const N: usize> MockChip<F> for LookupRangeChe
 
 				ctx.constrain_to_constant(z.clone(), F::zero())?;
 
-				Ok(self.x.clone())
+				Ok((self.x.clone(), last_word_cell))
 			},
 		)
 	}
@@ -254,35 +260,17 @@ impl<F: FieldExt, const K: usize, const N: usize, const S: usize> MockChipset<F>
 	) -> Result<Self::Output, Error> {
 		// First, check if x is less than 256 bits
 		let range_chip = LookupRangeCheckChip::<F, K, N>::new(self.x.clone());
-		let x = range_chip.synthesize(
+		let (x, last_word) = range_chip.synthesize(
 			mock_common,
 			&config.running_sum_selector,
 			layouter.namespace(|| "range check"),
 		)?;
 
-		// Take first "num_bits" bits of `element`.
-		let num_bits = K * N;
-		let bits = x.value().map(|element| {
-			fe_to_le_bits(element.clone()).into_iter().take(num_bits).collect::<Vec<_>>()
-		});
-
-		// Chunk the "bits" into K-bit words.
-		let words = bits
-			.map(|bits| {
-				bits.chunks_exact(K)
-					.map(|word| F::from(le_bits_to_u64::<K>(&(word.try_into().unwrap()))))
-					.collect::<Vec<_>>()
-			})
-			.transpose_vec(N);
-
-		// Take away the last word of `element`(x) & check if it is 4 bit
-		let last_word = words[N - 1];
-
 		let last_word_cell = layouter.assign_region(
-			|| "last word of x",
+			|| "copy last word of x",
 			|region| {
 				let mut ctx = RegionCtx::new(region, 0);
-				ctx.assign_advice(mock_common.common.advice[0], last_word)
+				ctx.copy_assign(mock_common.common.advice[0], last_word.clone())
 			},
 		)?;
 		let short_word_chip = LookupShortWordCheckChip::<F, K, S>::new(last_word_cell);
