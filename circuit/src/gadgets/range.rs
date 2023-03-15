@@ -256,23 +256,16 @@ impl<F: FieldExt, const K: usize, const N: usize, const S: usize> MockChipset<F>
 
 	fn synthesize(
 		self, mock_common: &MockCommonConfig, config: &RangeChipsetConfig,
-		mut layouter: impl halo2::circuit::Layouter<F>,
+		mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
 		// First, check if x is less than 256 bits
 		let range_chip = LookupRangeCheckChip::<F, K, N>::new(self.x.clone());
-		let (x, last_word) = range_chip.synthesize(
+		let (x, last_word_cell) = range_chip.synthesize(
 			mock_common,
 			&config.running_sum_selector,
 			layouter.namespace(|| "range check"),
 		)?;
 
-		let last_word_cell = layouter.assign_region(
-			|| "copy last word of x",
-			|region| {
-				let mut ctx = RegionCtx::new(region, 0);
-				ctx.copy_assign(mock_common.common.advice[0], last_word.clone())
-			},
-		)?;
 		let short_word_chip = LookupShortWordCheckChip::<F, K, S>::new(last_word_cell);
 		let _ = short_word_chip.synthesize(
 			mock_common,
