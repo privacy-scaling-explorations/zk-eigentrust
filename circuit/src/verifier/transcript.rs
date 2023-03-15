@@ -1,11 +1,16 @@
-use super::loader::{LEcPoint, LScalar, NativeLoader, NUM_BITS, NUM_LIMBS};
+use super::loader::native::{NUM_BITS, NUM_LIMBS};
 use crate::{
-	ecc::native::EcPoint,
 	integer::{native::Integer, rns::RnsParams},
 	params::RoundParams,
 	poseidon::native::sponge::PoseidonSponge,
 };
-use halo2::halo2curves::{Coordinates, CurveAffine};
+use halo2::{
+	halo2curves::{Coordinates, CurveAffine},
+	transcript::{
+		EncodedChallenge, Transcript as Halo2Transcript, TranscriptRead as Halo2TranscriptRead,
+		TranscriptReadBuffer, TranscriptWrite as Halo2TranscriptWrite, TranscriptWriterBuffer,
+	},
+};
 use snark_verifier::{
 	loader::native::NativeLoader as NativeSVLoader,
 	util::{
@@ -15,7 +20,7 @@ use snark_verifier::{
 	Error as VerifierError,
 };
 use std::{
-	io::{ErrorKind, Read, Write},
+	io::{Error as IoError, ErrorKind, Read, Result as IoResult, Write},
 	marker::PhantomData,
 };
 
@@ -31,7 +36,8 @@ where
 {
 	reader: RD,
 	state: PoseidonSponge<C::Scalar, WIDTH, R>,
-	loader: NativeLoader<C, P>,
+	loader: NativeSVLoader,
+	_p: PhantomData<P>,
 }
 
 impl<RD: Read, C: CurveAffine, P, R> PoseidonRead<RD, C, P, R>
@@ -40,57 +46,62 @@ where
 	R: RoundParams<C::Scalar, WIDTH>,
 {
 	/// Create new PoseidonRead transcript
-	pub fn new(reader: RD, loader: NativeLoader<C, P>) -> Self {
-		Self { reader, state: PoseidonSponge::new(), loader }
+	pub fn new(reader: RD, loader: NativeSVLoader) -> Self {
+		Self { reader, state: PoseidonSponge::new(), loader, _p: PhantomData }
 	}
 }
 
-impl<RD: Read, C: CurveAffine, P, R> Transcript<C, NativeLoader<C, P>> for PoseidonRead<RD, C, P, R>
+impl<RD: Read, C: CurveAffine, P, R> Transcript<C, NativeSVLoader> for PoseidonRead<RD, C, P, R>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	R: RoundParams<C::Scalar, WIDTH>,
 {
 	/// Returns [`Loader`].
-	fn loader(&self) -> &NativeLoader<C, P> {
+	fn loader(&self) -> &NativeSVLoader {
 		&self.loader
 	}
 
 	/// Squeeze a challenge.
-	fn squeeze_challenge(&mut self) -> LScalar<C, P> {
+	fn squeeze_challenge(&mut self) -> C::ScalarExt {
 		let default = C::Scalar::default();
 		self.state.update(&[default]);
 		let mut hasher = self.state.clone();
 		let val = hasher.squeeze();
-		LScalar::new(val, self.loader.clone())
+		val
 	}
 
 	/// Update with an elliptic curve point.
-	fn common_ec_point(&mut self, ec_point: &LEcPoint<C, P>) -> Result<(), VerifierError> {
+	fn common_ec_point(&mut self, ec_point: &C) -> Result<(), VerifierError> {
 		let default = C::Scalar::default();
 		self.state.update(&[default]);
 
-		self.state.update(&ec_point.inner.x.limbs);
-		self.state.update(&ec_point.inner.y.limbs);
+		let coordinates = ec_point.coordinates().unwrap();
+		let x_coordinate = coordinates.x();
+		let y_coordinate = coordinates.y();
+		let x = Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_w(x_coordinate.clone());
+		let y = Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_w(y_coordinate.clone());
+
+		self.state.update(&x.limbs);
+		self.state.update(&y.limbs);
 
 		Ok(())
 	}
 
 	/// Update with a scalar.
-	fn common_scalar(&mut self, scalar: &LScalar<C, P>) -> Result<(), VerifierError> {
+	fn common_scalar(&mut self, scalar: &C::ScalarExt) -> Result<(), VerifierError> {
 		let default = C::Scalar::default();
-		self.state.update(&[default, scalar.inner]);
+		self.state.update(&[default, *scalar]);
 
 		Ok(())
 	}
 }
 
-impl<RD: Read, C: CurveAffine, P, R> TranscriptRead<C, NativeLoader<C, P>>
-	for PoseidonRead<RD, C, P, R>
+impl<RD: Read, C: CurveAffine, P, R> TranscriptRead<C, NativeSVLoader> for PoseidonRead<RD, C, P, R>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	R: RoundParams<C::Scalar, WIDTH>,
 {
-	fn read_scalar(&mut self) -> Result<LScalar<C, P>, VerifierError> {
+	fn read_scalar(&mut self) -> Result<C::ScalarExt, VerifierError> {
 		let mut data = <C::Scalar as PrimeField>::Repr::default();
 		self.reader.read_exact(data.as_mut()).map_err(|err| {
 			VerifierError::Transcript(
@@ -104,13 +115,12 @@ where
 				"invalid field element encoding in proof".to_string(),
 			)
 		})?;
-		let scalar = LScalar::new(scalar, self.loader.clone());
-		self.common_scalar(&scalar)?;
+		<Self as Transcript<C, NativeSVLoader>>::common_scalar(self, &scalar)?;
 
 		Ok(scalar)
 	}
 
-	fn read_ec_point(&mut self) -> Result<LEcPoint<C, P>, VerifierError> {
+	fn read_ec_point(&mut self) -> Result<C, VerifierError> {
 		let mut compressed = C::Repr::default();
 		self.reader.read_exact(compressed.as_mut()).map_err(|err| {
 			VerifierError::Transcript(
@@ -124,14 +134,6 @@ where
 				"invalid point encoding in proof".to_string(),
 			)
 		})?;
-		let coordinates = point.coordinates().unwrap();
-		let x_coordinate = coordinates.x();
-		let y_coordinate = coordinates.y();
-		let x = Integer::from_w(x_coordinate.clone());
-		let y = Integer::from_w(y_coordinate.clone());
-
-		let ec_point = EcPoint::new(x, y);
-		let point = LEcPoint { inner: ec_point, loader: self.loader.clone() };
 		self.common_ec_point(&point)?;
 
 		Ok(point)
@@ -218,7 +220,7 @@ where
 {
 	/// Write a scalar.
 	fn write_scalar(&mut self, scalar: C::Scalar) -> Result<(), VerifierError> {
-		self.common_scalar(&scalar)?;
+		<Self as Transcript<C, NativeSVLoader>>::common_scalar(self, &scalar)?;
 		let data = scalar.to_repr();
 		self.writer.write_all(data.as_ref()).unwrap();
 
@@ -232,5 +234,145 @@ where
 		self.writer.write_all(compressed.as_ref()).unwrap();
 
 		Ok(())
+	}
+}
+
+// ----- HALO2 TRANSCRIPT TRAIT IMPLEMENTATIONS -----
+
+#[derive(Debug)]
+/// Challange scalar type
+pub struct ChallengeScalar<C: CurveAffine>(C::Scalar);
+
+impl<C: CurveAffine> EncodedChallenge<C> for ChallengeScalar<C> {
+	type Input = C::Scalar;
+
+	fn new(challenge_input: &C::Scalar) -> Self {
+		ChallengeScalar(*challenge_input)
+	}
+
+	fn get_scalar(&self) -> C::Scalar {
+		self.0
+	}
+}
+
+impl<RD: Read, C: CurveAffine, P, R> Halo2Transcript<C, ChallengeScalar<C>>
+	for PoseidonRead<RD, C, P, R>
+where
+	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	R: RoundParams<C::Scalar, WIDTH>,
+{
+	fn squeeze_challenge(&mut self) -> ChallengeScalar<C> {
+		let scalar = Transcript::squeeze_challenge(self);
+		ChallengeScalar::new(&scalar)
+	}
+
+	fn common_point(&mut self, point: C) -> IoResult<()> {
+		let res = self.common_ec_point(&point);
+		res.map_err(|x| match x {
+			VerifierError::Transcript(kind, message) => IoError::new(kind, message),
+			_ => IoError::new(ErrorKind::Other, "transcript error".to_string()),
+		})
+	}
+
+	fn common_scalar(&mut self, scalar: C::Scalar) -> IoResult<()> {
+		let res = <Self as Transcript<C, NativeSVLoader>>::common_scalar(self, &scalar);
+		// TODO: Extract error data from VerificationError if possible
+		// i.e. if error is Transcript variant
+		res.map_err(|x| IoError::new(ErrorKind::Other, "transcript error".to_string()))
+	}
+}
+
+impl<RD: Read, C: CurveAffine, P, R> Halo2TranscriptRead<C, ChallengeScalar<C>>
+	for PoseidonRead<RD, C, P, R>
+where
+	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	R: RoundParams<C::Scalar, WIDTH>,
+{
+	fn read_point(&mut self) -> IoResult<C> {
+		let res = <Self as TranscriptRead<C, NativeSVLoader>>::read_ec_point(self);
+		// TODO: Extract error data from VerificationError if possible
+		// i.e. if error is Transcript variant
+		res.map_err(|x| IoError::new(ErrorKind::Other, "transcript error".to_string()))
+	}
+
+	fn read_scalar(&mut self) -> IoResult<C::Scalar> {
+		let res = <Self as TranscriptRead<C, NativeSVLoader>>::read_scalar(self);
+		// TODO: Extract error data from VerificationError if possible
+		// i.e. if error is Transcript variant
+		res.map_err(|x| IoError::new(ErrorKind::Other, "transcript error".to_string()))
+	}
+}
+
+impl<RD: Read, C: CurveAffine, P, R> TranscriptReadBuffer<RD, C, ChallengeScalar<C>>
+	for PoseidonRead<RD, C, P, R>
+where
+	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	R: RoundParams<C::Scalar, WIDTH>,
+{
+	fn init(reader: RD) -> Self {
+		Self::new(reader, NativeSVLoader)
+	}
+}
+
+impl<W: Write, C: CurveAffine, P, R> Halo2Transcript<C, ChallengeScalar<C>>
+	for PoseidonWrite<W, C, P, R>
+where
+	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	R: RoundParams<C::Scalar, WIDTH>,
+{
+	fn squeeze_challenge(&mut self) -> ChallengeScalar<C> {
+		let scalar = Transcript::squeeze_challenge(self);
+		ChallengeScalar::new(&scalar)
+	}
+
+	fn common_point(&mut self, point: C) -> IoResult<()> {
+		let res = self.common_ec_point(&point);
+		res.map_err(|x| match x {
+			VerifierError::Transcript(kind, message) => IoError::new(kind, message),
+			_ => IoError::new(ErrorKind::Other, "transcript error".to_string()),
+		})
+	}
+
+	fn common_scalar(&mut self, scalar: C::Scalar) -> IoResult<()> {
+		let res = <Self as Transcript<C, NativeSVLoader>>::common_scalar(self, &scalar);
+		// TODO: Extract error data from VerificationError if possible
+		// i.e. if error is Transcript variant
+		res.map_err(|x| IoError::new(ErrorKind::Other, "transcript error".to_string()))
+	}
+}
+
+impl<W: Write, C: CurveAffine, P, R> Halo2TranscriptWrite<C, ChallengeScalar<C>>
+	for PoseidonWrite<W, C, P, R>
+where
+	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	R: RoundParams<C::Scalar, WIDTH>,
+{
+	fn write_point(&mut self, point: C) -> IoResult<()> {
+		let res = <Self as TranscriptWrite<C>>::write_ec_point(self, point);
+		// TODO: Extract error data from VerificationError if possible
+		// i.e. if error is Transcript variant
+		res.map_err(|x| IoError::new(ErrorKind::Other, "transcript error".to_string()))
+	}
+
+	fn write_scalar(&mut self, scalar: C::Scalar) -> IoResult<()> {
+		let res = <Self as TranscriptWrite<C>>::write_scalar(self, scalar);
+		// TODO: Extract error data from VerificationError if possible
+		// i.e. if error is Transcript variant
+		res.map_err(|x| IoError::new(ErrorKind::Other, "transcript error".to_string()))
+	}
+}
+
+impl<W: Write, C: CurveAffine, P, R> TranscriptWriterBuffer<W, C, ChallengeScalar<C>>
+	for PoseidonWrite<W, C, P, R>
+where
+	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	R: RoundParams<C::Scalar, WIDTH>,
+{
+	fn init(writer: W) -> Self {
+		Self::new(writer)
+	}
+
+	fn finalize(self) -> W {
+		self.writer
 	}
 }

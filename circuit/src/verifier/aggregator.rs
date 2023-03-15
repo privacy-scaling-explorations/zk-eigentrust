@@ -1,13 +1,19 @@
 use halo2::{
-	circuit::Value,
 	halo2curves::bn256::{Bn256, Fr, G1Affine},
-	plonk::VerifyingKey,
-	poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
+	plonk::{create_proof, Circuit},
+	poly::{
+		commitment::ParamsProver,
+		kzg::{
+			commitment::{KZGCommitmentScheme, ParamsKZG},
+			multiopen::ProverGWC,
+		},
+	},
+	transcript::{TranscriptReadBuffer, TranscriptWriterBuffer},
 };
-use rand::thread_rng;
+use rand::{thread_rng, RngCore};
 use snark_verifier::{
 	pcs::{
-		kzg::{Gwc19, KzgAccumulator, KzgAs},
+		kzg::{Gwc19, KzgAccumulator, KzgAs, KzgSuccinctVerifyingKey},
 		AccumulationSchemeProver,
 	},
 	system::halo2::{compile, Config},
@@ -23,87 +29,93 @@ use crate::{
 };
 
 use super::{
-	loader::{LScalar, NativeLoader},
+	gen_pk,
+	loader::native::{NUM_BITS, NUM_LIMBS},
 	transcript::{PoseidonRead, PoseidonWrite},
 };
 
 type PSV = PlonkSuccinctVerifier<KzgAs<Bn256, Gwc19>>;
+type SVK = KzgSuccinctVerifyingKey<G1Affine>;
 
 #[derive(Clone)]
 /// Snark witness structure
-pub struct SnarkWitness {
+pub struct Snark {
 	protocol: PlonkProtocol<G1Affine>,
-	instances: Vec<Vec<Value<Fr>>>,
-	proof: Value<Vec<u8>>,
+	instances: Vec<Vec<Fr>>,
+	proof: Vec<u8>,
 }
 
-impl SnarkWitness {
-	fn without_witnesses(&self) -> Self {
-		SnarkWitness {
-			protocol: self.protocol.clone(),
-			instances: self
-				.instances
-				.iter()
-				.map(|instances| vec![Value::unknown(); instances.len()])
-				.collect(),
-			proof: Value::unknown(),
-		}
-	}
+impl Snark {
+	fn new<C: Circuit<Fr>, R: RngCore>(
+		params: &ParamsKZG<Bn256>, circuit: C, instances: Vec<Vec<Fr>>, rng: &mut R,
+	) -> Self {
+		let pk = gen_pk(params, &circuit);
+		let protocol = compile(
+			params,
+			pk.get_vk(),
+			Config::kzg().with_num_instance(vec![1]),
+		);
 
-	fn proof(&self) -> Value<&[u8]> {
-		self.proof.as_ref().map(Vec::as_slice)
+		let instances_slice: Vec<&[Fr]> = instances.iter().map(|x| x.as_slice()).collect();
+		let mut transcript = PoseidonWrite::<_, G1Affine, Bn256_4_68, Params>::new(Vec::new());
+		create_proof::<KZGCommitmentScheme<Bn256>, ProverGWC<_>, _, _, _, _>(
+			params,
+			&pk,
+			&[circuit],
+			&[instances_slice.as_slice()],
+			rng,
+			&mut transcript,
+		)
+		.unwrap();
+		let proof = transcript.finalize();
+		Self { protocol, instances, proof }
 	}
 }
 
+// TODO: Make SnarkWitness and functions to convert from Snark to SnarkWitness,
+// without witness function
 struct Aggregator {
+	svk: SVK,
+	snarks: Vec<Snark>,
 	instances: Vec<Fr>,
+	as_proof: Vec<u8>,
 }
 
 impl Aggregator {
-	pub fn new(
-		params: &ParamsKZG<Bn256>, vk: &VerifyingKey<G1Affine>, num_instance: Vec<usize>,
-		proof: Vec<u8>, instances: Vec<LScalar<G1Affine, Bn256_4_68>>,
-	) -> Self {
-		let protocol = compile(
-			params,
-			vk,
-			Config::kzg().with_num_instance(num_instance.clone()),
-		);
-
-		let loader = NativeLoader::default();
-		let protocol = protocol.loaded(&loader);
-		let mut transcript_read: PoseidonRead<_, G1Affine, Bn256_4_68, Params> =
-			PoseidonRead::new(proof.as_slice(), loader);
-
+	pub fn new(params: &ParamsKZG<Bn256>, snarks: Vec<Snark>) -> Self {
 		let svk = params.get_g()[0].into();
 
-		let proof =
-			PSV::read_proof(&svk, &protocol, &[instances.clone()], &mut transcript_read).unwrap();
-		let accumulators = PSV::verify(&svk, &protocol, &[instances], &proof).unwrap();
+		let mut plonk_proofs = Vec::new();
+		for snark in &snarks {
+			let mut transcript_read: PoseidonRead<_, G1Affine, Bn256_4_68, Params> =
+				PoseidonRead::init(snark.proof.as_slice());
+			let proof = PSV::read_proof(
+				&svk, &snark.protocol, &snark.instances, &mut transcript_read,
+			)
+			.unwrap();
+			let res = PSV::verify(&svk, &snark.protocol, &snark.instances, &proof).unwrap();
+			plonk_proofs.extend(res);
+		}
 
-		let mut transcript_write =
-			PoseidonWrite::<Vec<u8>, G1Affine, Bn256_4_68, Params>::new(Vec::new());
+		let (accumulator, as_proof) = {
+			let mut transcript_write =
+				PoseidonWrite::<Vec<u8>, G1Affine, Bn256_4_68, Params>::new(Vec::new());
+			let rng = &mut thread_rng();
+			let accumulator = KzgAs::<Bn256, Gwc19>::create_proof(
+				&Default::default(),
+				&plonk_proofs,
+				&mut transcript_write,
+				rng,
+			)
+			.unwrap();
+			(accumulator, transcript_write.finalize())
+		};
 
-		let rng = &mut thread_rng();
-		// TODO: uncomment when TranscriptRead with NativeLoader from snark-verifier is
-		// implemented
+		let KzgAccumulator { lhs, rhs } = accumulator;
+		let instances = [lhs.x, lhs.y, rhs.x, rhs.y]
+			.map(|v| Integer::<_, _, NUM_LIMBS, NUM_BITS, Bn256_4_68>::from_w(v).limbs)
+			.concat();
 
-		// let accumulator = KzgAs::<Bn256, Gwc19>::create_proof(
-		// 	&Default::default(),
-		// 	&accumulators,
-		// 	&mut transcript_write,
-		// 	rng,
-		// )
-		// .unwrap();
-
-		// let KzgAccumulator { lhs, rhs } = accumulator;
-		// let instances = [lhs.x, lhs.y, rhs.x, rhs.y].map(|v|
-		// Integer::from_w(v).limbs).concat();
-
-		Self { instances: Vec::new() }
+		Self { svk, snarks, instances, as_proof }
 	}
 }
-
-// TODO: Add function for generating SnarkWitness from ParamsKzg and Circuit
-// TODO: Use SnarkWitness inside Aggregator new function, along Svk, instances,
-// and as_proof
