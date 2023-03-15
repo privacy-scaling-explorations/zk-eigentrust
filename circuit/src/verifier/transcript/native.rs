@@ -1,8 +1,8 @@
-use super::loader::native::{NUM_BITS, NUM_LIMBS};
 use crate::{
 	integer::{native::Integer, rns::RnsParams},
 	params::RoundParams,
 	poseidon::native::sponge::PoseidonSponge,
+	verifier::loader::native::{NUM_BITS, NUM_LIMBS},
 };
 use halo2::{
 	halo2curves::{Coordinates, CurveAffine},

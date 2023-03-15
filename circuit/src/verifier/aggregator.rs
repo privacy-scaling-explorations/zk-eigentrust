@@ -31,7 +31,7 @@ use crate::{
 use super::{
 	gen_pk,
 	loader::native::{NUM_BITS, NUM_LIMBS},
-	transcript::{PoseidonRead, PoseidonWrite},
+	transcript::native::{PoseidonRead, PoseidonWrite},
 };
 
 type PSV = PlonkSuccinctVerifier<KzgAs<Bn256, Gwc19>>;

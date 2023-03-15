@@ -1,6 +1,5 @@
 use crate::{
 	ecc::native::EcPoint,
-	gadgets::main::MainChip,
 	integer::{native::Integer, rns::RnsParams},
 };
 use halo2::{
