@@ -37,10 +37,11 @@ impl<F: FieldExt, const K: usize, const S: usize> MockChip<F>
 		let bitshift_selector = meta.complex_selector();
 
 		let word_column = mock_common.common.advice[0];
+		let shifted_word_column = mock_common.common.advice[1];
 
 		meta.lookup("Check K bits limit", |meta| {
 			let bitshift_selector = meta.query_selector(bitshift_selector);
-			let shifted_word = meta.query_advice(word_column, Rotation::cur());
+			let shifted_word = meta.query_advice(shifted_word_column, Rotation::cur());
 
 			vec![(bitshift_selector * shifted_word, mock_common.table)]
 		});
@@ -49,17 +50,15 @@ impl<F: FieldExt, const K: usize, const S: usize> MockChip<F>
 		// of bits. https://p.z.cash/halo2-0.1:decompose-short-lookup
 		meta.create_gate("Short word S bits limit", |meta| {
 			let bitshift_selector = meta.query_selector(bitshift_selector);
-			let word = meta.query_advice(word_column, Rotation::prev());
-			let shifted_word = meta.query_advice(word_column, Rotation::cur());
-			let inv_two_pow_s = meta.query_advice(word_column, Rotation::next());
+			let word = meta.query_advice(word_column, Rotation::cur());
+			let shifted_word = meta.query_advice(shifted_word_column, Rotation::cur());
 
-			let two_pow_k = F::from(1 << K);
+			let two_pow_k_min_s = F::from(1 << (K - S));
 
-			// shifted_word = word * 2^{K-s}
-			//              = word * 2^K * inv_two_pow_s
+			// shifted_word = word * 2^{K-S}
 			Constraints::with_selector(
 				bitshift_selector,
-				Some(word * two_pow_k * inv_two_pow_s - shifted_word),
+				Some(word * two_pow_k_min_s - shifted_word),
 			)
 		});
 
@@ -73,22 +72,14 @@ impl<F: FieldExt, const K: usize, const S: usize> MockChip<F>
 			|| "short word check chip",
 			|region| {
 				let mut ctx = RegionCtx::new(region, 0);
+				ctx.enable(selector.clone())?;
 
 				// Assign original value
 				let assigned_x = ctx.copy_assign(mock_common.common.advice[0], self.x.clone())?;
 
-				ctx.next();
-
 				// Assign shifted value
 				let shifted_word = self.x.value().cloned() * Value::known(F::from(1 << (K - S)));
-				ctx.assign_advice(mock_common.common.advice[0], shifted_word)?;
-				ctx.enable(selector.clone())?;
-
-				ctx.next();
-
-				// Assign 2^{-S} from a fixed column.
-				let inv_two_pow_s = F::from(1 << S).invert().unwrap();
-				ctx.assign_from_constant(mock_common.common.advice[0], inv_two_pow_s)?;
+				ctx.assign_advice(mock_common.common.advice[1], shifted_word)?;
 
 				Ok(assigned_x)
 			},
