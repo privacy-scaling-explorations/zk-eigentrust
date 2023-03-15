@@ -5,7 +5,7 @@ use crate::{
 use halo2::{
 	circuit::{AssignedCell, Layouter, Region, Value},
 	halo2curves::FieldExt,
-	plonk::{Constraints, Selector},
+	plonk::{ConstraintSystem, Constraints, Error, Selector},
 	poly::Rotation,
 };
 
@@ -31,9 +31,7 @@ impl<F: FieldExt, const K: usize, const S: usize> MockChip<F>
 {
 	type Output = AssignedCell<F, F>;
 
-	fn configure(
-		mock_common: &MockCommonConfig, meta: &mut halo2::plonk::ConstraintSystem<F>,
-	) -> Selector {
+	fn configure(mock_common: &MockCommonConfig, meta: &mut ConstraintSystem<F>) -> Selector {
 		assert!(0 < S && S < K, "Word bits should be less than target bits.");
 
 		let bitshift_selector = meta.complex_selector();
@@ -70,7 +68,7 @@ impl<F: FieldExt, const K: usize, const S: usize> MockChip<F>
 
 	fn synthesize(
 		self, mock_common: &MockCommonConfig, selector: &Selector, mut layouter: impl Layouter<F>,
-	) -> Result<Self::Output, halo2::plonk::Error> {
+	) -> Result<Self::Output, Error> {
 		layouter.assign_region(
 			|| "short word check chip",
 			|region| {
@@ -116,9 +114,7 @@ impl<F: FieldExt, const K: usize, const N: usize> LookupRangeCheckChip<F, K, N> 
 impl<F: FieldExt, const K: usize, const N: usize> MockChip<F> for LookupRangeCheckChip<F, K, N> {
 	type Output = AssignedCell<F, F>;
 
-	fn configure(
-		mock_common: &MockCommonConfig, meta: &mut halo2::plonk::ConstraintSystem<F>,
-	) -> Selector {
+	fn configure(mock_common: &MockCommonConfig, meta: &mut ConstraintSystem<F>) -> Selector {
 		let running_sum_selector = meta.complex_selector();
 
 		let running_sum = mock_common.common.advice[0];
@@ -157,7 +153,7 @@ impl<F: FieldExt, const K: usize, const N: usize> MockChip<F> for LookupRangeChe
 
 	fn synthesize(
 		self, mock_common: &MockCommonConfig, selector: &Selector, mut layouter: impl Layouter<F>,
-	) -> Result<Self::Output, halo2::plonk::Error> {
+	) -> Result<Self::Output, Error> {
 		layouter.assign_region(
 			|| "range check chip",
 			|region: Region<'_, F>| {
@@ -190,7 +186,6 @@ impl<F: FieldExt, const K: usize, const N: usize> MockChip<F> for LookupRangeChe
 				//
 				// [1111111100000001, 00000001, 0]
 				//
-				let mut zs = vec![x.clone()];
 
 				// Assign cumulative sum such that
 				//          z_i = 2^{K}⋅z_{i + 1} + a_i
@@ -210,11 +205,9 @@ impl<F: FieldExt, const K: usize, const N: usize> MockChip<F> for LookupRangeChe
 					// Assign z_next
 					ctx.next();
 					z = ctx.assign_advice(mock_common.common.advice[0], z_next)?;
-
-					zs.push(z.clone());
 				}
 
-				ctx.constrain_to_constant(zs.last().unwrap().clone(), F::zero())?;
+				ctx.constrain_to_constant(z.clone(), F::zero())?;
 
 				Ok(self.x.clone())
 			},
@@ -258,7 +251,7 @@ impl<F: FieldExt, const K: usize, const N: usize, const S: usize> MockChipset<F>
 	fn synthesize(
 		self, mock_common: &MockCommonConfig, config: &RangeChipsetConfig,
 		mut layouter: impl halo2::circuit::Layouter<F>,
-	) -> Result<Self::Output, halo2::plonk::Error> {
+	) -> Result<Self::Output, Error> {
 		// First, check if x is less than 256 bits
 		let range_chip = LookupRangeCheckChip::<F, K, N>::new(self.x.clone());
 		let x = range_chip.synthesize(

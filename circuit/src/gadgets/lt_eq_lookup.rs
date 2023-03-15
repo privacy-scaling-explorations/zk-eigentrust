@@ -1,6 +1,6 @@
 use super::{
 	bits2num::Bits2NumChip,
-	lt_eq::NShiftedChip,
+	lt_eq::{NShiftedChip, NUM_BITS, N_SHIFTED},
 	main::MainConfig,
 	range::{RangeChipset, RangeChipsetConfig},
 };
@@ -58,12 +58,6 @@ pub trait MockChipset<F: FieldExt> {
 	) -> Result<Self::Output, Error>;
 }
 
-/// 1 << 252
-const N_SHIFTED: [u8; 32] = [
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 16,
-];
-/// Numbers are limited to 252 to avoid overflow
-const NUM_BITS: usize = 252;
 /// Same number of bits as N_SHIFTED, since NUM + N_SHIFTED is the operation.
 const DIFF_BITS: usize = 253;
 
@@ -97,19 +91,14 @@ impl LessEqualConfig {
 struct LessEqualChipset<F: FieldExt> {
 	x: AssignedCell<F, F>,
 	y: AssignedCell<F, F>,
-	/// Bits of x and y and their difference
-	x_bits: [F; NUM_BITS],
-	y_bits: [F; NUM_BITS],
+	/// Difference between bits of x and y
 	diff_bits: [F; DIFF_BITS],
 }
 
 impl<F: FieldExt> LessEqualChipset<F> {
 	/// Constructs a new chipset
-	fn new(
-		x: AssignedCell<F, F>, y: AssignedCell<F, F>, x_bits: [F; NUM_BITS], y_bits: [F; NUM_BITS],
-		diff_bits: [F; DIFF_BITS],
-	) -> Self {
-		Self { x, y, x_bits, y_bits, diff_bits }
+	fn new(x: AssignedCell<F, F>, y: AssignedCell<F, F>, diff_bits: [F; DIFF_BITS]) -> Self {
+		Self { x, y, diff_bits }
 	}
 }
 
@@ -263,9 +252,7 @@ mod test {
 			let n_shifted = Fr::from_bytes(&N_SHIFTED).unwrap();
 			let b = self.x + n_shifted - self.y;
 			let diff_bits = to_bits(b.to_bytes()).map(Fr::from);
-			let x_bits = to_bits(self.x.to_bytes()).map(Fr::from);
-			let y_bits = to_bits(self.y.to_bytes()).map(Fr::from);
-			let lt_eq_chip = LessEqualChipset::<Fr>::new(x, y, x_bits, y_bits, diff_bits);
+			let lt_eq_chip = LessEqualChipset::<Fr>::new(x, y, diff_bits);
 			let res = lt_eq_chip.synthesize(
 				&config.mock_common,
 				&config.lt_eq,
