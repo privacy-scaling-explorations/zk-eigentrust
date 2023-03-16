@@ -687,7 +687,7 @@ where
 
 /// Configuration elements for the circuit are defined here.
 #[derive(Debug, Clone)]
-struct EccMulConfig {
+pub struct EccMulConfig {
 	/// Constructs configs and selector from different circuits.
 	ladder: EccUnreducedLadderConfig,
 	add: EccAddConfig,

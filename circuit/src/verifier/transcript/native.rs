@@ -24,9 +24,8 @@ use std::{
 	marker::PhantomData,
 };
 
-// TODO: Implement PoseidonRead with NativeSVLoader from snark-verifier
-
-const WIDTH: usize = 5;
+/// Width of the hasher state used in the transcript
+pub const WIDTH: usize = 5;
 
 /// PoseidonRead
 pub struct PoseidonRead<RD: Read, C: CurveAffine, P, R>
@@ -120,8 +119,11 @@ where
 		Ok(scalar)
 	}
 
+	/// Read limbs from reader, then construct C: CurveAffine from it
 	fn read_ec_point(&mut self) -> Result<C, VerifierError> {
-		let mut compressed = C::Repr::default();
+		// TODO: Read 128 bytes
+		// let mut compressed = [0; 128];
+		let mut compressed = C::Repr::default(); // This is 64 bytes
 		self.reader.read_exact(compressed.as_mut()).map_err(|err| {
 			VerifierError::Transcript(
 				err.kind(),
@@ -212,6 +214,7 @@ where
 	}
 }
 
+// TODO: Decompose C to limbs, and write the limbs into the writer
 impl<W: Write, C: CurveAffine, P, R> TranscriptWrite<C> for PoseidonWrite<W, C, P, R>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,

@@ -97,19 +97,17 @@ impl Aggregator {
 			plonk_proofs.extend(res);
 		}
 
-		let (accumulator, as_proof) = {
-			let mut transcript_write =
-				PoseidonWrite::<Vec<u8>, G1Affine, Bn256_4_68, Params>::new(Vec::new());
-			let rng = &mut thread_rng();
-			let accumulator = KzgAs::<Bn256, Gwc19>::create_proof(
-				&Default::default(),
-				&plonk_proofs,
-				&mut transcript_write,
-				rng,
-			)
-			.unwrap();
-			(accumulator, transcript_write.finalize())
-		};
+		let mut transcript_write =
+			PoseidonWrite::<Vec<u8>, G1Affine, Bn256_4_68, Params>::new(Vec::new());
+		let rng = &mut thread_rng();
+		let accumulator = KzgAs::<Bn256, Gwc19>::create_proof(
+			&Default::default(),
+			&plonk_proofs,
+			&mut transcript_write,
+			rng,
+		)
+		.unwrap();
+		let as_proof = transcript_write.finalize();
 
 		let KzgAccumulator { lhs, rhs } = accumulator;
 		let instances = [lhs.x, lhs.y, rhs.x, rhs.y]
