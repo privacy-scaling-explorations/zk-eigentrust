@@ -21,14 +21,14 @@ use halo2::{
 
 /// Structure for the AssignedPoint.
 #[derive(Clone, Debug)]
-struct AssignedPoint<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
+pub struct AssignedPoint<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
 where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 {
 	// x coordinate of the point
-	x: AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
+	pub(crate) x: AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
 	// y coordinate of the point
-	y: AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
+	pub(crate) y: AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
 }
 
 impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
