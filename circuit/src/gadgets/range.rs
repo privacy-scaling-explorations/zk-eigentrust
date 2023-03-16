@@ -269,7 +269,7 @@ mod tests {
 	use halo2::{
 		circuit::{Region, SimpleFloorPlanner, Value},
 		dev::MockProver,
-		halo2curves::pasta::Fp as Fr,
+		halo2curves::bn256::Fr,
 		plonk::{Circuit, ConstraintSystem, Error},
 	};
 
