@@ -1,7 +1,4 @@
-use crate::{
-	utils::{fe_to_le_bits, le_bits_to_u64},
-	RegionCtx,
-};
+use crate::{integer::rns::decompose_big, utils::fe_to_big, RegionCtx};
 use halo2::{
 	circuit::{AssignedCell, Layouter, Region, Value},
 	halo2curves::FieldExt,
@@ -151,19 +148,14 @@ impl<F: FieldExt, const K: usize, const N: usize> MockChip<F> for LookupRangeChe
 				let x = ctx.copy_assign(mock_common.common.advice[0], self.x.clone())?;
 
 				// Take first "num_bits" bits of `element`.
-				let num_bits = K * N;
-				let bits = x.value().map(|element| {
-					fe_to_le_bits(element.clone()).into_iter().take(num_bits).collect::<Vec<_>>()
-				});
-
-				// Chunk the "bits" into K-bit words.
-				let words = bits
-					.map(|bits| {
-						bits.chunks_exact(K)
-							.map(|word| F::from(le_bits_to_u64::<K>(&(word.try_into().unwrap()))))
-							.collect::<Vec<_>>()
+				let words = x
+					.value()
+					.map(|&element| {
+						let fe_big = fe_to_big(element);
+						let limbs: [F; N] = decompose_big::<_, N, K>(fe_big);
+						limbs
 					})
-					.transpose_vec(N);
+					.transpose_array();
 
 				// Example of 16-bit number:
 				// K = 8

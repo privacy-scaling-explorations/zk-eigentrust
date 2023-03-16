@@ -1,6 +1,6 @@
 use super::{
 	bits2num::Bits2NumChip,
-	lt_eq::{NShiftedChip, NUM_BITS, N_SHIFTED},
+	lt_eq::NShiftedChip,
 	main::MainConfig,
 	range::{RangeChipset, RangeChipsetConfig},
 };
@@ -160,6 +160,7 @@ mod test {
 	use super::*;
 	use crate::{
 		gadgets::{
+			lt_eq::N_SHIFTED,
 			main::MainChip,
 			range::{LookupRangeCheckChip, LookupShortWordCheckChip},
 		},
