@@ -10,10 +10,11 @@ ethers = { version = "=1.0.2", features = ["ethers-solc", "ws"] }
 clap = { version = "4.1.4", features = ["derive"] }
 rand = "0.8"
 tokio = { version = "1.18", features = ["time", "macros", "rt-multi-thread", "net"] }
+reqwest = { version = "0.11.13", default-features = false, features = ["json"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 csv = "1.1"
 bs58 = "0.4.0"
 
 eigen-trust-circuit = { path = "../circuit" }
-eigen-trust-protocol = { path = "../protocol" }
+eigen-trust-server = { path = "../server" }

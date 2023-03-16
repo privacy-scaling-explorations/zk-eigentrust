@@ -3,7 +3,10 @@ pub mod native;
 /// Edward curve params
 pub mod params;
 
-use crate::{gadgets::bits2num::Bits2NumChip, Chip, Chipset, CommonConfig, RegionCtx};
+use crate::{
+	gadgets::bits2num::Bits2NumChip, utils::assigned_as_bool, Chip, Chipset, CommonConfig,
+	RegionCtx,
+};
 use halo2::{
 	circuit::{AssignedCell, Layouter, Region, Value},
 	halo2curves::FieldExt,
@@ -322,12 +325,8 @@ impl<F: FieldExt, P: EdwardsParams<F>> Chip<F> for ScalarMulChip<F, P> {
 						e_z.value().cloned(),
 					);
 
-					let bit_value = self.value_bits[i].value().cloned();
-					let mut is_one = false;
-					bit_value.map(|f| {
-						is_one = F::one() == f;
-						f
-					});
+					let is_one = assigned_as_bool(self.value_bits[i].clone());
+
 					let (r_x_next, r_y_next, r_z_next) = if is_one {
 						(r_x3, r_y3, r_z3)
 					} else {
@@ -415,8 +414,7 @@ mod test {
 	use super::*;
 	use crate::{
 		edwards::{native::Point, params::BabyJubJub},
-		gadgets::bits2num::to_bits,
-		utils::{generate_params, prove_and_verify},
+		utils::{generate_params, prove_and_verify, to_bits},
 		CommonConfig,
 	};
 	use halo2::{

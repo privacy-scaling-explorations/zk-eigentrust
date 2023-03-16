@@ -2,6 +2,7 @@
 //! proofs, etc.
 
 use halo2::{
+	circuit::AssignedCell,
 	halo2curves::{
 		pairing::{Engine, MultiMillerLoop},
 		serde::SerdeObject,
@@ -25,7 +26,124 @@ use halo2::{
 };
 use num_bigint::BigUint;
 use rand::Rng;
-use std::{fmt::Debug, fs::write, io::Read, time::Instant};
+use serde::{de::DeserializeOwned, Serialize};
+use std::{
+	env::current_dir,
+	fmt::Debug,
+	fs::{write, File},
+	io::{BufReader, Error as IoError, Read},
+	path::Path,
+	time::Instant,
+};
+
+/// Reads raw bytes from the file
+pub fn read_bytes(path: impl AsRef<Path>) -> Vec<u8> {
+	let f = File::open(path).unwrap();
+	let mut reader = BufReader::new(f);
+	let mut buffer = Vec::new();
+
+	// Read file into vector.
+	reader.read_to_end(&mut buffer).unwrap();
+
+	buffer
+}
+
+/// Reads string from the file
+pub fn read_string(path: impl AsRef<Path>) -> String {
+	let f = File::open(path).unwrap();
+	let mut reader = BufReader::new(f);
+	let mut buffer = String::new();
+
+	// Read file into string.
+	reader.read_to_string(&mut buffer).unwrap();
+
+	buffer
+}
+
+/// Reads raw bytes from the file
+pub fn read_bytes_data(file_name: &str) -> Vec<u8> {
+	let current_dir = current_dir().unwrap();
+	let bin_path = current_dir.join(format!("../data/{}.bin", file_name));
+	read_bytes(bin_path)
+}
+
+/// Write bytes to a file
+pub fn write_bytes(bytes: Vec<u8>, path: impl AsRef<Path>) -> Result<(), IoError> {
+	write(path, bytes)
+}
+
+/// Write bytes to data directory
+pub fn write_bytes_data(bytes: Vec<u8>, file_name: &str) -> Result<(), IoError> {
+	let current_dir = current_dir().unwrap();
+	let bin_path = current_dir.join(format!("../data/{}.bin", file_name));
+	write(bin_path, bytes)
+}
+
+/// Writes yul to file
+pub fn write_yul_data(code: String, file_name: &str) -> Result<(), IoError> {
+	let current_dir = current_dir().unwrap();
+	let bin_path = current_dir.join(format!("../data/{}.yul", file_name));
+	write(bin_path, code)
+}
+
+/// Read yul file
+pub fn read_yul_data(file_name: &str) -> String {
+	let current_dir = current_dir().unwrap();
+	let str_path = current_dir.join(format!("../data/{}.yul", file_name));
+	let code = read_string(str_path);
+	code
+}
+
+/// Writes json to fule
+pub fn write_json_file<T: Serialize>(json: T, path: impl AsRef<Path>) -> Result<(), IoError> {
+	let bytes = serde_json::to_vec(&json)?;
+	write(path, bytes)?;
+	Ok(())
+}
+
+/// Reads the json file and deserialize it into the provided type
+pub fn write_json_data<T: Serialize>(json: T, file_name: &str) -> Result<(), IoError> {
+	let current_dir = current_dir()?;
+	let json_path = current_dir.join(format!("../data/{}.json", file_name));
+	write_json_file(json, json_path)?;
+	Ok(())
+}
+
+/// Reads the json file and deserialize it into the provided type
+pub fn read_json_file<T: DeserializeOwned>(path: impl AsRef<Path>) -> Result<T, IoError> {
+	let path = path.as_ref();
+	let file = std::fs::File::open(path)?;
+	let file = std::io::BufReader::new(file);
+	let val: T = serde_json::from_reader(file)?;
+	Ok(val)
+}
+
+/// Reads the json file and deserialize it into the provided type
+pub fn read_json_data<T: DeserializeOwned>(file_name: &str) -> Result<T, IoError> {
+	let current_dir = current_dir()?;
+	let json_path = current_dir.join(format!("../data/{}.json", file_name));
+	read_json_file(json_path)
+}
+
+/// Returns boolean value from the assigned cell value
+pub fn assigned_as_bool<F: FieldExt>(bit: AssignedCell<F, F>) -> bool {
+	let bit_value = bit.value();
+	let mut is_one = false;
+	bit_value.map(|f| {
+		is_one = F::one() == *f;
+		f
+	});
+	is_one
+}
+
+/// Converts given bytes to the bits.
+pub fn to_bits<const B: usize>(num: [u8; 32]) -> [bool; B] {
+	let mut bits = [false; B];
+	for i in 0..B {
+		bits[i] = num[i / 8] & (1 << (i % 8)) != 0;
+	}
+	bits
+}
 
 /// Convert bytes array to a wide representation of 64 bytes
 pub fn to_wide(b: &[u8]) -> [u8; 64] {
@@ -48,7 +166,7 @@ pub fn field_to_string<F: FieldExt>(f: &F) -> String {
 	bn_f.to_string()
 }
 
-/// Generate parameters with polynomial degere = `k`.
+/// Generate parameters with polynomial degree = `k`.
 pub fn generate_params<E: Engine + Debug>(k: u32) -> ParamsKZG<E>
 where
 	E::G1Affine: SerdeObject,
@@ -58,25 +176,24 @@ where
 }
 
 /// Write parameters to a file.
-pub fn write_params<E: Engine + Debug>(params: &ParamsKZG<E>, path: &str)
+pub fn write_params<E: Engine + Debug>(params: &ParamsKZG<E>)
 where
 	E::G1Affine: SerdeObject,
 	E::G2Affine: SerdeObject,
 {
 	let mut buffer: Vec<u8> = Vec::new();
 	params.write(&mut buffer).unwrap();
-	write(path, buffer).unwrap();
+	let name = format!("params-{}", params.k());
+	write_bytes_data(buffer, &name).unwrap();
 }
 
 /// Read parameters from a file.
-pub fn read_params<E: Engine + Debug>(path: &str) -> ParamsKZG<E>
+pub fn read_params<E: Engine + Debug>(k: u32) -> ParamsKZG<E>
 where
 	E::G1Affine: SerdeObject,
 	E::G2Affine: SerdeObject,
 {
-	let mut buffer: Vec<u8> = Vec::new();
-	let mut file = std::fs::File::open(path).unwrap();
-	file.read_to_end(&mut buffer).unwrap();
+	let buffer: Vec<u8> = read_bytes_data(&format!("params-{}", k));
 	ParamsKZG::<E>::read(&mut &buffer[..]).unwrap()
 }
 

@@ -1,21 +1,10 @@
-use crate::{Chip, RegionCtx};
+use crate::{Chip, CommonConfig, RegionCtx};
 use halo2::{
 	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region, Value},
 	plonk::{ConstraintSystem, Error, Expression, Selector},
 	poly::Rotation,
 };
-
-use crate::CommonConfig;
-
-/// Converts given bytes to the bits.
-pub fn to_bits<const B: usize>(num: [u8; 32]) -> [bool; B] {
-	let mut bits = [false; B];
-	for i in 0..B {
-		bits[i] = num[i / 8] & (1 << (i % 8)) != 0;
-	}
-	bits
-}
 
 /// Constructs a cell and a variable for the circuit.
 #[derive(Clone)]
@@ -116,7 +105,7 @@ impl<F: FieldExt> Chip<F> for Bits2NumChip<F> {
 mod test {
 	use super::*;
 	use crate::{
-		utils::{generate_params, prove_and_verify},
+		utils::{generate_params, prove_and_verify, to_bits},
 		CommonConfig,
 	};
 	use halo2::{

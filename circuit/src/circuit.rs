@@ -9,7 +9,7 @@ use crate::{
 	},
 	gadgets::{
 		absorb::AbsorbChip,
-		bits2num::{to_bits, Bits2NumChip},
+		bits2num::Bits2NumChip,
 		lt_eq::{LessEqualConfig, NShiftedChip, N_SHIFTED},
 		main::{AddChipset, MainChip, MainConfig, MulChipset},
 	},
@@ -19,6 +19,7 @@ use crate::{
 		sponge::{PoseidonSpongeChipset, PoseidonSpongeConfig},
 		FullRoundChip, PartialRoundChip, PoseidonChipset, PoseidonConfig,
 	},
+	utils::to_bits,
 	Chip, Chipset, CommonConfig, RegionCtx, ADVICE,
 };
 use halo2::{
@@ -525,8 +526,8 @@ mod test {
 	use super::*;
 	use crate::{
 		eddsa::native::{sign, SecretKey},
-		utils::{generate_params, prove_and_verify},
-		verifier::{evm_verify, gen_evm_verifier, gen_pk, gen_proof, gen_srs},
+		utils::{generate_params, prove_and_verify, read_params},
+		verifier::{evm_verify, gen_evm_verifier, gen_pk, gen_proof},
 	};
 	use halo2::{dev::MockProver, halo2curves::bn256::Bn256};
 	use rand::thread_rng;
@@ -602,11 +603,6 @@ mod test {
 			Err(e) => panic!("{}", e),
 		};
 
-		// let errs = prover.verify().err().unwrap();
-		// for err in errs {
-		// 	println!("{:#?}", err);
-		// }
-
 		assert_eq!(prover.verify(), Ok(()));
 	}
 
@@ -678,7 +674,6 @@ mod test {
 	}
 
 	#[test]
-	#[ignore = "Circuit too big"]
 	fn test_closed_graph_circut_evm() {
 		let s = vec![Scalar::from_u128(INITIAL_SCORE); NUM_NEIGHBOURS];
 		let ops: Vec<Vec<Scalar>> = vec![
@@ -739,7 +734,7 @@ mod test {
 		);
 
 		let k = 14;
-		let params = gen_srs(k);
+		let params = read_params(k);
 		let pk = gen_pk(&params, &et);
 		let deployment_code = gen_evm_verifier(&params, pk.get_vk(), vec![NUM_NEIGHBOURS]);
 		dbg!(deployment_code.len());

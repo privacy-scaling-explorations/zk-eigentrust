@@ -936,6 +936,8 @@ dependencies = [
  "num-traits",
  "plotters",
  "rand 0.8.5",
+ "serde",
+ "serde_json",
  "snark-verifier",
 ]
 
@@ -947,16 +949,17 @@ dependencies = [
  "clap",
  "csv",
  "eigen-trust-circuit",
- "eigen-trust-protocol",
+ "eigen-trust-server",
  "ethers",
  "rand 0.8.5",
+ "reqwest",
  "serde",
  "serde_json",
  "tokio",
 ]
 
 [[package]]
-name = "eigen-trust-protocol"
+name = "eigen-trust-server"
 version = "0.2.0"
 dependencies = [
  "async-trait",
@@ -3434,7 +3437,7 @@ checksum = "a507befe795404456341dfab10cef66ead4c041f62b8b11bbb92bffe5d0953e0"
 [[package]]
 name = "snark-verifier"
 version = "0.1.0"
-source = "git+https://github.com/privacy-scaling-explorations/snark-verifier#f1265f503f56ac640984532e1b7af4f06755f632"
+source = "git+https://github.com/privacy-scaling-explorations/snark-verifier?rev=54452c7#54452c71a5f9440a20a55ab4ea9b6d8cc4b5ea52"
 dependencies = [
  "bytes",
  "halo2_proofs",

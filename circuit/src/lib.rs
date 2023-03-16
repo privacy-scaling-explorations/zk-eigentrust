@@ -21,6 +21,7 @@ use halo2::{
 };
 
 pub use halo2;
+use serde::{Deserialize, Serialize};
 
 /// Closed graph circuit
 pub mod circuit;
@@ -164,7 +165,7 @@ impl<'a, F: FieldExt> RegionCtx<'a, F> {
 /// Number of advice columns in common config
 pub const ADVICE: usize = 8;
 /// Number of fixed columns in common config
-pub const FIXED: usize = 10;
+pub const FIXED: usize = 5;
 
 /// Common config for the whole circuit
 #[derive(Clone, Debug)]
@@ -252,4 +253,40 @@ pub fn calculate_message_hash<const N: usize, const S: usize>(
 		.collect();
 
 	(pks_hash, messages)
+}
+
+#[derive(Debug, Clone)]
+/// Structure for holding the ZK proof and public inputs needed for verification
+pub struct Proof {
+	/// Public inputs
+	pub pub_ins: Vec<Scalar>,
+	/// Proof bytes
+	pub proof: Vec<u8>,
+}
+
+impl From<ProofRaw> for Proof {
+	fn from(value: ProofRaw) -> Self {
+		let pub_ins = value.pub_ins.iter().map(|x| Scalar::from_bytes(x).unwrap()).collect();
+		let proof = value.proof;
+
+		Self { pub_ins, proof }
+	}
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Structure for holding the ZK proof and raw public inputs
+pub struct ProofRaw {
+	/// Public inputs
+	pub pub_ins: Vec<[u8; 32]>,
+	/// Proof bytes
+	pub proof: Vec<u8>,
+}
+
+impl From<Proof> for ProofRaw {
+	fn from(value: Proof) -> Self {
+		let pub_ins = value.pub_ins.iter().map(|x| x.to_bytes()).collect();
+		let proof = value.proof;
+
+		ProofRaw { pub_ins, proof }
+	}
 }
