@@ -25,6 +25,7 @@ use halo2::{
 	},
 };
 use num_bigint::BigUint;
+use num_traits::{Num, One};
 use rand::Rng;
 use serde::{de::DeserializeOwned, Serialize};
 use std::{
@@ -290,4 +291,44 @@ where
 	let res = verify(&params, pub_inps, &proof[..], pk.get_vk())?;
 
 	Ok(res)
+}
+
+/// The u64 integer represented by an L-bit little-endian bitstring.
+///
+/// # Panics
+///
+/// Panics if the bitstring is longer than 64 bits.
+pub fn le_bits_to_u64<const L: usize>(bits: &[bool; L]) -> u64 {
+	assert!(L <= 64);
+	bits.iter().enumerate().fold(0u64, |acc, (i, b)| acc + if *b { 1 << i } else { 0 })
+}
+
+/// Get the field element of `2 ^ n`
+pub fn power_of_two<F: FieldExt>(n: usize) -> F {
+	big_to_fe(BigUint::one() << n)
+}
+
+/// Get the little-endian bits array of [`Field`] element
+pub fn fe_to_le_bits<F: FieldExt>(e: F) -> Vec<bool> {
+	let le_bytes = fe_to_big(e).to_bytes_le();
+	let short_le_bytes = to_short(&le_bytes);
+	let le_bits: [bool; 256] = to_bits(short_le_bytes);
+	le_bits.to_vec()
+}
+
+/// Returns modulus of the [`FieldExt`] as [`BigUint`].
+pub fn modulus<F: FieldExt>() -> BigUint {
+	BigUint::from_str_radix(&F::MODULUS[2..], 16).unwrap()
+}
+
+/// Returns [`FieldExt`] for the given [`BigUint`].
+pub fn big_to_fe<F: FieldExt>(e: BigUint) -> F {
+	let modulus = modulus::<F>();
+	let e = e % modulus;
+	F::from_str_vartime(&e.to_str_radix(10)[..]).unwrap()
+}
+
+/// Returns [`BigUint`] representation for the given [`FieldExt`].
+pub fn fe_to_big<F: FieldExt>(fe: F) -> BigUint {
+	BigUint::from_bytes_le(fe.to_repr().as_ref())
 }
