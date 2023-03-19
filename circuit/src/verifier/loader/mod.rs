@@ -26,20 +26,17 @@ use std::{
 /// Native version of the loader
 pub mod native;
 
-// TODO: FOR Halo2LScalar: Use AssignedCell for inner value
-// TODO: For Halo2LEcPoint: Use AssignedPoint for inner value
-
 // TODO: Rename to LoaderConfig
 /// Halo2Loader
 pub struct Halo2Loader<C: CurveAffine, L: Layouter<C::Scalar>, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 {
-	layouter: Rc<Mutex<L>>,
-	common: CommonConfig,
-	ecc_mul_scalar: EccMulConfig,
-	main: MainConfig,
-	poseidon_sponge: PoseidonSpongeConfig,
+	pub(crate) layouter: Rc<Mutex<L>>,
+	pub(crate) common: CommonConfig,
+	pub(crate) ecc_mul_scalar: EccMulConfig,
+	pub(crate) main: MainConfig,
+	pub(crate) poseidon_sponge: PoseidonSpongeConfig,
 	_curve: PhantomData<C>,
 	_p: PhantomData<P>,
 }
@@ -372,17 +369,7 @@ where
 	fn assert_eq(
 		&self, annotation: &str, lhs: &Self::LoadedScalar, rhs: &Self::LoadedScalar,
 	) -> Result<(), snark_verifier::Error> {
-		let mut layouter = self.layouter.lock().unwrap();
-		layouter
-			.assign_region(
-				|| "eq",
-				|region: Region<'_, C::Scalar>| {
-					let mut ctx = RegionCtx::new(region, 0);
-					ctx.constrain_equal(lhs.inner.clone(), rhs.inner.clone())
-				},
-			)
-			.ok()
-			.ok_or_else(|| AssertionFailure(annotation.to_string()))
+		lhs.eq(rhs).then_some(()).ok_or_else(|| AssertionFailure(annotation.to_string()))
 	}
 }
 
@@ -466,7 +453,7 @@ where
 	fn ec_point_assert_eq(
 		&self, annotation: &str, lhs: &Self::LoadedEcPoint, rhs: &Self::LoadedEcPoint,
 	) -> Result<(), snark_verifier::Error> {
-		todo!()
+		lhs.eq(rhs).then_some(()).ok_or_else(|| AssertionFailure(annotation.to_string()))
 	}
 
 	fn multi_scalar_multiplication(
