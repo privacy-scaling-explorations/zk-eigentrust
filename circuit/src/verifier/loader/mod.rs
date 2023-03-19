@@ -1,13 +1,13 @@
 use crate::{
-	ecc::{AssignedPoint, EccMulConfig},
+	ecc::{AssignedPoint, EccMulChipset, EccMulConfig},
 	gadgets::main::{AddChipset, InverseChipset, MainConfig, MulChipset, SubChipset},
-	integer::rns::RnsParams,
+	integer::{native::Integer, rns::RnsParams, AssignedInteger},
 	poseidon::sponge::PoseidonSpongeConfig,
 	Chipset, CommonConfig, RegionCtx,
 };
 use halo2::{
-	circuit::{AssignedCell, Layouter, Region},
-	halo2curves::CurveAffine,
+	circuit::{AssignedCell, Layouter, Region, Value},
+	halo2curves::{Coordinates, CurveAffine},
 };
 use native::{NUM_BITS, NUM_LIMBS};
 use snark_verifier::{
@@ -447,7 +447,43 @@ where
 	type LoadedEcPoint = Halo2LEcPoint<C, L, P>;
 
 	fn ec_point_load_const(&self, value: &C) -> Self::LoadedEcPoint {
-		todo!()
+		let coords: Coordinates<C> = Option::from(value.coordinates()).unwrap();
+		let x = Integer::from_w(coords.x().clone());
+		let y = Integer::from_w(coords.y().clone());
+		let mut layouter = self.layouter.lock().unwrap();
+		let (x_limbs, y_limbs) = layouter
+			.assign_region(
+				|| "assign_limbs",
+				|region: Region<'_, C::Scalar>| {
+					let mut ctx = RegionCtx::new(region, 0);
+					let mut x_limbs: [Option<AssignedCell<C::Scalar, C::Scalar>>; NUM_LIMBS] =
+						[(); NUM_LIMBS].map(|_| None);
+					let mut y_limbs: [Option<AssignedCell<C::Scalar, C::Scalar>>; NUM_LIMBS] =
+						[(); NUM_LIMBS].map(|_| None);
+					for i in 0..NUM_LIMBS {
+						// TODO: Ask usage of the advice columns instead of the fixed because fixed
+						// is = 5
+						x_limbs[i] = Some(
+							ctx.assign_advice(self.common.advice[i], Value::known(x.limbs[i]))
+								.unwrap(),
+						);
+						y_limbs[i] = Some(
+							ctx.assign_advice(
+								self.common.advice[i + NUM_LIMBS],
+								Value::known(y.limbs[i]),
+							)
+							.unwrap(),
+						);
+					}
+					Ok((x_limbs.map(|x| x.unwrap()), y_limbs.map(|x| x.unwrap())))
+				},
+			)
+			.unwrap();
+		let x_assigned = AssignedInteger::new(x, x_limbs);
+		let y_assigned = AssignedInteger::new(y, y_limbs);
+
+		let assigned_point = AssignedPoint::new(x_assigned, y_assigned);
+		Halo2LEcPoint { inner: assigned_point, loader: self.clone() }
 	}
 
 	fn ec_point_assert_eq(
@@ -465,6 +501,17 @@ where
 	where
 		Self: ScalarLoader<<C as CurveAffine>::ScalarExt>,
 	{
+		/*
+		let point = pairs
+			.iter()
+			.cloned()
+			.map(|(scalar, base)| {
+				let chip = EccMulChipset::new(base.inner, scalar);
+				base.inner.mul_scalar(new.inner)
+			})
+			.reduce(|acc, value| acc.add(&value))
+			.unwrap();
+		*/
 		todo!()
 	}
 }

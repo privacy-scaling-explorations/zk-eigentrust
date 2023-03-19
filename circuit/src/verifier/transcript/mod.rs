@@ -60,7 +60,7 @@ where
 		assigned_zero
 	}
 }
-
+/*
 impl<RD: Read, C: CurveAffine, L: Layouter<C::Scalar>, P, R> Transcript<C, Halo2Loader<C, L, P>>
 	for PoseidonReadChipset<RD, C, L, P, R>
 where
@@ -109,3 +109,4 @@ where
 		todo!()
 	}
 }
+*/
