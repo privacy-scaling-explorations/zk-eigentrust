@@ -7,15 +7,15 @@ use crate::{
 		main::{MainConfig, SelectChipset},
 	},
 	integer::{
-		native::Integer, rns::RnsParams, AssignedInteger, IntegerAddChip, IntegerDivChip,
-		IntegerMulChip, IntegerReduceChip, IntegerSubChip,
+		rns::RnsParams, AssignedInteger, IntegerAddChip, IntegerDivChip, IntegerMulChip,
+		IntegerReduceChip, IntegerSubChip,
 	},
 	utils::assigned_as_bool,
-	Chip, Chipset, CommonConfig, RegionCtx,
+	Chip, Chipset, CommonConfig,
 };
 use halo2::{
 	arithmetic::FieldExt,
-	circuit::{AssignedCell, Layouter, Region, Value},
+	circuit::{AssignedCell, Layouter},
 	plonk::{Error, Selector},
 };
 
@@ -71,7 +71,7 @@ impl EccAddConfig {
 }
 
 /// Chipset structure for the EccAdd.
-struct EccAddChipset<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
+pub struct EccAddChipset<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
 where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 {
@@ -690,10 +690,9 @@ where
 pub struct EccMulConfig {
 	/// Constructs configs and selector from different circuits.
 	ladder: EccUnreducedLadderConfig,
-	add: EccAddConfig,
+	pub(crate) add: EccAddConfig,
 	double: EccDoubleConfig,
 	table_select: EccTableSelectConfig,
-	common: CommonConfig,
 	bits2num: Selector,
 }
 
@@ -701,9 +700,9 @@ impl EccMulConfig {
 	/// Construct a new config given the selector of child chips
 	pub fn new(
 		ladder: EccUnreducedLadderConfig, add: EccAddConfig, double: EccDoubleConfig,
-		table_select: EccTableSelectConfig, common: CommonConfig, bits2num: Selector,
+		table_select: EccTableSelectConfig, bits2num: Selector,
 	) -> Self {
-		Self { ladder, add, double, table_select, common, bits2num }
+		Self { ladder, add, double, table_select, bits2num }
 	}
 }
 
@@ -716,6 +715,10 @@ where
 	p: AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
 	// Assigned scalar value
 	scalar: AssignedCell<N, N>,
+	// AuxInitial (to_add)
+	aux_init: AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
+	// AuxFinish (to_sub)
+	aux_fin: AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
 }
 
 impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
@@ -724,8 +727,12 @@ where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 {
 	/// Creates a new ecc mul chipset.
-	pub fn new(p: AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>, scalar: AssignedCell<N, N>) -> Self {
-		Self { p, scalar }
+	pub fn new(
+		p: AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>, scalar: AssignedCell<N, N>,
+		aux_init: AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
+		aux_fin: AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
+	) -> Self {
+		Self { p, scalar, aux_init, aux_fin }
 	}
 }
 
@@ -741,71 +748,10 @@ where
 	fn synthesize(
 		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<N>,
 	) -> Result<Self::Output, Error> {
-		// TODO: Optimisation
-		let (aux_init_x_limbs, aux_init_y_limbs, aux_fin_x_limbs, aux_fin_y_limbs) = layouter
-			.assign_region(
-				|| "aux",
-				|region: Region<'_, N>| {
-					let mut ctx = RegionCtx::new(region, 0);
-					let mut init_x_limbs: [Option<AssignedCell<N, N>>; NUM_LIMBS] =
-						[(); NUM_LIMBS].map(|_| None);
-					let mut init_y_limbs: [Option<AssignedCell<N, N>>; NUM_LIMBS] =
-						[(); NUM_LIMBS].map(|_| None);
-					for i in 0..NUM_LIMBS {
-						let x = ctx.assign_advice(
-							config.common.advice[i],
-							Value::known(P::to_add_x()[i]),
-						)?;
-						let y = ctx.assign_advice(
-							config.common.advice[i + NUM_LIMBS],
-							Value::known(P::to_add_y()[i]),
-						)?;
-						init_x_limbs[i] = Some(x);
-						init_y_limbs[i] = Some(y);
-					}
-
-					ctx.next();
-					let mut fin_x_limbs: [Option<AssignedCell<N, N>>; NUM_LIMBS] =
-						[(); NUM_LIMBS].map(|_| None);
-					let mut fin_y_limbs: [Option<AssignedCell<N, N>>; NUM_LIMBS] =
-						[(); NUM_LIMBS].map(|_| None);
-					for i in 0..NUM_LIMBS {
-						let x = ctx.assign_advice(
-							config.common.advice[i],
-							Value::known(P::to_sub_x()[i]),
-						)?;
-						let y = ctx.assign_advice(
-							config.common.advice[i + NUM_LIMBS],
-							Value::known(P::to_sub_y()[i]),
-						)?;
-
-						fin_x_limbs[i] = Some(x);
-						fin_y_limbs[i] = Some(y);
-					}
-
-					Ok((
-						init_x_limbs.map(|x| x.unwrap()),
-						init_y_limbs.map(|x| x.unwrap()),
-						fin_x_limbs.map(|x| x.unwrap()),
-						fin_y_limbs.map(|x| x.unwrap()),
-					))
-				},
-			)?;
-
-		let aux_init_x_int = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::from_limbs(P::to_add_x());
-		let aux_init_y_int = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::from_limbs(P::to_add_y());
-		let aux_init_x = AssignedInteger::new(aux_init_x_int, aux_init_x_limbs);
-		let aux_init_y = AssignedInteger::new(aux_init_y_int, aux_init_y_limbs);
-		let aux_init = AssignedPoint::new(aux_init_x, aux_init_y);
-
-		let aux_fin_x_int = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::from_limbs(P::to_sub_x());
-		let aux_fin_y_int = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::from_limbs(P::to_sub_y());
-		let aux_fin_x = AssignedInteger::new(aux_fin_x_int, aux_fin_x_limbs);
-		let aux_fin_y = AssignedInteger::new(aux_fin_y_int, aux_fin_y_limbs);
-		let aux_fin = AssignedPoint::new(aux_fin_x, aux_fin_y);
-
-		let aux_init_plus_scalar_chip =
-			EccAddChipset::<W, N, NUM_LIMBS, NUM_BITS, P>::new(self.p.clone(), aux_init.clone());
+		let aux_init_plus_scalar_chip = EccAddChipset::<W, N, NUM_LIMBS, NUM_BITS, P>::new(
+			self.p.clone(),
+			self.aux_init.clone(),
+		);
 		let aux_init_plus_scalar = aux_init_plus_scalar_chip.synthesize(
 			common,
 			&config.add,
@@ -818,7 +764,7 @@ where
 		let acc_point_chip = EccTableSelectChipset::new(
 			bits[0].clone(),
 			aux_init_plus_scalar.clone(),
-			aux_init.clone(),
+			self.aux_init.clone(),
 		);
 		let mut acc_point = acc_point_chip.synthesize(
 			common,
@@ -829,7 +775,7 @@ where
 		let carry_point_chip = EccTableSelectChipset::new(
 			bits[1].clone(),
 			aux_init_plus_scalar.clone(),
-			aux_init.clone(),
+			self.aux_init.clone(),
 		);
 		let carry_point = carry_point_chip.synthesize(
 			common,
@@ -853,7 +799,7 @@ where
 			let carry_point_chip = EccTableSelectChipset::new(
 				bits[i].clone(),
 				aux_init_plus_scalar.clone(),
-				aux_init.clone(),
+				self.aux_init.clone(),
 			);
 			let carry_point = carry_point_chip.synthesize(
 				common,
@@ -868,7 +814,7 @@ where
 			)?;
 		}
 
-		let acc_add_chip = EccAddChipset::new(acc_point, aux_fin);
+		let acc_add_chip = EccAddChipset::new(acc_point, self.aux_fin);
 		acc_point = acc_add_chip.synthesize(
 			common,
 			&config.add,
@@ -893,8 +839,10 @@ mod test {
 			main::{MainChip, MainConfig},
 		},
 		integer::{
-			native::Integer, rns::Bn256_4_68, AssignedInteger, IntegerAddChip, IntegerDivChip,
-			IntegerMulChip, IntegerReduceChip, IntegerSubChip,
+			native::Integer,
+			rns::{Bn256_4_68, RnsParams},
+			AssignedInteger, IntegerAddChip, IntegerDivChip, IntegerMulChip, IntegerReduceChip,
+			IntegerSubChip,
 		},
 		Chip, Chipset, CommonConfig, RegionCtx,
 	};
@@ -996,7 +944,6 @@ mod test {
 				ecc_add.clone(),
 				ecc_double.clone(),
 				ecc_table_select,
-				common.clone(),
 				bits2num_selector,
 			);
 
@@ -1072,6 +1019,60 @@ mod test {
 				},
 			)?;
 
+			let (to_add_x_limbs, to_add_y_limbs) = layouter.assign_region(
+				|| "to_add_temp",
+				|region: Region<'_, N>| {
+					let mut ctx = RegionCtx::new(region, 0);
+					let mut x_limbs: [Option<AssignedCell<N, N>>; NUM_LIMBS] =
+						[(); NUM_LIMBS].map(|_| None);
+					let mut y_limbs: [Option<AssignedCell<N, N>>; NUM_LIMBS] =
+						[(); NUM_LIMBS].map(|_| None);
+					for i in 0..NUM_LIMBS {
+						let x = ctx.assign_advice(
+							config.common.advice[0],
+							Value::known(P::to_add_x()[i]),
+						)?;
+						let y = ctx.assign_advice(
+							config.common.advice[1],
+							Value::known(P::to_add_y()[i]),
+						)?;
+
+						x_limbs[i] = Some(x);
+						y_limbs[i] = Some(y);
+						ctx.next();
+					}
+
+					Ok((x_limbs.map(|x| x.unwrap()), y_limbs.map(|x| x.unwrap())))
+				},
+			)?;
+
+			let (to_sub_x_limbs, to_sub_y_limbs) = layouter.assign_region(
+				|| "to_sub_temp",
+				|region: Region<'_, N>| {
+					let mut ctx = RegionCtx::new(region, 0);
+					let mut x_limbs: [Option<AssignedCell<N, N>>; NUM_LIMBS] =
+						[(); NUM_LIMBS].map(|_| None);
+					let mut y_limbs: [Option<AssignedCell<N, N>>; NUM_LIMBS] =
+						[(); NUM_LIMBS].map(|_| None);
+					for i in 0..NUM_LIMBS {
+						let x = ctx.assign_advice(
+							config.common.advice[0],
+							Value::known(P::to_sub_x()[i]),
+						)?;
+						let y = ctx.assign_advice(
+							config.common.advice[1],
+							Value::known(P::to_sub_y()[i]),
+						)?;
+
+						x_limbs[i] = Some(x);
+						y_limbs[i] = Some(y);
+						ctx.next();
+					}
+
+					Ok((x_limbs.map(|x| x.unwrap()), y_limbs.map(|x| x.unwrap())))
+				},
+			)?;
+
 			let p_x_int = AssignedInteger::new(self.p.x.clone(), p_x_limbs);
 			let p_y_int = AssignedInteger::new(self.p.y.clone(), p_y_limbs);
 
@@ -1115,7 +1116,23 @@ mod test {
 				},
 
 				Gadgets::Mul => {
-					let chip = EccMulChipset::new(p.clone(), value.clone());
+					let to_add_x_int =
+						Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::from_limbs(P::to_add_x());
+					let to_add_y_int =
+						Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::from_limbs(P::to_add_y());
+					let to_add_x = AssignedInteger::new(to_add_x_int, to_add_x_limbs);
+					let to_add_y = AssignedInteger::new(to_add_y_int, to_add_y_limbs);
+					let to_add = AssignedPoint::new(to_add_x, to_add_y);
+
+					let to_sub_x_int =
+						Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::from_limbs(P::to_sub_x());
+					let to_sub_y_int =
+						Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::from_limbs(P::to_sub_y());
+					let to_sub_x = AssignedInteger::new(to_sub_x_int, to_sub_x_limbs);
+					let to_sub_y = AssignedInteger::new(to_sub_y_int, to_sub_y_limbs);
+					let to_sub = AssignedPoint::new(to_sub_x, to_sub_y);
+
+					let chip = EccMulChipset::new(p.clone(), value.clone(), to_add, to_sub);
 					result = Some(chip.synthesize(
 						&config.common,
 						&config.ecc_mul,

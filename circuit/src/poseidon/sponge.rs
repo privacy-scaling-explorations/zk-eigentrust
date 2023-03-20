@@ -25,6 +25,7 @@ impl PoseidonSpongeConfig {
 	}
 }
 
+#[derive(Clone, Debug)]
 /// Constructs a chip structure for the circuit.
 pub struct PoseidonSpongeChipset<F: FieldExt, const WIDTH: usize, P>
 where

@@ -6,7 +6,7 @@ use crate::{
 	integer::rns::RnsParams,
 	params::RoundParams,
 	poseidon::{sponge::PoseidonSpongeChipset, PoseidonChipset},
-	RegionCtx,
+	Chipset, RegionCtx,
 };
 use halo2::{
 	arithmetic::Field,
@@ -60,7 +60,7 @@ where
 		assigned_zero
 	}
 }
-/*
+
 impl<RD: Read, C: CurveAffine, L: Layouter<C::Scalar>, P, R> Transcript<C, Halo2Loader<C, L, P>>
 	for PoseidonReadChipset<RD, C, L, P, R>
 where
@@ -73,13 +73,17 @@ where
 
 	fn squeeze_challenge(&mut self) -> Halo2LScalar<C, L, P> {
 		let mut loader_ref = self.loader.layouter.lock().unwrap();
-		let default = Self::assigned_zero(self.loader);
-		self.state.update(default);
-		let mut hasher = self.state.synthesize(
-			&self.loader.common,
-			&self.loader.poseidon_sponge,
-			loader_ref.namespace(|| "squeeze_challenge"),
-		);
+		let default = Self::assigned_zero(self.loader.clone());
+		self.state.update(&[default]);
+		let hasher = self.state.clone();
+		let value = hasher
+			.synthesize(
+				&self.loader.common,
+				&self.loader.poseidon_sponge,
+				loader_ref.namespace(|| "squeeze_challenge"),
+			)
+			.unwrap();
+		Halo2LScalar::new(value, self.loader.clone())
 	}
 
 	fn common_ec_point(
@@ -109,4 +113,3 @@ where
 		todo!()
 	}
 }
-*/

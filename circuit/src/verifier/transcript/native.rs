@@ -279,9 +279,10 @@ where
 
 	fn common_scalar(&mut self, scalar: C::Scalar) -> IoResult<()> {
 		let res = <Self as Transcript<C, NativeSVLoader>>::common_scalar(self, &scalar);
-		// TODO: Extract error data from VerificationError if possible
-		// i.e. if error is Transcript variant
-		res.map_err(|x| IoError::new(ErrorKind::Other, "transcript error".to_string()))
+		res.map_err(|x| match x {
+			VerifierError::Transcript(kind, message) => IoError::new(kind, message),
+			_ => IoError::new(ErrorKind::Other, "transcript error".to_string()),
+		})
 	}
 }
 
@@ -293,16 +294,18 @@ where
 {
 	fn read_point(&mut self) -> IoResult<C> {
 		let res = <Self as TranscriptRead<C, NativeSVLoader>>::read_ec_point(self);
-		// TODO: Extract error data from VerificationError if possible
-		// i.e. if error is Transcript variant
-		res.map_err(|x| IoError::new(ErrorKind::Other, "transcript error".to_string()))
+		res.map_err(|x| match x {
+			VerifierError::Transcript(kind, message) => IoError::new(kind, message),
+			_ => IoError::new(ErrorKind::Other, "transcript error".to_string()),
+		})
 	}
 
 	fn read_scalar(&mut self) -> IoResult<C::Scalar> {
 		let res = <Self as TranscriptRead<C, NativeSVLoader>>::read_scalar(self);
-		// TODO: Extract error data from VerificationError if possible
-		// i.e. if error is Transcript variant
-		res.map_err(|x| IoError::new(ErrorKind::Other, "transcript error".to_string()))
+		res.map_err(|x| match x {
+			VerifierError::Transcript(kind, message) => IoError::new(kind, message),
+			_ => IoError::new(ErrorKind::Other, "transcript error".to_string()),
+		})
 	}
 }
 
@@ -338,9 +341,10 @@ where
 
 	fn common_scalar(&mut self, scalar: C::Scalar) -> IoResult<()> {
 		let res = <Self as Transcript<C, NativeSVLoader>>::common_scalar(self, &scalar);
-		// TODO: Extract error data from VerificationError if possible
-		// i.e. if error is Transcript variant
-		res.map_err(|x| IoError::new(ErrorKind::Other, "transcript error".to_string()))
+		res.map_err(|x| match x {
+			VerifierError::Transcript(kind, message) => IoError::new(kind, message),
+			_ => IoError::new(ErrorKind::Other, "transcript error".to_string()),
+		})
 	}
 }
 
@@ -352,16 +356,18 @@ where
 {
 	fn write_point(&mut self, point: C) -> IoResult<()> {
 		let res = <Self as TranscriptWrite<C>>::write_ec_point(self, point);
-		// TODO: Extract error data from VerificationError if possible
-		// i.e. if error is Transcript variant
-		res.map_err(|x| IoError::new(ErrorKind::Other, "transcript error".to_string()))
+		res.map_err(|x| match x {
+			VerifierError::Transcript(kind, message) => IoError::new(kind, message),
+			_ => IoError::new(ErrorKind::Other, "transcript error".to_string()),
+		})
 	}
 
 	fn write_scalar(&mut self, scalar: C::Scalar) -> IoResult<()> {
 		let res = <Self as TranscriptWrite<C>>::write_scalar(self, scalar);
-		// TODO: Extract error data from VerificationError if possible
-		// i.e. if error is Transcript variant
-		res.map_err(|x| IoError::new(ErrorKind::Other, "transcript error".to_string()))
+		res.map_err(|x| match x {
+			VerifierError::Transcript(kind, message) => IoError::new(kind, message),
+			_ => IoError::new(ErrorKind::Other, "transcript error".to_string()),
+		})
 	}
 }
 
