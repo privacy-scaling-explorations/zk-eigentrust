@@ -182,6 +182,72 @@ impl EigenTrustSet {
 
 		s
 	}
+
+	/// Filter out the list of invalid peers(public key) from `self.set`.
+	///
+	/// Ouput: the vector of public key of invalid peers
+	///
+	/// Here, we use kinda recursive approach to filter out the direct-invalid
+	/// and indirect-invalid peers.
+	fn filter_invalid_peers(&self) -> Vec<PublicKey> {
+		let mut invalid_peers: Vec<PublicKey> = vec![];
+
+		let mut invalid_peers_cnt = invalid_peers.len();
+
+		loop {
+			for i in 0..NUM_NEIGHBOURS {
+				let (pk, credits) = self.set[i].clone();
+
+				// No credits(initial score) means that the peer did not update his opinion.
+				// In other words, the peer did not sign his opinion.
+				if pk != PublicKey::default() && credits == Fr::zero() {
+					invalid_peers.push(pk);
+				} else {
+					if pk == PublicKey::default() || invalid_peers.contains(&pk) {
+						continue;
+					} else {
+						let mut ops_i = self.ops.get(&pk).unwrap().clone();
+
+						for j in 0..NUM_NEIGHBOURS {
+							let (pk_j, score) = ops_i.scores[j].clone();
+
+							if score == Fr::zero() {
+								continue;
+							} else {
+								// Direct Invalid - all opinions are given to invalid peers
+								if j != i && self.set[j].0 == pk_j && pk_j != PublicKey::default() {
+									ops_i.scores[j].1 = score;
+								} else {
+									ops_i.scores[j].1 = Fr::zero();
+								};
+
+								// Indirect Invalid - Opinions that became invalid after we marked
+								// Direct-Invalid opinions
+								if invalid_peers.contains(&pk_j) {
+									ops_i.scores[j].1 = Fr::zero();
+								}
+							}
+						}
+
+						if ops_i.scores.iter().all(|(_, score)| *score == Fr::zero()) {
+							invalid_peers.push(pk);
+						}
+					}
+				}
+			}
+			println!("Invalid peers: {}", invalid_peers.len());
+
+			// If no more invalid peers added, quits the loop
+			let updated_invalid_peers_cnt = invalid_peers.len();
+			if updated_invalid_peers_cnt == invalid_peers_cnt {
+				break;
+			} else {
+				invalid_peers_cnt = invalid_peers.len();
+			}
+		}
+
+		invalid_peers
+	}
 }
 
 #[cfg(test)]
@@ -557,5 +623,74 @@ mod test {
 		set.remove_member(pk1);
 
 		set.converge();
+	}
+
+	#[test]
+	fn test_filter_invalid_peers() {
+		//	Should filter out all the peers with following opinions.
+		//			1	2	3	4	5	6
+		//		--------------------------
+		//		1	10	.	.	.	.	.
+		//		2	.	.	30	.	.	.
+		//		3	10	.	.	.	.	.
+		//		4	.	.	.	.	.	.
+		//		5	.	.	.	.	.	.
+		//		6	.	.	.	.	.	.
+		let rng = &mut thread_rng();
+
+		let sk1 = SecretKey::random(rng);
+		let sk2 = SecretKey::random(rng);
+		let sk3 = SecretKey::random(rng);
+
+		let pk1 = sk1.public();
+		let pk2 = sk2.public();
+		let pk3 = sk3.public();
+
+		// Peer1(pk1) signs the opinion
+		let pks = [pk1, pk2, pk3, PublicKey::default(), PublicKey::default(), PublicKey::default()];
+		let scores = [Fr::from(10), Fr::zero(), Fr::zero(), Fr::zero(), Fr::zero(), Fr::zero()];
+		let (_, message_hashes) =
+			calculate_message_hash::<NUM_NEIGHBOURS, 1>(pks.to_vec(), vec![scores.to_vec()]);
+		let sig = sign(&sk1, &pk1, message_hashes[0]);
+
+		let scores = pks.zip(scores);
+		let op1 = Opinion::new(sig, message_hashes[0], scores);
+
+		// Peer2(pk2) signs the opinion
+		let pks = [pk1, pk2, pk3, PublicKey::default(), PublicKey::default(), PublicKey::default()];
+		let scores = [Fr::zero(), Fr::zero(), Fr::from(30), Fr::zero(), Fr::zero(), Fr::zero()];
+		let (_, message_hashes) =
+			calculate_message_hash::<NUM_NEIGHBOURS, 1>(pks.to_vec(), vec![scores.to_vec()]);
+		let sig = sign(&sk2, &pk2, message_hashes[0]);
+
+		let scores = pks.zip(scores);
+		let op2 = Opinion::new(sig, message_hashes[0], scores);
+
+		// Peer3(pk3) signs the opinion
+		let pks = [pk1, pk2, pk3, PublicKey::default(), PublicKey::default(), PublicKey::default()];
+		let scores = [Fr::from(10), Fr::zero(), Fr::zero(), Fr::zero(), Fr::zero(), Fr::zero()];
+		let (_, message_hashes) =
+			calculate_message_hash::<NUM_NEIGHBOURS, 1>(pks.to_vec(), vec![scores.to_vec()]);
+		let sig = sign(&sk3, &pk3, message_hashes[0]);
+
+		let scores = pks.zip(scores);
+		let op3 = Opinion::new(sig, message_hashes[0], scores);
+
+		// Setup EigenTrustSet
+		let mut set = EigenTrustSet::new();
+
+		set.add_member(pk1);
+		set.add_member(pk2);
+		set.add_member(pk3);
+
+		set.update_op(pk1, op1);
+		set.update_op(pk2, op2);
+		set.update_op(pk3, op3);
+
+		let invalid_peers = set.filter_invalid_peers();
+		assert!(
+			invalid_peers.len() == 3,
+			"Should filter out all peers as invalid"
+		);
 	}
 }
