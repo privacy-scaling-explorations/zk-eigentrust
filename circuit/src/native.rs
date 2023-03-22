@@ -191,47 +191,68 @@ impl EigenTrustSet {
 	/// and indirect-invalid peers.
 	fn filter_invalid_peers(&self) -> Vec<PublicKey> {
 		let mut invalid_peers: Vec<PublicKey> = vec![];
-
 		let mut invalid_peers_cnt = invalid_peers.len();
 
+		// Direct Invalid - all opinions are given to invalid peers
+		for i in 0..NUM_NEIGHBOURS {
+			let (pk, credits) = self.set[i].clone();
+
+			// No credits(initial score) means that the peer did not update his opinion.
+			// In other words, the peer did not sign his opinion.
+			if pk != PublicKey::default() && credits == Fr::zero() {
+				invalid_peers.push(pk);
+			} else {
+				if pk == PublicKey::default() || invalid_peers.contains(&pk) {
+					continue;
+				} else {
+					let mut ops_i = self.ops.get(&pk).unwrap().clone();
+
+					for j in 0..NUM_NEIGHBOURS {
+						let (pk_j, score) = ops_i.scores[j].clone();
+
+						if score == Fr::zero() {
+							continue;
+						} else {
+							if j != i && self.set[j].0 == pk_j && pk_j != PublicKey::default() {
+								ops_i.scores[j].1 = score;
+							} else {
+								ops_i.scores[j].1 = Fr::zero();
+							};
+						}
+					}
+
+					if ops_i.scores.iter().all(|(_, score)| *score == Fr::zero()) {
+						invalid_peers.push(pk);
+					}
+				}
+			}
+		}
+
+		// Indirect Invalid - Opinions that became invalid
+		// 					after we marked Direct-Invalid opinions
 		loop {
 			for i in 0..NUM_NEIGHBOURS {
-				let (pk, credits) = self.set[i].clone();
+				let (pk, _) = self.set[i].clone();
 
-				// No credits(initial score) means that the peer did not update his opinion.
-				// In other words, the peer did not sign his opinion.
-				if pk != PublicKey::default() && credits == Fr::zero() {
-					invalid_peers.push(pk);
+				if pk == PublicKey::default() || invalid_peers.contains(&pk) {
+					continue;
 				} else {
-					if pk == PublicKey::default() || invalid_peers.contains(&pk) {
-						continue;
-					} else {
-						let mut ops_i = self.ops.get(&pk).unwrap().clone();
+					let mut ops_i = self.ops.get(&pk).unwrap().clone();
 
-						for j in 0..NUM_NEIGHBOURS {
-							let (pk_j, score) = ops_i.scores[j].clone();
+					for j in 0..NUM_NEIGHBOURS {
+						let (pk_j, score) = ops_i.scores[j].clone();
 
-							if score == Fr::zero() {
-								continue;
-							} else {
-								// Direct Invalid - all opinions are given to invalid peers
-								if j != i && self.set[j].0 == pk_j && pk_j != PublicKey::default() {
-									ops_i.scores[j].1 = score;
-								} else {
-									ops_i.scores[j].1 = Fr::zero();
-								};
-
-								// Indirect Invalid - Opinions that became invalid after we marked
-								// Direct-Invalid opinions
-								if invalid_peers.contains(&pk_j) {
-									ops_i.scores[j].1 = Fr::zero();
-								}
+						if score == Fr::zero() {
+							continue;
+						} else {
+							if invalid_peers.contains(&pk_j) {
+								ops_i.scores[j].1 = Fr::zero();
 							}
 						}
+					}
 
-						if ops_i.scores.iter().all(|(_, score)| *score == Fr::zero()) {
-							invalid_peers.push(pk);
-						}
+					if ops_i.scores.iter().all(|(_, score)| *score == Fr::zero()) {
+						invalid_peers.push(pk);
 					}
 				}
 			}
