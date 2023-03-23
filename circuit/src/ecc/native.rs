@@ -188,9 +188,9 @@ where
 #[cfg(test)]
 mod test {
 	use super::EcPoint;
-	use crate::integer::{
-		native::Integer,
-		rns::{big_to_fe, fe_to_big, Bn256_4_68},
+	use crate::{
+		integer::{native::Integer, rns::Bn256_4_68},
+		utils::{big_to_fe, fe_to_big},
 	};
 	use halo2::{
 		arithmetic::Field,

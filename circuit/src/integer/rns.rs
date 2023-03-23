@@ -61,6 +61,7 @@
 // red_v_bit_len: 69,
 
 use super::native::Integer;
+use crate::utils::{big_to_fe, fe_to_big};
 use halo2::{
 	arithmetic::{Field, FieldExt},
 	halo2curves::bn256::{Fq, Fr},
@@ -68,7 +69,7 @@ use halo2::{
 };
 use num_bigint::BigUint;
 use num_integer::Integer as BigInteger;
-use num_traits::{FromPrimitive, Num, One, Zero};
+use num_traits::{FromPrimitive, One, Zero};
 use std::{fmt::Debug, ops::Shl, str::FromStr};
 
 /// This trait is for the dealing with RNS operations.
@@ -121,23 +122,6 @@ pub trait RnsParams<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_
 	fn compose_exp(input: [Expression<N>; NUM_LIMBS]) -> Expression<N>;
 	/// Inverts given Integer.
 	fn invert(input: BigUint) -> Option<Integer<W, N, NUM_LIMBS, NUM_BITS, Self>>;
-}
-
-/// Returns modulus of the [`FieldExt`] as [`BigUint`].
-pub fn modulus<F: FieldExt>() -> BigUint {
-	BigUint::from_str_radix(&F::MODULUS[2..], 16).unwrap()
-}
-
-/// Returns [`FieldExt`] for the given [`BigUint`].
-pub fn big_to_fe<F: FieldExt>(e: BigUint) -> F {
-	let modulus = modulus::<F>();
-	let e = e % modulus;
-	F::from_str_vartime(&e.to_str_radix(10)[..]).unwrap()
-}
-
-/// Returns [`BigUint`] representation for the given [`FieldExt`].
-pub fn fe_to_big<F: FieldExt>(fe: F) -> BigUint {
-	BigUint::from_bytes_le(fe.to_repr().as_ref())
 }
 
 /// Returns `limbs` by decomposing [`BigUint`].
