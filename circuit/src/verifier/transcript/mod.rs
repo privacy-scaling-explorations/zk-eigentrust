@@ -1,27 +1,31 @@
 use super::loader::{
 	native::{NUM_BITS, NUM_LIMBS},
-	Halo2LEcPoint, Halo2LScalar, Halo2Loader,
+	Halo2LEcPoint, Halo2LScalar, LoaderConfig,
 };
 use crate::{
-	integer::rns::RnsParams,
+	ecc::AssignedPoint,
+	integer::{native::Integer, rns::RnsParams, AssignedInteger},
 	params::RoundParams,
-	poseidon::{sponge::PoseidonSpongeChipset, PoseidonChipset},
+	poseidon::sponge::PoseidonSpongeChipset,
 	Chipset, RegionCtx,
 };
 use halo2::{
-	arithmetic::Field,
-	circuit::{AssignedCell, Layouter, Region},
+	arithmetic::{Field, FieldExt},
+	circuit::{AssignedCell, Layouter, Region, Value},
 	halo2curves::CurveAffine,
 };
 use native::WIDTH;
-use snark_verifier::util::transcript::{Transcript, TranscriptRead};
-use std::{io::Read, marker::PhantomData};
+use snark_verifier::{
+	util::transcript::{Transcript, TranscriptRead},
+	Error as VerifierError,
+};
+use std::{
+	io::{ErrorKind, Read},
+	marker::PhantomData,
+};
 
 /// Native version of transcript
 pub mod native;
-
-// TODO: Add TranscriptRead<_, Halo2Loader> for PoseidonRead struct that uses
-// PoseidonSpongeChipset
 
 /// PoseidonReadChipset
 pub struct PoseidonReadChipset<RD: Read, C: CurveAffine, L: Layouter<C::Scalar>, P, R>
@@ -31,7 +35,7 @@ where
 {
 	reader: RD,
 	state: PoseidonSpongeChipset<C::Scalar, WIDTH, R>,
-	loader: Halo2Loader<C, L, P>,
+	loader: LoaderConfig<C, L, P>,
 	_p: PhantomData<P>,
 }
 
@@ -41,12 +45,12 @@ where
 	R: RoundParams<C::Scalar, WIDTH>,
 {
 	/// Construct new PoseidonReadChipset
-	pub fn new(reader: RD, loader: Halo2Loader<C, L, P>) -> Self {
+	pub fn new(reader: RD, loader: LoaderConfig<C, L, P>) -> Self {
 		Self { reader, state: PoseidonSpongeChipset::new(), loader, _p: PhantomData }
 	}
 
 	/// Construct a new assigned zero value
-	pub fn assigned_zero(loader: Halo2Loader<C, L, P>) -> AssignedCell<C::Scalar, C::Scalar> {
+	pub fn assigned_zero(loader: LoaderConfig<C, L, P>) -> AssignedCell<C::Scalar, C::Scalar> {
 		let mut layouter = loader.layouter.lock().unwrap();
 		let assigned_zero = layouter
 			.assign_region(
@@ -61,13 +65,13 @@ where
 	}
 }
 
-impl<RD: Read, C: CurveAffine, L: Layouter<C::Scalar>, P, R> Transcript<C, Halo2Loader<C, L, P>>
+impl<RD: Read, C: CurveAffine, L: Layouter<C::Scalar>, P, R> Transcript<C, LoaderConfig<C, L, P>>
 	for PoseidonReadChipset<RD, C, L, P, R>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	R: RoundParams<C::Scalar, WIDTH>,
 {
-	fn loader(&self) -> &Halo2Loader<C, L, P> {
+	fn loader(&self) -> &LoaderConfig<C, L, P> {
 		&self.loader
 	}
 
@@ -89,27 +93,142 @@ where
 	fn common_ec_point(
 		&mut self, ec_point: &Halo2LEcPoint<C, L, P>,
 	) -> Result<(), snark_verifier::Error> {
-		todo!()
+		let default = Self::assigned_zero(self.loader.clone());
+		self.state.update(&[default]);
+		let coords = Option::from((ec_point.inner.x.clone(), ec_point.inner.y.clone()))
+			.ok_or_else(|| {
+				VerifierError::Transcript(
+					ErrorKind::Other,
+					"cannot write points at infinity to the transcript".to_string(),
+				)
+			})?;
+		self.state.update(&coords.0.limbs);
+		self.state.update(&coords.1.limbs);
+
+		Ok(())
 	}
 
 	fn common_scalar(
 		&mut self, scalar: &Halo2LScalar<C, L, P>,
 	) -> Result<(), snark_verifier::Error> {
-		todo!()
+		let default = Self::assigned_zero(self.loader.clone());
+		self.state.update(&[default, scalar.inner.clone()]);
+
+		Ok(())
 	}
 }
 
-impl<RD: Read, C: CurveAffine, L: Layouter<C::Scalar>, P, R> TranscriptRead<C, Halo2Loader<C, L, P>>
-	for PoseidonReadChipset<RD, C, L, P, R>
+impl<RD: Read, C: CurveAffine, L: Layouter<C::Scalar>, P, R>
+	TranscriptRead<C, LoaderConfig<C, L, P>> for PoseidonReadChipset<RD, C, L, P, R>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	R: RoundParams<C::Scalar, WIDTH>,
 {
 	fn read_scalar(&mut self) -> Result<Halo2LScalar<C, L, P>, snark_verifier::Error> {
-		todo!()
+		let mut data = [0; 64];
+		self.reader.read_exact(data.as_mut()).map_err(|err| {
+			VerifierError::Transcript(
+				err.kind(),
+				"invalid field element encoding in proof".to_string(),
+			)
+		})?;
+
+		let scalar = Option::from(C::Scalar::from_bytes_wide(&data)).ok_or_else(|| {
+			VerifierError::Transcript(
+				ErrorKind::Other,
+				"invalid field element encoding in proof".to_string(),
+			)
+		})?;
+		let loader = self.loader.clone();
+		let mut layouter = loader.layouter.lock().unwrap();
+		let assigned_scalar = layouter
+			.assign_region(
+				|| "assign_scalar",
+				|region: Region<'_, C::Scalar>| {
+					let mut ctx = RegionCtx::new(region, 0);
+					let scalar =
+						ctx.assign_advice(self.loader.common.advice[0], Value::known(scalar))?;
+					Ok(scalar)
+				},
+			)
+			.unwrap();
+		let assigned_lscalar = Halo2LScalar::new(assigned_scalar, self.loader.clone());
+		Self::common_scalar(self, &assigned_lscalar)?;
+
+		Ok(assigned_lscalar)
 	}
 
+	//TODO: Check here again
 	fn read_ec_point(&mut self) -> Result<Halo2LEcPoint<C, L, P>, snark_verifier::Error> {
-		todo!()
+		let mut compressed = [0; 128];
+		self.reader.read_exact(compressed.as_mut()).map_err(|err| {
+			VerifierError::Transcript(
+				err.kind(),
+				"invalid field element encoding in proof".to_string(),
+			)
+		})?;
+
+		let xy = [0; 64];
+		let x = C::Base::from_bytes_wide(&xy);
+		let y = C::Base::from_bytes_wide(&xy);
+
+		let point: C = Option::from(C::from_xy(x, y)).ok_or_else(|| {
+			VerifierError::Transcript(
+				ErrorKind::Other,
+				"invalid point encoding in proof".to_string(),
+			)
+		})?;
+
+		let x = Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_w(
+			point.coordinates().unwrap().x().clone(),
+		);
+		let y = Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_w(
+			point.coordinates().unwrap().y().clone(),
+		);
+
+		let loader = self.loader.clone();
+		let mut layouter = loader.layouter.lock().unwrap();
+		let assigned_coordinates = layouter
+			.assign_region(
+				|| "assign_coordinates",
+				|region: Region<'_, C::Scalar>| {
+					let mut ctx = RegionCtx::new(region, 0);
+					let mut x_limbs: [Option<AssignedCell<C::Scalar, C::Scalar>>; NUM_LIMBS] =
+						[(); NUM_LIMBS].map(|_| None);
+					let mut y_limbs: [Option<AssignedCell<C::Scalar, C::Scalar>>; NUM_LIMBS] =
+						[(); NUM_LIMBS].map(|_| None);
+					for i in 0..NUM_LIMBS {
+						x_limbs[i] = Some(
+							ctx.assign_advice(
+								self.loader.common.advice[i],
+								Value::known(x.limbs[i]),
+							)
+							.unwrap(),
+						);
+						y_limbs[i] = Some(
+							ctx.assign_advice(
+								self.loader.common.advice[i + NUM_LIMBS],
+								Value::known(y.limbs[i]),
+							)
+							.unwrap(),
+						);
+					}
+					Ok((x_limbs.map(|x| x.unwrap()), y_limbs.map(|x| x.unwrap())))
+				},
+			)
+			.unwrap();
+
+		let assigned_integer_x =
+			AssignedInteger::<_, _, NUM_LIMBS, NUM_BITS, P>::new(x, assigned_coordinates.0);
+		let assigned_integer_y =
+			AssignedInteger::<_, _, NUM_LIMBS, NUM_BITS, P>::new(y, assigned_coordinates.1);
+
+		let assigned_point = AssignedPoint::<_, _, NUM_LIMBS, NUM_BITS, P>::new(
+			assigned_integer_x, assigned_integer_y,
+		);
+		let loaded_point = Halo2LEcPoint::new(assigned_point, loader.clone());
+		self.common_ec_point(&loaded_point)?;
+
+		Ok(loaded_point)
 	}
 }

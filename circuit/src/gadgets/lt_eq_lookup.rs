@@ -91,14 +91,12 @@ impl LessEqualConfig {
 struct LessEqualChipset<F: FieldExt> {
 	x: AssignedCell<F, F>,
 	y: AssignedCell<F, F>,
-	/// Difference between bits of x and y
-	diff_bits: [F; DIFF_BITS],
 }
 
 impl<F: FieldExt> LessEqualChipset<F> {
 	/// Constructs a new chipset
-	fn new(x: AssignedCell<F, F>, y: AssignedCell<F, F>, diff_bits: [F; DIFF_BITS]) -> Self {
-		Self { x, y, diff_bits }
+	fn new(x: AssignedCell<F, F>, y: AssignedCell<F, F>) -> Self {
+		Self { x, y }
 	}
 }
 
@@ -131,7 +129,7 @@ impl<F: FieldExt> MockChipset<F> for LessEqualChipset<F> {
 			layouter.namespace(|| "n_shifted_diff"),
 		)?;
 
-		let diff_b2n = Bits2NumChip::new(inp, self.diff_bits.to_vec());
+		let diff_b2n = Bits2NumChip::new_exact::<DIFF_BITS>(inp);
 		let bits = diff_b2n.synthesize(
 			&mock_common.common,
 			&config.bits_2_num_selector,
@@ -164,7 +162,7 @@ mod test {
 			main::MainChip,
 			range::{LookupRangeCheckChip, LookupShortWordCheckChip},
 		},
-		utils::{generate_params, prove_and_verify, to_bits, to_wide},
+		utils::{generate_params, prove_and_verify, to_wide},
 		RegionCtx,
 	};
 	use halo2::{
@@ -250,10 +248,7 @@ mod test {
 					Ok((x, y))
 				},
 			)?;
-			let n_shifted = Fr::from_bytes(&N_SHIFTED).unwrap();
-			let b = self.x + n_shifted - self.y;
-			let diff_bits = to_bits(b.to_bytes()).map(Fr::from);
-			let lt_eq_chip = LessEqualChipset::<Fr>::new(x, y, diff_bits);
+			let lt_eq_chip = LessEqualChipset::<Fr>::new(x, y);
 			let res = lt_eq_chip.synthesize(
 				&config.mock_common,
 				&config.lt_eq,

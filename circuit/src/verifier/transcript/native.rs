@@ -5,6 +5,7 @@ use crate::{
 	verifier::loader::native::{NUM_BITS, NUM_LIMBS},
 };
 use halo2::{
+	arithmetic::FieldExt,
 	halo2curves::{Coordinates, CurveAffine},
 	transcript::{
 		EncodedChallenge, Transcript as Halo2Transcript, TranscriptRead as Halo2TranscriptRead,
@@ -101,14 +102,14 @@ where
 	R: RoundParams<C::Scalar, WIDTH>,
 {
 	fn read_scalar(&mut self) -> Result<C::ScalarExt, VerifierError> {
-		let mut data = <C::Scalar as PrimeField>::Repr::default();
+		let mut data = [0; 64];
 		self.reader.read_exact(data.as_mut()).map_err(|err| {
 			VerifierError::Transcript(
 				err.kind(),
 				"invalid field element encoding in proof".to_string(),
 			)
 		})?;
-		let scalar = Option::from(C::Scalar::from_repr(data)).ok_or_else(|| {
+		let scalar = Option::from(C::Scalar::from_bytes_wide(&data)).ok_or_else(|| {
 			VerifierError::Transcript(
 				ErrorKind::Other,
 				"invalid field element encoding in proof".to_string(),
@@ -119,18 +120,20 @@ where
 		Ok(scalar)
 	}
 
-	/// Read limbs from reader, then construct C: CurveAffine from it
 	fn read_ec_point(&mut self) -> Result<C, VerifierError> {
-		// TODO: Read 128 bytes
-		// let mut compressed = [0; 128];
-		let mut compressed = C::Repr::default(); // This is 64 bytes
+		let mut compressed = [0; 128];
 		self.reader.read_exact(compressed.as_mut()).map_err(|err| {
 			VerifierError::Transcript(
 				err.kind(),
 				"invalid field element encoding in proof".to_string(),
 			)
 		})?;
-		let point: C = Option::from(C::from_bytes(&compressed)).ok_or_else(|| {
+		// TODO: Ask this part if it is correct way to do like this
+		let xy = [0; 64];
+		let x = C::Base::from_bytes_wide(&xy);
+		let y = C::Base::from_bytes_wide(&xy);
+
+		let point: C = Option::from(C::from_xy(x, y)).ok_or_else(|| {
 			VerifierError::Transcript(
 				ErrorKind::Other,
 				"invalid point encoding in proof".to_string(),
@@ -187,14 +190,12 @@ where
 	fn common_ec_point(&mut self, ec_point: &C) -> Result<(), VerifierError> {
 		let default = C::Scalar::default();
 		self.state.update(&[default]);
-		let coords: Coordinates<C> = Option::from(ec_point.coordinates())
-			.ok_or_else(|| {
-				VerifierError::Transcript(
-					ErrorKind::Other,
-					"cannot write points at infinity to the transcript".to_string(),
-				)
-			})
-			.unwrap();
+		let coords: Coordinates<C> = Option::from(ec_point.coordinates()).ok_or_else(|| {
+			VerifierError::Transcript(
+				ErrorKind::Other,
+				"cannot write points at infinity to the transcript".to_string(),
+			)
+		})?;
 
 		let x: Integer<_, _, NUM_LIMBS, NUM_BITS, P> = Integer::from_w(coords.x().clone());
 		let y: Integer<_, _, NUM_LIMBS, NUM_BITS, P> = Integer::from_w(coords.y().clone());
@@ -214,7 +215,6 @@ where
 	}
 }
 
-// TODO: Decompose C to limbs, and write the limbs into the writer
 impl<W: Write, C: CurveAffine, P, R> TranscriptWrite<C> for PoseidonWrite<W, C, P, R>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
@@ -224,17 +224,29 @@ where
 	/// Write a scalar.
 	fn write_scalar(&mut self, scalar: C::Scalar) -> Result<(), VerifierError> {
 		<Self as Transcript<C, NativeSVLoader>>::common_scalar(self, &scalar)?;
-		let data = scalar.to_repr();
-		self.writer.write_all(data.as_ref()).unwrap();
-
+		let integer = Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_n(scalar);
+		for i in 0..NUM_LIMBS {
+			let data = integer.limbs[i].to_repr();
+			self.writer.write_all(data.as_ref()).unwrap();
+		}
 		Ok(())
 	}
 
 	/// Write a elliptic curve point.
 	fn write_ec_point(&mut self, ec_point: C) -> Result<(), VerifierError> {
 		self.common_ec_point(&ec_point)?;
-		let compressed = ec_point.to_bytes();
-		self.writer.write_all(compressed.as_ref()).unwrap();
+		let coordinates = ec_point.coordinates().unwrap();
+		let integer_x = Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_w(coordinates.x().clone());
+		let integer_y = Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_w(coordinates.y().clone());
+		for i in 0..NUM_LIMBS {
+			let compressed = integer_x.limbs[i].to_repr();
+			self.writer.write_all(compressed.as_ref()).unwrap();
+		}
+
+		for i in 0..NUM_LIMBS {
+			let compressed = integer_y.limbs[i].to_repr();
+			self.writer.write_all(compressed.as_ref()).unwrap();
+		}
 
 		Ok(())
 	}

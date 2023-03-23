@@ -27,9 +27,8 @@ use std::{
 /// Native version of the loader
 pub mod native;
 
-// TODO: Rename to LoaderConfig
-/// Halo2Loader
-pub struct Halo2Loader<C: CurveAffine, L: Layouter<C::Scalar>, P>
+/// LoaderConfig
+pub struct LoaderConfig<C: CurveAffine, L: Layouter<C::Scalar>, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 {
@@ -42,11 +41,11 @@ where
 	_p: PhantomData<P>,
 }
 
-impl<C: CurveAffine, L: Layouter<C::Scalar>, P> Halo2Loader<C, L, P>
+impl<C: CurveAffine, L: Layouter<C::Scalar>, P> LoaderConfig<C, L, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 {
-	/// Construct new Halo2Loader
+	/// Construct a new LoaderConfig
 	pub fn new(
 		layouter: Rc<Mutex<L>>, common: CommonConfig, ecc_mul_scalar: EccMulConfig,
 		main: MainConfig, poseidon_sponge: PoseidonSpongeConfig,
@@ -63,7 +62,7 @@ where
 	}
 }
 
-impl<C: CurveAffine, L: Layouter<C::Scalar>, P> Clone for Halo2Loader<C, L, P>
+impl<C: CurveAffine, L: Layouter<C::Scalar>, P> Clone for LoaderConfig<C, L, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 {
@@ -80,12 +79,12 @@ where
 	}
 }
 
-impl<C: CurveAffine, L: Layouter<C::Scalar>, P> Debug for Halo2Loader<C, L, P>
+impl<C: CurveAffine, L: Layouter<C::Scalar>, P> Debug for LoaderConfig<C, L, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		f.debug_struct("Halo2Loader").finish()
+		f.debug_struct("LoaderConfig").finish()
 	}
 }
 
@@ -94,8 +93,8 @@ pub struct Halo2LScalar<C: CurveAffine, L: Layouter<C::Scalar>, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 {
-	inner: AssignedCell<C::Scalar, C::Scalar>,
-	loader: Halo2Loader<C, L, P>,
+	pub(crate) inner: AssignedCell<C::Scalar, C::Scalar>,
+	pub(crate) loader: LoaderConfig<C, L, P>,
 }
 
 impl<C: CurveAffine, L: Layouter<C::Scalar>, P> Clone for Halo2LScalar<C, L, P>
@@ -133,7 +132,7 @@ where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 {
 	/// Creates a new Halo2LScalar
-	pub fn new(value: AssignedCell<C::Scalar, C::Scalar>, loader: Halo2Loader<C, L, P>) -> Self {
+	pub fn new(value: AssignedCell<C::Scalar, C::Scalar>, loader: LoaderConfig<C, L, P>) -> Self {
 		return Self { inner: value, loader };
 	}
 }
@@ -341,7 +340,7 @@ impl<C: CurveAffine, L: Layouter<C::Scalar>, P> LoadedScalar<C::Scalar> for Halo
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 {
-	type Loader = Halo2Loader<C, L, P>;
+	type Loader = LoaderConfig<C, L, P>;
 
 	/// Returns loader.
 	fn loader(&self) -> &Self::Loader {
@@ -349,8 +348,8 @@ where
 	}
 }
 
-// TODO: Ask why this is not under the Halo2Loader in native
-impl<C: CurveAffine, L: Layouter<C::Scalar>, P> ScalarLoader<C::Scalar> for Halo2Loader<C, L, P>
+// TODO: Ask why this is not under the LoaderConfig in native
+impl<C: CurveAffine, L: Layouter<C::Scalar>, P> ScalarLoader<C::Scalar> for LoaderConfig<C, L, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 {
@@ -393,8 +392,21 @@ pub struct Halo2LEcPoint<C: CurveAffine, L: Layouter<C::Scalar>, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 {
-	inner: AssignedPoint<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS, P>,
-	loader: Halo2Loader<C, L, P>,
+	pub(crate) inner: AssignedPoint<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS, P>,
+	pub(crate) loader: LoaderConfig<C, L, P>,
+}
+
+impl<C: CurveAffine, L: Layouter<C::Scalar>, P> Halo2LEcPoint<C, L, P>
+where
+	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+{
+	/// Creates a new Halo2LScalar
+	pub fn new(
+		value: AssignedPoint<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS, P>,
+		loader: LoaderConfig<C, L, P>,
+	) -> Self {
+		return Self { inner: value, loader };
+	}
 }
 
 impl<C: CurveAffine, L: Layouter<C::Scalar>, P> Clone for Halo2LEcPoint<C, L, P>
@@ -419,6 +431,7 @@ impl<C: CurveAffine, L: Layouter<C::Scalar>, P> PartialEq for Halo2LEcPoint<C, L
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 {
+	// TODO: Ask if this equality will allow security flows
 	fn eq(&self, other: &Self) -> bool {
 		self.inner.x.integer == other.inner.x.integer
 			&& self.inner.y.integer == other.inner.y.integer
@@ -429,7 +442,7 @@ impl<C: CurveAffine, L: Layouter<C::Scalar>, P> LoadedEcPoint<C> for Halo2LEcPoi
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 {
-	type Loader = Halo2Loader<C, L, P>;
+	type Loader = LoaderConfig<C, L, P>;
 
 	/// Returns loader.
 	fn loader(&self) -> &Self::Loader {
@@ -437,7 +450,7 @@ where
 	}
 }
 
-impl<C: CurveAffine, L: Layouter<C::Scalar>, P> EcPointLoader<C> for Halo2Loader<C, L, P>
+impl<C: CurveAffine, L: Layouter<C::Scalar>, P> EcPointLoader<C> for LoaderConfig<C, L, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 {
@@ -480,7 +493,7 @@ where
 		let y_assigned = AssignedInteger::new(y, y_limbs);
 
 		let assigned_point = AssignedPoint::new(x_assigned, y_assigned);
-		Halo2LEcPoint { inner: assigned_point, loader: self.clone() }
+		Halo2LEcPoint::new(assigned_point, self.clone())
 	}
 
 	fn ec_point_assert_eq(
@@ -618,18 +631,11 @@ where
 				add
 			})
 			.unwrap();
-		Halo2LEcPoint { inner: point, loader: config }
+		Halo2LEcPoint::new(point, config)
 	}
 }
 
-impl<C: CurveAffine, L: Layouter<C::Scalar>, P> Loader<C> for Halo2Loader<C, L, P> where
+impl<C: CurveAffine, L: Layouter<C::Scalar>, P> Loader<C> for LoaderConfig<C, L, P> where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>
 {
 }
-
-// TODO: Implement LoadedEcPoint for Halo2LEcPoint
-// ---- ec_point_load_const: Open a new region and decompose CurveAffine values
-// into limbs and assign each limb into a fixed column
-// ---- ec_point_assert_eq: Open a new region and call ctx.constrain_equal for
-// each limb
-// ---- multi_scalar_multiplication: Call mul_scalar and add chips for ecc

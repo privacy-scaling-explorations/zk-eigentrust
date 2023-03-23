@@ -338,9 +338,8 @@ pub fn power_of_two<F: FieldExt>(n: usize) -> F {
 /// Get the little-endian bits array of [`Field`] element
 pub fn fe_to_le_bits<F: FieldExt>(e: F) -> Vec<bool> {
 	let le_bytes = fe_to_big(e).to_bytes_le();
-	let short_le_bytes = to_short(&le_bytes);
-	let le_bits: [bool; 256] = to_bits(short_le_bytes);
-	le_bits.to_vec()
+	let le_bits = to_bits(&le_bytes);
+	le_bits
 }
 
 /// Returns modulus of the [`FieldExt`] as [`BigUint`].
