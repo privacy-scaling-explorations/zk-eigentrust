@@ -61,6 +61,14 @@ type PSV = PlonkSuccinctVerifier<KzgAs<Bn256, Gwc19>>;
 type SVK = KzgSuccinctVerifyingKey<G1Affine>;
 
 #[derive(Clone)]
+// TODO: Make SnarkWitness and functions to convert from Snark to SnarkWitness,
+// without witness function
+// pub struct Snark {
+// 	protocol: PlonkProtocol<G1Affine>,
+// 	instances: Vec<Vec<Value<Fr>>>,
+// 	proof: Value<Vec<u8>>,
+// }
+
 /// Snark witness structure
 pub struct Snark {
 	protocol: PlonkProtocol<G1Affine>,
@@ -95,8 +103,6 @@ impl Snark {
 	}
 }
 
-// TODO: Make SnarkWitness and functions to convert from Snark to SnarkWitness,
-// without witness function
 struct Aggregator<L: Layouter<Fr>> {
 	svk: SVK,
 	snarks: Vec<Snark>,
@@ -167,7 +173,7 @@ impl<L: Layouter<Fr>> Circuit<Fr> for Aggregator<L> {
 	type FloorPlanner = SimpleFloorPlanner;
 
 	fn without_witnesses(&self) -> Self {
-		// TODO: Return Value::unknown() for each value
+		// TODO: Return Value::unknown() for each value, after Implementing SnarkWitness
 		Self::clone(self)
 	}
 
