@@ -23,7 +23,7 @@ pub const NUM_LIMBS: usize = 4;
 pub const NUM_BITS: usize = 68;
 
 #[derive(Debug, Default, Clone, PartialEq)]
-/// NativeLoader
+/// NativeLoader structure
 pub struct NativeLoader<C: CurveAffine, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
@@ -33,7 +33,7 @@ where
 }
 
 #[derive(Debug, Default, Clone, PartialEq)]
-/// LScalar
+/// LScalar structure
 pub struct LScalar<C: CurveAffine, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
@@ -46,7 +46,7 @@ impl<C: CurveAffine, P> LScalar<C, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 {
-	/// new
+	/// Construct a new LScalar
 	pub fn new(value: C::Scalar, loader: NativeLoader<C, P>) -> Self {
 		Self { inner: value, loader }
 	}
@@ -242,13 +242,25 @@ where
 }
 
 #[derive(Debug, Default, Clone, PartialEq)]
-/// LEcPoint
+/// LEcPoint structure
 pub struct LEcPoint<C: CurveAffine, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 {
 	pub(crate) inner: EcPoint<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS, P>,
 	pub(crate) loader: NativeLoader<C, P>,
+}
+
+impl<C: CurveAffine, P> LEcPoint<C, P>
+where
+	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+{
+	/// Construct a new LEcPoint
+	pub fn new(
+		value: EcPoint<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS, P>, loader: NativeLoader<C, P>,
+	) -> Self {
+		Self { inner: value, loader }
+	}
 }
 
 impl<C: CurveAffine, P> LoadedEcPoint<C> for LEcPoint<C, P>
@@ -275,7 +287,7 @@ where
 		let y = Integer::from_w(coords.y().clone());
 		let point = EcPoint::new(x, y);
 
-		LEcPoint { inner: point, loader: self.clone() }
+		LEcPoint::new(point, self.clone())
 	}
 
 	fn ec_point_assert_eq(
@@ -302,8 +314,7 @@ where
 			})
 			.reduce(|acc, value| acc.add(&value))
 			.unwrap();
-
-		LEcPoint { inner: point, loader: pairs[0].1.loader.clone() }
+		LEcPoint::new(point, pairs[0].1.loader.clone())
 	}
 }
 

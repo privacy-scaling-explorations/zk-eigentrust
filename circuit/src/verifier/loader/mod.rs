@@ -97,6 +97,16 @@ where
 	pub(crate) loader: LoaderConfig<C, L, P>,
 }
 
+impl<C: CurveAffine, L: Layouter<C::Scalar>, P> Halo2LScalar<C, L, P>
+where
+	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+{
+	/// Creates a new Halo2LScalar
+	pub fn new(value: AssignedCell<C::Scalar, C::Scalar>, loader: LoaderConfig<C, L, P>) -> Self {
+		return Self { inner: value, loader };
+	}
+}
+
 impl<C: CurveAffine, L: Layouter<C::Scalar>, P> Clone for Halo2LScalar<C, L, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
@@ -124,16 +134,6 @@ where
 		let rhs = assigned_to_field(other.inner.clone());
 
 		lhs == rhs
-	}
-}
-
-impl<C: CurveAffine, L: Layouter<C::Scalar>, P> Halo2LScalar<C, L, P>
-where
-	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
-{
-	/// Creates a new Halo2LScalar
-	pub fn new(value: AssignedCell<C::Scalar, C::Scalar>, loader: LoaderConfig<C, L, P>) -> Self {
-		return Self { inner: value, loader };
 	}
 }
 
@@ -321,7 +321,7 @@ where
 			.synthesize(
 				&self.loader.common,
 				&self.loader.main,
-				loader_ref.namespace(|| "loader_sub"),
+				loader_ref.namespace(|| "loader_zero"),
 			)
 			.unwrap();
 		let sub_chipset = SubChipset::new(zero, self.inner);
@@ -329,7 +329,7 @@ where
 			.synthesize(
 				&self.loader.common,
 				&self.loader.main,
-				loader_ref.namespace(|| "loader_sub"),
+				loader_ref.namespace(|| "loader_neg"),
 			)
 			.unwrap();
 		Self { inner: neg, loader: self.loader.clone() }
@@ -342,13 +342,12 @@ where
 {
 	type Loader = LoaderConfig<C, L, P>;
 
-	/// Returns loader.
+	/// Returns [`Loader`].
 	fn loader(&self) -> &Self::Loader {
 		&self.loader
 	}
 }
 
-// TODO: Ask why this is not under the LoaderConfig in native
 impl<C: CurveAffine, L: Layouter<C::Scalar>, P> ScalarLoader<C::Scalar> for LoaderConfig<C, L, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
@@ -375,7 +374,7 @@ where
 		let mut layouter = self.layouter.lock().unwrap();
 		layouter
 			.assign_region(
-				|| "eq",
+				|| "assert_eq",
 				|region: Region<'_, C::Scalar>| {
 					let mut ctx = RegionCtx::new(region, 0);
 					let eq = ctx.constrain_equal(lhs.inner.clone(), rhs.inner.clone())?;
@@ -431,7 +430,6 @@ impl<C: CurveAffine, L: Layouter<C::Scalar>, P> PartialEq for Halo2LEcPoint<C, L
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 {
-	// TODO: Ask if this equality will allow security flows
 	fn eq(&self, other: &Self) -> bool {
 		self.inner.x.integer == other.inner.x.integer
 			&& self.inner.y.integer == other.inner.y.integer
@@ -444,7 +442,7 @@ where
 {
 	type Loader = LoaderConfig<C, L, P>;
 
-	/// Returns loader.
+	/// Returns [`Loader`].
 	fn loader(&self) -> &Self::Loader {
 		&self.loader
 	}
@@ -471,8 +469,6 @@ where
 					let mut y_limbs: [Option<AssignedCell<C::Scalar, C::Scalar>>; NUM_LIMBS] =
 						[(); NUM_LIMBS].map(|_| None);
 					for i in 0..NUM_LIMBS {
-						// TODO: Ask usage of the advice columns instead of the fixed because fixed
-						// is = 5
 						x_limbs[i] = Some(
 							ctx.assign_advice(self.common.advice[i], Value::known(x.limbs[i]))
 								.unwrap(),
@@ -502,7 +498,7 @@ where
 		let mut layouter = self.layouter.lock().unwrap();
 		layouter
 			.assign_region(
-				|| "eq",
+				|| "assert_eq",
 				|region: Region<'_, C::Scalar>| {
 					let mut ctx = RegionCtx::new(region, 0);
 					for i in 0..NUM_LIMBS {

@@ -27,7 +27,7 @@ use std::{
 /// Native version of transcript
 pub mod native;
 
-/// PoseidonReadChipset
+/// PoseidonReadChipset structure
 pub struct PoseidonReadChipset<RD: Read, C: CurveAffine, L: Layouter<C::Scalar>, P, R>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
@@ -71,10 +71,12 @@ where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	R: RoundParams<C::Scalar, WIDTH>,
 {
+	/// Returns [`LoaderConfig`].
 	fn loader(&self) -> &LoaderConfig<C, L, P> {
 		&self.loader
 	}
 
+	/// Squeeze a challenge.
 	fn squeeze_challenge(&mut self) -> Halo2LScalar<C, L, P> {
 		let mut loader_ref = self.loader.layouter.lock().unwrap();
 		let default = Self::assigned_zero(self.loader.clone());
@@ -90,6 +92,7 @@ where
 		Halo2LScalar::new(value, self.loader.clone())
 	}
 
+	/// Update with an elliptic curve point.
 	fn common_ec_point(
 		&mut self, ec_point: &Halo2LEcPoint<C, L, P>,
 	) -> Result<(), snark_verifier::Error> {
@@ -108,6 +111,7 @@ where
 		Ok(())
 	}
 
+	/// Update with a scalar.
 	fn common_scalar(
 		&mut self, scalar: &Halo2LScalar<C, L, P>,
 	) -> Result<(), snark_verifier::Error> {
@@ -158,7 +162,6 @@ where
 		Ok(assigned_lscalar)
 	}
 
-	//TODO: Check here again
 	fn read_ec_point(&mut self) -> Result<Halo2LEcPoint<C, L, P>, snark_verifier::Error> {
 		let mut compressed = [0; 128];
 		self.reader.read_exact(compressed.as_mut()).map_err(|err| {

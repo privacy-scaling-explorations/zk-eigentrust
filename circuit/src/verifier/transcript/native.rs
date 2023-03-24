@@ -56,7 +56,7 @@ where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	R: RoundParams<C::Scalar, WIDTH>,
 {
-	/// Returns [`Loader`].
+	/// Returns [`NativeSVLoader`].
 	fn loader(&self) -> &NativeSVLoader {
 		&self.loader
 	}
@@ -128,7 +128,7 @@ where
 				"invalid field element encoding in proof".to_string(),
 			)
 		})?;
-		// TODO: Ask this part if it is correct way to do like this
+
 		let xy = [0; 64];
 		let x = C::Base::from_bytes_wide(&xy);
 		let y = C::Base::from_bytes_wide(&xy);
@@ -145,7 +145,7 @@ where
 	}
 }
 
-/// PoseidonWrite
+/// PoseidonWrite structure
 pub struct PoseidonWrite<W: Write, C: CurveAffine, P, R>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
@@ -173,7 +173,7 @@ where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	R: RoundParams<C::Scalar, WIDTH>,
 {
-	/// Returns [`Loader`].
+	/// Returns [`NativeSVLoader`].
 	fn loader(&self) -> &NativeSVLoader {
 		&self.loader
 	}
