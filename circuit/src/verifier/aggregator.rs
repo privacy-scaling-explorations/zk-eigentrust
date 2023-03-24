@@ -103,27 +103,25 @@ impl Snark {
 	}
 }
 
-struct Aggregator<L: Layouter<Fr>> {
+struct Aggregator {
 	svk: SVK,
 	snarks: Vec<Snark>,
 	instances: Vec<Fr>,
 	as_proof: Vec<u8>,
-	_l: PhantomData<L>,
 }
 
-impl<L: Layouter<Fr>> Clone for Aggregator<L> {
+impl Clone for Aggregator {
 	fn clone(&self) -> Self {
 		Self {
 			svk: self.svk.clone(),
 			snarks: self.snarks.clone(),
 			instances: self.instances.clone(),
 			as_proof: self.as_proof.clone(),
-			_l: PhantomData,
 		}
 	}
 }
 
-impl<L: Layouter<Fr>> Aggregator<L> {
+impl Aggregator {
 	pub fn new(params: &ParamsKZG<Bn256>, snarks: Vec<Snark>) -> Self {
 		let svk = params.get_g()[0].into();
 
@@ -156,7 +154,7 @@ impl<L: Layouter<Fr>> Aggregator<L> {
 			.map(|v| Integer::<_, _, NUM_LIMBS, NUM_BITS, Bn256_4_68>::from_w(v).limbs)
 			.concat();
 
-		Self { svk, snarks, instances, as_proof, _l: PhantomData }
+		Self { svk, snarks, instances, as_proof }
 	}
 }
 
@@ -168,7 +166,7 @@ struct AggregatorConfig {
 	pub(crate) ecc_mul_scalar: EccMulConfig,
 }
 
-impl<L: Layouter<Fr>> Circuit<Fr> for Aggregator<L> {
+impl Circuit<Fr> for Aggregator {
 	type Config = AggregatorConfig;
 	type FloorPlanner = SimpleFloorPlanner;
 
@@ -217,11 +215,13 @@ impl<L: Layouter<Fr>> Circuit<Fr> for Aggregator<L> {
 	/// Given the provided `cs`, synthesize the circuit. The concrete type of
 	/// the caller will be different depending on the context, and they may or
 	/// may not expect to have a witness present.
-	fn synthesize(&self, config: Self::Config, layouter: L) -> Result<(), Error> {
+	fn synthesize(
+		&self, config: Self::Config, mut layouter: impl Layouter<Fr>,
+	) -> Result<(), Error> {
 		// TODO: Open a region and assign Instances
 
-		let layouter_rc = Rc::new(Mutex::new(layouter));
-		let loader_config = LoaderConfig::<G1Affine, L, Bn256_4_68>::new(
+		let layouter_rc = Rc::new(Mutex::new(layouter.namespace(|| "loader")));
+		let loader_config = LoaderConfig::<G1Affine, _, Bn256_4_68>::new(
 			layouter_rc, config.common, config.ecc_mul_scalar, config.main, config.poseidon_sponge,
 		);
 
