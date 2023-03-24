@@ -36,9 +36,9 @@ pub type PoseidonNativeSponge = PoseidonSponge<Scalar, HASHER_WIDTH, Params>;
 /// Type alias for the poseidon hasher chip with a width of 5 and bn254 params
 pub type PoseidonHasher = PoseidonChipset<Scalar, HASHER_WIDTH, Params>;
 /// Partial rounds of permulation chip
-type PartialRoundHasher = PartialRoundChip<Scalar, HASHER_WIDTH, Params>;
+pub type PartialRoundHasher = PartialRoundChip<Scalar, HASHER_WIDTH, Params>;
 /// Full rounds of permuation chip
-type FullRoundHasher = FullRoundChip<Scalar, HASHER_WIDTH, Params>;
+pub type FullRoundHasher = FullRoundChip<Scalar, HASHER_WIDTH, Params>;
 /// Type alias for the poseidon spong chip with a width of 5 and bn254 params
 pub type SpongeHasher = PoseidonSpongeChipset<Scalar, HASHER_WIDTH, Params>;
 /// Type alias for Eddsa chip on BabyJubJub elliptic curve
