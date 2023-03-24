@@ -88,7 +88,6 @@ async fn main() {
 		Mode::Verify => {
 			let url = format!("{}/score", config.server_url);
 			let proof_raw: ProofRaw = reqwest::get(url).await.unwrap().json().await.unwrap();
-			println!("{:?}", proof_raw);
 			let client = EigenTrustClient::new(config, user_secrets_raw);
 			client.verify(proof_raw).await.unwrap();
 			println!("Successful verification!");
