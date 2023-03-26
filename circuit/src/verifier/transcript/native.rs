@@ -131,7 +131,7 @@ where
 			)
 		})?;
 
-		let limb_chunk = compressed.chunks(32);
+		let mut limb_chunk = compressed.chunks(32);
 		let mut x_limbs = [C::Scalar::default(); NUM_LIMBS];
 		for i in 0..NUM_LIMBS {
 			let bytes = to_wide(limb_chunk.next().unwrap());

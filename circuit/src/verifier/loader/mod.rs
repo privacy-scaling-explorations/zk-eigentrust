@@ -54,7 +54,8 @@ where
 		layouter: Rc<Mutex<L>>, common: CommonConfig, ecc_mul_scalar: EccMulConfig,
 		main: MainConfig, poseidon_sponge: PoseidonSpongeConfig,
 	) -> Self {
-		let layouter_reg = layouter.clone().lock().unwrap();
+		let binding = layouter.clone();
+		let mut layouter_reg = binding.lock().unwrap();
 		let (aux_init_x_limbs, aux_init_y_limbs, aux_fin_x_limbs, aux_fin_y_limbs) = layouter_reg
 			.assign_region(
 				|| "aux",
@@ -596,8 +597,8 @@ where
 	) -> Self::LoadedEcPoint {
 		let config = pairs[0].1.loader.clone();
 		let mut layouter = pairs[0].1.loader.layouter.lock().unwrap();
-		//let mut layouter_2 = pairs[1].1.loader.layouter.lock().unwrap();
-		let auxes = pairs[0].1.loader.auxes;
+		let mut layouter_2 = pairs[1].1.loader.layouter.lock().unwrap();
+		let auxes = pairs[0].1.loader.auxes.clone();
 		let aux_init = auxes.0;
 		let aux_fin = auxes.1;
 
@@ -626,7 +627,7 @@ where
 					.synthesize(
 						&config.common,
 						&config.ecc_mul_scalar.add,
-						layouter.namespace(|| "ecc_add"),
+						layouter_2.namespace(|| "ecc_add"),
 					)
 					.unwrap();
 				add
