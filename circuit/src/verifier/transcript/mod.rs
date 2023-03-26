@@ -7,6 +7,7 @@ use crate::{
 	integer::{native::Integer, rns::RnsParams, AssignedInteger},
 	params::RoundParams,
 	poseidon::sponge::PoseidonSpongeChipset,
+	utils::to_wide,
 	Chipset, RegionCtx,
 };
 use halo2::{
@@ -16,7 +17,10 @@ use halo2::{
 };
 use native::WIDTH;
 use snark_verifier::{
-	util::transcript::{Transcript, TranscriptRead},
+	util::{
+		arithmetic::PrimeField,
+		transcript::{Transcript, TranscriptRead},
+	},
 	Error as VerifierError,
 };
 use std::{
@@ -129,7 +133,7 @@ where
 	R: RoundParams<C::Scalar, WIDTH>,
 {
 	fn read_scalar(&mut self) -> Result<Halo2LScalar<C, L, P>, snark_verifier::Error> {
-		let mut data = [0; 64];
+		let mut data = <C::Scalar as PrimeField>::Repr::default();
 		self.reader.read_exact(data.as_mut()).map_err(|err| {
 			VerifierError::Transcript(
 				err.kind(),
@@ -137,7 +141,7 @@ where
 			)
 		})?;
 
-		let scalar = Option::from(C::Scalar::from_bytes_wide(&data)).ok_or_else(|| {
+		let scalar = Option::from(C::Scalar::from_repr(data)).ok_or_else(|| {
 			VerifierError::Transcript(
 				ErrorKind::Other,
 				"invalid field element encoding in proof".to_string(),
@@ -163,7 +167,7 @@ where
 	}
 
 	fn read_ec_point(&mut self) -> Result<Halo2LEcPoint<C, L, P>, snark_verifier::Error> {
-		let mut compressed = [0; 128];
+		let mut compressed = [0; 256];
 		self.reader.read_exact(compressed.as_mut()).map_err(|err| {
 			VerifierError::Transcript(
 				err.kind(),
@@ -171,23 +175,21 @@ where
 			)
 		})?;
 
-		let xy = [0; 64];
-		let x = C::Base::from_bytes_wide(&xy);
-		let y = C::Base::from_bytes_wide(&xy);
+		let limb_chunk = compressed.chunks(32);
+		let mut x_limbs = [C::Scalar::default(); NUM_LIMBS];
+		for i in 0..NUM_LIMBS {
+			let bytes = to_wide(limb_chunk.next().unwrap());
+			x_limbs[i] = C::Scalar::from_bytes_wide(&bytes);
+		}
 
-		let point: C = Option::from(C::from_xy(x, y)).ok_or_else(|| {
-			VerifierError::Transcript(
-				ErrorKind::Other,
-				"invalid point encoding in proof".to_string(),
-			)
-		})?;
+		let mut y_limbs = [C::Scalar::default(); NUM_LIMBS];
+		for i in 0..NUM_LIMBS {
+			let bytes = to_wide(limb_chunk.next().unwrap());
+			y_limbs[i] = C::Scalar::from_bytes_wide(&bytes);
+		}
 
-		let x = Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_w(
-			point.coordinates().unwrap().x().clone(),
-		);
-		let y = Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_w(
-			point.coordinates().unwrap().y().clone(),
-		);
+		let x = Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_limbs(x_limbs);
+		let y = Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_limbs(y_limbs);
 
 		let loader = self.loader.clone();
 		let mut layouter = loader.layouter.lock().unwrap();

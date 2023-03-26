@@ -2,6 +2,7 @@ use crate::{
 	integer::{native::Integer, rns::RnsParams},
 	params::RoundParams,
 	poseidon::native::sponge::PoseidonSponge,
+	utils::to_wide,
 	verifier::loader::native::{NUM_BITS, NUM_LIMBS},
 };
 use halo2::{
@@ -102,14 +103,15 @@ where
 	R: RoundParams<C::Scalar, WIDTH>,
 {
 	fn read_scalar(&mut self) -> Result<C::ScalarExt, VerifierError> {
-		let mut data = [0; 64];
+		let mut data = <C::Scalar as PrimeField>::Repr::default();
+
 		self.reader.read_exact(data.as_mut()).map_err(|err| {
 			VerifierError::Transcript(
 				err.kind(),
 				"invalid field element encoding in proof".to_string(),
 			)
 		})?;
-		let scalar = Option::from(C::Scalar::from_bytes_wide(&data)).ok_or_else(|| {
+		let scalar = Option::from(C::Scalar::from_repr(data)).ok_or_else(|| {
 			VerifierError::Transcript(
 				ErrorKind::Other,
 				"invalid field element encoding in proof".to_string(),
@@ -121,7 +123,7 @@ where
 	}
 
 	fn read_ec_point(&mut self) -> Result<C, VerifierError> {
-		let mut compressed = [0; 128];
+		let mut compressed = [0; 256];
 		self.reader.read_exact(compressed.as_mut()).map_err(|err| {
 			VerifierError::Transcript(
 				err.kind(),
@@ -129,9 +131,24 @@ where
 			)
 		})?;
 
-		let xy = [0; 64];
-		let x = C::Base::from_bytes_wide(&xy);
-		let y = C::Base::from_bytes_wide(&xy);
+		let limb_chunk = compressed.chunks(32);
+		let mut x_limbs = [C::Scalar::default(); NUM_LIMBS];
+		for i in 0..NUM_LIMBS {
+			let bytes = to_wide(limb_chunk.next().unwrap());
+			x_limbs[i] = C::Scalar::from_bytes_wide(&bytes);
+		}
+
+		let mut y_limbs = [C::Scalar::default(); NUM_LIMBS];
+		for i in 0..NUM_LIMBS {
+			let bytes = to_wide(limb_chunk.next().unwrap());
+			y_limbs[i] = C::Scalar::from_bytes_wide(&bytes);
+		}
+
+		let x_wide = to_wide(P::compose(x_limbs).to_repr().as_ref());
+		let y_wide = to_wide(P::compose(y_limbs).to_repr().as_ref());
+
+		let x = C::Base::from_bytes_wide(&x_wide);
+		let y = C::Base::from_bytes_wide(&y_wide);
 
 		let point: C = Option::from(C::from_xy(x, y)).ok_or_else(|| {
 			VerifierError::Transcript(

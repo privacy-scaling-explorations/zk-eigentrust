@@ -24,14 +24,11 @@ use crate::{
 		IntegerReduceChip, IntegerSubChip,
 	},
 	params::poseidon_bn254_5x5::Params,
-	poseidon::{
-		sponge::{PoseidonSpongeChipset, PoseidonSpongeConfig},
-		PoseidonConfig,
-	},
-	Chip, Chipset, CommonConfig,
+	poseidon::{sponge::PoseidonSpongeConfig, PoseidonConfig},
+	Chip, CommonConfig, RegionCtx,
 };
 use halo2::{
-	circuit::{Layouter, SimpleFloorPlanner},
+	circuit::{Layouter, Region, SimpleFloorPlanner, Value},
 	halo2curves::bn256::{Bn256, Fq, Fr, G1Affine},
 	plonk::{create_proof, Circuit, ConstraintSystem, Error},
 	poly::{
@@ -55,7 +52,7 @@ use snark_verifier::{
 		SnarkVerifier,
 	},
 };
-use std::{marker::PhantomData, rc::Rc, sync::Mutex};
+use std::{rc::Rc, sync::Mutex};
 
 type PSV = PlonkSuccinctVerifier<KzgAs<Bn256, Gwc19>>;
 type SVK = KzgSuccinctVerifyingKey<G1Affine>;
@@ -175,10 +172,8 @@ impl Circuit<Fr> for Aggregator {
 		Self::clone(self)
 	}
 
-	/// The circuit is given an opportunity to describe the exact gate
-	/// arrangement, column arrangement, etc.
+	/// Configure
 	fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
-		// TODO: Configure all configs
 		let common = CommonConfig::new(meta);
 		let main_selector = MainChip::configure(&common, meta);
 		let main = MainConfig::new(main_selector);
@@ -212,9 +207,7 @@ impl Circuit<Fr> for Aggregator {
 		AggregatorConfig { common, main, poseidon_sponge, ecc_mul_scalar }
 	}
 
-	/// Given the provided `cs`, synthesize the circuit. The concrete type of
-	/// the caller will be different depending on the context, and they may or
-	/// may not expect to have a witness present.
+	/// Synthesize the circuit.
 	fn synthesize(
 		&self, config: Self::Config, mut layouter: impl Layouter<Fr>,
 	) -> Result<(), Error> {
@@ -230,15 +223,37 @@ impl Circuit<Fr> for Aggregator {
 			let protocol = snark.protocol.loaded(&loader_config);
 			let mut transcript_read: PoseidonReadChipset<&[u8], G1Affine, L, Bn256_4_68, Params> =
 				PoseidonReadChipset::new(snark.proof.as_slice(), loader_config);
+			let mut instances: Vec<Vec<Halo2LScalar<G1Affine, L, Bn256_4_68>>> = Vec::new();
+			layouter.assign_region(
+				|| "assign_instances",
+				|region: Region<'_, Fr>| {
+					let mut ctx = RegionCtx::new(region, 0);
+					for i in 0..snark.instances.len() {
+						for j in 0..snark.instances[i].len() {
+							let assigned = ctx.assign_advice(
+								config.common.advice[0],
+								Value::known(snark.instances[i][j]),
+							)?;
+							// Check the correctness of the ctx.next()
+							ctx.next();
+							let new = Halo2LScalar::new(assigned, loader_config);
+							instances[i].push(new);
+						}
+					}
+					Ok(())
+				},
+			);
 
-			// TODO: Fix errors after assigning instances
 			let proof = PlonkSuccinctVerifier::read_proof(
-				&self.svk, &protocol, &snark.instances, &mut transcript_read,
+				&self.svk,
+				&protocol,
+				&instances.unwrap(),
+				&mut transcript_read,
 			)
 			.unwrap();
-			// TODO: Fix errors after assigning instances
-			let res = PlonkSuccinctVerifier::verify(&self.svk, &protocol, &snark.instances, &proof)
-				.unwrap();
+
+			let res =
+				PlonkSuccinctVerifier::verify(&self.svk, &protocol, &instances, &proof).unwrap();
 
 			accumulators.extend(res);
 		}
