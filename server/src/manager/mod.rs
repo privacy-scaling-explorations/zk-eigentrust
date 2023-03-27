@@ -198,11 +198,13 @@ impl Manager {
 		let proof_bytes = gen_proof(&self.params, &self.proving_key, et, vec![pub_ins.clone()]);
 
 		// --- SANITY CHECK VERIFICATION ---
-		evm_verify(
-			self.verifier_code.clone(),
-			vec![pub_ins.clone()],
-			proof_bytes.clone(),
-		);
+		if cfg!(debug_assertions) {
+			evm_verify(
+				self.verifier_code.clone(),
+				vec![pub_ins.clone()],
+				proof_bytes.clone(),
+			);
+		}
 		// --- END ---
 
 		let proof = Proof { pub_ins, proof: proof_bytes };
