@@ -29,7 +29,7 @@ use crate::{
 };
 use halo2::{
 	circuit::{Layouter, Region, SimpleFloorPlanner, Value},
-	halo2curves::bn256::{Bn256, Fq, Fr, G1Affine},
+	halo2curves::bn256::{Bn256, Fq, Fr, G1Affine, G1},
 	plonk::{create_proof, Circuit, ConstraintSystem, Error},
 	poly::{
 		commitment::ParamsProver,
@@ -168,8 +168,14 @@ impl Circuit<Fr> for Aggregator {
 	type FloorPlanner = SimpleFloorPlanner;
 
 	fn without_witnesses(&self) -> Self {
-		// TODO: Return Value::unknown() for each value, after Implementing SnarkWitness
-		Self::clone(self)
+		Self {
+			svk: Value::<KzgSuccinctVerifyingKey<G1Affine>>::unknown(),
+			snarks: Value::unknown(),
+			instances: Value::unknown(),
+			as_proof: Value::unknown(),
+		}
+		// TODO: Return Value::unknown() for each value, after Implementing
+		// SnarkWitness Self::clone(self)
 	}
 
 	/// Configure
@@ -211,8 +217,6 @@ impl Circuit<Fr> for Aggregator {
 	fn synthesize(
 		&self, config: Self::Config, mut layouter: impl Layouter<Fr>,
 	) -> Result<(), Error> {
-		// TODO: Open a region and assign Instances
-
 		let layouter_rc = Rc::new(Mutex::new(layouter.namespace(|| "loader")));
 		let loader_config = LoaderConfig::<G1Affine, _, Bn256_4_68>::new(
 			layouter_rc, config.common, config.ecc_mul_scalar, config.main, config.poseidon_sponge,
@@ -221,9 +225,9 @@ impl Circuit<Fr> for Aggregator {
 		let mut accumulators = Vec::new();
 		for snark in self.snarks {
 			let protocol = snark.protocol.loaded(&loader_config);
-			let mut transcript_read: PoseidonReadChipset<&[u8], G1Affine, L, Bn256_4_68, Params> =
+			let mut transcript_read: PoseidonReadChipset<&[u8], G1Affine, _, Bn256_4_68, Params> =
 				PoseidonReadChipset::new(snark.proof.as_slice(), loader_config);
-			let mut instances: Vec<Vec<Halo2LScalar<G1Affine, L, Bn256_4_68>>> = Vec::new();
+			let mut instances: Vec<Vec<Halo2LScalar<G1Affine, _, Bn256_4_68>>> = Vec::new();
 			layouter.assign_region(
 				|| "assign_instances",
 				|region: Region<'_, Fr>| {
@@ -245,10 +249,7 @@ impl Circuit<Fr> for Aggregator {
 			);
 
 			let proof = PlonkSuccinctVerifier::read_proof(
-				&self.svk,
-				&protocol,
-				&instances.unwrap(),
-				&mut transcript_read,
+				&self.svk, &protocol, &instances, &mut transcript_read,
 			)
 			.unwrap();
 
@@ -258,7 +259,7 @@ impl Circuit<Fr> for Aggregator {
 			accumulators.extend(res);
 		}
 
-		let mut transcript: PoseidonReadChipset<&[u8], G1Affine, L, Bn256_4_68, Params> =
+		let mut transcript: PoseidonReadChipset<&[u8], G1Affine, _, Bn256_4_68, Params> =
 			PoseidonReadChipset::new(&self.as_proof, loader_config);
 		let proof =
 			KzgAs::<Bn256, Gwc19>::read_proof(&Default::default(), &accumulators, &mut transcript)
