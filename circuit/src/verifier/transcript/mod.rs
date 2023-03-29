@@ -237,3 +237,10 @@ where
 		Ok(loaded_point)
 	}
 }
+
+// TODO: Write tests comparing native and halo2 version
+// - squeeze_challenge
+// - common_ec_point
+// - common_scalar
+// - read_scalar
+// - read_ec_point

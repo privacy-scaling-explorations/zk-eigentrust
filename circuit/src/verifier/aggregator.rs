@@ -29,7 +29,7 @@ use crate::{
 };
 use halo2::{
 	circuit::{Layouter, Region, SimpleFloorPlanner, Value},
-	halo2curves::bn256::{Bn256, Fq, Fr, G1Affine, G1},
+	halo2curves::bn256::{Bn256, Fq, Fr, G1Affine},
 	plonk::{create_proof, Circuit, ConstraintSystem, Error},
 	poly::{
 		commitment::ParamsProver,
@@ -168,14 +168,9 @@ impl Circuit<Fr> for Aggregator {
 	type FloorPlanner = SimpleFloorPlanner;
 
 	fn without_witnesses(&self) -> Self {
-		Self {
-			svk: Value::<KzgSuccinctVerifyingKey<G1Affine>>::unknown(),
-			snarks: Value::unknown(),
-			instances: Value::unknown(),
-			as_proof: Value::unknown(),
-		}
 		// TODO: Return Value::unknown() for each value, after Implementing
-		// SnarkWitness Self::clone(self)
+		// SnarkWitness
+		Self::clone(self)
 	}
 
 	/// Configure
@@ -219,16 +214,22 @@ impl Circuit<Fr> for Aggregator {
 	) -> Result<(), Error> {
 		let layouter_rc = Rc::new(Mutex::new(layouter.namespace(|| "loader")));
 		let loader_config = LoaderConfig::<G1Affine, _, Bn256_4_68>::new(
-			layouter_rc, config.common, config.ecc_mul_scalar, config.main, config.poseidon_sponge,
+			layouter_rc.clone(),
+			config.common.clone(),
+			config.ecc_mul_scalar,
+			config.main,
+			config.poseidon_sponge,
 		);
 
 		let mut accumulators = Vec::new();
-		for snark in self.snarks {
+		for snark in &self.snarks {
 			let protocol = snark.protocol.loaded(&loader_config);
 			let mut transcript_read: PoseidonReadChipset<&[u8], G1Affine, _, Bn256_4_68, Params> =
-				PoseidonReadChipset::new(snark.proof.as_slice(), loader_config);
+				PoseidonReadChipset::new(snark.proof.as_slice(), loader_config.clone());
 			let mut instances: Vec<Vec<Halo2LScalar<G1Affine, _, Bn256_4_68>>> = Vec::new();
-			layouter.assign_region(
+
+			let mut lb = layouter_rc.lock().unwrap();
+			lb.assign_region(
 				|| "assign_instances",
 				|region: Region<'_, Fr>| {
 					let mut ctx = RegionCtx::new(region, 0);
@@ -239,22 +240,28 @@ impl Circuit<Fr> for Aggregator {
 								Value::known(snark.instances[i][j]),
 							)?;
 							// Check the correctness of the ctx.next()
+							// TODO: Flatten the array and split it into chunks with the size of
+							// advice columns length and assign values to each advice column
 							ctx.next();
-							let new = Halo2LScalar::new(assigned, loader_config);
+							let new = Halo2LScalar::new(assigned, loader_config.clone());
 							instances[i].push(new);
 						}
 					}
 					Ok(())
 				},
-			);
+			)?;
+			// Drop the layouter reference
+			drop(lb);
 
-			let proof = PlonkSuccinctVerifier::read_proof(
+			let proof = PlonkSuccinctVerifier::<KzgAs<Bn256, Gwc19>>::read_proof(
 				&self.svk, &protocol, &instances, &mut transcript_read,
 			)
 			.unwrap();
 
-			let res =
-				PlonkSuccinctVerifier::verify(&self.svk, &protocol, &instances, &proof).unwrap();
+			let res = PlonkSuccinctVerifier::<KzgAs<Bn256, Gwc19>>::verify(
+				&self.svk, &protocol, &instances, &proof,
+			)
+			.unwrap();
 
 			accumulators.extend(res);
 		}
@@ -274,20 +281,21 @@ impl Circuit<Fr> for Aggregator {
 		let rhs_y = accumulator.rhs.inner.y;
 
 		let mut row = 0;
+		let mut lb = layouter_rc.lock().unwrap();
 		for limb in lhs_x.limbs {
-			layouter.constrain_instance(limb.cell(), config.common.instance, row)?;
+			lb.constrain_instance(limb.cell(), config.common.instance, row)?;
 			row += 1;
 		}
 		for limb in lhs_y.limbs {
-			layouter.constrain_instance(limb.cell(), config.common.instance, row)?;
+			lb.constrain_instance(limb.cell(), config.common.instance, row)?;
 			row += 1;
 		}
 		for limb in rhs_x.limbs {
-			layouter.constrain_instance(limb.cell(), config.common.instance, row)?;
+			lb.constrain_instance(limb.cell(), config.common.instance, row)?;
 			row += 1;
 		}
 		for limb in rhs_y.limbs {
-			layouter.constrain_instance(limb.cell(), config.common.instance, row)?;
+			lb.constrain_instance(limb.cell(), config.common.instance, row)?;
 			row += 1;
 		}
 		Ok(())

@@ -56,6 +56,7 @@ where
 	) -> Self {
 		let binding = layouter.clone();
 		let mut layouter_reg = binding.lock().unwrap();
+		// TODO: Assign aux_init and aux_fin to fixed columns for security reasons
 		let (aux_init_x_limbs, aux_init_y_limbs, aux_fin_x_limbs, aux_fin_y_limbs) = layouter_reg
 			.assign_region(
 				|| "aux",
@@ -530,6 +531,7 @@ where
 		let x = Integer::from_w(coords.x().clone());
 		let y = Integer::from_w(coords.y().clone());
 		let mut layouter = self.layouter.lock().unwrap();
+		// TODO: Assignt to fixed column
 		let (x_limbs, y_limbs) = layouter
 			.assign_region(
 				|| "assign_limbs",
@@ -585,8 +587,7 @@ where
 					Ok(())
 				},
 			)
-			.ok()
-			.ok_or_else(|| AssertionFailure(annotation.to_string()))
+			.map_err(|_| AssertionFailure(annotation.to_string()))
 	}
 
 	fn multi_scalar_multiplication(
@@ -599,8 +600,7 @@ where
 		let mut layouter = pairs[0].1.loader.layouter.lock().unwrap();
 		let mut layouter_2 = pairs[1].1.loader.layouter.lock().unwrap();
 		let auxes = pairs[0].1.loader.auxes.clone();
-		let aux_init = auxes.0;
-		let aux_fin = auxes.1;
+		let (aux_init, aux_fin) = auxes;
 
 		let point = pairs
 			.iter()
@@ -620,6 +620,8 @@ where
 					)
 					.unwrap();
 				mul
+				// TODO: instead of returning AssignedPoint, return
+				// LoadedEcPoint
 			})
 			.reduce(|acc, value| {
 				let chip = EccAddChipset::new(acc.clone(), value.clone());
@@ -641,3 +643,6 @@ impl<C: CurveAffine, L: Layouter<C::Scalar>, P> Loader<C> for LoaderConfig<C, L,
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>
 {
 }
+
+// TODO: Write tests to compare native and halo2 version
+// - multi_scalar_multiplication
