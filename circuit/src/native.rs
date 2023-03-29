@@ -37,11 +37,16 @@ impl Default for Opinion {
 struct EigenTrustSet {
 	set: [(PublicKey, Fr); NUM_NEIGHBOURS],
 	ops: HashMap<PublicKey, Opinion>,
+	ops_validity: HashMap<PublicKey, Option<bool>>,
 }
 
 impl EigenTrustSet {
 	pub fn new() -> Self {
-		Self { set: [(PublicKey::default(), Fr::zero()); NUM_NEIGHBOURS], ops: HashMap::new() }
+		Self {
+			set: [(PublicKey::default(), Fr::zero()); NUM_NEIGHBOURS],
+			ops: HashMap::new(),
+			ops_validity: HashMap::new(),
+		}
 	}
 
 	pub fn add_member(&mut self, pk: PublicKey) {
@@ -183,15 +188,17 @@ impl EigenTrustSet {
 		s
 	}
 
-	/// Filter out the list of invalid peers(public key) from `self.set`.
+	/// Filter out the lists of invalid peers from `self.set`.
 	///
-	/// Ouput: the vector of public key of invalid peers
+	/// Ouput: 2 vectors of indices of invalid peer public keys
 	///
 	/// Here, we use kinda recursive approach to filter out the direct-invalid
 	/// and indirect-invalid peers.
-	fn filter_invalid_peers(&self) -> Vec<PublicKey> {
-		let mut invalid_peers: Vec<PublicKey> = vec![];
-		let mut invalid_peers_cnt = invalid_peers.len();
+	fn filter_invalid_peers(&mut self) -> (Vec<usize>, Vec<usize>) {
+		let mut direct_invalid_peer_ids: Vec<usize> = vec![];
+		let mut indirect_invalid_peer_ids: Vec<usize> = vec![];
+
+		let mut invalid_peers_cnt = 0;
 
 		// Direct Invalid - all opinions are given to invalid peers
 		for i in 0..NUM_NEIGHBOURS {
@@ -200,9 +207,9 @@ impl EigenTrustSet {
 			// No credits(initial score) means that the peer did not update his opinion.
 			// In other words, the peer did not sign his opinion.
 			if pk != PublicKey::default() && credits == Fr::zero() {
-				invalid_peers.push(pk);
+				direct_invalid_peer_ids.push(i);
 			} else {
-				if pk == PublicKey::default() || invalid_peers.contains(&pk) {
+				if pk == PublicKey::default() {
 					continue;
 				} else {
 					let mut ops_i = self.ops.get(&pk).unwrap().clone();
@@ -222,11 +229,12 @@ impl EigenTrustSet {
 					}
 
 					if ops_i.scores.iter().all(|(_, score)| *score == Fr::zero()) {
-						invalid_peers.push(pk);
+						direct_invalid_peer_ids.push(i);
 					}
 				}
 			}
 		}
+		invalid_peers_cnt += direct_invalid_peer_ids.len();
 
 		// Indirect Invalid - Opinions that became invalid
 		// 					after we marked Direct-Invalid opinions
@@ -234,40 +242,62 @@ impl EigenTrustSet {
 			for i in 0..NUM_NEIGHBOURS {
 				let (pk, _) = self.set[i].clone();
 
-				if pk == PublicKey::default() || invalid_peers.contains(&pk) {
+				if pk == PublicKey::default()
+					|| direct_invalid_peer_ids.contains(&i)
+					|| indirect_invalid_peer_ids.contains(&i)
+				{
 					continue;
 				} else {
 					let mut ops_i = self.ops.get(&pk).unwrap().clone();
 
 					for j in 0..NUM_NEIGHBOURS {
-						let (pk_j, score) = ops_i.scores[j].clone();
+						let (_, score) = ops_i.scores[j].clone();
 
 						if score == Fr::zero() {
 							continue;
 						} else {
-							if invalid_peers.contains(&pk_j) {
+							if direct_invalid_peer_ids.contains(&j)
+								|| indirect_invalid_peer_ids.contains(&j)
+							{
 								ops_i.scores[j].1 = Fr::zero();
 							}
 						}
 					}
 
 					if ops_i.scores.iter().all(|(_, score)| *score == Fr::zero()) {
-						invalid_peers.push(pk);
+						indirect_invalid_peer_ids.push(i);
 					}
 				}
 			}
-			println!("Invalid peers: {}", invalid_peers.len());
+			println!(
+				"Invalid peers: {}",
+				direct_invalid_peer_ids.len() + indirect_invalid_peer_ids.len()
+			);
 
 			// If no more invalid peers added, quits the loop
-			let updated_invalid_peers_cnt = invalid_peers.len();
-			if updated_invalid_peers_cnt == invalid_peers_cnt {
+			let new_invalid_peers_cnt =
+				direct_invalid_peer_ids.len() + indirect_invalid_peer_ids.len();
+			if new_invalid_peers_cnt == invalid_peers_cnt {
 				break;
 			} else {
-				invalid_peers_cnt = invalid_peers.len();
+				invalid_peers_cnt = direct_invalid_peer_ids.len() + indirect_invalid_peer_ids.len()
 			}
 		}
 
-		invalid_peers
+		// Update the `ops_valid` map
+		for i in 0..NUM_NEIGHBOURS {
+			let (pk, _) = self.set[i].clone();
+			if pk == PublicKey::default() {
+				self.ops_validity.insert(pk, None);
+			} else if direct_invalid_peer_ids.contains(&i) || indirect_invalid_peer_ids.contains(&i)
+			{
+				self.ops_validity.insert(pk, Some(false));
+			} else {
+				self.ops_validity.insert(pk, Some(true));
+			}
+		}
+
+		(direct_invalid_peer_ids, indirect_invalid_peer_ids)
 	}
 }
 
@@ -662,13 +692,15 @@ mod test {
 		let sk1 = SecretKey::random(rng);
 		let sk2 = SecretKey::random(rng);
 		let sk3 = SecretKey::random(rng);
+		let sk8 = SecretKey::random(rng);
 
 		let pk1 = sk1.public();
 		let pk2 = sk2.public();
 		let pk3 = sk3.public();
+		let pk8 = sk8.public();
 
 		// Peer1(pk1) signs the opinion
-		let pks = [pk1, pk2, pk3, PublicKey::default(), PublicKey::default(), PublicKey::default()];
+		let pks = [pk1, pk2, pk3, PublicKey::default(), PublicKey::default(), pk8];
 		let scores = [Fr::from(10), Fr::zero(), Fr::zero(), Fr::zero(), Fr::zero(), Fr::zero()];
 		let (_, message_hashes) =
 			calculate_message_hash::<NUM_NEIGHBOURS, 1>(pks.to_vec(), vec![scores.to_vec()]);
@@ -708,9 +740,10 @@ mod test {
 		set.update_op(pk2, op2);
 		set.update_op(pk3, op3);
 
-		let invalid_peers = set.filter_invalid_peers();
+		let (direct_invalid_peer_indices, indirect_invalid_peer_indices) =
+			set.filter_invalid_peers();
 		assert!(
-			invalid_peers.len() == 3,
+			direct_invalid_peer_indices.len() + indirect_invalid_peer_indices.len() == 3,
 			"Should filter out all peers as invalid"
 		);
 	}
