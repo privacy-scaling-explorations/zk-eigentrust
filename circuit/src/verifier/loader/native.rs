@@ -28,8 +28,18 @@ pub struct NativeLoader<C: CurveAffine, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 {
-	_c: PhantomData<C>,
-	_p: PhantomData<P>,
+	pub(crate) _c: PhantomData<C>,
+	pub(crate) _p: PhantomData<P>,
+}
+
+impl<C: CurveAffine, P> NativeLoader<C, P>
+where
+	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+{
+	/// Construct a new LScalar
+	pub fn new() -> Self {
+		Self { _c: PhantomData, _p: PhantomData }
+	}
 }
 
 #[derive(Debug, Default, Clone, PartialEq)]

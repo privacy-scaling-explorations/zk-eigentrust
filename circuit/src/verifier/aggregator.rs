@@ -25,7 +25,7 @@ use crate::{
 	},
 	params::poseidon_bn254_5x5::Params,
 	poseidon::{sponge::PoseidonSpongeConfig, PoseidonConfig},
-	Chip, CommonConfig, RegionCtx,
+	Chip, CommonConfig, RegionCtx, ADVICE,
 };
 use halo2::{
 	circuit::{Layouter, Region, SimpleFloorPlanner, Value},
@@ -226,30 +226,36 @@ impl Circuit<Fr> for Aggregator {
 			let protocol = snark.protocol.loaded(&loader_config);
 			let mut transcript_read: PoseidonReadChipset<&[u8], G1Affine, _, Bn256_4_68, Params> =
 				PoseidonReadChipset::new(snark.proof.as_slice(), loader_config.clone());
-			let mut instances: Vec<Vec<Halo2LScalar<G1Affine, _, Bn256_4_68>>> = Vec::new();
 
 			let mut lb = layouter_rc.lock().unwrap();
+			let mut instances: Vec<Vec<Halo2LScalar<G1Affine, _, Bn256_4_68>>> = Vec::new();
+			let mut instance_collector: Vec<Halo2LScalar<G1Affine, _, Bn256_4_68>> = Vec::new();
+			let instance_flatten =
+				snark.instances.clone().into_iter().flatten().collect::<Vec<Fr>>();
+			let mut instance_chunks = instance_flatten.chunks(ADVICE);
 			lb.assign_region(
 				|| "assign_instances",
 				|region: Region<'_, Fr>| {
 					let mut ctx = RegionCtx::new(region, 0);
-					for i in 0..snark.instances.len() {
-						for j in 0..snark.instances[i].len() {
-							let assigned = ctx.assign_advice(
-								config.common.advice[0],
-								Value::known(snark.instances[i][j]),
-							)?;
-							// Check the correctness of the ctx.next()
-							// TODO: Flatten the array and split it into chunks with the size of
-							// advice columns length and assign values to each advice column
-							ctx.next();
-							let new = Halo2LScalar::new(assigned, loader_config.clone());
-							instances[i].push(new);
+					for _ in 0..instance_chunks.len() {
+						let chunk = instance_chunks.next().unwrap();
+						for i in 0..chunk.len() {
+							let assigned =
+								ctx.assign_advice(config.common.advice[i], Value::known(chunk[i]))?;
+							let lscalar = Halo2LScalar::new(assigned, loader_config.clone());
+							instance_collector.push(lscalar);
 						}
+						ctx.next();
 					}
 					Ok(())
 				},
 			)?;
+			// TODO: Check if it is a square 2D vector or not
+			for i in 0..snark.instances.len() {
+				for j in 0..snark.instances[i].len() {
+					instances[i].push(instance_collector[j].clone());
+				}
+			}
 			// Drop the layouter reference
 			drop(lb);
 

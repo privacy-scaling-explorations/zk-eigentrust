@@ -7,7 +7,7 @@ use crate::{
 	Chipset, CommonConfig, RegionCtx,
 };
 use halo2::{
-	circuit::{AssignedCell, Layouter, Region, Value},
+	circuit::{AssignedCell, Layouter, Region},
 	halo2curves::{Coordinates, CurveAffine},
 };
 use native::{NUM_BITS, NUM_LIMBS};
@@ -56,7 +56,6 @@ where
 	) -> Self {
 		let binding = layouter.clone();
 		let mut layouter_reg = binding.lock().unwrap();
-		// TODO: Assign aux_init and aux_fin to fixed columns for security reasons
 		let (aux_init_x_limbs, aux_init_y_limbs, aux_fin_x_limbs, aux_fin_y_limbs) = layouter_reg
 			.assign_region(
 				|| "aux",
@@ -67,13 +66,12 @@ where
 					let mut init_y_limbs: [Option<AssignedCell<C::Scalar, C::Scalar>>; NUM_LIMBS] =
 						[(); NUM_LIMBS].map(|_| None);
 					for i in 0..NUM_LIMBS {
-						let x =
-							ctx.assign_advice(common.advice[i], Value::known(P::to_add_x()[i]))?;
-						let y = ctx.assign_advice(
-							common.advice[i + NUM_LIMBS],
-							Value::known(P::to_add_y()[i]),
-						)?;
+						let x = ctx.assign_fixed(common.fixed[i], P::to_add_x()[i])?;
 						init_x_limbs[i] = Some(x);
+					}
+					ctx.next();
+					for i in 0..NUM_LIMBS {
+						let y = ctx.assign_fixed(common.fixed[i], P::to_add_y()[i])?;
 						init_y_limbs[i] = Some(y);
 					}
 
@@ -83,14 +81,13 @@ where
 					let mut fin_y_limbs: [Option<AssignedCell<C::Scalar, C::Scalar>>; NUM_LIMBS] =
 						[(); NUM_LIMBS].map(|_| None);
 					for i in 0..NUM_LIMBS {
-						let x =
-							ctx.assign_advice(common.advice[i], Value::known(P::to_sub_x()[i]))?;
-						let y = ctx.assign_advice(
-							common.advice[i + NUM_LIMBS],
-							Value::known(P::to_sub_y()[i]),
-						)?;
+						let x = ctx.assign_fixed(common.fixed[i], P::to_sub_x()[i])?;
 
 						fin_x_limbs[i] = Some(x);
+					}
+					ctx.next();
+					for i in 0..NUM_LIMBS {
+						let y = ctx.assign_fixed(common.fixed[i], P::to_sub_y()[i])?;
 						fin_y_limbs[i] = Some(y);
 					}
 
@@ -531,7 +528,6 @@ where
 		let x = Integer::from_w(coords.x().clone());
 		let y = Integer::from_w(coords.y().clone());
 		let mut layouter = self.layouter.lock().unwrap();
-		// TODO: Assignt to fixed column
 		let (x_limbs, y_limbs) = layouter
 			.assign_region(
 				|| "assign_limbs",
@@ -542,17 +538,13 @@ where
 					let mut y_limbs: [Option<AssignedCell<C::Scalar, C::Scalar>>; NUM_LIMBS] =
 						[(); NUM_LIMBS].map(|_| None);
 					for i in 0..NUM_LIMBS {
-						x_limbs[i] = Some(
-							ctx.assign_advice(self.common.advice[i], Value::known(x.limbs[i]))
-								.unwrap(),
-						);
-						y_limbs[i] = Some(
-							ctx.assign_advice(
-								self.common.advice[i + NUM_LIMBS],
-								Value::known(y.limbs[i]),
-							)
-							.unwrap(),
-						);
+						x_limbs[i] =
+							Some(ctx.assign_fixed(self.common.fixed[i], x.limbs[i]).unwrap());
+					}
+					ctx.next();
+					for i in 0..NUM_LIMBS {
+						y_limbs[i] =
+							Some(ctx.assign_fixed(self.common.fixed[i], y.limbs[i]).unwrap());
 					}
 					Ok((x_limbs.map(|x| x.unwrap()), y_limbs.map(|x| x.unwrap())))
 				},
@@ -597,8 +589,6 @@ where
 		)],
 	) -> Self::LoadedEcPoint {
 		let config = pairs[0].1.loader.clone();
-		let mut layouter = pairs[0].1.loader.layouter.lock().unwrap();
-		let mut layouter_2 = pairs[1].1.loader.layouter.lock().unwrap();
 		let auxes = pairs[0].1.loader.auxes.clone();
 		let (aux_init, aux_fin) = auxes;
 
@@ -606,6 +596,7 @@ where
 			.iter()
 			.cloned()
 			.map(|(scalar, base)| {
+				let mut layouter = scalar.loader.layouter.lock().unwrap();
 				let chip = EccMulChipset::new(
 					base.inner.clone(),
 					scalar.inner.clone(),
@@ -619,23 +610,22 @@ where
 						layouter.namespace(|| "ecc_mul"),
 					)
 					.unwrap();
-				mul
-				// TODO: instead of returning AssignedPoint, return
-				// LoadedEcPoint
+				Halo2LEcPoint::new(mul, config.clone())
 			})
 			.reduce(|acc, value| {
-				let chip = EccAddChipset::new(acc.clone(), value.clone());
+				let mut layouter = value.loader.layouter.lock().unwrap();
+				let chip = EccAddChipset::new(acc.inner.clone(), value.inner.clone());
 				let add = chip
 					.synthesize(
 						&config.common,
 						&config.ecc_mul_scalar.add,
-						layouter_2.namespace(|| "ecc_add"),
+						layouter.namespace(|| "ecc_add"),
 					)
 					.unwrap();
-				add
+				Halo2LEcPoint::new(add, config.clone())
 			})
 			.unwrap();
-		Halo2LEcPoint::new(point, config)
+		point
 	}
 }
 
@@ -644,5 +634,161 @@ impl<C: CurveAffine, L: Layouter<C::Scalar>, P> Loader<C> for LoaderConfig<C, L,
 {
 }
 
-// TODO: Write tests to compare native and halo2 version
-// - multi_scalar_multiplication
+#[cfg(test)]
+mod test {
+
+	use std::{rc::Rc, sync::Mutex};
+
+	use super::{
+		native::{LEcPoint, LScalar, NativeLoader, NUM_BITS, NUM_LIMBS},
+		LoaderConfig,
+	};
+	use crate::{
+		circuit::{FullRoundHasher, PartialRoundHasher},
+		ecc::{
+			native::EcPoint, EccAddConfig, EccDoubleConfig, EccMulConfig, EccTableSelectConfig,
+			EccUnreducedLadderConfig,
+		},
+		gadgets::{
+			absorb::AbsorbChip,
+			bits2num::Bits2NumChip,
+			main::{MainChip, MainConfig},
+		},
+		integer::{
+			native::Integer, rns::Bn256_4_68, IntegerAddChip, IntegerDivChip, IntegerMulChip,
+			IntegerReduceChip, IntegerSubChip,
+		},
+		poseidon::{sponge::PoseidonSpongeConfig, PoseidonConfig},
+		verifier::transcript::native::WIDTH,
+		Chip, CommonConfig, RegionCtx,
+	};
+	use halo2::{
+		arithmetic::Field,
+		circuit::{Layouter, Region, SimpleFloorPlanner},
+		dev::MockProver,
+		halo2curves::bn256::{Fq, Fr, G1Affine},
+		plonk::{Circuit, ConstraintSystem, Error},
+	};
+	use rand::thread_rng;
+	use snark_verifier::loader::EcPointLoader;
+
+	type C = G1Affine;
+	type P = Bn256_4_68;
+	type Scalar = Fr;
+	type Base = Fq;
+	#[derive(Clone)]
+	struct TestConfig {
+		common: CommonConfig,
+		main: MainConfig,
+		poseidon_sponge: PoseidonSpongeConfig,
+		ecc_mul_scalar: EccMulConfig,
+	}
+
+	#[derive(Clone)]
+	struct TestCircuit {
+		pairs: Vec<(LScalar<C, P>, LEcPoint<C, P>)>,
+	}
+
+	impl TestCircuit {
+		fn new(pairs: Vec<(LScalar<C, P>, LEcPoint<C, P>)>) -> Self {
+			Self { pairs }
+		}
+	}
+
+	impl Circuit<Scalar> for TestCircuit {
+		type Config = TestConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			self.clone()
+		}
+
+		fn configure(meta: &mut ConstraintSystem<Scalar>) -> TestConfig {
+			let common = CommonConfig::new(meta);
+			let main_selector = MainChip::configure(&common, meta);
+			let main = MainConfig::new(main_selector);
+
+			let full_round_selector = FullRoundHasher::configure(&common, meta);
+			let partial_round_selector = PartialRoundHasher::configure(&common, meta);
+			let poseidon = PoseidonConfig::new(full_round_selector, partial_round_selector);
+
+			let absorb_selector = AbsorbChip::<Scalar, WIDTH>::configure(&common, meta);
+			let poseidon_sponge = PoseidonSpongeConfig::new(poseidon.clone(), absorb_selector);
+
+			let bits2num = Bits2NumChip::configure(&common, meta);
+
+			let int_red =
+				IntegerReduceChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
+			let int_add =
+				IntegerAddChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
+			let int_sub =
+				IntegerSubChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
+			let int_mul =
+				IntegerMulChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
+			let int_div =
+				IntegerDivChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
+
+			let ladder = EccUnreducedLadderConfig::new(int_add, int_sub, int_mul, int_div);
+			let add = EccAddConfig::new(int_red, int_sub, int_mul, int_div);
+			let double = EccDoubleConfig::new(int_red, int_add, int_sub, int_mul, int_div);
+			let table_select = EccTableSelectConfig::new(main.clone());
+			let ecc_mul_scalar = EccMulConfig::new(ladder, add, double, table_select, bits2num);
+			TestConfig { common, main, poseidon_sponge, ecc_mul_scalar }
+		}
+
+		fn synthesize(
+			&self, config: TestConfig, mut layouter: impl Layouter<Scalar>,
+		) -> Result<(), Error> {
+			let layouter_rc = Rc::new(Mutex::new(layouter.namespace(|| "loader")));
+			let loader_config = LoaderConfig::<C, _, P>::new(
+				layouter_rc.clone(),
+				config.common.clone(),
+				config.ecc_mul_scalar,
+				config.main,
+				config.poseidon_sponge,
+			);
+
+			let mut lb = layouter_rc.lock().unwrap();
+			lb.assign_region(
+				|| "assign_pairs",
+				|region: Region<'_, Scalar>| {
+					let mut ctx = RegionCtx::new(region, 0);
+					Ok(())
+				},
+			)?;
+			Ok(())
+		}
+	}
+
+	#[test]
+	fn test_multi_scalar_multiplication() {
+		// Testing MSM
+		let rng = &mut thread_rng();
+		let loader = NativeLoader::<C, P>::new();
+		let mut pairs: Vec<(LScalar<C, P>, LEcPoint<C, P>)> = Vec::new();
+		for _ in 0..3 {
+			let x = Integer::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::from_n(Scalar::random(
+				rng.clone(),
+			));
+			let y = Integer::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::from_n(Scalar::random(
+				rng.clone(),
+			));
+			let points = EcPoint::new(x, y);
+			let scalar = LScalar::new(Scalar::random(rng.clone()), loader.clone());
+			let ec_point = LEcPoint::new(points, loader.clone());
+			pairs.push((scalar, ec_point));
+		}
+		let borrowed_pairs: Vec<(&LScalar<C, P>, &LEcPoint<C, P>)> =
+			pairs.iter().map(|x| (&x.0, &x.1)).collect();
+		let res = NativeLoader::multi_scalar_multiplication(borrowed_pairs.as_slice());
+
+		let mut p_ins = Vec::new();
+		p_ins.extend(res.inner.x.limbs);
+		p_ins.extend(res.inner.y.limbs);
+		let circuit = TestCircuit::new(pairs);
+		let k = 9;
+		let prover = MockProver::run(k, &circuit, vec![p_ins]).unwrap();
+
+		//assert_eq!(prover.verify(), Ok(()));
+	}
+}
