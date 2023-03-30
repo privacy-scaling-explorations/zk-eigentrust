@@ -591,12 +591,12 @@ where
 		let config = pairs[0].1.loader.clone();
 		let auxes = pairs[0].1.loader.auxes.clone();
 		let (aux_init, aux_fin) = auxes;
-
 		let point = pairs
 			.iter()
 			.cloned()
 			.map(|(scalar, base)| {
-				let mut layouter = scalar.loader.layouter.lock().unwrap();
+				// TODO: program stucks here somehow, try to fix it.
+				let mut layouter = base.loader.layouter.lock().unwrap();
 				let chip = EccMulChipset::new(
 					base.inner.clone(),
 					scalar.inner.clone(),
@@ -636,18 +636,15 @@ impl<C: CurveAffine, L: Layouter<C::Scalar>, P> Loader<C> for LoaderConfig<C, L,
 
 #[cfg(test)]
 mod test {
-
-	use std::{rc::Rc, sync::Mutex};
-
 	use super::{
 		native::{LEcPoint, LScalar, NativeLoader, NUM_BITS, NUM_LIMBS},
-		LoaderConfig,
+		Halo2LEcPoint, Halo2LScalar, LoaderConfig,
 	};
 	use crate::{
 		circuit::{FullRoundHasher, PartialRoundHasher},
 		ecc::{
-			native::EcPoint, EccAddConfig, EccDoubleConfig, EccMulConfig, EccTableSelectConfig,
-			EccUnreducedLadderConfig,
+			native::EcPoint, AssignedPoint, EccAddConfig, EccDoubleConfig, EccMulConfig,
+			EccTableSelectConfig, EccUnreducedLadderConfig,
 		},
 		gadgets::{
 			absorb::AbsorbChip,
@@ -655,8 +652,8 @@ mod test {
 			main::{MainChip, MainConfig},
 		},
 		integer::{
-			native::Integer, rns::Bn256_4_68, IntegerAddChip, IntegerDivChip, IntegerMulChip,
-			IntegerReduceChip, IntegerSubChip,
+			native::Integer, rns::Bn256_4_68, AssignedInteger, IntegerAddChip, IntegerDivChip,
+			IntegerMulChip, IntegerReduceChip, IntegerSubChip,
 		},
 		poseidon::{sponge::PoseidonSpongeConfig, PoseidonConfig},
 		verifier::transcript::native::WIDTH,
@@ -664,13 +661,14 @@ mod test {
 	};
 	use halo2::{
 		arithmetic::Field,
-		circuit::{Layouter, Region, SimpleFloorPlanner},
+		circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner, Value},
 		dev::MockProver,
 		halo2curves::bn256::{Fq, Fr, G1Affine},
 		plonk::{Circuit, ConstraintSystem, Error},
 	};
 	use rand::thread_rng;
 	use snark_verifier::loader::EcPointLoader;
+	use std::{rc::Rc, sync::Mutex};
 
 	type C = G1Affine;
 	type P = Bn256_4_68;
@@ -748,14 +746,68 @@ mod test {
 				config.poseidon_sponge,
 			);
 
+			let mut assigned_pairs: Vec<(Halo2LScalar<C, _, P>, Halo2LEcPoint<C, _, P>)> =
+				Vec::new();
 			let mut lb = layouter_rc.lock().unwrap();
 			lb.assign_region(
 				|| "assign_pairs",
 				|region: Region<'_, Scalar>| {
 					let mut ctx = RegionCtx::new(region, 0);
+					for i in 0..self.pairs.len() {
+						let assigned_scalar = ctx.assign_advice(
+							config.common.advice[0],
+							Value::known(self.pairs[i].0.inner),
+						)?;
+						ctx.next();
+						let halo2_scalar =
+							Halo2LScalar::new(assigned_scalar, loader_config.clone());
+
+						let mut x_limbs: [Option<AssignedCell<Scalar, Scalar>>; NUM_LIMBS] =
+							[(); NUM_LIMBS].map(|_| None);
+						let mut y_limbs: [Option<AssignedCell<Scalar, Scalar>>; NUM_LIMBS] =
+							[(); NUM_LIMBS].map(|_| None);
+						for j in 0..NUM_LIMBS {
+							x_limbs[j] = Some(ctx.assign_advice(
+								config.common.advice[j],
+								Value::known(self.pairs[i].1.inner.x.limbs[j]),
+							)?);
+							y_limbs[j] = Some(ctx.assign_advice(
+								config.common.advice[j + NUM_LIMBS],
+								Value::known(self.pairs[i].1.inner.y.limbs[j]),
+							)?);
+						}
+						ctx.next();
+						let x_limbs = x_limbs.map(|x| x.unwrap());
+						let y_limbs = y_limbs.map(|x| x.unwrap());
+
+						let x = AssignedInteger::new(self.pairs[i].1.inner.x.clone(), x_limbs);
+						let y = AssignedInteger::new(self.pairs[i].1.inner.y.clone(), y_limbs);
+
+						let assigned_point = AssignedPoint::new(x, y);
+						let halo2_point = Halo2LEcPoint::new(assigned_point, loader_config.clone());
+						assigned_pairs.push((halo2_scalar, halo2_point));
+					}
 					Ok(())
 				},
 			)?;
+
+			let borrowed_pairs: Vec<(&Halo2LScalar<C, _, P>, &Halo2LEcPoint<C, _, P>)> =
+				assigned_pairs.iter().map(|x| (&x.0, &x.1)).collect();
+			let res = LoaderConfig::multi_scalar_multiplication(borrowed_pairs.as_slice());
+
+			for i in 0..NUM_LIMBS {
+				lb.constrain_instance(
+					res.inner.clone().x.limbs[i].cell(),
+					config.common.instance,
+					i,
+				)?;
+				lb.constrain_instance(
+					res.inner.clone().y.limbs[i].cell(),
+					config.common.instance,
+					i + NUM_LIMBS,
+				)?;
+			}
+
 			Ok(())
 		}
 	}
@@ -789,6 +841,6 @@ mod test {
 		let k = 9;
 		let prover = MockProver::run(k, &circuit, vec![p_ins]).unwrap();
 
-		//assert_eq!(prover.verify(), Ok(()));
+		assert_eq!(prover.verify(), Ok(()));
 	}
 }

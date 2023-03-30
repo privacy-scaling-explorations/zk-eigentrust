@@ -36,7 +36,7 @@ impl<C: CurveAffine, P> NativeLoader<C, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 {
-	/// Construct a new LScalar
+	/// Construct a new NativeLoader
 	pub fn new() -> Self {
 		Self { _c: PhantomData, _p: PhantomData }
 	}
