@@ -588,6 +588,7 @@ where
 			&Self::LoadedEcPoint,
 		)],
 	) -> Self::LoadedEcPoint {
+		// TODO: Define config and aux inside the iteratior
 		let config = pairs[0].1.loader.clone();
 		let auxes = pairs[0].1.loader.auxes.clone();
 		let (aux_init, aux_fin) = auxes;
