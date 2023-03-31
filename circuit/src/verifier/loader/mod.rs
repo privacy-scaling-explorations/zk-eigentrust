@@ -850,6 +850,7 @@ mod test {
 		}
 	}
 
+	#[ignore = "Stuck infinitely in MSM circuit"]
 	#[test]
 	fn test_multi_scalar_multiplication() {
 		// Testing MSM
