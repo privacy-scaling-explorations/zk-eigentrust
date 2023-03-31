@@ -1,4 +1,7 @@
-use crate::{Chip, CommonConfig, RegionCtx};
+use crate::{
+	utils::{assigned_to_field, field_to_bits, field_to_bits_vec},
+	Chip, CommonConfig, RegionCtx,
+};
 use halo2::{
 	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region, Value},
@@ -17,8 +20,17 @@ pub struct Bits2NumChip<F: FieldExt> {
 
 impl<F: FieldExt> Bits2NumChip<F> {
 	/// Create a new chip.
-	pub fn new(value: AssignedCell<F, F>, bits: Vec<F>) -> Self {
-		let bit_vals = bits.into_iter().map(Value::known).collect();
+	pub fn new_exact<const B: usize>(value: AssignedCell<F, F>) -> Self {
+		let fe = assigned_to_field(value.clone());
+		let bits = field_to_bits::<_, B>(fe);
+		let bit_vals = bits.map(|x| Value::known(x)).to_vec();
+		Self { value, bits: bit_vals }
+	}
+
+	/// Create a new chip.
+	pub fn new(value: AssignedCell<F, F>) -> Self {
+		let fe = assigned_to_field(value.clone());
+		let bit_vals = field_to_bits_vec(fe).iter().map(|&x| Value::known(x)).collect();
 		Self { value, bits: bit_vals }
 	}
 }
@@ -105,7 +117,7 @@ impl<F: FieldExt> Chip<F> for Bits2NumChip<F> {
 mod test {
 	use super::*;
 	use crate::{
-		utils::{generate_params, prove_and_verify, to_bits},
+		utils::{generate_params, prove_and_verify},
 		CommonConfig,
 	};
 	use halo2::{
@@ -124,12 +136,11 @@ mod test {
 	#[derive(Clone)]
 	struct TestCircuit<const B: usize> {
 		numba: Fr,
-		bytes: [u8; 32],
 	}
 
 	impl<const B: usize> TestCircuit<B> {
-		fn new(x: Fr, y: [u8; 32]) -> Self {
-			Self { numba: x, bytes: y }
+		fn new(x: Fr) -> Self {
+			Self { numba: x }
 		}
 	}
 
@@ -160,8 +171,7 @@ mod test {
 				},
 			)?;
 
-			let bits = to_bits::<B>(self.bytes).map(|b| Fr::from(b));
-			let bits2num = Bits2NumChip::new(numba, bits.to_vec());
+			let bits2num = Bits2NumChip::new_exact::<B>(numba);
 			let _ = bits2num.synthesize(
 				&config.common,
 				&config.bits2num_selector,
@@ -176,12 +186,8 @@ mod test {
 	fn test_bits_to_num() {
 		// Testing field element 0x01234567890abcdef.
 		let numba = Fr::from(1311768467294899695u64);
-		let numba_bytes = [
-			239, 205, 171, 144, 120, 86, 52, 18, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-			0, 0, 0, 0, 0, 0, 0,
-		];
 
-		let circuit = TestCircuit::<256>::new(numba, numba_bytes);
+		let circuit = TestCircuit::<256>::new(numba);
 		let k = 9;
 		let prover = MockProver::run(k, &circuit, vec![vec![]]).unwrap();
 
@@ -192,12 +198,8 @@ mod test {
 	fn test_bits_to_num_big() {
 		// Testing biggest value in the field.
 		let numba = Fr::zero().sub(&Fr::one());
-		let numba_bytes = [
-			0, 0, 0, 240, 147, 245, 225, 67, 145, 112, 185, 121, 72, 232, 51, 40, 93, 88, 129, 129,
-			182, 69, 80, 184, 41, 160, 49, 225, 114, 78, 100, 48,
-		];
 
-		let circuit = TestCircuit::<256>::new(numba, numba_bytes);
+		let circuit = TestCircuit::<256>::new(numba);
 		let k = 9;
 		let prover = MockProver::run(k, &circuit, vec![vec![]]).unwrap();
 
@@ -207,12 +209,7 @@ mod test {
 	#[test]
 	fn test_bits_to_num_big_plus() {
 		// Testing biggest value in the field + 1.
-		let numba_bytes = [
-			1, 0, 0, 240, 147, 245, 225, 67, 145, 112, 185, 121, 72, 232, 51, 40, 93, 88, 129, 129,
-			182, 69, 80, 184, 41, 160, 49, 225, 114, 78, 100, 48,
-		];
-
-		let circuit = TestCircuit::<256>::new(Fr::zero(), numba_bytes);
+		let circuit = TestCircuit::<256>::new(Fr::zero());
 		let k = 9;
 		let prover = MockProver::run(k, &circuit, vec![vec![]]).unwrap();
 
@@ -222,7 +219,7 @@ mod test {
 	#[test]
 	fn test_bits_to_num_zero_bits() {
 		// Testing zero as value with 0 bits.
-		let circuit = TestCircuit::<0>::new(Fr::zero(), [0; 32]);
+		let circuit = TestCircuit::<0>::new(Fr::zero());
 		let k = 9;
 		let prover = MockProver::run(k, &circuit, vec![vec![]]).unwrap();
 
@@ -232,7 +229,7 @@ mod test {
 	#[test]
 	fn test_bits_to_num_zero_value() {
 		// Testing zero as value with 254 bits.
-		let circuit = TestCircuit::<254>::new(Fr::zero(), [0; 32]);
+		let circuit = TestCircuit::<254>::new(Fr::zero());
 		let k = 9;
 		let prover = MockProver::run(k, &circuit, vec![vec![]]).unwrap();
 
@@ -242,12 +239,7 @@ mod test {
 	#[test]
 	fn test_bits_to_num_production() {
 		let numba = Fr::from(1311768467294899695u64);
-		let numba_bytes = [
-			239, 205, 171, 144, 120, 86, 52, 18, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-			0, 0, 0, 0, 0, 0, 0,
-		];
-
-		let circuit = TestCircuit::<256>::new(numba, numba_bytes);
+		let circuit = TestCircuit::<256>::new(numba);
 		let k = 9;
 		let rng = &mut rand::thread_rng();
 		let params = generate_params(k);

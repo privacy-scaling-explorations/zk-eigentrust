@@ -373,14 +373,13 @@ impl StrictScalarMulConfig {
 pub struct StrictScalarMulChipset<F: FieldExt, P: EdwardsParams<F>> {
 	e: AssignedPoint<F>,
 	value: AssignedCell<F, F>,
-	value_bits: Vec<F>,
 	_params: PhantomData<P>,
 }
 
 impl<F: FieldExt, P: EdwardsParams<F>> StrictScalarMulChipset<F, P> {
 	/// Construct a new chipset
-	pub fn new(e: AssignedPoint<F>, value: AssignedCell<F, F>, value_bits: Vec<F>) -> Self {
-		Self { e, value, value_bits, _params: PhantomData }
+	pub fn new(e: AssignedPoint<F>, value: AssignedCell<F, F>) -> Self {
+		Self { e, value, _params: PhantomData }
 	}
 }
 
@@ -391,7 +390,7 @@ impl<F: FieldExt, P: EdwardsParams<F>> Chipset<F> for StrictScalarMulChipset<F, 
 	fn synthesize(
 		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
-		let bits2num_chip = Bits2NumChip::new(self.value, self.value_bits);
+		let bits2num_chip = Bits2NumChip::new(self.value);
 		let bits = bits2num_chip.synthesize(
 			common,
 			&config.bits2num_selector,
@@ -414,7 +413,7 @@ mod test {
 	use super::*;
 	use crate::{
 		edwards::{native::Point, params::BabyJubJub},
-		utils::{generate_params, prove_and_verify, to_bits},
+		utils::{field_to_bits, generate_params, prove_and_verify},
 		CommonConfig,
 	};
 	use halo2::{
@@ -522,7 +521,7 @@ mod test {
 						|region: Region<'_, Fr>| {
 							let mut ctx = RegionCtx::new(region, 0);
 							const NUM_BITS: usize = 256;
-							let bits = to_bits::<NUM_BITS>(self.inputs[3].to_bytes()).map(Fr::from);
+							let bits = field_to_bits::<Fr, NUM_BITS>(self.inputs[3]).map(Fr::from);
 							let mut items = Vec::new();
 							for i in 0..NUM_BITS {
 								let val = Value::known(bits[i]);
@@ -622,7 +621,7 @@ mod test {
 		let (r_x, r_y) = BabyJubJub::b8();
 		let r_point = Point::<Fr, BabyJubJub>::new(r_x, r_y);
 		let r = r_point.projective();
-		let res = r_point.mul_scalar(&scalar.to_bytes());
+		let res = r_point.mul_scalar(scalar);
 		let circuit = TestCircuit::new([r.x, r.y, r.z, scalar], Gadgets::ScalarMul);
 
 		let k = 11;
@@ -638,7 +637,7 @@ mod test {
 		let (r_x, r_y) = BabyJubJub::b8();
 		let r_point = Point::<Fr, BabyJubJub>::new(r_x, r_y);
 		let r = r_point.projective();
-		let res = r_point.mul_scalar(&scalar.to_bytes());
+		let res = r_point.mul_scalar(scalar);
 		let circuit = TestCircuit::new([r.x, r.y, r.z, scalar], Gadgets::ScalarMul);
 
 		let k = 11;
@@ -654,7 +653,7 @@ mod test {
 		let (r_x, r_y) = BabyJubJub::b8();
 		let r_point = Point::<Fr, BabyJubJub>::new(r_x, r_y);
 		let r = r_point.projective();
-		let res = r_point.mul_scalar(&scalar.to_bytes());
+		let res = r_point.mul_scalar(scalar);
 		let circuit = TestCircuit::new([r.x, r.y, r.z, scalar], Gadgets::ScalarMul);
 
 		let k = 11;
@@ -669,7 +668,7 @@ mod test {
 		let (r_x, r_y) = BabyJubJub::b8();
 		let r_point = Point::<Fr, BabyJubJub>::new(r_x, r_y);
 		let r = r_point.projective();
-		let res = r_point.mul_scalar(&scalar.to_bytes());
+		let res = r_point.mul_scalar(scalar);
 		let circuit = TestCircuit::new([r.x, r.y, r.z, scalar], Gadgets::ScalarMul);
 
 		let k = 11;

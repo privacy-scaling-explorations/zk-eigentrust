@@ -91,7 +91,6 @@ pub fn generate_et_verifier() {
 		pub_keys.to_vec(),
 		signatures,
 		ops,
-		messages,
 	);
 
 	let k = 14;

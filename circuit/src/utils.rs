@@ -137,13 +137,40 @@ pub fn assigned_as_bool<F: FieldExt>(bit: AssignedCell<F, F>) -> bool {
 	is_one
 }
 
+/// Returns field value from the assigned cell value
+pub fn assigned_to_field<F: FieldExt>(cell: AssignedCell<F, F>) -> F {
+	let cell_value = cell.value();
+	let mut arr = F::zero();
+	cell_value.map(|f| {
+		arr = *f;
+	});
+	arr
+}
+
 /// Converts given bytes to the bits.
-pub fn to_bits<const B: usize>(num: [u8; 32]) -> [bool; B] {
-	let mut bits = [false; B];
-	for i in 0..B {
-		bits[i] = num[i / 8] & (1 << (i % 8)) != 0;
+pub fn to_bits(num: &[u8]) -> Vec<bool> {
+	let len = num.len() * 8;
+	let mut bits = Vec::new();
+	for i in 0..len {
+		let bit = num[i / 8] & (1 << (i % 8)) != 0;
+		bits.push(bit);
 	}
 	bits
+}
+
+/// Converts given field element to the bits.
+pub fn field_to_bits_vec<F: FieldExt>(num: F) -> Vec<F> {
+	let bits = to_bits(num.to_repr().as_ref());
+	let sliced_bits = bits[..F::NUM_BITS as usize].to_vec();
+	sliced_bits.iter().map(|&x| F::from(x)).collect()
+}
+
+/// Converts given field element to the bits.
+pub fn field_to_bits<F: FieldExt, const B: usize>(num: F) -> [F; B] {
+	let bits = to_bits(num.to_repr().as_ref());
+	let sliced_bits = bits[..B].to_vec();
+	let vec: Vec<F> = sliced_bits.iter().map(|&x| F::from(x)).collect();
+	vec.try_into().unwrap()
 }
 
 /// Convert bytes array to a wide representation of 64 bytes
@@ -311,9 +338,8 @@ pub fn power_of_two<F: FieldExt>(n: usize) -> F {
 /// Get the little-endian bits array of [`Field`] element
 pub fn fe_to_le_bits<F: FieldExt>(e: F) -> Vec<bool> {
 	let le_bytes = fe_to_big(e).to_bytes_le();
-	let short_le_bytes = to_short(&le_bytes);
-	let le_bits: [bool; 256] = to_bits(short_le_bytes);
-	le_bits.to_vec()
+	let le_bits = to_bits(&le_bytes);
+	le_bits
 }
 
 /// Returns modulus of the [`FieldExt`] as [`BigUint`].

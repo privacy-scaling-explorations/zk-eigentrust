@@ -3,6 +3,7 @@ use halo2::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
 /// Constructs objects.
+#[derive(Clone)]
 pub struct PoseidonSponge<F: FieldExt, const WIDTH: usize, P>
 where
 	P: RoundParams<F, WIDTH>,
