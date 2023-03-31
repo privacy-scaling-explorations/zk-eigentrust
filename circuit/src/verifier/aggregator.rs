@@ -66,14 +66,18 @@ type SVK = KzgSuccinctVerifyingKey<G1Affine>;
 // 	proof: Value<Vec<u8>>,
 // }
 
-/// Snark witness structure
+/// Snark structure
 pub struct Snark {
+	// Protocol
 	protocol: PlonkProtocol<G1Affine>,
+	// Instances
 	instances: Vec<Vec<Fr>>,
+	// Proof
 	proof: Vec<u8>,
 }
 
 impl Snark {
+	/// Create a new Snark
 	fn new<C: Circuit<Fr>, R: RngCore>(
 		params: &ParamsKZG<Bn256>, circuit: C, instances: Vec<Vec<Fr>>, rng: &mut R,
 	) -> Self {
@@ -101,13 +105,18 @@ impl Snark {
 }
 
 struct Aggregator {
+	// Succinct Verifying Key
 	svk: SVK,
+	// Snarks for the aggregation
 	snarks: Vec<Snark>,
+	// Instances
 	instances: Vec<Fr>,
+	// Accumulation Scheme Proof
 	as_proof: Vec<u8>,
 }
 
 impl Clone for Aggregator {
+	/// Returns a copy of the value.
 	fn clone(&self) -> Self {
 		Self {
 			svk: self.svk.clone(),
@@ -119,6 +128,7 @@ impl Clone for Aggregator {
 }
 
 impl Aggregator {
+	/// Create a new aggregator.
 	pub fn new(params: &ParamsKZG<Bn256>, snarks: Vec<Snark>) -> Self {
 		let svk = params.get_g()[0].into();
 
@@ -155,8 +165,10 @@ impl Aggregator {
 	}
 }
 
+/// AggregatorConfig structure
 #[derive(Clone)]
 struct AggregatorConfig {
+	// Configurations for the needed circuit configs.
 	pub(crate) common: CommonConfig,
 	pub(crate) main: MainConfig,
 	pub(crate) poseidon_sponge: PoseidonSpongeConfig,
@@ -167,13 +179,14 @@ impl Circuit<Fr> for Aggregator {
 	type Config = AggregatorConfig;
 	type FloorPlanner = SimpleFloorPlanner;
 
+	/// Returns a copy of this circuit with no witness values
 	fn without_witnesses(&self) -> Self {
 		// TODO: Return Value::unknown() for each value, after Implementing
 		// SnarkWitness
 		Self::clone(self)
 	}
 
-	/// Configure
+	/// Configure the circuit.
 	fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
 		let common = CommonConfig::new(meta);
 		let main_selector = MainChip::configure(&common, meta);

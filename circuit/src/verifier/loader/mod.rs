@@ -27,20 +27,24 @@ use std::{
 /// Native version of the loader
 pub mod native;
 
-/// LoaderConfig
+/// LoaderConfig structure
 pub struct LoaderConfig<C: CurveAffine, L: Layouter<C::Scalar>, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 {
+	// Layouter
 	pub(crate) layouter: Rc<Mutex<L>>,
+	// Configurations for the needed circuit configs.
 	pub(crate) common: CommonConfig,
 	pub(crate) ecc_mul_scalar: EccMulConfig,
 	pub(crate) main: MainConfig,
 	pub(crate) poseidon_sponge: PoseidonSpongeConfig,
+	// Aux_init and Aux_fin for the ecc_mul operation
 	pub(crate) auxes: (
 		AssignedPoint<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS, P>,
 		AssignedPoint<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS, P>,
 	),
+	// PhantomData
 	_curve: PhantomData<C>,
 	_p: PhantomData<P>,
 }
@@ -134,6 +138,7 @@ impl<C: CurveAffine, L: Layouter<C::Scalar>, P> Clone for LoaderConfig<C, L, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 {
+	/// Returns a copy of the value.
 	fn clone(&self) -> Self {
 		Self {
 			layouter: self.layouter.clone(),
@@ -152,17 +157,20 @@ impl<C: CurveAffine, L: Layouter<C::Scalar>, P> Debug for LoaderConfig<C, L, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 {
+	/// Formats the value using the given formatter.
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		f.debug_struct("LoaderConfig").finish()
 	}
 }
 
-/// Halo2 loaded scalar structure
+/// Halo2LScalar structure
 pub struct Halo2LScalar<C: CurveAffine, L: Layouter<C::Scalar>, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 {
+	// Inner value for the halo2 loaded scalar
 	pub(crate) inner: AssignedCell<C::Scalar, C::Scalar>,
+	// Loader
 	pub(crate) loader: LoaderConfig<C, L, P>,
 }
 
@@ -180,6 +188,7 @@ impl<C: CurveAffine, L: Layouter<C::Scalar>, P> Clone for Halo2LScalar<C, L, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 {
+	/// Returns a copy of the value.
 	fn clone(&self) -> Self {
 		Self { inner: self.inner.clone(), loader: self.loader.clone() }
 	}
@@ -189,6 +198,7 @@ impl<C: CurveAffine, L: Layouter<C::Scalar>, P> Debug for Halo2LScalar<C, L, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 {
+	/// Formats the value using the given formatter.
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		f.debug_struct("Halo2LScalar").field("inner", &self.inner).finish()
 	}
@@ -198,6 +208,8 @@ impl<C: CurveAffine, L: Layouter<C::Scalar>, P> PartialEq for Halo2LScalar<C, L,
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 {
+	///  This method tests for `self` and `other` values to be equal, and is
+	/// used by `==`.
 	fn eq(&self, other: &Self) -> bool {
 		let lhs = assigned_to_field(self.inner.clone());
 		let rhs = assigned_to_field(other.inner.clone());
@@ -210,6 +222,7 @@ impl<C: CurveAffine, L: Layouter<C::Scalar>, P> FieldOps for Halo2LScalar<C, L, 
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 {
+	/// Returns multiplicative inversion if any.
 	fn invert(&self) -> Option<Self> {
 		let mut loader_ref = self.loader.layouter.lock().unwrap();
 		let inv_chipset = InverseChipset::new(self.inner.clone());
@@ -230,6 +243,7 @@ where
 {
 	type Output = Self;
 
+	/// Performs the `+` operation.
 	fn add(self, rhs: &'a Self) -> Self {
 		let mut loader_ref = self.loader.layouter.lock().unwrap();
 		let add_chipset = AddChipset::new(self.inner, rhs.inner.clone());
@@ -250,6 +264,7 @@ where
 {
 	type Output = Self;
 
+	/// Performs the `+` operation.
 	fn add(self, rhs: Self) -> Self {
 		self.add(&rhs)
 	}
@@ -259,6 +274,7 @@ impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P> AddAssign<&'a Self> for Halo
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 {
+	/// Performs the `+=` operation.
 	fn add_assign(&mut self, rhs: &'a Self) {
 		*self = self.clone().add(rhs);
 	}
@@ -268,6 +284,7 @@ impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P> AddAssign<Self> for Halo2LSc
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 {
+	/// Performs the `+=` operation.
 	fn add_assign(&mut self, rhs: Self) {
 		self.add_assign(&rhs)
 	}
@@ -281,6 +298,7 @@ where
 {
 	type Output = Self;
 
+	/// Performs the `*` operation.
 	fn mul(self, rhs: &'a Self) -> Self {
 		let mut loader_ref = self.loader.layouter.lock().unwrap();
 		let mul_chipset = MulChipset::new(self.inner, rhs.inner.clone());
@@ -301,6 +319,7 @@ where
 {
 	type Output = Self;
 
+	/// Performs the `*` operation.
 	fn mul(self, rhs: Self) -> Self {
 		self.mul(&rhs)
 	}
@@ -310,6 +329,7 @@ impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P> MulAssign<&'a Self> for Halo
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 {
+	/// Performs the `*=` operation.
 	fn mul_assign(&mut self, rhs: &'a Self) {
 		*self = self.clone().mul(rhs);
 	}
@@ -319,6 +339,7 @@ impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P> MulAssign<Self> for Halo2LSc
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 {
+	/// Performs the `*=` operation.
 	fn mul_assign(&mut self, rhs: Self) {
 		self.mul_assign(&rhs)
 	}
@@ -332,6 +353,7 @@ where
 {
 	type Output = Self;
 
+	/// Performs the `-` operation.
 	fn sub(self, rhs: &'a Self) -> Self {
 		let mut loader_ref = self.loader.layouter.lock().unwrap();
 		let sub_chipset = SubChipset::new(self.inner, rhs.inner.clone());
@@ -352,6 +374,7 @@ where
 {
 	type Output = Self;
 
+	/// Performs the `-` operation.
 	fn sub(self, rhs: Self) -> Self {
 		self.sub(&rhs)
 	}
@@ -361,6 +384,7 @@ impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P> SubAssign<&'a Self> for Halo
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 {
+	/// Performs the `-=` operation.
 	fn sub_assign(&mut self, rhs: &'a Self) {
 		*self = self.clone().sub(rhs);
 	}
@@ -370,6 +394,7 @@ impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P> SubAssign<Self> for Halo2LSc
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 {
+	/// Performs the `-=` operation.
 	fn sub_assign(&mut self, rhs: Self) {
 		self.sub_assign(&rhs)
 	}
@@ -383,6 +408,7 @@ where
 {
 	type Output = Self;
 
+	/// Performs the unary `-` operation.
 	fn neg(self) -> Self {
 		let mut loader_ref = self.loader.layouter.lock().unwrap();
 		let sub_chipset = SubChipset::new(self.inner.clone(), self.inner.clone());
@@ -423,6 +449,7 @@ where
 {
 	type LoadedScalar = Halo2LScalar<C, L, P>;
 
+	/// Load a constant field element.
 	fn load_const(&self, value: &C::Scalar) -> Self::LoadedScalar {
 		let mut layouter = self.layouter.lock().unwrap();
 		let assigned_value = layouter
@@ -437,6 +464,7 @@ where
 		Halo2LScalar::new(assigned_value, self.clone())
 	}
 
+	/// Assert `lhs` and `rhs` field elements are equal.
 	fn assert_eq(
 		&self, annotation: &str, lhs: &Self::LoadedScalar, rhs: &Self::LoadedScalar,
 	) -> Result<(), snark_verifier::Error> {
@@ -455,12 +483,14 @@ where
 	}
 }
 
-/// Halo2 loaded ec point structure
+/// Halo2LEcPoint structure
 pub struct Halo2LEcPoint<C: CurveAffine, L: Layouter<C::Scalar>, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 {
+	// Inner value for the halo2 loaded point
 	pub(crate) inner: AssignedPoint<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS, P>,
+	// Loader
 	pub(crate) loader: LoaderConfig<C, L, P>,
 }
 
@@ -481,6 +511,7 @@ impl<C: CurveAffine, L: Layouter<C::Scalar>, P> Clone for Halo2LEcPoint<C, L, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 {
+	/// Returns a copy of the value.
 	fn clone(&self) -> Self {
 		Self { inner: self.inner.clone(), loader: self.loader.clone() }
 	}
@@ -490,6 +521,7 @@ impl<C: CurveAffine, L: Layouter<C::Scalar>, P> Debug for Halo2LEcPoint<C, L, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 {
+	/// Formats the value using the given formatter.
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		f.debug_struct("Halo2LEcPoint").field("inner", &self.inner).finish()
 	}
@@ -499,6 +531,8 @@ impl<C: CurveAffine, L: Layouter<C::Scalar>, P> PartialEq for Halo2LEcPoint<C, L
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 {
+	/// This method tests for `self` and `other` values to be equal, and is used
+	/// by `==`.
 	fn eq(&self, other: &Self) -> bool {
 		self.inner.x.integer == other.inner.x.integer
 			&& self.inner.y.integer == other.inner.y.integer
@@ -523,6 +557,7 @@ where
 {
 	type LoadedEcPoint = Halo2LEcPoint<C, L, P>;
 
+	/// Load a constant elliptic curve point.
 	fn ec_point_load_const(&self, value: &C) -> Self::LoadedEcPoint {
 		let coords: Coordinates<C> = Option::from(value.coordinates()).unwrap();
 		let x = Integer::from_w(coords.x().clone());
@@ -557,6 +592,7 @@ where
 		Halo2LEcPoint::new(assigned_point, self.clone())
 	}
 
+	/// Assert lhs and rhs elliptic curve points are equal.
 	fn ec_point_assert_eq(
 		&self, annotation: &str, lhs: &Self::LoadedEcPoint, rhs: &Self::LoadedEcPoint,
 	) -> Result<(), snark_verifier::Error> {
@@ -582,6 +618,7 @@ where
 			.map_err(|_| AssertionFailure(annotation.to_string()))
 	}
 
+	/// Perform multi-scalar multiplication.
 	fn multi_scalar_multiplication(
 		pairs: &[(
 			&<Self as ScalarLoader<C::Scalar>>::LoadedScalar,

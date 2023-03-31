@@ -28,6 +28,7 @@ pub struct NativeLoader<C: CurveAffine, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 {
+	// PhantomData
 	pub(crate) _c: PhantomData<C>,
 	pub(crate) _p: PhantomData<P>,
 }
@@ -48,7 +49,9 @@ pub struct LScalar<C: CurveAffine, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 {
+	// Inner value for the loaded scalar
 	pub(crate) inner: C::Scalar,
+	// Loader
 	pub(crate) loader: NativeLoader<C, P>,
 }
 
@@ -66,6 +69,7 @@ impl<C: CurveAffine, P> FieldOps for LScalar<C, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 {
+	/// Returns multiplicative inversion if any.
 	fn invert(&self) -> Option<Self> {
 		let inv = Field::invert(&self.inner.clone());
 		let inv_op: Option<C::Scalar> = inv.into();
@@ -81,6 +85,7 @@ where
 {
 	type Output = LScalar<C, P>;
 
+	/// Performs the `+` operation.
 	fn add(self, rhs: &'a LScalar<C, P>) -> Self::Output {
 		let res = self.inner + rhs.inner;
 		Self { inner: res, loader: self.loader.clone() }
@@ -93,6 +98,7 @@ where
 {
 	type Output = LScalar<C, P>;
 
+	/// Performs the `+` operation.
 	fn add(self, rhs: LScalar<C, P>) -> Self::Output {
 		self.add(&rhs)
 	}
@@ -102,6 +108,7 @@ impl<'a, C: CurveAffine, P> AddAssign<&'a LScalar<C, P>> for LScalar<C, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 {
+	/// Performs the `+=` operation.
 	fn add_assign(&mut self, rhs: &'a LScalar<C, P>) {
 		*self = self.clone().add(rhs);
 	}
@@ -111,6 +118,7 @@ impl<C: CurveAffine, P> AddAssign<LScalar<C, P>> for LScalar<C, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 {
+	/// Performs the `+=` operation.
 	fn add_assign(&mut self, rhs: LScalar<C, P>) {
 		self.add_assign(&rhs)
 	}
@@ -124,6 +132,7 @@ where
 {
 	type Output = LScalar<C, P>;
 
+	/// Performs the `*` operation.
 	fn mul(self, rhs: &'a LScalar<C, P>) -> Self::Output {
 		let res = self.inner * rhs.inner;
 		Self { inner: res, loader: self.loader.clone() }
@@ -136,6 +145,7 @@ where
 {
 	type Output = LScalar<C, P>;
 
+	/// Performs the `*` operation.
 	fn mul(self, rhs: LScalar<C, P>) -> Self::Output {
 		self.mul(&rhs)
 	}
@@ -145,6 +155,7 @@ impl<'a, C: CurveAffine, P> MulAssign<&'a LScalar<C, P>> for LScalar<C, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 {
+	/// Performs the `*=` operation.
 	fn mul_assign(&mut self, rhs: &'a LScalar<C, P>) {
 		*self = self.clone().mul(rhs);
 	}
@@ -154,6 +165,7 @@ impl<C: CurveAffine, P> MulAssign<LScalar<C, P>> for LScalar<C, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 {
+	/// Performs the `*=` operation.
 	fn mul_assign(&mut self, rhs: LScalar<C, P>) {
 		self.mul_assign(&rhs)
 	}
@@ -167,6 +179,7 @@ where
 {
 	type Output = LScalar<C, P>;
 
+	/// Performs the `-` operation.
 	fn sub(self, rhs: &'a LScalar<C, P>) -> Self::Output {
 		let res = self.inner - rhs.inner;
 		Self { inner: res, loader: self.loader.clone() }
@@ -179,6 +192,7 @@ where
 {
 	type Output = LScalar<C, P>;
 
+	/// Performs the `-` operation.
 	fn sub(self, rhs: LScalar<C, P>) -> Self::Output {
 		self.sub(&rhs)
 	}
@@ -188,6 +202,7 @@ impl<'a, C: CurveAffine, P> SubAssign<&'a LScalar<C, P>> for LScalar<C, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 {
+	/// Performs the `-=` operation.
 	fn sub_assign(&mut self, rhs: &'a LScalar<C, P>) {
 		*self = self.clone().sub(rhs);
 	}
@@ -197,6 +212,7 @@ impl<C: CurveAffine, P> SubAssign<LScalar<C, P>> for LScalar<C, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 {
+	/// Performs the `-=` operation.
 	fn sub_assign(&mut self, rhs: LScalar<C, P>) {
 		self.sub_assign(&rhs)
 	}
@@ -210,6 +226,7 @@ where
 {
 	type Output = Self;
 
+	/// Performs the unary `-` operation.
 	fn neg(self) -> Self::Output {
 		let res = C::Scalar::neg(self.inner.clone());
 		Self { inner: res, loader: self.loader.clone() }
@@ -257,7 +274,9 @@ pub struct LEcPoint<C: CurveAffine, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 {
+	// Inner value for the loaded point
 	pub(crate) inner: EcPoint<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS, P>,
+	// Loader
 	pub(crate) loader: NativeLoader<C, P>,
 }
 
@@ -291,6 +310,7 @@ where
 {
 	type LoadedEcPoint = LEcPoint<C, P>;
 
+	/// Load a constant elliptic curve point.
 	fn ec_point_load_const(&self, value: &C) -> Self::LoadedEcPoint {
 		let coords: Coordinates<C> = Option::from(value.coordinates()).unwrap();
 		let x = Integer::from_w(coords.x().clone());
@@ -300,6 +320,7 @@ where
 		LEcPoint::new(point, self.clone())
 	}
 
+	/// Assert lhs and rhs elliptic curve points are equal.
 	fn ec_point_assert_eq(
 		&self, annotation: &str, lhs: &Self::LoadedEcPoint, rhs: &Self::LoadedEcPoint,
 	) -> Result<(), VerifierError> {

@@ -28,7 +28,7 @@ use std::{
 	marker::PhantomData,
 };
 
-/// Native version of transcript
+/// Native version of the transcript
 pub mod native;
 
 /// PoseidonReadChipset structure
@@ -37,9 +37,13 @@ where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	R: RoundParams<C::Scalar, WIDTH>,
 {
+	// Reader
 	reader: RD,
+	// PoseidonSponge
 	state: PoseidonSpongeChipset<C::Scalar, WIDTH, R>,
+	// Loader
 	loader: LoaderConfig<C, L, P>,
+	// PhantomData
 	_p: PhantomData<P>,
 }
 
@@ -48,12 +52,12 @@ where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	R: RoundParams<C::Scalar, WIDTH>,
 {
-	/// Construct new PoseidonReadChipset
+	/// Construct a new PoseidonReadChipset
 	pub fn new(reader: RD, loader: LoaderConfig<C, L, P>) -> Self {
 		Self { reader, state: PoseidonSpongeChipset::new(), loader, _p: PhantomData }
 	}
 
-	/// Construct a new assigned zero value
+	/// Construct a new `assigned zero` value
 	pub fn assigned_zero(loader: LoaderConfig<C, L, P>) -> AssignedCell<C::Scalar, C::Scalar> {
 		let mut layouter = loader.layouter.lock().unwrap();
 		let assigned_zero = layouter
@@ -132,6 +136,7 @@ where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	R: RoundParams<C::Scalar, WIDTH>,
 {
+	/// Read a scalar.
 	fn read_scalar(&mut self) -> Result<Halo2LScalar<C, L, P>, snark_verifier::Error> {
 		let mut data = <C::Scalar as PrimeField>::Repr::default();
 		self.reader.read_exact(data.as_mut()).map_err(|err| {
@@ -166,6 +171,7 @@ where
 		Ok(assigned_lscalar)
 	}
 
+	/// Read an elliptic curve point.
 	fn read_ec_point(&mut self) -> Result<Halo2LEcPoint<C, L, P>, snark_verifier::Error> {
 		let mut compressed = [0; 256];
 		self.reader.read_exact(compressed.as_mut()).map_err(|err| {

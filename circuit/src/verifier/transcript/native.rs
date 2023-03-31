@@ -29,15 +29,19 @@ use std::{
 /// Width of the hasher state used in the transcript
 pub const WIDTH: usize = 5;
 
-/// PoseidonRead
+/// PoseidonRead structure
 pub struct PoseidonRead<RD: Read, C: CurveAffine, P, R>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	R: RoundParams<C::Scalar, WIDTH>,
 {
+	// Reader
 	reader: RD,
+	// PoseidonSponge
 	state: PoseidonSponge<C::Scalar, WIDTH, R>,
+	// Loader
 	loader: NativeSVLoader,
+	// PhantomData
 	_p: PhantomData<P>,
 }
 
@@ -46,7 +50,7 @@ where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	R: RoundParams<C::Scalar, WIDTH>,
 {
-	/// Create new PoseidonRead transcript
+	/// Create a new PoseidonRead transcript
 	pub fn new(reader: RD, loader: NativeSVLoader) -> Self {
 		Self { reader, state: PoseidonSponge::new(), loader, _p: PhantomData }
 	}
@@ -102,6 +106,7 @@ where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	R: RoundParams<C::Scalar, WIDTH>,
 {
+	/// Read a scalar.
 	fn read_scalar(&mut self) -> Result<C::ScalarExt, VerifierError> {
 		let mut data = <C::Scalar as PrimeField>::Repr::default();
 
@@ -122,6 +127,7 @@ where
 		Ok(scalar)
 	}
 
+	/// Read an elliptic curve point.
 	fn read_ec_point(&mut self) -> Result<C, VerifierError> {
 		let mut compressed = [0; 256];
 		self.reader.read_exact(compressed.as_mut()).map_err(|err| {
@@ -168,9 +174,13 @@ where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	R: RoundParams<C::Scalar, WIDTH>,
 {
+	// Writer
 	writer: W,
+	// PoseidonSponge
 	state: PoseidonSponge<C::Scalar, WIDTH, R>,
+	// Loader
 	loader: NativeSVLoader,
+	// PhantomData
 	_p: PhantomData<P>,
 }
 
@@ -179,7 +189,7 @@ where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	R: RoundParams<C::Scalar, WIDTH>,
 {
-	/// Create a new poseidon transcript writer
+	/// Create a new PoseidonWrite transcript.
 	pub fn new(writer: W) -> Self {
 		Self { writer, state: PoseidonSponge::new(), loader: NativeSVLoader, _p: PhantomData }
 	}
@@ -272,16 +282,18 @@ where
 // ----- HALO2 TRANSCRIPT TRAIT IMPLEMENTATIONS -----
 
 #[derive(Debug)]
-/// Challange scalar type
+/// ChallangeScalar structure
 pub struct ChallengeScalar<C: CurveAffine>(C::Scalar);
 
 impl<C: CurveAffine> EncodedChallenge<C> for ChallengeScalar<C> {
 	type Input = C::Scalar;
 
+	/// Get an encoded challenge from a given input challenge.
 	fn new(challenge_input: &C::Scalar) -> Self {
 		ChallengeScalar(*challenge_input)
 	}
 
+	/// Get a scalar field element from an encoded challenge.
 	fn get_scalar(&self) -> C::Scalar {
 		self.0
 	}
@@ -293,11 +305,14 @@ where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	R: RoundParams<C::Scalar, WIDTH>,
 {
+	/// Squeeze an encoded verifier challenge from the transcript.
 	fn squeeze_challenge(&mut self) -> ChallengeScalar<C> {
 		let scalar = Transcript::squeeze_challenge(self);
 		ChallengeScalar::new(&scalar)
 	}
 
+	/// Writing the point to the transcript without writing it to the proof,
+	/// treating it as a common input.
 	fn common_point(&mut self, point: C) -> IoResult<()> {
 		let res = self.common_ec_point(&point);
 		res.map_err(|x| match x {
@@ -306,6 +321,8 @@ where
 		})
 	}
 
+	/// Writing the scalar to the transcript without writing it to the proof,
+	/// treating it as a common input.
 	fn common_scalar(&mut self, scalar: C::Scalar) -> IoResult<()> {
 		let res = <Self as Transcript<C, NativeSVLoader>>::common_scalar(self, &scalar);
 		res.map_err(|x| match x {
@@ -321,6 +338,7 @@ where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	R: RoundParams<C::Scalar, WIDTH>,
 {
+	/// Read a curve point from the prover.
 	fn read_point(&mut self) -> IoResult<C> {
 		let res = <Self as TranscriptRead<C, NativeSVLoader>>::read_ec_point(self);
 		res.map_err(|x| match x {
@@ -329,6 +347,7 @@ where
 		})
 	}
 
+	/// Read a curve scalar from the prover.
 	fn read_scalar(&mut self) -> IoResult<C::Scalar> {
 		let res = <Self as TranscriptRead<C, NativeSVLoader>>::read_scalar(self);
 		res.map_err(|x| match x {
@@ -344,6 +363,7 @@ where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	R: RoundParams<C::Scalar, WIDTH>,
 {
+	/// Initialize a transcript given an input buffer.
 	fn init(reader: RD) -> Self {
 		Self::new(reader, NativeSVLoader)
 	}
@@ -355,11 +375,13 @@ where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	R: RoundParams<C::Scalar, WIDTH>,
 {
+	/// Squeeze an encoded verifier challenge from the transcript.
 	fn squeeze_challenge(&mut self) -> ChallengeScalar<C> {
 		let scalar = Transcript::squeeze_challenge(self);
 		ChallengeScalar::new(&scalar)
 	}
 
+	/// Squeeze an encoded verifier challenge from the transcript.
 	fn common_point(&mut self, point: C) -> IoResult<()> {
 		let res = self.common_ec_point(&point);
 		res.map_err(|x| match x {
@@ -368,6 +390,8 @@ where
 		})
 	}
 
+	/// Writing the scalar to the transcript without writing it to the proof,
+	/// treating it as a common input.
 	fn common_scalar(&mut self, scalar: C::Scalar) -> IoResult<()> {
 		let res = <Self as Transcript<C, NativeSVLoader>>::common_scalar(self, &scalar);
 		res.map_err(|x| match x {
@@ -383,6 +407,7 @@ where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	R: RoundParams<C::Scalar, WIDTH>,
 {
+	/// Write a curve point to the proof and the transcript.
 	fn write_point(&mut self, point: C) -> IoResult<()> {
 		let res = <Self as TranscriptWrite<C>>::write_ec_point(self, point);
 		res.map_err(|x| match x {
@@ -391,6 +416,7 @@ where
 		})
 	}
 
+	/// Write a scalar to the proof and the transcript.
 	fn write_scalar(&mut self, scalar: C::Scalar) -> IoResult<()> {
 		let res = <Self as TranscriptWrite<C>>::write_scalar(self, scalar);
 		res.map_err(|x| match x {
@@ -406,10 +432,12 @@ where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	R: RoundParams<C::Scalar, WIDTH>,
 {
+	/// Initialize a transcript given an output buffer.
 	fn init(writer: W) -> Self {
 		Self::new(writer)
 	}
 
+	/// Conclude the interaction and return the output buffer (writer).
 	fn finalize(self) -> W {
 		self.writer
 	}
