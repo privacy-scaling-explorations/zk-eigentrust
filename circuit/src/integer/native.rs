@@ -103,6 +103,12 @@ where
 		Self::new(num_bn)
 	}
 
+	/// Creates and new Integer from native field
+	pub fn from_n(num: N) -> Self {
+		let num_bn = fe_to_big(num);
+		Self::new(num_bn)
+	}
+
 	/// Construct an Integer from given `limbs`.
 	pub fn from_limbs(limbs: [N; NUM_LIMBS]) -> Self {
 		Self { limbs, _wrong_field: PhantomData, _rns: PhantomData }

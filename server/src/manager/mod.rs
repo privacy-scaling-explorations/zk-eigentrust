@@ -187,14 +187,10 @@ impl Manager {
 			sigs.push(att.sig.clone());
 		}
 
-		const N: usize = NUM_NEIGHBOURS;
-		let (_, messages) = calculate_message_hash::<N, N>(pks.clone(), ops.clone());
-
 		let et = EigenTrust::<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, SCALE>::new(
 			pks,
 			sigs,
 			ops.clone(),
-			messages,
 		);
 		let init_score = vec![Scalar::from_u128(INITIAL_SCORE); NUM_NEIGHBOURS];
 		let pub_ins = native::<Scalar, NUM_NEIGHBOURS, NUM_ITER, SCALE>(init_score, ops);
@@ -202,11 +198,13 @@ impl Manager {
 		let proof_bytes = gen_proof(&self.params, &self.proving_key, et, vec![pub_ins.clone()]);
 
 		// --- SANITY CHECK VERIFICATION ---
-		evm_verify(
-			self.verifier_code.clone(),
-			vec![pub_ins.clone()],
-			proof_bytes.clone(),
-		);
+		if cfg!(debug_assertions) {
+			evm_verify(
+				self.verifier_code.clone(),
+				vec![pub_ins.clone()],
+				proof_bytes.clone(),
+			);
+		}
 		// --- END ---
 
 		let proof = Proof { pub_ins, proof: proof_bytes };

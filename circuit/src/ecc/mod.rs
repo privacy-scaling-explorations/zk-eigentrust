@@ -21,14 +21,14 @@ use halo2::{
 
 /// Structure for the AssignedPoint.
 #[derive(Clone, Debug)]
-struct AssignedPoint<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
+pub struct AssignedPoint<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
 where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 {
 	// x coordinate of the point
-	x: AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
+	pub(crate) x: AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
 	// y coordinate of the point
-	y: AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
+	pub(crate) y: AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
 }
 
 impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
@@ -71,7 +71,7 @@ impl EccAddConfig {
 }
 
 /// Chipset structure for the EccAdd.
-struct EccAddChipset<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
+pub struct EccAddChipset<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
 where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 {
@@ -687,10 +687,10 @@ where
 
 /// Configuration elements for the circuit are defined here.
 #[derive(Debug, Clone)]
-struct EccMulConfig {
+pub struct EccMulConfig {
 	/// Constructs configs and selector from different circuits.
 	ladder: EccUnreducedLadderConfig,
-	add: EccAddConfig,
+	pub(crate) add: EccAddConfig,
 	double: EccDoubleConfig,
 	table_select: EccTableSelectConfig,
 	bits2num: Selector,
@@ -707,16 +707,14 @@ impl EccMulConfig {
 }
 
 /// Chipset structure for the EccMul.
-struct EccMulChipset<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
+pub struct EccMulChipset<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
 where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 {
 	// Assigned point p
 	p: AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
-	// Scalar value as bits
-	scalar_bits: [N; 254],
 	// Assigned scalar value
-	value: AssignedCell<N, N>,
+	scalar: AssignedCell<N, N>,
 	// AuxInitial (to_add)
 	aux_init: AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
 	// AuxFinish (to_sub)
@@ -730,11 +728,11 @@ where
 {
 	/// Creates a new ecc mul chipset.
 	pub fn new(
-		p: AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>, scalar_bits: [N; 254],
-		value: AssignedCell<N, N>, aux_init: AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
+		p: AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>, scalar: AssignedCell<N, N>,
+		aux_init: AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
 		aux_fin: AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
 	) -> Self {
-		Self { p, scalar_bits, value, aux_init, aux_fin }
+		Self { p, scalar, aux_init, aux_fin }
 	}
 }
 
@@ -759,8 +757,7 @@ where
 			&config.add,
 			layouter.namespace(|| "aux_init_plus_scalar"),
 		)?;
-
-		let bits = Bits2NumChip::new(self.value, self.scalar_bits.to_vec());
+		let bits = Bits2NumChip::new(self.scalar);
 		let mut bits = bits.synthesize(common, &config.bits2num, layouter.namespace(|| "bits"))?;
 		bits.reverse();
 
@@ -888,17 +885,16 @@ mod test {
 		p: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
 		q: Option<EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>>,
 		value: Option<N>,
-		value_bits: Option<[N; 254]>,
+
 		gadget: Gadgets,
 	}
 
 	impl TestCircuit {
 		fn new(
 			p: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
-			q: Option<EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>>, value: Option<N>,
-			value_bits: Option<[N; 254]>, gadget: Gadgets,
+			q: Option<EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>>, value: Option<N>, gadget: Gadgets,
 		) -> Self {
-			Self { p, q, value, value_bits, gadget }
+			Self { p, q, value, gadget }
 		}
 	}
 
@@ -1136,13 +1132,7 @@ mod test {
 					let to_sub_y = AssignedInteger::new(to_sub_y_int, to_sub_y_limbs);
 					let to_sub = AssignedPoint::new(to_sub_x, to_sub_y);
 
-					let chip = EccMulChipset::new(
-						p.clone(),
-						self.value_bits.unwrap(),
-						value.clone(),
-						to_add,
-						to_sub,
-					);
+					let chip = EccMulChipset::new(p.clone(), value.clone(), to_add, to_sub);
 					result = Some(chip.synthesize(
 						&config.common,
 						&config.ecc_mul,
@@ -1180,7 +1170,7 @@ mod test {
 		let q_point = EcPoint::<W, N, NUM_LIMBS, NUM_BITS, P>::new(b.clone(), c.clone());
 
 		let res = p_point.add(&q_point);
-		let test_chip = TestCircuit::new(p_point, Some(q_point), None, None, Gadgets::Add);
+		let test_chip = TestCircuit::new(p_point, Some(q_point), None, Gadgets::Add);
 
 		let k = 7;
 		let mut p_ins = Vec::new();
@@ -1200,7 +1190,7 @@ mod test {
 		let p_point = EcPoint::<W, N, NUM_LIMBS, NUM_BITS, P>::new(a.clone(), b.clone());
 
 		let res = p_point.double();
-		let test_chip = TestCircuit::new(p_point, None, None, None, Gadgets::Double);
+		let test_chip = TestCircuit::new(p_point, None, None, Gadgets::Double);
 
 		let k = 7;
 		let mut p_ins = Vec::new();
@@ -1223,7 +1213,7 @@ mod test {
 		let q_point = EcPoint::<W, N, NUM_LIMBS, NUM_BITS, P>::new(b.clone(), c.clone());
 
 		let res = p_point.ladder(&q_point);
-		let test_chip = TestCircuit::new(p_point, Some(q_point), None, None, Gadgets::Ladder);
+		let test_chip = TestCircuit::new(p_point, Some(q_point), None, Gadgets::Ladder);
 
 		let k = 7;
 		let mut p_ins = Vec::new();
@@ -1238,13 +1228,6 @@ mod test {
 		// Testing ecc mul.
 		let rng = &mut thread_rng();
 		let scalar = Fr::random(rng);
-		let mut value_bits = [Fr::zero(); 254];
-		for i in 0..254 {
-			let bool = scalar.to_bytes()[i / 8] & (1 << (i % 8)) != 0;
-			if bool {
-				value_bits[i] = Fr::one();
-			}
-		}
 
 		let a_big = BigUint::from_str("2342876324689764345467879012938433459867545345").unwrap();
 		let b_big = BigUint::from_str("6546457298123794342352534089237495253453455675").unwrap();
@@ -1252,9 +1235,8 @@ mod test {
 		let b = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(b_big);
 		let p_point = EcPoint::<W, N, NUM_LIMBS, NUM_BITS, P>::new(a.clone(), b.clone());
 
-		let res = p_point.mul_scalar(scalar.to_bytes());
-		let test_chip =
-			TestCircuit::new(p_point, None, Some(scalar), Some(value_bits), Gadgets::Mul);
+		let res = p_point.mul_scalar(scalar);
+		let test_chip = TestCircuit::new(p_point, None, Some(scalar), Gadgets::Mul);
 
 		let k = 15;
 		let mut p_ins = Vec::new();

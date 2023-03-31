@@ -152,12 +152,12 @@ where
 	}
 
 	/// Scalar multiplication for given point with using ladder
-	pub fn mul_scalar(&self, le_bytes: [u8; 32]) -> Self {
+	pub fn mul_scalar(&self, scalar: N) -> Self {
 		let aux_init = Self::to_add();
 		let exp: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P> = self.clone();
-
 		// Converts given input to its bit by Scalar Field's bit size
-		let mut bits = to_bits::<254>(le_bytes);
+		let mut bits = to_bits(scalar.to_repr().as_ref());
+		bits = bits[..N::NUM_BITS as usize].to_vec();
 		bits.reverse();
 
 		let table = [aux_init.clone(), exp.clone().add(&aux_init)];
@@ -291,7 +291,7 @@ mod test {
 		let a_y_w = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_y_bn);
 		let a_w = EcPoint::new(a_x_w, a_y_w);
 
-		let c_w = a_w.mul_scalar(scalar.to_bytes());
+		let c_w = a_w.mul_scalar(scalar);
 
 		assert_eq!(c.x, big_to_fe(c_w.x.value()));
 		assert_eq!(c.y, big_to_fe(c_w.y.value()));

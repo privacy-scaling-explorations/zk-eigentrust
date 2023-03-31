@@ -360,6 +360,61 @@ impl<F: FieldExt> Chipset<F> for IsEqualChipset<F> {
 	}
 }
 
+/// Chip for calculating and constraining an inverse value
+pub struct InverseChipset<F: FieldExt> {
+	x: AssignedCell<F, F>,
+}
+
+impl<F: FieldExt> InverseChipset<F> {
+	/// Create new InverseChipset
+	pub fn new(x: AssignedCell<F, F>) -> Self {
+		Self { x }
+	}
+}
+
+impl<F: FieldExt> Chipset<F> for InverseChipset<F> {
+	type Config = MainConfig;
+	type Output = AssignedCell<F, F>;
+
+	fn synthesize(
+		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<F>,
+	) -> Result<Self::Output, Error> {
+		// We should satisfy the equation below
+		// 1 - x * x_inv = 0
+
+		// Witness layout:
+		// | A   | B     | C   | D   | E  |
+		// | --- | ----- | --- | --- | ---|
+		// | x   | x_inv | res |     |    |
+
+		let (zero, x_inv) = layouter.assign_region(
+			|| "assign_values",
+			|region| {
+				let x_inv = self.x.clone().value().map(|v| v.invert().unwrap_or(F::zero()));
+
+				let mut ctx = RegionCtx::new(region, 0);
+				let zero = ctx.assign_advice(common.advice[0], Value::known(F::zero()))?;
+				let x_inv = ctx.assign_advice(common.advice[1], x_inv)?;
+				Ok((zero, x_inv))
+			},
+		)?;
+
+		// [a, b, c, d, e]
+		let advices = [self.x.clone(), x_inv.clone(), zero.clone(), zero.clone(), zero.clone()];
+		// [s_a, s_b, s_c, s_d, s_e, s_mul_ab, s_mul_cd, s_constant]
+		let fixed_add = [F::zero(), F::zero(), F::zero(), F::zero(), F::zero()];
+		let fixed_mul = [F::one(), F::zero(), -F::one()];
+		let main_chip = MainChip::new(advices, fixed_add, fixed_mul);
+		main_chip.synthesize(
+			common,
+			&config.selector,
+			layouter.namespace(|| "is_inverse"),
+		)?;
+
+		Ok(x_inv)
+	}
+}
+
 /// Chip for is_zero operation
 pub struct IsZeroChipset<F: FieldExt> {
 	x: AssignedCell<F, F>,
@@ -380,8 +435,8 @@ impl<F: FieldExt> Chipset<F> for IsZeroChipset<F> {
 		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
 		// We should satisfy the equation below
-		// 1 - x * x_inv = 1
-		// x * x_inv = 0
+		// res = 1 - x * x_inv = 0
+		// x * x_inv = 1
 		// x * x_inv + res - 1 = 0
 
 		// Addional constraint:
