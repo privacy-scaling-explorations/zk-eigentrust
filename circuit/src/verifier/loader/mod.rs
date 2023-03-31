@@ -625,15 +625,14 @@ where
 			&Self::LoadedEcPoint,
 		)],
 	) -> Self::LoadedEcPoint {
-		// TODO: Define config and aux inside the iteratior
-		let config = pairs[0].1.loader.clone();
-		let auxes = pairs[0].1.loader.auxes.clone();
-		let (aux_init, aux_fin) = auxes;
 		let point = pairs
 			.iter()
 			.cloned()
 			.map(|(scalar, base)| {
-				// TODO: program stucks here somehow, try to fix it.
+				// TODO: Test stucks here, fix it.
+				let config = pairs[0].0.loader.clone();
+				let auxes = pairs[0].1.loader.auxes.clone();
+				let (aux_init, aux_fin) = auxes;
 				let mut layouter = base.loader.layouter.lock().unwrap();
 				let chip = EccMulChipset::new(
 					base.inner.clone(),
@@ -651,6 +650,7 @@ where
 				Halo2LEcPoint::new(mul, config.clone())
 			})
 			.reduce(|acc, value| {
+				let config = pairs[0].0.loader.clone();
 				let mut layouter = value.loader.layouter.lock().unwrap();
 				let chip = EccAddChipset::new(acc.inner.clone(), value.inner.clone());
 				let add = chip
@@ -850,7 +850,6 @@ mod test {
 		}
 	}
 
-	#[ignore = "Stuck infinitely in MSM circuit."]
 	#[test]
 	fn test_multi_scalar_multiplication() {
 		// Testing MSM
