@@ -69,6 +69,7 @@ where
 				},
 			)
 			.unwrap();
+		drop(layouter);
 		assigned_zero
 	}
 }
@@ -86,10 +87,10 @@ where
 
 	/// Squeeze a challenge.
 	fn squeeze_challenge(&mut self) -> Halo2LScalar<C, L, P> {
-		let mut loader_ref = self.loader.layouter.lock().unwrap();
 		let default = Self::assigned_zero(self.loader.clone());
 		self.state.update(&[default]);
 		let hasher = self.state.clone();
+		let mut loader_ref = self.loader.layouter.lock().unwrap();
 		let value = hasher
 			.synthesize(
 				&self.loader.common,
@@ -246,7 +247,7 @@ where
 
 #[cfg(test)]
 mod test {
-	use super::{LoaderConfig, PoseidonReadChipset};
+	use super::{native::PoseidonRead, LoaderConfig, PoseidonReadChipset};
 	use crate::{
 		circuit::{FullRoundHasher, PartialRoundHasher},
 		ecc::{
@@ -272,9 +273,11 @@ mod test {
 	};
 	use halo2::{
 		circuit::{Layouter, Region, SimpleFloorPlanner},
+		dev::MockProver,
 		halo2curves::bn256::{Fq, Fr, G1Affine},
 		plonk::{Circuit, ConstraintSystem, Error},
 	};
+	use snark_verifier::{loader::native::NativeLoader, util::transcript::Transcript};
 	use std::{rc::Rc, sync::Mutex};
 
 	type C = G1Affine;
@@ -355,26 +358,31 @@ mod test {
 				config.poseidon_sponge,
 			);
 
-			let mut lb = layouter_rc.lock().unwrap();
-			lb.assign_region(
-				|| "assign",
-				|region: Region<'_, Scalar>| {
-					let mut ctx = RegionCtx::new(region, 0);
-
-					Ok(())
-				},
-			)?;
 			let reader = Vec::new();
-			let poseidon_read =
+			let mut poseidon_read =
 				PoseidonReadChipset::<_, C, _, P, R>::new(reader.as_slice(), loader);
+			let res = poseidon_read.squeeze_challenge();
+
+			let mut lb = layouter_rc.lock().unwrap();
+			lb.constrain_instance(res.inner.clone().cell(), config.common.instance, 0)?;
 
 			Ok(())
 		}
 	}
-	#[ignore = "TODO."]
+
 	#[test]
 	fn test_squeeze_challenge() {
 		// Test squeeze challenge
+		let reader = Vec::new();
+		let mut poseidon_read =
+			PoseidonRead::<_, G1Affine, Bn256_4_68, Params>::new(reader.as_slice(), NativeLoader);
+		let res = poseidon_read.squeeze_challenge();
+
+		let circuit = TestCircuit::new(None, None);
+		let k = 9;
+		let prover = MockProver::run(k, &circuit, vec![vec![res]]).unwrap();
+
+		assert_eq!(prover.verify(), Ok(()));
 	}
 	#[ignore = "TODO."]
 	#[test]
