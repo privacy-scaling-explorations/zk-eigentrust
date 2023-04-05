@@ -36,11 +36,11 @@ where
 	R: RoundParams<C::Scalar, WIDTH>,
 {
 	// Reader
-	reader: RD,
+	pub(crate) reader: RD,
 	// PoseidonSponge
-	state: PoseidonSponge<C::Scalar, WIDTH, R>,
+	pub(crate) state: PoseidonSponge<C::Scalar, WIDTH, R>,
 	// Loader
-	loader: NativeSVLoader,
+	pub(crate) loader: NativeSVLoader,
 	// PhantomData
 	_p: PhantomData<P>,
 }

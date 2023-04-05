@@ -251,7 +251,7 @@ mod test {
 	use crate::{
 		circuit::{FullRoundHasher, PartialRoundHasher},
 		ecc::{
-			EccAddConfig, EccDoubleConfig, EccMulConfig, EccTableSelectConfig,
+			AssignedPoint, EccAddConfig, EccDoubleConfig, EccMulConfig, EccTableSelectConfig,
 			EccUnreducedLadderConfig,
 		},
 		gadgets::{
@@ -260,24 +260,35 @@ mod test {
 			main::{MainChip, MainConfig},
 		},
 		integer::{
-			rns::Bn256_4_68, IntegerAddChip, IntegerDivChip, IntegerMulChip, IntegerReduceChip,
-			IntegerSubChip,
+			native::Integer, rns::Bn256_4_68, AssignedInteger, IntegerAddChip, IntegerDivChip,
+			IntegerMulChip, IntegerReduceChip, IntegerSubChip,
 		},
 		params::poseidon_bn254_5x5::Params,
 		poseidon::{sponge::PoseidonSpongeConfig, PoseidonConfig},
 		verifier::{
-			loader::native::{LEcPoint, LScalar, NUM_BITS, NUM_LIMBS},
+			loader::{
+				native::{NUM_BITS, NUM_LIMBS},
+				Halo2LEcPoint, Halo2LScalar,
+			},
 			transcript::native::WIDTH,
 		},
-		Chip, CommonConfig, RegionCtx,
+		Chip, Chipset, CommonConfig, RegionCtx,
 	};
 	use halo2::{
-		circuit::{Layouter, Region, SimpleFloorPlanner},
+		arithmetic::Field,
+		circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner, Value},
 		dev::MockProver,
-		halo2curves::bn256::{Fq, Fr, G1Affine},
+		halo2curves::{
+			bn256::{Fq, Fr, G1Affine},
+			CurveAffine,
+		},
 		plonk::{Circuit, ConstraintSystem, Error},
 	};
-	use snark_verifier::{loader::native::NativeLoader, util::transcript::Transcript};
+	use rand::thread_rng;
+	use snark_verifier::{
+		loader::native::NativeLoader as NativeSVLoader,
+		util::transcript::{Transcript, TranscriptRead},
+	};
 	use std::{rc::Rc, sync::Mutex};
 
 	type C = G1Affine;
@@ -294,18 +305,15 @@ mod test {
 	}
 
 	#[derive(Clone)]
-	struct TestCircuit {
-		lscalar: Option<LScalar<C, P>>,
-		lpoint: Option<LEcPoint<C, P>>,
-	}
+	struct TestSqueezeCircuit;
 
-	impl TestCircuit {
-		fn new(lscalar: Option<LScalar<C, P>>, lpoint: Option<LEcPoint<C, P>>) -> Self {
-			Self { lscalar, lpoint }
+	impl TestSqueezeCircuit {
+		fn new() -> Self {
+			Self
 		}
 	}
 
-	impl Circuit<Scalar> for TestCircuit {
+	impl Circuit<Scalar> for TestSqueezeCircuit {
 		type Config = TestConfig;
 		type FloorPlanner = SimpleFloorPlanner;
 
@@ -357,7 +365,6 @@ mod test {
 				config.main,
 				config.poseidon_sponge,
 			);
-
 			let reader = Vec::new();
 			let mut poseidon_read =
 				PoseidonReadChipset::<_, C, _, P, R>::new(reader.as_slice(), loader);
@@ -375,29 +382,359 @@ mod test {
 		// Test squeeze challenge
 		let reader = Vec::new();
 		let mut poseidon_read =
-			PoseidonRead::<_, G1Affine, Bn256_4_68, Params>::new(reader.as_slice(), NativeLoader);
-		let res = poseidon_read.squeeze_challenge();
+			PoseidonRead::<_, G1Affine, Bn256_4_68, Params>::new(reader.as_slice(), NativeSVLoader);
 
-		let circuit = TestCircuit::new(None, None);
+		let res = poseidon_read.squeeze_challenge();
+		let circuit = TestSqueezeCircuit::new();
 		let k = 9;
 		let prover = MockProver::run(k, &circuit, vec![vec![res]]).unwrap();
-
 		assert_eq!(prover.verify(), Ok(()));
 	}
-	#[ignore = "TODO."]
+
+	#[derive(Clone)]
+	struct TestCommonEcPointCircuit {
+		ec_point: C,
+	}
+
+	impl TestCommonEcPointCircuit {
+		fn new(ec_point: C) -> Self {
+			Self { ec_point }
+		}
+	}
+
+	impl Circuit<Scalar> for TestCommonEcPointCircuit {
+		type Config = TestConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			self.clone()
+		}
+
+		fn configure(meta: &mut ConstraintSystem<Scalar>) -> TestConfig {
+			let common = CommonConfig::new(meta);
+			let main_selector = MainChip::configure(&common, meta);
+			let main = MainConfig::new(main_selector);
+
+			let full_round_selector = FullRoundHasher::configure(&common, meta);
+			let partial_round_selector = PartialRoundHasher::configure(&common, meta);
+			let poseidon = PoseidonConfig::new(full_round_selector, partial_round_selector);
+
+			let absorb_selector = AbsorbChip::<Scalar, WIDTH>::configure(&common, meta);
+			let poseidon_sponge = PoseidonSpongeConfig::new(poseidon.clone(), absorb_selector);
+
+			let bits2num = Bits2NumChip::configure(&common, meta);
+
+			let int_red =
+				IntegerReduceChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
+			let int_add =
+				IntegerAddChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
+			let int_sub =
+				IntegerSubChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
+			let int_mul =
+				IntegerMulChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
+			let int_div =
+				IntegerDivChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
+
+			let ladder = EccUnreducedLadderConfig::new(int_add, int_sub, int_mul, int_div);
+			let add = EccAddConfig::new(int_red, int_sub, int_mul, int_div);
+			let double = EccDoubleConfig::new(int_red, int_add, int_sub, int_mul, int_div);
+			let table_select = EccTableSelectConfig::new(main.clone());
+			let ecc_mul_scalar = EccMulConfig::new(ladder, add, double, table_select, bits2num);
+			TestConfig { common, main, poseidon_sponge, ecc_mul_scalar }
+		}
+
+		fn synthesize(
+			&self, config: TestConfig, mut layouter: impl Layouter<Scalar>,
+		) -> Result<(), Error> {
+			let layouter_rc = Rc::new(Mutex::new(layouter.namespace(|| "loader")));
+			let loader = LoaderConfig::<C, _, P>::new(
+				layouter_rc.clone(),
+				config.common.clone(),
+				config.ecc_mul_scalar,
+				config.main,
+				config.poseidon_sponge.clone(),
+			);
+
+			let coordinates = self.ec_point.coordinates().unwrap();
+
+			let x = Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_w(*coordinates.x());
+			let y = Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_w(*coordinates.y());
+
+			let mut lb = layouter_rc.lock().unwrap();
+			let assigned_coordinates = lb
+				.assign_region(
+					|| "assign",
+					|region: Region<'_, Scalar>| {
+						let mut ctx = RegionCtx::new(region, 0);
+						let mut x_limbs: [Option<AssignedCell<Scalar, Scalar>>; NUM_LIMBS] =
+							[(); NUM_LIMBS].map(|_| None);
+						let mut y_limbs: [Option<AssignedCell<Scalar, Scalar>>; NUM_LIMBS] =
+							[(); NUM_LIMBS].map(|_| None);
+						for i in 0..NUM_LIMBS {
+							x_limbs[i] = Some(
+								ctx.assign_advice(
+									config.common.advice[i],
+									Value::known(x.limbs[i]),
+								)
+								.unwrap(),
+							);
+							y_limbs[i] = Some(
+								ctx.assign_advice(
+									config.common.advice[i + NUM_LIMBS],
+									Value::known(y.limbs[i]),
+								)
+								.unwrap(),
+							);
+						}
+						Ok((x_limbs.map(|x| x.unwrap()), y_limbs.map(|x| x.unwrap())))
+					},
+				)
+				.unwrap();
+
+			let assigned_integer_x = AssignedInteger::<_, _, NUM_LIMBS, NUM_BITS, P>::new(
+				x.clone(),
+				assigned_coordinates.0,
+			);
+			let assigned_integer_y = AssignedInteger::<_, _, NUM_LIMBS, NUM_BITS, P>::new(
+				y.clone(),
+				assigned_coordinates.1,
+			);
+
+			let assigned_point = AssignedPoint::<_, _, NUM_LIMBS, NUM_BITS, P>::new(
+				assigned_integer_x, assigned_integer_y,
+			);
+			let ec_point = Halo2LEcPoint::new(assigned_point, loader.clone());
+
+			drop(lb);
+			let reader = Vec::new();
+			let mut poseidon_read =
+				PoseidonReadChipset::<_, C, _, P, R>::new(reader.as_slice(), loader);
+			poseidon_read.common_ec_point(&ec_point).unwrap();
+			let mut lb = layouter_rc.lock().unwrap();
+			let res = poseidon_read.state.synthesize(
+				&config.common,
+				&config.poseidon_sponge,
+				lb.namespace(|| "squeeze"),
+			)?;
+			lb.constrain_instance(res.clone().cell(), config.common.instance, 0)?;
+			Ok(())
+		}
+	}
+
 	#[test]
 	fn test_common_ec_point() {
 		// Test common ec point
+		let reader = Vec::new();
+		let mut poseidon_read =
+			PoseidonRead::<_, G1Affine, Bn256_4_68, Params>::new(reader.as_slice(), NativeSVLoader);
+		let rng = &mut thread_rng();
+		let ec_point = C::random(rng);
+		poseidon_read.common_ec_point(&ec_point).unwrap();
+
+		let res = poseidon_read.state.squeeze();
+		let circuit = TestCommonEcPointCircuit::new(ec_point);
+		let k = 8;
+		let prover = MockProver::run(k, &circuit, vec![vec![res]]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
 	}
-	#[ignore = "TODO."]
+
+	#[derive(Clone)]
+	struct TestCommonScalarCircuit {
+		scalar: Scalar,
+	}
+
+	impl TestCommonScalarCircuit {
+		fn new(scalar: Scalar) -> Self {
+			Self { scalar }
+		}
+	}
+
+	impl Circuit<Scalar> for TestCommonScalarCircuit {
+		type Config = TestConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			self.clone()
+		}
+
+		fn configure(meta: &mut ConstraintSystem<Scalar>) -> TestConfig {
+			let common = CommonConfig::new(meta);
+			let main_selector = MainChip::configure(&common, meta);
+			let main = MainConfig::new(main_selector);
+
+			let full_round_selector = FullRoundHasher::configure(&common, meta);
+			let partial_round_selector = PartialRoundHasher::configure(&common, meta);
+			let poseidon = PoseidonConfig::new(full_round_selector, partial_round_selector);
+
+			let absorb_selector = AbsorbChip::<Scalar, WIDTH>::configure(&common, meta);
+			let poseidon_sponge = PoseidonSpongeConfig::new(poseidon.clone(), absorb_selector);
+
+			let bits2num = Bits2NumChip::configure(&common, meta);
+
+			let int_red =
+				IntegerReduceChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
+			let int_add =
+				IntegerAddChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
+			let int_sub =
+				IntegerSubChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
+			let int_mul =
+				IntegerMulChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
+			let int_div =
+				IntegerDivChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
+
+			let ladder = EccUnreducedLadderConfig::new(int_add, int_sub, int_mul, int_div);
+			let add = EccAddConfig::new(int_red, int_sub, int_mul, int_div);
+			let double = EccDoubleConfig::new(int_red, int_add, int_sub, int_mul, int_div);
+			let table_select = EccTableSelectConfig::new(main.clone());
+			let ecc_mul_scalar = EccMulConfig::new(ladder, add, double, table_select, bits2num);
+			TestConfig { common, main, poseidon_sponge, ecc_mul_scalar }
+		}
+
+		fn synthesize(
+			&self, config: TestConfig, mut layouter: impl Layouter<Scalar>,
+		) -> Result<(), Error> {
+			let layouter_rc = Rc::new(Mutex::new(layouter.namespace(|| "loader")));
+			let loader = LoaderConfig::<C, _, P>::new(
+				layouter_rc.clone(),
+				config.common.clone(),
+				config.ecc_mul_scalar,
+				config.main,
+				config.poseidon_sponge.clone(),
+			);
+
+			let mut lb = layouter_rc.lock().unwrap();
+			let assigned_scalar = lb
+				.assign_region(
+					|| "assign_scalar",
+					|region: Region<'_, Scalar>| {
+						let mut ctx = RegionCtx::new(region, 0);
+						let scalar =
+							ctx.assign_advice(config.common.advice[0], Value::known(self.scalar))?;
+						Ok(scalar)
+					},
+				)
+				.unwrap();
+			let scalar = Halo2LScalar::new(assigned_scalar, loader.clone());
+			drop(lb);
+			let reader = Vec::new();
+			let mut poseidon_read =
+				PoseidonReadChipset::<_, C, _, P, R>::new(reader.as_slice(), loader);
+			poseidon_read.common_scalar(&scalar).unwrap();
+			let mut lb = layouter_rc.lock().unwrap();
+			let res = poseidon_read.state.synthesize(
+				&config.common,
+				&config.poseidon_sponge,
+				lb.namespace(|| "squeeze"),
+			)?;
+			lb.constrain_instance(res.clone().cell(), config.common.instance, 0)?;
+
+			Ok(())
+		}
+	}
+
 	#[test]
 	fn test_common_scalar() {
 		// Test common scalar
+		let reader = Vec::new();
+		let mut poseidon_read =
+			PoseidonRead::<_, G1Affine, Bn256_4_68, Params>::new(reader.as_slice(), NativeSVLoader);
+		let rng = &mut thread_rng();
+		let scalar = Scalar::random(rng);
+		poseidon_read.common_scalar(&scalar).unwrap();
+
+		let res = poseidon_read.state.squeeze();
+		let circuit = TestCommonScalarCircuit::new(scalar);
+		let k = 7;
+		let prover = MockProver::run(k, &circuit, vec![vec![res]]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
 	}
-	#[ignore = "TODO."]
+
+	#[derive(Clone)]
+	struct TestReadScalarCircuit;
+
+	impl TestReadScalarCircuit {
+		fn new() -> Self {
+			Self
+		}
+	}
+
+	impl Circuit<Scalar> for TestReadScalarCircuit {
+		type Config = TestConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			self.clone()
+		}
+
+		fn configure(meta: &mut ConstraintSystem<Scalar>) -> TestConfig {
+			let common = CommonConfig::new(meta);
+			let main_selector = MainChip::configure(&common, meta);
+			let main = MainConfig::new(main_selector);
+
+			let full_round_selector = FullRoundHasher::configure(&common, meta);
+			let partial_round_selector = PartialRoundHasher::configure(&common, meta);
+			let poseidon = PoseidonConfig::new(full_round_selector, partial_round_selector);
+
+			let absorb_selector = AbsorbChip::<Scalar, WIDTH>::configure(&common, meta);
+			let poseidon_sponge = PoseidonSpongeConfig::new(poseidon.clone(), absorb_selector);
+
+			let bits2num = Bits2NumChip::configure(&common, meta);
+
+			let int_red =
+				IntegerReduceChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
+			let int_add =
+				IntegerAddChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
+			let int_sub =
+				IntegerSubChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
+			let int_mul =
+				IntegerMulChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
+			let int_div =
+				IntegerDivChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
+
+			let ladder = EccUnreducedLadderConfig::new(int_add, int_sub, int_mul, int_div);
+			let add = EccAddConfig::new(int_red, int_sub, int_mul, int_div);
+			let double = EccDoubleConfig::new(int_red, int_add, int_sub, int_mul, int_div);
+			let table_select = EccTableSelectConfig::new(main.clone());
+			let ecc_mul_scalar = EccMulConfig::new(ladder, add, double, table_select, bits2num);
+			TestConfig { common, main, poseidon_sponge, ecc_mul_scalar }
+		}
+
+		fn synthesize(
+			&self, config: TestConfig, mut layouter: impl Layouter<Scalar>,
+		) -> Result<(), Error> {
+			let layouter_rc = Rc::new(Mutex::new(layouter.namespace(|| "loader")));
+			let loader = LoaderConfig::<C, _, P>::new(
+				layouter_rc.clone(),
+				config.common.clone(),
+				config.ecc_mul_scalar,
+				config.main,
+				config.poseidon_sponge.clone(),
+			);
+
+			let reader = Vec::new();
+			let mut poseidon_read =
+				PoseidonReadChipset::<_, C, _, P, R>::new(reader.as_slice(), loader);
+			let res = poseidon_read.read_scalar().unwrap();
+
+			let mut lb = layouter_rc.lock().unwrap();
+			lb.constrain_instance(res.inner.clone().cell(), config.common.instance, 0)?;
+
+			Ok(())
+		}
+	}
+
 	#[test]
 	fn test_read_scalar() {
 		// Test read scalar
+		let reader = Vec::new();
+		let mut poseidon_read =
+			PoseidonRead::<_, G1Affine, Bn256_4_68, Params>::new(reader.as_slice(), NativeSVLoader);
+
+		let res = poseidon_read.read_scalar().unwrap();
+		let circuit = TestReadScalarCircuit::new();
+		let k = 7;
+		let prover = MockProver::run(k, &circuit, vec![vec![res]]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
 	}
 	#[ignore = "TODO."]
 	#[test]
