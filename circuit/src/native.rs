@@ -84,7 +84,7 @@ impl EigenTrustSet {
 		self.ops.insert(from, op);
 	}
 
-	pub fn converge(&mut self) -> [Fr; NUM_NEIGHBOURS] {
+	pub fn converge(&self) -> [Fr; NUM_NEIGHBOURS] {
 		let (filtered_set, mut filtered_ops) = self.filter_peers();
 
 		// Normalize the opinion scores
@@ -192,19 +192,12 @@ impl EigenTrustSet {
 				//
 				for j in 0..NUM_NEIGHBOURS {
 					let (pk_j, score) = ops_i.scores[j].clone();
-					let true_pk = if i == j {
-						pk_i
-					} else if pk_j == pk_i {
-						PublicKey::default()
-					} else {
-						pk_j
-					};
-					let true_score = if true_pk == pk_i || true_pk == PublicKey::default() {
+					let true_score = if pk_j == pk_i || pk_j == PublicKey::default() {
 						Fr::zero()
 					} else {
 						score
 					};
-					ops_i.scores[j] = (true_pk, true_score);
+					ops_i.scores[j] = (pk_j, true_score);
 				}
 
 				// Update the opinion array - pairs of (key, score)
@@ -275,7 +268,7 @@ mod test {
 	use super::{EigenTrustSet, Opinion, INITIAL_SCORE, NUM_NEIGHBOURS};
 	use crate::{
 		calculate_message_hash,
-		eddsa::native::{sign, PublicKey, SecretKey, Signature},
+		eddsa::native::{sign, PublicKey, SecretKey},
 	};
 	use halo2::halo2curves::{bn256::Fr, FieldExt};
 	use rand::thread_rng;
