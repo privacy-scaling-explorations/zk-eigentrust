@@ -213,11 +213,6 @@ impl EigenTrustSet {
 				//	Peer1 opinion
 				// 		[(p1, 0), (p3, 10), (null, 0)]
 				//   => [(p1, 0), (p2, 0),  (p3, 0)]
-				let op_score_sum =
-					ops_i.scores.iter().fold(Fr::zero(), |acc, &(_, score)| acc + score);
-				if op_score_sum == Fr::zero() {
-					panic!("The peer {i} didn't give any score to other peers!");
-				}
 				for j in 0..NUM_NEIGHBOURS {
 					let (set_pk_j, _) = filtered_set[j];
 					let (op_pk_j, _) = ops_i.scores[j].clone();
@@ -244,9 +239,9 @@ impl EigenTrustSet {
 				//	Peer1 opinion
 				//      [(p1, 0), (p2, 0), (p3, 0)]
 				//   => [(p1, 0), (p2, 1), (p3, 1)]
-				let new_op_score_sum =
+				let op_score_sum =
 					ops_i.scores.iter().fold(Fr::zero(), |acc, &(_, score)| acc + score);
-				if new_op_score_sum == Fr::zero() {
+				if op_score_sum == Fr::zero() {
 					for j in 0..NUM_NEIGHBOURS {
 						let (pk_j, _) = ops_i.scores[j].clone();
 						if i != j && valid_peers.contains(&pk_j) {
