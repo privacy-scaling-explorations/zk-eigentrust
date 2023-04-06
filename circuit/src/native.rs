@@ -156,8 +156,6 @@ impl EigenTrustSet {
 		let mut filtered_set: [(PublicKey, Fr); NUM_NEIGHBOURS] = self.set.clone();
 		let mut filtered_ops: HashMap<PublicKey, Opinion> = HashMap::new();
 
-		let mut valid_peers: Vec<PublicKey> = vec![];
-
 		// Convert the peer who didn't sign his opinion, to default peer
 		//
 		// Example:
@@ -170,8 +168,6 @@ impl EigenTrustSet {
 			// If no credits, the peer did not sign his opinion
 			if credits == Fr::zero() {
 				filtered_set[i] = (PublicKey::default(), Fr::zero());
-			} else {
-				valid_peers.push(pk);
 			}
 		}
 
@@ -191,13 +187,10 @@ impl EigenTrustSet {
 				// 	 => [(p1,  0), (p2, 10), (null,  0)]
 				//
 				for j in 0..NUM_NEIGHBOURS {
-					let (pk_j, score) = ops_i.scores[j].clone();
-					let true_score = if pk_j == pk_i || pk_j == PublicKey::default() {
-						Fr::zero()
-					} else {
-						score
+					let (pk_j, _) = ops_i.scores[j].clone();
+					if pk_j == pk_i || pk_j == PublicKey::default() {
+						ops_i.scores[j] = (pk_j, Fr::zero());
 					};
-					ops_i.scores[j] = (pk_j, true_score);
 				}
 
 				// Update the opinion array - pairs of (key, score)
@@ -216,13 +209,8 @@ impl EigenTrustSet {
 				for j in 0..NUM_NEIGHBOURS {
 					let (set_pk_j, _) = filtered_set[j];
 					let (op_pk_j, _) = ops_i.scores[j].clone();
-
-					if set_pk_j == PublicKey::default() {
-						ops_i.scores[j] = (PublicKey::default(), Fr::zero());
-					} else {
-						if op_pk_j != set_pk_j {
-							ops_i.scores[j] = (set_pk_j, Fr::zero());
-						}
+					if set_pk_j != op_pk_j {
+						ops_i.scores[j] = (set_pk_j, Fr::zero());
 					}
 				}
 
@@ -244,7 +232,7 @@ impl EigenTrustSet {
 				if op_score_sum == Fr::zero() {
 					for j in 0..NUM_NEIGHBOURS {
 						let (pk_j, _) = ops_i.scores[j].clone();
-						if i != j && valid_peers.contains(&pk_j) {
+						if pk_j != pk_i && pk_j != PublicKey::default() {
 							ops_i.scores[j] = (pk_j, Fr::from(1));
 						}
 					}
