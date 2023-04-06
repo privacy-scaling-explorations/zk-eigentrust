@@ -271,7 +271,7 @@ mod test {
 				native::{NUM_BITS, NUM_LIMBS},
 				Halo2LEcPoint, Halo2LScalar,
 			},
-			transcript::native::{PoseidonWrite, WIDTH},
+			transcript::native::WIDTH,
 		},
 		Chip, Chipset, CommonConfig, RegionCtx,
 	};
@@ -305,24 +305,8 @@ mod test {
 		ecc_mul_scalar: EccMulConfig,
 	}
 
-	#[derive(Clone)]
-	struct TestSqueezeCircuit;
-
-	impl TestSqueezeCircuit {
-		fn new() -> Self {
-			Self
-		}
-	}
-
-	impl Circuit<Scalar> for TestSqueezeCircuit {
-		type Config = TestConfig;
-		type FloorPlanner = SimpleFloorPlanner;
-
-		fn without_witnesses(&self) -> Self {
-			self.clone()
-		}
-
-		fn configure(meta: &mut ConstraintSystem<Scalar>) -> TestConfig {
+	impl TestConfig {
+		fn new(meta: &mut ConstraintSystem<Scalar>) -> Self {
 			let common = CommonConfig::new(meta);
 			let main_selector = MainChip::configure(&common, meta);
 			let main = MainConfig::new(main_selector);
@@ -353,6 +337,28 @@ mod test {
 			let table_select = EccTableSelectConfig::new(main.clone());
 			let ecc_mul_scalar = EccMulConfig::new(ladder, add, double, table_select, bits2num);
 			TestConfig { common, main, poseidon_sponge, ecc_mul_scalar }
+		}
+	}
+
+	#[derive(Clone)]
+	struct TestSqueezeCircuit;
+
+	impl TestSqueezeCircuit {
+		fn new() -> Self {
+			Self
+		}
+	}
+
+	impl Circuit<Scalar> for TestSqueezeCircuit {
+		type Config = TestConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			self.clone()
+		}
+
+		fn configure(meta: &mut ConstraintSystem<Scalar>) -> TestConfig {
+			TestConfig::new(meta)
 		}
 
 		fn synthesize(
@@ -412,36 +418,7 @@ mod test {
 		}
 
 		fn configure(meta: &mut ConstraintSystem<Scalar>) -> TestConfig {
-			let common = CommonConfig::new(meta);
-			let main_selector = MainChip::configure(&common, meta);
-			let main = MainConfig::new(main_selector);
-
-			let full_round_selector = FullRoundHasher::configure(&common, meta);
-			let partial_round_selector = PartialRoundHasher::configure(&common, meta);
-			let poseidon = PoseidonConfig::new(full_round_selector, partial_round_selector);
-
-			let absorb_selector = AbsorbChip::<Scalar, WIDTH>::configure(&common, meta);
-			let poseidon_sponge = PoseidonSpongeConfig::new(poseidon.clone(), absorb_selector);
-
-			let bits2num = Bits2NumChip::configure(&common, meta);
-
-			let int_red =
-				IntegerReduceChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
-			let int_add =
-				IntegerAddChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
-			let int_sub =
-				IntegerSubChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
-			let int_mul =
-				IntegerMulChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
-			let int_div =
-				IntegerDivChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
-
-			let ladder = EccUnreducedLadderConfig::new(int_add, int_sub, int_mul, int_div);
-			let add = EccAddConfig::new(int_red, int_sub, int_mul, int_div);
-			let double = EccDoubleConfig::new(int_red, int_add, int_sub, int_mul, int_div);
-			let table_select = EccTableSelectConfig::new(main.clone());
-			let ecc_mul_scalar = EccMulConfig::new(ladder, add, double, table_select, bits2num);
-			TestConfig { common, main, poseidon_sponge, ecc_mul_scalar }
+			TestConfig::new(meta)
 		}
 
 		fn synthesize(
@@ -559,36 +536,7 @@ mod test {
 		}
 
 		fn configure(meta: &mut ConstraintSystem<Scalar>) -> TestConfig {
-			let common = CommonConfig::new(meta);
-			let main_selector = MainChip::configure(&common, meta);
-			let main = MainConfig::new(main_selector);
-
-			let full_round_selector = FullRoundHasher::configure(&common, meta);
-			let partial_round_selector = PartialRoundHasher::configure(&common, meta);
-			let poseidon = PoseidonConfig::new(full_round_selector, partial_round_selector);
-
-			let absorb_selector = AbsorbChip::<Scalar, WIDTH>::configure(&common, meta);
-			let poseidon_sponge = PoseidonSpongeConfig::new(poseidon.clone(), absorb_selector);
-
-			let bits2num = Bits2NumChip::configure(&common, meta);
-
-			let int_red =
-				IntegerReduceChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
-			let int_add =
-				IntegerAddChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
-			let int_sub =
-				IntegerSubChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
-			let int_mul =
-				IntegerMulChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
-			let int_div =
-				IntegerDivChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
-
-			let ladder = EccUnreducedLadderConfig::new(int_add, int_sub, int_mul, int_div);
-			let add = EccAddConfig::new(int_red, int_sub, int_mul, int_div);
-			let double = EccDoubleConfig::new(int_red, int_add, int_sub, int_mul, int_div);
-			let table_select = EccTableSelectConfig::new(main.clone());
-			let ecc_mul_scalar = EccMulConfig::new(ladder, add, double, table_select, bits2num);
-			TestConfig { common, main, poseidon_sponge, ecc_mul_scalar }
+			TestConfig::new(meta)
 		}
 
 		fn synthesize(
@@ -670,36 +618,7 @@ mod test {
 		}
 
 		fn configure(meta: &mut ConstraintSystem<Scalar>) -> TestConfig {
-			let common = CommonConfig::new(meta);
-			let main_selector = MainChip::configure(&common, meta);
-			let main = MainConfig::new(main_selector);
-
-			let full_round_selector = FullRoundHasher::configure(&common, meta);
-			let partial_round_selector = PartialRoundHasher::configure(&common, meta);
-			let poseidon = PoseidonConfig::new(full_round_selector, partial_round_selector);
-
-			let absorb_selector = AbsorbChip::<Scalar, WIDTH>::configure(&common, meta);
-			let poseidon_sponge = PoseidonSpongeConfig::new(poseidon.clone(), absorb_selector);
-
-			let bits2num = Bits2NumChip::configure(&common, meta);
-
-			let int_red =
-				IntegerReduceChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
-			let int_add =
-				IntegerAddChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
-			let int_sub =
-				IntegerSubChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
-			let int_mul =
-				IntegerMulChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
-			let int_div =
-				IntegerDivChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
-
-			let ladder = EccUnreducedLadderConfig::new(int_add, int_sub, int_mul, int_div);
-			let add = EccAddConfig::new(int_red, int_sub, int_mul, int_div);
-			let double = EccDoubleConfig::new(int_red, int_add, int_sub, int_mul, int_div);
-			let table_select = EccTableSelectConfig::new(main.clone());
-			let ecc_mul_scalar = EccMulConfig::new(ladder, add, double, table_select, bits2num);
-			TestConfig { common, main, poseidon_sponge, ecc_mul_scalar }
+			TestConfig::new(meta)
 		}
 
 		fn synthesize(
@@ -762,36 +681,7 @@ mod test {
 		}
 
 		fn configure(meta: &mut ConstraintSystem<Scalar>) -> TestConfig {
-			let common = CommonConfig::new(meta);
-			let main_selector = MainChip::configure(&common, meta);
-			let main = MainConfig::new(main_selector);
-
-			let full_round_selector = FullRoundHasher::configure(&common, meta);
-			let partial_round_selector = PartialRoundHasher::configure(&common, meta);
-			let poseidon = PoseidonConfig::new(full_round_selector, partial_round_selector);
-
-			let absorb_selector = AbsorbChip::<Scalar, WIDTH>::configure(&common, meta);
-			let poseidon_sponge = PoseidonSpongeConfig::new(poseidon.clone(), absorb_selector);
-
-			let bits2num = Bits2NumChip::configure(&common, meta);
-
-			let int_red =
-				IntegerReduceChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
-			let int_add =
-				IntegerAddChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
-			let int_sub =
-				IntegerSubChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
-			let int_mul =
-				IntegerMulChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
-			let int_div =
-				IntegerDivChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
-
-			let ladder = EccUnreducedLadderConfig::new(int_add, int_sub, int_mul, int_div);
-			let add = EccAddConfig::new(int_red, int_sub, int_mul, int_div);
-			let double = EccDoubleConfig::new(int_red, int_add, int_sub, int_mul, int_div);
-			let table_select = EccTableSelectConfig::new(main.clone());
-			let ecc_mul_scalar = EccMulConfig::new(ladder, add, double, table_select, bits2num);
-			TestConfig { common, main, poseidon_sponge, ecc_mul_scalar }
+			TestConfig::new(meta)
 		}
 
 		fn synthesize(
