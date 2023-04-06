@@ -53,13 +53,12 @@ The client's command-line interface was built using [clap.rs](http://clap.rs/). 
 - `compile-contracts`: Compiles all the `.sol` and `.yul` contracts available in the `data` folder. For `.sol` contracts, it generates an ABI JSON file and a Rust binding file. For `.yul` smart contracts, it compiles Yul code into binary.
 - `deploy-contracts`: Deploys all the contracts.
 - `show`: Displays the `client-config.json` file.
-- `update`: Updates the specified field in `client-config.json`. The argument must be passed with `--subcommand "new-value"`. The available subcommands are:
-    - `name`
-    - `score`
-    - `sk`
-    - `as_address`
-    - `mnemonic`
-    - `node_url`
+- `update`: Updates the specified field in `client-config.json`. The argument must be passed as `[subcommand] "[new_value]"`. The available subcommands are:
+    - `as_address`: Updates the address of the AttestationStation contract.
+    - `mnemonic`: Updates the mnemonic for the Ethereum wallet.
+    - `score`: Updates a selected peer score. e.g. `score "Alice 100"`.
+    - `node_url`: Updates the URL for the Ethereum node.
+    - `sk`: Updates the secret_key. Both strings should be separated by a comma.
 - `verify`: Fetches the proof from the server on `server_url` and submits the proof to ET Verifier on `et_verifier_wrapper_address`.
 
 ## Configuration
@@ -80,7 +79,7 @@ The client configuration is stored in `data/client-config.json`, which specifies
 
 The server was built using [hyper.rs](http://hyper.rs/). You can find the configuration file at `data/protocol-config.json`, where you can specify the following:
 
-- `epoch_interval`: Interval at which proofs are calculated
-- `endpoint`: Socket that listens for connections to the server
+- `epoch_interval`: Interval at which proofs are calculated.
+- `endpoint`: Socket that listens for connections to the server.
 - `ethereum_node_url`: URL of the Ethereum node we are connecting to. This defaults to `127.0.0.1:8545` to run with a local `anvil` EVM blockchain.
 - `as_contract_address`: Address of the AttestationStation smart contract from which events are being fetched.

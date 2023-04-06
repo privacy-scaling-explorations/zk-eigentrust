@@ -36,19 +36,36 @@ enum Mode {
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Args)]
 struct UpdateData {
-	name: Option<String>,
-	score: Option<u128>,
-	sk: Option<String>,
-	as_address: Option<String>,
-	mnemonic: Option<String>,
-	node_url: Option<String>,
+	field: Option<String>,
+	new_data: Option<String>,
+}
+
+enum Config {
+	AttestationStationAddress,
+	Mnemonic,
+	NodeUrl,
+	Score,
+	SecretKey,
+}
+
+impl Config {
+	fn from_str(str: String) -> Result<Config, &'static str> {
+		match str.as_str() {
+			"as_address" => Ok(Config::AttestationStationAddress),
+			"mnemonic" => Ok(Config::Mnemonic),
+			"score" => Ok(Config::Score),
+			"node_url" => Ok(Config::NodeUrl),
+			"sk" => Ok(Config::SecretKey),
+			_ => Err("Invalid config field"),
+		}
+	}
 }
 
 #[tokio::main]
 async fn main() {
 	let cli = Cli::parse();
 	let user_secrets_raw: Vec<[String; 3]> = read_csv_data("bootstrap-nodes").unwrap();
-	let config: ClientConfig = read_json_data("client-config").unwrap();
+	let mut config: ClientConfig = read_json_data("client-config").unwrap();
 
 	let pos = user_secrets_raw.iter().position(|x| &config.secret_key == &x[1..]);
 	assert!(pos.is_some());
@@ -62,7 +79,7 @@ async fn main() {
 		Mode::DeployContracts => {
 			let deploy_res = deploy_as(&config.mnemonic, &config.ethereum_node_url).await;
 			if let Err(e) = deploy_res {
-				eprintln!("Failed to deploy the AttestationStation contract: {:?}", e);
+				println!("Failed to deploy the AttestationStation contract: {:?}", e);
 				return;
 			}
 			let address = deploy_res.unwrap();
@@ -72,7 +89,7 @@ async fn main() {
 			let deploy_res =
 				deploy_verifier(&config.mnemonic, &config.ethereum_node_url, et_contract).await;
 			if let Err(e) = deploy_res {
-				eprintln!("Failed to deploy the EigenTrustVerifier contract: {:?}", e);
+				println!("Failed to deploy the EigenTrustVerifier contract: {:?}", e);
 				return;
 			}
 			let address = deploy_res.unwrap();
@@ -93,84 +110,133 @@ async fn main() {
 			println!("Successful verification!");
 		},
 		Mode::Update(data) => {
-			let UpdateData { name, score, sk, as_address, mnemonic, node_url } = data;
+			let UpdateData { field, new_data } = data;
 
-			let mut client_config_updated = config.clone();
+			if let Some(f) = field {
+				if let Ok(config_field) = Config::from_str(f) {
+					match config_field {
+						Config::AttestationStationAddress => {
+							if let Some(new_data) = new_data {
+								let as_address_parsed: Result<Address, _> = new_data.parse();
 
-			if let (Some(name), Some(score)) = (name, score) {
-				let available_names: Vec<String> =
-					user_secrets_raw.iter().map(|x| x[0].clone()).collect();
-				let pos = available_names.iter().position(|x| &name == x);
-				if pos.is_none() {
-					eprintln!(
-						"Invalid neighbour name: {:?}, available: {:?}",
-						name, available_names
-					);
-					return;
+								if as_address_parsed.is_err() {
+									println!("Failed to parse address");
+									return;
+								}
+
+								config.as_address = new_data;
+							} else {
+								println!("Please provide a new address");
+							}
+						},
+						Config::Mnemonic => {
+							if let Some(new_data) = new_data {
+								let parsed_mnemonic =
+									Mnemonic::<English>::new_from_phrase(&new_data);
+
+								if parsed_mnemonic.is_err() {
+									println!("Failed to parse mnemonic!");
+									return;
+								}
+
+								config.mnemonic = new_data;
+							} else {
+								println!("Please provide a new mnemonic");
+							}
+						},
+						Config::NodeUrl => {
+							if let Some(new_data) = new_data {
+								let provider = Http::from_str(&new_data);
+
+								if provider.is_err() {
+									println!("Failed to parse node url!");
+									return;
+								}
+
+								config.ethereum_node_url = new_data;
+							} else {
+								println!("Please provide a new node url");
+							}
+						},
+						Config::Score => {
+							if let Some(new_data) = new_data {
+								let input: Vec<String> =
+									new_data.split(" ").map(|x| x.to_string()).collect();
+
+								if input.len() != 2 {
+									println!("Invalid input format. Expected: \"Alice 100\"");
+									return;
+								}
+
+								let name = input[0].clone();
+								let score = input[1].clone();
+
+								let score_parsed: Result<u128, _> = score.parse();
+								if score_parsed.is_err() {
+									println!("Failed to parse score");
+									return;
+								}
+
+								let available_names: Vec<String> =
+									user_secrets_raw.iter().map(|x| x[0].clone()).collect();
+								let pos = available_names.iter().position(|x| &name == x);
+
+								if pos.is_none() {
+									println!(
+										"Invalid neighbour name: {:?}, available: {:?}",
+										name, available_names
+									);
+									return;
+								}
+
+								let pos = pos.unwrap();
+								config.ops[pos] = score_parsed.unwrap();
+							} else {
+								println!(
+									"Please provice both name and score in order to update your opinion");
+							}
+						},
+						Config::SecretKey => {
+							if let Some(new_data) = new_data {
+								let sk_vec: Vec<String> =
+									new_data.split(",").map(|x| x.to_string()).collect();
+								if sk_vec.len() != 2 {
+									println!(
+										"Invalid secret key passed, expected 2 bs58 values separated by commas, e.g.: \
+										'2L9bbXNEayuRMMbrWFynPtgkrXH1iBdfryRH9Soa8M67,9rBeBVtbN2MkHDTpeAouqkMWNFJC6Bxb6bXH9jUueWaF'"
+									);
+									return;
+								}
+
+								let sk: [String; 2] = sk_vec.try_into().unwrap();
+								let sk0_decoded = bs58::decode(&sk[0]).into_vec();
+								let sk1_decoded = bs58::decode(&sk[1]).into_vec();
+
+								if sk0_decoded.is_err() || sk1_decoded.is_err() {
+									println!(
+										"Failed to decode secret key! Expecting bs58 encoded values!"
+									);
+									return;
+								}
+							} else {
+								println!("Please provide a new secret key");
+							}
+						},
+					}
+				} else {
+					println!("Invalid field name");
 				}
-				let pos = pos.unwrap();
-				client_config_updated.ops[pos] = score;
 			} else {
-				eprintln!("Please provice both name and score in order to update your opinion!");
+				println!("Please provide a field to update!");
 			}
 
-			if let Some(sk) = sk {
-				let sk_vec: Vec<String> = sk.split(",").map(|x| x.to_string()).collect();
-				if sk_vec.len() != 2 {
-					eprintln!(
-						"Invalid secret key passed, expected 2 bs58 values separated by commas, e.g.: \
-						'2L9bbXNEayuRMMbrWFynPtgkrXH1iBdfryRH9Soa8M67,9rBeBVtbN2MkHDTpeAouqkMWNFJC6Bxb6bXH9jUueWaF'"
-					);
-					return;
-				}
-				let sk: [String; 2] = sk_vec.try_into().unwrap();
-
-				let sk0_decoded = bs58::decode(&sk[0]).into_vec();
-				let sk1_decoded = bs58::decode(&sk[1]).into_vec();
-				if sk0_decoded.is_err() || sk1_decoded.is_err() {
-					eprintln!("Failed to decode secret key! Expecting bs58 encoded values!");
-					return;
-				}
-
-				client_config_updated.secret_key = sk;
-			}
-
-			if let Some(as_address) = as_address {
-				let as_address_parsed: Result<Address, _> = as_address.parse();
-				if as_address_parsed.is_err() {
-					eprintln!("Failed to parse address!");
-					return;
-				}
-
-				client_config_updated.as_address = as_address;
-			}
-
-			if let Some(mnemonic) = mnemonic {
-				let parsed_mnemonic = Mnemonic::<English>::new_from_phrase(&mnemonic);
-				if parsed_mnemonic.is_err() {
-					eprintln!("Failed to parse mnemonic!");
-					return;
-				}
-				client_config_updated.mnemonic = mnemonic;
-			}
-
-			if let Some(node_url) = node_url {
-				let provider = Http::from_str(&node_url);
-				if provider.is_err() {
-					eprintln!("Failed to parse node url!");
-					return;
-				}
-				client_config_updated.ethereum_node_url = node_url;
-			}
-
-			let res = write_json_data(client_config_updated, "client-config");
+			let res = write_json_data(config, "client-config");
 			if res.is_err() {
-				println!("Failed to same updated config!");
+				println!("Failed to update config");
 			}
 		},
 		Mode::Show => {
-			println!("Client config:");
-			println!("{:#?}", config);
+			println!("Client config:\n{:#?}", config);
 		},
 	}
 }
