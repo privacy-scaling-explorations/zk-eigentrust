@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use crate::eddsa::native::{PublicKey, Signature};
 use halo2::{
@@ -92,7 +92,9 @@ impl EigenTrustSet {
 		// We assume that the initial credit of peer is constant(INITIAL_SCORE)
 		for i in 0..NUM_NEIGHBOURS {
 			let (pk, credits) = filtered_set[i];
-			if !(pk == PublicKey::default() || credits == Fr::zero()) {
+			if pk == PublicKey::default() {
+				continue;
+			} else {
 				let mut ops_i = filtered_ops.get_mut(&pk).unwrap();
 
 				let op_score_sum =
@@ -106,7 +108,7 @@ impl EigenTrustSet {
 		}
 
 		// There should be at least 2 valid peers(valid opinions) for calculation
-		let valid_peers = filtered_set.iter().filter(|(_, credits)| credits != &Fr::zero()).count();
+		let valid_peers = filtered_set.iter().filter(|(pk, _)| pk != &PublicKey::default()).count();
 		assert!(valid_peers >= 2, "Insufficient peers for calculation!");
 
 		// By this point we should use filtered_set and filtered_opinions
@@ -156,26 +158,13 @@ impl EigenTrustSet {
 		let mut filtered_set: [(PublicKey, Fr); NUM_NEIGHBOURS] = self.set.clone();
 		let mut filtered_ops: HashMap<PublicKey, Opinion> = HashMap::new();
 
-		// Convert the peer who didn't sign his opinion, to default peer
-		//
-		// Example:
-		//  In this set, peer3 didn't sign the opinion.
-		//		[(p1, 10), (p2, 10), (p3, 0)]
-		//   => [(p1, 10), (p2, 10), (null, 0)]
-		// Here, "null" means default peer
-		for i in 0..NUM_NEIGHBOURS {
-			let (pk, credits) = filtered_set[i].clone();
-			// If no credits, the peer did not sign his opinion
-			if credits == Fr::zero() {
-				filtered_set[i] = (PublicKey::default(), Fr::zero());
-			}
-		}
-
 		// Distribute the scores to valid peers
 		for i in 0..NUM_NEIGHBOURS {
 			let (pk_i, _) = filtered_set[i].clone();
-			if pk_i != PublicKey::default() {
-				let mut ops_i = self.ops.get(&pk_i).unwrap().clone();
+			if pk_i == PublicKey::default() {
+				continue;
+			} else {
+				let mut ops_i = self.ops.get(&pk_i).unwrap_or(&Opinion::default()).clone();
 
 				// Give zero score for peers
 				//   - giving scores to itself
@@ -238,6 +227,7 @@ impl EigenTrustSet {
 					}
 				}
 
+				filtered_set[i] = (pk_i, Fr::from_u128(INITIAL_SCORE));
 				filtered_ops.insert(pk_i, ops_i);
 			}
 		}
@@ -287,6 +277,20 @@ mod test {
 
 	#[test]
 	#[should_panic]
+	fn test_one_member_converge() {
+		let mut set = EigenTrustSet::new();
+
+		let rng = &mut thread_rng();
+
+		let sk1 = SecretKey::random(rng);
+		let pk1 = sk1.public();
+
+		set.add_member(pk1);
+
+		set.converge();
+	}
+
+	#[test]
 	fn test_add_two_members_without_opinions() {
 		let mut set = EigenTrustSet::new();
 
@@ -305,7 +309,6 @@ mod test {
 	}
 
 	#[test]
-	#[should_panic]
 	fn test_add_two_members_with_one_opinion() {
 		let mut set = EigenTrustSet::new();
 
@@ -529,7 +532,6 @@ mod test {
 	}
 
 	#[test]
-	#[should_panic]
 	fn test_add_3_members_with_2_ops_quit_1_member_1_op() {
 		let mut set = EigenTrustSet::new();
 
