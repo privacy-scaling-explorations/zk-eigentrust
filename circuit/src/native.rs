@@ -57,8 +57,9 @@ impl EigenTrustSet {
 		let first_available = self.set.iter().position(|&(x, _)| x == PublicKey::default());
 		let index = first_available.unwrap();
 
-		// Initial score for new member is zero.
-		self.set[index] = (pk, Fr::zero());
+		// Give the initial score.
+		let initial_score = Fr::from_u128(INITIAL_SCORE);
+		self.set[index] = (pk, initial_score);
 	}
 
 	pub fn remove_member(&mut self, pk: PublicKey) {
@@ -75,11 +76,6 @@ impl EigenTrustSet {
 	pub fn update_op(&mut self, from: PublicKey, op: Opinion) {
 		let pos_from = self.set.iter().position(|&(x, _)| x == from);
 		assert!(pos_from.is_some());
-
-		// Initial score is updated only when the opinion is given/signed.
-		let initial_score = Fr::from_u128(INITIAL_SCORE);
-		let index = pos_from.unwrap();
-		self.set[index] = (from, initial_score);
 
 		self.ops.insert(from, op);
 	}
@@ -155,7 +151,7 @@ impl EigenTrustSet {
 		[(PublicKey, Fr); NUM_NEIGHBOURS],
 		HashMap<PublicKey, Opinion>,
 	) {
-		let mut filtered_set: [(PublicKey, Fr); NUM_NEIGHBOURS] = self.set.clone();
+		let filtered_set: [(PublicKey, Fr); NUM_NEIGHBOURS] = self.set.clone();
 		let mut filtered_ops: HashMap<PublicKey, Opinion> = HashMap::new();
 
 		// Distribute the scores to valid peers
@@ -233,8 +229,6 @@ impl EigenTrustSet {
 				}
 			}
 
-			// TODO: Give initial score when peer joins the set
-			filtered_set[i] = (pk_i, Fr::from_u128(INITIAL_SCORE));
 			filtered_ops.insert(pk_i, ops_i);
 		}
 
