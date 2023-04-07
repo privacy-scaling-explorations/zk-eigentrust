@@ -166,39 +166,28 @@ impl EigenTrustSet {
 			} else {
 				let mut ops_i = self.ops.get(&pk_i).unwrap_or(&Opinion::default()).clone();
 
-				// Give zero score for peers
-				//   - giving scores to itself
-				// 	 - giving scores to default peer
-				//
-				// Example:
-				//   Peer1 opinion
-				//		[(p1, 10), (p2, 10), (null, 10)]
-				// 	 => [(p1,  0), (p2, 10), (null,  0)]
-				//
-				for j in 0..NUM_NEIGHBOURS {
-					let (pk_j, _) = ops_i.scores[j].clone();
-					if pk_j == pk_i || pk_j == PublicKey::default() {
-						ops_i.scores[j] = (pk_j, Fr::zero());
-					};
-				}
-
 				// Update the opinion array - pairs of (key, score)
 				//
 				// Example 1:
 				// 	filtered_set => [p1, null, p3]
 				//	Peer1 opinion
-				// 		[(p1, 0), (p6, 10),  (p3, 10)]
+				// 		[(p1, 10), (p6, 10),  (p3, 10)]
 				//   => [(p1, 0), (null, 0), (p3, 10)]
 				//
 				// Example 2:
-				// 	filtered_set => [p1, p2, p3]
+				// 	filtered_set => [p1, p2, null]
 				//	Peer1 opinion
-				// 		[(p1, 0), (p3, 10), (null, 0)]
+				// 		[(p1, 0), (p3, 10), (null, 10)]
 				//   => [(p1, 0), (p2, 0),  (p3, 0)]
 				for j in 0..NUM_NEIGHBOURS {
 					let (set_pk_j, _) = filtered_set[j];
 					let (op_pk_j, _) = ops_i.scores[j].clone();
-					if set_pk_j != op_pk_j {
+
+					if op_pk_j == set_pk_j {
+						if op_pk_j == pk_i || op_pk_j == PublicKey::default() {
+							ops_i.scores[j].1 = Fr::zero();
+						}
+					} else {
 						ops_i.scores[j] = (set_pk_j, Fr::zero());
 					}
 				}
@@ -211,7 +200,7 @@ impl EigenTrustSet {
 				// 		[(p1, 0), (p2, 0), (p3, 10)]
 				//   => [(p1, 0), (p2, 0), (p3, 10)]
 				//
-				// Example 2: (Cont.d from above example 2)
+				// Example 2:
 				// 	filtered_set => [p1, p2, p3]
 				//	Peer1 opinion
 				//      [(p1, 0), (p2, 0), (p3, 0)]
