@@ -163,62 +163,79 @@ impl EigenTrustSet {
 			let (pk_i, _) = filtered_set[i].clone();
 			if pk_i == PublicKey::default() {
 				continue;
-			} else {
-				let mut ops_i = self.ops.get(&pk_i).unwrap_or(&Opinion::default()).clone();
-
-				// Update the opinion array - pairs of (key, score)
-				//
-				// Example 1:
-				// 	filtered_set => [p1, null, p3]
-				//	Peer1 opinion
-				// 		[(p1, 10), (p6, 10),  (p3, 10)]
-				//   => [(p1, 0), (null, 0), (p3, 10)]
-				//
-				// Example 2:
-				// 	filtered_set => [p1, p2, null]
-				//	Peer1 opinion
-				// 		[(p1, 0), (p3, 10), (null, 10)]
-				//   => [(p1, 0), (p2, 0),  (p3, 0)]
-				for j in 0..NUM_NEIGHBOURS {
-					let (set_pk_j, _) = filtered_set[j];
-					let (op_pk_j, _) = ops_i.scores[j].clone();
-
-					if op_pk_j == set_pk_j {
-						if op_pk_j == pk_i || op_pk_j == PublicKey::default() {
-							ops_i.scores[j].1 = Fr::zero();
-						}
-					} else {
-						ops_i.scores[j] = (set_pk_j, Fr::zero());
-					}
-				}
-
-				// Distribute the scores
-				//
-				// Example 1:
-				// 	filtered_set => [p1, p2, p3]
-				//	Peer1 opinion
-				// 		[(p1, 0), (p2, 0), (p3, 10)]
-				//   => [(p1, 0), (p2, 0), (p3, 10)]
-				//
-				// Example 2:
-				// 	filtered_set => [p1, p2, p3]
-				//	Peer1 opinion
-				//      [(p1, 0), (p2, 0), (p3, 0)]
-				//   => [(p1, 0), (p2, 1), (p3, 1)]
-				let op_score_sum =
-					ops_i.scores.iter().fold(Fr::zero(), |acc, &(_, score)| acc + score);
-				if op_score_sum == Fr::zero() {
-					for j in 0..NUM_NEIGHBOURS {
-						let (pk_j, _) = ops_i.scores[j].clone();
-						if pk_j != pk_i && pk_j != PublicKey::default() {
-							ops_i.scores[j] = (pk_j, Fr::from(1));
-						}
-					}
-				}
-
-				filtered_set[i] = (pk_i, Fr::from_u128(INITIAL_SCORE));
-				filtered_ops.insert(pk_i, ops_i);
 			}
+
+			let mut ops_i = self.ops.get(&pk_i).unwrap_or(&Opinion::default()).clone();
+
+			// Update the opinion array - pairs of (key, score)
+			//
+			// Example 1:
+			// 	filtered_set => [p1, null, p3]
+			//	Peer1 opinion
+			// 		[(p1, 10), (p6, 10),  (p3, 10)]
+			//   => [(p1, 0), (null, 0), (p3, 10)]
+			//
+			// Example 2:
+			// 	filtered_set => [p1, p2, null]
+			//	Peer1 opinion
+			// 		[(p1, 0), (p3, 10), (null, 10)]
+			//   => [(p1, 0), (p2, 0),  (p3, 0)]
+			for j in 0..NUM_NEIGHBOURS {
+				let (set_pk_j, _) = filtered_set[j];
+				let (op_pk_j, _) = ops_i.scores[j].clone();
+
+				let is_diff_pk_j = set_pk_j != op_pk_j;
+				let is_pk_j_zero = set_pk_j == PublicKey::default();
+				let is_pk_i = set_pk_j == pk_i;
+
+				// Conditions for nullifying the score
+				// 1. set_pk_j != op_pk_j
+				// 2. set_pk_j == 0
+				// 3. set_pk_j == pk_i
+				if is_diff_pk_j || is_pk_j_zero || is_pk_i {
+					ops_i.scores[j].1 = Fr::zero();
+				}
+
+				// Condition for correcting the pk
+				// 1. set_pk_j != op_pk_j
+				if is_diff_pk_j {
+					ops_i.scores[j].0 = set_pk_j;
+				}
+			}
+
+			// Distribute the scores
+			//
+			// Example 1:
+			// 	filtered_set => [p1, p2, p3]
+			//	Peer1 opinion
+			// 		[(p1, 0), (p2, 0), (p3, 10)]
+			//   => [(p1, 0), (p2, 0), (p3, 10)]
+			//
+			// Example 2:
+			// 	filtered_set => [p1, p2, p3]
+			//	Peer1 opinion
+			//      [(p1, 0), (p2, 0), (p3, 0)]
+			//   => [(p1, 0), (p2, 1), (p3, 1)]
+			let op_score_sum = ops_i.scores.iter().fold(Fr::zero(), |acc, &(_, score)| acc + score);
+			if op_score_sum == Fr::zero() {
+				for j in 0..NUM_NEIGHBOURS {
+					let (pk_j, _) = ops_i.scores[j].clone();
+
+					let is_diff_pk = pk_j != pk_i;
+					let is_not_null = pk_j != PublicKey::default();
+
+					// Conditions for distributing the score
+					// 1. pk_j != pk_i
+					// 2. pk_j != PublicKey::default()
+					if is_diff_pk && is_not_null {
+						ops_i.scores[j] = (pk_j, Fr::from(1));
+					}
+				}
+			}
+
+			// TODO: Give initial score when peer joins the set
+			filtered_set[i] = (pk_i, Fr::from_u128(INITIAL_SCORE));
+			filtered_ops.insert(pk_i, ops_i);
 		}
 
 		(filtered_set, filtered_ops)
