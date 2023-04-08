@@ -61,6 +61,12 @@ The client's command-line interface was built using [clap.rs](http://clap.rs/). 
     - `sk`: Updates the secret_key. Both strings should be separated by a comma.
 - `verify`: Fetches the proof from the server on `server_url` and submits the proof to ET Verifier on `et_verifier_wrapper_address`.
 
+An example of the `update` command is:
+
+```bash
+cargo run --release -- update score "Alice 100"
+```
+
 ## Configuration
 
 ### Client
