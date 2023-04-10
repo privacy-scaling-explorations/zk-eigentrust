@@ -65,7 +65,7 @@ impl SecretKey {
 }
 
 /// Configures a structure for the public key.
-#[derive(Hash, Clone, PartialEq, Eq, Default, Debug)]
+#[derive(Hash, Clone, Copy, PartialEq, Eq, Default, Debug)]
 pub struct PublicKey(pub Point<Fr, BabyJubJub>);
 
 impl PublicKey {
