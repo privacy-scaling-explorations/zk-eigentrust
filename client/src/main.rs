@@ -36,19 +36,36 @@ enum Mode {
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Args)]
 struct UpdateData {
-	name: Option<String>,
-	score: Option<u128>,
-	sk: Option<String>,
-	as_address: Option<String>,
-	mnemonic: Option<String>,
-	node_url: Option<String>,
+	field: Option<String>,
+	new_data: Option<String>,
+}
+
+enum Config {
+	AttestationStationAddress,
+	Mnemonic,
+	NodeUrl,
+	Score,
+	SecretKey,
+}
+
+impl Config {
+	fn from_str(str: &String) -> Result<Config, &'static str> {
+		match str.as_str() {
+			"as_address" => Ok(Config::AttestationStationAddress),
+			"mnemonic" => Ok(Config::Mnemonic),
+			"score" => Ok(Config::Score),
+			"node_url" => Ok(Config::NodeUrl),
+			"sk" => Ok(Config::SecretKey),
+			_ => Err("Invalid config field"),
+		}
+	}
 }
 
 #[tokio::main]
 async fn main() {
 	let cli = Cli::parse();
 	let user_secrets_raw: Vec<[String; 3]> = read_csv_data("bootstrap-nodes").unwrap();
-	let config: ClientConfig = read_json_data("client-config").unwrap();
+	let mut config: ClientConfig = read_json_data("client-config").unwrap();
 
 	let pos = user_secrets_raw.iter().position(|x| &config.secret_key == &x[1..]);
 	assert!(pos.is_some());
@@ -93,84 +110,107 @@ async fn main() {
 			println!("Successful verification!");
 		},
 		Mode::Update(data) => {
-			let UpdateData { name, score, sk, as_address, mnemonic, node_url } = data;
-
-			let mut client_config_updated = config.clone();
-
-			if let (Some(name), Some(score)) = (name, score) {
-				let available_names: Vec<String> =
-					user_secrets_raw.iter().map(|x| x[0].clone()).collect();
-				let pos = available_names.iter().position(|x| &name == x);
-				if pos.is_none() {
-					eprintln!(
-						"Invalid neighbour name: {:?}, available: {:?}",
-						name, available_names
-					);
-					return;
-				}
-				let pos = pos.unwrap();
-				client_config_updated.ops[pos] = score;
+			if let Err(e) = config_update(&mut config, data, user_secrets_raw) {
+				eprintln!("Failed to update client configuration.\n{}", e);
 			} else {
-				eprintln!("Please provice both name and score in order to update your opinion!");
-			}
-
-			if let Some(sk) = sk {
-				let sk_vec: Vec<String> = sk.split(",").map(|x| x.to_string()).collect();
-				if sk_vec.len() != 2 {
-					eprintln!(
-						"Invalid secret key passed, expected 2 bs58 values separated by commas, e.g.: \
-						'2L9bbXNEayuRMMbrWFynPtgkrXH1iBdfryRH9Soa8M67,9rBeBVtbN2MkHDTpeAouqkMWNFJC6Bxb6bXH9jUueWaF'"
-					);
-					return;
-				}
-				let sk: [String; 2] = sk_vec.try_into().unwrap();
-
-				let sk0_decoded = bs58::decode(&sk[0]).into_vec();
-				let sk1_decoded = bs58::decode(&sk[1]).into_vec();
-				if sk0_decoded.is_err() || sk1_decoded.is_err() {
-					eprintln!("Failed to decode secret key! Expecting bs58 encoded values!");
-					return;
-				}
-
-				client_config_updated.secret_key = sk;
-			}
-
-			if let Some(as_address) = as_address {
-				let as_address_parsed: Result<Address, _> = as_address.parse();
-				if as_address_parsed.is_err() {
-					eprintln!("Failed to parse address!");
-					return;
-				}
-
-				client_config_updated.as_address = as_address;
-			}
-
-			if let Some(mnemonic) = mnemonic {
-				let parsed_mnemonic = Mnemonic::<English>::new_from_phrase(&mnemonic);
-				if parsed_mnemonic.is_err() {
-					eprintln!("Failed to parse mnemonic!");
-					return;
-				}
-				client_config_updated.mnemonic = mnemonic;
-			}
-
-			if let Some(node_url) = node_url {
-				let provider = Http::from_str(&node_url);
-				if provider.is_err() {
-					eprintln!("Failed to parse node url!");
-					return;
-				}
-				client_config_updated.ethereum_node_url = node_url;
-			}
-
-			let res = write_json_data(client_config_updated, "client-config");
-			if res.is_err() {
-				println!("Failed to same updated config!");
+				println!("Client configuration updated.");
 			}
 		},
 		Mode::Show => {
-			println!("Client config:");
-			println!("{:#?}", config);
+			println!("Client config:\n{:#?}", config);
 		},
+	}
+}
+
+fn config_update(
+	config: &mut ClientConfig, data: UpdateData, user_secrets_raw: Vec<[String; 3]>,
+) -> Result<(), String> {
+	let UpdateData { field, new_data } = data;
+
+	if field.is_none() {
+		return Err("Please provide a field to update.".to_string());
+	}
+
+	if new_data.is_none() {
+		return Err("Please provide the update data, e.g. update score \"Alice 100\"".to_string());
+	}
+
+	let data = new_data.unwrap();
+
+	match Config::from_str(&field.unwrap())? {
+		Config::AttestationStationAddress => {
+			let as_address_parsed: Result<Address, _> = data.parse();
+
+			match as_address_parsed {
+				Ok(_) => config.as_address = data,
+				Err(_) => return Err("Failed to parse address.".to_string()),
+			}
+		},
+		Config::Mnemonic => match Mnemonic::<English>::new_from_phrase(&data) {
+			Ok(_) => config.mnemonic = data,
+			Err(_) => return Err("Failed to parse mnemonic.".to_string()),
+		},
+		Config::NodeUrl => match Http::from_str(&data) {
+			Ok(_) => config.ethereum_node_url = data,
+			Err(_) => return Err("Failed to parse node url.".to_string()),
+		},
+		Config::Score => {
+			let input: Vec<String> = data.split(" ").map(|x| x.to_string()).collect();
+
+			if input.len() != 2 {
+				return Err("Invalid input format. Expected: \"Alice 100\"".to_string());
+			}
+
+			let name = input[0].clone();
+			let score = input[1].clone();
+
+			let score_parsed: Result<u128, _> = score.parse();
+			if score_parsed.is_err() {
+				return Err("Failed to parse score.".to_string());
+			}
+
+			let available_names: Vec<String> =
+				user_secrets_raw.iter().map(|x| x[0].clone()).collect();
+			let pos = available_names.iter().position(|x| &name == x);
+
+			if pos.is_none() {
+				return Err(format!(
+					"Invalid neighbour name: {:?}, available: {:?}",
+					name, available_names
+				));
+			}
+
+			let pos = pos.unwrap();
+
+			config.ops[pos] = score_parsed.unwrap();
+		},
+		Config::SecretKey => {
+			let sk_vec: Vec<String> = data.split(",").map(|x| x.to_string()).collect();
+			if sk_vec.len() != 2 {
+				return Err(
+					"Invalid secret key passed, expected 2 bs58 values separated by commas, \
+					 e.g.:\n\"2L9bbXNEayuRMMbrWFynPtgkrXH1iBdfryRH9Soa8M67,\
+					 9rBeBVtbN2MkHDTpeAouqkMWNFJC6Bxb6bXH9jUueWaF\""
+						.to_string(),
+				);
+			}
+
+			let sk: [String; 2] = sk_vec.try_into().unwrap();
+			let sk0_decoded = bs58::decode(&sk[0]).into_vec();
+			let sk1_decoded = bs58::decode(&sk[1]).into_vec();
+
+			if sk0_decoded.is_err() || sk1_decoded.is_err() {
+				return Err(
+					"Failed to decode secret key. Expecting bs58 encoded values.".to_string(),
+				);
+			}
+
+			config.secret_key = sk;
+		},
+	}
+
+	match write_json_data(config, "client-config") {
+		Ok(_) => Ok(()),
+		Err(e) => Err(e.to_string()),
 	}
 }
