@@ -90,16 +90,14 @@ impl EigenTrustSet {
 			let (pk, credits) = filtered_set[i];
 			if pk == PublicKey::default() {
 				continue;
-			} else {
-				let mut ops_i = filtered_ops.get_mut(&pk).unwrap();
+			}
+			let mut ops_i = filtered_ops.get_mut(&pk).unwrap();
 
-				let op_score_sum =
-					ops_i.scores.iter().fold(Fr::zero(), |acc, &(_, score)| acc + score);
+			let op_score_sum = ops_i.scores.iter().fold(Fr::zero(), |acc, &(_, score)| acc + score);
 
-				for j in 0..NUM_NEIGHBOURS {
-					let (_, op_score) = ops_i.scores[j].clone();
-					ops_i.scores[j].1 = op_score * op_score_sum.invert().unwrap() * credits;
-				}
+			for j in 0..NUM_NEIGHBOURS {
+				let (_, op_score) = ops_i.scores[j].clone();
+				ops_i.scores[j].1 = op_score * op_score_sum.invert().unwrap() * credits;
 			}
 		}
 
