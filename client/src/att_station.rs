@@ -106,7 +106,8 @@ pub struct AttestationCreatedFilter {
 	pub key: [u8; 32],
 	pub val: ethers::core::types::Bytes,
 }
-#[doc = "Container type for all input parameters for the `attest` function with signature `attest((address,bytes32,bytes)[])` and selector `[94, 181, 234, 16]`"]
+#[doc = "Container type for all input parameters for the `attest` function with signature \
+         `attest((address,bytes32,bytes)[])` and selector `[94, 181, 234, 16]`"]
 #[derive(
 	Clone,
 	Debug,
@@ -120,7 +121,8 @@ pub struct AttestationCreatedFilter {
 pub struct AttestCall {
 	pub attestations: ::std::vec::Vec<AttestationData>,
 }
-#[doc = "Container type for all input parameters for the `attestations` function with signature `attestations(address,address,bytes32)` and selector `[41, 180, 44, 181]`"]
+#[doc = "Container type for all input parameters for the `attestations` function with signature \
+         `attestations(address,address,bytes32)` and selector `[41, 180, 44, 181]`"]
 #[derive(
 	Clone,
 	Debug,
@@ -180,7 +182,8 @@ impl ::std::convert::From<AttestationsCall> for AttestationStationCalls {
 		AttestationStationCalls::Attestations(var)
 	}
 }
-#[doc = "Container type for all return fields from the `attestations` function with signature `attestations(address,address,bytes32)` and selector `[41, 180, 44, 181]`"]
+#[doc = "Container type for all return fields from the `attestations` function with signature \
+         `attestations(address,address,bytes32)` and selector `[41, 180, 44, 181]`"]
 #[derive(
 	Clone,
 	Debug,

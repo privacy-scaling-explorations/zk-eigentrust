@@ -187,7 +187,12 @@ fn config_update(
 		Config::SecretKey => {
 			let sk_vec: Vec<String> = data.split(",").map(|x| x.to_string()).collect();
 			if sk_vec.len() != 2 {
-				return Err("Invalid secret key passed, expected 2 bs58 values separated by commas, e.g.:\n\"2L9bbXNEayuRMMbrWFynPtgkrXH1iBdfryRH9Soa8M67,9rBeBVtbN2MkHDTpeAouqkMWNFJC6Bxb6bXH9jUueWaF\"".to_string());
+				return Err(
+					"Invalid secret key passed, expected 2 bs58 values separated by commas, \
+					 e.g.:\n\"2L9bbXNEayuRMMbrWFynPtgkrXH1iBdfryRH9Soa8M67,\
+					 9rBeBVtbN2MkHDTpeAouqkMWNFJC6Bxb6bXH9jUueWaF\""
+						.to_string(),
+				);
 			}
 
 			let sk: [String; 2] = sk_vec.try_into().unwrap();
