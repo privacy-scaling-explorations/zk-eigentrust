@@ -583,6 +583,66 @@ impl<F: FieldExt> Chipset<F> for AndChipset<F> {
 		Ok(product)
 	}
 }
+/// Chip for OR operation
+pub struct OrChipset<F: FieldExt> {
+	x: AssignedCell<F, F>,
+	y: AssignedCell<F, F>,
+}
+
+impl<F: FieldExt> OrChipset<F> {
+	/// Create new OrChipset
+	pub fn new(x: AssignedCell<F, F>, y: AssignedCell<F, F>) -> Self {
+		Self { x, y }
+	}
+}
+
+impl<F: FieldExt> Chipset<F> for OrChipset<F> {
+	type Config = MainConfig;
+	type Output = AssignedCell<F, F>;
+
+	fn synthesize(
+		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<F>,
+	) -> Result<Self::Output, Error> {
+		// We should satisfy the equation below
+		// res = 1 - (1 - x) & (1 - y)
+		//
+		// "&" can be replaced with "*" since bit checks
+
+		let bool_chip = IsBoolChipset::new(self.x.clone());
+		bool_chip.synthesize(common, &config, layouter.namespace(|| "constraint bit"))?;
+
+		let bool_chip = IsBoolChipset::new(self.y.clone());
+		bool_chip.synthesize(common, &config, layouter.namespace(|| "constraint bit"))?;
+
+		let one = layouter.assign_region(
+			|| "one",
+			|region| {
+				let mut ctx = RegionCtx::new(region, 0);
+				ctx.assign_advice(common.advice[0], Value::known(F::one()))
+			},
+		)?;
+		let sub_chip = SubChipset::new(one.clone(), self.x.clone());
+		let x_complement =
+			sub_chip.synthesize(common, &config, layouter.namespace(|| "(1 - x)"))?;
+
+		let sub_chip = SubChipset::new(one.clone(), self.y.clone());
+		let y_complement =
+			sub_chip.synthesize(common, &config, layouter.namespace(|| "(1 - y)"))?;
+
+		let mul_chip = MulChipset::new(x_complement, y_complement);
+		let product =
+			mul_chip.synthesize(common, &config, layouter.namespace(|| "(1 - x) * (1 - y)"))?;
+
+		let sub_chip = SubChipset::new(one, product);
+		let or = sub_chip.synthesize(
+			common,
+			&config,
+			layouter.namespace(|| "1 - (1 - x) & (1 - y)"),
+		)?;
+
+		Ok(or)
+	}
+}
 
 #[cfg(test)]
 mod tests {
