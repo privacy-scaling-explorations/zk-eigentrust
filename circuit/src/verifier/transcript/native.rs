@@ -153,9 +153,6 @@ where
 		let x_wide = to_wide(P::compose(x_limbs).to_repr().as_ref());
 		let y_wide = to_wide(P::compose(y_limbs).to_repr().as_ref());
 
-		println!("x_wide = {:#?}", x_wide);
-		println!("y_wide = {:#?}", y_wide);
-
 		let x = C::Base::from_bytes_wide(&x_wide);
 		let y = C::Base::from_bytes_wide(&y_wide);
 

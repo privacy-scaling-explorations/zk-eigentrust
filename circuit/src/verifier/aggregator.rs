@@ -357,10 +357,9 @@ mod test {
 		Chip, CommonConfig, RegionCtx,
 	};
 	use halo2::{
-		arithmetic::Field,
 		circuit::{Layouter, Region, SimpleFloorPlanner, Value},
 		dev::MockProver,
-		halo2curves::bn256::{Bn256, Fq, Fr, G1Affine},
+		halo2curves::bn256::{Bn256, Fq, Fr},
 		plonk::{Circuit, ConstraintSystem, Error},
 		poly::{kzg::commitment::ParamsKZG, Rotation},
 	};
@@ -368,7 +367,6 @@ mod test {
 
 	use super::{Aggregator, AggregatorConfig, Snark};
 
-	type C = G1Affine;
 	type P = Bn256_4_68;
 	type Scalar = Fr;
 	type Base = Fq;

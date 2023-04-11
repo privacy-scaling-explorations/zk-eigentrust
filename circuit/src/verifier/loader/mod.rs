@@ -7,7 +7,7 @@ use crate::{
 	Chipset, CommonConfig, RegionCtx,
 };
 use halo2::{
-	circuit::{layouter, AssignedCell, Layouter, Region},
+	circuit::{AssignedCell, Layouter, Region},
 	halo2curves::{Coordinates, CurveAffine},
 };
 use native::{NUM_BITS, NUM_LIMBS};
