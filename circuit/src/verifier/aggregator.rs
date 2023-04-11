@@ -82,11 +82,10 @@ impl Snark {
 		params: &ParamsKZG<Bn256>, circuit: C, instances: Vec<Vec<Fr>>, rng: &mut R,
 	) -> Self {
 		let pk = gen_pk(params, &circuit);
-		let protocol = compile(
-			params,
-			pk.get_vk(),
-			Config::kzg().with_num_instance(vec![1]),
-		);
+		// TODO: Calculate number of instances from `instances` parameter
+		let config = Config::kzg().with_num_instance(vec![1]);
+		println!("{:?}", config);
+		let protocol = compile(params, pk.get_vk(), config);
 
 		let instances_slice: Vec<&[Fr]> = instances.iter().map(|x| x.as_slice()).collect();
 		let mut transcript = PoseidonWrite::<_, G1Affine, Bn256_4_68, Params>::new(Vec::new());
@@ -100,6 +99,7 @@ impl Snark {
 		)
 		.unwrap();
 		let proof = transcript.finalize();
+		// TODO: Access write from transript and write to file
 		Self { protocol, instances, proof }
 	}
 }
@@ -129,10 +129,10 @@ impl Clone for Aggregator {
 
 impl Aggregator {
 	/// Create a new aggregator.
-	pub fn new(params: &ParamsKZG<Bn256>, snarks: Vec<Snark>) -> Self {
+	pub fn new(params: &ParamsKZG<Bn256>, snarks: Vec<Snark>) {
 		let svk = params.get_g()[0].into();
 
-		let mut plonk_proofs = Vec::new();
+		// let mut plonk_proofs = Vec::new();
 		for snark in &snarks {
 			let mut transcript_read: PoseidonRead<_, G1Affine, Bn256_4_68, Params> =
 				PoseidonRead::init(snark.proof.as_slice());
@@ -140,28 +140,28 @@ impl Aggregator {
 				&svk, &snark.protocol, &snark.instances, &mut transcript_read,
 			)
 			.unwrap();
-			let res = PSV::verify(&svk, &snark.protocol, &snark.instances, &proof).unwrap();
-			plonk_proofs.extend(res);
+			// let res = PSV::verify(&svk, &snark.protocol, &snark.instances,
+			// &proof).unwrap(); plonk_proofs.extend(res);
 		}
 
-		let mut transcript_write =
-			PoseidonWrite::<Vec<u8>, G1Affine, Bn256_4_68, Params>::new(Vec::new());
-		let rng = &mut thread_rng();
-		let accumulator = KzgAs::<Bn256, Gwc19>::create_proof(
-			&Default::default(),
-			&plonk_proofs,
-			&mut transcript_write,
-			rng,
-		)
-		.unwrap();
-		let as_proof = transcript_write.finalize();
+		// let mut transcript_write =
+		// 	PoseidonWrite::<Vec<u8>, G1Affine, Bn256_4_68,
+		// Params>::new(Vec::new()); let rng = &mut thread_rng();
+		// let accumulator = KzgAs::<Bn256, Gwc19>::create_proof(
+		// 	&Default::default(),
+		// 	&plonk_proofs,
+		// 	&mut transcript_write,
+		// 	rng,
+		// )
+		// .unwrap();
+		// let as_proof = transcript_write.finalize();
 
-		let KzgAccumulator { lhs, rhs } = accumulator;
-		let instances = [lhs.x, lhs.y, rhs.x, rhs.y]
-			.map(|v| Integer::<_, _, NUM_LIMBS, NUM_BITS, Bn256_4_68>::from_w(v).limbs)
-			.concat();
+		// let KzgAccumulator { lhs, rhs } = accumulator;
+		// let instances = [lhs.x, lhs.y, rhs.x, rhs.y]
+		// 	.map(|v| Integer::<_, _, NUM_LIMBS, NUM_BITS,
+		// Bn256_4_68>::from_w(v).limbs) 	.concat();
 
-		Self { svk, snarks, instances, as_proof }
+		// Self { svk, snarks, instances, as_proof }
 	}
 }
 
@@ -437,8 +437,9 @@ mod test {
 			let aggregator_config = AggregatorConfig::new(
 				config.common, config.main, config.poseidon_sponge, config.ecc_mul_scalar,
 			);
-			let aggregator = Aggregator::new(&self.params, self.snarks.clone());
-			aggregator.synthesize(aggregator_config, layouter.namespace(|| "aggregate"))?;
+			Aggregator::new(&self.params, self.snarks.clone());
+			// aggregator.synthesize(aggregator_config, layouter.namespace(||
+			// "aggregate"))?;
 
 			Ok(())
 		}

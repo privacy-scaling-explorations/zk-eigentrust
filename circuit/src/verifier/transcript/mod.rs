@@ -749,4 +749,7 @@ mod test {
 		let prover = MockProver::run(k, &circuit, vec![p_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
 	}
+
+	// TODO: 1 more test where we write multiple scalars and multiple ec points
+	// in the same transcript
 }

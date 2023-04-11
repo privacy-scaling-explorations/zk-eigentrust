@@ -258,6 +258,7 @@ where
 		let integer = Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_n(scalar);
 		for i in 0..NUM_LIMBS {
 			let data = integer.limbs[i].to_repr();
+			// TODO: Print every scalar into the console or write to file
 			self.writer.write_all(data.as_ref()).unwrap();
 		}
 		Ok(())
@@ -269,6 +270,7 @@ where
 		let coordinates = ec_point.coordinates().unwrap();
 		let integer_x = Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_w(coordinates.x().clone());
 		let integer_y = Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_w(coordinates.y().clone());
+		// TODO: Print every point into the console or write to file
 		for i in 0..NUM_LIMBS {
 			let compressed = integer_x.limbs[i].to_repr();
 			self.writer.write_all(compressed.as_ref()).unwrap();
