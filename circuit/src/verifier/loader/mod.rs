@@ -7,7 +7,7 @@ use crate::{
 	Chipset, CommonConfig, RegionCtx,
 };
 use halo2::{
-	circuit::{AssignedCell, Layouter, Region},
+	circuit::{layouter, AssignedCell, Layouter, Region},
 	halo2curves::{Coordinates, CurveAffine},
 };
 use native::{NUM_BITS, NUM_LIMBS};
@@ -26,6 +26,16 @@ use std::{
 
 /// Native version of the loader
 pub mod native;
+
+/// Mutex Layouter optimizer
+/*
+fn layouter<T>(func: FnOnce(layouter) -> T) -> T {
+	let layouter = self.layouter.lock();
+	let res = func(layouter);
+	drop(layouter);
+	res
+}
+*/
 
 /// LoaderConfig structure
 pub struct LoaderConfig<C: CurveAffine, L: Layouter<C::Scalar>, P>
@@ -629,8 +639,8 @@ where
 			.iter()
 			.cloned()
 			.map(|(scalar, base)| {
-				let config = pairs[0].0.loader.clone();
-				let auxes = pairs[0].1.loader.auxes.clone();
+				let config = base.loader.clone();
+				let auxes = base.loader.auxes.clone();
 				let (aux_init, aux_fin) = auxes;
 				let mut layouter = base.loader.layouter.lock().unwrap();
 				let chip = EccMulChipset::new(
@@ -649,7 +659,7 @@ where
 				Halo2LEcPoint::new(mul, config.clone())
 			})
 			.reduce(|acc, value| {
-				let config = pairs[0].0.loader.clone();
+				let config = value.loader.clone();
 				let mut layouter = value.loader.layouter.lock().unwrap();
 				let chip = EccAddChipset::new(acc.inner.clone(), value.inner.clone());
 				let add = chip

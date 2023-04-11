@@ -153,13 +153,20 @@ where
 		let x_wide = to_wide(P::compose(x_limbs).to_repr().as_ref());
 		let y_wide = to_wide(P::compose(y_limbs).to_repr().as_ref());
 
+		println!("x_wide = {:#?}", x_wide);
+		println!("y_wide = {:#?}", y_wide);
+
 		let x = C::Base::from_bytes_wide(&x_wide);
 		let y = C::Base::from_bytes_wide(&y_wide);
 
+		println!("x = {:#?}", x);
+		println!("y = {:#?}", y);
+
+		println!("C::from_xy = {:#?}", C::from_xy(x, y));
 		let point: C = Option::from(C::from_xy(x, y)).ok_or_else(|| {
 			VerifierError::Transcript(
 				ErrorKind::Other,
-				"invalid point encoding in proof".to_string(),
+				"invalid point encoding in proof....".to_string(),
 			)
 		})?;
 		self.common_ec_point(&point)?;
