@@ -663,6 +663,7 @@ mod tests {
 	#[derive(Clone)]
 	enum Gadgets {
 		And,
+		Or,
 		IsBool,
 		IsEqual,
 		IsZero,
@@ -730,6 +731,15 @@ mod tests {
 						layouter.namespace(|| "and"),
 					)?;
 					layouter.constrain_instance(and.cell(), config.common.instance, 0)?;
+				},
+				Gadgets::Or => {
+					let or_chip = OrChipset::new(items[0].clone(), items[1].clone());
+					let or = or_chip.synthesize(
+						&config.common,
+						&config.main,
+						layouter.namespace(|| "or"),
+					)?;
+					layouter.constrain_instance(or.cell(), config.common.instance, 0)?;
 				},
 				Gadgets::IsBool => {
 					let is_bool_chip = IsBoolChipset::new(items[0].clone());
@@ -818,6 +828,38 @@ mod tests {
 	fn test_and_x0_y0() {
 		// Testing x = 0 and y = 0.
 		let test_chip = TestCircuit::new([Fr::from(0), Fr::from(0)], Gadgets::And);
+
+		let pub_ins = vec![Fr::from(0)];
+		let k = 5;
+		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+	#[test]
+	fn test_or_x1_y1() {
+		// Testing x = 1 and y = 1.
+		let test_chip = TestCircuit::new([Fr::from(1), Fr::from(1)], Gadgets::Or);
+
+		let pub_ins = vec![Fr::from(1)];
+		let k = 5;
+		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[test]
+	fn test_or_x1_y0() {
+		// Testing x = 1 and y = 0.
+		let test_chip = TestCircuit::new([Fr::from(1), Fr::from(0)], Gadgets::Or);
+
+		let pub_ins = vec![Fr::from(1)];
+		let k = 5;
+		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[test]
+	fn test_or_x0_y0() {
+		// Testing x = 0 and y = 0.
+		let test_chip = TestCircuit::new([Fr::from(0), Fr::from(0)], Gadgets::Or);
 
 		let pub_ins = vec![Fr::from(0)];
 		let k = 5;
