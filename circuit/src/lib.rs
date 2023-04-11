@@ -37,6 +37,8 @@ pub mod gadgets;
 pub mod integer;
 /// MerkleTree
 pub mod merkle_tree;
+/// Native version of EigenTrust
+pub mod native;
 /// A module for defining round parameters and MDS matrix for hash
 /// permutations
 pub mod params;
