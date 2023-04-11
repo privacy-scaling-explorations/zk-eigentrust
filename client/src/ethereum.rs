@@ -1,5 +1,3 @@
-#![allow(missing_docs)]
-
 use ethers::{
 	prelude::abigen,
 	providers::{Http, Provider},

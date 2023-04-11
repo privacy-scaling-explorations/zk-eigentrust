@@ -22,11 +22,16 @@ use eigen_trust_circuit::{
 		plonk::ProvingKey,
 		poly::kzg::commitment::ParamsKZG,
 	},
-	utils::to_short,
+	utils::{keygen, read_params, to_short},
 	verifier::{evm_verify, gen_evm_verifier, gen_proof},
 	Proof,
 };
-use std::collections::HashMap;
+use once_cell::sync::Lazy;
+use rand::thread_rng;
+use std::{
+	collections::HashMap,
+	sync::{Arc, Mutex},
+};
 
 /// Number of iterations to run the eigen trust algorithm
 pub const NUM_ITER: usize = 10;
@@ -76,6 +81,21 @@ pub struct Manager {
 	proving_key: ProvingKey<G1Affine>,
 	verifier_code: Vec<u8>,
 }
+
+static MANAGER_STORE: Lazy<Arc<Mutex<Manager>>> = Lazy::new(|| {
+	let k = 14;
+	let params = read_params(k);
+	let rng = &mut thread_rng();
+
+	const NN: usize = NUM_NEIGHBOURS;
+	const NI: usize = NUM_ITER;
+	const IS: u128 = INITIAL_SCORE;
+	const S: u128 = SCALE;
+	let et = EigenTrust::<NN, NI, IS, S>::random(rng);
+	let proving_key = keygen(&params, et).unwrap();
+
+	Arc::new(Mutex::new(Manager::new(params, proving_key)))
+});
 
 impl Manager {
 	/// Creates a new peer.

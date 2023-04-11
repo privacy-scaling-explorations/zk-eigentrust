@@ -955,29 +955,10 @@ dependencies = [
  "clap",
  "csv",
  "eigen-trust-circuit",
- "eigen-trust-server",
  "ethers",
- "rand 0.8.5",
- "reqwest",
- "serde",
- "serde_json",
- "tokio",
-]
-
-[[package]]
-name = "eigen-trust-server"
-version = "0.2.0"
-dependencies = [
- "async-trait",
- "bs58",
- "eigen-trust-circuit",
- "ethers",
- "ethers-contract",
- "futures",
- "hyper",
- "log",
  "once_cell",
  "rand 0.8.5",
+ "reqwest",
  "serde",
  "serde_json",
  "tokio",

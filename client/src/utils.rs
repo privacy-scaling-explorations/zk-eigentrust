@@ -1,5 +1,6 @@
 use csv::Reader as CsvReader;
 use eigen_trust_circuit::{
+	eddsa::native::{PublicKey, SecretKey},
 	halo2::halo2curves::bn256::Fr as Scalar,
 	utils::{read_yul_data, write_bytes_data},
 	verifier::{compile_yul, encode_calldata},
@@ -155,6 +156,32 @@ pub fn compile_yul_contracts() {
 		let compiled_contract = compile_yul(&code);
 		write_bytes_data(compiled_contract, &name).unwrap();
 	}
+}
+
+/// Construct the secret keys and public keys from the given raw data
+pub fn keyset_from_raw<const N: usize>(
+	sks_raw: [[&str; 2]; N],
+) -> (Vec<SecretKey>, Vec<PublicKey>) {
+	let mut sks = Vec::new();
+	let mut pks = Vec::new();
+	for i in 0..N {
+		let sk_raw = sks_raw[i];
+		let sk0_raw = bs58::decode(sk_raw[0]).into_vec().unwrap();
+		let sk1_raw = bs58::decode(sk_raw[1]).into_vec().unwrap();
+
+		let mut sk0_bytes: [u8; 32] = [0; 32];
+		sk0_bytes.copy_from_slice(&sk0_raw);
+		let mut sk1_bytes: [u8; 32] = [0; 32];
+		sk1_bytes.copy_from_slice(&sk1_raw);
+
+		let sk = SecretKey::from_raw([sk0_bytes, sk1_bytes]);
+		let pk = sk.public();
+
+		sks.push(sk);
+		pks.push(pk);
+	}
+
+	(sks, pks)
 }
 
 #[cfg(test)]

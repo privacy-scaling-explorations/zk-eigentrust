@@ -1,7 +1,6 @@
 [workspace]
 members = [
-	"server",
 	"circuit",
 	"client",
 ]
-default-members = ["server"]
+default-members = ["client"]

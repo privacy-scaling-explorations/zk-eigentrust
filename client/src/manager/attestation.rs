@@ -1,10 +1,9 @@
+use super::NUM_NEIGHBOURS;
 use eigen_trust_circuit::{
 	eddsa::native::{PublicKey, Signature},
 	halo2::halo2curves::bn256::Fr as Scalar,
 };
 use serde::{Deserialize, Serialize};
-
-use super::NUM_NEIGHBOURS;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 /// Raw data for the attestation
