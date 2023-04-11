@@ -37,16 +37,11 @@ impl Default for Opinion {
 struct EigenTrustSet {
 	set: [(PublicKey, Fr); NUM_NEIGHBOURS],
 	ops: HashMap<PublicKey, Opinion>,
-	ops_validity: HashMap<PublicKey, Option<bool>>,
 }
 
 impl EigenTrustSet {
 	pub fn new() -> Self {
-		Self {
-			set: [(PublicKey::default(), Fr::zero()); NUM_NEIGHBOURS],
-			ops: HashMap::new(),
-			ops_validity: HashMap::new(),
-		}
+		Self { set: [(PublicKey::default(), Fr::zero()); NUM_NEIGHBOURS], ops: HashMap::new() }
 	}
 
 	pub fn add_member(&mut self, pk: PublicKey) {
