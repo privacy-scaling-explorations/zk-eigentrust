@@ -1,4 +1,4 @@
-use super::NUM_NEIGHBOURS;
+use crate::NUM_NEIGHBOURS;
 use eigen_trust_circuit::{
 	eddsa::native::{PublicKey, Signature},
 	halo2::halo2curves::bn256::Fr as Scalar,
@@ -40,29 +40,29 @@ impl AttestationData {
 		let bytes = &mut bytes;
 
 		let mut sig_r_x: [u8; 32] = [0; 32];
-		sig_r_x.copy_from_slice(&bytes.drain(..32).as_slice());
+		sig_r_x.copy_from_slice(bytes.drain(..32).as_slice());
 
 		let mut sig_r_y: [u8; 32] = [0; 32];
-		sig_r_y.copy_from_slice(&bytes.drain(..32).as_slice());
+		sig_r_y.copy_from_slice(bytes.drain(..32).as_slice());
 
 		let mut sig_s: [u8; 32] = [0; 32];
-		sig_s.copy_from_slice(&bytes.drain(..32).as_slice());
+		sig_s.copy_from_slice(bytes.drain(..32).as_slice());
 
 		let mut pk_x: [u8; 32] = [0; 32];
-		pk_x.copy_from_slice(&bytes.drain(..32).as_slice());
+		pk_x.copy_from_slice(bytes.drain(..32).as_slice());
 
 		let mut pk_y: [u8; 32] = [0; 32];
-		pk_y.copy_from_slice(&bytes.drain(..32).as_slice());
+		pk_y.copy_from_slice(bytes.drain(..32).as_slice());
 
 		let pk = [pk_x, pk_y];
 
 		let mut neighbours = Vec::new();
 		for _ in 0..NUM_NEIGHBOURS {
 			let mut neighbour_x: [u8; 32] = [0; 32];
-			neighbour_x.copy_from_slice(&bytes.drain(..32).as_slice());
+			neighbour_x.copy_from_slice(bytes.drain(..32).as_slice());
 
 			let mut neighbour_y: [u8; 32] = [0; 32];
-			neighbour_y.copy_from_slice(&bytes.drain(..32).as_slice());
+			neighbour_y.copy_from_slice(bytes.drain(..32).as_slice());
 
 			neighbours.push([neighbour_x, neighbour_y]);
 		}
@@ -70,7 +70,7 @@ impl AttestationData {
 		let mut scores = Vec::new();
 		while !bytes.is_empty() {
 			let mut score: [u8; 32] = [0; 32];
-			score.copy_from_slice(&bytes.drain(..32).as_slice());
+			score.copy_from_slice(bytes.drain(..32).as_slice());
 
 			scores.push(score);
 		}

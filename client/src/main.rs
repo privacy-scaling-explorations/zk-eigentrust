@@ -4,6 +4,7 @@ use eigen_trust_circuit::{
 	ProofRaw,
 };
 use eigen_trust_client::{
+	manager::MANAGER_STORE,
 	utils::{
 		compile_sol_contract, compile_yul_contracts, deploy_as, deploy_et_wrapper, deploy_verifier,
 		read_csv_data,
@@ -15,7 +16,7 @@ use ethers::{
 	providers::Http,
 	signers::coins_bip39::{English, Mnemonic},
 };
-use std::str::FromStr;
+use std::{str::FromStr, sync::Arc};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -32,6 +33,7 @@ enum Mode {
 	Attest,
 	Update(UpdateData),
 	Verify,
+	CalculateProofs,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Args)]
@@ -49,8 +51,8 @@ enum Config {
 }
 
 impl Config {
-	fn from_str(str: &String) -> Result<Config, &'static str> {
-		match str.as_str() {
+	fn from_str(str: &str) -> Result<Config, &'static str> {
+		match str {
 			"as_address" => Ok(Config::AttestationStationAddress),
 			"mnemonic" => Ok(Config::Mnemonic),
 			"score" => Ok(Config::Score),
@@ -64,11 +66,17 @@ impl Config {
 #[tokio::main]
 async fn main() {
 	let cli = Cli::parse();
-	let user_secrets_raw: Vec<[String; 3]> = read_csv_data("bootstrap-nodes").unwrap();
-	let mut config: ClientConfig = read_json_data("client-config").unwrap();
+	let user_secrets_raw: Vec<[String; 3]> =
+		read_csv_data("bootstrap-nodes").expect("Failed to read bootstrap nodes");
+	let mut config: ClientConfig = read_json_data("client-config").expect("Failed to read config");
+	let mng_store = Arc::clone(&MANAGER_STORE);
 
-	let pos = user_secrets_raw.iter().position(|x| &config.secret_key == &x[1..]);
-	assert!(pos.is_some());
+	mng_store.lock().unwrap().generate_initial_attestations();
+
+	user_secrets_raw
+		.iter()
+		.position(|x| config.secret_key == x[1..])
+		.expect("No user found with the given secret key");
 
 	match cli.mode {
 		Mode::CompileContracts => {
@@ -97,6 +105,14 @@ async fn main() {
 				deploy_et_wrapper(&config.mnemonic, &config.ethereum_node_url, address).await;
 			let w_addr = wrapper_res.unwrap();
 			println!("EtVerifierWrapper contract deployed. Address: {}", w_addr);
+		},
+		Mode::CalculateProofs => match mng_store.lock() {
+			Ok(mut manager) => {
+				manager.calculate_proofs().unwrap();
+			},
+			Err(e) => {
+				println!("error: {:?}", e);
+			},
 		},
 		Mode::Attest => {
 			let client = EigenTrustClient::new(config, user_secrets_raw);
@@ -155,7 +171,7 @@ fn config_update(
 			Err(_) => return Err("Failed to parse node url.".to_string()),
 		},
 		Config::Score => {
-			let input: Vec<String> = data.split(" ").map(|x| x.to_string()).collect();
+			let input: Vec<String> = data.split(' ').map(|x| x.to_string()).collect();
 
 			if input.len() != 2 {
 				return Err("Invalid input format. Expected: \"Alice 100\"".to_string());
@@ -185,7 +201,7 @@ fn config_update(
 			config.ops[pos] = score_parsed.unwrap();
 		},
 		Config::SecretKey => {
-			let sk_vec: Vec<String> = data.split(",").map(|x| x.to_string()).collect();
+			let sk_vec: Vec<String> = data.split(',').map(|x| x.to_string()).collect();
 			if sk_vec.len() != 2 {
 				return Err(
 					"Invalid secret key passed, expected 2 bs58 values separated by commas, \

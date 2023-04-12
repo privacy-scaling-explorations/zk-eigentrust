@@ -20,9 +20,7 @@
 //! It is developed under the Ethereum Foundation grant.
 
 pub mod att_station;
-pub mod epoch;
 pub mod error;
-pub mod ethereum;
 pub mod manager;
 pub mod utils;
 
@@ -110,7 +108,7 @@ impl EigenTrustClient {
 		let sk = SecretKey::from_raw([sk0, sk1]);
 		let pk = sk.public();
 
-		let ops = self.config.ops.map(|x| Scalar::from_u128(x));
+		let ops = self.config.ops.map(Scalar::from_u128);
 
 		let (pks_hash, message_hash) =
 			calculate_message_hash::<NUM_NEIGHBOURS, 1>(user_publics.to_vec(), vec![ops.to_vec()]);

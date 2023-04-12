@@ -131,7 +131,7 @@ pub fn compile_sol_contract() {
 		let abi = contract.clone().abi.unwrap();
 		let abi_json = serde_json::to_string(&abi).unwrap();
 		let contract_json = serde_json::to_string(&contract).unwrap();
-		let bindings = Abigen::new(&name, abi_json.clone()).unwrap().generate().unwrap();
+		let bindings = Abigen::new(name, abi_json.clone()).unwrap().generate().unwrap();
 
 		// write to /data folder
 		bindings.write_to_file(bindings_path.clone()).unwrap();
@@ -151,10 +151,10 @@ pub fn compile_yul_contracts() {
 			continue;
 		}
 		let name = name_with_suffix.strip_suffix(".yul").unwrap();
-		// // compile it
-		let code = read_yul_data(&name);
+		// compile it
+		let code = read_yul_data(name);
 		let compiled_contract = compile_yul(&code);
-		write_bytes_data(compiled_contract, &name).unwrap();
+		write_bytes_data(compiled_contract, name).unwrap();
 	}
 }
 
@@ -164,8 +164,8 @@ pub fn keyset_from_raw<const N: usize>(
 ) -> (Vec<SecretKey>, Vec<PublicKey>) {
 	let mut sks = Vec::new();
 	let mut pks = Vec::new();
-	for i in 0..N {
-		let sk_raw = sks_raw[i];
+
+	for sk_raw in sks_raw {
 		let sk0_raw = bs58::decode(sk_raw[0]).into_vec().unwrap();
 		let sk1_raw = bs58::decode(sk_raw[1]).into_vec().unwrap();
 
