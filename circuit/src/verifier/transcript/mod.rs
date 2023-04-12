@@ -750,6 +750,143 @@ mod test {
 		assert_eq!(prover.verify(), Ok(()));
 	}
 
-	// TODO: 1 more test where we write multiple scalars and multiple ec points
-	// in the same transcript
+	#[derive(Clone)]
+	struct TestReadMultipleEcPointCircuit {
+		reader: Vec<u8>,
+	}
+
+	impl TestReadMultipleEcPointCircuit {
+		fn new(reader: Vec<u8>) -> Self {
+			Self { reader }
+		}
+	}
+
+	impl Circuit<Scalar> for TestReadMultipleEcPointCircuit {
+		type Config = TestConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			self.clone()
+		}
+
+		fn configure(meta: &mut ConstraintSystem<Scalar>) -> TestConfig {
+			TestConfig::new(meta)
+		}
+
+		fn synthesize(
+			&self, config: TestConfig, mut layouter: impl Layouter<Scalar>,
+		) -> Result<(), Error> {
+			let layouter_rc = Rc::new(Mutex::new(layouter.namespace(|| "loader")));
+			let loader = LoaderConfig::<C, _, P>::new(
+				layouter_rc.clone(),
+				config.common.clone(),
+				config.ecc_mul_scalar,
+				config.main,
+				config.poseidon_sponge.clone(),
+			);
+
+			let mut poseidon_read =
+				PoseidonReadChipset::<_, C, _, P, R>::new(self.reader.as_slice(), loader);
+			let res = poseidon_read.read_ec_point().unwrap();
+
+			let mut lb = layouter_rc.lock().unwrap();
+			for i in 0..NUM_LIMBS {
+				lb.constrain_instance(
+					res.inner.clone().x.limbs[i].cell(),
+					config.common.instance,
+					i,
+				)?;
+				lb.constrain_instance(
+					res.inner.clone().y.limbs[i].cell(),
+					config.common.instance,
+					i + NUM_LIMBS,
+				)?;
+			}
+			drop(lb);
+
+			let res = poseidon_read.read_scalar().unwrap();
+			let mut lb = layouter_rc.lock().unwrap();
+			lb.constrain_instance(res.inner.clone().cell(), config.common.instance, 8)?;
+			drop(lb);
+
+			let res = poseidon_read.read_ec_point().unwrap();
+
+			let mut lb = layouter_rc.lock().unwrap();
+			for i in 0..NUM_LIMBS {
+				lb.constrain_instance(
+					res.inner.clone().x.limbs[i].cell(),
+					config.common.instance,
+					i + (2 * NUM_LIMBS) + 1,
+				)?;
+				lb.constrain_instance(
+					res.inner.clone().y.limbs[i].cell(),
+					config.common.instance,
+					i + (3 * NUM_LIMBS) + 1,
+				)?;
+			}
+			drop(lb);
+
+			let res = poseidon_read.read_scalar().unwrap();
+			let mut lb = layouter_rc.lock().unwrap();
+			lb.constrain_instance(res.inner.clone().cell(), config.common.instance, 17)?;
+			Ok(())
+		}
+	}
+
+	#[test]
+	fn test_read_multiple_ec_point() {
+		// Test read ec point
+		let rng = &mut thread_rng();
+		let mut reader = Vec::new();
+
+		for _ in 0..2 {
+			let random = C::random(rng.clone());
+			let scalar = Scalar::random(rng.clone());
+
+			let coordinates = random.coordinates().unwrap();
+			println!("{:#?}", random.coordinates());
+
+			let x = Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_w(*coordinates.x());
+			let y = Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_w(*coordinates.y());
+			for i in 0..NUM_LIMBS {
+				reader.write_all(x.limbs[i].to_bytes().as_slice()).unwrap();
+			}
+			for i in 0..NUM_LIMBS {
+				reader.write_all(y.limbs[i].to_bytes().as_slice()).unwrap();
+			}
+
+			reader.write_all(scalar.to_bytes().as_slice()).unwrap();
+		}
+		let mut poseidon_read =
+			PoseidonRead::<_, G1Affine, Bn256_4_68, Params>::new(reader.as_slice(), NativeSVLoader);
+
+		let mut p_ins = Vec::new();
+
+		let res = poseidon_read.read_ec_point().unwrap();
+
+		let x = Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_w(res.x);
+		let y = Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_w(res.y);
+
+		p_ins.extend(x.limbs);
+		p_ins.extend(y.limbs);
+
+		let res = poseidon_read.read_scalar().unwrap();
+		p_ins.push(res);
+
+		let res = poseidon_read.read_ec_point().unwrap();
+
+		let x = Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_w(res.x);
+		let y = Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_w(res.y);
+
+		p_ins.extend(x.limbs);
+		p_ins.extend(y.limbs);
+
+		let res = poseidon_read.read_scalar().unwrap();
+		p_ins.push(res);
+
+		let circuit = TestReadMultipleEcPointCircuit::new(reader);
+		let k = 7;
+		let prover = MockProver::run(k, &circuit, vec![p_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
 }
