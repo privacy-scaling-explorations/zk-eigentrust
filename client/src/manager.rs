@@ -82,17 +82,6 @@ pub struct Manager {
 	verifier_code: Vec<u8>,
 }
 
-pub static MANAGER_STORE: Lazy<Arc<Mutex<Manager>>> = Lazy::new(|| {
-	let k = 14;
-	let params = read_params(k);
-	let rng = &mut thread_rng();
-
-	let et = EigenTrust::<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, SCALE>::random(rng);
-	let proving_key = keygen(&params, et).unwrap();
-
-	Arc::new(Mutex::new(Manager::new(params, proving_key)))
-});
-
 impl Manager {
 	/// Creates a new peer.
 	pub fn new(params: ParamsKZG<Bn256>, pk: ProvingKey<G1Affine>) -> Self {
@@ -240,6 +229,17 @@ impl Manager {
 		self.get_proof(self.cached_proofs.len() - 1)
 	}
 }
+
+pub static MANAGER_STORE: Lazy<Arc<Mutex<Manager>>> = Lazy::new(|| {
+	let k = 14;
+	let params = read_params(k);
+	let rng = &mut thread_rng();
+
+	let et = EigenTrust::<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, SCALE>::random(rng);
+	let proving_key = keygen(&params, et).unwrap();
+
+	Arc::new(Mutex::new(Manager::new(params, proving_key)))
+});
 
 #[cfg(test)]
 mod test {

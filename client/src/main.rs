@@ -7,7 +7,7 @@ use eigen_trust_client::{
 	manager::MANAGER_STORE,
 	utils::{
 		compile_sol_contract, compile_yul_contracts, deploy_as, deploy_et_wrapper, deploy_verifier,
-		read_csv_data,
+		get_attestations, read_csv_data,
 	},
 	ClientConfig, EigenTrustClient,
 };
@@ -71,7 +71,19 @@ async fn main() {
 	let mut config: ClientConfig = read_json_data("client-config").expect("Failed to read config");
 	let mng_store = Arc::clone(&MANAGER_STORE);
 
-	mng_store.lock().unwrap().generate_initial_attestations();
+	let attestations = get_attestations(&config).await.unwrap();
+
+	match mng_store.lock() {
+		Ok(mut manager) => {
+			for att in attestations {
+				println!("Adding attestation");
+				manager.add_attestation(att).unwrap();
+			}
+		},
+		Err(e) => {
+			println!("error: {:?}", e);
+		},
+	}
 
 	user_secrets_raw
 		.iter()
@@ -109,21 +121,30 @@ async fn main() {
 		Mode::CalculateProofs => match mng_store.lock() {
 			Ok(mut manager) => {
 				manager.calculate_proofs().unwrap();
+				println!("Proofs generated");
+			},
+			Err(e) => {
+				eprintln!("Error: {:?}", e);
+			},
+		},
+		Mode::Attest => {
+			let client = EigenTrustClient::new(config.clone(), user_secrets_raw);
+			println!("Attestations:\n{:#?}", config.ops);
+			client.attest().await.unwrap();
+		},
+		Mode::Verify => match mng_store.lock() {
+			Ok(mut manager) => {
+				manager.calculate_proofs().unwrap();
+
+				let proof = manager.get_last_proof().unwrap();
+				let client = EigenTrustClient::new(config, user_secrets_raw);
+
+				client.verify(ProofRaw::from(proof)).await.unwrap();
+				println!("Successful verification!");
 			},
 			Err(e) => {
 				println!("error: {:?}", e);
 			},
-		},
-		Mode::Attest => {
-			let client = EigenTrustClient::new(config, user_secrets_raw);
-			client.attest().await.unwrap();
-		},
-		Mode::Verify => {
-			let url = format!("{}/score", config.server_url);
-			let proof_raw: ProofRaw = reqwest::get(url).await.unwrap().json().await.unwrap();
-			let client = EigenTrustClient::new(config, user_secrets_raw);
-			client.verify(proof_raw).await.unwrap();
-			println!("Successful verification!");
 		},
 		Mode::Update(data) => {
 			if let Err(e) = config_update(&mut config, data, user_secrets_raw) {

@@ -59,7 +59,6 @@ pub struct ClientConfig {
 	pub et_verifier_wrapper_address: String,
 	pub mnemonic: String,
 	pub ethereum_node_url: String,
-	pub server_url: String,
 }
 
 pub struct EigenTrustClient {
@@ -213,7 +212,6 @@ mod test {
 			et_verifier_wrapper_address: et_verifier_address_string,
 			mnemonic,
 			ethereum_node_url: node_url,
-			server_url: String::new(),
 		};
 
 		let et_client = EigenTrustClient::new(config, user_secrets_raw);
@@ -251,7 +249,6 @@ mod test {
 			et_verifier_wrapper_address: et_verifier_address_string,
 			mnemonic,
 			ethereum_node_url: node_url,
-			server_url: String::new(),
 		};
 
 		let et_client = EigenTrustClient::new(config, user_secrets_raw);

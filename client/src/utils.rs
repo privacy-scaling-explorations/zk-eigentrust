@@ -1,3 +1,8 @@
+use crate::{
+	error::EigenError,
+	manager::attestation::{Attestation, AttestationData},
+	ClientConfig,
+};
 use csv::Reader as CsvReader;
 use eigen_trust_circuit::{
 	eddsa::native::{PublicKey, SecretKey},
@@ -10,7 +15,7 @@ use ethers::{
 	abi::Address,
 	middleware::SignerMiddleware,
 	prelude::{abigen, Abigen, ContractError},
-	providers::{Http, Middleware, Provider},
+	providers::{Http, Middleware, Provider, StreamExt},
 	signers::{coins_bip39::English, LocalWallet, MnemonicBuilder, Signer},
 	solc::{artifacts::ContractBytecode, Solc},
 	types::TransactionRequest,
@@ -182,6 +187,29 @@ pub fn keyset_from_raw<const N: usize>(
 	}
 
 	(sks, pks)
+}
+
+/// Get the attestations from the contract
+pub async fn get_attestations(config: &ClientConfig) -> Result<Vec<Attestation>, EigenError> {
+	let client = setup_client(&config.mnemonic, &config.ethereum_node_url);
+	let contract = AttestationStation::new(config.as_address.parse::<Address>().unwrap(), client);
+	let events = contract.event::<AttestationCreatedFilter>().from_block(0);
+	let mut stream = events.stream().await.unwrap().take(1);
+	let mut attestations = Vec::new();
+
+	while let Some(Ok(att_created)) = stream.next().await {
+		let AttestationCreatedFilter { val, .. } = att_created;
+		let att_data = AttestationData::from_bytes(val.to_vec());
+		let att = Attestation::from(att_data);
+
+		println!("Attestation: {:?}", val);
+
+		attestations.push(att);
+	}
+
+	println!("Done");
+
+	Ok(attestations)
 }
 
 #[cfg(test)]
