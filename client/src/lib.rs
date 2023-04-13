@@ -1,6 +1,33 @@
+//! # Eigen Trust
+//!
+//! A library for managing trust in a distributed network with zero-knowledge
+//! features.
+//!
+//! ## Main characteristics:
+//! **Self-policing** - the shared ethics of the user population is defined and
+//! enforced by the peers themselves and not by some central authority.
+//!
+//! **Minimal** - computation, infrastructure, storage, and message complexity
+//! are reduced to a minimum.
+//!
+//! **Incorruptible** - Reputation should be obtained by consistent good
+//! behavior through several transactions. This is enforced for all users, so no
+//! one can cheat the system and obtain a higher reputation. It is also
+//! resistant to malicious collectives.
+//!
+//! ## Implementation
+//! The library is implemented according to the original [Eigen Trust paper](http://ilpubs.stanford.edu:8090/562/1/2002-56.pdf).
+//! It is developed under the Ethereum Foundation grant.
+
 pub mod att_station;
+pub mod error;
+pub mod manager;
 pub mod utils;
 
+use crate::manager::{
+	attestation::{Attestation, AttestationData},
+	NUM_NEIGHBOURS,
+};
 use att_station::{AttestationData as AttData, AttestationStation as AttStation};
 use eigen_trust_circuit::{
 	calculate_message_hash,
@@ -8,10 +35,6 @@ use eigen_trust_circuit::{
 	halo2::halo2curves::{bn256::Fr as Scalar, FieldExt},
 	utils::to_short,
 	ProofRaw,
-};
-use eigen_trust_server::manager::{
-	attestation::{Attestation, AttestationData},
-	NUM_NEIGHBOURS,
 };
 use ethers::{
 	abi::Address,
@@ -36,7 +59,6 @@ pub struct ClientConfig {
 	pub et_verifier_wrapper_address: String,
 	pub mnemonic: String,
 	pub ethereum_node_url: String,
-	pub server_url: String,
 }
 
 pub struct EigenTrustClient {
@@ -85,7 +107,7 @@ impl EigenTrustClient {
 		let sk = SecretKey::from_raw([sk0, sk1]);
 		let pk = sk.public();
 
-		let ops = self.config.ops.map(|x| Scalar::from_u128(x));
+		let ops = self.config.ops.map(Scalar::from_u128);
 
 		let (pks_hash, message_hash) =
 			calculate_message_hash::<NUM_NEIGHBOURS, 1>(user_publics.to_vec(), vec![ops.to_vec()]);
@@ -152,6 +174,7 @@ impl EigenTrustClient {
 #[cfg(test)]
 mod test {
 	use crate::{
+		manager::NUM_NEIGHBOURS,
 		utils::{deploy_as, deploy_et_wrapper, deploy_verifier},
 		ClientConfig, EigenTrustClient,
 	};
@@ -159,7 +182,6 @@ mod test {
 		utils::{read_bytes_data, read_json_data},
 		ProofRaw,
 	};
-	use eigen_trust_server::manager::NUM_NEIGHBOURS;
 	use ethers::{abi::Address, utils::Anvil};
 
 	#[tokio::test]
@@ -190,7 +212,6 @@ mod test {
 			et_verifier_wrapper_address: et_verifier_address_string,
 			mnemonic,
 			ethereum_node_url: node_url,
-			server_url: String::new(),
 		};
 
 		let et_client = EigenTrustClient::new(config, user_secrets_raw);
@@ -228,7 +249,6 @@ mod test {
 			et_verifier_wrapper_address: et_verifier_address_string,
 			mnemonic,
 			ethereum_node_url: node_url,
-			server_url: String::new(),
 		};
 
 		let et_client = EigenTrustClient::new(config, user_secrets_raw);

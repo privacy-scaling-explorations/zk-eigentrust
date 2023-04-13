@@ -75,17 +75,8 @@ The client configuration is stored in `data/client-config.json`, which specifies
 
 - `ops`: Contains the peer scores for the entire group, currently fixed at five members.
 - `secret_key`: An EdDSA secret key, is used to manage the EigenTrust sets.
-- `as_address`: The address of the AttestationStation contract.
+- `as_address`: Address of the AttestationStation smart contract from which events are being fetched.
 - `et_verifier_wrapper_address`: A verifier smart contract for the EigenTrust global scores proof.
 - `mnemonic`: Mnemonic for an Ethereum wallet.
-- `ethereum_node_url`: The URL for the Ethereum node.
-- `server_url`: The URL for the running server.
-
-### Server
-
-The server was built using [hyper.rs](http://hyper.rs/). You can find the configuration file at `data/protocol-config.json`, where you can specify the following:
-
-- `epoch_interval`: Interval at which proofs are calculated.
-- `endpoint`: Socket that listens for connections to the server.
 - `ethereum_node_url`: URL of the Ethereum node we are connecting to. This defaults to `127.0.0.1:8545` to run with a local `anvil` EVM blockchain.
-- `as_contract_address`: Address of the AttestationStation smart contract from which events are being fetched.
+- `server_url`: The URL for the running server.

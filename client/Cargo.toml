@@ -2,19 +2,19 @@
 name = "eigen-trust-client"
 version = "0.1.0"
 edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+description = "A library for managing trust in a distributed network with zero-knowledge features."
+repository = "https://github.com/eigen-trust/protocol"
+license = "MIT"
 
 [dependencies]
 ethers = { version = "=1.0.2", features = ["ethers-solc", "ws"] }
 clap = { version = "4.1.4", features = ["derive"] }
 rand = "0.8"
 tokio = { version = "1.18", features = ["time", "macros", "rt-multi-thread", "net"] }
-reqwest = { version = "0.11.13", default-features = false, features = ["json"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 csv = "1.1"
 bs58 = "0.4.0"
+once_cell = "1.17.1"
 
 eigen-trust-circuit = { path = "../circuit" }
-eigen-trust-server = { path = "../server" }

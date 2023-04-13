@@ -7,7 +7,7 @@
 /// Attestation implementation
 pub mod attestation;
 
-use crate::{epoch::Epoch, error::EigenError, utils::keyset_from_raw};
+use crate::{error::EigenError, utils::keyset_from_raw};
 use attestation::Attestation;
 use eigen_trust_circuit::{
 	calculate_message_hash,
@@ -22,11 +22,16 @@ use eigen_trust_circuit::{
 		plonk::ProvingKey,
 		poly::kzg::commitment::ParamsKZG,
 	},
-	utils::to_short,
+	utils::{keygen, read_params, to_short},
 	verifier::{evm_verify, gen_evm_verifier, gen_proof},
 	Proof,
 };
-use std::collections::HashMap;
+use once_cell::sync::Lazy;
+use rand::thread_rng;
+use std::{
+	collections::HashMap,
+	sync::{Arc, Mutex},
+};
 
 /// Number of iterations to run the eigen trust algorithm
 pub const NUM_ITER: usize = 10;
@@ -70,8 +75,8 @@ pub const PUBLIC_KEYS: [&str; NUM_NEIGHBOURS] = [
 
 /// The peer struct.
 pub struct Manager {
-	pub(crate) cached_proofs: HashMap<Epoch, Proof>,
-	pub(crate) attestations: HashMap<Scalar, Attestation>,
+	attestations: HashMap<Scalar, Attestation>,
+	cached_proofs: Vec<Proof>,
 	params: ParamsKZG<Bn256>,
 	proving_key: ProvingKey<G1Affine>,
 	verifier_code: Vec<u8>,
@@ -80,10 +85,11 @@ pub struct Manager {
 impl Manager {
 	/// Creates a new peer.
 	pub fn new(params: ParamsKZG<Bn256>, pk: ProvingKey<G1Affine>) -> Self {
-		let verifier_code = gen_evm_verifier(&params, &pk.get_vk(), vec![NUM_NEIGHBOURS]);
+		let verifier_code = gen_evm_verifier(&params, pk.get_vk(), vec![NUM_NEIGHBOURS]);
+
 		Self {
-			cached_proofs: HashMap::new(),
 			attestations: HashMap::new(),
+			cached_proofs: Vec::new(),
 			params,
 			proving_key: pk,
 			verifier_code,
@@ -105,12 +111,12 @@ impl Manager {
 				let mut inps = [Scalar::zero(); 5];
 				inps[0] = pk.0.x;
 				inps[1] = pk.0.y;
-				let res = PoseidonNativeHasher::new(inps).permute()[0];
-				res
+
+				PoseidonNativeHasher::new(inps).permute()[0]
 			})
 			.collect();
 
-		if group.as_ref() != &pk_hashes {
+		if group.as_ref() != pk_hashes {
 			return Err(EigenError::InvalidAttestation);
 		}
 
@@ -167,15 +173,15 @@ impl Manager {
 	}
 
 	/// Calculate the scores for the given epoch, and cache the ZK proof of them
-	pub fn calculate_proofs(&mut self, epoch: Epoch) -> Result<(), EigenError> {
+	pub fn calculate_proofs(&mut self) -> Result<(), EigenError> {
 		let (_, pks) = keyset_from_raw(FIXED_SET);
 
 		let pk_hashes: Vec<Scalar> = pks
 			.iter()
 			.map(|pk| {
 				let pk_hash_inp = [pk.0.x, pk.0.y, Scalar::zero(), Scalar::zero(), Scalar::zero()];
-				let pk_hash = PoseidonNativeHasher::new(pk_hash_inp).permute()[0];
-				pk_hash
+
+				PoseidonNativeHasher::new(pk_hash_inp).permute()[0]
 			})
 			.collect();
 
@@ -208,34 +214,32 @@ impl Manager {
 		// --- END ---
 
 		let proof = Proof { pub_ins, proof: proof_bytes };
-		self.cached_proofs.insert(epoch, proof);
+		self.cached_proofs.push(proof);
 
 		Ok(())
 	}
 
-	/// Query the proof for a given epoch
-	pub fn get_proof(&self, epoch: Epoch) -> Result<Proof, EigenError> {
-		self.cached_proofs.get(&epoch).ok_or(EigenError::ProofNotFound).cloned()
+	/// Query the proof at the given index
+	pub fn get_proof(&self, index: usize) -> Result<Proof, EigenError> {
+		self.cached_proofs.get(index).ok_or(EigenError::ProofNotFound).cloned()
 	}
 
-	/// Query the proof for the last epoch
+	/// Query the last generated proof
 	pub fn get_last_proof(&self) -> Result<Proof, EigenError> {
-		let mut epoch = None;
-		for &curr_epoch in self.cached_proofs.keys() {
-			match epoch {
-				Some(e) => {
-					if curr_epoch > e {
-						epoch = Some(curr_epoch);
-					}
-				},
-				None => {
-					epoch = Some(curr_epoch);
-				},
-			}
-		}
-		self.get_proof(epoch.unwrap())
+		self.get_proof(self.cached_proofs.len() - 1)
 	}
 }
+
+pub static MANAGER_STORE: Lazy<Arc<Mutex<Manager>>> = Lazy::new(|| {
+	let k = 14;
+	let params = read_params(k);
+	let rng = &mut thread_rng();
+
+	let et = EigenTrust::<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, SCALE>::random(rng);
+	let proving_key = keygen(&params, et).unwrap();
+
+	Arc::new(Mutex::new(Manager::new(params, proving_key)))
+});
 
 #[cfg(test)]
 mod test {
@@ -250,14 +254,14 @@ mod test {
 		let random_circuit =
 			EigenTrust::<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, SCALE>::random(&mut rng);
 		let proving_key = keygen(&params, random_circuit).unwrap();
-
 		let mut manager = Manager::new(params, proving_key);
 
 		manager.generate_initial_attestations();
-		let epoch = Epoch(0);
-		manager.calculate_proofs(epoch).unwrap();
-		let proof = manager.get_proof(epoch).unwrap();
+		manager.calculate_proofs().unwrap();
+
+		let proof = manager.get_proof(0).unwrap();
 		let scores = [Scalar::from_u128(INITIAL_SCORE); NUM_NEIGHBOURS];
+
 		assert_eq!(proof.pub_ins, scores);
 	}
 }

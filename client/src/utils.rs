@@ -1,5 +1,11 @@
+use crate::{
+	error::EigenError,
+	manager::attestation::{Attestation, AttestationData},
+	ClientConfig,
+};
 use csv::Reader as CsvReader;
 use eigen_trust_circuit::{
+	eddsa::native::{PublicKey, SecretKey},
 	halo2::halo2curves::bn256::Fr as Scalar,
 	utils::{read_yul_data, write_bytes_data},
 	verifier::{compile_yul, encode_calldata},
@@ -9,7 +15,7 @@ use ethers::{
 	abi::Address,
 	middleware::SignerMiddleware,
 	prelude::{abigen, Abigen, ContractError},
-	providers::{Http, Middleware, Provider},
+	providers::{Http, Middleware, Provider, StreamExt},
 	signers::{coins_bip39::English, LocalWallet, MnemonicBuilder, Signer},
 	solc::{artifacts::ContractBytecode, Solc},
 	types::TransactionRequest,
@@ -130,7 +136,7 @@ pub fn compile_sol_contract() {
 		let abi = contract.clone().abi.unwrap();
 		let abi_json = serde_json::to_string(&abi).unwrap();
 		let contract_json = serde_json::to_string(&contract).unwrap();
-		let bindings = Abigen::new(&name, abi_json.clone()).unwrap().generate().unwrap();
+		let bindings = Abigen::new(name, abi_json.clone()).unwrap().generate().unwrap();
 
 		// write to /data folder
 		bindings.write_to_file(bindings_path.clone()).unwrap();
@@ -150,11 +156,60 @@ pub fn compile_yul_contracts() {
 			continue;
 		}
 		let name = name_with_suffix.strip_suffix(".yul").unwrap();
-		// // compile it
-		let code = read_yul_data(&name);
+		// compile it
+		let code = read_yul_data(name);
 		let compiled_contract = compile_yul(&code);
-		write_bytes_data(compiled_contract, &name).unwrap();
+		write_bytes_data(compiled_contract, name).unwrap();
 	}
+}
+
+/// Construct the secret keys and public keys from the given raw data
+pub fn keyset_from_raw<const N: usize>(
+	sks_raw: [[&str; 2]; N],
+) -> (Vec<SecretKey>, Vec<PublicKey>) {
+	let mut sks = Vec::new();
+	let mut pks = Vec::new();
+
+	for sk_raw in sks_raw {
+		let sk0_raw = bs58::decode(sk_raw[0]).into_vec().unwrap();
+		let sk1_raw = bs58::decode(sk_raw[1]).into_vec().unwrap();
+
+		let mut sk0_bytes: [u8; 32] = [0; 32];
+		sk0_bytes.copy_from_slice(&sk0_raw);
+		let mut sk1_bytes: [u8; 32] = [0; 32];
+		sk1_bytes.copy_from_slice(&sk1_raw);
+
+		let sk = SecretKey::from_raw([sk0_bytes, sk1_bytes]);
+		let pk = sk.public();
+
+		sks.push(sk);
+		pks.push(pk);
+	}
+
+	(sks, pks)
+}
+
+/// Get the attestations from the contract
+pub async fn get_attestations(config: &ClientConfig) -> Result<Vec<Attestation>, EigenError> {
+	let client = setup_client(&config.mnemonic, &config.ethereum_node_url);
+	let contract = AttestationStation::new(config.as_address.parse::<Address>().unwrap(), client);
+	let events = contract.event::<AttestationCreatedFilter>().from_block(0);
+	let mut stream = events.stream().await.unwrap().take(1);
+	let mut attestations = Vec::new();
+
+	while let Some(Ok(att_created)) = stream.next().await {
+		let AttestationCreatedFilter { val, .. } = att_created;
+		let att_data = AttestationData::from_bytes(val.to_vec());
+		let att = Attestation::from(att_data);
+
+		println!("Attestation: {:?}", val);
+
+		attestations.push(att);
+	}
+
+	println!("Done");
+
+	Ok(attestations)
 }
 
 #[cfg(test)]
