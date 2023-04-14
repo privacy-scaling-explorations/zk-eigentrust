@@ -27,7 +27,9 @@ use std::{
 	io::{BufReader, Error},
 	path::Path,
 	sync::Arc,
+	time::Duration,
 };
+use tokio::time::timeout;
 
 /// Reads the json file and deserialize it into the provided type
 pub fn read_csv_file<T: DeserializeOwned>(path: impl AsRef<Path>) -> Result<Vec<T>, Error> {
@@ -194,10 +196,10 @@ pub async fn get_attestations(config: &ClientConfig) -> Result<Vec<Attestation>,
 	let client = setup_client(&config.mnemonic, &config.ethereum_node_url);
 	let contract = AttestationStation::new(config.as_address.parse::<Address>().unwrap(), client);
 	let events = contract.event::<AttestationCreatedFilter>().from_block(0);
-	let mut stream = events.stream().await.unwrap().take(1);
+	let mut stream = events.stream().await.unwrap();
 	let mut attestations = Vec::new();
 
-	while let Some(Ok(att_created)) = stream.next().await {
+	while let Ok(Some(Ok(att_created))) = timeout(Duration::from_secs(10), stream.next()).await {
 		let AttestationCreatedFilter { val, .. } = att_created;
 		let att_data = AttestationData::from_bytes(val.to_vec());
 		let att = Attestation::from(att_data);

@@ -109,6 +109,7 @@ async fn main() {
 			client.attest().await.unwrap();
 		},
 		Mode::Verify => {
+			println!("Verifying proofs...");
 			let mut proof: Proof = Proof::from(ProofRaw { pub_ins: vec![[0; 32]], proof: vec![0] });
 			let attestations = get_attestations(&config).await.unwrap();
 
