@@ -1,7 +1,7 @@
 use clap::{Args, Parser, Subcommand};
 use eigen_trust_circuit::{
 	utils::{read_bytes_data, read_json_data, write_json_data},
-	ProofRaw,
+	Proof, ProofRaw,
 };
 use eigen_trust_client::{
 	manager::MANAGER_STORE,
@@ -33,7 +33,6 @@ enum Mode {
 	Attest,
 	Update(UpdateData),
 	Verify,
-	CalculateProofs,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Args)]
@@ -71,20 +70,6 @@ async fn main() {
 	let mut config: ClientConfig = read_json_data("client-config").expect("Failed to read config");
 	let mng_store = Arc::clone(&MANAGER_STORE);
 
-	let attestations = get_attestations(&config).await.unwrap();
-
-	match mng_store.lock() {
-		Ok(mut manager) => {
-			for att in attestations {
-				println!("Adding attestation");
-				manager.add_attestation(att).unwrap();
-			}
-		},
-		Err(e) => {
-			println!("error: {:?}", e);
-		},
-	}
-
 	user_secrets_raw
 		.iter()
 		.position(|x| config.secret_key == x[1..])
@@ -118,33 +103,35 @@ async fn main() {
 			let w_addr = wrapper_res.unwrap();
 			println!("EtVerifierWrapper contract deployed. Address: {}", w_addr);
 		},
-		Mode::CalculateProofs => match mng_store.lock() {
-			Ok(mut manager) => {
-				manager.calculate_proofs().unwrap();
-				println!("Proofs generated");
-			},
-			Err(e) => {
-				eprintln!("Error: {:?}", e);
-			},
-		},
 		Mode::Attest => {
 			let client = EigenTrustClient::new(config.clone(), user_secrets_raw);
 			println!("Attestations:\n{:#?}", config.ops);
 			client.attest().await.unwrap();
 		},
-		Mode::Verify => match mng_store.lock() {
-			Ok(mut manager) => {
-				manager.calculate_proofs().unwrap();
+		Mode::Verify => {
+			let mut proof: Proof = Proof::from(ProofRaw { pub_ins: vec![[0; 32]], proof: vec![0] });
+			let attestations = get_attestations(&config).await.unwrap();
 
-				let proof = manager.get_last_proof().unwrap();
-				let client = EigenTrustClient::new(config, user_secrets_raw);
+			match mng_store.lock() {
+				Ok(mut manager) => {
+					manager.generate_initial_attestations();
 
-				client.verify(ProofRaw::from(proof)).await.unwrap();
-				println!("Successful verification!");
-			},
-			Err(e) => {
-				println!("error: {:?}", e);
-			},
+					for att in attestations {
+						manager.add_attestation(att).unwrap();
+						println!("Added attestation");
+					}
+
+					proof = manager.calculate_proofs().unwrap();
+				},
+				Err(e) => {
+					println!("error: {:?}", e);
+				},
+			}
+
+			let client = EigenTrustClient::new(config, user_secrets_raw);
+
+			client.verify(ProofRaw::from(proof)).await.unwrap();
+			println!("Proof verified");
 		},
 		Mode::Update(data) => {
 			if let Err(e) = config_update(&mut config, data, user_secrets_raw) {

@@ -173,7 +173,7 @@ impl Manager {
 	}
 
 	/// Calculate the scores for the given epoch, and cache the ZK proof of them
-	pub fn calculate_proofs(&mut self) -> Result<(), EigenError> {
+	pub fn calculate_proofs(&mut self) -> Result<Proof, EigenError> {
 		let (_, pks) = keyset_from_raw(FIXED_SET);
 
 		let pk_hashes: Vec<Scalar> = pks
@@ -214,9 +214,10 @@ impl Manager {
 		// --- END ---
 
 		let proof = Proof { pub_ins, proof: proof_bytes };
-		self.cached_proofs.push(proof);
 
-		Ok(())
+		self.cached_proofs.push(proof.clone());
+
+		Ok(proof)
 	}
 
 	/// Query the proof at the given index
