@@ -203,16 +203,6 @@ impl Manager {
 
 		let proof_bytes = gen_proof(&self.params, &self.proving_key, et, vec![pub_ins.clone()]);
 
-		// --- SANITY CHECK VERIFICATION ---
-		if cfg!(debug_assertions) {
-			evm_verify(
-				self.verifier_code.clone(),
-				vec![pub_ins.clone()],
-				proof_bytes.clone(),
-			);
-		}
-		// --- END ---
-
 		let proof = Proof { pub_ins, proof: proof_bytes };
 
 		self.cached_proofs.push(proof.clone());
@@ -264,5 +254,7 @@ mod test {
 		let scores = [Scalar::from_u128(INITIAL_SCORE); NUM_NEIGHBOURS];
 
 		assert_eq!(proof.pub_ins, scores);
+
+		evm_verify(manager.verifier_code, vec![proof.pub_ins], proof.proof);
 	}
 }
