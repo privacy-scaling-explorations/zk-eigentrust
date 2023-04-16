@@ -92,7 +92,7 @@ impl EigenTrustSet {
 			let mut ops_i = filtered_ops.get_mut(&pk).unwrap();
 
 			let op_score_sum = ops_i.scores.iter().fold(Fr::zero(), |acc, &(_, score)| acc + score);
-			let inverted_sum = op_score_sum.invert().unwrap();
+			let inverted_sum = op_score_sum.invert().unwrap_or(Fr::zero());
 
 			for j in 0..NUM_NEIGHBOURS {
 				let (_, op_score) = ops_i.scores[j].clone();
@@ -131,11 +131,10 @@ impl EigenTrustSet {
 
 		println!("new s: {:#?}", s.map(|p| p.1));
 
-		let mut sum = Fr::zero();
-		for &(_, x) in s.iter() {
-			sum += x;
-		}
-		println!("sum: {:?}", sum);
+		let sum_initial = filtered_set.iter().fold(Fr::zero(), |acc, &(_, score)| acc + score);
+		let sum_final = s.iter().fold(Fr::zero(), |acc, &(_, score)| acc + score);
+		assert!(sum_initial == sum_final);
+		println!("sum: {:?}", sum_final);
 
 		s
 	}
