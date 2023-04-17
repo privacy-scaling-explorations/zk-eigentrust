@@ -11,10 +11,10 @@ const NUM_ITERATIONS: usize = 20;
 const INITIAL_SCORE: u128 = 1000;
 
 #[derive(Debug, Clone)]
-struct Opinion {
-	sig: Signature,
-	message_hash: Fr,
-	scores: [(PublicKey, Fr); NUM_NEIGHBOURS],
+pub struct Opinion {
+	pub sig: Signature,
+	pub message_hash: Fr,
+	pub scores: [(PublicKey, Fr); NUM_NEIGHBOURS],
 }
 
 impl Opinion {
