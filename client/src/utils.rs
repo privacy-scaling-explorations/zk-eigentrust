@@ -12,13 +12,14 @@ use eigen_trust_circuit::{
 	Proof as NativeProof,
 };
 use ethers::{
-	abi::Address,
+	abi::{Address, RawLog},
+	contract::EthEvent,
 	middleware::SignerMiddleware,
 	prelude::{abigen, Abigen, ContractError},
-	providers::{Http, Middleware, Provider, StreamExt},
+	providers::{Http, Middleware, Provider},
 	signers::{coins_bip39::English, LocalWallet, MnemonicBuilder, Signer},
 	solc::{artifacts::ContractBytecode, Solc},
-	types::TransactionRequest,
+	types::{Filter, TransactionRequest, H256},
 };
 use serde::de::DeserializeOwned;
 use std::{
@@ -27,9 +28,7 @@ use std::{
 	io::{BufReader, Error},
 	path::Path,
 	sync::Arc,
-	time::Duration,
 };
-use tokio::time::timeout;
 
 /// Reads the json file and deserialize it into the provided type
 pub fn read_csv_file<T: DeserializeOwned>(path: impl AsRef<Path>) -> Result<Vec<T>, Error> {
@@ -194,22 +193,25 @@ pub fn keyset_from_raw<const N: usize>(
 /// Get the attestations from the contract
 pub async fn get_attestations(config: &ClientConfig) -> Result<Vec<Attestation>, EigenError> {
 	let client = setup_client(&config.mnemonic, &config.ethereum_node_url);
-	let contract = AttestationStation::new(config.as_address.parse::<Address>().unwrap(), client);
-	let events = contract.event::<AttestationCreatedFilter>().from_block(0);
-	let mut stream = events.stream().await.unwrap();
+	let filter = Filter::new()
+		.address(config.as_address.parse::<Address>().unwrap())
+		.event("AttestationCreated(address,address,bytes32,bytes)")
+		.topic1(Vec::<H256>::new())
+		.topic2(Vec::<H256>::new())
+		.from_block(0);
+	let logs = client.get_logs(&filter).await.unwrap();
 	let mut attestations = Vec::new();
 
-	while let Ok(Some(Ok(att_created))) = timeout(Duration::from_secs(10), stream.next()).await {
-		let AttestationCreatedFilter { val, .. } = att_created;
-		let att_data = AttestationData::from_bytes(val.to_vec());
-		let att = Attestation::from(att_data);
+	println!("Indexed attestations: {}", logs.iter().len());
 
-		println!("Attestation: {:?}", val);
+	for log in logs.iter() {
+		let raw_log = RawLog::from((log.topics.clone(), log.data.to_vec()));
+		let att_created = AttestationCreatedFilter::decode_log(&raw_log).unwrap();
+		let att_data = AttestationData::from_bytes(att_created.val.to_vec());
+		let att = Attestation::from(att_data);
 
 		attestations.push(att);
 	}
-
-	println!("Done");
 
 	Ok(attestations)
 }
