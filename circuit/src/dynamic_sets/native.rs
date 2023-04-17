@@ -10,14 +10,19 @@ const NUM_NEIGHBOURS: usize = 6;
 const NUM_ITERATIONS: usize = 20;
 const INITIAL_SCORE: u128 = 1000;
 
+/// Opinion info of peer
 #[derive(Debug, Clone)]
 pub struct Opinion {
+	/// Signature of opinion
 	pub sig: Signature,
+	/// Hash of opinion message
 	pub message_hash: Fr,
+	/// Array of real opinions
 	pub scores: [(PublicKey, Fr); NUM_NEIGHBOURS],
 }
 
 impl Opinion {
+	/// Constructs the instance of `Opinion`
 	pub fn new(
 		sig: Signature, message_hash: Fr, scores: [(PublicKey, Fr); NUM_NEIGHBOURS],
 	) -> Self {

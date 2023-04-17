@@ -42,7 +42,7 @@ pub type FullRoundHasher = FullRoundChip<Scalar, HASHER_WIDTH, Params>;
 /// Type alias for the poseidon spong chip with a width of 5 and bn254 params
 pub type SpongeHasher = PoseidonSpongeChipset<Scalar, HASHER_WIDTH, Params>;
 /// Type alias for Eddsa chip on BabyJubJub elliptic curve
-type Eddsa = EddsaChipset<Scalar, BabyJubJub, Params>;
+pub type Eddsa = EddsaChipset<Scalar, BabyJubJub, Params>;
 
 #[derive(Clone, Debug)]
 /// The columns config for the main circuit.
