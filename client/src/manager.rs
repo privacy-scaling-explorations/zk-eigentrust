@@ -23,7 +23,7 @@ use eigen_trust_circuit::{
 		poly::kzg::commitment::ParamsKZG,
 	},
 	utils::{keygen, read_params, to_short},
-	verifier::{evm_verify, gen_evm_verifier, gen_proof},
+	verifier::gen_proof,
 	Proof,
 };
 use once_cell::sync::Lazy;
@@ -79,21 +79,12 @@ pub struct Manager {
 	cached_proofs: Vec<Proof>,
 	params: ParamsKZG<Bn256>,
 	proving_key: ProvingKey<G1Affine>,
-	verifier_code: Vec<u8>,
 }
 
 impl Manager {
 	/// Creates a new peer.
 	pub fn new(params: ParamsKZG<Bn256>, pk: ProvingKey<G1Affine>) -> Self {
-		let verifier_code = gen_evm_verifier(&params, pk.get_vk(), vec![NUM_NEIGHBOURS]);
-
-		Self {
-			attestations: HashMap::new(),
-			cached_proofs: Vec::new(),
-			params,
-			proving_key: pk,
-			verifier_code,
-		}
+		Self { attestations: HashMap::new(), cached_proofs: Vec::new(), params, proving_key: pk }
 	}
 
 	/// Add a new attestation into the cache, by first calculating the hash of
@@ -221,6 +212,7 @@ impl Manager {
 	}
 }
 
+/// Singleton `Manager` instance
 pub static MANAGER_STORE: Lazy<Arc<Mutex<Manager>>> = Lazy::new(|| {
 	let k = 14;
 	let params = read_params(k);
@@ -235,7 +227,11 @@ pub static MANAGER_STORE: Lazy<Arc<Mutex<Manager>>> = Lazy::new(|| {
 #[cfg(test)]
 mod test {
 	use super::*;
-	use eigen_trust_circuit::{halo2::poly::commitment::ParamsProver, utils::keygen};
+	use eigen_trust_circuit::{
+		halo2::poly::commitment::ParamsProver,
+		utils::keygen,
+		verifier::{evm_verify, gen_evm_verifier},
+	};
 	use rand::thread_rng;
 
 	#[test]
@@ -245,16 +241,16 @@ mod test {
 		let random_circuit =
 			EigenTrust::<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, SCALE>::random(&mut rng);
 		let proving_key = keygen(&params, random_circuit).unwrap();
-		let mut manager = Manager::new(params, proving_key);
+		let mut manager = Manager::new(params.clone(), proving_key.clone());
 
 		manager.generate_initial_attestations();
 		manager.calculate_proofs().unwrap();
 
 		let proof = manager.get_proof(0).unwrap();
 		let scores = [Scalar::from_u128(INITIAL_SCORE); NUM_NEIGHBOURS];
-
 		assert_eq!(proof.pub_ins, scores);
 
-		evm_verify(manager.verifier_code, vec![proof.pub_ins], proof.proof);
+		let verifier_code = gen_evm_verifier(&params, proving_key.get_vk(), vec![NUM_NEIGHBOURS]);
+		evm_verify(verifier_code, vec![proof.pub_ins], proof.proof);
 	}
 }
