@@ -79,4 +79,3 @@ The client configuration is stored in `data/client-config.json`, which specifies
 - `et_verifier_wrapper_address`: A verifier smart contract for the EigenTrust global scores proof.
 - `mnemonic`: Mnemonic for an Ethereum wallet.
 - `ethereum_node_url`: URL of the Ethereum node we are connecting to. This defaults to `127.0.0.1:8545` to run with a local `anvil` EVM blockchain.
-- `server_url`: The URL for the running server.
