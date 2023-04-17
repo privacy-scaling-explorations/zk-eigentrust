@@ -20,15 +20,14 @@
 //! It is developed under the Ethereum Foundation grant.
 
 pub mod att_station;
+pub mod attestation;
 pub mod error;
 pub mod manager;
 pub mod utils;
 
-use crate::manager::{
-	attestation::{Attestation, AttestationData},
-	NUM_NEIGHBOURS,
-};
+use crate::manager::NUM_NEIGHBOURS;
 use att_station::{AttestationData as AttData, AttestationStation as AttStation};
+use attestation::{Attestation, AttestationData};
 use eigen_trust_circuit::{
 	calculate_message_hash,
 	eddsa::native::{sign, SecretKey},
@@ -61,13 +60,13 @@ pub struct ClientConfig {
 	pub ethereum_node_url: String,
 }
 
-pub struct EigenTrustClient {
+pub struct Client {
 	client: SignerMiddlewareArc,
 	config: ClientConfig,
 	user_secrets_raw: Vec<[String; 3]>,
 }
 
-impl EigenTrustClient {
+impl Client {
 	pub fn new(config: ClientConfig, user_secrets_raw: Vec<[String; 3]>) -> Self {
 		let client = setup_client(&config.mnemonic, &config.ethereum_node_url);
 		Self { client, config, user_secrets_raw }
@@ -176,7 +175,7 @@ mod test {
 	use crate::{
 		manager::NUM_NEIGHBOURS,
 		utils::{deploy_as, deploy_et_wrapper, deploy_verifier},
-		ClientConfig, EigenTrustClient,
+		Client, ClientConfig,
 	};
 	use eigen_trust_circuit::{
 		utils::{read_bytes_data, read_json_data},
@@ -214,7 +213,7 @@ mod test {
 			ethereum_node_url: node_url,
 		};
 
-		let et_client = EigenTrustClient::new(config, user_secrets_raw);
+		let et_client = Client::new(config, user_secrets_raw);
 		let res = et_client.attest().await;
 		assert!(res.is_ok());
 
@@ -251,7 +250,7 @@ mod test {
 			ethereum_node_url: node_url,
 		};
 
-		let et_client = EigenTrustClient::new(config, user_secrets_raw);
+		let et_client = Client::new(config, user_secrets_raw);
 		let proof_raw: ProofRaw = read_json_data("et_proof").unwrap();
 		let res = et_client.verify(proof_raw).await;
 		assert!(res.is_ok());

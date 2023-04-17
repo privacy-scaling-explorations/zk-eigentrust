@@ -9,7 +9,7 @@ use eigen_trust_client::{
 		compile_sol_contract, compile_yul_contracts, deploy_as, deploy_et_wrapper, deploy_verifier,
 		get_attestations, read_csv_data,
 	},
-	ClientConfig, EigenTrustClient,
+	Client, ClientConfig,
 };
 use ethers::{
 	abi::Address,
@@ -104,7 +104,7 @@ async fn main() {
 			println!("EtVerifierWrapper contract deployed. Address: {}", w_addr);
 		},
 		Mode::Attest => {
-			let client = EigenTrustClient::new(config.clone(), user_secrets_raw);
+			let client = Client::new(config.clone(), user_secrets_raw);
 			println!("Attestations:\n{:#?}", config.ops);
 			client.attest().await.unwrap();
 		},
@@ -127,7 +127,7 @@ async fn main() {
 				},
 			}
 
-			let client = EigenTrustClient::new(config, user_secrets_raw);
+			let client = Client::new(config, user_secrets_raw);
 
 			client.verify(ProofRaw::from(proof)).await.unwrap();
 			println!("Proof verified");

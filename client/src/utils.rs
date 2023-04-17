@@ -1,6 +1,6 @@
 use crate::{
+	attestation::{Attestation, AttestationData},
 	error::EigenError,
-	manager::attestation::{Attestation, AttestationData},
 	ClientConfig,
 };
 use csv::Reader as CsvReader;

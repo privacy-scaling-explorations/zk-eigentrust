@@ -4,11 +4,7 @@
 //! - Calculating local scores toward neighbors for a given epoch
 //! - Keeping track of neighbors scores towards us
 
-/// Attestation implementation
-pub mod attestation;
-
-use crate::{error::EigenError, utils::keyset_from_raw};
-use attestation::Attestation;
+use crate::{attestation::Attestation, error::EigenError, utils::keyset_from_raw};
 use eigen_trust_circuit::{
 	calculate_message_hash,
 	circuit::{native, EigenTrust, PoseidonNativeHasher},
