@@ -338,9 +338,16 @@ impl<
 
 		// filter peers' ops
 		let ops = {
-			let mut filtered_ops = vec![];
+			let mut filtered_ops = Vec::new();
 			for i in 0..NUM_NEIGHBOURS {
-				let mut ops_i = vec![];
+				let mut ops_i = ops[i].clone();
+
+				// Update the opinion array - pairs of (key, score)
+				//
+				// TODO: How to nullify the op_score according to pair of (set_pk, op_pk)
+				//
+
+				// Distribute the scores
 				let mut op_score_sum = zero.clone();
 				for j in 0..NUM_NEIGHBOURS {
 					let add_chip = AddChipset::new(op_score_sum.clone(), ops[i][j].clone());
@@ -385,17 +392,19 @@ impl<
 						let is_not_null = is_default_pk_x && is_default_pk_y;
 
 						if is_diff_pk && is_not_null {
-							ops_i.push(one.clone());
-						} else {
-							ops_i.push(ops[i][j].clone());
+							ops_i[j] = one.clone();
 						}
 					}
 				}
+
+				// Add to "filtered_ops"
 				filtered_ops.push(ops_i);
 			}
 
 			filtered_ops
 		};
+
+		// Maybe, need to do "normalize" here?
 
 		// compute EigenTrust scores
 		{
