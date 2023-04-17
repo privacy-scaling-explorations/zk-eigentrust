@@ -14,7 +14,7 @@ use crate::{
 		absorb::AbsorbChip,
 		bits2num::Bits2NumChip,
 		lt_eq::{LessEqualConfig, NShiftedChip},
-		main::{AddChipset, MainChip, MainConfig, MulChipset},
+		main::{AddChipset, IsEqualChipset, MainChip, MainConfig, MulChipset},
 	},
 	params::poseidon_bn254_5x5::Params,
 	poseidon::{
@@ -146,121 +146,148 @@ impl<
 	fn synthesize(
 		&self, config: Self::Config, mut layouter: impl Layouter<Scalar>,
 	) -> Result<(), Error> {
-		let (zero, pk_x, pk_y, big_r_x, big_r_y, s, scale, ops, init_score, total_score, passed_s) =
-			layouter.assign_region(
-				|| "temp",
-				|region: Region<'_, Scalar>| {
-					let mut ctx = RegionCtx::new(region, 0);
+		let (
+			zero,
+			pk_x,
+			pk_y,
+			big_r_x,
+			big_r_y,
+			s,
+			scale,
+			ops,
+			init_score,
+			total_score,
+			passed_s,
+			one,
+			default_pk_x,
+			default_pk_y,
+		) = layouter.assign_region(
+			|| "temp",
+			|region: Region<'_, Scalar>| {
+				let mut ctx = RegionCtx::new(region, 0);
 
-					let zero = ctx.assign_from_constant(config.common.advice[0], Scalar::zero())?;
+				let zero = ctx.assign_from_constant(config.common.advice[0], Scalar::zero())?;
 
-					let scale = ctx.assign_from_constant(
-						config.common.advice[1],
-						Scalar::from_u128(SCALE.pow(NUM_ITER as u32)),
-					)?;
+				let scale = ctx.assign_from_constant(
+					config.common.advice[1],
+					Scalar::from_u128(SCALE.pow(NUM_ITER as u32)),
+				)?;
 
-					let assigned_initial_score = ctx.assign_from_constant(
-						config.common.advice[2],
-						Scalar::from_u128(INITIAL_SCORE),
-					)?;
+				let assigned_initial_score = ctx.assign_from_constant(
+					config.common.advice[2],
+					Scalar::from_u128(INITIAL_SCORE),
+				)?;
 
-					let assigned_total_score = ctx.assign_from_constant(
-						config.common.advice[3],
-						Scalar::from_u128(INITIAL_SCORE * NUM_NEIGHBOURS as u128),
-					)?;
+				let assigned_total_score = ctx.assign_from_constant(
+					config.common.advice[3],
+					Scalar::from_u128(INITIAL_SCORE * NUM_NEIGHBOURS as u128),
+				)?;
 
+				// Move to the next row
+				ctx.next();
+
+				let mut assigned_pk_x = Vec::new();
+				for chunk in self.pk_x.chunks(ADVICE) {
+					for i in 0..chunk.len() {
+						let val = chunk[i].clone();
+						let pk_x = ctx.assign_advice(config.common.advice[i], val)?;
+						assigned_pk_x.push(pk_x)
+					}
 					// Move to the next row
 					ctx.next();
+				}
 
-					let mut assigned_pk_x = Vec::new();
-					for chunk in self.pk_x.chunks(ADVICE) {
-						for i in 0..chunk.len() {
-							let val = chunk[i].clone();
-							let pk_x = ctx.assign_advice(config.common.advice[i], val)?;
-							assigned_pk_x.push(pk_x)
-						}
-						// Move to the next row
-						ctx.next();
+				let mut assigned_pk_y = Vec::new();
+				for chunk in self.pk_y.chunks(ADVICE) {
+					for i in 0..chunk.len() {
+						let val = chunk[i].clone();
+						let pk_y = ctx.assign_advice(config.common.advice[i], val)?;
+						assigned_pk_y.push(pk_y)
 					}
+					// Move to the next row
+					ctx.next();
+				}
 
-					let mut assigned_pk_y = Vec::new();
-					for chunk in self.pk_y.chunks(ADVICE) {
-						for i in 0..chunk.len() {
-							let val = chunk[i].clone();
-							let pk_y = ctx.assign_advice(config.common.advice[i], val)?;
-							assigned_pk_y.push(pk_y)
-						}
-						// Move to the next row
-						ctx.next();
+				let mut assigned_big_r_x = Vec::new();
+				for chunk in self.big_r_x.chunks(ADVICE) {
+					for i in 0..chunk.len() {
+						let val = chunk[i].clone();
+						let big_r_x = ctx.assign_advice(config.common.advice[i], val)?;
+						assigned_big_r_x.push(big_r_x)
 					}
+					// Move to the next row
+					ctx.next();
+				}
 
-					let mut assigned_big_r_x = Vec::new();
-					for chunk in self.big_r_x.chunks(ADVICE) {
-						for i in 0..chunk.len() {
-							let val = chunk[i].clone();
-							let big_r_x = ctx.assign_advice(config.common.advice[i], val)?;
-							assigned_big_r_x.push(big_r_x)
-						}
-						// Move to the next row
-						ctx.next();
+				let mut assigned_big_r_y = Vec::new();
+				for chunk in self.big_r_y.chunks(ADVICE) {
+					for i in 0..chunk.len() {
+						let val = chunk[i].clone();
+						let big_r_y = ctx.assign_advice(config.common.advice[i], val)?;
+						assigned_big_r_y.push(big_r_y)
 					}
+					// Move to the next row
+					ctx.next();
+				}
 
-					let mut assigned_big_r_y = Vec::new();
-					for chunk in self.big_r_y.chunks(ADVICE) {
-						for i in 0..chunk.len() {
-							let val = chunk[i].clone();
-							let big_r_y = ctx.assign_advice(config.common.advice[i], val)?;
-							assigned_big_r_y.push(big_r_y)
-						}
-						// Move to the next row
-						ctx.next();
+				let mut assigned_s = Vec::new();
+				for chunk in self.s.chunks(ADVICE) {
+					for i in 0..chunk.len() {
+						let val = chunk[i].clone();
+						let s = ctx.assign_advice(config.common.advice[i], val)?;
+						assigned_s.push(s)
 					}
+					// Move to the next row
+					ctx.next();
+				}
 
-					let mut assigned_s = Vec::new();
-					for chunk in self.s.chunks(ADVICE) {
+				let mut assigned_ops = Vec::new();
+				for neighbour_ops in &self.ops {
+					let mut assigned_neighbour_op = Vec::new();
+					for chunk in neighbour_ops.chunks(ADVICE) {
 						for i in 0..chunk.len() {
 							let val = chunk[i].clone();
 							let s = ctx.assign_advice(config.common.advice[i], val)?;
-							assigned_s.push(s)
+							assigned_neighbour_op.push(s)
 						}
 						// Move to the next row
 						ctx.next();
 					}
+					assigned_ops.push(assigned_neighbour_op);
+				}
 
-					let mut assigned_ops = Vec::new();
-					for neighbour_ops in &self.ops {
-						let mut assigned_neighbour_op = Vec::new();
-						for chunk in neighbour_ops.chunks(ADVICE) {
-							for i in 0..chunk.len() {
-								let val = chunk[i].clone();
-								let s = ctx.assign_advice(config.common.advice[i], val)?;
-								assigned_neighbour_op.push(s)
-							}
-							// Move to the next row
-							ctx.next();
-						}
-						assigned_ops.push(assigned_neighbour_op);
+				let mut passed_s = Vec::new();
+				for i in 0..NUM_NEIGHBOURS {
+					let index = i % ADVICE;
+					let ps = ctx.assign_from_instance(
+						config.common.advice[index], config.common.instance, i,
+					)?;
+					passed_s.push(ps);
+					if i == ADVICE - 1 {
+						ctx.next();
 					}
+				}
 
-					let mut passed_s = Vec::new();
-					for i in 0..NUM_NEIGHBOURS {
-						let index = i % ADVICE;
-						let ps = ctx.assign_from_instance(
-							config.common.advice[index], config.common.instance, i,
-						)?;
-						passed_s.push(ps);
-						if i == ADVICE - 1 {
-							ctx.next();
-						}
-					}
+				let one = ctx.assign_from_constant(config.common.advice[0], Scalar::one())?;
 
-					Ok((
-						zero, assigned_pk_x, assigned_pk_y, assigned_big_r_x, assigned_big_r_y,
-						assigned_s, scale, assigned_ops, assigned_initial_score,
-						assigned_total_score, passed_s,
-					))
-				},
-			)?;
+				let default_pk_x = ctx.assign_advice(
+					config.common.advice[1],
+					Value::known(PublicKey::default().0.x),
+				)?;
+
+				let default_pk_y = ctx.assign_advice(
+					config.common.advice[2],
+					Value::known(PublicKey::default().0.y),
+				)?;
+
+				Ok((
+					zero, assigned_pk_x, assigned_pk_y, assigned_big_r_x, assigned_big_r_y,
+					assigned_s, scale, assigned_ops, assigned_initial_score, assigned_total_score,
+					passed_s, one, default_pk_x, default_pk_y,
+				))
+			},
+		)?;
+
 		// signature verification
 		{
 			let mut pk_sponge = SpongeHasher::new();
@@ -310,9 +337,65 @@ impl<
 		}
 
 		// filter peers' ops
-		{
-			todo!("Implement the filtering operation");
-		}
+		let ops = {
+			let mut filtered_ops = vec![];
+			for i in 0..NUM_NEIGHBOURS {
+				let mut ops_i = vec![];
+				let mut op_score_sum = zero.clone();
+				for j in 0..NUM_NEIGHBOURS {
+					let add_chip = AddChipset::new(op_score_sum.clone(), ops[i][j].clone());
+					op_score_sum = add_chip.synthesize(
+						&config.common,
+						&config.main,
+						layouter.namespace(|| "op_score_sum"),
+					)?;
+				}
+
+				let equal_chip = IsEqualChipset::new(op_score_sum, zero.clone());
+				let is_sum_zero = equal_chip
+					.synthesize(
+						&config.common,
+						&config.main,
+						layouter.namespace(|| "op_score_sum == 0"),
+					)
+					.is_ok();
+				if is_sum_zero {
+					for j in 0..NUM_NEIGHBOURS {
+						let is_diff_pk = i != j;
+
+						let pk_x_equal_chip =
+							IsEqualChipset::new(pk_x[j].clone(), default_pk_x.clone());
+						let is_default_pk_x = pk_x_equal_chip
+							.synthesize(
+								&config.common,
+								&config.main,
+								layouter.namespace(|| "pk_j.x == default_pk.x"),
+							)
+							.is_ok();
+
+						let pk_y_equal_chip =
+							IsEqualChipset::new(pk_y[j].clone(), default_pk_y.clone());
+						let is_default_pk_y = pk_y_equal_chip
+							.synthesize(
+								&config.common,
+								&config.main,
+								layouter.namespace(|| "pk_j.y == default_pk.y"),
+							)
+							.is_ok();
+						let is_not_null = is_default_pk_x && is_default_pk_y;
+
+						if is_diff_pk && is_not_null {
+							ops_i.push(one.clone());
+						} else {
+							ops_i.push(ops[i][j].clone());
+						}
+					}
+				}
+				filtered_ops.push(ops_i);
+			}
+
+			filtered_ops
+		};
 
 		// compute EigenTrust scores
 		{
