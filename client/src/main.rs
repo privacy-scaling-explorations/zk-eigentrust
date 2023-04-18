@@ -27,10 +27,11 @@ struct Cli {
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Subcommand)]
 enum Mode {
-	Show,
+	Attest,
 	CompileContracts,
 	DeployContracts,
-	Attest,
+	GenerateProof,
+	Show,
 	Update(UpdateData),
 	Verify,
 }
@@ -76,6 +77,11 @@ async fn main() {
 		.expect("No user found with the given secret key");
 
 	match cli.mode {
+		Mode::Attest => {
+			let client = Client::new(config.clone(), user_secrets_raw);
+			println!("Attestations:\n{:#?}", config.ops);
+			client.attest().await.unwrap();
+		},
 		Mode::CompileContracts => {
 			compile_sol_contract();
 			compile_yul_contracts();
@@ -103,13 +109,9 @@ async fn main() {
 			let w_addr = wrapper_res.unwrap();
 			println!("EtVerifierWrapper contract deployed. Address: {}", w_addr);
 		},
-		Mode::Attest => {
-			let client = Client::new(config.clone(), user_secrets_raw);
-			println!("Attestations:\n{:#?}", config.ops);
-			client.attest().await.unwrap();
-		},
-		Mode::Verify => {
-			let mut proof: Proof = Proof::from(ProofRaw { pub_ins: vec![[0; 32]], proof: vec![0] });
+		Mode::GenerateProof => {
+			let mut _proof: Proof =
+				Proof::from(ProofRaw { pub_ins: vec![[0; 32]], proof: vec![0] });
 			let attestations = get_attestations(&config).await.unwrap();
 
 			match mng_store.lock() {
@@ -120,17 +122,17 @@ async fn main() {
 						manager.add_attestation(att).unwrap();
 					}
 
-					proof = manager.calculate_proofs().unwrap();
+					_proof = manager.calculate_proofs().unwrap();
 				},
 				Err(e) => {
 					println!("error: {:?}", e);
 				},
 			}
 
-			let client = Client::new(config, user_secrets_raw);
-
-			client.verify(ProofRaw::from(proof)).await.unwrap();
-			println!("Proof verified");
+			// TODO: Save proof to file
+		},
+		Mode::Show => {
+			println!("Client config:\n{:#?}", config);
 		},
 		Mode::Update(data) => {
 			if let Err(e) = config_update(&mut config, data, user_secrets_raw) {
@@ -139,8 +141,13 @@ async fn main() {
 				println!("Client configuration updated.");
 			}
 		},
-		Mode::Show => {
-			println!("Client config:\n{:#?}", config);
+		Mode::Verify => {
+			// TODO: Read proof from file
+			let proof: Proof = Proof::from(ProofRaw { pub_ins: vec![[0; 32]], proof: vec![0] });
+
+			let client = Client::new(config, user_secrets_raw);
+			client.verify(ProofRaw::from(proof)).await.unwrap();
+			println!("Proof verified");
 		},
 	}
 }
