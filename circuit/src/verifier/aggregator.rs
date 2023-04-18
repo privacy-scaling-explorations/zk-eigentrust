@@ -84,7 +84,7 @@ impl Snark {
 		let pk = gen_pk(params, &circuit);
 		// TODO: Calculate number of instances from `instances` parameter
 		let config = Config::kzg().with_num_instance(vec![1]);
-		println!("{:?}", config);
+
 		let protocol = compile(params, pk.get_vk(), config);
 
 		let instances_slice: Vec<&[Fr]> = instances.iter().map(|x| x.as_slice()).collect();
@@ -334,7 +334,7 @@ impl Circuit<Fr> for Aggregator {
 mod test {
 
 	use crate::{
-		circuit::{FullRoundHasher, PartialRoundHasher},
+		circuit::{EigenTrust, FullRoundHasher, PartialRoundHasher},
 		ecc::{
 			EccAddConfig, EccDoubleConfig, EccMulConfig, EccTableSelectConfig,
 			EccUnreducedLadderConfig,
