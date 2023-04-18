@@ -80,24 +80,23 @@ impl EigenTrustSet {
 		self.ops.insert(from, op);
 	}
 
-	pub fn converge(&self) -> [Fr; NUM_NEIGHBOURS] {
+	pub fn converge(&self) -> [(PublicKey, Fr); NUM_NEIGHBOURS] {
 		let (filtered_set, mut filtered_ops) = self.filter_peers();
 
 		// Normalize the opinion scores
-		// Distribute the credits(INITIAL_SCORE) to the valid opinion values
-		// We assume that the initial credit of peer is constant(INITIAL_SCORE)
 		for i in 0..NUM_NEIGHBOURS {
-			let (pk, credits) = filtered_set[i];
+			let (pk, _) = filtered_set[i];
 			if pk == PublicKey::default() {
 				continue;
 			}
 			let mut ops_i = filtered_ops.get_mut(&pk).unwrap();
 
 			let op_score_sum = ops_i.scores.iter().fold(Fr::zero(), |acc, &(_, score)| acc + score);
+			let inverted_sum = op_score_sum.invert().unwrap_or(Fr::zero());
 
 			for j in 0..NUM_NEIGHBOURS {
 				let (_, op_score) = ops_i.scores[j].clone();
-				ops_i.scores[j].1 = op_score * op_score_sum.invert().unwrap() * credits;
+				ops_i.scores[j].1 = op_score * inverted_sum;
 			}
 		}
 
@@ -106,39 +105,38 @@ impl EigenTrustSet {
 		assert!(valid_peers >= 2, "Insufficient peers for calculation!");
 
 		// By this point we should use filtered_set and filtered_opinions
-		let mut s = filtered_set.map(|item| item.1);
-		let default_op = Opinion::default();
+		let mut s = filtered_set.clone();
 		for _ in 0..NUM_ITERATIONS {
-			let mut distributions = [[Fr::zero(); NUM_NEIGHBOURS]; NUM_NEIGHBOURS];
 			for i in 0..NUM_NEIGHBOURS {
-				let mut local_distr = [Fr::zero(); NUM_NEIGHBOURS];
-				let pk = filtered_set[i].0;
-				let ops_i = filtered_ops.get(&pk).unwrap_or_else(|| &default_op);
-
-				for j in 0..NUM_NEIGHBOURS {
-					let op = ops_i.scores[j].1 * s[i];
-					local_distr[j] = op;
+				let (pk_i, _) = s[i];
+				if pk_i == PublicKey::default() {
+					continue;
 				}
-				distributions[i] = local_distr;
-			}
 
-			let mut new_s = [Fr::zero(); NUM_NEIGHBOURS];
-			for i in 0..NUM_NEIGHBOURS {
+				let mut new_score = Fr::zero();
 				for j in 0..NUM_NEIGHBOURS {
-					new_s[i] += distributions[j][i];
-				}
-			}
+					let (pk_j, n_score) = s[j];
+					if pk_j == PublicKey::default() {
+						continue;
+					}
 
-			s = new_s;
+					let ops_j = filtered_ops.get(&pk_j).unwrap();
+					let score = ops_j.scores[i].1;
+					let op = score * n_score;
+					new_score += op;
+				}
+				s[i].1 = new_score;
+			}
 		}
 
-		println!("new s: {:?}", s);
+		println!("new s: {:#?}", s.map(|p| p.1));
 
-		let mut sum = Fr::zero();
-		for x in s.iter() {
-			sum += x;
-		}
-		println!("sum: {:?}", sum);
+		let sum_initial = filtered_set.iter().fold(Fr::zero(), |acc, &(_, score)| acc + score);
+		let sum_final = s.iter().fold(Fr::zero(), |acc, &(_, score)| acc + score);
+		// TODO: Make sure that the total amount of reputation stays the same after
+		// convergence
+		// assert!(sum_initial == sum_final);
+		println!("sum before: {:?}, sum after: {:?}", sum_initial, sum_final);
 
 		s
 	}
