@@ -108,12 +108,31 @@ async fn main() {
 			println!("EtVerifierWrapper contract deployed. Address: {}", w_addr);
 		},
 		Mode::GenerateProof => {
-			let attestations = get_attestations(&config).await.unwrap();
+			let attestations = match get_attestations(&config).await {
+				Ok(attestations) => attestations,
+				Err(e) => {
+					eprintln!("Failed to get attestations: {:?}", e);
+					return;
+				},
+			};
 
-			if let Ok(mut manager) = mng_store.lock() {
-				manager.generate_initial_attestations();
-				manager.add_attestations(attestations).unwrap();
-				manager.calculate_proofs().unwrap();
+			let mut manager = match mng_store.lock() {
+				Ok(manager) => manager,
+				Err(_) => {
+					eprintln!("Failed to lock manager store");
+					return;
+				},
+			};
+
+			manager.generate_initial_attestations();
+
+			if let Err(e) = manager.add_attestations(attestations) {
+				eprintln!("Error adding attestations: {:?}", e);
+				return;
+			}
+
+			if let Err(e) = manager.calculate_proofs() {
+				eprintln!("Error calculating proofs: {:?}", e);
 			}
 		},
 		Mode::Show => println!("Client config:\n{:#?}", config),
@@ -123,7 +142,20 @@ async fn main() {
 		},
 		Mode::Verify => {
 			let client = Client::new(config, user_secrets_raw);
-			client.verify(ProofRaw::from(Manager::get_last_proof().unwrap())).await.unwrap();
+
+			let last_proof = match Manager::get_last_proof() {
+				Ok(proof) => ProofRaw::from(proof),
+				Err(e) => {
+					eprintln!("Failed to get the last proof: {:?}", e);
+					return;
+				},
+			};
+
+			if let Err(e) = client.verify(last_proof).await {
+				eprintln!("Failed to verify the proof: {:?}", e);
+				return;
+			}
+
 			println!("Proof verified");
 		},
 	}
