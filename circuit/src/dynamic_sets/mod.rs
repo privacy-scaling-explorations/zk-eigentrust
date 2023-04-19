@@ -14,7 +14,7 @@ use crate::{
 		absorb::AbsorbChip,
 		bits2num::Bits2NumChip,
 		lt_eq::{LessEqualConfig, NShiftedChip},
-		main::{AddChipset, IsEqualChipset, MainChip, MainConfig, MulChipset},
+		main::{AddChipset, InverseChipset, IsEqualChipset, MainChip, MainConfig, MulChipset},
 	},
 	params::poseidon_bn254_5x5::Params,
 	poseidon::{
@@ -30,6 +30,7 @@ use halo2::{
 	halo2curves::{bn256::Fr as Scalar, FieldExt},
 	plonk::{Circuit, ConstraintSystem, Error},
 };
+use itertools::InterleaveShortest;
 
 use self::native::Opinion;
 
@@ -366,34 +367,36 @@ impl<
 						layouter.namespace(|| "op_score_sum == 0"),
 					)
 					.is_ok();
-				if is_sum_zero {
-					for j in 0..NUM_NEIGHBOURS {
-						let is_diff_pk = i != j;
+				if !is_sum_zero {
+					continue;
+				}
 
-						let pk_x_equal_chip =
-							IsEqualChipset::new(pk_x[j].clone(), default_pk_x.clone());
-						let is_default_pk_x = pk_x_equal_chip
-							.synthesize(
-								&config.common,
-								&config.main,
-								layouter.namespace(|| "pk_j.x == default_pk.x"),
-							)
-							.is_ok();
+				for j in 0..NUM_NEIGHBOURS {
+					let is_diff_pk = i != j;
 
-						let pk_y_equal_chip =
-							IsEqualChipset::new(pk_y[j].clone(), default_pk_y.clone());
-						let is_default_pk_y = pk_y_equal_chip
-							.synthesize(
-								&config.common,
-								&config.main,
-								layouter.namespace(|| "pk_j.y == default_pk.y"),
-							)
-							.is_ok();
-						let is_not_null = is_default_pk_x && is_default_pk_y;
+					let pk_x_equal_chip =
+						IsEqualChipset::new(pk_x[j].clone(), default_pk_x.clone());
+					let is_default_pk_x = pk_x_equal_chip
+						.synthesize(
+							&config.common,
+							&config.main,
+							layouter.namespace(|| "pk_j.x == default_pk.x"),
+						)
+						.is_ok();
 
-						if is_diff_pk && is_not_null {
-							ops_i[j] = one.clone();
-						}
+					let pk_y_equal_chip =
+						IsEqualChipset::new(pk_y[j].clone(), default_pk_y.clone());
+					let is_default_pk_y = pk_y_equal_chip
+						.synthesize(
+							&config.common,
+							&config.main,
+							layouter.namespace(|| "pk_j.y == default_pk.y"),
+						)
+						.is_ok();
+					let is_not_null = is_default_pk_x && is_default_pk_y;
+
+					if is_diff_pk && is_not_null {
+						ops_i[j] = one.clone();
 					}
 				}
 
@@ -404,7 +407,60 @@ impl<
 			filtered_ops
 		};
 
-		// Maybe, need to do "normalize" here?
+		// "Normalization"
+		let ops = {
+			let mut normalized_ops = Vec::new();
+			for i in 0..NUM_NEIGHBOURS {
+				let mut ops_i = Vec::new();
+
+				// Compute the sum of scores
+				let mut op_score_sum = zero.clone();
+				for j in 0..NUM_NEIGHBOURS {
+					let add_chip = AddChipset::new(op_score_sum.clone(), ops[i][j].clone());
+					op_score_sum = add_chip.synthesize(
+						&config.common,
+						&config.main,
+						layouter.namespace(|| "op_score_sum"),
+					)?;
+				}
+
+				// Check if sum is zero
+				let equal_chip = IsEqualChipset::new(op_score_sum.clone(), zero.clone());
+				let is_sum_zero = equal_chip
+					.synthesize(
+						&config.common,
+						&config.main,
+						layouter.namespace(|| "op_score_sum == 0"),
+					)
+					.is_ok();
+				if is_sum_zero {
+					continue;
+				}
+
+				// Compute the normalized score
+				let invert_chip = InverseChipset::new(op_score_sum);
+				let inverted_sum = invert_chip.synthesize(
+					&config.common,
+					&config.main,
+					layouter.namespace(|| "invert_sum"),
+				)?;
+
+				for j in 0..NUM_NEIGHBOURS {
+					let mul_chip = MulChipset::new(ops[i][j].clone(), inverted_sum.clone());
+					let normalized_op = mul_chip.synthesize(
+						&config.common,
+						&config.main,
+						layouter.namespace(|| "op * inverted_sum"),
+					)?;
+					ops_i.push(normalized_op);
+				}
+
+				// Add to "normalized_ops"
+				normalized_ops.push(ops_i);
+			}
+
+			normalized_ops
+		};
 
 		// compute EigenTrust scores
 		{
