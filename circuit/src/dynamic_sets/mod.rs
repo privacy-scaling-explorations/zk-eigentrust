@@ -62,6 +62,8 @@ pub struct EigenTrustSet<
 	big_r_y: Vec<Value<Scalar>>,
 	s: Vec<Value<Scalar>>,
 	// Opinions
+	op_pk_x: Vec<Vec<Value<Scalar>>>,
+	op_pk_y: Vec<Vec<Value<Scalar>>>,
 	ops: Vec<Vec<Value<Scalar>>>,
 }
 
@@ -73,7 +75,10 @@ impl<
 	> EigenTrustSet<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, SCALE>
 {
 	/// Constructs a new EigenTrustSet circuit
-	pub fn new(pks: Vec<PublicKey>, signatures: Vec<Signature>, ops: Vec<Vec<Scalar>>) -> Self {
+	pub fn new(
+		pks: Vec<PublicKey>, signatures: Vec<Signature>, op_pks: Vec<Vec<PublicKey>>,
+		ops: Vec<Vec<Scalar>>,
+	) -> Self {
 		// Pubkey values
 		let pk_x = pks.iter().map(|pk| Value::known(pk.0.x.clone())).collect();
 		let pk_y = pks.iter().map(|pk| Value::known(pk.0.y.clone())).collect();
@@ -84,10 +89,18 @@ impl<
 		let s = signatures.iter().map(|sig| Value::known(sig.s.clone())).collect();
 
 		// Opinions
+		let op_pk_x = op_pks
+			.iter()
+			.map(|pks| pks.iter().map(|pk| Value::known(pk.0.x.clone())).collect())
+			.collect();
+		let op_pk_y = op_pks
+			.iter()
+			.map(|pks| pks.iter().map(|pk| Value::known(pk.0.y.clone())).collect())
+			.collect();
 		let ops =
 			ops.iter().map(|vals| vals.iter().map(|x| Value::known(x.clone())).collect()).collect();
 
-		Self { pk_x, pk_y, big_r_x, big_r_y, s, ops }
+		Self { pk_x, pk_y, big_r_x, big_r_y, s, op_pk_x, op_pk_y, ops }
 	}
 }
 
@@ -108,6 +121,8 @@ impl<
 			big_r_x: vec![Value::unknown(); NUM_NEIGHBOURS],
 			big_r_y: vec![Value::unknown(); NUM_NEIGHBOURS],
 			s: vec![Value::unknown(); NUM_NEIGHBOURS],
+			op_pk_x: vec![vec![Value::unknown(); NUM_NEIGHBOURS]; NUM_NEIGHBOURS],
+			op_pk_y: vec![vec![Value::unknown(); NUM_NEIGHBOURS]; NUM_NEIGHBOURS],
 			ops: vec![vec![Value::unknown(); NUM_NEIGHBOURS]; NUM_NEIGHBOURS],
 		}
 	}
@@ -162,6 +177,8 @@ impl<
 			one,
 			default_pk_x,
 			default_pk_y,
+			mut op_pk_x,
+			mut op_pk_y,
 		) = layouter.assign_region(
 			|| "temp",
 			|region: Region<'_, Scalar>| {
@@ -281,25 +298,56 @@ impl<
 					Value::known(PublicKey::default().0.y),
 				)?;
 
+				let mut assigned_op_pk_x = Vec::new();
+				for neighbour_pk_x in &self.op_pk_x {
+					let mut assigned_neighbour_pk_x = Vec::new();
+					for chunk in neighbour_pk_x.chunks(ADVICE) {
+						for i in 0..chunk.len() {
+							let val = chunk[i].clone();
+							let x = ctx.assign_advice(config.common.advice[i], val)?;
+							assigned_neighbour_pk_x.push(x);
+						}
+						// Move to the next row
+						ctx.next();
+					}
+					assigned_op_pk_x.push(assigned_neighbour_pk_x);
+				}
+
+				let mut assigned_op_pk_y = Vec::new();
+				for neighbour_pk_y in &self.op_pk_y {
+					let mut assigned_neighbour_pk_y = Vec::new();
+					for chunk in neighbour_pk_y.chunks(ADVICE) {
+						for i in 0..chunk.len() {
+							let val = chunk[i].clone();
+							let y = ctx.assign_advice(config.common.advice[i], val)?;
+							assigned_neighbour_pk_y.push(y);
+						}
+						// Move to the next row
+						ctx.next();
+					}
+					assigned_op_pk_y.push(assigned_neighbour_pk_y);
+				}
+
 				Ok((
 					zero, assigned_pk_x, assigned_pk_y, assigned_big_r_x, assigned_big_r_y,
 					assigned_s, scale, assigned_ops, assigned_initial_score, assigned_total_score,
-					passed_s, one, default_pk_x, default_pk_y,
+					passed_s, one, default_pk_x, default_pk_y, assigned_op_pk_x, assigned_op_pk_y,
 				))
 			},
 		)?;
 
 		// signature verification
 		{
-			let mut pk_sponge = SpongeHasher::new();
-			pk_sponge.update(&pk_x);
-			pk_sponge.update(&pk_y);
-			let keys_message_hash = pk_sponge.synthesize(
-				&config.common,
-				&config.sponge,
-				layouter.namespace(|| "keys_sponge"),
-			)?;
 			for i in 0..NUM_NEIGHBOURS {
+				let mut pk_sponge = SpongeHasher::new();
+				pk_sponge.update(&op_pk_x[i]);
+				pk_sponge.update(&op_pk_y[i]);
+				let pks_hash = pk_sponge.synthesize(
+					&config.common,
+					&config.sponge,
+					layouter.namespace(|| "pks_sponge"),
+				)?;
+
 				let mut scores_sponge = SpongeHasher::new();
 				scores_sponge.update(&ops[i]);
 				let scores_message_hash = scores_sponge.synthesize(
@@ -307,13 +355,8 @@ impl<
 					&config.sponge,
 					layouter.namespace(|| "scores_sponge"),
 				)?;
-				let message_hash_input = [
-					keys_message_hash.clone(),
-					scores_message_hash,
-					zero.clone(),
-					zero.clone(),
-					zero.clone(),
-				];
+				let message_hash_input =
+					[pks_hash, scores_message_hash, zero.clone(), zero.clone(), zero.clone()];
 				let poseidon = PoseidonHasher::new(message_hash_input);
 				let res = poseidon.synthesize(
 					&config.common,
@@ -341,12 +384,87 @@ impl<
 		let ops = {
 			let mut filtered_ops = Vec::new();
 			for i in 0..NUM_NEIGHBOURS {
+				let pk_i_x = pk_x[i].clone();
+				let pk_i_y = pk_y[i].clone();
+
 				let mut ops_i = ops[i].clone();
 
 				// Update the opinion array - pairs of (key, score)
-				//
-				// TODO: How to nullify the op_score according to pair of (set_pk, op_pk)
-				//
+				for j in 0..NUM_NEIGHBOURS {
+					let set_pk_j_x = pk_x[j].clone();
+					let set_pk_j_y = pk_y[j].clone();
+					let op_pk_j_x = op_pk_x[i][j].clone();
+					let op_pk_j_y = op_pk_y[i][j].clone();
+
+					let equal_chip = IsEqualChipset::new(set_pk_j_x.clone(), op_pk_j_x.clone());
+					let is_same_pk_j_x = equal_chip
+						.synthesize(
+							&config.common,
+							&config.main,
+							layouter.namespace(|| "set_pk_j_x == op_pk_j_x"),
+						)
+						.is_ok();
+					let equal_chip = IsEqualChipset::new(set_pk_j_y.clone(), op_pk_j_y.clone());
+					let is_same_pk_j_y = equal_chip
+						.synthesize(
+							&config.common,
+							&config.main,
+							layouter.namespace(|| "set_pk_j_y == op_pk_j_y"),
+						)
+						.is_ok();
+					let is_diff_pk_j = !(is_same_pk_j_x && is_same_pk_j_y);
+
+					let equal_chip = IsEqualChipset::new(set_pk_j_x.clone(), default_pk_x.clone());
+					let is_default_pk_x = equal_chip
+						.synthesize(
+							&config.common,
+							&config.main,
+							layouter.namespace(|| "set_pk_j_x == default_pk_x"),
+						)
+						.is_ok();
+					let equal_chip = IsEqualChipset::new(set_pk_j_y.clone(), default_pk_y.clone());
+					let is_default_pk_y = equal_chip
+						.synthesize(
+							&config.common,
+							&config.main,
+							layouter.namespace(|| "set_pk_j_y == default_pk_y"),
+						)
+						.is_ok();
+					let is_pk_j_null = is_default_pk_x && is_default_pk_y;
+
+					let equal_chip = IsEqualChipset::new(set_pk_j_x.clone(), pk_i_x.clone());
+					let is_pk_i_x = equal_chip
+						.synthesize(
+							&config.common,
+							&config.main,
+							layouter.namespace(|| "set_pk_j_x == pk_i_x"),
+						)
+						.is_ok();
+					let equal_chip = IsEqualChipset::new(set_pk_j_y.clone(), pk_i_y.clone());
+					let is_pk_i_y = equal_chip
+						.synthesize(
+							&config.common,
+							&config.main,
+							layouter.namespace(|| "set_pk_j_y == op_pk_j_y"),
+						)
+						.is_ok();
+					let is_pk_i = is_pk_i_x && is_pk_i_y;
+
+					// Conditions for nullifying the score
+					// 1. set_pk_j != op_pk_j
+					// 2. set_pk_j == 0 (null or default)
+					// 3. set_pk_j == pk_i
+					if is_diff_pk_j || is_pk_j_null || is_pk_i {
+						ops_i[j] = zero.clone();
+					}
+
+					// Condition for correcting the pk
+					// 1. set_pk_j != op_pk_j
+					if is_diff_pk_j {
+						op_pk_x[i][j] = set_pk_j_x;
+						op_pk_y[i][j] = set_pk_j_y;
+					}
+				}
 
 				// Distribute the scores
 				let mut op_score_sum = zero.clone();
@@ -367,36 +485,34 @@ impl<
 						layouter.namespace(|| "op_score_sum == 0"),
 					)
 					.is_ok();
-				if !is_sum_zero {
-					continue;
-				}
+				if is_sum_zero {
+					for j in 0..NUM_NEIGHBOURS {
+						let is_diff_pk = i != j;
 
-				for j in 0..NUM_NEIGHBOURS {
-					let is_diff_pk = i != j;
+						let pk_x_equal_chip =
+							IsEqualChipset::new(pk_x[j].clone(), default_pk_x.clone());
+						let is_default_pk_x = pk_x_equal_chip
+							.synthesize(
+								&config.common,
+								&config.main,
+								layouter.namespace(|| "pk_j_x == default_pk_x"),
+							)
+							.is_ok();
 
-					let pk_x_equal_chip =
-						IsEqualChipset::new(pk_x[j].clone(), default_pk_x.clone());
-					let is_default_pk_x = pk_x_equal_chip
-						.synthesize(
-							&config.common,
-							&config.main,
-							layouter.namespace(|| "pk_j.x == default_pk.x"),
-						)
-						.is_ok();
+						let pk_y_equal_chip =
+							IsEqualChipset::new(pk_y[j].clone(), default_pk_y.clone());
+						let is_default_pk_y = pk_y_equal_chip
+							.synthesize(
+								&config.common,
+								&config.main,
+								layouter.namespace(|| "pk_j_y == default_pk_y"),
+							)
+							.is_ok();
+						let is_not_null = !(is_default_pk_x && is_default_pk_y);
 
-					let pk_y_equal_chip =
-						IsEqualChipset::new(pk_y[j].clone(), default_pk_y.clone());
-					let is_default_pk_y = pk_y_equal_chip
-						.synthesize(
-							&config.common,
-							&config.main,
-							layouter.namespace(|| "pk_j.y == default_pk.y"),
-						)
-						.is_ok();
-					let is_not_null = is_default_pk_x && is_default_pk_y;
-
-					if is_diff_pk && is_not_null {
-						ops_i[j] = one.clone();
+						if is_diff_pk && is_not_null {
+							ops_i[j] = one.clone();
+						}
 					}
 				}
 
@@ -411,7 +527,7 @@ impl<
 		let ops = {
 			let mut normalized_ops = Vec::new();
 			for i in 0..NUM_NEIGHBOURS {
-				let mut ops_i = Vec::new();
+				let mut ops_i = ops[i].clone();
 
 				// Compute the sum of scores
 				let mut op_score_sum = zero.clone();
@@ -433,26 +549,25 @@ impl<
 						layouter.namespace(|| "op_score_sum == 0"),
 					)
 					.is_ok();
-				if is_sum_zero {
-					continue;
-				}
 
-				// Compute the normalized score
-				let invert_chip = InverseChipset::new(op_score_sum);
-				let inverted_sum = invert_chip.synthesize(
-					&config.common,
-					&config.main,
-					layouter.namespace(|| "invert_sum"),
-				)?;
-
-				for j in 0..NUM_NEIGHBOURS {
-					let mul_chip = MulChipset::new(ops[i][j].clone(), inverted_sum.clone());
-					let normalized_op = mul_chip.synthesize(
+				if !is_sum_zero {
+					// Compute the normalized score
+					let invert_chip = InverseChipset::new(op_score_sum);
+					let inverted_sum = invert_chip.synthesize(
 						&config.common,
 						&config.main,
-						layouter.namespace(|| "op * inverted_sum"),
+						layouter.namespace(|| "invert_sum"),
 					)?;
-					ops_i.push(normalized_op);
+
+					for j in 0..NUM_NEIGHBOURS {
+						let mul_chip = MulChipset::new(ops[i][j].clone(), inverted_sum.clone());
+						let normalized_op = mul_chip.synthesize(
+							&config.common,
+							&config.main,
+							layouter.namespace(|| "op * inverted_sum"),
+						)?;
+						ops_i[j] = normalized_op;
+					}
 				}
 
 				// Add to "normalized_ops"

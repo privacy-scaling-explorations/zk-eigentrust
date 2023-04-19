@@ -177,14 +177,14 @@ impl EigenTrustSet {
 				let (op_pk_j, _) = ops_i.scores[j].clone();
 
 				let is_diff_pk_j = set_pk_j != op_pk_j;
-				let is_pk_j_zero = set_pk_j == PublicKey::default();
+				let is_pk_j_null = set_pk_j == PublicKey::default();
 				let is_pk_i = set_pk_j == pk_i;
 
 				// Conditions for nullifying the score
 				// 1. set_pk_j != op_pk_j
-				// 2. set_pk_j == 0
+				// 2. set_pk_j == 0 (null or default key)
 				// 3. set_pk_j == pk_i
-				if is_diff_pk_j || is_pk_j_zero || is_pk_i {
+				if is_diff_pk_j || is_pk_j_null || is_pk_i {
 					ops_i.scores[j].1 = Fr::zero();
 				}
 
