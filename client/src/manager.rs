@@ -168,7 +168,7 @@ impl Manager {
 	}
 
 	/// Calculate the scores for the given epoch, and cache the ZK proof of them
-	pub fn calculate_proofs(&mut self) -> Result<Proof, EigenError> {
+	pub fn calculate_proofs(&mut self) -> Result<(), EigenError> {
 		let (_, pks) = keyset_from_raw(FIXED_SET);
 
 		let pk_hashes: Vec<Scalar> = pks
@@ -200,9 +200,9 @@ impl Manager {
 
 		let proof = Proof { pub_ins, proof: proof_bytes };
 
-		write_json_data(ProofRaw::from(proof.clone()), "et-proof").unwrap();
+		write_json_data(ProofRaw::from(proof), "et-proof").unwrap();
 
-		Ok(proof)
+		Ok(())
 	}
 
 	/// Get the last generated proof
