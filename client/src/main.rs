@@ -1,10 +1,10 @@
 use clap::{Args, Parser, Subcommand};
 use eigen_trust_circuit::{
 	utils::{read_bytes_data, read_json_data, write_json_data},
-	Proof, ProofRaw,
+	ProofRaw,
 };
 use eigen_trust_client::{
-	manager::MANAGER_STORE,
+	manager::{Manager, MANAGER_STORE},
 	utils::{
 		compile_sol_contract, compile_yul_contracts, deploy_as, deploy_et_wrapper, deploy_verifier,
 		get_attestations, read_csv_data,
@@ -88,7 +88,7 @@ async fn main() {
 			println!("Finished compiling!");
 		},
 		Mode::DeployContracts => {
-			let deploy_res = deploy_as(&config.mnemonic, &config.ethereum_node_url).await;
+			let deploy_res = deploy_as(&config.mnemonic, &config.node_url).await;
 			if let Err(e) = deploy_res {
 				eprintln!("Failed to deploy the AttestationStation contract: {:?}", e);
 				return;
@@ -97,56 +97,33 @@ async fn main() {
 			println!("AttestationStation contract deployed. Address: {}", address);
 
 			let et_contract = read_bytes_data("et_verifier");
-			let deploy_res =
-				deploy_verifier(&config.mnemonic, &config.ethereum_node_url, et_contract).await;
+			let deploy_res = deploy_verifier(&config.mnemonic, &config.node_url, et_contract).await;
 			if let Err(e) = deploy_res {
 				eprintln!("Failed to deploy the EigenTrustVerifier contract: {:?}", e);
 				return;
 			}
 			let address = deploy_res.unwrap();
-			let wrapper_res =
-				deploy_et_wrapper(&config.mnemonic, &config.ethereum_node_url, address).await;
+			let wrapper_res = deploy_et_wrapper(&config.mnemonic, &config.node_url, address).await;
 			let w_addr = wrapper_res.unwrap();
 			println!("EtVerifierWrapper contract deployed. Address: {}", w_addr);
 		},
 		Mode::GenerateProof => {
-			let mut _proof: Proof =
-				Proof::from(ProofRaw { pub_ins: vec![[0; 32]], proof: vec![0] });
 			let attestations = get_attestations(&config).await.unwrap();
 
-			match mng_store.lock() {
-				Ok(mut manager) => {
-					manager.generate_initial_attestations();
-
-					for att in attestations {
-						manager.add_attestation(att).unwrap();
-					}
-
-					_proof = manager.calculate_proofs().unwrap();
-				},
-				Err(e) => {
-					println!("error: {:?}", e);
-				},
+			if let Ok(mut manager) = mng_store.lock() {
+				manager.generate_initial_attestations();
+				manager.add_attestations(attestations).unwrap();
+				manager.calculate_proofs().unwrap();
 			}
-
-			// TODO: Save proof to file
 		},
-		Mode::Show => {
-			println!("Client config:\n{:#?}", config);
-		},
-		Mode::Update(data) => {
-			if let Err(e) = config_update(&mut config, data, user_secrets_raw) {
-				eprintln!("Failed to update client configuration.\n{}", e);
-			} else {
-				println!("Client configuration updated.");
-			}
+		Mode::Show => println!("Client config:\n{:#?}", config),
+		Mode::Update(data) => match config_update(&mut config, data, user_secrets_raw) {
+			Ok(_) => println!("Client configuration updated."),
+			Err(e) => eprintln!("Failed to update client configuration.\n{}", e),
 		},
 		Mode::Verify => {
-			// TODO: Read proof from file
-			let proof: Proof = Proof::from(ProofRaw { pub_ins: vec![[0; 32]], proof: vec![0] });
-
 			let client = Client::new(config, user_secrets_raw);
-			client.verify(ProofRaw::from(proof)).await.unwrap();
+			client.verify(ProofRaw::from(Manager::get_last_proof().unwrap())).await.unwrap();
 			println!("Proof verified");
 		},
 	}
@@ -181,7 +158,7 @@ fn config_update(
 			Err(_) => return Err("Failed to parse mnemonic.".to_string()),
 		},
 		Config::NodeUrl => match Http::from_str(&data) {
-			Ok(_) => config.ethereum_node_url = data,
+			Ok(_) => config.node_url = data,
 			Err(_) => return Err("Failed to parse node url.".to_string()),
 		},
 		Config::Score => {

@@ -18,9 +18,9 @@ use eigen_trust_circuit::{
 		plonk::ProvingKey,
 		poly::kzg::commitment::ParamsKZG,
 	},
-	utils::{keygen, read_params, to_short},
+	utils::{keygen, read_json_data, read_params, to_short, write_json_data},
 	verifier::gen_proof,
-	Proof,
+	Proof, ProofRaw,
 };
 use once_cell::sync::Lazy;
 use rand::thread_rng;
@@ -72,7 +72,6 @@ pub const PUBLIC_KEYS: [&str; NUM_NEIGHBOURS] = [
 /// The peer struct.
 pub struct Manager {
 	attestations: HashMap<Scalar, Attestation>,
-	cached_proofs: Vec<Proof>,
 	params: ParamsKZG<Bn256>,
 	proving_key: ProvingKey<G1Affine>,
 }
@@ -80,7 +79,7 @@ pub struct Manager {
 impl Manager {
 	/// Creates a new peer.
 	pub fn new(params: ParamsKZG<Bn256>, pk: ProvingKey<G1Affine>) -> Self {
-		Self { attestations: HashMap::new(), cached_proofs: Vec::new(), params, proving_key: pk }
+		Self { attestations: HashMap::new(), params, proving_key: pk }
 	}
 
 	/// Add a new attestation into the cache, by first calculating the hash of
@@ -126,6 +125,15 @@ impl Manager {
 		}
 
 		self.attestations.insert(res, att);
+
+		Ok(())
+	}
+
+	/// Adds multiple attestations
+	pub fn add_attestations(&mut self, atts: Vec<Attestation>) -> Result<(), EigenError> {
+		for att in atts {
+			self.add_attestation(att)?;
+		}
 
 		Ok(())
 	}
@@ -192,19 +200,17 @@ impl Manager {
 
 		let proof = Proof { pub_ins, proof: proof_bytes };
 
-		self.cached_proofs.push(proof.clone());
+		write_json_data(ProofRaw::from(proof.clone()), "et-proof").unwrap();
 
 		Ok(proof)
 	}
 
-	/// Query the proof at the given index
-	pub fn get_proof(&self, index: usize) -> Result<Proof, EigenError> {
-		self.cached_proofs.get(index).ok_or(EigenError::ProofNotFound).cloned()
-	}
-
-	/// Query the last generated proof
-	pub fn get_last_proof(&self) -> Result<Proof, EigenError> {
-		self.get_proof(self.cached_proofs.len() - 1)
+	/// Get the last generated proof
+	pub fn get_last_proof() -> Result<Proof, EigenError> {
+		match read_json_data::<ProofRaw>("et-proof") {
+			Ok(proof_raw) => Ok(Proof::from(proof_raw)),
+			Err(_) => Err(EigenError::ProofNotFound),
+		}
 	}
 }
 
@@ -242,7 +248,7 @@ mod test {
 		manager.generate_initial_attestations();
 		manager.calculate_proofs().unwrap();
 
-		let proof = manager.get_proof(0).unwrap();
+		let proof = Manager::get_last_proof().unwrap();
 		let scores = [Scalar::from_u128(INITIAL_SCORE); NUM_NEIGHBOURS];
 		assert_eq!(proof.pub_ins, scores);
 

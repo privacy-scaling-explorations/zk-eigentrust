@@ -57,7 +57,7 @@ pub struct ClientConfig {
 	pub as_address: String,
 	pub et_verifier_wrapper_address: String,
 	pub mnemonic: String,
-	pub ethereum_node_url: String,
+	pub node_url: String,
 }
 
 pub struct Client {
@@ -68,7 +68,7 @@ pub struct Client {
 
 impl Client {
 	pub fn new(config: ClientConfig, user_secrets_raw: Vec<[String; 3]>) -> Self {
-		let client = setup_client(&config.mnemonic, &config.ethereum_node_url);
+		let client = setup_client(&config.mnemonic, &config.node_url);
 		Self { client, config, user_secrets_raw }
 	}
 
@@ -210,7 +210,7 @@ mod test {
 			as_address: as_address_string,
 			et_verifier_wrapper_address: et_verifier_address_string,
 			mnemonic,
-			ethereum_node_url: node_url,
+			node_url,
 		};
 
 		let et_client = Client::new(config, user_secrets_raw);
@@ -247,7 +247,7 @@ mod test {
 			as_address: format!("{:?}", Address::default()),
 			et_verifier_wrapper_address: et_verifier_address_string,
 			mnemonic,
-			ethereum_node_url: node_url,
+			node_url,
 		};
 
 		let et_client = Client::new(config, user_secrets_raw);

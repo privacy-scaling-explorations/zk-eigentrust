@@ -192,7 +192,7 @@ pub fn keyset_from_raw<const N: usize>(
 
 /// Get the attestations from the contract
 pub async fn get_attestations(config: &ClientConfig) -> Result<Vec<Attestation>, EigenError> {
-	let client = setup_client(&config.mnemonic, &config.ethereum_node_url);
+	let client = setup_client(&config.mnemonic, &config.node_url);
 	let filter = Filter::new()
 		.address(config.as_address.parse::<Address>().unwrap())
 		.event("AttestationCreated(address,address,bytes32,bytes)")
