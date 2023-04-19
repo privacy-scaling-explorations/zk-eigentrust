@@ -6,8 +6,8 @@ use halo2::{
 	halo2curves::{bn256::Fr, FieldExt},
 };
 
-const NUM_NEIGHBOURS: usize = 6;
-const NUM_ITERATIONS: usize = 20;
+const NUM_NEIGHBOURS: usize = 5;
+const NUM_ITERATIONS: usize = 10;
 const INITIAL_SCORE: u128 = 1000;
 
 /// Opinion info of peer
@@ -39,16 +39,19 @@ impl Default for Opinion {
 	}
 }
 
-struct EigenTrustSet {
+/// Dynamic set for EigenTrust
+pub struct EigenTrustSet {
 	set: [(PublicKey, Fr); NUM_NEIGHBOURS],
 	ops: HashMap<PublicKey, Opinion>,
 }
 
 impl EigenTrustSet {
+	/// Constructs new instance
 	pub fn new() -> Self {
 		Self { set: [(PublicKey::default(), Fr::zero()); NUM_NEIGHBOURS], ops: HashMap::new() }
 	}
 
+	/// Add new set member and initial score
 	pub fn add_member(&mut self, pk: PublicKey) {
 		let pos = self.set.iter().position(|&(x, _)| x == pk);
 		// Make sure not already in the set
@@ -62,6 +65,7 @@ impl EigenTrustSet {
 		self.set[index] = (pk, initial_score);
 	}
 
+	/// Remove the member and its opinion
 	pub fn remove_member(&mut self, pk: PublicKey) {
 		let pos = self.set.iter().position(|&(x, _)| x == pk);
 		// Make sure already in the set
@@ -73,6 +77,7 @@ impl EigenTrustSet {
 		self.ops.remove(&pk);
 	}
 
+	/// Update the opinion of the member
 	pub fn update_op(&mut self, from: PublicKey, op: Opinion) {
 		let pos_from = self.set.iter().position(|&(x, _)| x == from);
 		assert!(pos_from.is_some());
@@ -80,6 +85,7 @@ impl EigenTrustSet {
 		self.ops.insert(from, op);
 	}
 
+	/// Compute the EigenTrust score
 	pub fn converge(&self) -> [(PublicKey, Fr); NUM_NEIGHBOURS] {
 		let (filtered_set, mut filtered_ops) = self.filter_peers();
 
@@ -324,22 +330,8 @@ mod test {
 		set.add_member(pk2);
 
 		// Peer1(pk1) signs the opinion
-		let pks = [
-			pk1,
-			pk2,
-			PublicKey::default(),
-			PublicKey::default(),
-			PublicKey::default(),
-			PublicKey::default(),
-		];
-		let scores = [
-			Fr::zero(),
-			Fr::from_u128(INITIAL_SCORE),
-			Fr::zero(),
-			Fr::zero(),
-			Fr::zero(),
-			Fr::zero(),
-		];
+		let pks = [pk1, pk2, PublicKey::default(), PublicKey::default(), PublicKey::default()];
+		let scores = [Fr::zero(), Fr::from_u128(INITIAL_SCORE), Fr::zero(), Fr::zero(), Fr::zero()];
 		let op1 = sign_opinion(&sk1, &pk1, &pks, &scores);
 
 		set.update_op(pk1, op1);
@@ -363,43 +355,15 @@ mod test {
 		set.add_member(pk2);
 
 		// Peer1(pk1) signs the opinion
-		let pks = [
-			pk1,
-			pk2,
-			PublicKey::default(),
-			PublicKey::default(),
-			PublicKey::default(),
-			PublicKey::default(),
-		];
-		let scores = [
-			Fr::zero(),
-			Fr::from_u128(INITIAL_SCORE),
-			Fr::zero(),
-			Fr::zero(),
-			Fr::zero(),
-			Fr::zero(),
-		];
+		let pks = [pk1, pk2, PublicKey::default(), PublicKey::default(), PublicKey::default()];
+		let scores = [Fr::zero(), Fr::from_u128(INITIAL_SCORE), Fr::zero(), Fr::zero(), Fr::zero()];
 		let op1 = sign_opinion(&sk1, &pk1, &pks, &scores);
 
 		set.update_op(pk1, op1);
 
 		// Peer2(pk2) signs the opinion
-		let pks = [
-			pk1,
-			pk2,
-			PublicKey::default(),
-			PublicKey::default(),
-			PublicKey::default(),
-			PublicKey::default(),
-		];
-		let scores = [
-			Fr::from_u128(INITIAL_SCORE),
-			Fr::zero(),
-			Fr::zero(),
-			Fr::zero(),
-			Fr::zero(),
-			Fr::zero(),
-		];
+		let pks = [pk1, pk2, PublicKey::default(), PublicKey::default(), PublicKey::default()];
+		let scores = [Fr::from_u128(INITIAL_SCORE), Fr::zero(), Fr::zero(), Fr::zero(), Fr::zero()];
 		let op2 = sign_opinion(&sk2, &pk2, &pks, &scores);
 
 		set.update_op(pk2, op2);
@@ -426,22 +390,22 @@ mod test {
 		set.add_member(pk3);
 
 		// Peer1(pk1) signs the opinion
-		let pks = [pk1, pk2, pk3, PublicKey::default(), PublicKey::default(), PublicKey::default()];
-		let scores = [Fr::zero(), Fr::from(300), Fr::from(700), Fr::zero(), Fr::zero(), Fr::zero()];
+		let pks = [pk1, pk2, pk3, PublicKey::default(), PublicKey::default()];
+		let scores = [Fr::zero(), Fr::from(300), Fr::from(700), Fr::zero(), Fr::zero()];
 		let op1 = sign_opinion(&sk1, &pk1, &pks, &scores);
 
 		set.update_op(pk1, op1);
 
 		// Peer2(pk2) signs the opinion
-		let pks = [pk1, pk2, pk3, PublicKey::default(), PublicKey::default(), PublicKey::default()];
-		let scores = [Fr::from(600), Fr::zero(), Fr::from(400), Fr::zero(), Fr::zero(), Fr::zero()];
+		let pks = [pk1, pk2, pk3, PublicKey::default(), PublicKey::default()];
+		let scores = [Fr::from(600), Fr::zero(), Fr::from(400), Fr::zero(), Fr::zero()];
 		let op2 = sign_opinion(&sk2, &pk2, &pks, &scores);
 
 		set.update_op(pk2, op2);
 
 		// Peer3(pk3) signs the opinion
-		let pks = [pk1, pk2, pk3, PublicKey::default(), PublicKey::default(), PublicKey::default()];
-		let scores = [Fr::from(600), Fr::from(400), Fr::zero(), Fr::zero(), Fr::zero(), Fr::zero()];
+		let pks = [pk1, pk2, pk3, PublicKey::default(), PublicKey::default()];
+		let scores = [Fr::from(600), Fr::from(400), Fr::zero(), Fr::zero(), Fr::zero()];
 		let op3 = sign_opinion(&sk3, &pk3, &pks, &scores);
 
 		set.update_op(pk3, op3);
@@ -468,15 +432,15 @@ mod test {
 		set.add_member(pk3);
 
 		// Peer1(pk1) signs the opinion
-		let pks = [pk1, pk2, pk3, PublicKey::default(), PublicKey::default(), PublicKey::default()];
-		let scores = [Fr::zero(), Fr::from(300), Fr::from(700), Fr::zero(), Fr::zero(), Fr::zero()];
+		let pks = [pk1, pk2, pk3, PublicKey::default(), PublicKey::default()];
+		let scores = [Fr::zero(), Fr::from(300), Fr::from(700), Fr::zero(), Fr::zero()];
 		let op1 = sign_opinion(&sk1, &pk1, &pks, &scores);
 
 		set.update_op(pk1, op1);
 
 		// Peer2(pk2) signs the opinion
-		let pks = [pk1, pk2, pk3, PublicKey::default(), PublicKey::default(), PublicKey::default()];
-		let scores = [Fr::from(600), Fr::zero(), Fr::from(400), Fr::zero(), Fr::zero(), Fr::zero()];
+		let pks = [pk1, pk2, pk3, PublicKey::default(), PublicKey::default()];
+		let scores = [Fr::from(600), Fr::zero(), Fr::from(400), Fr::zero(), Fr::zero()];
 		let op2 = sign_opinion(&sk2, &pk2, &pks, &scores);
 
 		set.update_op(pk2, op2);
@@ -503,22 +467,22 @@ mod test {
 		set.add_member(pk3);
 
 		// Peer1(pk1) signs the opinion
-		let pks = [pk1, pk2, pk3, PublicKey::default(), PublicKey::default(), PublicKey::default()];
-		let scores = [Fr::zero(), Fr::from(300), Fr::from(700), Fr::zero(), Fr::zero(), Fr::zero()];
+		let pks = [pk1, pk2, pk3, PublicKey::default(), PublicKey::default()];
+		let scores = [Fr::zero(), Fr::from(300), Fr::from(700), Fr::zero(), Fr::zero()];
 		let op1 = sign_opinion(&sk1, &pk1, &pks, &scores);
 
 		set.update_op(pk1, op1);
 
 		// Peer2(pk2) signs the opinion
-		let pks = [pk1, pk2, pk3, PublicKey::default(), PublicKey::default(), PublicKey::default()];
-		let scores = [Fr::from(600), Fr::zero(), Fr::from(400), Fr::zero(), Fr::zero(), Fr::zero()];
+		let pks = [pk1, pk2, pk3, PublicKey::default(), PublicKey::default()];
+		let scores = [Fr::from(600), Fr::zero(), Fr::from(400), Fr::zero(), Fr::zero()];
 		let op2 = sign_opinion(&sk2, &pk2, &pks, &scores);
 
 		set.update_op(pk2, op2);
 
 		// Peer3(pk3) signs the opinion
-		let pks = [pk1, pk2, pk3, PublicKey::default(), PublicKey::default(), PublicKey::default()];
-		let scores = [Fr::from(600), Fr::from(400), Fr::zero(), Fr::zero(), Fr::zero(), Fr::zero()];
+		let pks = [pk1, pk2, pk3, PublicKey::default(), PublicKey::default()];
+		let scores = [Fr::from(600), Fr::from(400), Fr::zero(), Fr::zero(), Fr::zero()];
 		let op3 = sign_opinion(&sk3, &pk3, &pks, &scores);
 
 		set.update_op(pk3, op3);
@@ -550,15 +514,15 @@ mod test {
 		set.add_member(pk3);
 
 		// Peer1(pk1) signs the opinion
-		let pks = [pk1, pk2, pk3, PublicKey::default(), PublicKey::default(), PublicKey::default()];
-		let scores = [Fr::zero(), Fr::from(300), Fr::from(700), Fr::zero(), Fr::zero(), Fr::zero()];
+		let pks = [pk1, pk2, pk3, PublicKey::default(), PublicKey::default()];
+		let scores = [Fr::zero(), Fr::from(300), Fr::from(700), Fr::zero(), Fr::zero()];
 		let op1 = sign_opinion(&sk1, &pk1, &pks, &scores);
 
 		set.update_op(pk1, op1);
 
 		// Peer2(pk2) signs the opinion
-		let pks = [pk1, pk2, pk3, PublicKey::default(), PublicKey::default(), PublicKey::default()];
-		let scores = [Fr::from(600), Fr::zero(), Fr::from(400), Fr::zero(), Fr::zero(), Fr::zero()];
+		let pks = [pk1, pk2, pk3, PublicKey::default(), PublicKey::default()];
+		let scores = [Fr::from(600), Fr::zero(), Fr::from(400), Fr::zero(), Fr::zero()];
 		let op2 = sign_opinion(&sk2, &pk2, &pks, &scores);
 
 		set.update_op(pk2, op2);
@@ -574,14 +538,14 @@ mod test {
 	#[test]
 	fn test_filter_peers() {
 		//	Filter the peers with following opinions:
-		//			1	2	3	4	5	6
-		//		--------------------------
-		//		1	10	10	.	.	10	.
-		//		2	.	.	30	.	.	.
-		//		3	10	.	.	.	.	.
-		//		4	.	.	.	.	.	.
-		//		5	.	.	.	.	.	.
-		//		6	.	.	.	.	.	.
+		//			1	2	3	4	 5
+		//		-----------------------
+		//		1	10	10	.	.	10
+		//		2	.	.	30	.	.
+		//		3	10	.	.	.	.
+		//		4	.	.	.	.	.
+		//		5	.	.	.	.	.
+
 		let rng = &mut thread_rng();
 
 		let sk1 = SecretKey::random(rng);
@@ -595,18 +559,18 @@ mod test {
 		let pk8 = sk8.public();
 
 		// Peer1(pk1) signs the opinion
-		let pks = [pk1, pk2, pk3, PublicKey::default(), PublicKey::default(), pk8];
-		let scores = [Fr::from(10), Fr::from(10), Fr::zero(), Fr::zero(), Fr::from(10), Fr::zero()];
+		let pks = [pk1, pk2, pk3, PublicKey::default(), pk8];
+		let scores = [Fr::from(10), Fr::from(10), Fr::zero(), Fr::zero(), Fr::from(10)];
 		let op1 = sign_opinion(&sk1, &pk1, &pks, &scores);
 
 		// Peer2(pk2) signs the opinion
-		let pks = [pk1, pk2, pk3, PublicKey::default(), PublicKey::default(), PublicKey::default()];
-		let scores = [Fr::zero(), Fr::zero(), Fr::from(30), Fr::zero(), Fr::zero(), Fr::zero()];
+		let pks = [pk1, pk2, pk3, PublicKey::default(), PublicKey::default()];
+		let scores = [Fr::zero(), Fr::zero(), Fr::from(30), Fr::zero(), Fr::zero()];
 		let op2 = sign_opinion(&sk2, &pk2, &pks, &scores);
 
 		// Peer3(pk3) signs the opinion
-		let pks = [pk1, pk2, pk3, PublicKey::default(), PublicKey::default(), PublicKey::default()];
-		let scores = [Fr::from(10), Fr::zero(), Fr::zero(), Fr::zero(), Fr::zero(), Fr::zero()];
+		let pks = [pk1, pk2, pk3, PublicKey::default(), PublicKey::default()];
+		let scores = [Fr::from(10), Fr::zero(), Fr::zero(), Fr::zero(), Fr::zero()];
 		let op3 = sign_opinion(&sk3, &pk3, &pks, &scores);
 
 		// Setup EigenTrustSet
