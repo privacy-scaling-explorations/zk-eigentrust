@@ -129,10 +129,10 @@ impl Clone for Aggregator {
 
 impl Aggregator {
 	/// Create a new aggregator.
-	pub fn new(params: &ParamsKZG<Bn256>, snarks: Vec<Snark>) {
+	pub fn new(params: &ParamsKZG<Bn256>, snarks: Vec<Snark>) -> Self {
 		let svk = params.get_g()[0].into();
 
-		// let mut plonk_proofs = Vec::new();
+		let mut plonk_proofs = Vec::new();
 		for snark in &snarks {
 			let mut transcript_read: PoseidonRead<_, G1Affine, Bn256_4_68, Params> =
 				PoseidonRead::init(snark.proof.as_slice());
@@ -140,28 +140,28 @@ impl Aggregator {
 				&svk, &snark.protocol, &snark.instances, &mut transcript_read,
 			)
 			.unwrap();
-			// let res = PSV::verify(&svk, &snark.protocol, &snark.instances,
-			// &proof).unwrap(); plonk_proofs.extend(res);
+			let res = PSV::verify(&svk, &snark.protocol, &snark.instances, &proof).unwrap();
+			plonk_proofs.extend(res);
 		}
 
-		// let mut transcript_write =
-		// 	PoseidonWrite::<Vec<u8>, G1Affine, Bn256_4_68,
-		// Params>::new(Vec::new()); let rng = &mut thread_rng();
-		// let accumulator = KzgAs::<Bn256, Gwc19>::create_proof(
-		// 	&Default::default(),
-		// 	&plonk_proofs,
-		// 	&mut transcript_write,
-		// 	rng,
-		// )
-		// .unwrap();
-		// let as_proof = transcript_write.finalize();
+		let mut transcript_write =
+			PoseidonWrite::<Vec<u8>, G1Affine, Bn256_4_68, Params>::new(Vec::new());
+		let rng = &mut thread_rng();
+		let accumulator = KzgAs::<Bn256, Gwc19>::create_proof(
+			&Default::default(),
+			&plonk_proofs,
+			&mut transcript_write,
+			rng,
+		)
+		.unwrap();
+		let as_proof = transcript_write.finalize();
 
-		// let KzgAccumulator { lhs, rhs } = accumulator;
-		// let instances = [lhs.x, lhs.y, rhs.x, rhs.y]
-		// 	.map(|v| Integer::<_, _, NUM_LIMBS, NUM_BITS,
-		// Bn256_4_68>::from_w(v).limbs) 	.concat();
+		let KzgAccumulator { lhs, rhs } = accumulator;
+		let instances = [lhs.x, lhs.y, rhs.x, rhs.y]
+			.map(|v| Integer::<_, _, NUM_LIMBS, NUM_BITS, Bn256_4_68>::from_w(v).limbs)
+			.concat();
 
-		// Self { svk, snarks, instances, as_proof }
+		Self { svk, snarks, instances, as_proof }
 	}
 }
 
@@ -274,8 +274,8 @@ impl Circuit<Fr> for Aggregator {
 			)?;
 			// TODO: Check if it is a square 2D vector or not
 			for i in 0..snark.instances.len() {
-				for j in 0..snark.instances[i].len() {
-					instances[i].push(instance_collector[j].clone());
+				for j in 0..snark.instances[0].len() {
+					instances.push(vec![instance_collector[j].clone()]);
 				}
 			}
 			// Drop the layouter reference
@@ -334,7 +334,7 @@ impl Circuit<Fr> for Aggregator {
 mod test {
 
 	use crate::{
-		circuit::{EigenTrust, FullRoundHasher, PartialRoundHasher},
+		circuit::{FullRoundHasher, PartialRoundHasher},
 		ecc::{
 			EccAddConfig, EccDoubleConfig, EccMulConfig, EccTableSelectConfig,
 			EccUnreducedLadderConfig,
@@ -437,9 +437,8 @@ mod test {
 			let aggregator_config = AggregatorConfig::new(
 				config.common, config.main, config.poseidon_sponge, config.ecc_mul_scalar,
 			);
-			Aggregator::new(&self.params, self.snarks.clone());
-			// aggregator.synthesize(aggregator_config, layouter.namespace(||
-			// "aggregate"))?;
+			let aggregator = Aggregator::new(&self.params, self.snarks.clone());
+			aggregator.synthesize(aggregator_config, layouter.namespace(|| "aggregate"))?;
 
 			Ok(())
 		}

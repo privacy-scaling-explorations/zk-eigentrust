@@ -109,16 +109,12 @@ where
 	/// Read a scalar.
 	fn read_scalar(&mut self) -> Result<C::ScalarExt, VerifierError> {
 		let mut data = <C::Scalar as PrimeField>::Repr::default();
-
-		//println!("read_scalar COUNTER");
-
 		self.reader.read_exact(data.as_mut()).map_err(|err| {
 			VerifierError::Transcript(
 				err.kind(),
 				"invalid field element encoding in proof".to_string(),
 			)
 		})?;
-		//println!("scalar_read = {:#?}", C::Scalar::from_repr(data).unwrap());
 
 		let scalar = Option::from(C::Scalar::from_repr(data)).ok_or_else(|| {
 			VerifierError::Transcript(
@@ -133,7 +129,7 @@ where
 
 	/// Read an elliptic curve point.
 	fn read_ec_point(&mut self) -> Result<C, VerifierError> {
-		let mut compressed = [0; 256];
+		let mut compressed = C::Repr::default();
 		self.reader.read_exact(compressed.as_mut()).map_err(|err| {
 			VerifierError::Transcript(
 				err.kind(),
@@ -141,46 +137,12 @@ where
 			)
 		})?;
 
-		let mut limb_chunk = compressed.chunks(32);
-		let mut x_limbs = [C::Scalar::default(); NUM_LIMBS];
-		for i in 0..NUM_LIMBS {
-			let bytes = to_wide(limb_chunk.next().unwrap());
-			x_limbs[i] = C::Scalar::from_bytes_wide(&bytes);
-		}
-
-		let mut y_limbs = [C::Scalar::default(); NUM_LIMBS];
-		for i in 0..NUM_LIMBS {
-			let bytes = to_wide(limb_chunk.next().unwrap());
-			y_limbs[i] = C::Scalar::from_bytes_wide(&bytes);
-		}
-
-		//let dummy =
-		//	Integer::<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS,
-		// P>::from_limbs(x_limbs.clone());
-		//println!("x_limbs = {:#?}", x_limbs);
-
-		//println!("dummy = {:#?}", Integer::reduce(&dummy).result);
-		//println!("dummy_base = {:#?}", P::compose_base(x_limbs));
-		//let dummy2 = Integer::reduce(&dummy);
-		//println!("dummy_compose = {:#?}", P::compose(dummy2.result.limbs));
-
-		let x_wide = to_wide(P::compose(x_limbs).to_repr().as_ref());
-		let y_wide = to_wide(P::compose(y_limbs).to_repr().as_ref());
-
-		let x = C::Base::from_bytes_wide(&x_wide);
-		let y = C::Base::from_bytes_wide(&y_wide);
-
-		//println!("x = {:#?}, y = {:#?}", x, y);
-
-		//println!("C::from_xy = {:#?}", C::from_xy(x, y));
-		//println!("read_EC COUNTER");
-		let point: C = Option::from(C::from_xy(x, y)).ok_or_else(|| {
+		let point: C = Option::from(C::from_bytes(&compressed)).ok_or_else(|| {
 			VerifierError::Transcript(
 				ErrorKind::Other,
-				"invalid point encoding in proof....".to_string(),
+				"invalid point encoding in proof".to_string(),
 			)
 		})?;
-		//println!("ec_point_read = {:#?}", C::from_xy(x, y).unwrap());
 
 		self.common_ec_point(&point)?;
 
@@ -243,7 +205,7 @@ where
 				"cannot write points at infinity to the transcript".to_string(),
 			)
 		})?;
-		println!("ec_point = {:#?}", ec_point);
+
 		let x: Integer<_, _, NUM_LIMBS, NUM_BITS, P> = Integer::from_w(coords.x().clone());
 		let y: Integer<_, _, NUM_LIMBS, NUM_BITS, P> = Integer::from_w(coords.y().clone());
 
@@ -270,46 +232,32 @@ where
 {
 	/// Write a scalar.
 	fn write_scalar(&mut self, scalar: C::Scalar) -> Result<(), VerifierError> {
-		//println!("write_scalar COUNTER");
-
 		<Self as Transcript<C, NativeSVLoader>>::common_scalar(self, &scalar)?;
-		let integer = Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_n(scalar);
-		for i in 0..NUM_LIMBS {
-			let data = integer.limbs[i].to_repr();
-			// TODO: Print every scalar into the console or write to file
-			//println!("scalar_write = {:#?}", integer.limbs[i]);
-			self.writer.write_all(data.as_ref()).unwrap();
-		}
+		let data = scalar.to_repr();
+		self.writer.write_all(data.as_ref()).unwrap();
+
 		Ok(())
 	}
 
 	/// Write a elliptic curve point.
 	fn write_ec_point(&mut self, ec_point: C) -> Result<(), VerifierError> {
-		//println!("write_ec_point COUNTER");
-
 		self.common_ec_point(&ec_point)?;
-		let coordinates = ec_point.coordinates().unwrap();
-		let integer_x = Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_w(coordinates.x().clone());
-		let integer_y = Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_w(coordinates.y().clone());
-		// TODO: Print every point into the console or write to file
-		for i in 0..NUM_LIMBS {
-			let compressed = integer_x.limbs[i].to_repr();
-			self.writer.write_all(compressed.as_ref()).unwrap();
-		}
+		let compressed = ec_point.to_bytes();
+		self.writer.write_all(compressed.as_ref()).unwrap();
+		/*
+					let coordinates = ec_point.coordinates().unwrap();
+				let integer_x = Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_w(coordinates.x().clone());
+				let integer_y = Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_w(coordinates.y().clone());
+				for i in 0..NUM_LIMBS {
+					let compressed = integer_x.limbs[i].to_repr();
+					self.writer.write_all(compressed.as_ref()).unwrap();
+				}
 
-		for i in 0..NUM_LIMBS {
-			let compressed = integer_y.limbs[i].to_repr();
-			self.writer.write_all(compressed.as_ref()).unwrap();
-		}
-		//println!("x_limbs = {:#?}", integer_x.limbs);
-
-		let x_wide = to_wide(P::compose(integer_x.limbs).to_repr().as_ref());
-		let y_wide = to_wide(P::compose(integer_y.limbs).to_repr().as_ref());
-
-		let x = C::Base::from_bytes_wide(&x_wide);
-		let y = C::Base::from_bytes_wide(&y_wide);
-		//println!("ec_point_write = {:#?}", C::from_xy(x, y).unwrap());
-
+				for i in 0..NUM_LIMBS {
+					let compressed = integer_y.limbs[i].to_repr();
+					self.writer.write_all(compressed.as_ref()).unwrap();
+				}
+		*/
 		Ok(())
 	}
 }
