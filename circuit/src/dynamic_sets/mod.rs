@@ -390,7 +390,7 @@ impl<
 				let pk_i_x = pk_x[i].clone();
 				let pk_i_y = pk_y[i].clone();
 
-				let mut ops_i = ops[i].clone();
+				let mut ops_i = Vec::new();
 
 				// Update the opinion array - pairs of (key, score)
 				for j in 0..NUM_NEIGHBOURS {
@@ -399,6 +399,7 @@ impl<
 					let op_pk_j_x = op_pk_x[i][j].clone();
 					let op_pk_j_y = op_pk_y[i][j].clone();
 
+					// Condition: set_pk_j != op_pk_j
 					let equal_chip = IsEqualChipset::new(set_pk_j_x.clone(), op_pk_j_x.clone());
 					let is_same_pk_j_x = equal_chip.synthesize(
 						&config.common,
@@ -424,6 +425,7 @@ impl<
 						layouter.namespace(|| "set_pk_j != op_pk_j"),
 					)?;
 
+					// Condition: op_pk_j != PublicKey::default()
 					let equal_chip = IsEqualChipset::new(set_pk_j_x.clone(), default_pk_x.clone());
 					let is_default_pk_x = equal_chip.synthesize(
 						&config.common,
@@ -443,6 +445,7 @@ impl<
 						layouter.namespace(|| "set_pk_j == default_pk"),
 					)?;
 
+					// Condition: set_pk_j == pk_i
 					let equal_chip = IsEqualChipset::new(set_pk_j_x.clone(), pk_i_x.clone());
 					let is_pk_i_x = equal_chip.synthesize(
 						&config.common,
@@ -479,12 +482,13 @@ impl<
 						layouter.namespace(|| "is_diff_pk_j || is_pk_j_null || is_pk_i"),
 					)?;
 
-					let select_chip = SelectChipset::new(cond, zero.clone(), ops_i[j].clone());
-					ops_i[j] = select_chip.synthesize(
+					let select_chip = SelectChipset::new(cond, zero.clone(), ops[i][j].clone());
+					let new_ops_i_j = select_chip.synthesize(
 						&config.common,
 						&config.main,
 						layouter.namespace(|| "filtered op score"),
 					)?;
+					ops_i.push(new_ops_i_j);
 
 					// Condition for correcting the pk
 					// 1. set_pk_j != op_pk_j
@@ -506,7 +510,7 @@ impl<
 				// Distribute the scores
 				let mut op_score_sum = zero.clone();
 				for j in 0..NUM_NEIGHBOURS {
-					let add_chip = AddChipset::new(op_score_sum.clone(), ops[i][j].clone());
+					let add_chip = AddChipset::new(op_score_sum.clone(), ops_i[j].clone());
 					op_score_sum = add_chip.synthesize(
 						&config.common,
 						&config.main,
@@ -614,7 +618,7 @@ impl<
 		let ops = {
 			let mut normalized_ops = Vec::new();
 			for i in 0..NUM_NEIGHBOURS {
-				let mut ops_i = ops[i].clone();
+				let mut ops_i = Vec::new();
 
 				// Compute the sum of scores
 				let mut op_score_sum = zero.clone();
@@ -646,7 +650,7 @@ impl<
 						&config.main,
 						layouter.namespace(|| "op * inverted_sum"),
 					)?;
-					ops_i[j] = normalized_op;
+					ops_i.push(normalized_op);
 				}
 
 				// Add to "normalized_ops"
@@ -809,7 +813,7 @@ mod test {
 			ops,
 		);
 
-		let k = 14;
+		let k = 15;
 		let prover = match MockProver::<Scalar>::run(k, &et, vec![res.to_vec()]) {
 			Ok(prover) => prover,
 			Err(e) => panic!("{}", e),
