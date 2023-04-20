@@ -7,11 +7,10 @@ use crate::{
 	integer::{native::Integer, rns::RnsParams, AssignedInteger},
 	params::RoundParams,
 	poseidon::sponge::PoseidonSpongeChipset,
-	utils::to_wide,
 	Chipset, RegionCtx,
 };
 use halo2::{
-	arithmetic::{Field, FieldExt},
+	arithmetic::Field,
 	circuit::{AssignedCell, Layouter, Region, Value},
 	halo2curves::CurveAffine,
 };
@@ -60,7 +59,7 @@ where
 	/// Construct a new `assigned zero` value
 	pub fn assigned_zero(loader: LoaderConfig<C, L, P>) -> AssignedCell<C::Scalar, C::Scalar> {
 		let mut layouter = loader.layouter.lock().unwrap();
-		let assigned_zero = layouter
+		layouter
 			.assign_region(
 				|| "assigned_zero",
 				|region: Region<'_, C::Scalar>| {
@@ -68,9 +67,7 @@ where
 					Ok(ctx.assign_fixed(loader.common.fixed[0], C::Scalar::zero())?)
 				},
 			)
-			.unwrap();
-		drop(layouter);
-		assigned_zero
+			.unwrap()
 	}
 }
 
@@ -175,7 +172,7 @@ where
 
 	/// Read an elliptic curve point.
 	fn read_ec_point(&mut self) -> Result<Halo2LEcPoint<C, L, P>, snark_verifier::Error> {
-		let mut compressed = [0; 256];
+		let mut compressed = C::Repr::default();
 		self.reader.read_exact(compressed.as_mut()).map_err(|err| {
 			VerifierError::Transcript(
 				err.kind(),
@@ -183,21 +180,16 @@ where
 			)
 		})?;
 
-		let mut limb_chunk = compressed.chunks(32);
-		let mut x_limbs = [C::Scalar::default(); NUM_LIMBS];
-		for i in 0..NUM_LIMBS {
-			let bytes = to_wide(limb_chunk.next().unwrap());
-			x_limbs[i] = C::Scalar::from_bytes_wide(&bytes);
-		}
+		let point: C = Option::from(C::from_bytes(&compressed)).ok_or_else(|| {
+			VerifierError::Transcript(
+				ErrorKind::Other,
+				"invalid point encoding in proof".to_string(),
+			)
+		})?;
+		let coordinates = point.coordinates().unwrap();
 
-		let mut y_limbs = [C::Scalar::default(); NUM_LIMBS];
-		for i in 0..NUM_LIMBS {
-			let bytes = to_wide(limb_chunk.next().unwrap());
-			y_limbs[i] = C::Scalar::from_bytes_wide(&bytes);
-		}
-
-		let x = Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_limbs(x_limbs);
-		let y = Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_limbs(y_limbs);
+		let x = Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_w(*coordinates.x());
+		let y = Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_w(*coordinates.y());
 
 		let loader = self.loader.clone();
 		let mut layouter = loader.layouter.lock().unwrap();

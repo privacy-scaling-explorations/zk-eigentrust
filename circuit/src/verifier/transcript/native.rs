@@ -2,11 +2,9 @@ use crate::{
 	integer::{native::Integer, rns::RnsParams},
 	params::RoundParams,
 	poseidon::native::sponge::PoseidonSponge,
-	utils::to_wide,
 	verifier::loader::native::{NUM_BITS, NUM_LIMBS},
 };
 use halo2::{
-	arithmetic::FieldExt,
 	halo2curves::{Coordinates, CurveAffine},
 	transcript::{
 		EncodedChallenge, Transcript as Halo2Transcript, TranscriptRead as Halo2TranscriptRead,
@@ -244,20 +242,6 @@ where
 		self.common_ec_point(&ec_point)?;
 		let compressed = ec_point.to_bytes();
 		self.writer.write_all(compressed.as_ref()).unwrap();
-		/*
-					let coordinates = ec_point.coordinates().unwrap();
-				let integer_x = Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_w(coordinates.x().clone());
-				let integer_y = Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_w(coordinates.y().clone());
-				for i in 0..NUM_LIMBS {
-					let compressed = integer_x.limbs[i].to_repr();
-					self.writer.write_all(compressed.as_ref()).unwrap();
-				}
-
-				for i in 0..NUM_LIMBS {
-					let compressed = integer_y.limbs[i].to_repr();
-					self.writer.write_all(compressed.as_ref()).unwrap();
-				}
-		*/
 		Ok(())
 	}
 }

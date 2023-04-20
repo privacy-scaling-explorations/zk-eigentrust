@@ -263,21 +263,28 @@ impl Circuit<Fr> for Aggregator {
 						let chunk = instance_chunks.next().unwrap();
 						for i in 0..chunk.len() {
 							let assigned =
-								ctx.assign_advice(config.common.advice[i], Value::known(chunk[i]))?;
-							let lscalar = Halo2LScalar::new(assigned, loader_config.clone());
-							instance_collector.push(lscalar);
+								ctx.assign_from_constant(config.common.advice[i], chunk[i])?;
+
+							let lscalar =
+								Halo2LScalar::new(assigned.clone(), loader_config.clone());
+
+							instance_collector.push(lscalar.clone());
 						}
+
 						ctx.next();
 					}
 					Ok(())
 				},
 			)?;
-			// TODO: Check if it is a square 2D vector or not
-			for i in 0..snark.instances.len() {
-				for j in 0..snark.instances[0].len() {
-					instances.push(vec![instance_collector[j].clone()]);
+
+			// TODO: Check if it is a square 2D vector or not and fix this algorithm for the
+			// complex circuits
+			for _ in 0..snark.instances.len() {
+				for _ in 0..snark.instances[0].len() {
+					instances.push(vec![instance_collector[0].clone()]);
 				}
 			}
+
 			// Drop the layouter reference
 			drop(lb);
 
@@ -304,28 +311,37 @@ impl Circuit<Fr> for Aggregator {
 
 		let lhs_x = accumulator.lhs.inner.x;
 		let lhs_y = accumulator.lhs.inner.y;
-
+		//println!("lhs_x = {:#?}, lhs_y = {:#?}", lhs_x, lhs_y);
 		let rhs_x = accumulator.rhs.inner.x;
 		let rhs_y = accumulator.rhs.inner.y;
+		//println!("rhs_x = {:#?}, rhs_y = {:#?}", rhs_x, rhs_y);
 
-		let mut row = 0;
-		let mut lb = layouter_rc.lock().unwrap();
-		for limb in lhs_x.limbs {
-			lb.constrain_instance(limb.cell(), config.common.instance, row)?;
-			row += 1;
-		}
-		for limb in lhs_y.limbs {
-			lb.constrain_instance(limb.cell(), config.common.instance, row)?;
-			row += 1;
-		}
-		for limb in rhs_x.limbs {
-			lb.constrain_instance(limb.cell(), config.common.instance, row)?;
-			row += 1;
-		}
-		for limb in rhs_y.limbs {
-			lb.constrain_instance(limb.cell(), config.common.instance, row)?;
-			row += 1;
-		}
+		/*
+				let mut row = 0;
+				let mut lb = layouter_rc.lock().unwrap();
+				for limb in lhs_x.limbs {
+					lb.constrain_instance(limb.cell(), config.common.instance, row)?;
+					row += 1;
+				}
+				drop(lb);
+				let mut lb = layouter_rc.lock().unwrap();
+				for limb in lhs_y.limbs {
+					lb.constrain_instance(limb.cell(), config.common.instance, row)?;
+					row += 1;
+				}
+				drop(lb);
+				let mut lb = layouter_rc.lock().unwrap();
+				for limb in rhs_x.limbs {
+					lb.constrain_instance(limb.cell(), config.common.instance, row)?;
+					row += 1;
+				}
+				drop(lb);
+				let mut lb = layouter_rc.lock().unwrap();
+				for limb in rhs_y.limbs {
+					lb.constrain_instance(limb.cell(), config.common.instance, row)?;
+					row += 1;
+				}
+		*/
 		Ok(())
 	}
 }
@@ -508,7 +524,7 @@ mod test {
 					Ok(res)
 				},
 			)?;
-			layouter.constrain_instance(result.cell(), config.common.instance, 0)?;
+			//layouter.constrain_instance(result.cell(), config.common.instance, 0)?;
 
 			Ok(())
 		}
@@ -518,7 +534,7 @@ mod test {
 	fn test_aggregator() {
 		// Testing Aggregator
 		let rng = &mut thread_rng();
-		let k = 17;
+		let k = 23;
 		let params = generate_params::<Bn256>(k);
 
 		let random_circuit_1 = MulChip::new(Fr::one(), Fr::one());
