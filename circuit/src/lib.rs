@@ -1,7 +1,5 @@
 //! The module for the main EigenTrust circuit.
 
-#![feature(slice_flatten)]
-#![feature(array_zip, array_try_map)]
 #![allow(clippy::tabs_in_doc_comments)]
 #![deny(
 	future_incompatible, nonstandard_style, missing_docs, deprecated, unreachable_code,
