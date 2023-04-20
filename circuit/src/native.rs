@@ -250,8 +250,12 @@ mod test {
 			calculate_message_hash::<NUM_NEIGHBOURS, 1>(pks.to_vec(), vec![scores.to_vec()]);
 		let sig = sign(sk, pk, message_hashes[0]);
 
-		let scores = pks.zip(*scores);
-		let op = Opinion::new(sig, message_hashes[0], scores);
+		// let scores = pks.zip(*scores);
+		let mut op_scores = [(PublicKey::default(), Fr::zero()); NUM_NEIGHBOURS];
+		for i in 0..NUM_NEIGHBOURS {
+			op_scores[i] = (pks[i], scores[i]);
+		}
+		let op = Opinion::new(sig, message_hashes[0], op_scores);
 		op
 	}
 
