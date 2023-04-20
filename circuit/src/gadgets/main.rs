@@ -361,6 +361,10 @@ impl<F: FieldExt> Chipset<F> for IsEqualChipset<F> {
 }
 
 /// Chip for calculating and constraining an inverse value
+///
+/// Chip returns if `x` is
+/// 	- invertible : `1/x`
+/// 	- non-invertible: `1`
 pub struct InverseChipset<F: FieldExt> {
 	x: AssignedCell<F, F>,
 }
@@ -380,35 +384,77 @@ impl<F: FieldExt> Chipset<F> for InverseChipset<F> {
 		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
 		// We should satisfy the equation below
-		// 1 - x * x_inv = 0
+		// 1 - x * x_inv = 0 (unsafe)
 
+		// For the complete "inverse" operation,
+		//
+		// Returns 'r' as a condition bit that defines if inversion successful or not
+		// First enforce 'r' to be a bit
+		// (x * x_inv) - 1 + r = 0
+		// r * x_inv - r = 0
+		// if r = 1 then x_inv = 1
+		// if r = 0 then x_inv = 1/x
+		//
 		// Witness layout:
-		// | A   | B     | C   | D   | E  |
-		// | --- | ----- | --- | --- | ---|
-		// | x   | x_inv | res |     |    |
+		// | A | B     | C |
+		// | - | ----- | - |
+		// | x | x_inv | r |
+		// | r | x_inv | r |
+		//
+		// Ref: https://github.com/privacy-scaling-explorations/halo2wrong/blob/master/maingate/src/instructions.rs#L417-L485
 
-		let (zero, x_inv) = layouter.assign_region(
+		let (zero, x_inv, r) = layouter.assign_region(
 			|| "assign_values",
 			|region| {
-				let x_inv = self.x.clone().value().map(|v| v.invert().unwrap_or(F::zero()));
+				let (r, x_inv) = self
+					.x
+					.clone()
+					.value()
+					.map(|v| {
+						Option::from(v.invert())
+							.map(|v_inv| (F::zero(), v_inv))
+							.unwrap_or_else(|| (F::one(), F::one()))
+					})
+					.unzip();
 
 				let mut ctx = RegionCtx::new(region, 0);
 				let zero = ctx.assign_advice(common.advice[0], Value::known(F::zero()))?;
 				let x_inv = ctx.assign_advice(common.advice[1], x_inv)?;
-				Ok((zero, x_inv))
+				let r = ctx.assign_advice(common.advice[2], r)?;
+				Ok((zero, x_inv, r))
 			},
 		)?;
 
-		// [a, b, c, d, e]
-		let advices = [self.x.clone(), x_inv.clone(), zero.clone(), zero.clone(), zero.clone()];
-		// [s_a, s_b, s_c, s_d, s_e, s_mul_ab, s_mul_cd, s_constant]
-		let fixed_add = [F::zero(), F::zero(), F::zero(), F::zero(), F::zero()];
+		// Enforce `r` to be bit
+		let is_r_bit = IsBoolChipset::new(r.clone());
+		is_r_bit.synthesize(common, config, layouter.namespace(|| "r * r - r = 0"))?;
+
+		// (x * x_inv) - 1 + r = 0
+		// | A | B     | C |
+		// | - | ----- | - |
+		// | x | x_inv | r |
+		let advices = [self.x.clone(), x_inv.clone(), r.clone(), zero.clone(), zero.clone()];
+		let fixed_add = [F::zero(), F::zero(), F::one(), F::zero(), F::zero()];
 		let fixed_mul = [F::one(), F::zero(), -F::one()];
 		let main_chip = MainChip::new(advices, fixed_add, fixed_mul);
 		main_chip.synthesize(
 			common,
 			&config.selector,
-			layouter.namespace(|| "is_inverse"),
+			layouter.namespace(|| "x * x_inv + r - 1 = 0"),
+		)?;
+
+		// r * x_inv - r = 0
+		// | A | B     | C |
+		// | - | ----- | - |
+		// | r | x_inv | r |
+		let advices = [r.clone(), x_inv.clone(), r, zero.clone(), zero.clone()];
+		let fixed_add = [F::zero(), F::zero(), -F::one(), F::zero(), F::zero()];
+		let fixed_mul = [F::one(), F::zero(), F::zero()];
+		let main_chip = MainChip::new(advices, fixed_add, fixed_mul);
+		main_chip.synthesize(
+			common,
+			&config.selector,
+			layouter.namespace(|| "r * x_inv - r = 0"),
 		)?;
 
 		Ok(x_inv)
