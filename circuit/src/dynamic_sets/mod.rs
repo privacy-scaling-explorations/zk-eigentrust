@@ -627,34 +627,26 @@ impl<
 					)?;
 				}
 
-				// Check if sum is zero
-				let equal_chip = IsEqualChipset::new(op_score_sum.clone(), zero.clone());
-				let is_sum_zero = equal_chip
-					.synthesize(
-						&config.common,
-						&config.main,
-						layouter.namespace(|| "op_score_sum == 0"),
-					)
-					.is_ok();
+				// Compute the normalized score
+				//
+				// Note: Here, there is no need to check if `op_score_sum` is zero.
+				//       If `op_score_sum` is zero, it means all of opinion scores are zero.
+				//		 Hence, the normalized score would be simply zero.
+				let invert_chip = InverseChipset::new(op_score_sum);
+				let inverted_sum = invert_chip.synthesize(
+					&config.common,
+					&config.main,
+					layouter.namespace(|| "invert_sum"),
+				)?;
 
-				if !is_sum_zero {
-					// Compute the normalized score
-					let invert_chip = InverseChipset::new(op_score_sum);
-					let inverted_sum = invert_chip.synthesize(
+				for j in 0..NUM_NEIGHBOURS {
+					let mul_chip = MulChipset::new(ops[i][j].clone(), inverted_sum.clone());
+					let normalized_op = mul_chip.synthesize(
 						&config.common,
 						&config.main,
-						layouter.namespace(|| "invert_sum"),
+						layouter.namespace(|| "op * inverted_sum"),
 					)?;
-
-					for j in 0..NUM_NEIGHBOURS {
-						let mul_chip = MulChipset::new(ops[i][j].clone(), inverted_sum.clone());
-						let normalized_op = mul_chip.synthesize(
-							&config.common,
-							&config.main,
-							layouter.namespace(|| "op * inverted_sum"),
-						)?;
-						ops_i[j] = normalized_op;
-					}
+					ops_i[j] = normalized_op;
 				}
 
 				// Add to "normalized_ops"
