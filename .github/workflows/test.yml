@@ -25,19 +25,18 @@ jobs:
 
       - name: Set-Up
         run: ./scripts/init.sh
-        
+
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
 
       - name: Fmt Check
         run: ./scripts/fmt-check.sh
 
+      - name: Build
+        run: ./scripts/build.sh && ./scripts/diff.sh
+
       - name: Clippy Check
         run: ./scripts/clippy.sh
 
-      - name: Build
-        run: ./scripts/build.sh && ./scripts/diff.sh
-        
       - name: Test
         run: ./scripts/test.sh
-      
