@@ -113,23 +113,24 @@ impl EigenTrustSet {
 		// By this point we should use filtered_set and filtered_opinions
 		let mut s = filtered_set.clone();
 		for _ in 0..NUM_ITERATIONS {
+			let mut sop = Vec::new();
 			for i in 0..NUM_NEIGHBOURS {
-				let (pk_i, _) = s[i];
-				if pk_i == PublicKey::default() {
-					continue;
-				}
+				let (pk_i, n_score) = s[i];
+				let op_i = filtered_ops.get(&pk_i).unwrap();
 
+				let mut sop_i = Vec::new();
+				for j in 0..NUM_NEIGHBOURS {
+					let score = op_i.scores[j].1;
+					let res = score * n_score;
+					sop_i.push(res);
+				}
+				sop.push(sop_i);
+			}
+
+			for i in 0..NUM_NEIGHBOURS {
 				let mut new_score = Fr::zero();
 				for j in 0..NUM_NEIGHBOURS {
-					let (pk_j, n_score) = s[j];
-					if pk_j == PublicKey::default() {
-						continue;
-					}
-
-					let ops_j = filtered_ops.get(&pk_j).unwrap();
-					let score = ops_j.scores[i].1;
-					let op = score * n_score;
-					new_score += op;
+					new_score += sop[j][i];
 				}
 				s[i].1 = new_score;
 			}
@@ -160,10 +161,11 @@ impl EigenTrustSet {
 		for i in 0..NUM_NEIGHBOURS {
 			let (pk_i, _) = filtered_set[i].clone();
 			if pk_i == PublicKey::default() {
+				filtered_ops.insert(PublicKey::default(), Opinion::default());
 				continue;
 			}
 
-			let mut ops_i = self.ops.get(&pk_i).unwrap_or(&Opinion::default()).clone();
+			let mut ops_i = self.ops.get(&pk_i).unwrap().clone();
 
 			// Update the opinion array - pairs of (key, score)
 			//
