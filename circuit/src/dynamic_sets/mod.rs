@@ -273,6 +273,7 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u1
 						ctx.next();
 					}
 				}
+				ctx.next();
 
 				let one = ctx.assign_from_constant(config.common.advice[0], Scalar::one())?;
 
@@ -285,6 +286,7 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u1
 					config.common.advice[2],
 					Value::known(PublicKey::default().0.y),
 				)?;
+				ctx.next();
 
 				let mut assigned_op_pk_x = Vec::new();
 				for neighbour_pk_x in &self.op_pk_x {
@@ -771,10 +773,10 @@ mod test {
 			for i in 0..NUM_NEIGHBOURS {
 				et.add_member(pub_keys[i].clone());
 
-				let (_, message_hashes) =
-					calculate_message_hash::<NUM_NEIGHBOURS, 1>(op_pub_keys[i].to_vec(), vec![ops
-						[i]
-						.clone()]);
+				let (_, message_hashes) = calculate_message_hash::<NUM_NEIGHBOURS, 1>(
+					op_pub_keys[i].to_vec(),
+					vec![ops[i].clone()],
+				);
 				let sig = sign(&secret_keys[i], &pub_keys[i], message_hashes[0]);
 				signatures.push(sig.clone());
 
