@@ -116,6 +116,11 @@ impl EigenTrustSet {
 			let mut sop = Vec::new();
 			for i in 0..NUM_NEIGHBOURS {
 				let (pk_i, n_score) = s[i];
+				if pk_i == PublicKey::default() {
+					sop.push(vec![Fr::zero(); NUM_NEIGHBOURS]);
+					continue;
+				}
+
 				let op_i = filtered_ops.get(&pk_i).unwrap();
 
 				let mut sop_i = Vec::new();
@@ -161,11 +166,10 @@ impl EigenTrustSet {
 		for i in 0..NUM_NEIGHBOURS {
 			let (pk_i, _) = filtered_set[i].clone();
 			if pk_i == PublicKey::default() {
-				filtered_ops.insert(PublicKey::default(), Opinion::default());
 				continue;
 			}
 
-			let mut ops_i = self.ops.get(&pk_i).unwrap().clone();
+			let mut ops_i = self.ops.get(&pk_i).unwrap_or(&Opinion::default()).clone();
 
 			// Update the opinion array - pairs of (key, score)
 			//
