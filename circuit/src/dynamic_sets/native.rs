@@ -145,9 +145,7 @@ impl EigenTrustSet {
 
 		let sum_initial = filtered_set.iter().fold(Fr::zero(), |acc, &(_, score)| acc + score);
 		let sum_final = s.iter().fold(Fr::zero(), |acc, &(_, score)| acc + score);
-		// TODO: Make sure that the total amount of reputation stays the same after
-		// convergence
-		// assert!(sum_initial == sum_final);
+		assert!(sum_initial == sum_final);
 		println!("sum before: {:?}, sum after: {:?}", sum_initial, sum_final);
 
 		s
