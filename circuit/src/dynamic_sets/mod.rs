@@ -699,7 +699,12 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u1
 			},
 		)?;
 
+		/*
 		// Constrain the total reputation in the set
+		//
+		// TODO: This reputation sum check SHOULD be done after
+		//		resolving this issue. (https://github.com/eigen-trust/protocol/issues/198)
+
 		let mut sum = zero.clone();
 		for i in 0..NUM_NEIGHBOURS {
 			let add_chipset = AddChipset::new(sum.clone(), passed_s[i].clone());
@@ -719,6 +724,7 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u1
 				Ok(())
 			},
 		)?;
+		*/
 
 		Ok(())
 	}
