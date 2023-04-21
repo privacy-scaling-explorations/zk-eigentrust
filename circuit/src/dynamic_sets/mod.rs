@@ -653,10 +653,10 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u1
 		// Compute the EigenTrust scores
 		let mut s = vec![init_score.clone(); NUM_NEIGHBOURS];
 		for _ in 0..NUM_ITER {
-			let mut distributions = Vec::new();
+			let mut sop = Vec::new();
 			for i in 0..NUM_NEIGHBOURS {
 				let op_i = ops[i].clone();
-				let mut local_distr = Vec::new();
+				let mut sop_i = Vec::new();
 				for j in 0..NUM_NEIGHBOURS {
 					let mul_chip = MulChipset::new(op_i[j].clone(), s[i].clone());
 					let res = mul_chip.synthesize(
@@ -664,15 +664,15 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u1
 						&config.main,
 						layouter.namespace(|| "op_mul"),
 					)?;
-					local_distr.push(res);
+					sop_i.push(res);
 				}
-				distributions.push(local_distr);
+				sop.push(sop_i);
 			}
 
 			let mut new_s = vec![zero.clone(); NUM_NEIGHBOURS];
 			for i in 0..NUM_NEIGHBOURS {
 				for j in 0..NUM_NEIGHBOURS {
-					let add_chip = AddChipset::new(new_s[i].clone(), distributions[j][i].clone());
+					let add_chip = AddChipset::new(new_s[i].clone(), sop[j][i].clone());
 					new_s[i] = add_chip.synthesize(
 						&config.common,
 						&config.main,
