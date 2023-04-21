@@ -115,10 +115,10 @@ impl Manager {
 			return Err(EigenError::InvalidAttestation);
 		}
 
-		let (_, message_hash) =
-			calculate_message_hash::<NUM_NEIGHBOURS, 1>(att.neighbours.clone(), vec![att
-				.scores
-				.clone()]);
+		let (_, message_hash) = calculate_message_hash::<NUM_NEIGHBOURS, 1>(
+			att.neighbours.clone(),
+			vec![att.scores.clone()],
+		);
 
 		if !verify_sig(&att.sig, &att.pk, message_hash[0]) {
 			return Err(EigenError::InvalidAttestation);

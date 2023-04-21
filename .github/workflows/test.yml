@@ -25,7 +25,7 @@ jobs:
 
       - name: Set-Up
         run: ./scripts/init.sh
-        
+
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
 
@@ -37,7 +37,6 @@ jobs:
 
       - name: Build
         run: ./scripts/build.sh && ./scripts/diff.sh
-        
+
       - name: Test
         run: ./scripts/test.sh
-      
