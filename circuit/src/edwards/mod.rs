@@ -27,8 +27,16 @@ pub struct AssignedPoint<F: FieldExt> {
 	pub z: AssignedCell<F, F>,
 }
 
+impl<F: FieldExt> AssignedPoint<F> {
+	/// Create a new assigned point, given the coordinates
+	pub fn new(x: AssignedCell<F, F>, y: AssignedCell<F, F>, z: AssignedCell<F, F>) -> Self {
+		Self { x, y, z }
+	}
+}
+
 /// Unassigned point
-pub struct UnassignedPoint<F> {
+#[derive(Clone, Copy)]
+pub struct UnassignedPoint<F: FieldExt> {
 	/// Point x
 	pub x: Value<F>,
 	/// Point y
@@ -37,10 +45,15 @@ pub struct UnassignedPoint<F> {
 	pub z: Value<F>,
 }
 
-impl<F: FieldExt> AssignedPoint<F> {
-	/// Create a new assigned point, given the coordinates
-	pub fn new(x: AssignedCell<F, F>, y: AssignedCell<F, F>, z: AssignedCell<F, F>) -> Self {
-		Self { x, y, z }
+impl<F: FieldExt> UnassignedPoint<F> {
+	/// Construct new unassigned point from field elements
+	pub fn new(x: F, y: F, z: F) -> Self {
+		Self { x: Value::known(x), y: Value::known(y), z: Value::known(z) }
+	}
+
+	/// Return unknown values
+	pub fn without_witnesses(&self) -> Self {
+		Self { x: Value::unknown(), y: Value::unknown(), z: Value::unknown() }
 	}
 }
 
@@ -413,6 +426,7 @@ mod test {
 	use super::*;
 	use crate::{
 		edwards::{native::Point, params::BabyJubJub},
+		gadgets::main::NUM_ADVICE,
 		utils::{field_to_bits, generate_params, prove_and_verify},
 		CommonConfig,
 	};
@@ -422,6 +436,203 @@ mod test {
 		halo2curves::bn256::{Bn256, Fr},
 		plonk::Circuit,
 	};
+
+	struct PointAssigner {
+		unassigned_point: UnassignedPoint<Fr>,
+	}
+
+	impl PointAssigner {
+		fn new(p: UnassignedPoint<Fr>) -> Self {
+			Self { unassigned_point: p }
+		}
+	}
+
+	impl Chipset<Fr> for PointAssigner {
+		type Config = ();
+		type Output = AssignedPoint<Fr>;
+
+		fn synthesize(
+			self, common: &CommonConfig, _: &Self::Config, mut layouter: impl Layouter<Fr>,
+		) -> Result<Self::Output, Error> {
+			let (x_assigned, y_assigned, z_assigned) = layouter.assign_region(
+				|| "temp",
+				|region: Region<'_, Fr>| {
+					let mut ctx = RegionCtx::new(region, 0);
+					let x_assigned =
+						ctx.assign_advice(common.advice[0], self.unassigned_point.x)?;
+					let y_assigned =
+						ctx.assign_advice(common.advice[1], self.unassigned_point.y)?;
+					let z_assigned =
+						ctx.assign_advice(common.advice[2], self.unassigned_point.z)?;
+					Ok((x_assigned, y_assigned, z_assigned))
+				},
+			)?;
+
+			let point = AssignedPoint::new(x_assigned, y_assigned, z_assigned);
+			Ok(point)
+		}
+	}
+
+	#[derive(Clone)]
+	struct AddTestCircuit {
+		e: UnassignedPoint<Fr>,
+		r: UnassignedPoint<Fr>,
+	}
+
+	impl AddTestCircuit {
+		fn new(e: UnassignedPoint<Fr>, r: UnassignedPoint<Fr>) -> Self {
+			Self { e, r }
+		}
+	}
+
+	impl Circuit<Fr> for AddTestCircuit {
+		type Config = TestConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			Self { e: self.e.without_witnesses(), r: self.r.without_witnesses() }
+		}
+
+		fn configure(meta: &mut ConstraintSystem<Fr>) -> TestConfig {
+			TestConfig::new(meta)
+		}
+
+		fn synthesize(
+			&self, config: TestConfig, mut layouter: impl Layouter<Fr>,
+		) -> Result<(), Error> {
+			let point_assigner_e = PointAssigner::new(self.e);
+			let e = point_assigner_e.synthesize(
+				&config.common,
+				&(),
+				layouter.namespace(|| "point assigner e"),
+			)?;
+			let point_assigner_r = PointAssigner::new(self.r);
+			let r = point_assigner_r.synthesize(
+				&config.common,
+				&(),
+				layouter.namespace(|| "point assigner r"),
+			)?;
+			let chip = PointAddChip::<_, BabyJubJub>::new(e, r);
+			let res = chip.synthesize(
+				&config.common,
+				&config.point_add_selector,
+				layouter.namespace(|| "point_add"),
+			)?;
+			layouter.constrain_instance(res.x.cell(), config.common.instance, 0)?;
+			layouter.constrain_instance(res.y.cell(), config.common.instance, 1)?;
+			layouter.constrain_instance(res.z.cell(), config.common.instance, 2)?;
+			Ok(())
+		}
+	}
+
+	#[derive(Clone)]
+	struct IntoAffineTestCircuit {
+		r: UnassignedPoint<Fr>,
+	}
+
+	impl IntoAffineTestCircuit {
+		fn new(r: UnassignedPoint<Fr>) -> Self {
+			Self { r }
+		}
+	}
+
+	impl Circuit<Fr> for IntoAffineTestCircuit {
+		type Config = TestConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			Self { r: self.r.without_witnesses() }
+		}
+
+		fn configure(meta: &mut ConstraintSystem<Fr>) -> TestConfig {
+			TestConfig::new(meta)
+		}
+
+		fn synthesize(
+			&self, config: TestConfig, mut layouter: impl Layouter<Fr>,
+		) -> Result<(), Error> {
+			let point_assigner_r = PointAssigner::new(self.r);
+			let r = point_assigner_r.synthesize(
+				&config.common,
+				&(),
+				layouter.namespace(|| "point assigner r"),
+			)?;
+			let chip = IntoAffineChip::<_>::new(r);
+			let (x, y) = chip.synthesize(
+				&config.common,
+				&config.into_affine_selector,
+				layouter.namespace(|| "into_affine"),
+			)?;
+			layouter.constrain_instance(x.cell(), config.common.instance, 0)?;
+			layouter.constrain_instance(y.cell(), config.common.instance, 1)?;
+			Ok(())
+		}
+	}
+
+	#[derive(Clone)]
+	struct MulScalarTestCircuit {
+		r: UnassignedPoint<Fr>,
+		scalar: Fr,
+	}
+
+	impl MulScalarTestCircuit {
+		fn new(r: UnassignedPoint<Fr>, scalar: Fr) -> Self {
+			Self { r, scalar }
+		}
+	}
+
+	impl Circuit<Fr> for MulScalarTestCircuit {
+		type Config = TestConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			Self { r: self.r.without_witnesses(), scalar: self.scalar.clone() }
+		}
+
+		fn configure(meta: &mut ConstraintSystem<Fr>) -> TestConfig {
+			TestConfig::new(meta)
+		}
+
+		fn synthesize(
+			&self, config: TestConfig, mut layouter: impl Layouter<Fr>,
+		) -> Result<(), Error> {
+			const NUM_BITS: usize = 256;
+			let bits = field_to_bits::<Fr, NUM_BITS>(self.scalar).map(Fr::from);
+
+			let point_assigner_r = PointAssigner::new(self.r);
+			let r = point_assigner_r.synthesize(
+				&config.common,
+				&(),
+				layouter.namespace(|| "point assigner r"),
+			)?;
+			let assigned_bits = layouter.assign_region(
+				|| "temp",
+				|region: Region<'_, Fr>| {
+					let mut ctx = RegionCtx::new(region, 0);
+					let mut items = Vec::new();
+					for chunk in bits.chunks(NUM_ADVICE) {
+						for i in 0..chunk.len() {
+							let val = Value::known(chunk[i]);
+							let x = ctx.assign_advice(config.common.advice[i], val)?;
+							items.push(x);
+						}
+						ctx.next();
+					}
+					Ok(items)
+				},
+			)?;
+			let chip = ScalarMulChip::<_, BabyJubJub>::new(r, assigned_bits);
+			let res = chip.synthesize(
+				&config.common,
+				&config.scalar_mul_selector,
+				layouter.namespace(|| "scalar_mul"),
+			)?;
+			layouter.constrain_instance(res.x.cell(), config.common.instance, 0)?;
+			layouter.constrain_instance(res.y.cell(), config.common.instance, 1)?;
+			layouter.constrain_instance(res.z.cell(), config.common.instance, 2)?;
+			Ok(())
+		}
+	}
 
 	#[derive(Clone)]
 	enum Gadgets {
@@ -438,112 +649,14 @@ mod test {
 		scalar_mul_selector: Selector,
 	}
 
-	#[derive(Clone)]
-	struct TestCircuit<const N: usize> {
-		inputs: [Fr; N],
-		gadget: Gadgets,
-	}
-
-	impl<const N: usize> TestCircuit<N> {
-		fn new(inputs: [Fr; N], gadget: Gadgets) -> Self {
-			Self { inputs, gadget }
-		}
-	}
-
-	impl<const N: usize> Circuit<Fr> for TestCircuit<N> {
-		type Config = TestConfig;
-		type FloorPlanner = SimpleFloorPlanner;
-
-		fn without_witnesses(&self) -> Self {
-			self.clone()
-		}
-
-		fn configure(meta: &mut ConstraintSystem<Fr>) -> TestConfig {
+	impl TestConfig {
+		fn new(meta: &mut ConstraintSystem<Fr>) -> Self {
 			let common = CommonConfig::new(meta);
 			let point_add_selector = PointAddChip::<Fr, BabyJubJub>::configure(&common, meta);
 			let into_affine_selector = IntoAffineChip::configure(&common, meta);
 			let scalar_mul_selector = ScalarMulChip::<Fr, BabyJubJub>::configure(&common, meta);
 
-			TestConfig { common, point_add_selector, into_affine_selector, scalar_mul_selector }
-		}
-
-		fn synthesize(
-			&self, config: TestConfig, mut layouter: impl Layouter<Fr>,
-		) -> Result<(), Error> {
-			let items = layouter.assign_region(
-				|| "temp",
-				|region: Region<'_, Fr>| {
-					let mut ctx = RegionCtx::new(region, 0);
-					let mut items = Vec::new();
-					for i in 0..N {
-						let val = Value::known(self.inputs[i]);
-						let x = ctx.assign_advice(config.common.advice[0], val)?;
-						ctx.next();
-						items.push(x);
-					}
-					Ok(items)
-				},
-			)?;
-
-			match self.gadget {
-				Gadgets::AddPoint => {
-					let r =
-						AssignedPoint::new(items[0].clone(), items[1].clone(), items[2].clone());
-					let e =
-						AssignedPoint::new(items[3].clone(), items[4].clone(), items[5].clone());
-					let chip = PointAddChip::<_, BabyJubJub>::new(r, e);
-					let res = chip.synthesize(
-						&config.common,
-						&config.point_add_selector,
-						layouter.namespace(|| "point_add"),
-					)?;
-					layouter.constrain_instance(res.x.cell(), config.common.instance, 0)?;
-					layouter.constrain_instance(res.y.cell(), config.common.instance, 1)?;
-					layouter.constrain_instance(res.z.cell(), config.common.instance, 2)?;
-				},
-				Gadgets::IntoAffine => {
-					let p =
-						AssignedPoint::new(items[0].clone(), items[1].clone(), items[2].clone());
-					let chip = IntoAffineChip::new(p);
-					let (x, y) = chip.synthesize(
-						&config.common,
-						&config.into_affine_selector,
-						layouter.namespace(|| "into_affine"),
-					)?;
-					layouter.constrain_instance(x.cell(), config.common.instance, 0)?;
-					layouter.constrain_instance(y.cell(), config.common.instance, 1)?;
-				},
-				Gadgets::ScalarMul => {
-					let e =
-						AssignedPoint::new(items[0].clone(), items[1].clone(), items[2].clone());
-					let assigned_bits = layouter.assign_region(
-						|| "temp",
-						|region: Region<'_, Fr>| {
-							let mut ctx = RegionCtx::new(region, 0);
-							const NUM_BITS: usize = 256;
-							let bits = field_to_bits::<Fr, NUM_BITS>(self.inputs[3]).map(Fr::from);
-							let mut items = Vec::new();
-							for i in 0..NUM_BITS {
-								let val = Value::known(bits[i]);
-								let x = ctx.assign_advice(config.common.advice[0], val)?;
-								ctx.next();
-								items.push(x);
-							}
-							Ok(items)
-						},
-					)?;
-					let chip = ScalarMulChip::<_, BabyJubJub>::new(e, assigned_bits);
-					let res = chip.synthesize(
-						&config.common,
-						&config.scalar_mul_selector,
-						layouter.namespace(|| "scalar_mul"),
-					)?;
-					layouter.constrain_instance(res.x.cell(), config.common.instance, 0)?;
-					layouter.constrain_instance(res.y.cell(), config.common.instance, 1)?;
-					layouter.constrain_instance(res.z.cell(), config.common.instance, 2)?;
-				},
-			}
-			Ok(())
+			Self { common, point_add_selector, into_affine_selector, scalar_mul_selector }
 		}
 	}
 
@@ -556,7 +669,10 @@ mod test {
 		let (e_x, e_y) = BabyJubJub::g();
 		let e = Point::<Fr, BabyJubJub>::new(e_x, e_y).projective();
 		let (x_res, y_res, z_res) = BabyJubJub::add(r.x, r.y, r.z, e.x, e.y, e.z);
-		let circuit = TestCircuit::new([r.x, r.y, r.z, e.x, e.y, e.z], Gadgets::AddPoint);
+
+		let e = UnassignedPoint::new(e.x, e.y, e.z);
+		let r = UnassignedPoint::new(r.x, r.y, r.z);
+		let circuit = AddTestCircuit::new(e, r);
 
 		let k = 7;
 		let pub_ins = vec![x_res, y_res, z_res];
@@ -571,7 +687,10 @@ mod test {
 		let (e_x, e_y) = BabyJubJub::g();
 		let e = Point::<Fr, BabyJubJub>::new(e_x, e_y).projective();
 		let (x_res, y_res, z_res) = BabyJubJub::add(r.x, r.y, r.z, e.x, e.y, e.z);
-		let circuit = TestCircuit::new([r.x, r.y, r.z, e.x, e.y, e.z], Gadgets::AddPoint);
+
+		let e = UnassignedPoint::new(e.x, e.y, e.z);
+		let r = UnassignedPoint::new(r.x, r.y, r.z);
+		let circuit = AddTestCircuit::new(e, r);
 
 		let k = 11;
 		let rng = &mut rand::thread_rng();
@@ -589,7 +708,9 @@ mod test {
 		let (r_x, r_y) = BabyJubJub::b8();
 		let r = Point::<Fr, BabyJubJub>::new(r_x, r_y).projective();
 		let r_affine = r.affine();
-		let circuit = TestCircuit::new([r.x, r.y, r.z], Gadgets::IntoAffine);
+
+		let r = UnassignedPoint::new(r.x, r.y, r.z);
+		let circuit = IntoAffineTestCircuit::new(r);
 
 		let k = 7;
 		let pub_ins = vec![r_affine.x, r_affine.y];
@@ -602,7 +723,9 @@ mod test {
 		let (r_x, r_y) = BabyJubJub::b8();
 		let r = Point::<Fr, BabyJubJub>::new(r_x, r_y).projective();
 		let r_affine = r.affine();
-		let circuit = TestCircuit::new([r.x, r.y, r.z], Gadgets::IntoAffine);
+
+		let r = UnassignedPoint::new(r.x, r.y, r.z);
+		let circuit = IntoAffineTestCircuit::new(r);
 
 		let k = 9;
 		let rng = &mut rand::thread_rng();
@@ -622,7 +745,9 @@ mod test {
 		let r_point = Point::<Fr, BabyJubJub>::new(r_x, r_y);
 		let r = r_point.projective();
 		let res = r_point.mul_scalar(scalar);
-		let circuit = TestCircuit::new([r.x, r.y, r.z, scalar], Gadgets::ScalarMul);
+
+		let r = UnassignedPoint::new(r.x, r.y, r.z);
+		let circuit = MulScalarTestCircuit::new(r, scalar);
 
 		let k = 11;
 		let pub_ins = vec![res.x, res.y, res.z];
@@ -638,7 +763,9 @@ mod test {
 		let r_point = Point::<Fr, BabyJubJub>::new(r_x, r_y);
 		let r = r_point.projective();
 		let res = r_point.mul_scalar(scalar);
-		let circuit = TestCircuit::new([r.x, r.y, r.z, scalar], Gadgets::ScalarMul);
+
+		let r = UnassignedPoint::new(r.x, r.y, r.z);
+		let circuit = MulScalarTestCircuit::new(r, scalar);
 
 		let k = 11;
 		let pub_ins = vec![res.x, res.y, res.z];
@@ -654,7 +781,9 @@ mod test {
 		let r_point = Point::<Fr, BabyJubJub>::new(r_x, r_y);
 		let r = r_point.projective();
 		let res = r_point.mul_scalar(scalar);
-		let circuit = TestCircuit::new([r.x, r.y, r.z, scalar], Gadgets::ScalarMul);
+
+		let r = UnassignedPoint::new(r.x, r.y, r.z);
+		let circuit = MulScalarTestCircuit::new(r, scalar);
 
 		let k = 11;
 		let pub_ins = vec![res.x, res.y, res.z];
@@ -669,7 +798,9 @@ mod test {
 		let r_point = Point::<Fr, BabyJubJub>::new(r_x, r_y);
 		let r = r_point.projective();
 		let res = r_point.mul_scalar(scalar);
-		let circuit = TestCircuit::new([r.x, r.y, r.z, scalar], Gadgets::ScalarMul);
+
+		let r = UnassignedPoint::new(r.x, r.y, r.z);
+		let circuit = MulScalarTestCircuit::new(r, scalar);
 
 		let k = 11;
 		let rng = &mut rand::thread_rng();

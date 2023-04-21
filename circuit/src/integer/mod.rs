@@ -678,14 +678,11 @@ where
 #[cfg(test)]
 mod test {
 	use super::{native::Integer, rns::Bn256_4_68, *};
-	use crate::{
-		utils::{generate_params, prove_and_verify},
-		Chipset, CommonConfig,
-	};
+	use crate::{Chipset, CommonConfig};
 	use halo2::{
 		circuit::{SimpleFloorPlanner, Value},
 		dev::MockProver,
-		halo2curves::bn256::{Bn256, Fq, Fr},
+		halo2curves::bn256::{Fq, Fr},
 		plonk::Circuit,
 	};
 	use num_bigint::BigUint;
@@ -696,15 +693,6 @@ mod test {
 	const NUM_LIMBS: usize = 4;
 	const NUM_BITS: usize = 68;
 	type P = Bn256_4_68;
-
-	#[derive(Clone)]
-	enum Gadgets {
-		Reduce,
-		Add,
-		Sub,
-		Mul,
-		Div,
-	}
 
 	#[derive(Clone, Debug)]
 	struct TestConfig {
