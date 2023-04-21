@@ -311,37 +311,39 @@ impl Circuit<Fr> for Aggregator {
 
 		let lhs_x = accumulator.lhs.inner.x;
 		let lhs_y = accumulator.lhs.inner.y;
-		//println!("lhs_x = {:#?}, lhs_y = {:#?}", lhs_x, lhs_y);
+		println!("lhs_x = {:#?}", lhs_x.integer);
+		println!("lhs_y = {:#?}", lhs_y.integer);
+
 		let rhs_x = accumulator.rhs.inner.x;
 		let rhs_y = accumulator.rhs.inner.y;
-		//println!("rhs_x = {:#?}, rhs_y = {:#?}", rhs_x, rhs_y);
+		println!("rhs_x = {:#?}", rhs_x.integer);
+		println!("rhs_y = {:#?}", rhs_y.integer);
 
-		/*
-				let mut row = 0;
-				let mut lb = layouter_rc.lock().unwrap();
-				for limb in lhs_x.limbs {
-					lb.constrain_instance(limb.cell(), config.common.instance, row)?;
-					row += 1;
-				}
-				drop(lb);
-				let mut lb = layouter_rc.lock().unwrap();
-				for limb in lhs_y.limbs {
-					lb.constrain_instance(limb.cell(), config.common.instance, row)?;
-					row += 1;
-				}
-				drop(lb);
-				let mut lb = layouter_rc.lock().unwrap();
-				for limb in rhs_x.limbs {
-					lb.constrain_instance(limb.cell(), config.common.instance, row)?;
-					row += 1;
-				}
-				drop(lb);
-				let mut lb = layouter_rc.lock().unwrap();
-				for limb in rhs_y.limbs {
-					lb.constrain_instance(limb.cell(), config.common.instance, row)?;
-					row += 1;
-				}
-		*/
+		let mut row = 0;
+		let mut lb = layouter_rc.lock().unwrap();
+		for limb in lhs_x.limbs {
+			lb.constrain_instance(limb.cell(), config.common.instance, row)?;
+			row += 1;
+		}
+		drop(lb);
+		let mut lb = layouter_rc.lock().unwrap();
+		for limb in lhs_y.limbs {
+			lb.constrain_instance(limb.cell(), config.common.instance, row)?;
+			row += 1;
+		}
+		drop(lb);
+		let mut lb = layouter_rc.lock().unwrap();
+		for limb in rhs_x.limbs {
+			lb.constrain_instance(limb.cell(), config.common.instance, row)?;
+			row += 1;
+		}
+		drop(lb);
+		let mut lb = layouter_rc.lock().unwrap();
+		for limb in rhs_y.limbs {
+			lb.constrain_instance(limb.cell(), config.common.instance, row)?;
+			row += 1;
+		}
+
 		Ok(())
 	}
 }
@@ -377,7 +379,7 @@ mod test {
 		dev::MockProver,
 		halo2curves::bn256::{Bn256, Fq, Fr},
 		plonk::{Circuit, ConstraintSystem, Error},
-		poly::{kzg::commitment::ParamsKZG, Rotation},
+		poly::Rotation,
 	};
 	use rand::thread_rng;
 
@@ -396,13 +398,12 @@ mod test {
 
 	#[derive(Clone)]
 	struct TestCircuit {
-		snarks: Vec<Snark>,
-		params: ParamsKZG<Bn256>,
+		aggregator: Aggregator,
 	}
 
 	impl TestCircuit {
-		fn new(snarks: Vec<Snark>, params: ParamsKZG<Bn256>) -> Self {
-			Self { snarks, params }
+		fn new(aggregator: Aggregator) -> Self {
+			Self { aggregator }
 		}
 	}
 
@@ -453,8 +454,8 @@ mod test {
 			let aggregator_config = AggregatorConfig::new(
 				config.common, config.main, config.poseidon_sponge, config.ecc_mul_scalar,
 			);
-			let aggregator = Aggregator::new(&self.params, self.snarks.clone());
-			aggregator.synthesize(aggregator_config, layouter.namespace(|| "aggregate"))?;
+
+			self.aggregator.synthesize(aggregator_config, layouter.namespace(|| "aggregate"))?;
 
 			Ok(())
 		}
@@ -524,7 +525,7 @@ mod test {
 					Ok(res)
 				},
 			)?;
-			//layouter.constrain_instance(result.cell(), config.common.instance, 0)?;
+			layouter.constrain_instance(result.cell(), config.common.instance, 0)?;
 
 			Ok(())
 		}
@@ -547,9 +548,11 @@ mod test {
 		let snark_2 = Snark::new(&params.clone(), random_circuit_2, instances_2, rng);
 
 		let snarks = vec![snark_1, snark_2];
+		let aggregator = Aggregator::new(&params, snarks.clone());
 
-		let circuit = TestCircuit::new(snarks, params);
-		let prover = MockProver::run(k, &circuit, vec![vec![]]).unwrap();
+		let circuit = TestCircuit::new(aggregator.clone());
+		println!("{:#?}", aggregator.instances);
+		let prover = MockProver::run(k, &circuit, vec![aggregator.instances]).unwrap();
 
 		assert_eq!(prover.verify(), Ok(()));
 	}
