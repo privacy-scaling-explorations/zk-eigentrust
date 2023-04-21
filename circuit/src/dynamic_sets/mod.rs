@@ -604,51 +604,51 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u1
 		// 	filtered_ops
 		// };
 
-		// // "Normalization"
-		// let ops = {
-		// 	let mut normalized_ops = Vec::new();
-		// 	for i in 0..NUM_NEIGHBOURS {
-		// 		let mut ops_i = Vec::new();
+		// "Normalization"
+		let ops = {
+			let mut normalized_ops = Vec::new();
+			for i in 0..NUM_NEIGHBOURS {
+				let mut ops_i = Vec::new();
 
-		// 		// Compute the sum of scores
-		// 		let mut op_score_sum = zero.clone();
-		// 		for j in 0..NUM_NEIGHBOURS {
-		// 			let add_chip = AddChipset::new(op_score_sum.clone(), ops[i][j].clone());
-		// 			op_score_sum = add_chip.synthesize(
-		// 				&config.common,
-		// 				&config.main,
-		// 				layouter.namespace(|| "op_score_sum"),
-		// 			)?;
-		// 		}
+				// Compute the sum of scores
+				let mut op_score_sum = zero.clone();
+				for j in 0..NUM_NEIGHBOURS {
+					let add_chip = AddChipset::new(op_score_sum.clone(), ops[i][j].clone());
+					op_score_sum = add_chip.synthesize(
+						&config.common,
+						&config.main,
+						layouter.namespace(|| "op_score_sum"),
+					)?;
+				}
 
-		// 		// Compute the normalized score
-		// 		//
-		// 		// Note: Here, there is no need to check if `op_score_sum` is zero.
-		// 		//       If `op_score_sum` is zero, it means all of opinion scores are zero.
-		// 		//		 Hence, the normalized score would be simply zero.
-		// 		let invert_chip = InverseChipset::new(op_score_sum);
-		// 		let inverted_sum = invert_chip.synthesize(
-		// 			&config.common,
-		// 			&config.main,
-		// 			layouter.namespace(|| "invert_sum"),
-		// 		)?;
+				// Compute the normalized score
+				//
+				// Note: Here, there is no need to check if `op_score_sum` is zero.
+				//       If `op_score_sum` is zero, it means all of opinion scores are zero.
+				//		 Hence, the normalized score would be simply zero.
+				let invert_chip = InverseChipset::new(op_score_sum);
+				let inverted_sum = invert_chip.synthesize(
+					&config.common,
+					&config.main,
+					layouter.namespace(|| "invert_sum"),
+				)?;
 
-		// 		for j in 0..NUM_NEIGHBOURS {
-		// 			let mul_chip = MulChipset::new(ops[i][j].clone(), inverted_sum.clone());
-		// 			let normalized_op = mul_chip.synthesize(
-		// 				&config.common,
-		// 				&config.main,
-		// 				layouter.namespace(|| "op * inverted_sum"),
-		// 			)?;
-		// 			ops_i.push(normalized_op);
-		// 		}
+				for j in 0..NUM_NEIGHBOURS {
+					let mul_chip = MulChipset::new(ops[i][j].clone(), inverted_sum.clone());
+					let normalized_op = mul_chip.synthesize(
+						&config.common,
+						&config.main,
+						layouter.namespace(|| "op * inverted_sum"),
+					)?;
+					ops_i.push(normalized_op);
+				}
 
-		// 		// Add to "normalized_ops"
-		// 		normalized_ops.push(ops_i);
-		// 	}
+				// Add to "normalized_ops"
+				normalized_ops.push(ops_i);
+			}
 
-		// 	normalized_ops
-		// };
+			normalized_ops
+		};
 
 		// Compute the EigenTrust scores
 		let mut s = vec![init_score.clone(); NUM_NEIGHBOURS];
@@ -692,6 +692,7 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u1
 				for i in 0..NUM_NEIGHBOURS {
 					let passed_s = ctx.copy_assign(config.common.advice[0], passed_s[i].clone())?;
 					let s = ctx.copy_assign(config.common.advice[1], s[i].clone())?;
+					println!("{:?} = {:?}", passed_s.value(), s.value());
 					ctx.constrain_equal(passed_s, s)?;
 					ctx.next();
 				}
@@ -699,12 +700,7 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u1
 			},
 		)?;
 
-		/*
 		// Constrain the total reputation in the set
-		//
-		// TODO: This reputation sum check SHOULD be done after
-		//		resolving this issue. (https://github.com/eigen-trust/protocol/issues/198)
-
 		let mut sum = zero.clone();
 		for i in 0..NUM_NEIGHBOURS {
 			let add_chipset = AddChipset::new(sum.clone(), passed_s[i].clone());
@@ -720,11 +716,11 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u1
 				let ctx = &mut RegionCtx::new(region, 0);
 				let sum = ctx.copy_assign(config.common.advice[0], sum.clone())?;
 				let total_score = ctx.copy_assign(config.common.advice[1], total_score.clone())?;
+				println!("{:?} == {:?}", sum.value(), total_score.value());
 				ctx.constrain_equal(sum, total_score)?;
 				Ok(())
 			},
 		)?;
-		*/
 
 		Ok(())
 	}
