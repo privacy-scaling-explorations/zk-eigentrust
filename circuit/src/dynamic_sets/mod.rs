@@ -326,285 +326,285 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u1
 			},
 		)?;
 
-		// // signature verification
-		// for i in 0..NUM_NEIGHBOURS {
-		// 	let mut pk_sponge = SpongeHasher::new();
-		// 	pk_sponge.update(&op_pk_x[i]);
-		// 	pk_sponge.update(&op_pk_y[i]);
-		// 	let pks_hash = pk_sponge.synthesize(
-		// 		&config.common,
-		// 		&config.sponge,
-		// 		layouter.namespace(|| "pks_sponge"),
-		// 	)?;
+		// signature verification
+		for i in 0..NUM_NEIGHBOURS {
+			let mut pk_sponge = SpongeHasher::new();
+			pk_sponge.update(&op_pk_x[i]);
+			pk_sponge.update(&op_pk_y[i]);
+			let pks_hash = pk_sponge.synthesize(
+				&config.common,
+				&config.sponge,
+				layouter.namespace(|| "pks_sponge"),
+			)?;
 
-		// 	let mut scores_sponge = SpongeHasher::new();
-		// 	scores_sponge.update(&ops[i]);
-		// 	let scores_message_hash = scores_sponge.synthesize(
-		// 		&config.common,
-		// 		&config.sponge,
-		// 		layouter.namespace(|| "scores_sponge"),
-		// 	)?;
-		// 	let message_hash_input =
-		// 		[pks_hash, scores_message_hash, zero.clone(), zero.clone(), zero.clone()];
-		// 	let poseidon = PoseidonHasher::new(message_hash_input);
-		// 	let res = poseidon.synthesize(
-		// 		&config.common,
-		// 		&config.poseidon,
-		// 		layouter.namespace(|| "message_hash"),
-		// 	)?;
+			let mut scores_sponge = SpongeHasher::new();
+			scores_sponge.update(&ops[i]);
+			let scores_message_hash = scores_sponge.synthesize(
+				&config.common,
+				&config.sponge,
+				layouter.namespace(|| "scores_sponge"),
+			)?;
+			let message_hash_input =
+				[pks_hash, scores_message_hash, zero.clone(), zero.clone(), zero.clone()];
+			let poseidon = PoseidonHasher::new(message_hash_input);
+			let res = poseidon.synthesize(
+				&config.common,
+				&config.poseidon,
+				layouter.namespace(|| "message_hash"),
+			)?;
 
-		// 	let eddsa = Eddsa::new(
-		// 		big_r_x[i].clone(),
-		// 		big_r_y[i].clone(),
-		// 		s[i].clone(),
-		// 		pk_x[i].clone(),
-		// 		pk_y[i].clone(),
-		// 		res[0].clone(),
-		// 	);
-		// 	eddsa.synthesize(
-		// 		&config.common,
-		// 		&config.eddsa,
-		// 		layouter.namespace(|| "eddsa"),
-		// 	)?;
-		// }
+			let eddsa = Eddsa::new(
+				big_r_x[i].clone(),
+				big_r_y[i].clone(),
+				s[i].clone(),
+				pk_x[i].clone(),
+				pk_y[i].clone(),
+				res[0].clone(),
+			);
+			eddsa.synthesize(
+				&config.common,
+				&config.eddsa,
+				layouter.namespace(|| "eddsa"),
+			)?;
+		}
 
-		// // filter peers' ops
-		// let ops = {
-		// 	let mut filtered_ops = Vec::new();
+		// filter peers' ops
+		let ops = {
+			let mut filtered_ops = Vec::new();
 
-		// 	for i in 0..NUM_NEIGHBOURS {
-		// 		let pk_i_x = pk_x[i].clone();
-		// 		let pk_i_y = pk_y[i].clone();
+			for i in 0..NUM_NEIGHBOURS {
+				let pk_i_x = pk_x[i].clone();
+				let pk_i_y = pk_y[i].clone();
 
-		// 		let mut ops_i = Vec::new();
+				let mut ops_i = Vec::new();
 
-		// 		let mut op_pk_x_i = Vec::new();
-		// 		let mut op_pk_y_i = Vec::new();
+				let mut op_pk_x_i = Vec::new();
+				let mut op_pk_y_i = Vec::new();
 
-		// 		// Update the opinion array - pairs of (key, score)
-		// 		for j in 0..NUM_NEIGHBOURS {
-		// 			let set_pk_j_x = pk_x[j].clone();
-		// 			let set_pk_j_y = pk_y[j].clone();
-		// 			let op_pk_j_x = op_pk_x[i][j].clone();
-		// 			let op_pk_j_y = op_pk_y[i][j].clone();
+				// Update the opinion array - pairs of (key, score)
+				for j in 0..NUM_NEIGHBOURS {
+					let set_pk_j_x = pk_x[j].clone();
+					let set_pk_j_y = pk_y[j].clone();
+					let op_pk_j_x = op_pk_x[i][j].clone();
+					let op_pk_j_y = op_pk_y[i][j].clone();
 
-		// 			// Condition: set_pk_j != op_pk_j
-		// 			let equal_chip = IsEqualChipset::new(set_pk_j_x.clone(), op_pk_j_x.clone());
-		// 			let is_same_pk_j_x = equal_chip.synthesize(
-		// 				&config.common,
-		// 				&config.main,
-		// 				layouter.namespace(|| "set_pk_j_x == op_pk_j_x"),
-		// 			)?;
-		// 			let equal_chip = IsEqualChipset::new(set_pk_j_y.clone(), op_pk_j_y.clone());
-		// 			let is_same_pk_j_y = equal_chip.synthesize(
-		// 				&config.common,
-		// 				&config.main,
-		// 				layouter.namespace(|| "set_pk_j_y == op_pk_j_y"),
-		// 			)?;
-		// 			let and_chip = AndChipset::new(is_same_pk_j_x, is_same_pk_j_y);
-		// 			let is_same_pk_j = and_chip.synthesize(
-		// 				&config.common,
-		// 				&config.main,
-		// 				layouter.namespace(|| "set_pk_j == op_pk_j"),
-		// 			)?;
-		// 			let sub_chip = SubChipset::new(one.clone(), is_same_pk_j);
-		// 			let is_diff_pk_j = sub_chip.synthesize(
-		// 				&config.common,
-		// 				&config.main,
-		// 				layouter.namespace(|| "set_pk_j != op_pk_j"),
-		// 			)?;
+					// Condition: set_pk_j != op_pk_j
+					let equal_chip = IsEqualChipset::new(set_pk_j_x.clone(), op_pk_j_x.clone());
+					let is_same_pk_j_x = equal_chip.synthesize(
+						&config.common,
+						&config.main,
+						layouter.namespace(|| "set_pk_j_x == op_pk_j_x"),
+					)?;
+					let equal_chip = IsEqualChipset::new(set_pk_j_y.clone(), op_pk_j_y.clone());
+					let is_same_pk_j_y = equal_chip.synthesize(
+						&config.common,
+						&config.main,
+						layouter.namespace(|| "set_pk_j_y == op_pk_j_y"),
+					)?;
+					let and_chip = AndChipset::new(is_same_pk_j_x, is_same_pk_j_y);
+					let is_same_pk_j = and_chip.synthesize(
+						&config.common,
+						&config.main,
+						layouter.namespace(|| "set_pk_j == op_pk_j"),
+					)?;
+					let sub_chip = SubChipset::new(one.clone(), is_same_pk_j);
+					let is_diff_pk_j = sub_chip.synthesize(
+						&config.common,
+						&config.main,
+						layouter.namespace(|| "set_pk_j != op_pk_j"),
+					)?;
 
-		// 			// Condition: op_pk_j != PublicKey::default()
-		// 			let equal_chip = IsEqualChipset::new(set_pk_j_x.clone(),
-		// default_pk_x.clone()); 			let is_default_pk_x = equal_chip.synthesize(
-		// 				&config.common,
-		// 				&config.main,
-		// 				layouter.namespace(|| "set_pk_j_x == default_pk_x"),
-		// 			)?;
-		// 			let equal_chip = IsEqualChipset::new(set_pk_j_y.clone(),
-		// default_pk_y.clone()); 			let is_default_pk_y = equal_chip.synthesize(
-		// 				&config.common,
-		// 				&config.main,
-		// 				layouter.namespace(|| "set_pk_j_y == default_pk_y"),
-		// 			)?;
-		// 			let and_chip = AndChipset::new(is_default_pk_x, is_default_pk_y);
-		// 			let is_pk_j_null = and_chip.synthesize(
-		// 				&config.common,
-		// 				&config.main,
-		// 				layouter.namespace(|| "set_pk_j == default_pk"),
-		// 			)?;
+					// Condition: op_pk_j != PublicKey::default()
+					let equal_chip = IsEqualChipset::new(set_pk_j_x.clone(), default_pk_x.clone());
+					let is_default_pk_x = equal_chip.synthesize(
+						&config.common,
+						&config.main,
+						layouter.namespace(|| "set_pk_j_x == default_pk_x"),
+					)?;
+					let equal_chip = IsEqualChipset::new(set_pk_j_y.clone(), default_pk_y.clone());
+					let is_default_pk_y = equal_chip.synthesize(
+						&config.common,
+						&config.main,
+						layouter.namespace(|| "set_pk_j_y == default_pk_y"),
+					)?;
+					let and_chip = AndChipset::new(is_default_pk_x, is_default_pk_y);
+					let is_pk_j_null = and_chip.synthesize(
+						&config.common,
+						&config.main,
+						layouter.namespace(|| "set_pk_j == default_pk"),
+					)?;
 
-		// 			// Condition: set_pk_j == pk_i
-		// 			let equal_chip = IsEqualChipset::new(set_pk_j_x.clone(), pk_i_x.clone());
-		// 			let is_pk_i_x = equal_chip.synthesize(
-		// 				&config.common,
-		// 				&config.main,
-		// 				layouter.namespace(|| "set_pk_j_x == pk_i_x"),
-		// 			)?;
-		// 			let equal_chip = IsEqualChipset::new(set_pk_j_y.clone(), pk_i_y.clone());
-		// 			let is_pk_i_y = equal_chip.synthesize(
-		// 				&config.common,
-		// 				&config.main,
-		// 				layouter.namespace(|| "set_pk_j_y == pk_i_y"),
-		// 			)?;
-		// 			let and_chip = AndChipset::new(is_pk_i_x, is_pk_i_y);
-		// 			let is_pk_i = and_chip.synthesize(
-		// 				&config.common,
-		// 				&config.main,
-		// 				layouter.namespace(|| "set_pk_j == pk_i"),
-		// 			)?;
+					// Condition: set_pk_j == pk_i
+					let equal_chip = IsEqualChipset::new(set_pk_j_x.clone(), pk_i_x.clone());
+					let is_pk_i_x = equal_chip.synthesize(
+						&config.common,
+						&config.main,
+						layouter.namespace(|| "set_pk_j_x == pk_i_x"),
+					)?;
+					let equal_chip = IsEqualChipset::new(set_pk_j_y.clone(), pk_i_y.clone());
+					let is_pk_i_y = equal_chip.synthesize(
+						&config.common,
+						&config.main,
+						layouter.namespace(|| "set_pk_j_y == pk_i_y"),
+					)?;
+					let and_chip = AndChipset::new(is_pk_i_x, is_pk_i_y);
+					let is_pk_i = and_chip.synthesize(
+						&config.common,
+						&config.main,
+						layouter.namespace(|| "set_pk_j == pk_i"),
+					)?;
 
-		// 			// Conditions for nullifying the score
-		// 			// 1. set_pk_j != op_pk_j
-		// 			// 2. set_pk_j == 0 (null or default)
-		// 			// 3. set_pk_j == pk_i
-		// 			let or_chip = OrChipset::new(is_diff_pk_j.clone(), is_pk_j_null);
-		// 			let cond = or_chip.synthesize(
-		// 				&config.common,
-		// 				&config.main,
-		// 				layouter.namespace(|| "is_diff_pk_j || is_pk_j_null"),
-		// 			)?;
-		// 			let or_chip = OrChipset::new(cond, is_pk_i);
-		// 			let cond = or_chip.synthesize(
-		// 				&config.common,
-		// 				&config.main,
-		// 				layouter.namespace(|| "is_diff_pk_j || is_pk_j_null || is_pk_i"),
-		// 			)?;
+					// Conditions for nullifying the score
+					// 1. set_pk_j != op_pk_j
+					// 2. set_pk_j == 0 (null or default)
+					// 3. set_pk_j == pk_i
+					let or_chip = OrChipset::new(is_diff_pk_j.clone(), is_pk_j_null);
+					let cond = or_chip.synthesize(
+						&config.common,
+						&config.main,
+						layouter.namespace(|| "is_diff_pk_j || is_pk_j_null"),
+					)?;
+					let or_chip = OrChipset::new(cond, is_pk_i);
+					let cond = or_chip.synthesize(
+						&config.common,
+						&config.main,
+						layouter.namespace(|| "is_diff_pk_j || is_pk_j_null || is_pk_i"),
+					)?;
 
-		// 			let select_chip = SelectChipset::new(cond, zero.clone(), ops[i][j].clone());
-		// 			let new_ops_i_j = select_chip.synthesize(
-		// 				&config.common,
-		// 				&config.main,
-		// 				layouter.namespace(|| "filtered op score"),
-		// 			)?;
-		// 			ops_i.push(new_ops_i_j);
+					let select_chip = SelectChipset::new(cond, zero.clone(), ops[i][j].clone());
+					let new_ops_i_j = select_chip.synthesize(
+						&config.common,
+						&config.main,
+						layouter.namespace(|| "filtered op score"),
+					)?;
+					ops_i.push(new_ops_i_j);
 
-		// 			// Condition for correcting the pk
-		// 			// 1. set_pk_j != op_pk_j
-		// 			let select_chip =
-		// 				SelectChipset::new(is_diff_pk_j.clone(), set_pk_j_x, op_pk_j_x);
-		// 			let new_op_pk_j_x = select_chip.synthesize(
-		// 				&config.common,
-		// 				&config.main,
-		// 				layouter.namespace(|| "update op_pk_x"),
-		// 			)?;
-		// 			op_pk_x_i.push(new_op_pk_j_x);
+					// Condition for correcting the pk
+					// 1. set_pk_j != op_pk_j
+					let select_chip =
+						SelectChipset::new(is_diff_pk_j.clone(), set_pk_j_x, op_pk_j_x);
+					let new_op_pk_j_x = select_chip.synthesize(
+						&config.common,
+						&config.main,
+						layouter.namespace(|| "update op_pk_x"),
+					)?;
+					op_pk_x_i.push(new_op_pk_j_x);
 
-		// 			let select_chip = SelectChipset::new(is_diff_pk_j, set_pk_j_y, op_pk_j_y);
-		// 			let new_op_pk_j_y = select_chip.synthesize(
-		// 				&config.common,
-		// 				&config.main,
-		// 				layouter.namespace(|| "update op_pk_y"),
-		// 			)?;
-		// 			op_pk_y_i.push(new_op_pk_j_y);
-		// 		}
+					let select_chip = SelectChipset::new(is_diff_pk_j, set_pk_j_y, op_pk_j_y);
+					let new_op_pk_j_y = select_chip.synthesize(
+						&config.common,
+						&config.main,
+						layouter.namespace(|| "update op_pk_y"),
+					)?;
+					op_pk_y_i.push(new_op_pk_j_y);
+				}
 
-		// 		// Distribute the scores
-		// 		let mut op_score_sum = zero.clone();
-		// 		for j in 0..NUM_NEIGHBOURS {
-		// 			let add_chip = AddChipset::new(op_score_sum.clone(), ops_i[j].clone());
-		// 			op_score_sum = add_chip.synthesize(
-		// 				&config.common,
-		// 				&config.main,
-		// 				layouter.namespace(|| "op_score_sum"),
-		// 			)?;
-		// 		}
+				// Distribute the scores
+				let mut op_score_sum = zero.clone();
+				for j in 0..NUM_NEIGHBOURS {
+					let add_chip = AddChipset::new(op_score_sum.clone(), ops_i[j].clone());
+					op_score_sum = add_chip.synthesize(
+						&config.common,
+						&config.main,
+						layouter.namespace(|| "op_score_sum"),
+					)?;
+				}
 
-		// 		let equal_chip = IsEqualChipset::new(op_score_sum, zero.clone());
-		// 		let is_sum_zero = equal_chip.synthesize(
-		// 			&config.common,
-		// 			&config.main,
-		// 			layouter.namespace(|| "op_score_sum == 0"),
-		// 		)?;
-		// 		for j in 0..NUM_NEIGHBOURS {
-		// 			let op_pk_j_x = op_pk_x_i[j].clone();
-		// 			let op_pk_j_y = op_pk_y_i[j].clone();
+				let equal_chip = IsEqualChipset::new(op_score_sum, zero.clone());
+				let is_sum_zero = equal_chip.synthesize(
+					&config.common,
+					&config.main,
+					layouter.namespace(|| "op_score_sum == 0"),
+				)?;
+				for j in 0..NUM_NEIGHBOURS {
+					let op_pk_j_x = op_pk_x_i[j].clone();
+					let op_pk_j_y = op_pk_y_i[j].clone();
 
-		// 			// Condition 1. op_pk_j != pk_i
-		// 			let equal_chip = IsEqualChipset::new(op_pk_j_x.clone(), pk_i_x.clone());
-		// 			let is_pk_i_x = equal_chip.synthesize(
-		// 				&config.common,
-		// 				&config.main,
-		// 				layouter.namespace(|| "op_pk_j_x == pk_i_x"),
-		// 			)?;
-		// 			let equal_chip = IsEqualChipset::new(op_pk_j_y.clone(), pk_i_y.clone());
-		// 			let is_pk_i_y = equal_chip.synthesize(
-		// 				&config.common,
-		// 				&config.main,
-		// 				layouter.namespace(|| "op_pk_j_y == pk_i_y"),
-		// 			)?;
-		// 			let and_chip = AndChipset::new(is_pk_i_x, is_pk_i_y);
-		// 			let is_pk_i = and_chip.synthesize(
-		// 				&config.common,
-		// 				&config.main,
-		// 				layouter.namespace(|| "op_pk_j == pk_i"),
-		// 			)?;
-		// 			let sub_chip = SubChipset::new(one.clone(), is_pk_i);
-		// 			let is_diff_pk = sub_chip.synthesize(
-		// 				&config.common,
-		// 				&config.main,
-		// 				layouter.namespace(|| "op_pk_j != pk_i"),
-		// 			)?;
+					// Condition 1. op_pk_j != pk_i
+					let equal_chip = IsEqualChipset::new(op_pk_j_x.clone(), pk_i_x.clone());
+					let is_pk_i_x = equal_chip.synthesize(
+						&config.common,
+						&config.main,
+						layouter.namespace(|| "op_pk_j_x == pk_i_x"),
+					)?;
+					let equal_chip = IsEqualChipset::new(op_pk_j_y.clone(), pk_i_y.clone());
+					let is_pk_i_y = equal_chip.synthesize(
+						&config.common,
+						&config.main,
+						layouter.namespace(|| "op_pk_j_y == pk_i_y"),
+					)?;
+					let and_chip = AndChipset::new(is_pk_i_x, is_pk_i_y);
+					let is_pk_i = and_chip.synthesize(
+						&config.common,
+						&config.main,
+						layouter.namespace(|| "op_pk_j == pk_i"),
+					)?;
+					let sub_chip = SubChipset::new(one.clone(), is_pk_i);
+					let is_diff_pk = sub_chip.synthesize(
+						&config.common,
+						&config.main,
+						layouter.namespace(|| "op_pk_j != pk_i"),
+					)?;
 
-		// 			// Condition 2. op_pk_j != PublicKey::default()
-		// 			let pk_x_equal_chip =
-		// 				IsEqualChipset::new(pk_x[j].clone(), default_pk_x.clone());
-		// 			let is_default_pk_x = pk_x_equal_chip.synthesize(
-		// 				&config.common,
-		// 				&config.main,
-		// 				layouter.namespace(|| "pk_j_x == default_pk_x"),
-		// 			)?;
+					// Condition 2. op_pk_j != PublicKey::default()
+					let pk_x_equal_chip =
+						IsEqualChipset::new(pk_x[j].clone(), default_pk_x.clone());
+					let is_default_pk_x = pk_x_equal_chip.synthesize(
+						&config.common,
+						&config.main,
+						layouter.namespace(|| "pk_j_x == default_pk_x"),
+					)?;
 
-		// 			let pk_y_equal_chip =
-		// 				IsEqualChipset::new(pk_y[j].clone(), default_pk_y.clone());
-		// 			let is_default_pk_y = pk_y_equal_chip.synthesize(
-		// 				&config.common,
-		// 				&config.main,
-		// 				layouter.namespace(|| "pk_j_y == default_pk_y"),
-		// 			)?;
-		// 			let and_chip = AndChipset::new(is_default_pk_x, is_default_pk_y);
-		// 			let is_null = and_chip.synthesize(
-		// 				&config.common,
-		// 				&config.main,
-		// 				layouter.namespace(|| "pk_j == default"),
-		// 			)?;
-		// 			let sub_chip = SubChipset::new(one.clone(), is_null);
-		// 			let is_not_null = sub_chip.synthesize(
-		// 				&config.common,
-		// 				&config.main,
-		// 				layouter.namespace(|| "pk_j != default"),
-		// 			)?;
+					let pk_y_equal_chip =
+						IsEqualChipset::new(pk_y[j].clone(), default_pk_y.clone());
+					let is_default_pk_y = pk_y_equal_chip.synthesize(
+						&config.common,
+						&config.main,
+						layouter.namespace(|| "pk_j_y == default_pk_y"),
+					)?;
+					let and_chip = AndChipset::new(is_default_pk_x, is_default_pk_y);
+					let is_null = and_chip.synthesize(
+						&config.common,
+						&config.main,
+						layouter.namespace(|| "pk_j == default"),
+					)?;
+					let sub_chip = SubChipset::new(one.clone(), is_null);
+					let is_not_null = sub_chip.synthesize(
+						&config.common,
+						&config.main,
+						layouter.namespace(|| "pk_j != default"),
+					)?;
 
-		// 			// Conditions for distributing the score
-		// 			// 1. pk_j != pk_i
-		// 			// 2. pk_j != PublicKey::default()
-		// 			// 3. op_score_sum == 0
-		// 			let and_chip = AndChipset::new(is_diff_pk, is_not_null);
-		// 			let cond = and_chip.synthesize(
-		// 				&config.common,
-		// 				&config.main,
-		// 				layouter.namespace(|| "is_diff_pk && is_not_null"),
-		// 			)?;
-		// 			let and_chip = AndChipset::new(cond, is_sum_zero.clone());
-		// 			let cond = and_chip.synthesize(
-		// 				&config.common,
-		// 				&config.main,
-		// 				layouter.namespace(|| "is_diff_pk && is_not_null && is_sum_zero"),
-		// 			)?;
-		// 			let select_chip = SelectChipset::new(cond, one.clone(), ops_i[j].clone());
-		// 			ops_i[j] = select_chip.synthesize(
-		// 				&config.common,
-		// 				&config.main,
-		// 				layouter.namespace(|| "filtered op score"),
-		// 			)?;
-		// 		}
+					// Conditions for distributing the score
+					// 1. pk_j != pk_i
+					// 2. pk_j != PublicKey::default()
+					// 3. op_score_sum == 0
+					let and_chip = AndChipset::new(is_diff_pk, is_not_null);
+					let cond = and_chip.synthesize(
+						&config.common,
+						&config.main,
+						layouter.namespace(|| "is_diff_pk && is_not_null"),
+					)?;
+					let and_chip = AndChipset::new(cond, is_sum_zero.clone());
+					let cond = and_chip.synthesize(
+						&config.common,
+						&config.main,
+						layouter.namespace(|| "is_diff_pk && is_not_null && is_sum_zero"),
+					)?;
+					let select_chip = SelectChipset::new(cond, one.clone(), ops_i[j].clone());
+					ops_i[j] = select_chip.synthesize(
+						&config.common,
+						&config.main,
+						layouter.namespace(|| "filtered op score"),
+					)?;
+				}
 
-		// 		// Add to "filtered_ops"
-		// 		filtered_ops.push(ops_i);
-		// 	}
+				// Add to "filtered_ops"
+				filtered_ops.push(ops_i);
+			}
 
-		// 	filtered_ops
-		// };
+			filtered_ops
+		};
 
 		// "Normalization"
 		let ops = {
