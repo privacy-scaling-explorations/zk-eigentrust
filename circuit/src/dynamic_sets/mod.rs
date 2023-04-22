@@ -4,8 +4,8 @@ pub mod native;
 use crate::{
 	circuit::{Eddsa, FullRoundHasher, PartialRoundHasher, PoseidonHasher, SpongeHasher},
 	eddsa::{
-		native::{sign, PublicKey, SecretKey, Signature},
-		EddsaChipset, EddsaConfig,
+		native::{PublicKey, Signature},
+		EddsaConfig,
 	},
 	edwards::{
 		params::BabyJubJub, IntoAffineChip, PointAddChip, ScalarMulChip, StrictScalarMulConfig,
@@ -19,23 +19,14 @@ use crate::{
 			MulChipset, OrChipset, SelectChipset, SubChipset,
 		},
 	},
-	params::poseidon_bn254_5x5::Params,
-	poseidon::{
-		native::{sponge::PoseidonSponge, Poseidon},
-		sponge::{PoseidonSpongeChipset, PoseidonSpongeConfig},
-		FullRoundChip, PartialRoundChip, PoseidonChipset, PoseidonConfig,
-	},
+	poseidon::{sponge::PoseidonSpongeConfig, PoseidonConfig},
 	Chip, Chipset, CommonConfig, RegionCtx, ADVICE,
 };
 use halo2::{
-	arithmetic::Field,
 	circuit::{Layouter, Region, SimpleFloorPlanner, Value},
 	halo2curves::{bn256::Fr as Scalar, FieldExt},
 	plonk::{Circuit, ConstraintSystem, Error},
 };
-use itertools::InterleaveShortest;
-
-use self::native::Opinion;
 
 const HASHER_WIDTH: usize = 5;
 
@@ -733,7 +724,6 @@ mod test {
 	use super::*;
 	use crate::{
 		calculate_message_hash,
-		circuit::{PoseidonNativeHasher, PoseidonNativeSponge},
 		eddsa::native::{sign, SecretKey},
 		utils::{generate_params, prove_and_verify, read_params},
 		verifier::{evm_verify, gen_evm_verifier, gen_pk, gen_proof},
@@ -747,7 +737,6 @@ mod test {
 
 	#[test]
 	fn test_closed_graph_circut() {
-		let s = vec![Scalar::from_u128(INITIAL_SCORE); NUM_NEIGHBOURS];
 		let ops: Vec<Vec<Scalar>> = vec![
 			vec![0, 200, 300, 500, 0],
 			vec![100, 0, 100, 100, 700],
@@ -808,7 +797,6 @@ mod test {
 
 	#[test]
 	fn test_closed_graph_circut_prod() {
-		let s = vec![Scalar::from_u128(INITIAL_SCORE); NUM_NEIGHBOURS];
 		let ops: Vec<Vec<Scalar>> = vec![
 			vec![0, 200, 300, 500, 0],
 			vec![100, 0, 100, 100, 700],
@@ -866,7 +854,6 @@ mod test {
 
 	#[test]
 	fn test_closed_graph_circut_evm() {
-		let s = vec![Scalar::from_u128(INITIAL_SCORE); NUM_NEIGHBOURS];
 		let ops: Vec<Vec<Scalar>> = vec![
 			vec![0, 200, 300, 500, 0],
 			vec![100, 0, 100, 100, 700],
