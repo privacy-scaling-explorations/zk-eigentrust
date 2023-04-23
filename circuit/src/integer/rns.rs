@@ -65,6 +65,7 @@ use crate::utils::{big_to_fe, fe_to_big};
 use halo2::{
 	arithmetic::{Field, FieldExt},
 	halo2curves::bn256::{Fq, Fr},
+	halo2curves::secp256k1::{Fp as secp256k1Fp, Fq as secp256k1Fq},
 	plonk::Expression,
 };
 use num_bigint::BigUint;
@@ -96,32 +97,153 @@ pub trait RnsParams<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_
 	fn to_sub_x() -> [N; NUM_LIMBS];
 	/// Returns EcPoint AuxFin's y coordinate
 	fn to_sub_y() -> [N; NUM_LIMBS];
+	/// Inverts given Integer.
+	fn invert(input: BigUint) -> Option<Integer<W, N, NUM_LIMBS, NUM_BITS, Self>>;
+
 	/// Returns residue value from given inputs.
-	fn residues(n: &[N; NUM_LIMBS], t: &[N; NUM_LIMBS]) -> Vec<N>;
+	fn residues(n: &[N; NUM_LIMBS], t: &[N; NUM_LIMBS]) -> Vec<N> {
+		let lsh1 = Self::left_shifters()[1];
+		let rsh2 = Self::right_shifters()[2];
+
+		let mut res = Vec::new();
+		let mut carry = N::zero();
+		for i in (0..NUM_LIMBS).step_by(2) {
+			let (t_0, t_1) = (t[i], t[i + 1]);
+			let (r_0, r_1) = (n[i], n[i + 1]);
+			let u = t_0 + (t_1 * lsh1) - r_0 - (lsh1 * r_1) + carry;
+			let v = u * rsh2;
+			carry = v;
+			res.push(v)
+		}
+		res
+	}
+
 	/// Returns `quotient` and `remainder` for the reduce operation.
-	fn construct_reduce_qr(a_bn: BigUint) -> (N, [N; NUM_LIMBS]);
+	fn construct_reduce_qr(a_bn: BigUint) -> (N, [N; NUM_LIMBS]) {
+		let wrong_mod_bn = Self::wrong_modulus();
+		let (quotient, result_bn) = a_bn.div_rem(&wrong_mod_bn);
+		let q = big_to_fe(quotient);
+		let result = decompose_big::<N, NUM_LIMBS, NUM_BITS>(result_bn);
+		(q, result)
+	}
+
 	/// Returns `quotient` and `remainder` for the add operation.
-	fn construct_add_qr(a_bn: BigUint, b_bn: BigUint) -> (N, [N; NUM_LIMBS]);
+	fn construct_add_qr(a_bn: BigUint, b_bn: BigUint) -> (N, [N; NUM_LIMBS]) {
+		let wrong_mod_bn = Self::wrong_modulus();
+		let (quotient, result_bn) = (a_bn + b_bn).div_rem(&wrong_mod_bn);
+		// This check assures that the addition operation can only wrap the wrong field
+		// one time.
+		assert!(quotient <= BigUint::from_u8(1).unwrap());
+		let q = big_to_fe(quotient);
+		let result = decompose_big::<N, NUM_LIMBS, NUM_BITS>(result_bn);
+		(q, result)
+	}
+
 	/// Returns `quotient` and `remainder` for the sub operation.
-	fn construct_sub_qr(a_bn: BigUint, b_bn: BigUint) -> (N, [N; NUM_LIMBS]);
+	fn construct_sub_qr(a_bn: BigUint, b_bn: BigUint) -> (N, [N; NUM_LIMBS]) {
+		let wrong_mod_bn = Self::wrong_modulus();
+		let (quotient, result_bn) = if b_bn > a_bn {
+			let negative_result = big_to_fe::<Fq>(a_bn) - big_to_fe::<Fq>(b_bn);
+			let (_, result_bn) = (fe_to_big(negative_result)).div_rem(&wrong_mod_bn);
+			// This quotient is considered as -1 in calculations.
+			let quotient = BigUint::from_i8(1).unwrap();
+			(quotient, result_bn)
+		} else {
+			(a_bn - b_bn).div_rem(&wrong_mod_bn)
+		};
+		// This check assures that the subtraction operation can only wrap the wrong
+		// field one time.
+		assert!(quotient <= BigUint::from_u8(1).unwrap());
+		let q = big_to_fe(quotient);
+		let result = decompose_big::<N, NUM_LIMBS, NUM_BITS>(result_bn);
+		(q, result)
+	}
+
 	/// Returns `quotient` and `remainder` for the mul operation.
-	fn construct_mul_qr(a_bn: BigUint, b_bn: BigUint) -> ([N; NUM_LIMBS], [N; NUM_LIMBS]);
+	fn construct_mul_qr(a_bn: BigUint, b_bn: BigUint) -> ([N; NUM_LIMBS], [N; NUM_LIMBS]) {
+		let wrong_mod_bn = Self::wrong_modulus();
+		let (quotient, result_bn) = (a_bn * b_bn).div_rem(&wrong_mod_bn);
+		let q = decompose_big::<N, NUM_LIMBS, NUM_BITS>(quotient);
+		let result = decompose_big::<N, NUM_LIMBS, NUM_BITS>(result_bn);
+		(q, result)
+	}
+
 	/// Returns `quotient` and `remainder` for the div operation.
-	fn construct_div_qr(a_bn: BigUint, b_bn: BigUint) -> ([N; NUM_LIMBS], [N; NUM_LIMBS]);
+	fn construct_div_qr(a_bn: BigUint, b_bn: BigUint) -> ([N; NUM_LIMBS], [N; NUM_LIMBS]) {
+		let b_invert = Self::invert(b_bn.clone()).unwrap().value();
+		let should_be_one = b_invert.clone() * b_bn.clone() % Self::wrong_modulus();
+		assert!(should_be_one == BigUint::one());
+		let result = b_invert * a_bn.clone() % Self::wrong_modulus();
+		let (quotient, reduced_self) = (result.clone() * b_bn).div_rem(&Self::wrong_modulus());
+		let (k, must_be_zero) = (a_bn - reduced_self).div_rem(&Self::wrong_modulus());
+		assert_eq!(must_be_zero, BigUint::zero());
+		let q = decompose_big::<N, NUM_LIMBS, NUM_BITS>(quotient - k);
+		let result = decompose_big::<N, NUM_LIMBS, NUM_BITS>(result);
+		(q, result)
+	}
+
 	/// Constraint for the binary part of `Chinese Remainder Theorem`.
-	fn constrain_binary_crt(t: [N; NUM_LIMBS], result: [N; NUM_LIMBS], residues: Vec<N>) -> bool;
+	fn constrain_binary_crt(t: [N; NUM_LIMBS], result: [N; NUM_LIMBS], residues: Vec<N>) -> bool {
+		let lsh_one = Self::left_shifters()[1];
+		let lsh_two = Self::left_shifters()[2];
+
+		let mut is_satisfied = true;
+		let mut v = N::zero();
+		for i in (0..NUM_LIMBS).step_by(2) {
+			let (t_lo, t_hi) = (t[i], t[i + 1]);
+			let (r_lo, r_hi) = (result[i], result[i + 1]);
+			// CONSTRAINT
+			let res = t_lo + t_hi * lsh_one - r_lo - r_hi * lsh_one - residues[i / 2] * lsh_two + v;
+			v = residues[i / 2];
+			let res_is_zero: bool = res.is_zero().into();
+			is_satisfied = is_satisfied & res_is_zero;
+		}
+		is_satisfied
+	}
+
 	/// Constraint for the binary part of `Chinese Remainder Theorem` using
 	/// Expressions.
 	fn constrain_binary_crt_exp(
 		t: [Expression<N>; NUM_LIMBS], result: [Expression<N>; NUM_LIMBS],
 		residues: Vec<Expression<N>>,
-	) -> Vec<Expression<N>>;
+	) -> Vec<Expression<N>> {
+		let lsh_one = Self::left_shifters()[1];
+		let lsh_two = Self::left_shifters()[2];
+
+		let mut v = Expression::Constant(N::zero());
+		let mut constraints = Vec::new();
+		for i in (0..NUM_LIMBS).step_by(2) {
+			let (t_lo, t_hi) = (t[i].clone(), t[i + 1].clone());
+			let (r_lo, r_hi) = (result[i].clone(), result[i + 1].clone());
+			let res =
+				t_lo + t_hi * lsh_one - r_lo - r_hi * lsh_one - residues[i / 2].clone() * lsh_two
+					+ v;
+			v = residues[i / 2].clone();
+			constraints.push(res);
+		}
+
+		constraints
+	}
+
 	/// Composes integer limbs into single [`FieldExt`] value.
-	fn compose(input: [N; NUM_LIMBS]) -> N;
+	fn compose(input: [N; NUM_LIMBS]) -> N {
+		let left_shifters = Self::left_shifters();
+		let mut sum = N::zero();
+		for i in 0..NUM_LIMBS {
+			sum += input[i] * left_shifters[i];
+		}
+		sum
+	}
+
 	/// Composes integer limbs as Expressions into single Expression value.
-	fn compose_exp(input: [Expression<N>; NUM_LIMBS]) -> Expression<N>;
-	/// Inverts given Integer.
-	fn invert(input: BigUint) -> Option<Integer<W, N, NUM_LIMBS, NUM_BITS, Self>>;
+	fn compose_exp(input: [Expression<N>; NUM_LIMBS]) -> Expression<N> {
+		let left_shifters = Self::left_shifters();
+		let mut sum = Expression::Constant(N::zero());
+		for i in 0..NUM_LIMBS {
+			sum = sum + input[i].clone() * left_shifters[i];
+		}
+		sum
+	}
 }
 
 /// Returns `limbs` by decomposing [`BigUint`].
@@ -234,140 +356,6 @@ impl RnsParams<Fq, Fr, 4, 68> for Bn256_4_68 {
 		[limb0, limb1, limb2, limb3]
 	}
 
-	fn residues(n: &[Fr; 4], t: &[Fr; 4]) -> Vec<Fr> {
-		let lsh1 = Self::left_shifters()[1];
-		let rsh2 = Self::right_shifters()[2];
-
-		let mut res = Vec::new();
-		let mut carry = Fr::zero();
-		for i in (0..4).step_by(2) {
-			let (t_0, t_1) = (t[i], t[i + 1]);
-			let (r_0, r_1) = (n[i], n[i + 1]);
-			let u = t_0 + (t_1 * lsh1) - r_0 - (lsh1 * r_1) + carry;
-			let v = u * rsh2;
-			carry = v;
-			res.push(v)
-		}
-		res
-	}
-
-	fn construct_reduce_qr(a_bn: BigUint) -> (Fr, [Fr; 4]) {
-		let wrong_mod_bn = Self::wrong_modulus();
-		let (quotient, result_bn) = a_bn.div_rem(&wrong_mod_bn);
-		let q = big_to_fe(quotient);
-		let result = decompose_big::<Fr, 4, 68>(result_bn);
-		(q, result)
-	}
-
-	fn construct_add_qr(a_bn: BigUint, b_bn: BigUint) -> (Fr, [Fr; 4]) {
-		let wrong_mod_bn = Self::wrong_modulus();
-		let (quotient, result_bn) = (a_bn + b_bn).div_rem(&wrong_mod_bn);
-		// This check assures that the addition operation can only wrap the wrong field
-		// one time.
-		assert!(quotient <= BigUint::from_u8(1).unwrap());
-		let q = big_to_fe(quotient);
-		let result = decompose_big::<Fr, 4, 68>(result_bn);
-		(q, result)
-	}
-
-	fn construct_sub_qr(a_bn: BigUint, b_bn: BigUint) -> (Fr, [Fr; 4]) {
-		let wrong_mod_bn = Self::wrong_modulus();
-		let (quotient, result_bn) = if b_bn > a_bn {
-			let negative_result = big_to_fe::<Fq>(a_bn) - big_to_fe::<Fq>(b_bn);
-			let (_, result_bn) = (fe_to_big(negative_result)).div_rem(&wrong_mod_bn);
-			// This quotient is considered as -1 in calculations.
-			let quotient = BigUint::from_i8(1).unwrap();
-			(quotient, result_bn)
-		} else {
-			(a_bn - b_bn).div_rem(&wrong_mod_bn)
-		};
-		// This check assures that the subtraction operation can only wrap the wrong
-		// field one time.
-		assert!(quotient <= BigUint::from_u8(1).unwrap());
-		let q = big_to_fe(quotient);
-		let result = decompose_big::<Fr, 4, 68>(result_bn);
-		(q, result)
-	}
-
-	fn construct_mul_qr(a_bn: BigUint, b_bn: BigUint) -> ([Fr; 4], [Fr; 4]) {
-		let wrong_mod_bn = Self::wrong_modulus();
-		let (quotient, result_bn) = (a_bn * b_bn).div_rem(&wrong_mod_bn);
-		let q = decompose_big::<Fr, 4, 68>(quotient);
-		let result = decompose_big::<Fr, 4, 68>(result_bn);
-		(q, result)
-	}
-
-	fn construct_div_qr(a_bn: BigUint, b_bn: BigUint) -> ([Fr; 4], [Fr; 4]) {
-		let b_invert = Self::invert(b_bn.clone()).unwrap().value();
-		let should_be_one = b_invert.clone() * b_bn.clone() % Self::wrong_modulus();
-		assert!(should_be_one == BigUint::one());
-		let result = b_invert * a_bn.clone() % Self::wrong_modulus();
-		let (quotient, reduced_self) = (result.clone() * b_bn).div_rem(&Self::wrong_modulus());
-		let (k, must_be_zero) = (a_bn - reduced_self).div_rem(&Self::wrong_modulus());
-		assert_eq!(must_be_zero, BigUint::zero());
-		let q = decompose_big::<Fr, 4, 68>(quotient - k);
-		let result = decompose_big::<Fr, 4, 68>(result);
-		(q, result)
-	}
-
-	fn constrain_binary_crt(t: [Fr; 4], result: [Fr; 4], residues: Vec<Fr>) -> bool {
-		let lsh_one = Self::left_shifters()[1];
-		let lsh_two = Self::left_shifters()[2];
-
-		let mut is_satisfied = true;
-		let mut v = Fr::zero();
-		for i in (0..4).step_by(2) {
-			let (t_lo, t_hi) = (t[i], t[i + 1]);
-			let (r_lo, r_hi) = (result[i], result[i + 1]);
-			// CONSTRAINT
-			let res = t_lo + t_hi * lsh_one - r_lo - r_hi * lsh_one - residues[i / 2] * lsh_two + v;
-			v = residues[i / 2];
-			let res_is_zero: bool = res.is_zero().into();
-			is_satisfied = is_satisfied & res_is_zero;
-		}
-		is_satisfied
-	}
-
-	fn constrain_binary_crt_exp(
-		t: [Expression<Fr>; 4], result: [Expression<Fr>; 4], residues: Vec<Expression<Fr>>,
-	) -> Vec<Expression<Fr>> {
-		let lsh_one = Self::left_shifters()[1];
-		let lsh_two = Self::left_shifters()[2];
-
-		let mut v = Expression::Constant(Fr::zero());
-		let mut constraints = Vec::new();
-		for i in (0..4).step_by(2) {
-			let (t_lo, t_hi) = (t[i].clone(), t[i + 1].clone());
-			let (r_lo, r_hi) = (result[i].clone(), result[i + 1].clone());
-			let res =
-				t_lo + t_hi * lsh_one - r_lo - r_hi * lsh_one - residues[i / 2].clone() * lsh_two
-					+ v;
-			v = residues[i / 2].clone();
-			constraints.push(res);
-		}
-
-		constraints
-	}
-
-	/// Composes integer limbs into single [`FieldExt`] value.
-	fn compose(input: [Fr; 4]) -> Fr {
-		let left_shifters = Self::left_shifters();
-		let mut sum = Fr::zero();
-		for i in 0..4 {
-			sum += input[i] * left_shifters[i];
-		}
-		sum
-	}
-
-	fn compose_exp(input: [Expression<Fr>; 4]) -> Expression<Fr> {
-		let left_shifters = Self::left_shifters();
-		let mut sum = Expression::Constant(Fr::zero());
-		for i in 0..4 {
-			sum = sum + input[i].clone() * left_shifters[i];
-		}
-		sum
-	}
-
 	// TODO: Move outside Rns -- Use just BigUint as output
 	/// Computes the inverse of the [`BigUint`] as an element of the Wrong
 	/// field. Returns `None` if the value cannot be inverted.
@@ -375,5 +363,107 @@ impl RnsParams<Fq, Fr, 4, 68> for Bn256_4_68 {
 		let a_w = big_to_fe::<Fq>(input);
 		let inv_w = a_w.invert();
 		inv_w.map(|inv| Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(fe_to_big(inv))).into()
+	}
+}
+
+/// We implement two structs one for the Secpk256k1 Base Field as the wrong field and one for the Secp256k1 Scalar Field as the wrong field. The native field is the BN256 scalar field.
+/// The reason for implementing both these structs is that ECDSA verification contains operations in both fields.
+#[derive(Debug, Clone, PartialEq, Default)]
+/// Struct for the Secp256k1 Base Field as the wrong field.
+pub struct Secp256k1BaseField4_68;
+
+impl RnsParams<secp256k1Fp, Fr, 4, 68> for Secp256k1BaseField4_68 {
+	fn native_modulus() -> BigUint {
+		todo!()
+	}
+
+	fn wrong_modulus() -> BigUint {
+		todo!()
+	}
+
+	fn wrong_modulus_in_native_modulus() -> Fr {
+		todo!()
+	}
+
+	fn negative_wrong_modulus_decomposed() -> [Fr; 4] {
+		todo!()
+	}
+
+	fn right_shifters() -> [Fr; 4] {
+		todo!()
+	}
+
+	fn left_shifters() -> [Fr; 4] {
+		todo!()
+	}
+
+	fn to_add_x() -> [Fr; 4] {
+		todo!()
+	}
+
+	fn to_add_y() -> [Fr; 4] {
+		todo!()
+	}
+
+	fn to_sub_x() -> [Fr; 4] {
+		todo!()
+	}
+
+	fn to_sub_y() -> [Fr; 4] {
+		todo!()
+	}
+
+	fn invert(input: BigUint) -> Option<Integer<secp256k1Fp, Fr, 4, 68, Self>> {
+		todo!()
+	}
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+/// Struct for the Secp256k1 Scalar Field as the wrong field.
+pub struct Secp256k1ScalarField4_68;
+
+impl RnsParams<secp256k1Fq, Fr, 4, 68> for Secp256k1ScalarField4_68 {
+	fn native_modulus() -> BigUint {
+		todo!()
+	}
+
+	fn wrong_modulus() -> BigUint {
+		todo!()
+	}
+
+	fn wrong_modulus_in_native_modulus() -> Fr {
+		todo!()
+	}
+
+	fn negative_wrong_modulus_decomposed() -> [Fr; 4] {
+		todo!()
+	}
+
+	fn right_shifters() -> [Fr; 4] {
+		todo!()
+	}
+
+	fn left_shifters() -> [Fr; 4] {
+		todo!()
+	}
+
+	fn to_add_x() -> [Fr; 4] {
+		todo!()
+	}
+
+	fn to_add_y() -> [Fr; 4] {
+		todo!()
+	}
+
+	fn to_sub_x() -> [Fr; 4] {
+		todo!()
+	}
+
+	fn to_sub_y() -> [Fr; 4] {
+		todo!()
+	}
+
+	fn invert(input: BigUint) -> Option<Integer<secp256k1Fq, Fr, 4, 68, Self>> {
+		todo!()
 	}
 }
