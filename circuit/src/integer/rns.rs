@@ -369,101 +369,206 @@ impl RnsParams<Fq, Fr, 4, 68> for Bn256_4_68 {
 /// We implement two structs one for the Secpk256k1 Base Field as the wrong field and one for the Secp256k1 Scalar Field as the wrong field. The native field is the BN256 scalar field.
 /// The reason for implementing both these structs is that ECDSA verification contains operations in both fields.
 #[derive(Debug, Clone, PartialEq, Default)]
-/// Struct for the Secp256k1 Base Field as the wrong field.
+/// Struct for the Secp256k1 Base Field as the wrong field. https://github.com/privacy-scaling-explorations/halo2curves/blob/main/src/secp256k1/fp.rs
 pub struct Secp256k1BaseField4_68;
 
 impl RnsParams<secp256k1Fp, Fr, 4, 68> for Secp256k1BaseField4_68 {
 	fn native_modulus() -> BigUint {
-		todo!()
+		BigUint::from_str(
+			"21888242871839275222246405745257275088548364400416034343698204186575808495617",
+		)
+		.unwrap()
 	}
 
 	fn wrong_modulus() -> BigUint {
-		todo!()
+		BigUint::from_str(
+			"115792089237316195423570985008687907853269984665640564039457584007908834671663",
+		)
+		.unwrap()
 	}
 
+	// https://www.wolframalpha.com/input?i=115792089237316195423570985008687907853269984665640564039457584007908834671663+mod+21888242871839275222246405745257275088548364400416034343698204186575808495617
+	// https://www.wolframalpha.com/input?i=6350874878119819312338956282401532410528162663560392320966563075029792193578+in+hex
 	fn wrong_modulus_in_native_modulus() -> Fr {
-		todo!()
+		Fr::from_raw([
+			0xac96341b4ffffc2a, 0x36fc76959f60cd29, 0x666ea36f7879462e, 0x0e0a77c19a07df2f,
+		])
 	}
 
+	// https://www.wolframalpha.com/input?i=-115792089237316195423570985008687907853269984665640564039457584007908834671663+mod+21888242871839275222246405745257275088548364400416034343698204186575808495617
+	// sanity check: https://www.wolframalpha.com/input?i=140029228562771870679+%2B+54120732105655028278+*+2%5E68+%2B+18037446069688272914+*+2%5E136+%2B+604307990016668+*+2%5E204
 	fn negative_wrong_modulus_decomposed() -> [Fr; 4] {
-		todo!()
+		let limb0 = Fr::from_u128(140029228562771870679);
+		let limb1 = Fr::from_u128(54120732105655028278);
+		let limb2 = Fr::from_u128(18037446069688272914);
+		let limb3 = Fr::from_u128(604307990016668);
+		[limb0, limb1, limb2, limb3]
 	}
 
 	fn right_shifters() -> [Fr; 4] {
-		todo!()
+		let limb0 = Fr::from_u128(1);
+		let limb1 = Fr::from_raw([
+			0xf8e4610fb396ee5, 0xb42e346981868e48, 0x1dbc9c192fc7933a, 0xb603a5609b3f6f8,
+		]);
+		let limb2 = Fr::from_raw([
+			0x568bea8e0766f9dd, 0xa31a140f219532a9, 0x1a908db2cea9b991, 0x1b7c016fe8acfaed,
+		]);
+		let limb3 = Fr::from_raw([
+			0x769b0bf04e2f27cc, 0x55a33201cd88df51, 0x338287b1e0bedd99, 0x523513296c10199,
+		]);
+		[limb0, limb1, limb2, limb3]
 	}
 
 	fn left_shifters() -> [Fr; 4] {
-		todo!()
+		let limb0 = Fr::from_u128(1);
+		let limb1 = Fr::from_raw([0x0, 0x10, 0x0, 0x0]);
+		let limb2 = Fr::from_raw([0x0, 0x0, 0x100, 0x0]);
+		let limb3 = Fr::from_raw([0x0, 0x0, 0x0, 0x1000]);
+		[limb0, limb1, limb2, limb3]
 	}
 
 	fn to_add_x() -> [Fr; 4] {
-		todo!()
+		let limb0 = Fr::from_u128(39166801021317585802);
+		let limb1 = Fr::from_u128(280722752500048210634);
+		let limb2 = Fr::from_u128(246774286082614522626);
+		let limb3 = Fr::from_u128(648543811392721);
+		[limb0, limb1, limb2, limb3]
 	}
 
 	fn to_add_y() -> [Fr; 4] {
-		todo!()
+		let limb0 = Fr::from_u128(260479261066082801011);
+		let limb1 = Fr::from_u128(36674947070525072812);
+		let limb2 = Fr::from_u128(146132927816985441332);
+		let limb3 = Fr::from_u128(251381276165850);
+		[limb0, limb1, limb2, limb3]
 	}
 
 	fn to_sub_x() -> [Fr; 4] {
-		todo!()
+		let limb0 = Fr::from_u128(39683184256656720731);
+		let limb1 = Fr::from_u128(65039279958035916755);
+		let limb2 = Fr::from_u128(55471468959241741054);
+		let limb3 = Fr::from_u128(517651676279778);
+		[limb0, limb1, limb2, limb3]
 	}
 
 	fn to_sub_y() -> [Fr; 4] {
-		todo!()
+		let limb0 = Fr::from_u128(82480000500960897165);
+		let limb1 = Fr::from_u128(24667200311316519684);
+		let limb2 = Fr::from_u128(293910609844452716081);
+		let limb3 = Fr::from_u128(761069265693657);
+		[limb0, limb1, limb2, limb3]
 	}
 
 	fn invert(input: BigUint) -> Option<Integer<secp256k1Fp, Fr, 4, 68, Self>> {
-		todo!()
+		let a_w = big_to_fe::<secp256k1Fp>(input);
+		let inv_w = a_w.invert();
+		inv_w
+			.map(|inv| {
+				Integer::<secp256k1Fp, Fr, 4, 68, Secp256k1BaseField4_68>::new(fe_to_big(inv))
+			})
+			.into()
 	}
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
 /// Struct for the Secp256k1 Scalar Field as the wrong field.
+/// From https://github.com/privacy-scaling-explorations/halo2curves/blob/main/src/secp256k1/fq.rs
 pub struct Secp256k1ScalarField4_68;
 
 impl RnsParams<secp256k1Fq, Fr, 4, 68> for Secp256k1ScalarField4_68 {
 	fn native_modulus() -> BigUint {
-		todo!()
+		BigUint::from_str(
+			"21888242871839275222246405745257275088548364400416034343698204186575808495617",
+		)
+		.unwrap()
 	}
 
 	fn wrong_modulus() -> BigUint {
-		todo!()
+		BigUint::from_str(
+			"115792089237316195423570985008687907852837564279074904382605163141518161494337",
+		)
+		.unwrap()
 	}
 
+	// https://www.wolframalpha.com/input?i=115792089237316195423570985008687907852837564279074904382605163141518161494337+mod+21888242871839275222246405745257275088548364400416034343698204186575808495617
+	// https://www.wolframalpha.com/input?i=6350874878119819312338956282401532410095742276994732664114142208639119016252+in+hex
 	fn wrong_modulus_in_native_modulus() -> Fr {
-		todo!()
+		Fr::from_raw([
+			0x6c6892a92036413c, 0xf1ab537c4ea96d65, 0x666ea36f7879462c, 0x0e0a77c19a07df2f,
+		])
 	}
 
+	// https://www.wolframalpha.com/input?i=-115792089237316195423570985008687907852837564279074904382605163141518161494337+mod+21888242871839275222246405745257275088548364400416034343698204186575808495617
+	// sanity check: https://www.wolframalpha.com/input?i=218440734761789537989+%2B+55585829363597246514+*+2%5E68+%2B+18037446069688272914+*+2%5E136+%2B+604307990016668+*+2%5E204
 	fn negative_wrong_modulus_decomposed() -> [Fr; 4] {
-		todo!()
+		let limb0 = Fr::from_u128(218440734761789537989);
+		let limb1 = Fr::from_u128(55585829363597246514);
+		let limb2 = Fr::from_u128(18037446069688272914);
+		let limb3 = Fr::from_u128(604307990016668);
+		[limb0, limb1, limb2, limb3]
 	}
 
 	fn right_shifters() -> [Fr; 4] {
-		todo!()
+		let limb0 = Fr::from_u128(1);
+		let limb1 = Fr::from_raw([
+			0xf8e4610fb396ee5, 0xb42e346981868e48, 0x1dbc9c192fc7933a, 0xb603a5609b3f6f8,
+		]);
+		let limb2 = Fr::from_raw([
+			0x568bea8e0766f9dd, 0xa31a140f219532a9, 0x1a908db2cea9b991, 0x1b7c016fe8acfaed,
+		]);
+		let limb3 = Fr::from_raw([
+			0x769b0bf04e2f27cc, 0x55a33201cd88df51, 0x338287b1e0bedd99, 0x523513296c10199,
+		]);
+		[limb0, limb1, limb2, limb3]
 	}
 
 	fn left_shifters() -> [Fr; 4] {
-		todo!()
+		let limb0 = Fr::from_u128(1);
+		let limb1 = Fr::from_raw([0x0, 0x10, 0x0, 0x0]);
+		let limb2 = Fr::from_raw([0x0, 0x0, 0x100, 0x0]);
+		let limb3 = Fr::from_raw([0x0, 0x0, 0x0, 0x1000]);
+		[limb0, limb1, limb2, limb3]
 	}
 
 	fn to_add_x() -> [Fr; 4] {
-		todo!()
+		let limb0 = Fr::from_u128(39166801021317585802);
+		let limb1 = Fr::from_u128(280722752500048210634);
+		let limb2 = Fr::from_u128(246774286082614522626);
+		let limb3 = Fr::from_u128(648543811392721);
+		[limb0, limb1, limb2, limb3]
 	}
 
 	fn to_add_y() -> [Fr; 4] {
-		todo!()
+		let limb0 = Fr::from_u128(260479261066082801011);
+		let limb1 = Fr::from_u128(36674947070525072812);
+		let limb2 = Fr::from_u128(146132927816985441332);
+		let limb3 = Fr::from_u128(251381276165850);
+		[limb0, limb1, limb2, limb3]
 	}
 
 	fn to_sub_x() -> [Fr; 4] {
-		todo!()
+		let limb0 = Fr::from_u128(39683184256656720731);
+		let limb1 = Fr::from_u128(65039279958035916755);
+		let limb2 = Fr::from_u128(55471468959241741054);
+		let limb3 = Fr::from_u128(517651676279778);
+		[limb0, limb1, limb2, limb3]
 	}
 
 	fn to_sub_y() -> [Fr; 4] {
-		todo!()
+		let limb0 = Fr::from_u128(82480000500960897165);
+		let limb1 = Fr::from_u128(24667200311316519684);
+		let limb2 = Fr::from_u128(293910609844452716081);
+		let limb3 = Fr::from_u128(761069265693657);
+		[limb0, limb1, limb2, limb3]
 	}
 
 	fn invert(input: BigUint) -> Option<Integer<secp256k1Fq, Fr, 4, 68, Self>> {
-		todo!()
+		let a_w = big_to_fe::<secp256k1Fq>(input);
+		let inv_w = a_w.invert();
+		inv_w
+			.map(|inv| {
+				Integer::<secp256k1Fq, Fr, 4, 68, Secp256k1ScalarField4_68>::new(fe_to_big(inv))
+			})
+			.into()
 	}
 }
