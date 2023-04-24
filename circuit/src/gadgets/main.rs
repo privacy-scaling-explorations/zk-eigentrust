@@ -706,36 +706,32 @@ mod tests {
 	use rand::thread_rng;
 
 	#[derive(Clone)]
-	enum Gadgets {
-		And,
-		Or,
-		IsBool,
-		IsEqual,
-		IsZero,
-		Mul,
-		Select,
-		Add,
-	}
-
-	#[derive(Clone)]
 	struct TestConfig {
 		common: CommonConfig,
 		main: MainConfig,
 	}
 
-	#[derive(Clone)]
-	struct TestCircuit<F: FieldExt, const N: usize> {
-		inputs: [F; N],
-		gadget: Gadgets,
-	}
-
-	impl<F: FieldExt, const N: usize> TestCircuit<F, N> {
-		fn new(inputs: [F; N], gadget: Gadgets) -> Self {
-			Self { inputs, gadget }
+	impl TestConfig {
+		fn new(meta: &mut ConstraintSystem<Fr>) -> Self {
+			let common = CommonConfig::new(meta);
+			let main = MainConfig::new(MainChip::configure(&common, meta));
+			Self { common, main }
 		}
 	}
 
-	impl<F: FieldExt, const N: usize> Circuit<F> for TestCircuit<F, N> {
+	#[derive(Clone)]
+	struct AndTestCircuit {
+		x: Fr,
+		y: Fr,
+	}
+
+	impl AndTestCircuit {
+		fn new(x: Fr, y: Fr) -> Self {
+			Self { x, y }
+		}
+	}
+
+	impl Circuit<Fr> for AndTestCircuit {
 		type Config = TestConfig;
 		type FloorPlanner = SimpleFloorPlanner;
 
@@ -743,104 +739,31 @@ mod tests {
 			self.clone()
 		}
 
-		fn configure(meta: &mut ConstraintSystem<F>) -> TestConfig {
-			let common = CommonConfig::new(meta);
-			let main = MainConfig::new(MainChip::configure(&common, meta));
-			TestConfig { common, main }
+		fn configure(meta: &mut ConstraintSystem<Fr>) -> TestConfig {
+			TestConfig::new(meta)
 		}
 
 		fn synthesize(
-			&self, config: TestConfig, mut layouter: impl Layouter<F>,
+			&self, config: TestConfig, mut layouter: impl Layouter<Fr>,
 		) -> Result<(), Error> {
-			let items = layouter.assign_region(
+			let (x, y) = layouter.assign_region(
 				|| "temp",
 				|region| {
 					let mut ctx = RegionCtx::new(region, 0);
-					let mut items = Vec::new();
-					for i in 0..N {
-						let val = Value::known(self.inputs[i]);
-						let x = ctx.assign_advice(config.common.advice[0], val)?;
-						ctx.next();
-						items.push(x);
-					}
-					Ok(items)
+					let x = ctx.assign_advice(config.common.advice[0], Value::known(self.x))?;
+					let y = ctx.assign_advice(config.common.advice[1], Value::known(self.y))?;
+
+					Ok((x, y))
 				},
 			)?;
 
-			match self.gadget {
-				Gadgets::And => {
-					let and_chip = AndChipset::new(items[0].clone(), items[1].clone());
-					let and = and_chip.synthesize(
-						&config.common,
-						&config.main,
-						layouter.namespace(|| "and"),
-					)?;
-					layouter.constrain_instance(and.cell(), config.common.instance, 0)?;
-				},
-				Gadgets::Or => {
-					let or_chip = OrChipset::new(items[0].clone(), items[1].clone());
-					let or = or_chip.synthesize(
-						&config.common,
-						&config.main,
-						layouter.namespace(|| "or"),
-					)?;
-					layouter.constrain_instance(or.cell(), config.common.instance, 0)?;
-				},
-				Gadgets::IsBool => {
-					let is_bool_chip = IsBoolChipset::new(items[0].clone());
-					is_bool_chip.synthesize(
-						&config.common,
-						&config.main,
-						layouter.namespace(|| "is_bool"),
-					)?;
-				},
-				Gadgets::IsEqual => {
-					let is_equal_chip = IsEqualChipset::new(items[0].clone(), items[1].clone());
-					let is_equal = is_equal_chip.synthesize(
-						&config.common,
-						&config.main,
-						layouter.namespace(|| "is_equal"),
-					)?;
-					layouter.constrain_instance(is_equal.cell(), config.common.instance, 0)?;
-				},
-				Gadgets::IsZero => {
-					let is_zero_chip = IsZeroChipset::new(items[0].clone());
-					let is_zero = is_zero_chip.synthesize(
-						&config.common,
-						&config.main,
-						layouter.namespace(|| "is_zero"),
-					)?;
-					layouter.constrain_instance(is_zero.cell(), config.common.instance, 0)?;
-				},
-				Gadgets::Add => {
-					let add_chip = AddChipset::new(items[0].clone(), items[1].clone());
-					let add = add_chip.synthesize(
-						&config.common,
-						&config.main,
-						layouter.namespace(|| "add"),
-					)?;
-					layouter.constrain_instance(add.cell(), config.common.instance, 0)?;
-				},
-				Gadgets::Mul => {
-					let mul_chip = MulChipset::new(items[0].clone(), items[1].clone());
-					let mul = mul_chip.synthesize(
-						&config.common,
-						&config.main,
-						layouter.namespace(|| "mul"),
-					)?;
-					layouter.constrain_instance(mul.cell(), config.common.instance, 0)?;
-				},
-				Gadgets::Select => {
-					let select_chip =
-						SelectChipset::new(items[0].clone(), items[1].clone(), items[2].clone());
-					let select = select_chip.synthesize(
-						&config.common,
-						&config.main,
-						layouter.namespace(|| "select"),
-					)?;
-					layouter.constrain_instance(select.cell(), config.common.instance, 0)?;
-				},
-			}
+			let and_chip = AndChipset::new(x, y);
+			let and = and_chip.synthesize(
+				&config.common,
+				&config.main,
+				layouter.namespace(|| "and chipset"),
+			)?;
+			layouter.constrain_instance(and.cell(), config.common.instance, 0)?;
 
 			Ok(())
 		}
@@ -850,7 +773,7 @@ mod tests {
 	#[test]
 	fn test_and_x1_y1() {
 		// Testing x = 1 and y = 1.
-		let test_chip = TestCircuit::new([Fr::from(1), Fr::from(1)], Gadgets::And);
+		let test_chip = AndTestCircuit::new(Fr::from(1), Fr::from(1));
 
 		let pub_ins = vec![Fr::from(1)];
 		let k = 5;
@@ -861,7 +784,7 @@ mod tests {
 	#[test]
 	fn test_and_x1_y0() {
 		// Testing x = 1 and y = 0.
-		let test_chip = TestCircuit::new([Fr::from(1), Fr::from(0)], Gadgets::And);
+		let test_chip = AndTestCircuit::new(Fr::from(1), Fr::from(0));
 
 		let pub_ins = vec![Fr::from(0)];
 		let k = 5;
@@ -872,39 +795,7 @@ mod tests {
 	#[test]
 	fn test_and_x0_y0() {
 		// Testing x = 0 and y = 0.
-		let test_chip = TestCircuit::new([Fr::from(0), Fr::from(0)], Gadgets::And);
-
-		let pub_ins = vec![Fr::from(0)];
-		let k = 5;
-		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
-		assert_eq!(prover.verify(), Ok(()));
-	}
-	#[test]
-	fn test_or_x1_y1() {
-		// Testing x = 1 and y = 1.
-		let test_chip = TestCircuit::new([Fr::from(1), Fr::from(1)], Gadgets::Or);
-
-		let pub_ins = vec![Fr::from(1)];
-		let k = 5;
-		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
-		assert_eq!(prover.verify(), Ok(()));
-	}
-
-	#[test]
-	fn test_or_x1_y0() {
-		// Testing x = 1 and y = 0.
-		let test_chip = TestCircuit::new([Fr::from(1), Fr::from(0)], Gadgets::Or);
-
-		let pub_ins = vec![Fr::from(1)];
-		let k = 5;
-		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
-		assert_eq!(prover.verify(), Ok(()));
-	}
-
-	#[test]
-	fn test_or_x0_y0() {
-		// Testing x = 0 and y = 0.
-		let test_chip = TestCircuit::new([Fr::from(0), Fr::from(0)], Gadgets::Or);
+		let test_chip = AndTestCircuit::new(Fr::from(0), Fr::from(0));
 
 		let pub_ins = vec![Fr::from(0)];
 		let k = 5;
@@ -915,7 +806,7 @@ mod tests {
 	#[test]
 	fn test_and_x0_y1() {
 		// Testing x = 0 and y = 1.
-		let test_chip = TestCircuit::new([Fr::from(0), Fr::from(1)], Gadgets::And);
+		let test_chip = AndTestCircuit::new(Fr::from(0), Fr::from(1));
 
 		let pub_ins = vec![Fr::from(0)];
 		let k = 5;
@@ -925,7 +816,7 @@ mod tests {
 
 	#[test]
 	fn test_and_production() {
-		let test_chip = TestCircuit::new([Fr::from(1), Fr::from(1)], Gadgets::And);
+		let test_chip = AndTestCircuit::new(Fr::from(1), Fr::from(1));
 
 		let k = 5;
 		let rng = &mut thread_rng();
@@ -936,16 +827,147 @@ mod tests {
 		assert!(res);
 	}
 
+	#[derive(Clone)]
+	struct OrTestCircuit {
+		x: Fr,
+		y: Fr,
+	}
+
+	impl OrTestCircuit {
+		fn new(x: Fr, y: Fr) -> Self {
+			Self { x, y }
+		}
+	}
+
+	impl Circuit<Fr> for OrTestCircuit {
+		type Config = TestConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			self.clone()
+		}
+
+		fn configure(meta: &mut ConstraintSystem<Fr>) -> TestConfig {
+			TestConfig::new(meta)
+		}
+
+		fn synthesize(
+			&self, config: TestConfig, mut layouter: impl Layouter<Fr>,
+		) -> Result<(), Error> {
+			let (x, y) = layouter.assign_region(
+				|| "temp",
+				|region| {
+					let mut ctx = RegionCtx::new(region, 0);
+					let x = ctx.assign_advice(config.common.advice[0], Value::known(self.x))?;
+					let y = ctx.assign_advice(config.common.advice[1], Value::known(self.y))?;
+
+					Ok((x, y))
+				},
+			)?;
+
+			let or_chip = OrChipset::new(x, y);
+			let or = or_chip.synthesize(
+				&config.common,
+				&config.main,
+				layouter.namespace(|| "or chipset"),
+			)?;
+			layouter.constrain_instance(or.cell(), config.common.instance, 0)?;
+
+			Ok(())
+		}
+	}
+
+	#[test]
+	fn test_or_x1_y1() {
+		// Testing x = 1 and y = 1.
+		let test_chip = OrTestCircuit::new(Fr::from(1), Fr::from(1));
+
+		let pub_ins = vec![Fr::from(1)];
+		let k = 5;
+		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	// TEST CASES FOR THE OR CIRCUIT
+	#[test]
+	fn test_or_x1_y0() {
+		// Testing x = 1 and y = 0.
+		let test_chip = OrTestCircuit::new(Fr::from(1), Fr::from(0));
+
+		let pub_ins = vec![Fr::from(1)];
+		let k = 5;
+		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[test]
+	fn test_or_x0_y0() {
+		// Testing x = 0 and y = 0.
+		let test_chip = OrTestCircuit::new(Fr::from(0), Fr::from(0));
+
+		let pub_ins = vec![Fr::from(0)];
+		let k = 5;
+		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[derive(Clone)]
+	struct IsBoolTestCircuit {
+		x: Fr,
+	}
+
+	impl IsBoolTestCircuit {
+		fn new(x: Fr) -> Self {
+			Self { x }
+		}
+	}
+
+	impl Circuit<Fr> for IsBoolTestCircuit {
+		type Config = TestConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			self.clone()
+		}
+
+		fn configure(meta: &mut ConstraintSystem<Fr>) -> TestConfig {
+			TestConfig::new(meta)
+		}
+
+		fn synthesize(
+			&self, config: TestConfig, mut layouter: impl Layouter<Fr>,
+		) -> Result<(), Error> {
+			let x = layouter.assign_region(
+				|| "temp",
+				|region| {
+					let mut ctx = RegionCtx::new(region, 0);
+					let x = ctx.assign_advice(config.common.advice[0], Value::known(self.x))?;
+
+					Ok(x)
+				},
+			)?;
+
+			let bool_chip = IsBoolChipset::new(x);
+			bool_chip.synthesize(
+				&config.common,
+				&config.main,
+				layouter.namespace(|| "is bool chipset"),
+			)?;
+
+			Ok(())
+		}
+	}
+
 	// TEST CASES FOR THE IS_BOOL CIRCUIT
 	// In a IsBool test case sending a dummy instance doesn't
 	// affect the circuit output because it is not constrained.
 	#[test]
 	fn test_is_bool_value_zero() {
 		// Testing input zero as value.
-		let test_chip = TestCircuit::new([Fr::from(0)], Gadgets::IsBool);
+		let test_chip = IsBoolTestCircuit::new(Fr::from(0));
 
 		let k = 4;
-		let dummy_instance = vec![Fr::zero()];
+		let dummy_instance = vec![];
 		let prover = MockProver::run(k, &test_chip, vec![dummy_instance]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
 	}
@@ -953,10 +975,10 @@ mod tests {
 	#[test]
 	fn test_is_bool_value_one() {
 		// Testing input one as value.
-		let test_chip = TestCircuit::new([Fr::from(1)], Gadgets::IsBool);
+		let test_chip = IsBoolTestCircuit::new(Fr::from(1));
 
 		let k = 4;
-		let dummy_instance = vec![Fr::zero()];
+		let dummy_instance = vec![];
 		let prover = MockProver::run(k, &test_chip, vec![dummy_instance]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
 	}
@@ -964,17 +986,17 @@ mod tests {
 	#[test]
 	fn test_is_bool_invalid_value() {
 		// Testing input two as value, which is invalid for the boolean circuit.
-		let test_chip = TestCircuit::new([Fr::from(2)], Gadgets::IsBool);
+		let test_chip = IsBoolTestCircuit::new(Fr::from(2));
 
 		let k = 4;
-		let dummy_instance = vec![Fr::zero()];
+		let dummy_instance = vec![];
 		let prover = MockProver::run(k, &test_chip, vec![dummy_instance]).unwrap();
 		assert!(prover.verify().is_err());
 	}
 
 	#[test]
 	fn test_is_bool_production() {
-		let test_chip = TestCircuit::new([Fr::from(0)], Gadgets::IsBool);
+		let test_chip = IsBoolTestCircuit::new(Fr::from(0));
 
 		let k = 4;
 		let rng = &mut thread_rng();
@@ -986,11 +1008,61 @@ mod tests {
 		assert!(res);
 	}
 
+	#[derive(Clone)]
+	struct IsEqualTestCircuit {
+		x: Fr,
+		y: Fr,
+	}
+
+	impl IsEqualTestCircuit {
+		fn new(x: Fr, y: Fr) -> Self {
+			Self { x, y }
+		}
+	}
+
+	impl Circuit<Fr> for IsEqualTestCircuit {
+		type Config = TestConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			self.clone()
+		}
+
+		fn configure(meta: &mut ConstraintSystem<Fr>) -> TestConfig {
+			TestConfig::new(meta)
+		}
+
+		fn synthesize(
+			&self, config: TestConfig, mut layouter: impl Layouter<Fr>,
+		) -> Result<(), Error> {
+			let (x, y) = layouter.assign_region(
+				|| "temp",
+				|region| {
+					let mut ctx = RegionCtx::new(region, 0);
+					let x = ctx.assign_advice(config.common.advice[0], Value::known(self.x))?;
+					let y = ctx.assign_advice(config.common.advice[1], Value::known(self.y))?;
+
+					Ok((x, y))
+				},
+			)?;
+
+			let is_eq_chip = IsEqualChipset::new(x, y);
+			let is_eq = is_eq_chip.synthesize(
+				&config.common,
+				&config.main,
+				layouter.namespace(|| "is equal chipset"),
+			)?;
+			layouter.constrain_instance(is_eq.cell(), config.common.instance, 0)?;
+
+			Ok(())
+		}
+	}
+
 	// TEST CASES FOR THE IS_EQUAL CIRCUIT
 	#[test]
 	fn test_is_equal() {
 		// Testing equal values.
-		let test_chip = TestCircuit::new([Fr::from(123), Fr::from(123)], Gadgets::IsEqual);
+		let test_chip = IsEqualTestCircuit::new(Fr::from(123), Fr::from(123));
 
 		let pub_ins = vec![Fr::one()];
 		let k = 4;
@@ -1001,7 +1073,7 @@ mod tests {
 	#[test]
 	fn test_is_not_equal() {
 		// Testing not equal values.
-		let test_chip = TestCircuit::new([Fr::from(123), Fr::from(124)], Gadgets::IsEqual);
+		let test_chip = IsEqualTestCircuit::new(Fr::from(123), Fr::from(124));
 
 		let pub_ins = vec![Fr::zero()];
 		let k = 4;
@@ -1011,7 +1083,7 @@ mod tests {
 
 	#[test]
 	fn test_is_equal_production() {
-		let test_chip = TestCircuit::new([Fr::from(123), Fr::from(123)], Gadgets::IsEqual);
+		let test_chip = IsEqualTestCircuit::new(Fr::from(123), Fr::from(123));
 
 		let k = 4;
 		let rng = &mut thread_rng();
@@ -1021,11 +1093,59 @@ mod tests {
 		assert!(res);
 	}
 
+	#[derive(Clone)]
+	struct IsZeroTestCircuit {
+		x: Fr,
+	}
+
+	impl IsZeroTestCircuit {
+		fn new(x: Fr) -> Self {
+			Self { x }
+		}
+	}
+
+	impl Circuit<Fr> for IsZeroTestCircuit {
+		type Config = TestConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			self.clone()
+		}
+
+		fn configure(meta: &mut ConstraintSystem<Fr>) -> TestConfig {
+			TestConfig::new(meta)
+		}
+
+		fn synthesize(
+			&self, config: TestConfig, mut layouter: impl Layouter<Fr>,
+		) -> Result<(), Error> {
+			let x = layouter.assign_region(
+				|| "temp",
+				|region| {
+					let mut ctx = RegionCtx::new(region, 0);
+					let x = ctx.assign_advice(config.common.advice[0], Value::known(self.x))?;
+
+					Ok(x)
+				},
+			)?;
+
+			let is_zero_chip = IsZeroChipset::new(x);
+			let is_zero = is_zero_chip.synthesize(
+				&config.common,
+				&config.main,
+				layouter.namespace(|| "is zero chipset"),
+			)?;
+			layouter.constrain_instance(is_zero.cell(), config.common.instance, 0)?;
+
+			Ok(())
+		}
+	}
+
 	// TEST CASES FOR THE IS_ZERO CIRCUIT
 	#[test]
 	fn test_is_zero() {
 		// Testing zero as value.
-		let test_chip = TestCircuit::new([Fr::from(0)], Gadgets::IsZero);
+		let test_chip = IsZeroTestCircuit::new(Fr::from(0));
 
 		let pub_ins = vec![Fr::one()];
 		let k = 4;
@@ -1036,7 +1156,7 @@ mod tests {
 	#[test]
 	fn test_is_zero_not() {
 		// Testing a non-zero value.
-		let test_chip = TestCircuit::new([Fr::from(1)], Gadgets::IsZero);
+		let test_chip = IsZeroTestCircuit::new(Fr::from(1));
 
 		let pub_ins = vec![Fr::zero()];
 		let k = 4;
@@ -1046,7 +1166,7 @@ mod tests {
 
 	#[test]
 	fn test_is_zero_production() {
-		let test_chip = TestCircuit::new([Fr::from(0)], Gadgets::IsZero);
+		let test_chip = IsZeroTestCircuit::new(Fr::from(0));
 
 		let k = 4;
 		let rng = &mut thread_rng();
@@ -1056,11 +1176,61 @@ mod tests {
 		assert!(res);
 	}
 
+	#[derive(Clone)]
+	struct AddTestCircuit {
+		x: Fr,
+		y: Fr,
+	}
+
+	impl AddTestCircuit {
+		fn new(x: Fr, y: Fr) -> Self {
+			Self { x, y }
+		}
+	}
+
+	impl Circuit<Fr> for AddTestCircuit {
+		type Config = TestConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			self.clone()
+		}
+
+		fn configure(meta: &mut ConstraintSystem<Fr>) -> TestConfig {
+			TestConfig::new(meta)
+		}
+
+		fn synthesize(
+			&self, config: TestConfig, mut layouter: impl Layouter<Fr>,
+		) -> Result<(), Error> {
+			let (x, y) = layouter.assign_region(
+				|| "temp",
+				|region| {
+					let mut ctx = RegionCtx::new(region, 0);
+					let x = ctx.assign_advice(config.common.advice[0], Value::known(self.x))?;
+					let y = ctx.assign_advice(config.common.advice[1], Value::known(self.y))?;
+
+					Ok((x, y))
+				},
+			)?;
+
+			let add_chip = AddChipset::new(x, y);
+			let add = add_chip.synthesize(
+				&config.common,
+				&config.main,
+				layouter.namespace(|| "add chipset"),
+			)?;
+			layouter.constrain_instance(add.cell(), config.common.instance, 0)?;
+
+			Ok(())
+		}
+	}
+
 	// TEST CASES FOR THE ADD CIRCUIT
 	#[test]
 	fn test_add() {
 		// Testing x = 5 and y = 2.
-		let test_chip = TestCircuit::new([Fr::from(5), Fr::from(2)], Gadgets::Add);
+		let test_chip = AddTestCircuit::new(Fr::from(5), Fr::from(2));
 
 		let k = 4;
 		let pub_ins = vec![Fr::from(5 + 2)];
@@ -1071,7 +1241,7 @@ mod tests {
 	#[test]
 	fn test_add_y1() {
 		// Testing x = 3 and y = 1.
-		let test_chip = TestCircuit::new([Fr::from(3), Fr::from(1)], Gadgets::Add);
+		let test_chip = AddTestCircuit::new(Fr::from(3), Fr::from(1));
 
 		let k = 4;
 		let pub_ins = vec![Fr::from(3 + 1)];
@@ -1082,7 +1252,7 @@ mod tests {
 	#[test]
 	fn test_add_y0() {
 		// Testing x = 4 and y = 0.
-		let test_chip = TestCircuit::new([Fr::from(4), Fr::from(0)], Gadgets::Add);
+		let test_chip = AddTestCircuit::new(Fr::from(4), Fr::from(0));
 
 		let k = 4;
 		let pub_ins = vec![Fr::from(4 + 0)];
@@ -1092,7 +1262,7 @@ mod tests {
 
 	#[test]
 	fn test_add_production() {
-		let test_chip = TestCircuit::new([Fr::from(5), Fr::from(2)], Gadgets::Add);
+		let test_chip = AddTestCircuit::new(Fr::from(5), Fr::from(2));
 
 		let k = 4;
 		let rng = &mut thread_rng();
@@ -1103,11 +1273,61 @@ mod tests {
 		assert!(res);
 	}
 
+	#[derive(Clone)]
+	struct MulTestCircuit {
+		x: Fr,
+		y: Fr,
+	}
+
+	impl MulTestCircuit {
+		fn new(x: Fr, y: Fr) -> Self {
+			Self { x, y }
+		}
+	}
+
+	impl Circuit<Fr> for MulTestCircuit {
+		type Config = TestConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			self.clone()
+		}
+
+		fn configure(meta: &mut ConstraintSystem<Fr>) -> TestConfig {
+			TestConfig::new(meta)
+		}
+
+		fn synthesize(
+			&self, config: TestConfig, mut layouter: impl Layouter<Fr>,
+		) -> Result<(), Error> {
+			let (x, y) = layouter.assign_region(
+				|| "temp",
+				|region| {
+					let mut ctx = RegionCtx::new(region, 0);
+					let x = ctx.assign_advice(config.common.advice[0], Value::known(self.x))?;
+					let y = ctx.assign_advice(config.common.advice[1], Value::known(self.y))?;
+
+					Ok((x, y))
+				},
+			)?;
+
+			let mul_chip = MulChipset::new(x, y);
+			let mul = mul_chip.synthesize(
+				&config.common,
+				&config.main,
+				layouter.namespace(|| "mul chipset"),
+			)?;
+			layouter.constrain_instance(mul.cell(), config.common.instance, 0)?;
+
+			Ok(())
+		}
+	}
+
 	// TEST CASES FOR THE MUL CIRCUIT
 	#[test]
 	fn test_mul() {
 		// Testing x = 5 and y = 2.
-		let test_chip = TestCircuit::new([Fr::from(5), Fr::from(2)], Gadgets::Mul);
+		let test_chip = MulTestCircuit::new(Fr::from(5), Fr::from(2));
 
 		let k = 4;
 		let pub_ins = vec![Fr::from(10)];
@@ -1118,7 +1338,7 @@ mod tests {
 	#[test]
 	fn test_mul_y1() {
 		// Testing x = 3 and y = 1.
-		let test_chip = TestCircuit::new([Fr::from(3), Fr::from(1)], Gadgets::Mul);
+		let test_chip = MulTestCircuit::new(Fr::from(3), Fr::from(1));
 
 		let k = 4;
 		let pub_ins = vec![Fr::from(3)];
@@ -1129,7 +1349,7 @@ mod tests {
 	#[test]
 	fn test_mul_y0() {
 		// Testing x = 4 and y = 0.
-		let test_chip = TestCircuit::new([Fr::from(4), Fr::from(0)], Gadgets::Mul);
+		let test_chip = MulTestCircuit::new(Fr::from(4), Fr::from(0));
 
 		let k = 4;
 		let pub_ins = vec![Fr::from(0)];
@@ -1139,7 +1359,7 @@ mod tests {
 
 	#[test]
 	fn test_mul_production() {
-		let test_chip = TestCircuit::new([Fr::from(5), Fr::from(2)], Gadgets::Mul);
+		let test_chip = MulTestCircuit::new(Fr::from(5), Fr::from(2));
 
 		let k = 4;
 		let rng = &mut thread_rng();
@@ -1150,11 +1370,63 @@ mod tests {
 		assert!(res);
 	}
 
+	#[derive(Clone)]
+	struct SelectTestCircuit {
+		bit: Fr,
+		x: Fr,
+		y: Fr,
+	}
+
+	impl SelectTestCircuit {
+		fn new(bit: Fr, x: Fr, y: Fr) -> Self {
+			Self { bit, x, y }
+		}
+	}
+
+	impl Circuit<Fr> for SelectTestCircuit {
+		type Config = TestConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			self.clone()
+		}
+
+		fn configure(meta: &mut ConstraintSystem<Fr>) -> TestConfig {
+			TestConfig::new(meta)
+		}
+
+		fn synthesize(
+			&self, config: TestConfig, mut layouter: impl Layouter<Fr>,
+		) -> Result<(), Error> {
+			let (bit, x, y) = layouter.assign_region(
+				|| "temp",
+				|region| {
+					let mut ctx = RegionCtx::new(region, 0);
+					let bit = ctx.assign_advice(config.common.advice[0], Value::known(self.bit))?;
+					let x = ctx.assign_advice(config.common.advice[1], Value::known(self.x))?;
+					let y = ctx.assign_advice(config.common.advice[2], Value::known(self.y))?;
+
+					Ok((bit, x, y))
+				},
+			)?;
+
+			let select_chip = SelectChipset::new(bit, x, y);
+			let select = select_chip.synthesize(
+				&config.common,
+				&config.main,
+				layouter.namespace(|| "select chipset"),
+			)?;
+			layouter.constrain_instance(select.cell(), config.common.instance, 0)?;
+
+			Ok(())
+		}
+	}
+
 	// TEST CASES FOR THE SELECT CIRCUIT
 	#[test]
 	fn test_select() {
 		// Testing bit = 0.
-		let test_chip = TestCircuit::new([Fr::from(0), Fr::from(2), Fr::from(3)], Gadgets::Select);
+		let test_chip = SelectTestCircuit::new(Fr::from(0), Fr::from(2), Fr::from(3));
 
 		let pub_ins = vec![Fr::from(3)];
 		let k = 4;
@@ -1165,7 +1437,7 @@ mod tests {
 	#[test]
 	fn test_select_one_as_bit() {
 		// Testing bit = 1.
-		let test_chip = TestCircuit::new([Fr::from(1), Fr::from(7), Fr::from(4)], Gadgets::Select);
+		let test_chip = SelectTestCircuit::new(Fr::from(1), Fr::from(7), Fr::from(4));
 
 		let pub_ins = vec![Fr::from(7)];
 		let k = 4;
@@ -1177,7 +1449,7 @@ mod tests {
 	fn test_select_two_as_bit() {
 		// Testing bit = 2. Constraint not satisfied error will return
 		// because the bit is not a boolean value.
-		let test_chip = TestCircuit::new([Fr::from(2), Fr::from(3), Fr::from(6)], Gadgets::Select);
+		let test_chip = SelectTestCircuit::new(Fr::from(2), Fr::from(3), Fr::from(6));
 
 		let pub_ins = vec![Fr::from(3)];
 		let k = 4;
@@ -1187,7 +1459,7 @@ mod tests {
 
 	#[test]
 	fn test_select_production() {
-		let test_chip = TestCircuit::new([Fr::from(0), Fr::from(2), Fr::from(3)], Gadgets::Select);
+		let test_chip = SelectTestCircuit::new(Fr::from(0), Fr::from(2), Fr::from(3));
 
 		let k = 4;
 		let rng = &mut thread_rng();
