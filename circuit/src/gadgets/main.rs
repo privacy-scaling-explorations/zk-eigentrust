@@ -655,13 +655,7 @@ impl<F: FieldExt> Chipset<F> for OrChipset<F> {
 		//	   = x + y - xy
 		//
 		// "&" can be replaced with "*" since bit checks
-
-		let bool_chip = IsBoolChipset::new(self.x.clone());
-		bool_chip.synthesize(common, &config, layouter.namespace(|| "constraint bit"))?;
-
-		let bool_chip = IsBoolChipset::new(self.y.clone());
-		bool_chip.synthesize(common, &config, layouter.namespace(|| "constraint bit"))?;
-
+		//
 		// Witness layout:
 		// | A   | B   | C   | D   | E  |
 		// | --- | --- | --- | --- | ---|
@@ -676,6 +670,12 @@ impl<F: FieldExt> Chipset<F> for OrChipset<F> {
 				Ok((res, zero))
 			},
 		)?;
+
+		let bool_chip = IsBoolChipset::new(self.x.clone());
+		bool_chip.synthesize(common, &config, layouter.namespace(|| "constraint bit"))?;
+
+		let bool_chip = IsBoolChipset::new(self.y.clone());
+		bool_chip.synthesize(common, &config, layouter.namespace(|| "constraint bit"))?;
 
 		// [a, b, c, d, e]
 		let advices = [self.x, self.y, res.clone(), zero.clone(), zero];
