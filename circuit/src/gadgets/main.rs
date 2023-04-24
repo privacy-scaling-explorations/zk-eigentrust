@@ -651,6 +651,8 @@ impl<F: FieldExt> Chipset<F> for OrChipset<F> {
 	) -> Result<Self::Output, Error> {
 		// We should satisfy the equation below
 		// res = 1 - (1 - x) & (1 - y)
+		//	   = 1 - (1 - x - y + xy)
+		//	   = x + y - xy
 		//
 		// "&" can be replaced with "*" since bit checks
 
@@ -660,33 +662,30 @@ impl<F: FieldExt> Chipset<F> for OrChipset<F> {
 		let bool_chip = IsBoolChipset::new(self.y.clone());
 		bool_chip.synthesize(common, &config, layouter.namespace(|| "constraint bit"))?;
 
-		let one = layouter.assign_region(
-			|| "one",
+		// Witness layout:
+		// | A   | B   | C   | D   | E  |
+		// | --- | --- | --- | --- | ---|
+		// | x   | y   | res |     |    |
+		let (res, zero) = layouter.assign_region(
+			|| "assign values",
 			|region| {
+				let res = self.x.value().zip(self.y.value()).map(|(x, y)| *x + *y - *x * *y);
 				let mut ctx = RegionCtx::new(region, 0);
-				ctx.assign_advice(common.advice[0], Value::known(F::one()))
+				let res = ctx.assign_advice(common.advice[0], res)?;
+				let zero = ctx.assign_advice(common.advice[1], Value::known(F::zero()))?;
+				Ok((res, zero))
 			},
 		)?;
-		let sub_chip = SubChipset::new(one.clone(), self.x.clone());
-		let x_complement =
-			sub_chip.synthesize(common, &config, layouter.namespace(|| "(1 - x)"))?;
 
-		let sub_chip = SubChipset::new(one.clone(), self.y.clone());
-		let y_complement =
-			sub_chip.synthesize(common, &config, layouter.namespace(|| "(1 - y)"))?;
+		// [a, b, c, d, e]
+		let advices = [self.x, self.y, res.clone(), zero.clone(), zero];
+		// [s_a, s_b, s_c, s_d, s_e, s_mul_ab, s_mul_cd, s_constant]
+		let fixed_add = [F::one(), F::one(), -F::one(), F::zero(), F::zero()];
+		let fixed_mul = [-F::one(), F::zero(), F::zero()];
+		let main_chip = MainChip::new(advices, fixed_add, fixed_mul);
+		main_chip.synthesize(common, &config.selector, layouter.namespace(|| "main_or"))?;
 
-		let mul_chip = MulChipset::new(x_complement, y_complement);
-		let product =
-			mul_chip.synthesize(common, &config, layouter.namespace(|| "(1 - x) * (1 - y)"))?;
-
-		let sub_chip = SubChipset::new(one, product);
-		let or = sub_chip.synthesize(
-			common,
-			&config,
-			layouter.namespace(|| "1 - (1 - x) & (1 - y)"),
-		)?;
-
-		Ok(or)
+		Ok(res)
 	}
 }
 
