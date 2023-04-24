@@ -28,8 +28,8 @@ impl AttestationData {
 
 	/// Convert a vector of bytes into the struct
 	pub fn from_bytes(mut bytes: Vec<u8>) -> Result<Self, &'static str> {
-		if bytes.len() != 129 {
-			return Err("Input bytes vector should be of length 129");
+		if bytes.len() != 133 {
+			return Err("Input bytes vector should be of length 133");
 		}
 
 		let mut sig_r_x = [0u8; 32];
