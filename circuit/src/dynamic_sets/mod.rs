@@ -685,7 +685,6 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u1
 				for i in 0..NUM_NEIGHBOURS {
 					let passed_s = ctx.copy_assign(config.common.advice[0], passed_s[i].clone())?;
 					let s = ctx.copy_assign(config.common.advice[1], s[i].clone())?;
-					println!("{:?} = {:?}", passed_s.value(), s.value());
 					ctx.constrain_equal(passed_s, s)?;
 					ctx.next();
 				}
@@ -709,7 +708,6 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u1
 				let ctx = &mut RegionCtx::new(region, 0);
 				let sum = ctx.copy_assign(config.common.advice[0], sum.clone())?;
 				let total_score = ctx.copy_assign(config.common.advice[1], total_score.clone())?;
-				println!("{:?} == {:?}", sum.value(), total_score.value());
 				ctx.constrain_equal(sum, total_score)?;
 				Ok(())
 			},
