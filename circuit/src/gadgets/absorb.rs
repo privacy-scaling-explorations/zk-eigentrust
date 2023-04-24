@@ -2,7 +2,7 @@ use crate::{Chip, CommonConfig, RegionCtx};
 use halo2::{
 	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region},
-	plonk::{ConstraintSystem, Error, Expression, Selector},
+	plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
 	poly::Rotation,
 };
 
@@ -76,17 +76,22 @@ impl<F: FieldExt, const WIDTH: usize> Chip<F> for AbsorbChip<F, WIDTH> {
 				ctx.next();
 
 				// Calculate the next state to permute
-				let columns = common.advice[0..WIDTH].try_into().unwrap();
-				let collection = loaded_chunk.zip(loaded_state).zip(columns);
-				let next_state = collection.try_map(|((chunk_state, pos_state), column)| {
+				let columns: [Column<Advice>; WIDTH] =
+					common.advice[0..WIDTH].to_vec().try_into().unwrap();
+				let mut next_state: [Option<AssignedCell<F, F>>; WIDTH] = [(); WIDTH].map(|_| None);
+				for i in 0..WIDTH {
+					let chunk_state = &loaded_chunk[i];
+					let pos_state = &loaded_state[i];
+					let column = columns[i];
 					let sum = chunk_state.value().and_then(|&s| {
 						let pos_state_val = pos_state.value();
 						pos_state_val.map(|&ps| s + ps)
 					});
-					ctx.assign_advice(column, sum)
-				})?;
+					let assigned_sum = ctx.assign_advice(column, sum)?;
+					next_state[i] = Some(assigned_sum);
+				}
 
-				Ok(next_state)
+				Ok(next_state.map(|x| x.unwrap()))
 			},
 		)
 	}

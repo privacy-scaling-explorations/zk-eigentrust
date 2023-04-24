@@ -1,7 +1,5 @@
 //! The module for the main EigenTrust circuit.
 
-#![feature(slice_flatten)]
-#![feature(array_zip, array_try_map)]
 #![allow(clippy::tabs_in_doc_comments)]
 #![deny(
 	future_incompatible, nonstandard_style, missing_docs, deprecated, unreachable_code,
@@ -25,6 +23,8 @@ use serde::{Deserialize, Serialize};
 
 /// Closed graph circuit
 pub mod circuit;
+/// EigenTrustSet
+pub mod dynamic_sets;
 /// Ecc arithemtic on wrong field
 pub mod ecc;
 /// EDDSA signature scheme gadgets + native version
@@ -37,8 +37,6 @@ pub mod gadgets;
 pub mod integer;
 /// MerkleTree
 pub mod merkle_tree;
-/// Native version of EigenTrust
-pub mod native;
 /// A module for defining round parameters and MDS matrix for hash
 /// permutations
 pub mod params;
