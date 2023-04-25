@@ -714,18 +714,9 @@ mod test {
 	fn test_read_ec_point() {
 		// Test read ec point
 		let rng = &mut thread_rng();
-		let random = C::random(rng);
-		let coordinates = random.coordinates().unwrap();
-
-		let x = Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_w(*coordinates.x());
-		let y = Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_w(*coordinates.y());
+		let random = C::random(rng).to_bytes();
 		let mut reader = Vec::new();
-		for i in 0..NUM_LIMBS {
-			reader.write_all(x.limbs[i].to_bytes().as_slice()).unwrap();
-		}
-		for i in 0..NUM_LIMBS {
-			reader.write_all(y.limbs[i].to_bytes().as_slice()).unwrap();
-		}
+		reader.write_all(random.as_ref()).unwrap();
 
 		let mut poseidon_read =
 			PoseidonRead::<_, G1Affine, Bn256_4_68, Params>::new(reader.as_slice(), NativeSVLoader);
