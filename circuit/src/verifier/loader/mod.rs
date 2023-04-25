@@ -27,7 +27,7 @@ use std::{
 /// Native version of the loader
 pub mod native;
 
-/// Mutex Layouter optimizer
+/// TODO: Mutex Layouter optimizer
 /*
 fn layouter<T>(func: FnOnce(layouter) -> T) -> T {
 	let layouter = self.layouter.lock();
@@ -484,8 +484,8 @@ where
 				|| "assert_eq",
 				|region: Region<'_, C::Scalar>| {
 					let mut ctx = RegionCtx::new(region, 0);
-					let eq = ctx.constrain_equal(lhs.inner.clone(), rhs.inner.clone())?;
-					Ok(eq)
+					ctx.constrain_equal(lhs.inner.clone(), rhs.inner.clone())?;
+					Ok(())
 				},
 			)
 			.ok()
