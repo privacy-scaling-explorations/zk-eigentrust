@@ -273,6 +273,7 @@ mod test {
 		dev::MockProver,
 		halo2curves::{
 			bn256::{Fq, Fr, G1Affine},
+			group::GroupEncoding,
 			CurveAffine,
 		},
 		plonk::{Circuit, ConstraintSystem, Error},
@@ -780,7 +781,6 @@ mod test {
 			let mut poseidon_read =
 				PoseidonReadChipset::<_, C, _, P, R>::new(self.reader.as_slice(), loader);
 			let res = poseidon_read.read_ec_point().unwrap();
-
 			let mut lb = layouter_rc.lock().unwrap();
 			for i in 0..NUM_LIMBS {
 				lb.constrain_instance(
@@ -830,35 +830,19 @@ mod test {
 		// Test read ec point
 		let rng = &mut thread_rng();
 		let mut reader = Vec::new();
-
 		for _ in 0..2 {
-			let random = C::random(rng.clone());
+			let random = C::random(rng.clone()).to_bytes();
 			let scalar = Scalar::random(rng.clone());
-
-			let coordinates = random.coordinates().unwrap();
-			println!("{:#?}", random.coordinates());
-
-			let x = Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_w(*coordinates.x());
-			let y = Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_w(*coordinates.y());
-			for i in 0..NUM_LIMBS {
-				reader.write_all(x.limbs[i].to_bytes().as_slice()).unwrap();
-			}
-			for i in 0..NUM_LIMBS {
-				reader.write_all(y.limbs[i].to_bytes().as_slice()).unwrap();
-			}
-
+			reader.write_all(random.as_ref()).unwrap();
 			reader.write_all(scalar.to_bytes().as_slice()).unwrap();
 		}
 		let mut poseidon_read =
 			PoseidonRead::<_, G1Affine, Bn256_4_68, Params>::new(reader.as_slice(), NativeSVLoader);
 
 		let mut p_ins = Vec::new();
-
 		let res = poseidon_read.read_ec_point().unwrap();
-
 		let x = Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_w(res.x);
 		let y = Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_w(res.y);
-
 		p_ins.extend(x.limbs);
 		p_ins.extend(y.limbs);
 
@@ -866,10 +850,8 @@ mod test {
 		p_ins.push(res);
 
 		let res = poseidon_read.read_ec_point().unwrap();
-
 		let x = Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_w(res.x);
 		let y = Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_w(res.y);
-
 		p_ins.extend(x.limbs);
 		p_ins.extend(y.limbs);
 
