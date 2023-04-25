@@ -678,14 +678,11 @@ where
 #[cfg(test)]
 mod test {
 	use super::{native::Integer, rns::Bn256_4_68, *};
-	use crate::{
-		utils::{generate_params, prove_and_verify},
-		CommonConfig,
-	};
+	use crate::{Chipset, CommonConfig};
 	use halo2::{
 		circuit::{SimpleFloorPlanner, Value},
 		dev::MockProver,
-		halo2curves::bn256::{Bn256, Fq, Fr},
+		halo2curves::bn256::{Fq, Fr},
 		plonk::Circuit,
 	};
 	use num_bigint::BigUint;
@@ -697,15 +694,6 @@ mod test {
 	const NUM_BITS: usize = 68;
 	type P = Bn256_4_68;
 
-	#[derive(Clone)]
-	enum Gadgets {
-		Reduce,
-		Add,
-		Sub,
-		Mul,
-		Div,
-	}
-
 	#[derive(Clone, Debug)]
 	struct TestConfig {
 		common: CommonConfig,
@@ -716,31 +704,8 @@ mod test {
 		div_selector: Selector,
 	}
 
-	#[derive(Clone)]
-	struct TestCircuit {
-		x: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
-		y: Option<Integer<W, N, NUM_LIMBS, NUM_BITS, P>>,
-		gadget: Gadgets,
-	}
-
-	impl TestCircuit {
-		fn new(
-			x: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
-			y: Option<Integer<W, N, NUM_LIMBS, NUM_BITS, P>>, gadget: Gadgets,
-		) -> Self {
-			Self { x, y, gadget }
-		}
-	}
-
-	impl Circuit<N> for TestCircuit {
-		type Config = TestConfig;
-		type FloorPlanner = SimpleFloorPlanner;
-
-		fn without_witnesses(&self) -> Self {
-			self.clone()
-		}
-
-		fn configure(meta: &mut ConstraintSystem<N>) -> TestConfig {
+	impl TestConfig {
+		pub fn new(meta: &mut ConstraintSystem<N>) -> Self {
 			let common = CommonConfig::new(meta);
 			let reduce_selector =
 				IntegerReduceChip::<W, N, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
@@ -753,126 +718,142 @@ mod test {
 			let div_selector =
 				IntegerDivChip::<W, N, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
 
-			TestConfig {
-				common,
-				reduce_selector,
-				add_selector,
-				sub_selector,
-				mul_selector,
-				div_selector,
-			}
+			Self { common, reduce_selector, add_selector, sub_selector, mul_selector, div_selector }
 		}
+	}
+
+	struct SingleAssigner {
+		x: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
+	}
+
+	impl SingleAssigner {
+		fn new(x: Integer<W, N, NUM_LIMBS, NUM_BITS, P>) -> Self {
+			Self { x }
+		}
+	}
+
+	impl Chipset<N> for SingleAssigner {
+		type Config = ();
+		type Output = AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>;
 
 		fn synthesize(
-			&self, config: TestConfig, mut layouter: impl Layouter<N>,
-		) -> Result<(), Error> {
+			self, common: &CommonConfig, _c: &Self::Config, mut layouter: impl Layouter<N>,
+		) -> Result<Self::Output, Error> {
+			let x_limbs_assigned = layouter.assign_region(
+				|| "temp",
+				|region: Region<'_, N>| {
+					let mut ctx = RegionCtx::new(region, 0);
+					let mut x_limbs: [Option<AssignedCell<N, N>>; NUM_LIMBS] =
+						[(); NUM_LIMBS].map(|_| None);
+					for i in 0..NUM_LIMBS {
+						let limb_value = Value::known(self.x.limbs[i]);
+						let x = ctx.assign_advice(common.advice[i], limb_value)?;
+						x_limbs[i] = Some(x);
+					}
+					Ok(x_limbs)
+				},
+			)?;
+
+			let x = AssignedInteger::new(self.x.clone(), x_limbs_assigned.map(|x| x.unwrap()));
+			Ok(x)
+		}
+	}
+
+	struct ToupleAssigner {
+		x: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
+		y: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
+	}
+
+	impl ToupleAssigner {
+		fn new(
+			x: Integer<W, N, NUM_LIMBS, NUM_BITS, P>, y: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
+		) -> Self {
+			Self { x, y }
+		}
+	}
+
+	impl Chipset<N> for ToupleAssigner {
+		type Config = ();
+		type Output = (
+			AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
+			AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
+		);
+
+		fn synthesize(
+			self, common: &CommonConfig, _c: &Self::Config, mut layouter: impl Layouter<N>,
+		) -> Result<Self::Output, Error> {
 			let (x_limbs_assigned, y_limbs_assigned) = layouter.assign_region(
 				|| "temp",
 				|region: Region<'_, N>| {
 					let mut ctx = RegionCtx::new(region, 0);
 					let mut x_limbs: [Option<AssignedCell<N, N>>; NUM_LIMBS] =
 						[(); NUM_LIMBS].map(|_| None);
+					for i in 0..NUM_LIMBS {
+						let limb_value = Value::known(self.x.limbs[i]);
+						let x = ctx.assign_advice(common.advice[i], limb_value)?;
+						x_limbs[i] = Some(x);
+					}
+					ctx.next();
+
 					let mut y_limbs: [Option<AssignedCell<N, N>>; NUM_LIMBS] =
 						[(); NUM_LIMBS].map(|_| None);
 					for i in 0..NUM_LIMBS {
-						let x = ctx.assign_advice(
-							config.common.advice[0],
-							Value::known(self.x.limbs[i]),
-						)?;
-						x_limbs[i] = Some(x);
-						if self.y.is_some() {
-							let y_unwrapped = self.y.clone().unwrap();
-							let y = ctx.assign_advice(
-								config.common.advice[1],
-								Value::known(y_unwrapped.limbs[i]),
-							)?;
-							y_limbs[i] = Some(y);
-						}
-						ctx.next();
+						let limb_value = Value::known(self.y.limbs[i]);
+						let y = ctx.assign_advice(common.advice[i], limb_value)?;
+						y_limbs[i] = Some(y);
 					}
 					Ok((x_limbs, y_limbs))
 				},
 			)?;
 
-			let result;
-			match self.gadget {
-				Gadgets::Reduce => {
-					let assigned_integer =
-						AssignedInteger::new(self.x.clone(), x_limbs_assigned.map(|x| x.unwrap()));
-					let chip = IntegerReduceChip::new(assigned_integer);
-					result = Some(chip.synthesize(
-						&config.common,
-						&config.reduce_selector,
-						layouter.namespace(|| "reduce"),
-					)?);
-				},
+			let x = AssignedInteger::new(self.x.clone(), x_limbs_assigned.map(|x| x.unwrap()));
+			let y = AssignedInteger::new(self.y.clone(), y_limbs_assigned.map(|x| x.unwrap()));
+			Ok((x, y))
+		}
+	}
 
-				Gadgets::Add => {
-					let x_assigned =
-						AssignedInteger::new(self.x.clone(), x_limbs_assigned.map(|x| x.unwrap()));
-					let y_assigned = AssignedInteger::new(
-						self.y.clone().unwrap(),
-						y_limbs_assigned.map(|x| x.unwrap()),
-					);
-					let chip = IntegerAddChip::new(x_assigned, y_assigned);
-					result = Some(chip.synthesize(
-						&config.common,
-						&config.add_selector,
-						layouter.namespace(|| "add"),
-					)?);
-				},
-				Gadgets::Sub => {
-					let x_assigned =
-						AssignedInteger::new(self.x.clone(), x_limbs_assigned.map(|x| x.unwrap()));
-					let y_assigned = AssignedInteger::new(
-						self.y.clone().unwrap(),
-						y_limbs_assigned.map(|x| x.unwrap()),
-					);
-					let chip = IntegerSubChip::new(x_assigned, y_assigned);
-					result = Some(chip.synthesize(
-						&config.common,
-						&config.sub_selector,
-						layouter.namespace(|| "sub"),
-					)?);
-				},
-				Gadgets::Mul => {
-					let x_assigned =
-						AssignedInteger::new(self.x.clone(), x_limbs_assigned.map(|x| x.unwrap()));
-					let y_assigned = AssignedInteger::new(
-						self.y.clone().unwrap(),
-						y_limbs_assigned.map(|x| x.unwrap()),
-					);
-					let chip = IntegerMulChip::new(x_assigned, y_assigned);
+	#[derive(Clone)]
+	struct ReduceTestCircuit {
+		x: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
+	}
 
-					result = Some(chip.synthesize(
-						&config.common,
-						&config.mul_selector,
-						layouter.namespace(|| "mul"),
-					)?);
-				},
+	impl ReduceTestCircuit {
+		fn new(x: Integer<W, N, NUM_LIMBS, NUM_BITS, P>) -> Self {
+			Self { x }
+		}
+	}
 
-				Gadgets::Div => {
-					let x_assigned =
-						AssignedInteger::new(self.x.clone(), x_limbs_assigned.map(|x| x.unwrap()));
-					let y_assigned = AssignedInteger::new(
-						self.y.clone().unwrap(),
-						y_limbs_assigned.map(|x| x.unwrap()),
-					);
-					let chip = IntegerDivChip::new(x_assigned, y_assigned);
+	impl Circuit<N> for ReduceTestCircuit {
+		type Config = TestConfig;
+		type FloorPlanner = SimpleFloorPlanner;
 
-					result = Some(chip.synthesize(
-						&config.common,
-						&config.div_selector,
-						layouter.namespace(|| "div"),
-					)?);
-				},
-			};
+		fn without_witnesses(&self) -> Self {
+			self.clone()
+		}
+
+		fn configure(meta: &mut ConstraintSystem<N>) -> TestConfig {
+			TestConfig::new(meta)
+		}
+
+		fn synthesize(
+			&self, config: TestConfig, mut layouter: impl Layouter<N>,
+		) -> Result<(), Error> {
+			let single_assigner = SingleAssigner::new(self.x.clone());
+			let x_assigned = single_assigner.synthesize(
+				&config.common,
+				&(),
+				layouter.namespace(|| "assign x"),
+			)?;
+
+			let chip = IntegerReduceChip::new(x_assigned);
+			let result = chip.synthesize(
+				&config.common,
+				&config.reduce_selector,
+				layouter.namespace(|| "reduce"),
+			)?;
+
 			for i in 0..NUM_LIMBS {
-				layouter.constrain_instance(
-					result.clone().unwrap().limbs[i].cell(),
-					config.common.instance,
-					i,
-				)?;
+				layouter.constrain_instance(result.limbs[i].cell(), config.common.instance, i)?;
 			}
 
 			Ok(())
@@ -888,7 +869,7 @@ mod test {
 		.unwrap();
 		let a = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(a_big);
 		let res = a.reduce();
-		let test_chip = TestCircuit::new(a.clone(), None, Gadgets::Reduce);
+		let test_chip = ReduceTestCircuit::new(a);
 
 		let k = 5;
 		let p_ins = res.result.limbs.to_vec();
@@ -905,12 +886,63 @@ mod test {
 		.unwrap();
 		let a = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(a_big);
 		let res = a.reduce();
-		let test_chip = TestCircuit::new(a.clone(), None, Gadgets::Reduce);
+		let test_chip = ReduceTestCircuit::new(a);
 
 		let k = 5;
 		let p_ins = res.result.limbs.to_vec();
 		let prover = MockProver::run(k, &test_chip, vec![p_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[derive(Clone)]
+	struct AddTestCircuit {
+		x: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
+		y: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
+	}
+
+	impl AddTestCircuit {
+		fn new(
+			x: Integer<W, N, NUM_LIMBS, NUM_BITS, P>, y: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
+		) -> Self {
+			Self { x, y }
+		}
+	}
+
+	impl Circuit<N> for AddTestCircuit {
+		type Config = TestConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			self.clone()
+		}
+
+		fn configure(meta: &mut ConstraintSystem<N>) -> TestConfig {
+			TestConfig::new(meta)
+		}
+
+		fn synthesize(
+			&self, config: TestConfig, mut layouter: impl Layouter<N>,
+		) -> Result<(), Error> {
+			let touple_assigner = ToupleAssigner::new(self.x.clone(), self.y.clone());
+			let (x_assigned, y_assigned) = touple_assigner.synthesize(
+				&config.common,
+				&(),
+				layouter.namespace(|| "assign x and y"),
+			)?;
+
+			let chip = IntegerAddChip::new(x_assigned, y_assigned);
+			let result = chip.synthesize(
+				&config.common,
+				&config.add_selector,
+				layouter.namespace(|| "add"),
+			)?;
+
+			for i in 0..NUM_LIMBS {
+				layouter.constrain_instance(result.limbs[i].cell(), config.common.instance, i)?;
+			}
+
+			Ok(())
+		}
 	}
 
 	#[test]
@@ -924,7 +956,7 @@ mod test {
 		let a = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(a_big);
 		let b = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(b_big);
 		let res = a.add(&b);
-		let test_chip = TestCircuit::new(a, Some(b), Gadgets::Add);
+		let test_chip = AddTestCircuit::new(a, b);
 
 		let k = 5;
 		let p_ins = res.result.limbs.to_vec();
@@ -932,48 +964,55 @@ mod test {
 		assert_eq!(prover.verify(), Ok(()));
 	}
 
-	#[test]
-	fn should_mul_two_numbers() {
-		// Testing mul with two elements.
-		let a_big = BigUint::from_str(
-			"2188824287183927522224640574525727508869631115729782366268903789426208582",
-		)
-		.unwrap();
-		let b_big = BigUint::from_str("121231231231231231231231231233").unwrap();
-		let a = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(a_big);
-		let b = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(b_big);
-		let res = a.mul(&b);
-		let test_chip = TestCircuit::new(a, Some(b), Gadgets::Mul);
-		let k = 5;
-		let pub_ins = res.result.limbs.to_vec();
-		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
-		assert_eq!(prover.verify(), Ok(()));
+	#[derive(Clone)]
+	struct SubTestCircuit {
+		x: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
+		y: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
 	}
 
-	#[test]
-	fn test_add_mul_production() {
-		let a_big = BigUint::from_str("4057452572750886963137894").unwrap();
-		let b_big = BigUint::from_str("4057452572750112323238869612312354423534563456363213137894")
-			.unwrap();
-		let a = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_big);
-		let b = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(b_big);
-		let res_add = a.add(&b);
-		let res_mul = a.mul(&b);
-		let test_chip_add = TestCircuit::new(a.clone(), Some(b.clone()), Gadgets::Add);
-		let test_chip_mul = TestCircuit::new(a, Some(b), Gadgets::Mul);
+	impl SubTestCircuit {
+		fn new(
+			x: Integer<W, N, NUM_LIMBS, NUM_BITS, P>, y: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
+		) -> Self {
+			Self { x, y }
+		}
+	}
 
-		let k = 5;
-		let rng = &mut rand::thread_rng();
-		let params = generate_params(k);
-		let pub_ins_add = res_add.result.limbs;
-		let pub_ins_mul = res_mul.result.limbs;
-		let res =
-			prove_and_verify::<Bn256, _, _>(params.clone(), test_chip_add, &[&pub_ins_add], rng)
-				.unwrap();
-		assert!(res);
-		let res =
-			prove_and_verify::<Bn256, _, _>(params, test_chip_mul, &[&pub_ins_mul], rng).unwrap();
-		assert!(res);
+	impl Circuit<N> for SubTestCircuit {
+		type Config = TestConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			self.clone()
+		}
+
+		fn configure(meta: &mut ConstraintSystem<N>) -> TestConfig {
+			TestConfig::new(meta)
+		}
+
+		fn synthesize(
+			&self, config: TestConfig, mut layouter: impl Layouter<N>,
+		) -> Result<(), Error> {
+			let touple_assigner = ToupleAssigner::new(self.x.clone(), self.y.clone());
+			let (x_assigned, y_assigned) = touple_assigner.synthesize(
+				&config.common,
+				&(),
+				layouter.namespace(|| "assign x and y"),
+			)?;
+
+			let chip = IntegerSubChip::new(x_assigned, y_assigned);
+			let result = chip.synthesize(
+				&config.common,
+				&config.sub_selector,
+				layouter.namespace(|| "sub"),
+			)?;
+
+			for i in 0..NUM_LIMBS {
+				layouter.constrain_instance(result.limbs[i].cell(), config.common.instance, i)?;
+			}
+
+			Ok(())
+		}
 	}
 
 	#[test]
@@ -987,11 +1026,131 @@ mod test {
 		let a = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(a_big);
 		let b = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(b_big);
 		let res = a.sub(&b);
-		let test_chip = TestCircuit::new(a, Some(b), Gadgets::Sub);
+		let test_chip = SubTestCircuit::new(a, b);
 		let k = 5;
 		let pub_ins = res.result.limbs.to_vec();
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[derive(Clone)]
+	struct MulTestCircuit {
+		x: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
+		y: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
+	}
+
+	impl MulTestCircuit {
+		fn new(
+			x: Integer<W, N, NUM_LIMBS, NUM_BITS, P>, y: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
+		) -> Self {
+			Self { x, y }
+		}
+	}
+
+	impl Circuit<N> for MulTestCircuit {
+		type Config = TestConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			self.clone()
+		}
+
+		fn configure(meta: &mut ConstraintSystem<N>) -> TestConfig {
+			TestConfig::new(meta)
+		}
+
+		fn synthesize(
+			&self, config: TestConfig, mut layouter: impl Layouter<N>,
+		) -> Result<(), Error> {
+			let touple_assigner = ToupleAssigner::new(self.x.clone(), self.y.clone());
+			let (x_assigned, y_assigned) = touple_assigner.synthesize(
+				&config.common,
+				&(),
+				layouter.namespace(|| "assign x and y"),
+			)?;
+
+			let chip = IntegerMulChip::new(x_assigned, y_assigned);
+			let result = chip.synthesize(
+				&config.common,
+				&config.mul_selector,
+				layouter.namespace(|| "mul"),
+			)?;
+
+			for i in 0..NUM_LIMBS {
+				layouter.constrain_instance(result.limbs[i].cell(), config.common.instance, i)?;
+			}
+
+			Ok(())
+		}
+	}
+
+	#[test]
+	fn should_mul_two_numbers() {
+		// Testing mul with two elements.
+		let a_big = BigUint::from_str(
+			"2188824287183927522224640574525727508869631115729782366268903789426208582",
+		)
+		.unwrap();
+		let b_big = BigUint::from_str("121231231231231231231231231233").unwrap();
+		let a = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(a_big);
+		let b = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(b_big);
+		let res = a.mul(&b);
+		let test_chip = MulTestCircuit::new(a, b);
+		let k = 5;
+		let pub_ins = res.result.limbs.to_vec();
+		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[derive(Clone)]
+	struct DivTestCircuit {
+		x: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
+		y: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
+	}
+
+	impl DivTestCircuit {
+		fn new(
+			x: Integer<W, N, NUM_LIMBS, NUM_BITS, P>, y: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
+		) -> Self {
+			Self { x, y }
+		}
+	}
+
+	impl Circuit<N> for DivTestCircuit {
+		type Config = TestConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			self.clone()
+		}
+
+		fn configure(meta: &mut ConstraintSystem<N>) -> TestConfig {
+			TestConfig::new(meta)
+		}
+
+		fn synthesize(
+			&self, config: TestConfig, mut layouter: impl Layouter<N>,
+		) -> Result<(), Error> {
+			let touple_assigner = ToupleAssigner::new(self.x.clone(), self.y.clone());
+			let (x_assigned, y_assigned) = touple_assigner.synthesize(
+				&config.common,
+				&(),
+				layouter.namespace(|| "assign x and y"),
+			)?;
+
+			let chip = IntegerDivChip::new(x_assigned, y_assigned);
+			let result = chip.synthesize(
+				&config.common,
+				&config.div_selector,
+				layouter.namespace(|| "div"),
+			)?;
+
+			for i in 0..NUM_LIMBS {
+				layouter.constrain_instance(result.limbs[i].cell(), config.common.instance, i)?;
+			}
+
+			Ok(())
+		}
 	}
 
 	#[test]
@@ -1005,7 +1164,7 @@ mod test {
 		let a = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(a_big);
 		let b = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(b_big);
 		let res = a.div(&b);
-		let test_chip = TestCircuit::new(a, Some(b), Gadgets::Div);
+		let test_chip = DivTestCircuit::new(a, b);
 		let k = 5;
 		let pub_ins = res.result.limbs.to_vec();
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
