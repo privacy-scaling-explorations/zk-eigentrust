@@ -4,9 +4,10 @@ use super::loader::{
 };
 use crate::{
 	ecc::AssignedPoint,
-	integer::{native::Integer, rns::RnsParams, AssignedInteger},
+	integer::{native::Integer, AssignedInteger},
 	params::RoundParams,
 	poseidon::sponge::PoseidonSpongeChipset,
+	rns::RnsParams,
 	utils::to_wide,
 	Chipset, RegionCtx,
 };
@@ -259,11 +260,11 @@ mod test {
 			main::{MainChip, MainConfig},
 		},
 		integer::{
-			rns::Bn256_4_68, IntegerAddChip, IntegerDivChip, IntegerMulChip, IntegerReduceChip,
-			IntegerSubChip,
+			IntegerAddChip, IntegerDivChip, IntegerMulChip, IntegerReduceChip, IntegerSubChip,
 		},
 		params::poseidon_bn254_5x5::Params,
 		poseidon::{sponge::PoseidonSpongeConfig, PoseidonConfig},
+		rns::bn256::Bn256_4_68,
 		verifier::{
 			loader::native::{LEcPoint, LScalar, NUM_BITS, NUM_LIMBS},
 			transcript::native::WIDTH,

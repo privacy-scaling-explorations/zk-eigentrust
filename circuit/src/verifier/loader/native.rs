@@ -1,7 +1,4 @@
-use crate::{
-	ecc::native::EcPoint,
-	integer::{native::Integer, rns::RnsParams},
-};
+use crate::{ecc::native::EcPoint, integer::native::Integer, rns::RnsParams};
 use halo2::{
 	arithmetic::Field,
 	halo2curves::{Coordinates, CurveAffine},

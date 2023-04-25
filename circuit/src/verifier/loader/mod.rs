@@ -1,8 +1,9 @@
 use crate::{
 	ecc::{AssignedPoint, EccAddChipset, EccMulChipset, EccMulConfig},
 	gadgets::main::{AddChipset, InverseChipset, MainConfig, MulChipset, SubChipset},
-	integer::{native::Integer, rns::RnsParams, AssignedInteger},
+	integer::{native::Integer, AssignedInteger},
 	poseidon::sponge::PoseidonSpongeConfig,
+	rns::RnsParams,
 	utils::assigned_to_field,
 	Chipset, CommonConfig, RegionCtx,
 };
@@ -690,10 +691,11 @@ mod test {
 			main::{MainChip, MainConfig},
 		},
 		integer::{
-			native::Integer, rns::Bn256_4_68, AssignedInteger, IntegerAddChip, IntegerDivChip,
-			IntegerMulChip, IntegerReduceChip, IntegerSubChip,
+			native::Integer, AssignedInteger, IntegerAddChip, IntegerDivChip, IntegerMulChip,
+			IntegerReduceChip, IntegerSubChip,
 		},
 		poseidon::{sponge::PoseidonSpongeConfig, PoseidonConfig},
+		rns::bn256::Bn256_4_68,
 		verifier::transcript::native::WIDTH,
 		Chip, CommonConfig, RegionCtx,
 	};

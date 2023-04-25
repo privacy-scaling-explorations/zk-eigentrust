@@ -1,7 +1,8 @@
 use crate::{
-	integer::{native::Integer, rns::RnsParams},
+	integer::native::Integer,
 	params::RoundParams,
 	poseidon::native::sponge::PoseidonSponge,
+	rns::RnsParams,
 	utils::to_wide,
 	verifier::loader::native::{NUM_BITS, NUM_LIMBS},
 };

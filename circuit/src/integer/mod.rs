@@ -1,9 +1,8 @@
 /// Native implementation for the non-native field arithmetic
 pub mod native;
 /// RNS operations for the non-native field arithmetic
-pub mod rns;
-
 use self::native::Integer;
+use crate::rns::RnsParams;
 use crate::{Chip, CommonConfig, RegionCtx};
 use halo2::{
 	arithmetic::FieldExt,
@@ -12,7 +11,6 @@ use halo2::{
 	poly::Rotation,
 };
 use native::{Quotient, ReductionWitness};
-use rns::RnsParams;
 use std::marker::PhantomData;
 
 /// Assigns given values and their reduction witnesses
@@ -677,8 +675,9 @@ where
 
 #[cfg(test)]
 mod test {
-	use super::{native::Integer, rns::Bn256_4_68, *};
+	use super::{native::Integer, *};
 	use crate::{
+		rns::bn256::Bn256_4_68,
 		utils::{generate_params, prove_and_verify},
 		CommonConfig,
 	};

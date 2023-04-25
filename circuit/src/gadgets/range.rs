@@ -1,4 +1,4 @@
-use crate::{integer::rns::decompose_big, utils::fe_to_big, RegionCtx};
+use crate::{rns::decompose_big, utils::fe_to_big, RegionCtx};
 use halo2::{
 	circuit::{AssignedCell, Layouter, Region, Value},
 	halo2curves::FieldExt,
