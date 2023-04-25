@@ -437,6 +437,25 @@ mod test {
 		plonk::Circuit,
 	};
 
+	#[derive(Clone)]
+	struct TestConfig {
+		common: CommonConfig,
+		point_add_selector: Selector,
+		into_affine_selector: Selector,
+		scalar_mul_selector: Selector,
+	}
+
+	impl TestConfig {
+		fn new(meta: &mut ConstraintSystem<Fr>) -> Self {
+			let common = CommonConfig::new(meta);
+			let point_add_selector = PointAddChip::<Fr, BabyJubJub>::configure(&common, meta);
+			let into_affine_selector = IntoAffineChip::configure(&common, meta);
+			let scalar_mul_selector = ScalarMulChip::<Fr, BabyJubJub>::configure(&common, meta);
+
+			Self { common, point_add_selector, into_affine_selector, scalar_mul_selector }
+		}
+	}
+
 	struct PointAssigner {
 		unassigned_point: UnassignedPoint<Fr>,
 	}
@@ -525,6 +544,47 @@ mod test {
 		}
 	}
 
+	// TEST CASES FOR THE ADD_POINT CIRCUIT
+	#[test]
+	fn should_add_point() {
+		// Testing a valid case.
+		let (r_x, r_y) = BabyJubJub::b8();
+		let r = Point::<Fr, BabyJubJub>::new(r_x, r_y).projective();
+		let (e_x, e_y) = BabyJubJub::g();
+		let e = Point::<Fr, BabyJubJub>::new(e_x, e_y).projective();
+		let (x_res, y_res, z_res) = BabyJubJub::add(r.x, r.y, r.z, e.x, e.y, e.z);
+
+		let e = UnassignedPoint::new(e.x, e.y, e.z);
+		let r = UnassignedPoint::new(r.x, r.y, r.z);
+		let circuit = AddTestCircuit::new(e, r);
+
+		let k = 7;
+		let pub_ins = vec![x_res, y_res, z_res];
+		let prover = MockProver::run(k, &circuit, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[test]
+	fn should_add_point_production() {
+		let (r_x, r_y) = BabyJubJub::b8();
+		let r = Point::<Fr, BabyJubJub>::new(r_x, r_y).projective();
+		let (e_x, e_y) = BabyJubJub::g();
+		let e = Point::<Fr, BabyJubJub>::new(e_x, e_y).projective();
+		let (x_res, y_res, z_res) = BabyJubJub::add(r.x, r.y, r.z, e.x, e.y, e.z);
+
+		let e = UnassignedPoint::new(e.x, e.y, e.z);
+		let r = UnassignedPoint::new(r.x, r.y, r.z);
+		let circuit = AddTestCircuit::new(e, r);
+
+		let k = 11;
+		let rng = &mut rand::thread_rng();
+		let params = generate_params(k);
+		let pub_ins = [x_res, y_res, z_res];
+		let res = prove_and_verify::<Bn256, _, _>(params, circuit, &[&pub_ins], rng).unwrap();
+
+		assert!(res);
+	}
+
 	#[derive(Clone)]
 	struct IntoAffineTestCircuit {
 		r: UnassignedPoint<Fr>,
@@ -567,6 +627,41 @@ mod test {
 			layouter.constrain_instance(y.cell(), config.common.instance, 1)?;
 			Ok(())
 		}
+	}
+
+	// TEST CASES FOR THE INTO_AFFINE CIRCUIT
+	#[test]
+	fn should_into_affine_point() {
+		// Testing a valid case.
+		let (r_x, r_y) = BabyJubJub::b8();
+		let r = Point::<Fr, BabyJubJub>::new(r_x, r_y).projective();
+		let r_affine = r.affine();
+
+		let r = UnassignedPoint::new(r.x, r.y, r.z);
+		let circuit = IntoAffineTestCircuit::new(r);
+
+		let k = 7;
+		let pub_ins = vec![r_affine.x, r_affine.y];
+		let prover = MockProver::run(k, &circuit, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[test]
+	fn should_into_affine_point_production() {
+		let (r_x, r_y) = BabyJubJub::b8();
+		let r = Point::<Fr, BabyJubJub>::new(r_x, r_y).projective();
+		let r_affine = r.affine();
+
+		let r = UnassignedPoint::new(r.x, r.y, r.z);
+		let circuit = IntoAffineTestCircuit::new(r);
+
+		let k = 9;
+		let rng = &mut rand::thread_rng();
+		let params = generate_params(k);
+		let pub_ins = vec![r_affine.x, r_affine.y];
+		let res = prove_and_verify::<Bn256, _, _>(params, circuit, &[&pub_ins], rng).unwrap();
+
+		assert!(res);
 	}
 
 	#[derive(Clone)]
@@ -632,108 +727,6 @@ mod test {
 			layouter.constrain_instance(res.z.cell(), config.common.instance, 2)?;
 			Ok(())
 		}
-	}
-
-	#[derive(Clone)]
-	enum Gadgets {
-		AddPoint,
-		IntoAffine,
-		ScalarMul,
-	}
-
-	#[derive(Clone)]
-	struct TestConfig {
-		common: CommonConfig,
-		point_add_selector: Selector,
-		into_affine_selector: Selector,
-		scalar_mul_selector: Selector,
-	}
-
-	impl TestConfig {
-		fn new(meta: &mut ConstraintSystem<Fr>) -> Self {
-			let common = CommonConfig::new(meta);
-			let point_add_selector = PointAddChip::<Fr, BabyJubJub>::configure(&common, meta);
-			let into_affine_selector = IntoAffineChip::configure(&common, meta);
-			let scalar_mul_selector = ScalarMulChip::<Fr, BabyJubJub>::configure(&common, meta);
-
-			Self { common, point_add_selector, into_affine_selector, scalar_mul_selector }
-		}
-	}
-
-	// TEST CASES FOR THE ADD_POINT CIRCUIT
-	#[test]
-	fn should_add_point() {
-		// Testing a valid case.
-		let (r_x, r_y) = BabyJubJub::b8();
-		let r = Point::<Fr, BabyJubJub>::new(r_x, r_y).projective();
-		let (e_x, e_y) = BabyJubJub::g();
-		let e = Point::<Fr, BabyJubJub>::new(e_x, e_y).projective();
-		let (x_res, y_res, z_res) = BabyJubJub::add(r.x, r.y, r.z, e.x, e.y, e.z);
-
-		let e = UnassignedPoint::new(e.x, e.y, e.z);
-		let r = UnassignedPoint::new(r.x, r.y, r.z);
-		let circuit = AddTestCircuit::new(e, r);
-
-		let k = 7;
-		let pub_ins = vec![x_res, y_res, z_res];
-		let prover = MockProver::run(k, &circuit, vec![pub_ins]).unwrap();
-		assert_eq!(prover.verify(), Ok(()));
-	}
-
-	#[test]
-	fn should_add_point_production() {
-		let (r_x, r_y) = BabyJubJub::b8();
-		let r = Point::<Fr, BabyJubJub>::new(r_x, r_y).projective();
-		let (e_x, e_y) = BabyJubJub::g();
-		let e = Point::<Fr, BabyJubJub>::new(e_x, e_y).projective();
-		let (x_res, y_res, z_res) = BabyJubJub::add(r.x, r.y, r.z, e.x, e.y, e.z);
-
-		let e = UnassignedPoint::new(e.x, e.y, e.z);
-		let r = UnassignedPoint::new(r.x, r.y, r.z);
-		let circuit = AddTestCircuit::new(e, r);
-
-		let k = 11;
-		let rng = &mut rand::thread_rng();
-		let params = generate_params(k);
-		let pub_ins = [x_res, y_res, z_res];
-		let res = prove_and_verify::<Bn256, _, _>(params, circuit, &[&pub_ins], rng).unwrap();
-
-		assert!(res);
-	}
-
-	// TEST CASES FOR THE INTO_AFFINE CIRCUIT
-	#[test]
-	fn should_into_affine_point() {
-		// Testing a valid case.
-		let (r_x, r_y) = BabyJubJub::b8();
-		let r = Point::<Fr, BabyJubJub>::new(r_x, r_y).projective();
-		let r_affine = r.affine();
-
-		let r = UnassignedPoint::new(r.x, r.y, r.z);
-		let circuit = IntoAffineTestCircuit::new(r);
-
-		let k = 7;
-		let pub_ins = vec![r_affine.x, r_affine.y];
-		let prover = MockProver::run(k, &circuit, vec![pub_ins]).unwrap();
-		assert_eq!(prover.verify(), Ok(()));
-	}
-
-	#[test]
-	fn should_into_affine_point_production() {
-		let (r_x, r_y) = BabyJubJub::b8();
-		let r = Point::<Fr, BabyJubJub>::new(r_x, r_y).projective();
-		let r_affine = r.affine();
-
-		let r = UnassignedPoint::new(r.x, r.y, r.z);
-		let circuit = IntoAffineTestCircuit::new(r);
-
-		let k = 9;
-		let rng = &mut rand::thread_rng();
-		let params = generate_params(k);
-		let pub_ins = vec![r_affine.x, r_affine.y];
-		let res = prove_and_verify::<Bn256, _, _>(params, circuit, &[&pub_ins], rng).unwrap();
-
-		assert!(res);
 	}
 
 	//TEST CASES FOR THE SCALAR_MUL CIRCUIT
