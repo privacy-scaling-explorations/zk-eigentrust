@@ -45,7 +45,10 @@ where
 
 		for chunk in self.inputs.chunks(WIDTH) {
 			let loaded_state = Self::load_state(chunk);
-			let input = loaded_state.zip(self.state).map(|(lhs, rhs)| lhs + rhs);
+			let mut input = [F::zero(); WIDTH];
+			for i in 0..WIDTH {
+				input[i] = loaded_state[i] + self.state[i];
+			}
 
 			let rescue_prime = RescuePrime::<_, WIDTH, P>::new(input);
 			self.state = rescue_prime.permute();

@@ -4,18 +4,19 @@ use eigen_trust_circuit::{
 	ProofRaw,
 };
 use eigen_trust_client::{
+	manager::{Manager, MANAGER_STORE},
 	utils::{
 		compile_sol_contract, compile_yul_contracts, deploy_as, deploy_et_wrapper, deploy_verifier,
-		read_csv_data,
+		get_attestations, read_csv_data,
 	},
-	ClientConfig, EigenTrustClient,
+	Client, ClientConfig,
 };
 use ethers::{
 	abi::Address,
 	providers::Http,
 	signers::coins_bip39::{English, Mnemonic},
 };
-use std::str::FromStr;
+use std::{str::FromStr, sync::Arc};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -26,10 +27,11 @@ struct Cli {
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Subcommand)]
 enum Mode {
-	Show,
+	Attest,
 	CompileContracts,
 	DeployContracts,
-	Attest,
+	GenerateProof,
+	Show,
 	Update(UpdateData),
 	Verify,
 }
@@ -49,8 +51,8 @@ enum Config {
 }
 
 impl Config {
-	fn from_str(str: &String) -> Result<Config, &'static str> {
-		match str.as_str() {
+	fn from_str(str: &str) -> Result<Config, &'static str> {
+		match str {
 			"as_address" => Ok(Config::AttestationStationAddress),
 			"mnemonic" => Ok(Config::Mnemonic),
 			"score" => Ok(Config::Score),
@@ -64,20 +66,29 @@ impl Config {
 #[tokio::main]
 async fn main() {
 	let cli = Cli::parse();
-	let user_secrets_raw: Vec<[String; 3]> = read_csv_data("bootstrap-nodes").unwrap();
-	let mut config: ClientConfig = read_json_data("client-config").unwrap();
+	let user_secrets_raw: Vec<[String; 3]> =
+		read_csv_data("bootstrap-nodes").expect("Failed to read bootstrap nodes");
+	let mut config: ClientConfig = read_json_data("client-config").expect("Failed to read config");
+	let mng_store = Arc::clone(&MANAGER_STORE);
 
-	let pos = user_secrets_raw.iter().position(|x| &config.secret_key == &x[1..]);
-	assert!(pos.is_some());
+	user_secrets_raw
+		.iter()
+		.position(|x| config.secret_key == x[1..])
+		.expect("No user found with the given secret key");
 
 	match cli.mode {
+		Mode::Attest => {
+			let client = Client::new(config.clone(), user_secrets_raw);
+			println!("Attestations:\n{:#?}", config.ops);
+			client.attest().await.unwrap();
+		},
 		Mode::CompileContracts => {
 			compile_sol_contract();
 			compile_yul_contracts();
 			println!("Finished compiling!");
 		},
 		Mode::DeployContracts => {
-			let deploy_res = deploy_as(&config.mnemonic, &config.ethereum_node_url).await;
+			let deploy_res = deploy_as(&config.mnemonic, &config.node_url).await;
 			if let Err(e) = deploy_res {
 				eprintln!("Failed to deploy the AttestationStation contract: {:?}", e);
 				return;
@@ -86,38 +97,66 @@ async fn main() {
 			println!("AttestationStation contract deployed. Address: {}", address);
 
 			let et_contract = read_bytes_data("et_verifier");
-			let deploy_res =
-				deploy_verifier(&config.mnemonic, &config.ethereum_node_url, et_contract).await;
+			let deploy_res = deploy_verifier(&config.mnemonic, &config.node_url, et_contract).await;
 			if let Err(e) = deploy_res {
 				eprintln!("Failed to deploy the EigenTrustVerifier contract: {:?}", e);
 				return;
 			}
 			let address = deploy_res.unwrap();
-			let wrapper_res =
-				deploy_et_wrapper(&config.mnemonic, &config.ethereum_node_url, address).await;
+			let wrapper_res = deploy_et_wrapper(&config.mnemonic, &config.node_url, address).await;
 			let w_addr = wrapper_res.unwrap();
 			println!("EtVerifierWrapper contract deployed. Address: {}", w_addr);
 		},
-		Mode::Attest => {
-			let client = EigenTrustClient::new(config, user_secrets_raw);
-			client.attest().await.unwrap();
-		},
-		Mode::Verify => {
-			let url = format!("{}/score", config.server_url);
-			let proof_raw: ProofRaw = reqwest::get(url).await.unwrap().json().await.unwrap();
-			let client = EigenTrustClient::new(config, user_secrets_raw);
-			client.verify(proof_raw).await.unwrap();
-			println!("Successful verification!");
-		},
-		Mode::Update(data) => {
-			if let Err(e) = config_update(&mut config, data, user_secrets_raw) {
-				eprintln!("Failed to update client configuration.\n{}", e);
-			} else {
-				println!("Client configuration updated.");
+		Mode::GenerateProof => {
+			let attestations = match get_attestations(&config).await {
+				Ok(attestations) => attestations,
+				Err(e) => {
+					eprintln!("Failed to get attestations: {:?}", e);
+					return;
+				},
+			};
+
+			let mut manager = match mng_store.lock() {
+				Ok(manager) => manager,
+				Err(_) => {
+					eprintln!("Failed to lock manager store");
+					return;
+				},
+			};
+
+			manager.generate_initial_attestations();
+
+			if let Err(e) = manager.add_attestations(attestations) {
+				eprintln!("Error adding attestations: {:?}", e);
+				return;
+			}
+
+			if let Err(e) = manager.calculate_proofs() {
+				eprintln!("Error calculating proofs: {:?}", e);
 			}
 		},
-		Mode::Show => {
-			println!("Client config:\n{:#?}", config);
+		Mode::Show => println!("Client config:\n{:#?}", config),
+		Mode::Update(data) => match config_update(&mut config, data, user_secrets_raw) {
+			Ok(_) => println!("Client configuration updated."),
+			Err(e) => eprintln!("Failed to update client configuration.\n{}", e),
+		},
+		Mode::Verify => {
+			let client = Client::new(config, user_secrets_raw);
+
+			let last_proof = match Manager::get_last_proof() {
+				Ok(proof) => ProofRaw::from(proof),
+				Err(e) => {
+					eprintln!("Failed to get the last proof: {:?}", e);
+					return;
+				},
+			};
+
+			if let Err(e) = client.verify(last_proof).await {
+				eprintln!("Failed to verify the proof: {:?}", e);
+				return;
+			}
+
+			println!("Proof verified");
 		},
 	}
 }
@@ -151,11 +190,11 @@ fn config_update(
 			Err(_) => return Err("Failed to parse mnemonic.".to_string()),
 		},
 		Config::NodeUrl => match Http::from_str(&data) {
-			Ok(_) => config.ethereum_node_url = data,
+			Ok(_) => config.node_url = data,
 			Err(_) => return Err("Failed to parse node url.".to_string()),
 		},
 		Config::Score => {
-			let input: Vec<String> = data.split(" ").map(|x| x.to_string()).collect();
+			let input: Vec<String> = data.split(' ').map(|x| x.to_string()).collect();
 
 			if input.len() != 2 {
 				return Err("Invalid input format. Expected: \"Alice 100\"".to_string());
@@ -185,7 +224,7 @@ fn config_update(
 			config.ops[pos] = score_parsed.unwrap();
 		},
 		Config::SecretKey => {
-			let sk_vec: Vec<String> = data.split(",").map(|x| x.to_string()).collect();
+			let sk_vec: Vec<String> = data.split(',').map(|x| x.to_string()).collect();
 			if sk_vec.len() != 2 {
 				return Err(
 					"Invalid secret key passed, expected 2 bs58 values separated by commas, \
