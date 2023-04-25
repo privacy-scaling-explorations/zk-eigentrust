@@ -57,7 +57,11 @@ pub trait RnsParams<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_
 	/// Returns EcPoint AuxFin's y coordinate
 	fn to_sub_y() -> [N; NUM_LIMBS];
 	/// Inverts given Integer.
-	fn invert(input: BigUint) -> Option<Integer<W, N, NUM_LIMBS, NUM_BITS, Self>>;
+	fn invert(input: BigUint) -> Option<Integer<W, N, NUM_LIMBS, NUM_BITS, Self>> {
+		let a_w = big_to_fe::<W>(input);
+		let inv_w = a_w.invert();
+		inv_w.map(|inv| Integer::<W, N, NUM_LIMBS, NUM_BITS, Self>::new(fe_to_big(inv))).into()
+	}
 
 	/// Returns residue value from given inputs.
 	fn residues(n: &[N; NUM_LIMBS], t: &[N; NUM_LIMBS]) -> Vec<N> {

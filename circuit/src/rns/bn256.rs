@@ -146,10 +146,4 @@ impl RnsParams<Fq, Fr, 4, 68> for Bn256_4_68 {
 		let limb3 = Fr::from_u128(761069265693657);
 		[limb0, limb1, limb2, limb3]
 	}
-
-	fn invert(input: BigUint) -> Option<Integer<Fq, Fr, 4, 68, Bn256_4_68>> {
-		let a_w = big_to_fe::<Fq>(input);
-		let inv_w = a_w.invert();
-		inv_w.map(|inv| Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(fe_to_big(inv))).into()
-	}
 }
