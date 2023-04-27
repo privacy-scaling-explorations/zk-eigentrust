@@ -74,6 +74,7 @@ impl Client {
 
 	pub async fn attest(&self) -> Result<(), ClientError> {
 		let mut sk_vec = Vec::new();
+
 		for x in &self.user_secrets_raw {
 			let sk0_decoded_bytes = bs58::decode(&x[1]).into_vec();
 			let sk1_decoded_bytes = bs58::decode(&x[2]).into_vec();
@@ -83,7 +84,9 @@ impl Client {
 
 			let sk0 = to_short(&sk0_decoded);
 			let sk1 = to_short(&sk1_decoded);
+
 			let sk = SecretKey::from_raw([sk0, sk1]);
+
 			sk_vec.push(sk);
 		}
 
@@ -109,11 +112,12 @@ impl Client {
 		let ops = self.config.ops.map(Scalar::from_u128);
 
 		let (pks_hash, message_hash) =
-			calculate_message_hash::<NUM_NEIGHBOURS, 1>(user_publics.to_vec(), vec![ops.to_vec()]);
+			calculate_message_hash::<1, 1>(vec![user_publics[0]], vec![vec![ops[0]]]);
 
 		let sig = sign(&sk, &pk, message_hash[0]);
 
-		let att = Attestation::new(sig, pk, user_publics.to_vec(), ops.to_vec());
+		let att = Attestation { about: todo!(), key: todo!(), value: todo!(), message: todo!() };
+
 		let att_data = AttestationData::from(att);
 		let bytes = att_data.to_bytes();
 

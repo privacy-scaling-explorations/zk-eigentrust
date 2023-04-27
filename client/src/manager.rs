@@ -89,41 +89,43 @@ impl Manager {
 			.map(|x| to_short(&x))
 			.map(|x| Scalar::from_repr(x).unwrap());
 
-		let pk_hashes: Vec<Scalar> = att
-			.neighbours
-			.iter()
-			.map(|pk| {
-				let mut inps = [Scalar::zero(); 5];
-				inps[0] = pk.0.x;
-				inps[1] = pk.0.y;
+		// let pk_hashes: Vec<Scalar> = att
+		// 	.neighbours
+		// 	.iter()
+		// 	.map(|pk| {
+		// 		let mut inps = [Scalar::zero(); 5];
+		// 		inps[0] = pk.0.x;
+		// 		inps[1] = pk.0.y;
 
-				PoseidonNativeHasher::new(inps).permute()[0]
-			})
-			.collect();
+		// 		PoseidonNativeHasher::new(inps).permute()[0]
+		// 	})
+		// 	.collect();
 
-		if group.as_ref() != pk_hashes {
-			return Err(EigenError::InvalidAttestation);
-		}
+		// if group.as_ref() != pk_hashes {
+		// 	return Err(EigenError::InvalidAttestation);
+		// }
 
-		let mut pk_hash_inp = [Scalar::zero(); 5];
-		pk_hash_inp[0] = att.pk.0.x;
-		pk_hash_inp[1] = att.pk.0.y;
-		let res = PoseidonNativeHasher::new(pk_hash_inp).permute()[0];
+		// let mut pk_hash_inp = [Scalar::zero(); 5];
 
-		if !group.contains(&res) {
-			return Err(EigenError::InvalidAttestation);
-		}
+		// pk_hash_inp[0] = att.pk.0.x;
+		// pk_hash_inp[1] = att.pk.0.y;
 
-		let (_, message_hash) = calculate_message_hash::<NUM_NEIGHBOURS, 1>(
-			att.neighbours.clone(),
-			vec![att.scores.clone()],
-		);
+		// let res = PoseidonNativeHasher::new(pk_hash_inp).permute()[0];
 
-		if !verify_sig(&att.sig, &att.pk, message_hash[0]) {
-			return Err(EigenError::InvalidAttestation);
-		}
+		// if !group.contains(&res) {
+		// 	return Err(EigenError::InvalidAttestation);
+		// }
 
-		self.attestations.insert(res, att);
+		// let (_, message_hash) = calculate_message_hash::<NUM_NEIGHBOURS, 1>(
+		// 	att.neighbours.clone(),
+		// 	vec![att.scores.clone()],
+		// );
+
+		// if !verify_sig(&att.sig, &att.pk, message_hash[0]) {
+		// 	return Err(EigenError::InvalidAttestation);
+		// }
+
+		// self.attestations.insert(res, att);
 
 		Ok(())
 	}
@@ -161,7 +163,10 @@ impl Manager {
 			let pk_hash_inp = [pk.0.x, pk.0.y, Scalar::zero(), Scalar::zero(), Scalar::zero()];
 			let pk_hash = PoseidonNativeHasher::new(pk_hash_inp).permute()[0];
 
-			let att = Attestation::new(sig, pk, pks.clone(), scs);
+			// let att = Attestation::new(sig, pk, pks.clone(), scs);
+			let att =
+				Attestation { about: todo!(), key: todo!(), value: todo!(), message: todo!() };
+
 			self.attestations.insert(pk_hash, att);
 		}
 	}
@@ -181,11 +186,12 @@ impl Manager {
 
 		let mut ops = Vec::new();
 		let mut sigs = Vec::new();
-		for pk_hash in pk_hashes {
-			let att = self.attestations.get(&pk_hash).unwrap();
-			ops.push(att.scores.to_vec());
-			sigs.push(att.sig.clone());
-		}
+		
+		// for pk_hash in pk_hashes {
+		// 	let att = self.attestations.get(&pk_hash).unwrap();
+		// 	ops.push(att.scores.to_vec());
+		// 	sigs.push(att.sig.clone());
+		// }
 
 		let et = EigenTrust::<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, SCALE>::new(
 			pks,

@@ -1,3 +1,4 @@
+use eigen_trust_circuit::eddsa::native::Signature;
 use ethers::types::Address;
 use serde::{Deserialize, Serialize};
 
@@ -7,7 +8,6 @@ pub struct AttestationData {
 	sig_r_x: [u8; 32],
 	sig_r_y: [u8; 32],
 	sig_s: [u8; 32],
-	key: u32,
 	value: u8,
 	message: [u8; 32],
 }
@@ -28,8 +28,8 @@ impl AttestationData {
 
 	/// Convert a vector of bytes into the struct
 	pub fn from_bytes(mut bytes: Vec<u8>) -> Result<Self, &'static str> {
-		if bytes.len() != 133 {
-			return Err("Input bytes vector should be of length 133");
+		if bytes.len() != 129 {
+			return Err("Input bytes vector should be of length 129");
 		}
 
 		let mut sig_r_x = [0u8; 32];
@@ -46,15 +46,12 @@ impl AttestationData {
 		let sig_s_bytes = bytes.drain(0..32).collect::<Vec<u8>>();
 		sig_s.copy_from_slice(&sig_s_bytes);
 
-		let key_bytes = bytes.drain(..4).collect::<Vec<u8>>();
-		let key: u32 = u32::from_be_bytes(key_bytes.try_into().unwrap());
-
 		let value = bytes.remove(0);
 
 		let message_bytes = bytes.drain(0..32).collect::<Vec<u8>>();
 		message.copy_from_slice(&message_bytes);
 
-		Ok(Self { sig_r_x, sig_r_y, sig_s, key, value, message })
+		Ok(Self { sig_r_x, sig_r_y, sig_s, value, message })
 	}
 }
 
@@ -70,7 +67,6 @@ impl From<Attestation> for AttestationData {
 			sig_r_x: [0; 32],
 			sig_r_y: [0; 32],
 			sig_s: [0; 32],
-			key: att.key,
 			value: att.value,
 			message: att.message,
 		}
@@ -104,8 +100,15 @@ impl Attestation {
 
 impl From<AttestationData> for Attestation {
 	fn from(att: AttestationData) -> Self {
-		Self { about: Address::default(), key: att.key, value: att.value, message: att.message }
+		Self { about: Address::default(), key: 0u32, value: att.value, message: att.message }
 	}
+}
+
+pub struct AttestationTransaction {
+	/// Attestation
+	pub attestation: Attestation,
+	/// Signature
+	pub signature: Signature,
 }
 
 #[cfg(test)]

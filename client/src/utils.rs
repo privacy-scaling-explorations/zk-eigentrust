@@ -15,9 +15,16 @@ use ethers::{
 	abi::{Address, RawLog},
 	contract::EthEvent,
 	middleware::SignerMiddleware,
-	prelude::{abigen, Abigen, ContractError},
+	prelude::{
+		abigen,
+		k256::{ecdsa::SigningKey, elliptic_curve::PrimeField, pkcs8::der::Encode},
+		Abigen, ContractError,
+	},
 	providers::{Http, Middleware, Provider},
-	signers::{coins_bip39::English, LocalWallet, MnemonicBuilder, Signer},
+	signers::{
+		coins_bip39::{English, Mnemonic},
+		LocalWallet, MnemonicBuilder, Signer, Wallet,
+	},
 	solc::{artifacts::ContractBytecode, Solc},
 	types::{Filter, TransactionRequest, H256},
 };
@@ -208,12 +215,60 @@ pub async fn get_attestations(config: &ClientConfig) -> Result<Vec<Attestation>,
 		let raw_log = RawLog::from((log.topics.clone(), log.data.to_vec()));
 		let att_created = AttestationCreatedFilter::decode_log(&raw_log).unwrap();
 		let att_data = AttestationData::from_bytes(att_created.val.to_vec());
-		let att = Attestation::from(att_data);
+		// let att = Attestation::from(att_data);
+		let att = Attestation { about: todo!(), key: todo!(), value: todo!(), message: todo!() };
 
 		attestations.push(att);
 	}
 
 	Ok(attestations)
+}
+
+/// Returns a vector of Ethereum wallets derived from the given mnemonic phrase
+pub fn ecdsa_wallets_from_mnemonic(
+	mnemonic: &str, count: usize,
+) -> Result<Vec<Wallet<SigningKey>>, Box<dyn std::error::Error>> {
+	let wallet = MnemonicBuilder::<English>::default().phrase(mnemonic);
+	let mut wallets = Vec::new();
+
+	for i in 0..count {
+		let child_key = wallet.clone().index(i as u32).unwrap().build().unwrap();
+		wallets.push(child_key);
+	}
+
+	println!("Wallets: {:?}", wallets);
+	Ok(wallets)
+}
+
+/// Returns a vector of EDDSA public keys derived from the given mnemonic phrase
+pub fn eddsa_public_keys_from_mnemonic(
+	mnemonic: &str, count: usize,
+) -> Result<Vec<Wallet<SigningKey>>, Box<dyn std::error::Error>> {
+	let wallet = MnemonicBuilder::<English>::default().phrase(mnemonic);
+	let mut eddsa_pks = Vec::new();
+
+	for i in 0..count {
+		let derivation_path = format!("{}{}", "m/44'/60'/0'/0/", i);
+		let x_mnemonic = Mnemonic::<English>::new_from_phrase(derivation_path.as_str()).unwrap();
+		// let derived_priv_key =
+		// 	x_mnemonic.derive_key(derivation_path.parse().unwrap(), None).unwrap();
+	}
+
+	println!("EDDSA PKs: {:?}", eddsa_pks);
+	Ok(eddsa_pks)
+}
+
+/// Convert Ethereum private key to Fr element
+pub fn ecdsa_to_eddsa_pk(eth_private_key: &[u8; 32]) -> Result<Scalar, &'static str> {
+	let fr_key = Scalar::from_repr(*eth_private_key);
+
+	if fr_key.is_none().into() {
+		return Err(
+			"The provided Ethereum private key is not within the valid range for the BN254 curve.",
+		);
+	}
+
+	Ok(fr_key.unwrap())
 }
 
 #[cfg(test)]
