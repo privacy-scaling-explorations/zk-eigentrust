@@ -37,7 +37,7 @@ where
 	R: RoundParams<C::Scalar, WIDTH>,
 {
 	// Reader
-	reader: RD,
+	reader: Value<RD>,
 	// PoseidonSponge
 	state: PoseidonSpongeChipset<C::Scalar, WIDTH, R>,
 	// Loader
@@ -52,7 +52,7 @@ where
 	R: RoundParams<C::Scalar, WIDTH>,
 {
 	/// Construct a new PoseidonReadChipset
-	pub fn new(reader: RD, loader: LoaderConfig<C, L, P>) -> Self {
+	pub fn new(reader: Value<RD>, loader: LoaderConfig<C, L, P>) -> Self {
 		Self { reader, state: PoseidonSpongeChipset::new(), loader, _p: PhantomData }
 	}
 
@@ -136,20 +136,15 @@ where
 {
 	/// Read a scalar.
 	fn read_scalar(&mut self) -> Result<Halo2LScalar<C, L, P>, snark_verifier::Error> {
-		let mut data = <C::Scalar as PrimeField>::Repr::default();
-		self.reader.read_exact(data.as_mut()).map_err(|err| {
-			VerifierError::Transcript(
-				err.kind(),
-				"invalid field element encoding in proof".to_string(),
-			)
-		})?;
-
-		let scalar = Option::from(C::Scalar::from_repr(data)).ok_or_else(|| {
-			VerifierError::Transcript(
-				ErrorKind::Other,
-				"invalid field element encoding in proof".to_string(),
-			)
-		})?;
+		let scalar = self.reader.as_mut().and_then(|reader| {
+			let mut data = <C::Scalar as PrimeField>::Repr::default();
+			if reader.read_exact(data.as_mut()).is_err() {
+				return Value::unknown();
+			}
+			Option::<C::Scalar>::from(C::Scalar::from_repr(data))
+				.map(Value::known)
+				.unwrap_or_else(Value::unknown)
+		});
 		let loader = self.loader.clone();
 		let mut layouter = loader.layouter.lock().unwrap();
 		let assigned_scalar = layouter
@@ -157,8 +152,7 @@ where
 				|| "assign_scalar",
 				|region: Region<'_, C::Scalar>| {
 					let mut ctx = RegionCtx::new(region, 0);
-					let scalar =
-						ctx.assign_advice(self.loader.common.advice[0], Value::known(scalar))?;
+					let scalar = ctx.assign_advice(self.loader.common.advice[0], scalar)?;
 					Ok(scalar)
 				},
 			)
@@ -172,24 +166,21 @@ where
 
 	/// Read an elliptic curve point.
 	fn read_ec_point(&mut self) -> Result<Halo2LEcPoint<C, L, P>, snark_verifier::Error> {
-		let mut compressed = C::Repr::default();
-		self.reader.read_exact(compressed.as_mut()).map_err(|err| {
-			VerifierError::Transcript(
-				err.kind(),
-				"invalid field element encoding in proof".to_string(),
-			)
-		})?;
+		let mut x: Option<Integer<_, _, NUM_LIMBS, NUM_BITS, P>> = None;
+		let mut y: Option<Integer<_, _, NUM_LIMBS, NUM_BITS, P>> = None;
 
-		let point: C = Option::from(C::from_bytes(&compressed)).ok_or_else(|| {
-			VerifierError::Transcript(
-				ErrorKind::Other,
-				"invalid point encoding in proof".to_string(),
-			)
-		})?;
-		let coordinates = point.coordinates().unwrap();
-
-		let x = Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_w(*coordinates.x());
-		let y = Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_w(*coordinates.y());
+		let _ = self.reader.as_mut().and_then(|reader| {
+			let mut compressed = C::Repr::default();
+			if reader.read_exact(compressed.as_mut()).is_err() {
+				return Value::unknown();
+			}
+			let coords = C::from_bytes(&compressed).unwrap().coordinates().unwrap();
+			x = Some(Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_w(*coords.x()));
+			y = Some(Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_w(*coords.y()));
+			Option::<C>::from(C::from_bytes(&compressed))
+				.map(Value::known)
+				.unwrap_or_else(Value::unknown)
+		});
 
 		let loader = self.loader.clone();
 		let mut layouter = loader.layouter.lock().unwrap();
@@ -206,14 +197,14 @@ where
 						x_limbs[i] = Some(
 							ctx.assign_advice(
 								self.loader.common.advice[i],
-								Value::known(x.limbs[i]),
+								Value::known(x.clone().unwrap().limbs[i]),
 							)
 							.unwrap(),
 						);
 						y_limbs[i] = Some(
 							ctx.assign_advice(
 								self.loader.common.advice[i + NUM_LIMBS],
-								Value::known(y.limbs[i]),
+								Value::known(y.clone().unwrap().limbs[i]),
 							)
 							.unwrap(),
 						);
@@ -223,10 +214,14 @@ where
 			)
 			.unwrap();
 		drop(layouter);
-		let assigned_integer_x =
-			AssignedInteger::<_, _, NUM_LIMBS, NUM_BITS, P>::new(x, assigned_coordinates.0);
-		let assigned_integer_y =
-			AssignedInteger::<_, _, NUM_LIMBS, NUM_BITS, P>::new(y, assigned_coordinates.1);
+		let assigned_integer_x = AssignedInteger::<_, _, NUM_LIMBS, NUM_BITS, P>::new(
+			x.unwrap(),
+			assigned_coordinates.0,
+		);
+		let assigned_integer_y = AssignedInteger::<_, _, NUM_LIMBS, NUM_BITS, P>::new(
+			y.unwrap(),
+			assigned_coordinates.1,
+		);
 
 		let assigned_point = AssignedPoint::<_, _, NUM_LIMBS, NUM_BITS, P>::new(
 			assigned_integer_x, assigned_integer_y,
@@ -367,7 +362,7 @@ mod test {
 			);
 			let reader = Vec::new();
 			let mut poseidon_read =
-				PoseidonReadChipset::<_, C, _, P, R>::new(reader.as_slice(), loader);
+				PoseidonReadChipset::<_, C, _, P, R>::new(Value::known(reader.as_slice()), loader);
 			let res = poseidon_read.squeeze_challenge();
 
 			let mut lb = layouter_rc.lock().unwrap();
@@ -479,7 +474,7 @@ mod test {
 			drop(lb);
 			let reader = Vec::new();
 			let mut poseidon_read =
-				PoseidonReadChipset::<_, C, _, P, R>::new(reader.as_slice(), loader);
+				PoseidonReadChipset::<_, C, _, P, R>::new(Value::known(reader.as_slice()), loader);
 			poseidon_read.common_ec_point(&ec_point).unwrap();
 			let mut lb = layouter_rc.lock().unwrap();
 			let res = poseidon_read.state.synthesize(
@@ -560,7 +555,7 @@ mod test {
 			drop(lb);
 			let reader = Vec::new();
 			let mut poseidon_read =
-				PoseidonReadChipset::<_, C, _, P, R>::new(reader.as_slice(), loader);
+				PoseidonReadChipset::<_, C, _, P, R>::new(Value::known(reader.as_slice()), loader);
 			poseidon_read.common_scalar(&scalar).unwrap();
 			let mut lb = layouter_rc.lock().unwrap();
 			let res = poseidon_read.state.synthesize(
@@ -626,8 +621,10 @@ mod test {
 				config.poseidon_sponge.clone(),
 			);
 
-			let mut poseidon_read =
-				PoseidonReadChipset::<_, C, _, P, R>::new(self.reader.as_slice(), loader);
+			let mut poseidon_read = PoseidonReadChipset::<_, C, _, P, R>::new(
+				Value::known(self.reader.as_slice()),
+				loader,
+			);
 			let res = poseidon_read.read_scalar().unwrap();
 
 			let mut lb = layouter_rc.lock().unwrap();
@@ -689,8 +686,10 @@ mod test {
 				config.poseidon_sponge.clone(),
 			);
 
-			let mut poseidon_read =
-				PoseidonReadChipset::<_, C, _, P, R>::new(self.reader.as_slice(), loader);
+			let mut poseidon_read = PoseidonReadChipset::<_, C, _, P, R>::new(
+				Value::known(self.reader.as_slice()),
+				loader,
+			);
 			let res = poseidon_read.read_ec_point().unwrap();
 
 			let mut lb = layouter_rc.lock().unwrap();
@@ -769,8 +768,10 @@ mod test {
 				config.poseidon_sponge.clone(),
 			);
 
-			let mut poseidon_read =
-				PoseidonReadChipset::<_, C, _, P, R>::new(self.reader.as_slice(), loader);
+			let mut poseidon_read = PoseidonReadChipset::<_, C, _, P, R>::new(
+				Value::known(self.reader.as_slice()),
+				loader,
+			);
 			let res = poseidon_read.read_ec_point().unwrap();
 			let mut lb = layouter_rc.lock().unwrap();
 			for i in 0..NUM_LIMBS {
