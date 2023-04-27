@@ -244,14 +244,14 @@ pub fn ecdsa_wallets_from_mnemonic(
 pub fn eddsa_public_keys_from_mnemonic(
 	mnemonic: &str, count: usize,
 ) -> Result<Vec<Wallet<SigningKey>>, Box<dyn std::error::Error>> {
-	let wallet = MnemonicBuilder::<English>::default().phrase(mnemonic);
+	let mnemonic = Mnemonic::<English>::new_from_phrase(mnemonic).unwrap();
 	let mut eddsa_pks = Vec::new();
 
 	for i in 0..count {
-		let derivation_path = format!("{}{}", "m/44'/60'/0'/0/", i);
-		let x_mnemonic = Mnemonic::<English>::new_from_phrase(derivation_path.as_str()).unwrap();
-		// let derived_priv_key =
-		// 	x_mnemonic.derive_key(derivation_path.parse().unwrap(), None).unwrap();
+		// Derivation path to be parsed by the bip32 crate
+		let path: Vec<u32> = vec![2147483692, 2147483708, 2147483648, 0, i as u32];
+
+		let pk = mnemonic.derive_key(&path, None).expect("Failed to derive signing key");
 	}
 
 	println!("EDDSA PKs: {:?}", eddsa_pks);
