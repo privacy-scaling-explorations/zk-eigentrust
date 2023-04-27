@@ -7,7 +7,8 @@ use eigen_trust_client::{
 	manager::{Manager, MANAGER_STORE},
 	utils::{
 		compile_sol_contract, compile_yul_contracts, deploy_as, deploy_et_wrapper, deploy_verifier,
-		ecdsa_wallets_from_mnemonic, get_attestations, read_csv_data,
+		ecdsa_wallets_from_mnemonic, eddsa_key_pairs_from_mnemonic, get_attestations,
+		read_csv_data,
 	},
 	Client, ClientConfig,
 };
@@ -77,7 +78,11 @@ async fn main() {
 		.expect("No user found with the given secret key");
 
 	// Create ethereum wallets
-	let wallets = ecdsa_wallets_from_mnemonic(&config.mnemonic, 5);
+	// let wallets = ecdsa_wallets_from_mnemonic(&config.mnemonic, 5);
+
+	let eddsa_pairs = eddsa_key_pairs_from_mnemonic(&config.mnemonic, 5);
+
+	println!("EEDSA pairs:\n{:#?}", eddsa_pairs);
 
 	// Generate EDDSA private keys
 	// let mut sks = Vec::new();

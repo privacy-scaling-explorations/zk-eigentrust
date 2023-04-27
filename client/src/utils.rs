@@ -17,7 +17,10 @@ use ethers::{
 	middleware::SignerMiddleware,
 	prelude::{
 		abigen,
-		k256::{ecdsa::SigningKey, elliptic_curve::PrimeField, pkcs8::der::Encode},
+		k256::{
+			ecdsa::{self, SigningKey},
+			elliptic_curve::PrimeField,
+		},
 		Abigen, ContractError,
 	},
 	providers::{Http, Middleware, Provider},
@@ -241,21 +244,31 @@ pub fn ecdsa_wallets_from_mnemonic(
 }
 
 /// Returns a vector of EDDSA public keys derived from the given mnemonic phrase
-pub fn eddsa_public_keys_from_mnemonic(
+pub fn eddsa_key_pairs_from_mnemonic(
 	mnemonic: &str, count: usize,
-) -> Result<Vec<Wallet<SigningKey>>, Box<dyn std::error::Error>> {
+) -> Result<Vec<(SecretKey, PublicKey)>, Box<dyn std::error::Error>> {
 	let mnemonic = Mnemonic::<English>::new_from_phrase(mnemonic).unwrap();
-	let mut eddsa_pks = Vec::new();
+	let mut key_pairs = Vec::new();
 
 	for i in 0..count {
 		// Derivation path to be parsed by the bip32 crate
+		// TODO: Improve gen of derivation path numbers
 		let path: Vec<u32> = vec![2147483692, 2147483708, 2147483648, 0, i as u32];
 
 		let pk = mnemonic.derive_key(&path, None).expect("Failed to derive signing key");
+
+		let raw_pk: &ecdsa::SigningKey = pk.as_ref();
+
+		let hash_input = raw_pk.to_bytes();
+
+		let eddsa_sk = SecretKey::from_byte_array(&hash_input);
+
+		let eddsa_pk = eddsa_sk.public();
+
+		key_pairs.push((eddsa_sk, eddsa_pk));
 	}
 
-	println!("EDDSA PKs: {:?}", eddsa_pks);
-	Ok(eddsa_pks)
+	Ok(key_pairs)
 }
 
 /// Convert Ethereum private key to Fr element
