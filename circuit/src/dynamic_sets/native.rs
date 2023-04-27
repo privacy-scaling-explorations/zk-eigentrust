@@ -143,6 +143,13 @@ impl EigenTrustSet {
 
 		println!("new s: {:#?}", s.map(|p| p.1));
 
+		// Apply scaling for converting large final scores to small values (easy to read)
+		let scale_factor = Fr::from_u128(
+			10_u128.pow(NUM_ITERATIONS as u32 - (INITIAL_SCORE as f32).log10() as u32),
+		);
+		println!("scaled new s: {:#?}", s.map(|p| p.1 * scale_factor));
+
+		// Assert the score sum for checking the possible reputation leak
 		let sum_initial = filtered_set.iter().fold(Fr::zero(), |acc, &(_, score)| acc + score);
 		let sum_final = s.iter().fold(Fr::zero(), |acc, &(_, score)| acc + score);
 		assert!(sum_initial == sum_final);
