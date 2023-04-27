@@ -19,7 +19,7 @@ use ethers::{
 	providers::{Http, Middleware, Provider},
 	signers::{coins_bip39::English, LocalWallet, MnemonicBuilder, Signer},
 	solc::{artifacts::ContractBytecode, Solc},
-	types::{Filter, TransactionRequest, H256},
+	types::{Filter, TransactionReceipt, TransactionRequest, H256},
 };
 use serde::de::DeserializeOwned;
 use std::{
@@ -220,7 +220,8 @@ pub async fn get_attestations(config: &ClientConfig) -> Result<Vec<Attestation>,
 mod test {
 	use super::{call_verifier, deploy_as, deploy_verifier};
 	use eigen_trust_circuit::{
-		utils::{read_bytes_data, read_json_data},
+		utils::{read_bytes_data, read_json_data, read_yul_data},
+		verifier::compile_yul,
 		Proof, ProofRaw,
 	};
 	use ethers::utils::Anvil;
@@ -254,10 +255,28 @@ mod test {
 		let mnemonic = "test test test test test test test test test test test junk";
 		let node_endpoint = anvil.endpoint();
 
-		let bytecode = read_bytes_data("et_verifier");
+		let yul_data = read_yul_data("et_verifier");
+		let bytecode = compile_yul(&yul_data);
 		let addr = deploy_verifier(mnemonic, &node_endpoint, bytecode).await.unwrap();
 
 		let proof_raw: ProofRaw = read_json_data("et_proof").unwrap();
+		let proof = Proof::from(proof_raw);
+		call_verifier(mnemonic, &node_endpoint, addr, proof).await;
+
+		drop(anvil);
+	}
+
+	#[tokio::test]
+	async fn should_call_test_verifier_contract() {
+		let anvil = Anvil::new().spawn();
+		let mnemonic = "test test test test test test test test test test test junk";
+		let node_endpoint = anvil.endpoint();
+
+		let yul_data = read_yul_data("test_verifier");
+		let bytecode = compile_yul(&yul_data);
+		let addr = deploy_verifier(mnemonic, &node_endpoint, bytecode).await.unwrap();
+
+		let proof_raw: ProofRaw = read_json_data("test_proof").unwrap();
 		let proof = Proof::from(proof_raw);
 		call_verifier(mnemonic, &node_endpoint, addr, proof).await;
 
