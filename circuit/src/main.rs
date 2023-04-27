@@ -14,7 +14,7 @@ use std::env::current_dir;
 
 /// Generate params for the circuit.
 fn main() {
-	generate_params_and_write();
+	// generate_params_and_write();
 	generate_et_verifier();
 }
 

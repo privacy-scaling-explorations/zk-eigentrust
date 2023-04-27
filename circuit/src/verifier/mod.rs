@@ -139,9 +139,9 @@ mod test {
 
 	use super::{gen_evm_verifier, gen_pk, gen_proof};
 	use crate::{
-		utils::{generate_params, prove_and_verify, read_params},
-		verifier::evm_verify,
-		RegionCtx,
+		utils::{generate_params, prove_and_verify, read_params, write_json_data, write_yul_data},
+		verifier::{evm_verify, gen_evm_verifier_code},
+		Proof, ProofRaw, RegionCtx,
 	};
 	use halo2::{
 		circuit::{Layouter, Region, SimpleFloorPlanner, Value},
@@ -324,5 +324,12 @@ mod test {
 		let pub_ins = vec![sum; VERTICAL_SIZE];
 		let proof = gen_proof(&params, &pk, circuit.clone(), vec![pub_ins.clone()]);
 		evm_verify(deployment_code, vec![pub_ins.clone()], proof.clone());
+
+		let proof = Proof { pub_ins, proof };
+		let proof_raw: ProofRaw = proof.into();
+		write_json_data(proof_raw, "test_proof").unwrap();
+
+		let yul_code = gen_evm_verifier_code(&params, pk.get_vk(), vec![VERTICAL_SIZE]);
+		write_yul_data(yul_code, "test_verifier").unwrap();
 	}
 }

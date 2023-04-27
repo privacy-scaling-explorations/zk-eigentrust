@@ -5,17 +5,15 @@ pub mod et_verifier_wrapper {
 	#![allow(dead_code)]
 	#![allow(clippy::type_complexity)]
 	#![allow(unused_imports)]
-	use ethers::{
-		contract::{
-			builders::{ContractCall, Event},
-			Contract, Lazy,
-		},
-		core::{
-			abi::{Abi, Detokenize, InvalidOutputType, Token, Tokenizable},
-			types::*,
-		},
-		providers::Middleware,
+	use ethers::contract::{
+		builders::{ContractCall, Event},
+		Contract, Lazy,
 	};
+	use ethers::core::{
+		abi::{Abi, Detokenize, InvalidOutputType, Token, Tokenizable},
+		types::*,
+	};
+	use ethers::providers::Middleware;
 	#[doc = "EtVerifierWrapper was auto-generated with ethers-rs Abigen. More information at: https://github.com/gakonst/ethers-rs"]
 	use std::sync::Arc;
 	# [rustfmt :: skip] const __ABI : & str = "[{\"type\":\"constructor\",\"inputs\":[{\"internalType\":\"address\",\"name\":\"vaddr\",\"type\":\"address\"}]},{\"type\":\"function\",\"name\":\"verify\",\"inputs\":[{\"internalType\":\"uint256[5]\",\"name\":\"pub_ins\",\"type\":\"uint256[5]\"},{\"internalType\":\"bytes\",\"name\":\"proof\",\"type\":\"bytes\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"}]" ;
@@ -32,7 +30,6 @@ pub mod et_verifier_wrapper {
 	}
 	impl<M> std::ops::Deref for EtVerifierWrapper<M> {
 		type Target = ethers::contract::Contract<M>;
-
 		fn deref(&self) -> &Self::Target {
 			&self.0
 		}
@@ -52,7 +49,6 @@ pub mod et_verifier_wrapper {
 			ethers::contract::Contract::new(address.into(), ETVERIFIERWRAPPER_ABI.clone(), client)
 				.into()
 		}
-
 		#[doc = "Calls the contract's `verify` (0x839ded65) function"]
 		pub fn verify(
 			&self, pub_ins: [ethers::core::types::U256; 5usize], proof: ethers::core::types::Bytes,
