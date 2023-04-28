@@ -25,7 +25,7 @@ use crate::{
 	},
 	params::poseidon_bn254_5x5::Params,
 	poseidon::{sponge::PoseidonSpongeConfig, PoseidonConfig},
-	Chip, CommonConfig, RegionCtx,
+	Chip, CommonConfig, RegionCtx, ADVICE,
 };
 use halo2::{
 	circuit::{Layouter, Region, SimpleFloorPlanner, Value},
@@ -278,51 +278,41 @@ impl Circuit<Fr> for Aggregator {
 			config.main,
 			config.poseidon_sponge,
 		);
-
 		let mut accumulators = Vec::new();
 		for snark in &self.snarks {
 			let protocol = snark.protocol.loaded(&loader_config);
 			let mut transcript_read: PoseidonReadChipset<&[u8], G1Affine, _, Bn256_4_68, Params> =
 				PoseidonReadChipset::new(snark.proof(), loader_config.clone());
-
 			let mut lb = layouter_rc.lock().unwrap();
 			let mut instances: Vec<Vec<Halo2LScalar<G1Affine, _, Bn256_4_68>>> = Vec::new();
-			//let mut instance_collector: Vec<Halo2LScalar<G1Affine, _, Bn256_4_68>> = Vec::new();
-			//let instance_flatten =
-			//	snark.instances.clone().into_iter().flatten().collect::<Vec<Fr>>();
-			//let mut instance_chunks = instance_flatten.chunks(ADVICE);
+			let mut instance_collector: Vec<Halo2LScalar<G1Affine, _, Bn256_4_68>> = Vec::new();
+			let instance_flatten =
+				snark.instances.clone().into_iter().flatten().collect::<Vec<Value<Fr>>>();
+			let mut instance_chunks = instance_flatten.chunks(ADVICE);
 			lb.assign_region(
 				|| "assign_instances",
 				|region: Region<'_, Fr>| {
 					let mut ctx = RegionCtx::new(region, 0);
-					for j in 0..snark.instances.len() {
-						//let chunk = instance_chunks.next().unwrap();
-						for i in 0..snark.instances[j].len() {
-							let assigned =
-								ctx.assign_advice(config.common.advice[i], snark.instances[0][0])?;
-
-							let lscalar = Halo2LScalar::new(
-								ctx.assign_advice(config.common.advice[i], snark.instances[0][0])?,
-								loader_config.clone(),
-							);
-
-							instances.push(vec![lscalar.clone()]);
+					for _ in 0..instance_chunks.len() {
+						let chunk = instance_chunks.next().unwrap();
+						for i in 0..chunk.len() {
+							let value = ctx.assign_advice(config.common.advice[i], chunk[i])?;
+							let lscalar = Halo2LScalar::new(value, loader_config.clone());
+							instance_collector.push(lscalar.clone());
 						}
-
 						ctx.next();
 					}
 					Ok(())
 				},
 			)?;
-			println!("{:#?}", instances);
 
 			// TODO: Check if it is a square 2D vector or not and fix this algorithm for the
 			// complex circuits. This for loops are working only for one instance inputs.
-			//for _ in 0..snark.instances.len() {
-			//	for _ in 0..snark.instances[0].len() {
-			//		instances.push(vec![instance_collector[0].clone()]);
-			//	}
-			//}
+			for _ in 0..snark.instances.len() {
+				for _ in 0..snark.instances[0].len() {
+					instances.push(vec![instance_collector[0].clone()]);
+				}
+			}
 			// Drop the layouter reference
 			drop(lb);
 
