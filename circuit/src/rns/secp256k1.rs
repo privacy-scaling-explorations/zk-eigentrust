@@ -9,20 +9,30 @@
 /// to_sub.x: 0xf6530b63da8d89214d6a0cfe38f7294317ebe6f8cd408c9617a123c2b0a7b025
 /// to_sub.y: 0x0903073bbd64df08681cf59bf4689b77e18b198eb3833371e39cf322ff8f1de3
 ///
-/// Wrong Modulus in Native Modulus for Base Field: https://www.wolframalpha.com/input?i=115792089237316195423570985008687907853269984665640564039457584007908834671663+mod+21888242871839275222246405745257275088548364400416034343698204186575808495617
+/// Wrong Modulus in Native Modulus for Base Field: https://www.wolframalpha.com/input?\
+/// i=115792089237316195423570985008687907853269984665640564039457584007908834671663+mod+\
+/// 21888242871839275222246405745257275088548364400416034343698204186575808495617
 /// https://www.wolframalpha.com/input?i=6350874878119819312338956282401532410528162663560392320966563075029792193578+in+hex
 ///
-/// Negative Wrong Modulus for Base Field: https://www.wolframalpha.com/input?i=-115792089237316195423570985008687907853269984665640564039457584007908834671663+mod+2%5E272
-/// Wrong Modulus in Native Modulus for Scalar Field: https://www.wolframalpha.com/input?i=115792089237316195423570985008687907852837564279074904382605163141518161494337+mod+21888242871839275222246405745257275088548364400416034343698204186575808495617
+/// Negative Wrong Modulus for Base Field: https://www.wolframalpha.com/input?\
+/// i=-115792089237316195423570985008687907853269984665640564039457584007908834671663+mod+2%5E272
+///
+/// Wrong Modulus in Native Modulus for Scalar Field: https://www.wolframalpha.com/input?\
+/// i=115792089237316195423570985008687907852837564279074904382605163141518161494337+mod+\
+/// 21888242871839275222246405745257275088548364400416034343698204186575808495617
 /// https://www.wolframalpha.com/input?i=6350874878119819312338956282401532410095742276994732664114142208639119016252+in+hex
-/// Negative Wrong Modulus for Scalar Field: https://www.wolframalpha.com/input?i=-115792089237316195423570985008687907852837564279074904382605163141518161494337+mod+2%5E272
+///
+/// Negative Wrong Modulus for Scalar Field: https://www.wolframalpha.com/input?\
+/// i=-115792089237316195423570985008687907852837564279074904382605163141518161494337+mod+2%5E272
 use super::*;
+use halo2::halo2curves::secp256k1::{Fp, Fq};
 
 #[derive(Debug, Clone, PartialEq, Default)]
-/// Struct for the Secp256k1 Base Field as the wrong field. From https://github.com/privacy-scaling-explorations/halo2curves/blob/main/src/secp256k1/fp.rs
-pub struct Secp256k1BaseField4_68;
+/// Struct for the Secp256k1 Base Field as the wrong field.
+/// From https://github.com/privacy-scaling-explorations/halo2curves/blob/main/src/secp256k1/fp.rs
+pub struct Secp256k1_Base_4_68;
 
-impl RnsParams<secp256k1Fp, Fr, 4, 68> for Secp256k1BaseField4_68 {
+impl RnsParams<Fp, Fr, 4, 68> for Secp256k1_Base_4_68 {
 	fn native_modulus() -> BigUint {
 		BigUint::from_str(
 			"21888242871839275222246405745257275088548364400416034343698204186575808495617",
@@ -109,9 +119,9 @@ impl RnsParams<secp256k1Fp, Fr, 4, 68> for Secp256k1BaseField4_68 {
 #[derive(Debug, Clone, PartialEq, Default)]
 /// Struct for the Secp256k1 Scalar Field as the wrong field.
 /// From https://github.com/privacy-scaling-explorations/halo2curves/blob/main/src/secp256k1/fq.rs
-pub struct Secp256k1ScalarField4_68;
+pub struct Secp256k1_Scalar_4_68;
 
-impl RnsParams<secp256k1Fq, Fr, 4, 68> for Secp256k1ScalarField4_68 {
+impl RnsParams<Fq, Fr, 4, 68> for Secp256k1_Scalar_4_68 {
 	fn native_modulus() -> BigUint {
 		BigUint::from_str(
 			"21888242871839275222246405745257275088548364400416034343698204186575808495617",
@@ -195,20 +205,26 @@ impl RnsParams<secp256k1Fq, Fr, 4, 68> for Secp256k1ScalarField4_68 {
 	}
 }
 
-#[test]
-fn generate_secp256k1_aux() {
-	use halo2::halo2curves::secp256k1::*;
-	use rand::rngs::OsRng;
-	let random_scalar = Fq::random(OsRng);
-	let g = Secp256k1::generator();
-	let to_add = (g * random_scalar).to_affine();
-	println!("random_scalar: {:?}", random_scalar);
-	println!("to_add: {:?}", to_add);
-	println!("to_add.x: {:?}", to_add.x);
-	println!("to_add.y: {:?}", to_add.y);
+#[cfg(test)]
+mod test {
+	use crate::rns::make_mul_aux;
+	use halo2::{arithmetic::Field, halo2curves::group::Curve};
 
-	let to_sub = make_mul_aux(to_add);
-	println!("to_sub: {:?}", to_sub);
-	println!("to_sub.x: {:?}", to_sub.x);
-	println!("to_sub.y: {:?}", to_sub.y);
+	#[test]
+	fn generate_secp256k1_aux() {
+		use halo2::halo2curves::secp256k1::*;
+		use rand::rngs::OsRng;
+		let random_scalar = Fq::random(OsRng);
+		let g = Secp256k1::generator();
+		let to_add = (g * random_scalar).to_affine();
+		println!("random_scalar: {:?}", random_scalar);
+		println!("to_add: {:?}", to_add);
+		println!("to_add.x: {:?}", to_add.x);
+		println!("to_add.y: {:?}", to_add.y);
+
+		let to_sub = make_mul_aux(to_add);
+		println!("to_sub: {:?}", to_sub);
+		println!("to_sub.x: {:?}", to_sub.x);
+		println!("to_sub.y: {:?}", to_sub.y);
+	}
 }

@@ -760,10 +760,10 @@ mod test {
 			for i in 0..NUM_NEIGHBOURS {
 				et.add_member(pub_keys[i].clone());
 
-				let (_, message_hashes) =
-					calculate_message_hash::<NUM_NEIGHBOURS, 1>(op_pub_keys[i].to_vec(), vec![ops
-						[i]
-						.clone()]);
+				let (_, message_hashes) = calculate_message_hash::<NUM_NEIGHBOURS, 1>(
+					op_pub_keys[i].to_vec(),
+					vec![ops[i].clone()],
+				);
 				let sig = sign(&secret_keys[i], &pub_keys[i], message_hashes[0]);
 				signatures.push(sig.clone());
 
@@ -819,10 +819,10 @@ mod test {
 			for i in 0..NUM_NEIGHBOURS {
 				et.add_member(pub_keys[i].clone());
 
-				let (_, message_hashes) =
-					calculate_message_hash::<NUM_NEIGHBOURS, 1>(op_pub_keys[i].to_vec(), vec![ops
-						[i]
-						.clone()]);
+				let (_, message_hashes) = calculate_message_hash::<NUM_NEIGHBOURS, 1>(
+					op_pub_keys[i].to_vec(),
+					vec![ops[i].clone()],
+				);
 				let sig = sign(&secret_keys[i], &pub_keys[i], message_hashes[0]);
 				signatures.push(sig.clone());
 
@@ -876,10 +876,10 @@ mod test {
 			for i in 0..NUM_NEIGHBOURS {
 				et.add_member(pub_keys[i].clone());
 
-				let (_, message_hashes) =
-					calculate_message_hash::<NUM_NEIGHBOURS, 1>(op_pub_keys[i].to_vec(), vec![ops
-						[i]
-						.clone()]);
+				let (_, message_hashes) = calculate_message_hash::<NUM_NEIGHBOURS, 1>(
+					op_pub_keys[i].to_vec(),
+					vec![ops[i].clone()],
+				);
 				let sig = sign(&secret_keys[i], &pub_keys[i], message_hashes[0]);
 				signatures.push(sig.clone());
 

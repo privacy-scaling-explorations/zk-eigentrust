@@ -361,10 +361,10 @@ mod test {
 			main::{MainChip, MainConfig},
 		},
 		integer::{
-			rns::Bn256_4_68, IntegerAddChip, IntegerDivChip, IntegerMulChip, IntegerReduceChip,
-			IntegerSubChip,
+			IntegerAddChip, IntegerDivChip, IntegerMulChip, IntegerReduceChip, IntegerSubChip,
 		},
 		poseidon::{sponge::PoseidonSpongeConfig, PoseidonConfig},
+		rns::bn256::Bn256_4_68,
 		utils::generate_params,
 		verifier::{
 			loader::native::{NUM_BITS, NUM_LIMBS},

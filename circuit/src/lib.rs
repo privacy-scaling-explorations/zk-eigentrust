@@ -6,6 +6,7 @@
 	unreachable_patterns, absolute_paths_not_starting_with_crate, unsafe_code, clippy::panic,
 	clippy::unnecessary_cast, clippy::cast_lossless, clippy::cast_possible_wrap
 )]
+#![allow(non_camel_case_types)]
 #![warn(trivial_casts)]
 #![forbid(unsafe_code)]
 

@@ -3,11 +3,10 @@ use crate::{
 	utils::{big_to_fe, fe_to_big},
 };
 use halo2::{
-	arithmetic::{Field, FieldExt},
+	arithmetic::FieldExt,
 	halo2curves::{
-		bn256::{Fq, Fr},
+		bn256::Fr,
 		group::{ff::PrimeField, Curve},
-		secp256k1::{Fp as secp256k1Fp, Fq as secp256k1Fq},
 		CurveAffine,
 	},
 	plonk::Expression,
@@ -110,7 +109,7 @@ pub trait RnsParams<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_
 	fn construct_sub_qr(a_bn: BigUint, b_bn: BigUint) -> (N, [N; NUM_LIMBS]) {
 		let wrong_mod_bn = Self::wrong_modulus();
 		let (quotient, result_bn) = if b_bn > a_bn {
-			let negative_result = big_to_fe::<Fq>(a_bn) - big_to_fe::<Fq>(b_bn);
+			let negative_result = big_to_fe::<W>(a_bn) - big_to_fe::<W>(b_bn);
 			let (_, result_bn) = (fe_to_big(negative_result)).div_rem(&wrong_mod_bn);
 			// This quotient is considered as -1 in calculations.
 			let quotient = BigUint::from_i8(1).unwrap();
