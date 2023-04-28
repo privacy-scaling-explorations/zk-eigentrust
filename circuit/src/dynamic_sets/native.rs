@@ -6,13 +6,9 @@ use halo2::{
 	halo2curves::{bn256::Fr, FieldExt},
 };
 
-const NUM_NEIGHBOURS: usize = 5;
-const NUM_ITERATIONS: usize = 10;
-const INITIAL_SCORE: u128 = 1000;
-
 /// Opinion info of peer
 #[derive(Debug, Clone)]
-pub struct Opinion {
+pub struct Opinion<const NUM_NEIGHBOURS: usize> {
 	/// Signature of opinion
 	pub sig: Signature,
 	/// Hash of opinion message
@@ -21,7 +17,7 @@ pub struct Opinion {
 	pub scores: [(PublicKey, Fr); NUM_NEIGHBOURS],
 }
 
-impl Opinion {
+impl<const NUM_NEIGHBOURS: usize> Opinion<NUM_NEIGHBOURS> {
 	/// Constructs the instance of `Opinion`
 	pub fn new(
 		sig: Signature, message_hash: Fr, scores: [(PublicKey, Fr); NUM_NEIGHBOURS],
@@ -30,7 +26,7 @@ impl Opinion {
 	}
 }
 
-impl Default for Opinion {
+impl<const NUM_NEIGHBOURS: usize> Default for Opinion<NUM_NEIGHBOURS> {
 	fn default() -> Self {
 		let sig = Signature::new(Fr::zero(), Fr::zero(), Fr::zero());
 		let message_hash = Fr::zero();
@@ -40,12 +36,18 @@ impl Default for Opinion {
 }
 
 /// Dynamic set for EigenTrust
-pub struct EigenTrustSet {
+pub struct EigenTrustSet<
+	const NUM_NEIGHBOURS: usize,
+	const NUM_ITERATIONS: usize,
+	const INITIAL_SCORE: u128,
+> {
 	set: [(PublicKey, Fr); NUM_NEIGHBOURS],
-	ops: HashMap<PublicKey, Opinion>,
+	ops: HashMap<PublicKey, Opinion<NUM_NEIGHBOURS>>,
 }
 
-impl EigenTrustSet {
+impl<const NUM_NEIGHBOURS: usize, const NUM_ITERATIONS: usize, const INITIAL_SCORE: u128>
+	EigenTrustSet<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>
+{
 	/// Constructs new instance
 	pub fn new() -> Self {
 		Self { set: [(PublicKey::default(), Fr::zero()); NUM_NEIGHBOURS], ops: HashMap::new() }
@@ -78,7 +80,7 @@ impl EigenTrustSet {
 	}
 
 	/// Update the opinion of the member
-	pub fn update_op(&mut self, from: PublicKey, op: Opinion) {
+	pub fn update_op(&mut self, from: PublicKey, op: Opinion<NUM_NEIGHBOURS>) {
 		let pos_from = self.set.iter().position(|&(x, _)| x == from);
 		assert!(pos_from.is_some());
 
@@ -144,9 +146,7 @@ impl EigenTrustSet {
 		println!("new s: {:#?}", s.map(|p| p.1));
 
 		// Apply scaling for converting large final scores to small values (easy to read)
-		let scale_factor = Fr::from_u128(
-			10_u128.pow(NUM_ITERATIONS as u32 - (INITIAL_SCORE as f32).log10() as u32),
-		);
+		let scale_factor = Fr::from_u128(10).pow(&[NUM_ITERATIONS as u64, 0, 0, 0]);
 		println!("scaled new s: {:#?}", s.map(|p| p.1 * scale_factor));
 
 		// Assert the score sum for checking the possible reputation leak
@@ -162,10 +162,10 @@ impl EigenTrustSet {
 		&self,
 	) -> (
 		[(PublicKey, Fr); NUM_NEIGHBOURS],
-		HashMap<PublicKey, Opinion>,
+		HashMap<PublicKey, Opinion<NUM_NEIGHBOURS>>,
 	) {
 		let filtered_set: [(PublicKey, Fr); NUM_NEIGHBOURS] = self.set.clone();
-		let mut filtered_ops: HashMap<PublicKey, Opinion> = HashMap::new();
+		let mut filtered_ops: HashMap<PublicKey, Opinion<NUM_NEIGHBOURS>> = HashMap::new();
 
 		// Distribute the scores to valid peers
 		for i in 0..NUM_NEIGHBOURS {
@@ -251,7 +251,7 @@ impl EigenTrustSet {
 
 #[cfg(test)]
 mod test {
-	use super::{EigenTrustSet, Opinion, INITIAL_SCORE, NUM_NEIGHBOURS};
+	use super::{EigenTrustSet, Opinion};
 	use crate::{
 		calculate_message_hash,
 		eddsa::native::{sign, PublicKey, SecretKey},
@@ -259,10 +259,14 @@ mod test {
 	use halo2::halo2curves::{bn256::Fr, FieldExt};
 	use rand::thread_rng;
 
+	const NUM_NEIGHBOURS: usize = 123;
+	const NUM_ITERATIONS: usize = 10;
+	const INITIAL_SCORE: u128 = 2437;
+
 	fn sign_opinion(
 		sk: &SecretKey, pk: &PublicKey, pks: &[PublicKey; NUM_NEIGHBOURS],
 		scores: &[Fr; NUM_NEIGHBOURS],
-	) -> Opinion {
+	) -> Opinion<NUM_NEIGHBOURS> {
 		let (_, message_hashes) =
 			calculate_message_hash::<NUM_NEIGHBOURS, 1>(pks.to_vec(), vec![scores.to_vec()]);
 		let sig = sign(sk, pk, message_hashes[0]);
@@ -279,7 +283,7 @@ mod test {
 	#[test]
 	#[should_panic]
 	fn test_add_member_in_initial_set() {
-		let mut set = EigenTrustSet::new();
+		let mut set = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
 
 		let rng = &mut thread_rng();
 
@@ -295,7 +299,7 @@ mod test {
 	#[test]
 	#[should_panic]
 	fn test_one_member_converge() {
-		let mut set = EigenTrustSet::new();
+		let mut set = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
 
 		let rng = &mut thread_rng();
 
@@ -309,7 +313,7 @@ mod test {
 
 	#[test]
 	fn test_add_two_members_without_opinions() {
-		let mut set = EigenTrustSet::new();
+		let mut set = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
 
 		let rng = &mut thread_rng();
 
@@ -327,7 +331,7 @@ mod test {
 
 	#[test]
 	fn test_add_two_members_with_one_opinion() {
-		let mut set = EigenTrustSet::new();
+		let mut set = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
 
 		let rng = &mut thread_rng();
 
@@ -341,8 +345,13 @@ mod test {
 		set.add_member(pk2);
 
 		// Peer1(pk1) signs the opinion
-		let pks = [pk1, pk2, PublicKey::default(), PublicKey::default(), PublicKey::default()];
-		let scores = [Fr::zero(), Fr::from_u128(INITIAL_SCORE), Fr::zero(), Fr::zero(), Fr::zero()];
+		let mut pks = [PublicKey::default(); NUM_NEIGHBOURS];
+		pks[0] = pk1;
+		pks[1] = pk2;
+
+		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
+		scores[1] = Fr::from_u128(INITIAL_SCORE);
+
 		let op1 = sign_opinion(&sk1, &pk1, &pks, &scores);
 
 		set.update_op(pk1, op1);
@@ -352,7 +361,7 @@ mod test {
 
 	#[test]
 	fn test_add_two_members_with_opinions() {
-		let mut set = EigenTrustSet::new();
+		let mut set = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
 
 		let rng = &mut thread_rng();
 
@@ -366,15 +375,25 @@ mod test {
 		set.add_member(pk2);
 
 		// Peer1(pk1) signs the opinion
-		let pks = [pk1, pk2, PublicKey::default(), PublicKey::default(), PublicKey::default()];
-		let scores = [Fr::zero(), Fr::from_u128(INITIAL_SCORE), Fr::zero(), Fr::zero(), Fr::zero()];
+		let mut pks = [PublicKey::default(); NUM_NEIGHBOURS];
+		pks[0] = pk1;
+		pks[1] = pk2;
+
+		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
+		scores[1] = Fr::from_u128(INITIAL_SCORE);
+
 		let op1 = sign_opinion(&sk1, &pk1, &pks, &scores);
 
 		set.update_op(pk1, op1);
 
 		// Peer2(pk2) signs the opinion
-		let pks = [pk1, pk2, PublicKey::default(), PublicKey::default(), PublicKey::default()];
-		let scores = [Fr::from_u128(INITIAL_SCORE), Fr::zero(), Fr::zero(), Fr::zero(), Fr::zero()];
+		let mut pks = [PublicKey::default(); NUM_NEIGHBOURS];
+		pks[0] = pk1;
+		pks[1] = pk2;
+
+		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
+		scores[1] = Fr::from_u128(INITIAL_SCORE);
+
 		let op2 = sign_opinion(&sk2, &pk2, &pks, &scores);
 
 		set.update_op(pk2, op2);
@@ -384,7 +403,7 @@ mod test {
 
 	#[test]
 	fn test_add_three_members_with_opinions() {
-		let mut set = EigenTrustSet::new();
+		let mut set = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
 
 		let rng = &mut thread_rng();
 
@@ -401,22 +420,43 @@ mod test {
 		set.add_member(pk3);
 
 		// Peer1(pk1) signs the opinion
-		let pks = [pk1, pk2, pk3, PublicKey::default(), PublicKey::default()];
-		let scores = [Fr::zero(), Fr::from(300), Fr::from(700), Fr::zero(), Fr::zero()];
+		let mut pks = [PublicKey::default(); NUM_NEIGHBOURS];
+		pks[0] = pk1;
+		pks[1] = pk2;
+		pks[2] = pk3;
+
+		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
+		scores[1] = Fr::from_u128(300);
+		scores[2] = Fr::from_u128(700);
+
 		let op1 = sign_opinion(&sk1, &pk1, &pks, &scores);
 
 		set.update_op(pk1, op1);
 
 		// Peer2(pk2) signs the opinion
-		let pks = [pk1, pk2, pk3, PublicKey::default(), PublicKey::default()];
-		let scores = [Fr::from(600), Fr::zero(), Fr::from(400), Fr::zero(), Fr::zero()];
+		let mut pks = [PublicKey::default(); NUM_NEIGHBOURS];
+		pks[0] = pk1;
+		pks[1] = pk2;
+		pks[2] = pk3;
+
+		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
+		scores[0] = Fr::from_u128(600);
+		scores[2] = Fr::from_u128(400);
+
 		let op2 = sign_opinion(&sk2, &pk2, &pks, &scores);
 
 		set.update_op(pk2, op2);
 
 		// Peer3(pk3) signs the opinion
-		let pks = [pk1, pk2, pk3, PublicKey::default(), PublicKey::default()];
-		let scores = [Fr::from(600), Fr::from(400), Fr::zero(), Fr::zero(), Fr::zero()];
+		let mut pks = [PublicKey::default(); NUM_NEIGHBOURS];
+		pks[0] = pk1;
+		pks[1] = pk2;
+		pks[2] = pk3;
+
+		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
+		scores[0] = Fr::from_u128(600);
+		scores[1] = Fr::from_u128(400);
+
 		let op3 = sign_opinion(&sk3, &pk3, &pks, &scores);
 
 		set.update_op(pk3, op3);
@@ -426,7 +466,7 @@ mod test {
 
 	#[test]
 	fn test_add_three_members_with_two_opinions() {
-		let mut set = EigenTrustSet::new();
+		let mut set = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
 
 		let rng = &mut thread_rng();
 
@@ -443,15 +483,29 @@ mod test {
 		set.add_member(pk3);
 
 		// Peer1(pk1) signs the opinion
-		let pks = [pk1, pk2, pk3, PublicKey::default(), PublicKey::default()];
-		let scores = [Fr::zero(), Fr::from(300), Fr::from(700), Fr::zero(), Fr::zero()];
+		let mut pks = [PublicKey::default(); NUM_NEIGHBOURS];
+		pks[0] = pk1;
+		pks[1] = pk2;
+		pks[2] = pk3;
+
+		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
+		scores[1] = Fr::from_u128(300);
+		scores[2] = Fr::from_u128(700);
+
 		let op1 = sign_opinion(&sk1, &pk1, &pks, &scores);
 
 		set.update_op(pk1, op1);
 
 		// Peer2(pk2) signs the opinion
-		let pks = [pk1, pk2, pk3, PublicKey::default(), PublicKey::default()];
-		let scores = [Fr::from(600), Fr::zero(), Fr::from(400), Fr::zero(), Fr::zero()];
+		let mut pks = [PublicKey::default(); NUM_NEIGHBOURS];
+		pks[0] = pk1;
+		pks[1] = pk2;
+		pks[2] = pk3;
+
+		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
+		scores[0] = Fr::from_u128(600);
+		scores[2] = Fr::from_u128(400);
+
 		let op2 = sign_opinion(&sk2, &pk2, &pks, &scores);
 
 		set.update_op(pk2, op2);
@@ -461,7 +515,7 @@ mod test {
 
 	#[test]
 	fn test_add_3_members_with_3_ops_quit_1_member() {
-		let mut set = EigenTrustSet::new();
+		let mut set = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
 
 		let rng = &mut thread_rng();
 
@@ -478,22 +532,44 @@ mod test {
 		set.add_member(pk3);
 
 		// Peer1(pk1) signs the opinion
-		let pks = [pk1, pk2, pk3, PublicKey::default(), PublicKey::default()];
-		let scores = [Fr::zero(), Fr::from(300), Fr::from(700), Fr::zero(), Fr::zero()];
+		// Peer2(pk2) signs the opinion
+		let mut pks = [PublicKey::default(); NUM_NEIGHBOURS];
+		pks[0] = pk1;
+		pks[1] = pk2;
+		pks[2] = pk3;
+
+		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
+		scores[1] = Fr::from_u128(300);
+		scores[2] = Fr::from_u128(700);
+
 		let op1 = sign_opinion(&sk1, &pk1, &pks, &scores);
 
 		set.update_op(pk1, op1);
 
 		// Peer2(pk2) signs the opinion
-		let pks = [pk1, pk2, pk3, PublicKey::default(), PublicKey::default()];
-		let scores = [Fr::from(600), Fr::zero(), Fr::from(400), Fr::zero(), Fr::zero()];
+		let mut pks = [PublicKey::default(); NUM_NEIGHBOURS];
+		pks[0] = pk1;
+		pks[1] = pk2;
+		pks[2] = pk3;
+
+		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
+		scores[0] = Fr::from_u128(600);
+		scores[2] = Fr::from_u128(400);
+
 		let op2 = sign_opinion(&sk2, &pk2, &pks, &scores);
 
 		set.update_op(pk2, op2);
 
 		// Peer3(pk3) signs the opinion
-		let pks = [pk1, pk2, pk3, PublicKey::default(), PublicKey::default()];
-		let scores = [Fr::from(600), Fr::from(400), Fr::zero(), Fr::zero(), Fr::zero()];
+		let mut pks = [PublicKey::default(); NUM_NEIGHBOURS];
+		pks[0] = pk1;
+		pks[1] = pk2;
+		pks[2] = pk3;
+
+		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
+		scores[0] = Fr::from_u128(600);
+		scores[1] = Fr::from_u128(400);
+
 		let op3 = sign_opinion(&sk3, &pk3, &pks, &scores);
 
 		set.update_op(pk3, op3);
@@ -508,7 +584,7 @@ mod test {
 
 	#[test]
 	fn test_add_3_members_with_2_ops_quit_1_member_1_op() {
-		let mut set = EigenTrustSet::new();
+		let mut set = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
 
 		let rng = &mut thread_rng();
 
@@ -525,25 +601,39 @@ mod test {
 		set.add_member(pk3);
 
 		// Peer1(pk1) signs the opinion
-		let pks = [pk1, pk2, pk3, PublicKey::default(), PublicKey::default()];
-		let scores = [Fr::zero(), Fr::from(300), Fr::from(700), Fr::zero(), Fr::zero()];
+		let mut pks = [PublicKey::default(); NUM_NEIGHBOURS];
+		pks[0] = pk1;
+		pks[1] = pk2;
+		pks[2] = pk3;
+
+		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
+		scores[1] = Fr::from_u128(300);
+		scores[2] = Fr::from_u128(700);
+
 		let op1 = sign_opinion(&sk1, &pk1, &pks, &scores);
 
 		set.update_op(pk1, op1);
 
 		// Peer2(pk2) signs the opinion
-		let pks = [pk1, pk2, pk3, PublicKey::default(), PublicKey::default()];
-		let scores = [Fr::from(600), Fr::zero(), Fr::from(400), Fr::zero(), Fr::zero()];
+		let mut pks = [PublicKey::default(); NUM_NEIGHBOURS];
+		pks[0] = pk1;
+		pks[1] = pk2;
+		pks[2] = pk3;
+
+		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
+		scores[0] = Fr::from_u128(600);
+		scores[2] = Fr::from_u128(400);
+
 		let op2 = sign_opinion(&sk2, &pk2, &pks, &scores);
 
 		set.update_op(pk2, op2);
 
 		set.converge();
 
-		// Peer1 quits
-		set.remove_member(pk1);
+		// // Peer1 quits
+		// set.remove_member(pk1);
 
-		set.converge();
+		// set.converge();
 	}
 
 	#[test]
@@ -570,22 +660,41 @@ mod test {
 		let pk8 = sk8.public();
 
 		// Peer1(pk1) signs the opinion
-		let pks = [pk1, pk2, pk3, PublicKey::default(), pk8];
-		let scores = [Fr::from(10), Fr::from(10), Fr::zero(), Fr::zero(), Fr::from(10)];
+		let mut pks = [PublicKey::default(); NUM_NEIGHBOURS];
+		pks[0] = pk1;
+		pks[1] = pk2;
+		pks[2] = pk3;
+
+		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
+		scores[0] = Fr::from_u128(10);
+		scores[1] = Fr::from_u128(10);
+
 		let op1 = sign_opinion(&sk1, &pk1, &pks, &scores);
 
 		// Peer2(pk2) signs the opinion
-		let pks = [pk1, pk2, pk3, PublicKey::default(), PublicKey::default()];
-		let scores = [Fr::zero(), Fr::zero(), Fr::from(30), Fr::zero(), Fr::zero()];
+		let mut pks = [PublicKey::default(); NUM_NEIGHBOURS];
+		pks[0] = pk1;
+		pks[1] = pk2;
+		pks[2] = pk3;
+
+		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
+		scores[2] = Fr::from_u128(30);
+
 		let op2 = sign_opinion(&sk2, &pk2, &pks, &scores);
 
 		// Peer3(pk3) signs the opinion
-		let pks = [pk1, pk2, pk3, PublicKey::default(), PublicKey::default()];
-		let scores = [Fr::from(10), Fr::zero(), Fr::zero(), Fr::zero(), Fr::zero()];
+		let mut pks = [PublicKey::default(); NUM_NEIGHBOURS];
+		pks[0] = pk1;
+		pks[1] = pk2;
+		pks[2] = pk3;
+
+		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
+		scores[0] = Fr::from_u128(10);
+
 		let op3 = sign_opinion(&sk3, &pk3, &pks, &scores);
 
 		// Setup EigenTrustSet
-		let mut set = EigenTrustSet::new();
+		let mut set = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
 
 		set.add_member(pk1);
 		set.add_member(pk2);

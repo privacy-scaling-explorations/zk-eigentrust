@@ -729,9 +729,9 @@ mod test {
 	use halo2::{dev::MockProver, halo2curves::bn256::Bn256};
 	use rand::thread_rng;
 
-	pub const NUM_ITER: usize = 10;
-	pub const NUM_NEIGHBOURS: usize = 5;
-	pub const INITIAL_SCORE: u128 = 1000;
+	const NUM_NEIGHBOURS: usize = 5;
+	const NUM_ITERATIONS: usize = 20;
+	const INITIAL_SCORE: u128 = 1000;
 
 	#[test]
 	fn test_closed_graph_circut() {
@@ -756,7 +756,8 @@ mod test {
 		let (res, signatures) = {
 			let mut signatures = vec![];
 
-			let mut et = native::EigenTrustSet::new();
+			let mut et =
+				native::EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
 			for i in 0..NUM_NEIGHBOURS {
 				et.add_member(pub_keys[i].clone());
 
@@ -777,7 +778,7 @@ mod test {
 			(res, signatures)
 		};
 
-		let et = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE>::new(
+		let et = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new(
 			pub_keys.to_vec(),
 			signatures,
 			op_pub_keys,
@@ -815,7 +816,8 @@ mod test {
 		let (res, signatures) = {
 			let mut signatures = vec![];
 
-			let mut et = native::EigenTrustSet::new();
+			let mut et =
+				native::EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
 			for i in 0..NUM_NEIGHBOURS {
 				et.add_member(pub_keys[i].clone());
 
@@ -836,7 +838,7 @@ mod test {
 			(res, signatures)
 		};
 
-		let et = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE>::new(
+		let et = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new(
 			pub_keys.to_vec(),
 			signatures,
 			op_pub_keys,
@@ -872,7 +874,8 @@ mod test {
 		let (res, signatures) = {
 			let mut signatures = vec![];
 
-			let mut et = native::EigenTrustSet::new();
+			let mut et =
+				native::EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
 			for i in 0..NUM_NEIGHBOURS {
 				et.add_member(pub_keys[i].clone());
 
@@ -893,7 +896,7 @@ mod test {
 			(res, signatures)
 		};
 
-		let et = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE>::new(
+		let et = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new(
 			pub_keys.to_vec(),
 			signatures,
 			op_pub_keys,
