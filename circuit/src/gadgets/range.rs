@@ -267,7 +267,7 @@ mod tests {
 	use super::*;
 
 	use halo2::{
-		circuit::{Region, SimpleFloorPlanner, Value},
+		circuit::{Region, SimpleFloorPlanner, Table, Value},
 		dev::MockProver,
 		halo2curves::bn256::Fr,
 		plonk::{Circuit, ConstraintSystem, Error},
@@ -277,13 +277,6 @@ mod tests {
 	const N: usize = 2;
 	const S: usize = 3;
 
-	#[derive(Debug, Clone)]
-	enum Gadget {
-		ShortWordCheck,
-		RangeCheck,
-		RangeChipset,
-	}
-
 	#[derive(Clone)]
 	struct TestConfig {
 		mock_common: MockCommonConfig,
@@ -292,27 +285,8 @@ mod tests {
 		lookup_range_check: RangeChipsetConfig,
 	}
 
-	#[derive(Clone)]
-	struct TestCircuit {
-		x: Fr,
-		gadget: Gadget,
-	}
-
-	impl TestCircuit {
-		fn new(x: Fr, gadget: Gadget) -> Self {
-			Self { x, gadget }
-		}
-	}
-
-	impl Circuit<Fr> for TestCircuit {
-		type Config = TestConfig;
-		type FloorPlanner = SimpleFloorPlanner;
-
-		fn without_witnesses(&self) -> Self {
-			self.clone()
-		}
-
-		fn configure(meta: &mut ConstraintSystem<Fr>) -> TestConfig {
+	impl TestConfig {
+		fn new(meta: &mut ConstraintSystem<Fr>) -> Self {
 			let mock_common = MockCommonConfig::new(meta);
 			let short_word_selector =
 				LookupShortWordCheckChip::<Fr, K, S>::configure(&mock_common, meta);
@@ -321,32 +295,69 @@ mod tests {
 			let lookup_range_check =
 				RangeChipsetConfig::new(running_sum_selector, short_word_selector);
 
-			TestConfig {
-				mock_common,
-				short_word_selector,
-				running_sum_selector,
-				lookup_range_check,
-			}
+			Self { mock_common, short_word_selector, running_sum_selector, lookup_range_check }
 		}
+	}
+
+	struct TableAssigner;
+
+	impl MockChipset<Fr> for TableAssigner {
+		type Config = ();
+		type Output = ();
 
 		fn synthesize(
-			&self, config: TestConfig, mut layouter: impl Layouter<Fr>,
-		) -> Result<(), Error> {
+			self, common: &MockCommonConfig, _: &Self::Config, mut layouter: impl Layouter<Fr>,
+		) -> Result<Self::Output, Error> {
 			// Loads the values [0..2^K) into `common.table`.
 			layouter.assign_table(
 				|| "table_column",
-				|mut table| {
+				|mut table: Table<Fr>| {
 					// We generate the row values lazily (we only need them during keygen).
 					for index in 0..(1 << K) {
 						table.assign_cell(
 							|| "table_column",
-							config.mock_common.table,
+							common.table,
 							index,
 							|| Value::known(Fr::from(index as u64)),
 						)?;
 					}
 					Ok(())
 				},
+			)
+		}
+	}
+
+	#[derive(Clone)]
+	struct SWTestCircuit {
+		x: Fr,
+	}
+
+	impl SWTestCircuit {
+		fn new(x: Fr) -> Self {
+			Self { x }
+		}
+	}
+
+	impl Circuit<Fr> for SWTestCircuit {
+		type Config = TestConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			self.clone()
+		}
+
+		fn configure(meta: &mut ConstraintSystem<Fr>) -> TestConfig {
+			TestConfig::new(meta)
+		}
+
+		fn synthesize(
+			&self, config: TestConfig, mut layouter: impl Layouter<Fr>,
+		) -> Result<(), Error> {
+			let table_assigner = TableAssigner;
+			table_assigner.synthesize(
+				&config.mock_common,
+				&(),
+				layouter.namespace(|| "table setup"),
 			)?;
 
 			let x = layouter.assign_region(
@@ -359,33 +370,12 @@ mod tests {
 				},
 			)?;
 
-			match self.gadget {
-				Gadget::ShortWordCheck => {
-					let short_word_check_chip = LookupShortWordCheckChip::<Fr, K, S>::new(x);
-					let _ = short_word_check_chip.synthesize(
-						&config.mock_common,
-						&config.short_word_selector,
-						layouter.namespace(|| "short word check"),
-					)?;
-				},
-				Gadget::RangeCheck => {
-					let range_check_chip = LookupRangeCheckChip::<Fr, K, N>::new(x);
-					let _ = range_check_chip.synthesize(
-						&config.mock_common,
-						&config.running_sum_selector,
-						layouter.namespace(|| "range check"),
-					)?;
-				},
-				Gadget::RangeChipset => {
-					let lookup_range_check_chipset = RangeChipset::<Fr, K, N, S>::new(x);
-					let _ = lookup_range_check_chipset.synthesize(
-						&config.mock_common,
-						&config.lookup_range_check,
-						layouter.namespace(|| "lookup range check chipset"),
-					)?;
-				},
-			}
-
+			let short_word_check_chip = LookupShortWordCheckChip::<Fr, K, S>::new(x);
+			let _ = short_word_check_chip.synthesize(
+				&config.mock_common,
+				&config.short_word_selector,
+				layouter.namespace(|| "short word check"),
+			)?;
 			Ok(())
 		}
 	}
@@ -398,54 +388,160 @@ mod tests {
 		// Testing x is 3 bits
 		let x = Fr::from(0x07); // 0b111
 
-		let test_chip = TestCircuit::new(x, Gadget::ShortWordCheck);
+		let test_chip = SWTestCircuit::new(x);
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins.clone()]).unwrap();
 		assert!(prover.verify().is_ok());
 
 		// Should fail since x is 4 bits
 		let x = Fr::from(0x09); // 0b1001
 
-		let test_chip = TestCircuit::new(x, Gadget::ShortWordCheck);
+		let test_chip = SWTestCircuit::new(x);
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
 		assert!(prover.verify().is_err());
 	}
 
+	#[derive(Clone)]
+	struct LookupRangeTestCircuit {
+		x: Fr,
+	}
+
+	impl LookupRangeTestCircuit {
+		fn new(x: Fr) -> Self {
+			Self { x }
+		}
+	}
+
+	impl Circuit<Fr> for LookupRangeTestCircuit {
+		type Config = TestConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			self.clone()
+		}
+
+		fn configure(meta: &mut ConstraintSystem<Fr>) -> TestConfig {
+			TestConfig::new(meta)
+		}
+
+		fn synthesize(
+			&self, config: TestConfig, mut layouter: impl Layouter<Fr>,
+		) -> Result<(), Error> {
+			let table_assigner = TableAssigner;
+			table_assigner.synthesize(
+				&config.mock_common,
+				&(),
+				layouter.namespace(|| "table setup"),
+			)?;
+
+			let x = layouter.assign_region(
+				|| "temp",
+				|region: Region<'_, Fr>| {
+					let mut ctx = RegionCtx::new(region, 0);
+					let x_val = Value::known(self.x);
+					let x = ctx.assign_advice(config.mock_common.common.advice[0], x_val)?;
+					Ok(x)
+				},
+			)?;
+
+			let range_check_chip = LookupRangeCheckChip::<Fr, K, N>::new(x);
+			let _ = range_check_chip.synthesize(
+				&config.mock_common,
+				&config.running_sum_selector,
+				layouter.namespace(|| "range check"),
+			)?;
+			Ok(())
+		}
+	}
+
 	#[test]
-	fn test_range_check() {
+	fn test_lookup_range_check() {
 		let k = 9;
 		let pub_ins = vec![];
 
 		// Testing x is 16 bits
 		let x = Fr::from(0xffff); // 0b1111111111111111
 
-		let test_chip = TestCircuit::new(x, Gadget::RangeCheck);
+		let test_chip = LookupRangeTestCircuit::new(x);
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins.clone()]).unwrap();
 		assert!(prover.verify().is_ok());
 
 		// Should fail since x is 17 bits
 		let x = Fr::from(0x10000); // 0b10000000000000000
 
-		let test_chip = TestCircuit::new(x, Gadget::RangeCheck);
+		let test_chip = LookupRangeTestCircuit::new(x);
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
 		assert!(prover.verify().is_err());
 	}
 
+	#[derive(Clone)]
+	struct RangeTestCircuit {
+		x: Fr,
+	}
+
+	impl RangeTestCircuit {
+		fn new(x: Fr) -> Self {
+			Self { x }
+		}
+	}
+
+	impl Circuit<Fr> for RangeTestCircuit {
+		type Config = TestConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			self.clone()
+		}
+
+		fn configure(meta: &mut ConstraintSystem<Fr>) -> TestConfig {
+			TestConfig::new(meta)
+		}
+
+		fn synthesize(
+			&self, config: TestConfig, mut layouter: impl Layouter<Fr>,
+		) -> Result<(), Error> {
+			let table_assigner = TableAssigner;
+			table_assigner.synthesize(
+				&config.mock_common,
+				&(),
+				layouter.namespace(|| "table setup"),
+			)?;
+
+			let x = layouter.assign_region(
+				|| "temp",
+				|region: Region<'_, Fr>| {
+					let mut ctx = RegionCtx::new(region, 0);
+					let x_val = Value::known(self.x);
+					let x = ctx.assign_advice(config.mock_common.common.advice[0], x_val)?;
+					Ok(x)
+				},
+			)?;
+
+			let lookup_range_check_chipset = RangeChipset::<Fr, K, N, S>::new(x);
+			let _ = lookup_range_check_chipset.synthesize(
+				&config.mock_common,
+				&config.lookup_range_check,
+				layouter.namespace(|| "lookup range check chipset"),
+			)?;
+			Ok(())
+		}
+	}
+
 	#[test]
-	fn test_lookup_range_check_chipset() {
+	fn test_range_check_chipset() {
 		let k = 9;
 		let pub_ins = vec![];
 
 		// Testing x is 11 bits
 		let x = Fr::from(0x7ff); // 0b11111111111
 
-		let test_chip = TestCircuit::new(x, Gadget::RangeChipset);
+		let test_chip = RangeTestCircuit::new(x);
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins.clone()]).unwrap();
 		assert!(prover.verify().is_ok());
 
 		// Should fail since x is 12 bits
 		let x = Fr::from(0xfff); // 0b111111111111
 
-		let test_chip = TestCircuit::new(x, Gadget::RangeChipset);
+		let test_chip = RangeTestCircuit::new(x);
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
 		assert!(prover.verify().is_err());
 	}

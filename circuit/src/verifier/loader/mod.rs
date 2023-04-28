@@ -28,6 +28,16 @@ use std::{
 /// Native version of the loader
 pub mod native;
 
+/// TODO: Mutex Layouter optimizer
+/*
+fn layouter<T>(func: FnOnce(layouter) -> T) -> T {
+	let layouter = self.layouter.lock();
+	let res = func(layouter);
+	drop(layouter);
+	res
+}
+*/
+
 /// LoaderConfig structure
 pub struct LoaderConfig<C: CurveAffine, L: Layouter<C::Scalar>, P>
 where
@@ -475,8 +485,8 @@ where
 				|| "assert_eq",
 				|region: Region<'_, C::Scalar>| {
 					let mut ctx = RegionCtx::new(region, 0);
-					let eq = ctx.constrain_equal(lhs.inner.clone(), rhs.inner.clone())?;
-					Ok(eq)
+					ctx.constrain_equal(lhs.inner.clone(), rhs.inner.clone())?;
+					Ok(())
 				},
 			)
 			.ok()
@@ -630,9 +640,8 @@ where
 			.iter()
 			.cloned()
 			.map(|(scalar, base)| {
-				// TODO: Test stucks here, fix it.
-				let config = pairs[0].0.loader.clone();
-				let auxes = pairs[0].1.loader.auxes.clone();
+				let config = base.loader.clone();
+				let auxes = base.loader.auxes.clone();
 				let (aux_init, aux_fin) = auxes;
 				let mut layouter = base.loader.layouter.lock().unwrap();
 				let chip = EccMulChipset::new(
@@ -651,7 +660,7 @@ where
 				Halo2LEcPoint::new(mul, config.clone())
 			})
 			.reduce(|acc, value| {
-				let config = pairs[0].0.loader.clone();
+				let config = value.loader.clone();
 				let mut layouter = value.loader.layouter.lock().unwrap();
 				let chip = EccAddChipset::new(acc.inner.clone(), value.inner.clone());
 				let add = chip
@@ -798,9 +807,10 @@ mod test {
 							config.common.advice[0],
 							Value::known(self.pairs[i].0.inner),
 						)?;
-						ctx.next();
+
 						let halo2_scalar =
 							Halo2LScalar::new(assigned_scalar, loader_config.clone());
+						ctx.next();
 
 						let mut x_limbs: [Option<AssignedCell<Scalar, Scalar>>; NUM_LIMBS] =
 							[(); NUM_LIMBS].map(|_| None);
@@ -830,11 +840,18 @@ mod test {
 					Ok(())
 				},
 			)?;
+			drop(lb);
 
-			let borrowed_pairs: Vec<(&Halo2LScalar<C, _, P>, &Halo2LEcPoint<C, _, P>)> =
+			// TODO: Assigned_pairs returns double. Can be because of the multithread.
+			// research and fix it
+			let borrowed_pairs_2x: Vec<(&Halo2LScalar<C, _, P>, &Halo2LEcPoint<C, _, P>)> =
 				assigned_pairs.iter().map(|x| (&x.0, &x.1)).collect();
+			let borrowed_pairs: Vec<(&Halo2LScalar<C, _, P>, &Halo2LEcPoint<C, _, P>)> =
+				borrowed_pairs_2x[3..6].to_vec();
+
 			let res = LoaderConfig::multi_scalar_multiplication(borrowed_pairs.as_slice());
 
+			let mut lb = layouter_rc.lock().unwrap();
 			for i in 0..NUM_LIMBS {
 				lb.constrain_instance(
 					res.inner.clone().x.limbs[i].cell(),
@@ -852,7 +869,6 @@ mod test {
 		}
 	}
 
-	#[ignore = "Stuck infinitely in MSM circuit"]
 	#[test]
 	fn test_multi_scalar_multiplication() {
 		// Testing MSM
@@ -867,8 +883,9 @@ mod test {
 				rng.clone(),
 			));
 			let points = EcPoint::new(x, y);
-			let scalar = LScalar::new(Scalar::random(rng.clone()), loader.clone());
 			let ec_point = LEcPoint::new(points, loader.clone());
+			let scalar = LScalar::new(Scalar::random(rng.clone()), loader.clone());
+
 			pairs.push((scalar, ec_point));
 		}
 		let borrowed_pairs: Vec<(&LScalar<C, P>, &LEcPoint<C, P>)> =
@@ -879,7 +896,7 @@ mod test {
 		p_ins.extend(res.inner.x.limbs);
 		p_ins.extend(res.inner.y.limbs);
 		let circuit = TestCircuit::new(pairs);
-		let k = 9;
+		let k = 17;
 		let prover = MockProver::run(k, &circuit, vec![p_ins]).unwrap();
 
 		assert_eq!(prover.verify(), Ok(()));

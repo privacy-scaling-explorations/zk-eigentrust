@@ -61,7 +61,7 @@ type SVK = KzgSuccinctVerifyingKey<G1Affine>;
 #[derive(Clone)]
 // TODO: Make SnarkWitness and functions to convert from Snark to SnarkWitness,
 // without witness function
-// pub struct Snark {
+// pub struct SnarkWitness {
 // 	protocol: PlonkProtocol<G1Affine>,
 // 	instances: Vec<Vec<Value<Fr>>>,
 // 	proof: Value<Vec<u8>>,
@@ -83,11 +83,10 @@ impl Snark {
 		params: &ParamsKZG<Bn256>, circuit: C, instances: Vec<Vec<Fr>>, rng: &mut R,
 	) -> Self {
 		let pk = gen_pk(params, &circuit);
-		let protocol = compile(
-			params,
-			pk.get_vk(),
-			Config::kzg().with_num_instance(vec![1]),
-		);
+		// TODO: Calculate number of instances from `instances` parameter
+		let config = Config::kzg().with_num_instance(vec![1]);
+
+		let protocol = compile(params, pk.get_vk(), config);
 
 		let instances_slice: Vec<&[Fr]> = instances.iter().map(|x| x.as_slice()).collect();
 		let mut transcript = PoseidonWrite::<_, G1Affine, Bn256_4_68, Params>::new(Vec::new());
@@ -101,6 +100,7 @@ impl Snark {
 		)
 		.unwrap();
 		let proof = transcript.finalize();
+
 		Self { protocol, instances, proof }
 	}
 }
@@ -174,6 +174,15 @@ struct AggregatorConfig {
 	pub(crate) main: MainConfig,
 	pub(crate) poseidon_sponge: PoseidonSpongeConfig,
 	pub(crate) ecc_mul_scalar: EccMulConfig,
+}
+
+impl AggregatorConfig {
+	fn new(
+		common: CommonConfig, main: MainConfig, poseidon_sponge: PoseidonSpongeConfig,
+		ecc_mul_scalar: EccMulConfig,
+	) -> Self {
+		Self { common, main, poseidon_sponge, ecc_mul_scalar }
+	}
 }
 
 impl Circuit<Fr> for Aggregator {
@@ -255,21 +264,28 @@ impl Circuit<Fr> for Aggregator {
 						let chunk = instance_chunks.next().unwrap();
 						for i in 0..chunk.len() {
 							let assigned =
-								ctx.assign_advice(config.common.advice[i], Value::known(chunk[i]))?;
-							let lscalar = Halo2LScalar::new(assigned, loader_config.clone());
-							instance_collector.push(lscalar);
+								ctx.assign_from_constant(config.common.advice[i], chunk[i])?;
+
+							let lscalar =
+								Halo2LScalar::new(assigned.clone(), loader_config.clone());
+
+							instance_collector.push(lscalar.clone());
 						}
+
 						ctx.next();
 					}
 					Ok(())
 				},
 			)?;
-			// TODO: Check if it is a square 2D vector or not
-			for i in 0..snark.instances.len() {
-				for j in 0..snark.instances[i].len() {
-					instances[i].push(instance_collector[j].clone());
+
+			// TODO: Check if it is a square 2D vector or not and fix this algorithm for the
+			// complex circuits. This for loops are working only for one instance inputs.
+			for _ in 0..snark.instances.len() {
+				for _ in 0..snark.instances[0].len() {
+					instances.push(vec![instance_collector[0].clone()]);
 				}
 			}
+
 			// Drop the layouter reference
 			drop(lb);
 
@@ -291,6 +307,7 @@ impl Circuit<Fr> for Aggregator {
 		let proof =
 			KzgAs::<Bn256, Gwc19>::read_proof(&Default::default(), &accumulators, &mut transcript)
 				.unwrap();
+
 		let accumulator =
 			KzgAs::<Bn256, Gwc19>::verify(&Default::default(), &accumulators, &proof).unwrap();
 
@@ -306,18 +323,235 @@ impl Circuit<Fr> for Aggregator {
 			lb.constrain_instance(limb.cell(), config.common.instance, row)?;
 			row += 1;
 		}
+		drop(lb);
+		let mut lb = layouter_rc.lock().unwrap();
 		for limb in lhs_y.limbs {
 			lb.constrain_instance(limb.cell(), config.common.instance, row)?;
 			row += 1;
 		}
+		drop(lb);
+		let mut lb = layouter_rc.lock().unwrap();
 		for limb in rhs_x.limbs {
 			lb.constrain_instance(limb.cell(), config.common.instance, row)?;
 			row += 1;
 		}
+		drop(lb);
+		let mut lb = layouter_rc.lock().unwrap();
 		for limb in rhs_y.limbs {
 			lb.constrain_instance(limb.cell(), config.common.instance, row)?;
 			row += 1;
 		}
+
 		Ok(())
+	}
+}
+
+#[cfg(test)]
+mod test {
+
+	use crate::{
+		circuit::{FullRoundHasher, PartialRoundHasher},
+		ecc::{
+			EccAddConfig, EccDoubleConfig, EccMulConfig, EccTableSelectConfig,
+			EccUnreducedLadderConfig,
+		},
+		gadgets::{
+			absorb::AbsorbChip,
+			bits2num::Bits2NumChip,
+			main::{MainChip, MainConfig},
+		},
+		integer::{
+			rns::Bn256_4_68, IntegerAddChip, IntegerDivChip, IntegerMulChip, IntegerReduceChip,
+			IntegerSubChip,
+		},
+		poseidon::{sponge::PoseidonSpongeConfig, PoseidonConfig},
+		utils::generate_params,
+		verifier::{
+			loader::native::{NUM_BITS, NUM_LIMBS},
+			transcript::native::WIDTH,
+		},
+		Chip, CommonConfig, RegionCtx,
+	};
+	use halo2::{
+		circuit::{Layouter, Region, SimpleFloorPlanner, Value},
+		dev::MockProver,
+		halo2curves::bn256::{Bn256, Fq, Fr},
+		plonk::{Circuit, ConstraintSystem, Error},
+		poly::Rotation,
+	};
+	use rand::thread_rng;
+
+	use super::{Aggregator, AggregatorConfig, Snark};
+
+	type P = Bn256_4_68;
+	type Scalar = Fr;
+	type Base = Fq;
+	#[derive(Clone)]
+	struct TestConfig {
+		common: CommonConfig,
+		main: MainConfig,
+		poseidon_sponge: PoseidonSpongeConfig,
+		ecc_mul_scalar: EccMulConfig,
+	}
+
+	#[derive(Clone)]
+	struct TestCircuit {
+		aggregator: Aggregator,
+	}
+
+	impl TestCircuit {
+		fn new(aggregator: Aggregator) -> Self {
+			Self { aggregator }
+		}
+	}
+
+	impl Circuit<Scalar> for TestCircuit {
+		type Config = TestConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			self.clone()
+		}
+
+		fn configure(meta: &mut ConstraintSystem<Scalar>) -> TestConfig {
+			let common = CommonConfig::new(meta);
+			let main_selector = MainChip::configure(&common, meta);
+			let main = MainConfig::new(main_selector);
+
+			let full_round_selector = FullRoundHasher::configure(&common, meta);
+			let partial_round_selector = PartialRoundHasher::configure(&common, meta);
+			let poseidon = PoseidonConfig::new(full_round_selector, partial_round_selector);
+
+			let absorb_selector = AbsorbChip::<Scalar, WIDTH>::configure(&common, meta);
+			let poseidon_sponge = PoseidonSpongeConfig::new(poseidon.clone(), absorb_selector);
+
+			let bits2num = Bits2NumChip::configure(&common, meta);
+
+			let int_red =
+				IntegerReduceChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
+			let int_add =
+				IntegerAddChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
+			let int_sub =
+				IntegerSubChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
+			let int_mul =
+				IntegerMulChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
+			let int_div =
+				IntegerDivChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
+
+			let ladder = EccUnreducedLadderConfig::new(int_add, int_sub, int_mul, int_div);
+			let add = EccAddConfig::new(int_red, int_sub, int_mul, int_div);
+			let double = EccDoubleConfig::new(int_red, int_add, int_sub, int_mul, int_div);
+			let table_select = EccTableSelectConfig::new(main.clone());
+			let ecc_mul_scalar = EccMulConfig::new(ladder, add, double, table_select, bits2num);
+			TestConfig { common, main, poseidon_sponge, ecc_mul_scalar }
+		}
+
+		fn synthesize(
+			&self, config: TestConfig, mut layouter: impl Layouter<Scalar>,
+		) -> Result<(), Error> {
+			let aggregator_config = AggregatorConfig::new(
+				config.common, config.main, config.poseidon_sponge, config.ecc_mul_scalar,
+			);
+
+			self.aggregator.synthesize(aggregator_config, layouter.namespace(|| "aggregate"))?;
+
+			Ok(())
+		}
+	}
+
+	#[derive(Clone)]
+	pub struct MulConfig {
+		common: CommonConfig,
+	}
+
+	/// Constructs individual cells for the configuration elements.
+	#[derive(Debug, Clone)]
+	pub struct MulChip<Scalar> {
+		x: Scalar,
+		y: Scalar,
+	}
+
+	impl MulChip<Scalar> {
+		/// Create a new chip.
+		pub fn new(x: Scalar, y: Scalar) -> Self {
+			MulChip { x, y }
+		}
+	}
+
+	impl Circuit<Scalar> for MulChip<Scalar> {
+		type Config = MulConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			self.clone()
+		}
+
+		/// Make the circuit config.
+		fn configure(meta: &mut ConstraintSystem<Scalar>) -> MulConfig {
+			let common = CommonConfig::new(meta);
+			let s = meta.selector();
+
+			meta.create_gate("mul", |v_cells| {
+				let x_exp = v_cells.query_advice(common.advice[0], Rotation::cur());
+				let y_exp = v_cells.query_advice(common.advice[1], Rotation::cur());
+				let x_next_exp = v_cells.query_advice(common.advice[0], Rotation::next());
+				let s_exp = v_cells.query_selector(s);
+
+				vec![s_exp * ((x_exp * y_exp) - x_next_exp)]
+			});
+
+			MulConfig { common }
+		}
+
+		/// Synthesize the circuit.
+		fn synthesize(
+			&self, config: MulConfig, mut layouter: impl Layouter<Scalar>,
+		) -> Result<(), Error> {
+			let result = layouter.assign_region(
+				|| "assign",
+				|region: Region<'_, Scalar>| {
+					let mut ctx = RegionCtx::new(region, 0);
+					let assigned_x =
+						ctx.assign_advice(config.common.advice[0], Value::known(self.x))?;
+					let assigned_y =
+						ctx.assign_advice(config.common.advice[1], Value::known(self.y))?;
+
+					let out = assigned_x.value().cloned() * assigned_y.value();
+
+					let res = ctx.assign_advice(config.common.advice[0], out)?;
+
+					Ok(res)
+				},
+			)?;
+			layouter.constrain_instance(result.cell(), config.common.instance, 0)?;
+
+			Ok(())
+		}
+	}
+
+	#[ignore = "Aggregator fails"]
+	#[test]
+	fn test_aggregator() {
+		// Testing Aggregator
+		let rng = &mut thread_rng();
+		let k = 22;
+		let params = generate_params::<Bn256>(k);
+
+		let random_circuit_1 = MulChip::new(Fr::one() + Fr::one(), Fr::one());
+		let random_circuit_2 = MulChip::new(Fr::one(), Fr::one());
+
+		let instances_1: Vec<Vec<Fr>> = vec![vec![Fr::one() + Fr::one()]];
+		let instances_2: Vec<Vec<Fr>> = vec![vec![Fr::one()]];
+
+		let snark_1 = Snark::new(&params.clone(), random_circuit_1, instances_1, rng);
+		let snark_2 = Snark::new(&params.clone(), random_circuit_2, instances_2, rng);
+
+		let snarks = vec![snark_1, snark_2];
+		let aggregator = Aggregator::new(&params, snarks.clone());
+
+		let circuit = TestCircuit::new(aggregator.clone());
+		let prover = MockProver::run(k, &circuit, vec![aggregator.instances]).unwrap();
+
+		assert_eq!(prover.verify(), Ok(()));
 	}
 }

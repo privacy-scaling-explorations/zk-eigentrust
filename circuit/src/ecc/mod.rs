@@ -848,7 +848,7 @@ mod test {
 	};
 	use halo2::{
 		arithmetic::Field,
-		circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner, Value},
+		circuit::{Layouter, Region, SimpleFloorPlanner, Value},
 		dev::MockProver,
 		halo2curves::bn256::{Fq, Fr},
 		plonk::{Circuit, ConstraintSystem, Error},
@@ -863,14 +863,6 @@ mod test {
 	const NUM_BITS: usize = 68;
 	type P = Bn256_4_68;
 
-	#[derive(Clone)]
-	enum Gadgets {
-		Add,
-		Double,
-		Ladder,
-		Mul,
-	}
-
 	#[derive(Clone, Debug)]
 	struct TestConfig {
 		common: CommonConfig,
@@ -880,33 +872,8 @@ mod test {
 		ecc_mul: EccMulConfig,
 	}
 
-	#[derive(Clone)]
-	struct TestCircuit {
-		p: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
-		q: Option<EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>>,
-		value: Option<N>,
-
-		gadget: Gadgets,
-	}
-
-	impl TestCircuit {
-		fn new(
-			p: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
-			q: Option<EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>>, value: Option<N>, gadget: Gadgets,
-		) -> Self {
-			Self { p, q, value, gadget }
-		}
-	}
-
-	impl Circuit<N> for TestCircuit {
-		type Config = TestConfig;
-		type FloorPlanner = SimpleFloorPlanner;
-
-		fn without_witnesses(&self) -> Self {
-			self.clone()
-		}
-
-		fn configure(meta: &mut ConstraintSystem<N>) -> TestConfig {
+	impl TestConfig {
+		fn new(meta: &mut ConstraintSystem<N>) -> Self {
 			let common = CommonConfig::new(meta);
 			let main = MainConfig::new(MainChip::configure(&common, meta));
 
@@ -949,210 +916,167 @@ mod test {
 
 			TestConfig { common, ecc_add, ecc_double, ecc_ladder, ecc_mul }
 		}
+	}
+
+	struct IntegerAssigner {
+		x: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
+	}
+
+	impl IntegerAssigner {
+		fn new(x: Integer<W, N, NUM_LIMBS, NUM_BITS, P>) -> Self {
+			Self { x }
+		}
+	}
+
+	impl Chipset<N> for IntegerAssigner {
+		type Config = ();
+		type Output = AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>;
+
+		fn synthesize(
+			self, common: &CommonConfig, _: &Self::Config, mut layouter: impl Layouter<N>,
+		) -> Result<Self::Output, Error> {
+			let assigned_limbs = layouter.assign_region(
+				|| "to_add_temp",
+				|region: Region<'_, N>| {
+					let mut ctx = RegionCtx::new(region, 0);
+					let x_limbs = [
+						ctx.assign_advice(common.advice[0], Value::known(self.x.limbs[0]))?,
+						ctx.assign_advice(common.advice[1], Value::known(self.x.limbs[1]))?,
+						ctx.assign_advice(common.advice[2], Value::known(self.x.limbs[2]))?,
+						ctx.assign_advice(common.advice[3], Value::known(self.x.limbs[3]))?,
+					];
+
+					Ok(x_limbs)
+				},
+			)?;
+
+			let x_assigned = AssignedInteger::new(self.x, assigned_limbs);
+			Ok(x_assigned)
+		}
+	}
+
+	struct PointAssigner {
+		point: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
+	}
+
+	impl PointAssigner {
+		fn new(point: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>) -> Self {
+			Self { point }
+		}
+	}
+
+	impl Chipset<N> for PointAssigner {
+		type Config = ();
+		type Output = AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>;
+
+		fn synthesize(
+			self, common: &CommonConfig, _: &Self::Config, mut layouter: impl Layouter<N>,
+		) -> Result<Self::Output, Error> {
+			let x_assigner = IntegerAssigner::new(self.point.x);
+			let y_assigner = IntegerAssigner::new(self.point.y);
+
+			let x = x_assigner.synthesize(common, &(), layouter.namespace(|| "x assigner"))?;
+			let y = y_assigner.synthesize(common, &(), layouter.namespace(|| "y assigner"))?;
+
+			let point = AssignedPoint::new(x, y);
+
+			Ok(point)
+		}
+	}
+
+	struct AuxAssigner;
+
+	impl Chipset<N> for AuxAssigner {
+		type Config = ();
+		type Output = (
+			AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
+			AssignedPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
+		);
+
+		fn synthesize(
+			self, common: &CommonConfig, _: &Self::Config, mut layouter: impl Layouter<N>,
+		) -> Result<Self::Output, Error> {
+			let to_add_x = P::to_add_x();
+			let to_add_y = P::to_add_y();
+			let to_sub_x = P::to_sub_x();
+			let to_sub_y = P::to_sub_y();
+
+			let to_add_x_int = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::from_limbs(to_add_x);
+			let to_add_y_int = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::from_limbs(to_add_y);
+			let to_sub_x_int = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::from_limbs(to_sub_x);
+			let to_sub_y_int = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::from_limbs(to_sub_y);
+
+			let to_add_point = EcPoint::new(to_add_x_int, to_add_y_int);
+			let to_sub_point = EcPoint::new(to_sub_x_int, to_sub_y_int);
+
+			let to_add_assigner = PointAssigner::new(to_add_point);
+			let to_add = to_add_assigner.synthesize(
+				common,
+				&(),
+				layouter.namespace(|| "to_add assigner"),
+			)?;
+			let to_sub_assigner = PointAssigner::new(to_sub_point);
+			let to_sub = to_sub_assigner.synthesize(
+				common,
+				&(),
+				layouter.namespace(|| "to_sub assigner"),
+			)?;
+
+			Ok((to_add, to_sub))
+		}
+	}
+
+	#[derive(Clone)]
+	struct EccAddTestCircuit {
+		p: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
+		q: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
+	}
+
+	impl EccAddTestCircuit {
+		fn new(
+			p: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>, q: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
+		) -> Self {
+			Self { p, q }
+		}
+	}
+
+	impl Circuit<N> for EccAddTestCircuit {
+		type Config = TestConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			self.clone()
+		}
+
+		fn configure(meta: &mut ConstraintSystem<N>) -> TestConfig {
+			TestConfig::new(meta)
+		}
 
 		fn synthesize(
 			&self, config: TestConfig, mut layouter: impl Layouter<N>,
 		) -> Result<(), Error> {
-			let value = layouter.assign_region(
-				|| "scalar_mul_values",
-				|region: Region<'_, N>| {
-					let mut ctx = RegionCtx::new(region, 0);
-
-					let value = ctx.assign_advice(
-						config.common.advice[0],
-						Value::known(self.value.unwrap_or(N::zero())),
-					)?;
-					ctx.next();
-					Ok(value)
-				},
+			let p_assigner = PointAssigner::new(self.p.clone());
+			let p_assigned =
+				p_assigner.synthesize(&config.common, &(), layouter.namespace(|| "p assigner"))?;
+			let q_assigner = PointAssigner::new(self.q.clone());
+			let q_assigned =
+				q_assigner.synthesize(&config.common, &(), layouter.namespace(|| "q assigner"))?;
+			let chip = EccAddChipset::new(p_assigned, q_assigned);
+			let result = chip.synthesize(
+				&config.common,
+				&config.ecc_add,
+				layouter.namespace(|| "ecc_add"),
 			)?;
-
-			let (p_x_limbs, p_y_limbs) = layouter.assign_region(
-				|| "p_temp",
-				|region: Region<'_, N>| {
-					let mut ctx = RegionCtx::new(region, 0);
-					let mut x_limbs: [Option<AssignedCell<N, N>>; NUM_LIMBS] =
-						[(); NUM_LIMBS].map(|_| None);
-					let mut y_limbs: [Option<AssignedCell<N, N>>; NUM_LIMBS] =
-						[(); NUM_LIMBS].map(|_| None);
-					for i in 0..NUM_LIMBS {
-						let x = ctx.assign_advice(
-							config.common.advice[0],
-							Value::known(self.p.x.limbs[i]),
-						)?;
-
-						let y = ctx.assign_advice(
-							config.common.advice[1],
-							Value::known(self.p.y.limbs[i]),
-						)?;
-						x_limbs[i] = Some(x);
-						y_limbs[i] = Some(y);
-						ctx.next();
-					}
-
-					Ok((x_limbs.map(|x| x.unwrap()), y_limbs.map(|y| y.unwrap())))
-				},
-			)?;
-
-			let (q_x_limbs, q_y_limbs) = layouter.assign_region(
-				|| "q_temp",
-				|region: Region<'_, N>| {
-					let mut ctx = RegionCtx::new(region, 0);
-					let mut x_limbs: [Option<AssignedCell<N, N>>; NUM_LIMBS] =
-						[(); NUM_LIMBS].map(|_| None);
-					let mut y_limbs: [Option<AssignedCell<N, N>>; NUM_LIMBS] =
-						[(); NUM_LIMBS].map(|_| None);
-					for i in 0..NUM_LIMBS {
-						let x = ctx.assign_advice(config.common.advice[0], {
-							Value::known(self.q.clone().map(|p| p.x.limbs[i]).unwrap_or(N::zero()))
-						})?;
-						let y = ctx.assign_advice(config.common.advice[1], {
-							Value::known(self.q.clone().map(|p| p.y.limbs[i]).unwrap_or(N::zero()))
-						})?;
-
-						x_limbs[i] = Some(x);
-						y_limbs[i] = Some(y);
-						ctx.next();
-					}
-
-					Ok((x_limbs.map(|x| x.unwrap()), y_limbs.map(|x| x.unwrap())))
-				},
-			)?;
-
-			let (to_add_x_limbs, to_add_y_limbs) = layouter.assign_region(
-				|| "to_add_temp",
-				|region: Region<'_, N>| {
-					let mut ctx = RegionCtx::new(region, 0);
-					let mut x_limbs: [Option<AssignedCell<N, N>>; NUM_LIMBS] =
-						[(); NUM_LIMBS].map(|_| None);
-					let mut y_limbs: [Option<AssignedCell<N, N>>; NUM_LIMBS] =
-						[(); NUM_LIMBS].map(|_| None);
-					for i in 0..NUM_LIMBS {
-						let x = ctx.assign_advice(
-							config.common.advice[0],
-							Value::known(P::to_add_x()[i]),
-						)?;
-						let y = ctx.assign_advice(
-							config.common.advice[1],
-							Value::known(P::to_add_y()[i]),
-						)?;
-
-						x_limbs[i] = Some(x);
-						y_limbs[i] = Some(y);
-						ctx.next();
-					}
-
-					Ok((x_limbs.map(|x| x.unwrap()), y_limbs.map(|x| x.unwrap())))
-				},
-			)?;
-
-			let (to_sub_x_limbs, to_sub_y_limbs) = layouter.assign_region(
-				|| "to_sub_temp",
-				|region: Region<'_, N>| {
-					let mut ctx = RegionCtx::new(region, 0);
-					let mut x_limbs: [Option<AssignedCell<N, N>>; NUM_LIMBS] =
-						[(); NUM_LIMBS].map(|_| None);
-					let mut y_limbs: [Option<AssignedCell<N, N>>; NUM_LIMBS] =
-						[(); NUM_LIMBS].map(|_| None);
-					for i in 0..NUM_LIMBS {
-						let x = ctx.assign_advice(
-							config.common.advice[0],
-							Value::known(P::to_sub_x()[i]),
-						)?;
-						let y = ctx.assign_advice(
-							config.common.advice[1],
-							Value::known(P::to_sub_y()[i]),
-						)?;
-
-						x_limbs[i] = Some(x);
-						y_limbs[i] = Some(y);
-						ctx.next();
-					}
-
-					Ok((x_limbs.map(|x| x.unwrap()), y_limbs.map(|x| x.unwrap())))
-				},
-			)?;
-
-			let p_x_int = AssignedInteger::new(self.p.x.clone(), p_x_limbs);
-			let p_y_int = AssignedInteger::new(self.p.y.clone(), p_y_limbs);
-
-			let p = AssignedPoint::new(p_x_int, p_y_int);
-
-			let result;
-			match self.gadget {
-				Gadgets::Add => {
-					let q_x_int = AssignedInteger::new(self.q.clone().unwrap().x, q_x_limbs);
-					let q_y_int = AssignedInteger::new(self.q.clone().unwrap().y, q_y_limbs);
-					let q = AssignedPoint::new(q_x_int, q_y_int);
-
-					let chip = EccAddChipset::new(p, q);
-					result = Some(chip.synthesize(
-						&config.common,
-						&config.ecc_add,
-						layouter.namespace(|| "ecc_add"),
-					)?);
-				},
-
-				Gadgets::Double => {
-					let chip = EccDoubleChipset::new(p);
-					result = Some(chip.synthesize(
-						&config.common,
-						&config.ecc_double,
-						layouter.namespace(|| "ecc_double"),
-					)?);
-				},
-
-				Gadgets::Ladder => {
-					let q_x_int = AssignedInteger::new(self.q.clone().unwrap().x, q_x_limbs);
-					let q_y_int = AssignedInteger::new(self.q.clone().unwrap().y, q_y_limbs);
-					let q = AssignedPoint::new(q_x_int, q_y_int);
-
-					let chip = EccUnreducedLadderChipset::new(p, q);
-					result = Some(chip.synthesize(
-						&config.common,
-						&config.ecc_ladder,
-						layouter.namespace(|| "ecc_ladder"),
-					)?);
-				},
-
-				Gadgets::Mul => {
-					let to_add_x_int =
-						Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::from_limbs(P::to_add_x());
-					let to_add_y_int =
-						Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::from_limbs(P::to_add_y());
-					let to_add_x = AssignedInteger::new(to_add_x_int, to_add_x_limbs);
-					let to_add_y = AssignedInteger::new(to_add_y_int, to_add_y_limbs);
-					let to_add = AssignedPoint::new(to_add_x, to_add_y);
-
-					let to_sub_x_int =
-						Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::from_limbs(P::to_sub_x());
-					let to_sub_y_int =
-						Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::from_limbs(P::to_sub_y());
-					let to_sub_x = AssignedInteger::new(to_sub_x_int, to_sub_x_limbs);
-					let to_sub_y = AssignedInteger::new(to_sub_y_int, to_sub_y_limbs);
-					let to_sub = AssignedPoint::new(to_sub_x, to_sub_y);
-
-					let chip = EccMulChipset::new(p.clone(), value.clone(), to_add, to_sub);
-					result = Some(chip.synthesize(
-						&config.common,
-						&config.ecc_mul,
-						layouter.namespace(|| "ecc_mul"),
-					)?);
-				},
-			};
 
 			for i in 0..NUM_LIMBS {
+				layouter.constrain_instance(result.x.limbs[i].cell(), config.common.instance, i)?;
 				layouter.constrain_instance(
-					result.clone().unwrap().x.limbs[i].cell(),
-					config.common.instance,
-					i,
-				)?;
-				layouter.constrain_instance(
-					result.clone().unwrap().y.limbs[i].cell(),
+					result.y.limbs[i].cell(),
 					config.common.instance,
 					i + NUM_LIMBS,
 				)?;
 			}
+
 			Ok(())
 		}
 	}
@@ -1170,7 +1094,7 @@ mod test {
 		let q_point = EcPoint::<W, N, NUM_LIMBS, NUM_BITS, P>::new(b.clone(), c.clone());
 
 		let res = p_point.add(&q_point);
-		let test_chip = TestCircuit::new(p_point, Some(q_point), None, Gadgets::Add);
+		let test_chip = EccAddTestCircuit::new(p_point, q_point);
 
 		let k = 7;
 		let mut p_ins = Vec::new();
@@ -1178,6 +1102,55 @@ mod test {
 		p_ins.extend(res.y.limbs);
 		let prover = MockProver::run(k, &test_chip, vec![p_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[derive(Clone)]
+	struct EccDoubleTestCircuit {
+		p: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
+	}
+
+	impl EccDoubleTestCircuit {
+		fn new(p: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>) -> Self {
+			Self { p }
+		}
+	}
+
+	impl Circuit<N> for EccDoubleTestCircuit {
+		type Config = TestConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			self.clone()
+		}
+
+		fn configure(meta: &mut ConstraintSystem<N>) -> TestConfig {
+			TestConfig::new(meta)
+		}
+
+		fn synthesize(
+			&self, config: TestConfig, mut layouter: impl Layouter<N>,
+		) -> Result<(), Error> {
+			let p_assigner = PointAssigner::new(self.p.clone());
+			let p_assigned =
+				p_assigner.synthesize(&config.common, &(), layouter.namespace(|| "p assigner"))?;
+			let chip = EccDoubleChipset::new(p_assigned);
+			let result = chip.synthesize(
+				&config.common,
+				&config.ecc_double,
+				layouter.namespace(|| "ecc_double"),
+			)?;
+
+			for i in 0..NUM_LIMBS {
+				layouter.constrain_instance(result.x.limbs[i].cell(), config.common.instance, i)?;
+				layouter.constrain_instance(
+					result.y.limbs[i].cell(),
+					config.common.instance,
+					i + NUM_LIMBS,
+				)?;
+			}
+
+			Ok(())
+		}
 	}
 
 	#[test]
@@ -1190,7 +1163,7 @@ mod test {
 		let p_point = EcPoint::<W, N, NUM_LIMBS, NUM_BITS, P>::new(a.clone(), b.clone());
 
 		let res = p_point.double();
-		let test_chip = TestCircuit::new(p_point, None, None, Gadgets::Double);
+		let test_chip = EccDoubleTestCircuit::new(p_point);
 
 		let k = 7;
 		let mut p_ins = Vec::new();
@@ -1198,6 +1171,62 @@ mod test {
 		p_ins.extend(res.y.limbs);
 		let prover = MockProver::run(k, &test_chip, vec![p_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[derive(Clone)]
+	struct EccLadderTestCircuit {
+		p: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
+		q: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
+	}
+
+	impl EccLadderTestCircuit {
+		fn new(
+			p: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>, q: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
+		) -> Self {
+			Self { p, q }
+		}
+	}
+
+	impl Circuit<N> for EccLadderTestCircuit {
+		type Config = TestConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			self.clone()
+		}
+
+		fn configure(meta: &mut ConstraintSystem<N>) -> TestConfig {
+			TestConfig::new(meta)
+		}
+
+		fn synthesize(
+			&self, config: TestConfig, mut layouter: impl Layouter<N>,
+		) -> Result<(), Error> {
+			let p_assigner = PointAssigner::new(self.p.clone());
+			let p_assigned =
+				p_assigner.synthesize(&config.common, &(), layouter.namespace(|| "p assigner"))?;
+
+			let q_assigner = PointAssigner::new(self.q.clone());
+			let q_assigned =
+				q_assigner.synthesize(&config.common, &(), layouter.namespace(|| "q assigner"))?;
+			let chip = EccUnreducedLadderChipset::new(p_assigned, q_assigned);
+			let result = chip.synthesize(
+				&config.common,
+				&config.ecc_ladder,
+				layouter.namespace(|| "ecc_ladder"),
+			)?;
+
+			for i in 0..NUM_LIMBS {
+				layouter.constrain_instance(result.x.limbs[i].cell(), config.common.instance, i)?;
+				layouter.constrain_instance(
+					result.y.limbs[i].cell(),
+					config.common.instance,
+					i + NUM_LIMBS,
+				)?;
+			}
+
+			Ok(())
+		}
 	}
 
 	#[test]
@@ -1213,7 +1242,7 @@ mod test {
 		let q_point = EcPoint::<W, N, NUM_LIMBS, NUM_BITS, P>::new(b.clone(), c.clone());
 
 		let res = p_point.ladder(&q_point);
-		let test_chip = TestCircuit::new(p_point, Some(q_point), None, Gadgets::Ladder);
+		let test_chip = EccLadderTestCircuit::new(p_point, q_point);
 
 		let k = 7;
 		let mut p_ins = Vec::new();
@@ -1221,6 +1250,75 @@ mod test {
 		p_ins.extend(res.y.limbs);
 		let prover = MockProver::run(k, &test_chip, vec![p_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[derive(Clone)]
+	struct EccMulTestCircuit {
+		p: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
+		value: N,
+	}
+
+	impl EccMulTestCircuit {
+		fn new(p: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>, value: N) -> Self {
+			Self { p, value }
+		}
+	}
+
+	impl Circuit<N> for EccMulTestCircuit {
+		type Config = TestConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			self.clone()
+		}
+
+		fn configure(meta: &mut ConstraintSystem<N>) -> TestConfig {
+			TestConfig::new(meta)
+		}
+
+		fn synthesize(
+			&self, config: TestConfig, mut layouter: impl Layouter<N>,
+		) -> Result<(), Error> {
+			let value_assigned = layouter.assign_region(
+				|| "scalar_mul_values",
+				|region: Region<'_, N>| {
+					let mut ctx = RegionCtx::new(region, 0);
+
+					let value =
+						ctx.assign_advice(config.common.advice[0], Value::known(self.value))?;
+					Ok(value)
+				},
+			)?;
+
+			let aux_assigner = AuxAssigner;
+			let (to_add, to_sub) = aux_assigner.synthesize(
+				&config.common,
+				&(),
+				layouter.namespace(|| "aux assigner"),
+			)?;
+
+			let p_assigner = PointAssigner::new(self.p.clone());
+			let p_assigned =
+				p_assigner.synthesize(&config.common, &(), layouter.namespace(|| "p assigner"))?;
+
+			let chip = EccMulChipset::new(p_assigned, value_assigned, to_add, to_sub);
+			let result = chip.synthesize(
+				&config.common,
+				&config.ecc_mul,
+				layouter.namespace(|| "ecc_mul"),
+			)?;
+
+			for i in 0..NUM_LIMBS {
+				layouter.constrain_instance(result.x.limbs[i].cell(), config.common.instance, i)?;
+				layouter.constrain_instance(
+					result.y.limbs[i].cell(),
+					config.common.instance,
+					i + NUM_LIMBS,
+				)?;
+			}
+
+			Ok(())
+		}
 	}
 
 	#[test]
@@ -1236,7 +1334,7 @@ mod test {
 		let p_point = EcPoint::<W, N, NUM_LIMBS, NUM_BITS, P>::new(a.clone(), b.clone());
 
 		let res = p_point.mul_scalar(scalar);
-		let test_chip = TestCircuit::new(p_point, None, Some(scalar), Gadgets::Mul);
+		let test_chip = EccMulTestCircuit::new(p_point, scalar);
 
 		let k = 15;
 		let mut p_ins = Vec::new();
