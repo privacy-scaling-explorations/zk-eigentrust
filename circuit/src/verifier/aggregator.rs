@@ -300,6 +300,7 @@ impl Circuit<Fr> for Aggregator {
 							let lscalar = Halo2LScalar::new(value, loader_config.clone());
 							instance_collector.push(lscalar.clone());
 						}
+
 						ctx.next();
 					}
 					Ok(())
@@ -313,6 +314,7 @@ impl Circuit<Fr> for Aggregator {
 					instances.push(vec![instance_collector[0].clone()]);
 				}
 			}
+
 			// Drop the layouter reference
 			drop(lb);
 
