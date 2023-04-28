@@ -12,8 +12,10 @@
 /// Wrong Modulus in Native Modulus for Base Field: https://www.wolframalpha.com/input?i=115792089237316195423570985008687907853269984665640564039457584007908834671663+mod+21888242871839275222246405745257275088548364400416034343698204186575808495617
 /// https://www.wolframalpha.com/input?i=6350874878119819312338956282401532410528162663560392320966563075029792193578+in+hex
 ///
+/// Negative Wrong Modulus for Base Field: https://www.wolframalpha.com/input?i=-115792089237316195423570985008687907853269984665640564039457584007908834671663+mod+2%5E272
 /// Wrong Modulus in Native Modulus for Scalar Field: https://www.wolframalpha.com/input?i=115792089237316195423570985008687907852837564279074904382605163141518161494337+mod+21888242871839275222246405745257275088548364400416034343698204186575808495617
 /// https://www.wolframalpha.com/input?i=6350874878119819312338956282401532410095742276994732664114142208639119016252+in+hex
+/// Negative Wrong Modulus for Scalar Field: https://www.wolframalpha.com/input?i=-115792089237316195423570985008687907852837564279074904382605163141518161494337+mod+2%5E272
 use super::*;
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -42,10 +44,10 @@ impl RnsParams<secp256k1Fp, Fr, 4, 68> for Secp256k1BaseField4_68 {
 	}
 
 	fn negative_wrong_modulus_decomposed() -> [Fr; 4] {
-		let limb0 = Fr::from_u128(140029228562771870679);
-		let limb1 = Fr::from_u128(54120732105655028278);
-		let limb2 = Fr::from_u128(18037446069688272914);
-		let limb3 = Fr::from_u128(604307990016668);
+		let limb0 = Fr::from_u128(4294968273);
+		let limb1 = Fr::from_u128(0);
+		let limb2 = Fr::from_u128(0);
+		let limb3 = Fr::from_u128(295143401579725455360);
 		[limb0, limb1, limb2, limb3]
 	}
 
@@ -131,10 +133,10 @@ impl RnsParams<secp256k1Fq, Fr, 4, 68> for Secp256k1ScalarField4_68 {
 	}
 
 	fn negative_wrong_modulus_decomposed() -> [Fr; 4] {
-		let limb0 = Fr::from_u128(218440734761789537989);
-		let limb1 = Fr::from_u128(55585829363597246514);
-		let limb2 = Fr::from_u128(18037446069688272914);
-		let limb3 = Fr::from_u128(604307990016668);
+		let limb0 = Fr::from_u128(78411506203312635583);
+		let limb1 = Fr::from_u128(1465097257942218236);
+		let limb2 = Fr::from_u128(0);
+		let limb3 = Fr::from_u128(295143401579725455360);
 		[limb0, limb1, limb2, limb3]
 	}
 
