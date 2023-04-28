@@ -2,8 +2,7 @@
 pub mod native;
 /// RNS operations for the non-native field arithmetic
 use self::native::Integer;
-use crate::rns::RnsParams;
-use crate::{Chip, CommonConfig, RegionCtx};
+use crate::{rns::RnsParams, Chip, CommonConfig, RegionCtx};
 use halo2::{
 	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region, Value},

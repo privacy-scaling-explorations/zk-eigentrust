@@ -1,7 +1,7 @@
 array_width = 90
 chain_width = 90
 attr_fn_like_width = 90
-fn_args_layout = "Compressed"
+fn_params_layout = "Compressed"
 hard_tabs = true
 use_field_init_shorthand = true
 match_block_trailing_comma = true

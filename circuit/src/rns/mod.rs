@@ -1,11 +1,15 @@
-use crate::integer::native::Integer;
-use crate::utils::{big_to_fe, fe_to_big};
+use crate::{
+	integer::native::Integer,
+	utils::{big_to_fe, fe_to_big},
+};
 use halo2::{
 	arithmetic::{Field, FieldExt},
-	halo2curves::bn256::{Fq, Fr},
-	halo2curves::group::{ff::PrimeField, Curve},
-	halo2curves::secp256k1::{Fp as secp256k1Fp, Fq as secp256k1Fq},
-	halo2curves::CurveAffine,
+	halo2curves::{
+		bn256::{Fq, Fr},
+		group::{ff::PrimeField, Curve},
+		secp256k1::{Fp as secp256k1Fp, Fq as secp256k1Fq},
+		CurveAffine,
+	},
 	plonk::Expression,
 };
 use num_bigint::BigUint;
