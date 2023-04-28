@@ -26,22 +26,25 @@ pub mod manager;
 pub mod utils;
 
 use crate::manager::NUM_NEIGHBOURS;
-use att_station::{AttestationData as AttData, AttestationStation as AttStation};
-use attestation::{Attestation, AttestationData};
+use att_station::{AttestationData as ContractAttestationData, AttestationStation as AttStation};
+use attestation::{Attestation, AttestationPayload, AttestationSubmission};
 use eigen_trust_circuit::{
 	calculate_message_hash,
-	eddsa::native::{sign, SecretKey},
+	eddsa::native::sign,
 	halo2::halo2curves::{bn256::Fr as Scalar, ff::PrimeField},
-	utils::to_short,
 	ProofRaw,
 };
 use ethers::{
 	abi::Address,
 	prelude::EthDisplay,
+	signers::Signer,
 	types::{Bytes, U256},
 };
 use serde::{Deserialize, Serialize};
-use utils::{setup_client, EtVerifierWrapper, SignerMiddlewareArc};
+use utils::{
+	eddsa_sk_from_mnemonic, eth_wallets_from_mnemonic, setup_client, EtVerifierWrapper,
+	SignerMiddlewareArc,
+};
 
 #[derive(Debug)]
 pub enum ClientError {
@@ -52,7 +55,7 @@ pub enum ClientError {
 
 #[derive(Serialize, Deserialize, Debug, EthDisplay, Clone)]
 pub struct ClientConfig {
-	pub ops: [u128; NUM_NEIGHBOURS],
+	pub ops: [u8; NUM_NEIGHBOURS],
 	pub secret_key: [String; 2],
 	pub as_address: String,
 	pub et_verifier_wrapper_address: String,
@@ -63,76 +66,36 @@ pub struct ClientConfig {
 pub struct Client {
 	client: SignerMiddlewareArc,
 	config: ClientConfig,
-	user_secrets_raw: Vec<[String; 3]>,
 }
 
 impl Client {
-	pub fn new(config: ClientConfig, user_secrets_raw: Vec<[String; 3]>) -> Self {
+	pub fn new(config: ClientConfig) -> Self {
 		let client = setup_client(&config.mnemonic, &config.node_url);
-		Self { client, config, user_secrets_raw }
+		Self { client, config }
 	}
 
 	pub async fn attest(&self) -> Result<(), ClientError> {
-		let mut sk_vec = Vec::new();
+		let sk_vec = eddsa_sk_from_mnemonic(&self.config.mnemonic, 2).unwrap();
+		let wallets = eth_wallets_from_mnemonic(&self.config.mnemonic, 2).unwrap();
 
-		for x in &self.user_secrets_raw {
-			let sk0_decoded_bytes = bs58::decode(&x[1]).into_vec();
-			let sk1_decoded_bytes = bs58::decode(&x[2]).into_vec();
+		// User keys
+		let user_sk = &sk_vec[0];
 
-			let sk0_decoded = sk0_decoded_bytes.map_err(|_| ClientError::DecodeError)?;
-			let sk1_decoded = sk1_decoded_bytes.map_err(|_| ClientError::DecodeError)?;
+		// Attest for neighbour 1
+		let neighbour_sk = &sk_vec[1];
+		let neighbour_score = self.config.ops[1];
+		let neighbour_address = wallets[1].address();
 
-			let sk0 = to_short(&sk0_decoded);
-			let sk1 = to_short(&sk1_decoded);
+		let attestation = Attestation::new(neighbour_address, 0, neighbour_score, None);
 
-			let sk = SecretKey::from_raw([sk0, sk1]);
-
-			sk_vec.push(sk);
-		}
-
-		let user_secrets: [SecretKey; NUM_NEIGHBOURS] =
-			sk_vec.try_into().map_err(|_| ClientError::DecodeError)?;
-		let user_publics = user_secrets.map(|s| s.public());
-
-		let sk0_bytes_vec = bs58::decode(&self.config.secret_key[0]).into_vec();
-		let sk1_bytes_vec = bs58::decode(&self.config.secret_key[1]).into_vec();
-
-		let sk0_bytes = sk0_bytes_vec.map_err(|_| ClientError::DecodeError)?;
-		let sk1_bytes = sk1_bytes_vec.map_err(|_| ClientError::DecodeError)?;
-
-		let mut sk0: [u8; 32] = [0; 32];
-		sk0[..].copy_from_slice(&sk0_bytes);
-
-		let mut sk1: [u8; 32] = [0; 32];
-		sk1[..].copy_from_slice(&sk1_bytes);
-
-		let sk = SecretKey::from_raw([sk0, sk1]);
-		let pk = sk.public();
-
-		let ops = self.config.ops.map(Scalar::from_u128);
-
-		let (pks_hash, message_hash) =
-			calculate_message_hash::<1, 1>(vec![user_publics[0]], vec![vec![ops[0]]]);
-
-		let sig = sign(&sk, &pk, message_hash[0]);
-
-		let att = Attestation { about: todo!(), key: todo!(), value: todo!(), message: todo!() };
-
-		let att_data = AttestationData::from(att);
-		let bytes = att_data.to_bytes();
+		let submission =
+			AttestationSubmission::new(attestation, user_sk.clone(), neighbour_sk.public());
 
 		let as_address_res = self.config.as_address.parse::<Address>();
 		let as_address = as_address_res.map_err(|_| ClientError::ParseError)?;
 		let as_contract = AttStation::new(as_address, self.client.clone());
 
-		let as_data = AttData(
-			Address::zero(),
-			pks_hash.to_bytes(),
-			Bytes::from(bytes.clone()),
-		);
-		let as_data_vec = vec![as_data];
-
-		let tx_call = as_contract.attest(as_data_vec);
+		let tx_call = as_contract.attest(vec![ContractAttestationData::from(submission)]);
 		let tx_res = tx_call.send();
 		let tx = tx_res.await.map_err(|_| ClientError::TxError)?;
 		let res = tx.await.map_err(|_| ClientError::TxError)?;
@@ -217,7 +180,7 @@ mod test {
 			node_url,
 		};
 
-		let et_client = Client::new(config, user_secrets_raw);
+		let et_client = Client::new(config);
 		let res = et_client.attest().await;
 		assert!(res.is_ok());
 
@@ -254,7 +217,7 @@ mod test {
 			node_url,
 		};
 
-		let et_client = Client::new(config, user_secrets_raw);
+		let et_client = Client::new(config);
 		let proof_raw: ProofRaw = read_json_data("et_proof").unwrap();
 		let res = et_client.verify(proof_raw).await;
 		assert!(res.is_ok());

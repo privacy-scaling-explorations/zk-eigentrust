@@ -1,8 +1,4 @@
-use crate::{
-	attestation::{Attestation, AttestationData},
-	error::EigenError,
-	ClientConfig,
-};
+use crate::{attestation::Attestation, error::EigenError, ClientConfig};
 use csv::Reader as CsvReader;
 use eigen_trust_circuit::{
 	eddsa::native::{PublicKey, SecretKey},
@@ -214,7 +210,7 @@ pub async fn get_attestations(config: &ClientConfig) -> Result<Vec<Attestation>,
 	for log in logs.iter() {
 		let raw_log = RawLog::from((log.topics.clone(), log.data.to_vec()));
 		let att_created = AttestationCreatedFilter::decode_log(&raw_log).unwrap();
-		let att_data = AttestationData::from_bytes(att_created.val.to_vec());
+		// let att_data = AttestationData::from_bytes(att_created.val.to_vec());
 		// let att = Attestation::from(att_data);
 		let att = Attestation { about: todo!(), key: todo!(), value: todo!(), message: todo!() };
 

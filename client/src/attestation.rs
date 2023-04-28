@@ -1,10 +1,73 @@
-use eigen_trust_circuit::eddsa::native::Signature;
-use ethers::types::Address;
+use crate::att_station::AttestationData as ContractAttestationData;
+use eigen_trust_circuit::{
+	calculate_message_hash,
+	eddsa::native::{sign, PublicKey, SecretKey},
+	halo2::halo2curves::bn256::Fr as Scalar,
+};
+use ethers::types::{Address, Bytes};
 use serde::{Deserialize, Serialize};
+
+#[derive(Clone)]
+/// Attestation submission struct
+pub struct AttestationSubmission {
+	/// Attestation
+	pub attestation: Attestation,
+	/// Attester EDDSA secret key
+	pub attester_sk: SecretKey,
+	/// Attested EDDSA public key
+	pub attested_pub_key: PublicKey,
+}
+
+impl AttestationSubmission {
+	pub fn new(
+		attestation: Attestation, attester_sk: SecretKey, attested_pub_key: PublicKey,
+	) -> Self {
+		Self { attestation, attester_sk, attested_pub_key }
+	}
+}
+
+impl From<AttestationSubmission> for ContractAttestationData {
+	fn from(submission: AttestationSubmission) -> Self {
+		// Get the pks_hash
+		// TODO: Implement message hash function for single neighbour attestations
+		let (pks_hash, _) = calculate_message_hash::<1, 1>(
+			vec![submission.attested_pub_key],
+			vec![vec![Scalar::from(submission.attestation.value as u64)]],
+		);
+
+		let payload = AttestationPayload::from(submission.clone());
+
+		Self(
+			submission.attestation.about,
+			pks_hash.to_bytes(), // TODO: check this value
+			Bytes::from(payload.to_bytes()),
+		)
+	}
+}
+
+#[derive(Clone)]
+/// Attestation struct
+pub struct Attestation {
+	/// Ethereum address of peer being rated
+	pub about: Address,
+	/// Unique identifier for the action being rated
+	pub key: u32,
+	/// Given rating for the action
+	pub value: u8,
+	/// Optional field for attaching additional information to the attestation
+	pub message: [u8; 32],
+}
+
+impl Attestation {
+	/// Construct a new attestation for given data
+	pub fn new(about: Address, key: u32, value: u8, message: Option<[u8; 32]>) -> Self {
+		Self { about, key, value, message: message.unwrap_or([0; 32]) }
+	}
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 /// Attestation raw data
-pub struct AttestationData {
+pub struct AttestationPayload {
 	sig_r_x: [u8; 32],
 	sig_r_y: [u8; 32],
 	sig_s: [u8; 32],
@@ -12,7 +75,7 @@ pub struct AttestationData {
 	message: [u8; 32],
 }
 
-impl AttestationData {
+impl AttestationPayload {
 	/// Convert the struct into a vector of bytes
 	pub fn to_bytes(self) -> Vec<u8> {
 		let mut bytes = Vec::new();
@@ -55,60 +118,30 @@ impl AttestationData {
 	}
 }
 
-impl From<Attestation> for AttestationData {
-	fn from(att: Attestation) -> Self {
-		// Hash the Attestation struct using the Poseidon hash function
-		// let att_hash = Poseidon::hash(&att);
+impl From<AttestationSubmission> for AttestationPayload {
+	fn from(submission: AttestationSubmission) -> Self {
+		let value = submission.attestation.value;
+		let message = submission.attestation.message;
 
-		// Sign the hash using the ECDSA algorithm with the provided keys
-		// let sig = ECDSA::sign(&att_hash, &keys);
+		// Get the message hash
+		// TODO: Implement message hash function for single neighbour attestations
+		let (_, message_hash) = calculate_message_hash::<1, 1>(
+			vec![submission.attested_pub_key],
+			vec![vec![Scalar::from(submission.attestation.value as u64)]],
+		);
 
-		Self {
-			sig_r_x: [0; 32],
-			sig_r_y: [0; 32],
-			sig_s: [0; 32],
-			value: att.value,
-			message: att.message,
-		}
+		let signature = sign(
+			&submission.attester_sk,
+			&submission.attester_sk.public(),
+			message_hash[0],
+		);
+
+		let sig_r_x = signature.big_r.x.to_bytes();
+		let sig_r_y = signature.big_r.y.to_bytes();
+		let sig_s = signature.s.to_bytes();
+
+		Self { sig_r_x, sig_r_y, sig_s, value, message }
 	}
-}
-
-#[derive(Clone)]
-/// Attestation struct
-pub struct Attestation {
-	/// Ethereum address of peer being rated
-	pub about: Address,
-	/// Unique identifier for the action being rated
-	pub key: u32,
-	/// Given rating for the action
-	pub value: u8,
-	/// Optional field for attaching additional information to the attestation
-	pub message: [u8; 32],
-}
-
-impl Attestation {
-	/// Construct a new attestation for given data
-	pub fn new(about: Address, key: u32, value: u8, message: [u8; 32]) -> Self {
-		Self { about, key, value, message }
-	}
-
-	pub fn hash_attestation(attestation: &Attestation) -> [u8; 32] {
-		// TODO: Implement hash function
-		[0u8; 32]
-	}
-}
-
-impl From<AttestationData> for Attestation {
-	fn from(att: AttestationData) -> Self {
-		Self { about: Address::default(), key: 0u32, value: att.value, message: att.message }
-	}
-}
-
-pub struct AttestationTransaction {
-	/// Attestation
-	pub attestation: Attestation,
-	/// Signature
-	pub signature: Signature,
 }
 
 #[cfg(test)]

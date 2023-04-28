@@ -7,7 +7,7 @@ use eigen_trust_client::{
 	manager::{Manager, MANAGER_STORE},
 	utils::{
 		compile_sol_contract, compile_yul_contracts, deploy_as, deploy_et_wrapper, deploy_verifier,
-		eddsa_sk_from_mnemonic, eth_wallets_from_mnemonic, get_attestations, read_csv_data,
+		get_attestations, read_csv_data,
 	},
 	Client, ClientConfig,
 };
@@ -76,15 +76,9 @@ async fn main() {
 		.position(|x| config.secret_key == x[1..])
 		.expect("No user found with the given secret key");
 
-	let wallets = eth_wallets_from_mnemonic(&config.mnemonic, 5);
-	// println!("Ethereum wallets:\n{:#?}", wallets);
-
-	let eddsa_pairs = eddsa_sk_from_mnemonic(&config.mnemonic, 5);
-	// println!("EEDSA pairs:\n{:#?}", eddsa_pairs);
-
 	match cli.mode {
 		Mode::Attest => {
-			let client = Client::new(config.clone(), user_secrets_raw);
+			let client = Client::new(config.clone());
 			println!("Attestations:\n{:#?}", config.ops);
 			client.attest().await.unwrap();
 		},
@@ -147,7 +141,7 @@ async fn main() {
 			Err(e) => eprintln!("Failed to update client configuration.\n{}", e),
 		},
 		Mode::Verify => {
-			let client = Client::new(config, user_secrets_raw);
+			let client = Client::new(config);
 
 			let last_proof = match Manager::get_last_proof() {
 				Ok(proof) => ProofRaw::from(proof),
@@ -209,7 +203,7 @@ fn config_update(
 			let name = input[0].clone();
 			let score = input[1].clone();
 
-			let score_parsed: Result<u128, _> = score.parse();
+			let score_parsed: Result<u8, _> = score.parse();
 			if score_parsed.is_err() {
 				return Err("Failed to parse score.".to_string());
 			}
