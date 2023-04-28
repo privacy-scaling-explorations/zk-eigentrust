@@ -102,16 +102,6 @@ impl RnsParams<secp256k1Fp, Fr, 4, 68> for Secp256k1BaseField4_68 {
 		let limb3 = Fr::from_u128(158537774519885);
 		[limb0, limb1, limb2, limb3]
 	}
-
-	fn invert(input: BigUint) -> Option<Integer<secp256k1Fp, Fr, 4, 68, Self>> {
-		let a_w = big_to_fe::<secp256k1Fp>(input);
-		let inv_w = a_w.invert();
-		inv_w
-			.map(|inv| {
-				Integer::<secp256k1Fp, Fr, 4, 68, Secp256k1BaseField4_68>::new(fe_to_big(inv))
-			})
-			.into()
-	}
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
