@@ -28,11 +28,12 @@ use super::*;
 use halo2::halo2curves::secp256k1::{Fp, Fq};
 
 #[derive(Debug, Clone, PartialEq, Default)]
-/// Struct for the Secp256k1 Base Field as the wrong field.
+/// Struct for the Secp256k1 Base and Scalar Field as the wrong field.
 /// From https://github.com/privacy-scaling-explorations/halo2curves/blob/main/src/secp256k1/fp.rs
-pub struct Secp256k1_Base_4_68;
+/// From https://github.com/privacy-scaling-explorations/halo2curves/blob/main/src/secp256k1/fq.rs
+pub struct Secp256k1_4_68;
 
-impl RnsParams<Fp, Fr, 4, 68> for Secp256k1_Base_4_68 {
+impl RnsParams<Fp, Fr, 4, 68> for Secp256k1_4_68 {
 	fn native_modulus() -> BigUint {
 		BigUint::from_str(
 			"21888242871839275222246405745257275088548364400416034343698204186575808495617",
@@ -116,12 +117,7 @@ impl RnsParams<Fp, Fr, 4, 68> for Secp256k1_Base_4_68 {
 	}
 }
 
-#[derive(Debug, Clone, PartialEq, Default)]
-/// Struct for the Secp256k1 Scalar Field as the wrong field.
-/// From https://github.com/privacy-scaling-explorations/halo2curves/blob/main/src/secp256k1/fq.rs
-pub struct Secp256k1_Scalar_4_68;
-
-impl RnsParams<Fq, Fr, 4, 68> for Secp256k1_Scalar_4_68 {
+impl RnsParams<Fq, Fr, 4, 68> for Secp256k1_4_68 {
 	fn native_modulus() -> BigUint {
 		BigUint::from_str(
 			"21888242871839275222246405745257275088548364400416034343698204186575808495617",
