@@ -257,7 +257,7 @@ mod test {
 		eddsa::native::{sign, PublicKey, SecretKey},
 	};
 	use halo2::halo2curves::{bn256::Fr, FieldExt};
-	use rand::thread_rng;
+	use rand::{thread_rng, Rng};
 
 	const NUM_NEIGHBOURS: usize = 123;
 	const NUM_ITERATIONS: usize = 10;
@@ -711,4 +711,11 @@ mod test {
 		let final_ops_cnt = filtered_ops.keys().count();
 		assert!(final_peers_cnt == final_ops_cnt);
 	}
+
+	// TODO: Define 5 versions of constants
+	// NUM_NEIGHBOURS - from 5 to 65000;
+	// NUM_ITERATIONS - from 10 to 100;
+	// INITIAL_SCORE - from 100 to 10000000;
+	//
+	// Write tests for each version
 }
