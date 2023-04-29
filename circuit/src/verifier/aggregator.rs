@@ -293,6 +293,7 @@ impl Circuit<Fr> for Aggregator {
 				|| "assign_instances",
 				|region: Region<'_, Fr>| {
 					let mut ctx = RegionCtx::new(region, 0);
+					// TODO: When it is assign_advice, it assings one none cell. Fix it.
 					for _ in 0..instance_chunks.len() {
 						let chunk = instance_chunks.next().unwrap();
 						for i in 0..chunk.len() {
