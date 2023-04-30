@@ -1,5 +1,7 @@
-use super::rns::{compose_big, decompose_big, RnsParams};
-use crate::utils::fe_to_big;
+use crate::{
+	rns::{compose_big, decompose_big, RnsParams},
+	utils::fe_to_big,
+};
 use halo2::arithmetic::FieldExt;
 use num_bigint::BigUint;
 use num_traits::{One, Zero};
@@ -314,7 +316,7 @@ where
 #[cfg(test)]
 mod test {
 	use super::*;
-	use crate::integer::rns::Bn256_4_68;
+	use crate::rns::bn256::Bn256_4_68;
 	use halo2::halo2curves::bn256::{Fq, Fr};
 	use num_integer::Integer as NumInteger;
 	use num_traits::{FromPrimitive, One, Zero};

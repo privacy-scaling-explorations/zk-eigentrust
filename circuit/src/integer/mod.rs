@@ -1,10 +1,8 @@
 /// Native implementation for the non-native field arithmetic
 pub mod native;
 /// RNS operations for the non-native field arithmetic
-pub mod rns;
-
 use self::native::Integer;
-use crate::{Chip, CommonConfig, RegionCtx};
+use crate::{rns::RnsParams, Chip, CommonConfig, RegionCtx};
 use halo2::{
 	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region, Value},
@@ -12,7 +10,6 @@ use halo2::{
 	poly::Rotation,
 };
 use native::{Quotient, ReductionWitness};
-use rns::RnsParams;
 use std::marker::PhantomData;
 
 /// Assigns given values and their reduction witnesses
@@ -677,8 +674,8 @@ where
 
 #[cfg(test)]
 mod test {
-	use super::{native::Integer, rns::Bn256_4_68, *};
-	use crate::{Chipset, CommonConfig};
+	use super::{native::Integer, *};
+	use crate::{rns::bn256::Bn256_4_68, Chipset, CommonConfig};
 	use halo2::{
 		circuit::{SimpleFloorPlanner, Value},
 		dev::MockProver,

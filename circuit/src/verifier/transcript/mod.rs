@@ -4,9 +4,10 @@ use super::loader::{
 };
 use crate::{
 	ecc::AssignedPoint,
-	integer::{native::Integer, rns::RnsParams, AssignedInteger},
+	integer::{native::Integer, AssignedInteger},
 	params::RoundParams,
 	poseidon::sponge::PoseidonSpongeChipset,
+	rns::RnsParams,
 	Chipset, RegionCtx,
 };
 use halo2::{
@@ -253,11 +254,12 @@ mod test {
 			main::{MainChip, MainConfig},
 		},
 		integer::{
-			native::Integer, rns::Bn256_4_68, AssignedInteger, IntegerAddChip, IntegerDivChip,
-			IntegerMulChip, IntegerReduceChip, IntegerSubChip,
+			native::Integer, AssignedInteger, IntegerAddChip, IntegerDivChip, IntegerMulChip,
+			IntegerReduceChip, IntegerSubChip,
 		},
 		params::poseidon_bn254_5x5::Params,
 		poseidon::{sponge::PoseidonSpongeConfig, PoseidonConfig},
+		rns::bn256::Bn256_4_68,
 		verifier::{
 			loader::{
 				native::{NUM_BITS, NUM_LIMBS},

@@ -13,10 +13,7 @@
 // r_x = m_1 * m_1 - p_x - f
 // r_y = m_1 * (r_x - p_x) - p_y
 
-use crate::{
-	integer::{native::Integer, rns::RnsParams},
-	utils::to_bits,
-};
+use crate::{integer::native::Integer, rns::RnsParams, utils::to_bits};
 use halo2::{self, arithmetic::FieldExt};
 
 /// Structure for the EcPoint
@@ -189,7 +186,8 @@ where
 mod test {
 	use super::EcPoint;
 	use crate::{
-		integer::{native::Integer, rns::Bn256_4_68},
+		integer::native::Integer,
+		rns::bn256::Bn256_4_68,
 		utils::{big_to_fe, fe_to_big},
 	};
 	use halo2::{
