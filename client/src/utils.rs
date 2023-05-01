@@ -1,4 +1,8 @@
-use crate::{attestation::Attestation, error::EigenError, ClientConfig};
+use crate::{
+	attestation::{Attestation, AttestationPayload},
+	error::EigenError,
+	ClientConfig,
+};
 use csv::Reader as CsvReader;
 use eigen_trust_circuit::{
 	eddsa::native::{PublicKey, SecretKey},
@@ -210,9 +214,15 @@ pub async fn get_attestations(config: &ClientConfig) -> Result<Vec<Attestation>,
 	for log in logs.iter() {
 		let raw_log = RawLog::from((log.topics.clone(), log.data.to_vec()));
 		let att_created = AttestationCreatedFilter::decode_log(&raw_log).unwrap();
-		// let att_data = AttestationData::from_bytes(att_created.val.to_vec());
-		// let att = Attestation::from(att_data);
-		let att = Attestation { about: todo!(), key: todo!(), value: todo!(), message: todo!() };
+		let att_data =
+			AttestationPayload::from_bytes(att_created.val.to_vec()).expect("Failed to decode");
+
+		let att = Attestation {
+			about: att_created.about,
+			key: att_created.key,
+			value: att_data.get_value(),
+			message: att_data.get_message(),
+		};
 
 		attestations.push(att);
 	}
@@ -244,6 +254,7 @@ pub fn eddsa_sk_from_mnemonic(mnemonic: &str, count: u32) -> Result<Vec<SecretKe
 	const BIP32_HARDEN: u32 = 0x8000_0000;
 
 	for i in 0..count {
+		// Set standard derivation path 44'/60'/0'/0/i
 		let derivation_path: Vec<u32> =
 			vec![44 + BIP32_HARDEN, 60 + BIP32_HARDEN, BIP32_HARDEN, 0, i];
 

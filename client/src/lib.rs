@@ -25,20 +25,22 @@ pub mod error;
 pub mod manager;
 pub mod utils;
 
-use crate::manager::NUM_NEIGHBOURS;
+use std::collections::HashMap;
+
+use crate::{att_station::AttestationCreatedFilter, manager::NUM_NEIGHBOURS};
 use att_station::{AttestationData as ContractAttestationData, AttestationStation as AttStation};
-use attestation::{Attestation, AttestationPayload, AttestationSubmission};
+use attestation::{Attestation, AttestationPayload, SignedAttestation};
 use eigen_trust_circuit::{
-	calculate_message_hash,
-	eddsa::native::sign,
-	halo2::halo2curves::{bn256::Fr as Scalar, ff::PrimeField},
-	ProofRaw,
+	calculate_message_hash, eddsa::native::sign, halo2::halo2curves::bn256::Fr as Scalar, ProofRaw,
 };
+use error::EigenError;
 use ethers::{
-	abi::Address,
+	abi::{Address, RawLog},
+	contract::EthEvent,
 	prelude::EthDisplay,
+	providers::Middleware,
 	signers::Signer,
-	types::{Bytes, U256},
+	types::{Bytes, Filter, H256, U256},
 };
 use serde::{Deserialize, Serialize};
 use utils::{
@@ -69,11 +71,13 @@ pub struct Client {
 }
 
 impl Client {
+	/// Create a new client
 	pub fn new(config: ClientConfig) -> Self {
 		let client = setup_client(&config.mnemonic, &config.node_url);
 		Self { client, config }
 	}
 
+	/// Submit an attestation to the attestation station
 	pub async fn attest(&self) -> Result<(), ClientError> {
 		let sk_vec = eddsa_sk_from_mnemonic(&self.config.mnemonic, 2).unwrap();
 		let wallets = eth_wallets_from_mnemonic(&self.config.mnemonic, 2).unwrap();
@@ -82,20 +86,26 @@ impl Client {
 		let user_sk = &sk_vec[0];
 
 		// Attest for neighbour 1
-		let neighbour_sk = &sk_vec[1];
 		let neighbour_score = self.config.ops[1];
 		let neighbour_address = wallets[1].address();
 
-		let attestation = Attestation::new(neighbour_address, 0, neighbour_score, None);
+		let attestation = Attestation::new(neighbour_address, [0; 32], neighbour_score, None);
 
-		let submission =
-			AttestationSubmission::new(attestation, user_sk.clone(), neighbour_sk.public());
+		let (_, message_hash) = calculate_message_hash::<1, 1>(
+			vec![user_sk.public()],
+			vec![vec![Scalar::from(neighbour_score as u64)]],
+		);
+
+		let signature = sign(user_sk, &user_sk.public(), message_hash[0]);
+
+		let signed_attestation =
+			SignedAttestation::new(attestation, wallets[0].address(), signature);
 
 		let as_address_res = self.config.as_address.parse::<Address>();
 		let as_address = as_address_res.map_err(|_| ClientError::ParseError)?;
 		let as_contract = AttStation::new(as_address, self.client.clone());
 
-		let tx_call = as_contract.attest(vec![ContractAttestationData::from(submission)]);
+		let tx_call = as_contract.attest(vec![ContractAttestationData::from(signed_attestation)]);
 		let tx_res = tx_call.send();
 		let tx = tx_res.await.map_err(|_| ClientError::TxError)?;
 		let res = tx.await.map_err(|_| ClientError::TxError)?;
@@ -107,6 +117,66 @@ impl Client {
 		Ok(())
 	}
 
+	/// Calculate
+	pub async fn calculate_proofs(&mut self) -> Result<(), EigenError> {
+		// Get participants
+		let signed_attestations = self.get_signed_attestations().await.unwrap();
+
+		let mut participants_map = HashMap::<Address, ()>::new();
+
+		for att in signed_attestations {
+			// Insert attested
+			participants_map.insert(att.attestation.about, ());
+
+			// Insert attester
+			participants_map.insert(att.attester, ());
+		}
+
+		let participants: Vec<Address> = participants_map.keys().cloned().collect();
+
+		// TODO: Get EDDSA public keys from participants
+		// TODO: Use dynamic set
+		// TODO: Store proofs
+
+		Ok(())
+	}
+
+	/// Get the attestations from the contract
+	pub async fn get_signed_attestations(&self) -> Result<Vec<SignedAttestation>, EigenError> {
+		let filter = Filter::new()
+			.address(self.config.as_address.parse::<Address>().unwrap())
+			.event("AttestationCreated(address,address,bytes32,bytes)")
+			.topic1(Vec::<H256>::new())
+			.topic2(Vec::<H256>::new())
+			.from_block(0);
+		let logs = &self.client.get_logs(&filter).await.unwrap();
+		let mut signed = Vec::new();
+
+		println!("Indexed attestations: {}", logs.iter().len());
+
+		for log in logs.iter() {
+			let raw_log = RawLog::from((log.topics.clone(), log.data.to_vec()));
+			let att_created = AttestationCreatedFilter::decode_log(&raw_log).unwrap();
+			let att_data =
+				AttestationPayload::from_bytes(att_created.val.to_vec()).expect("Failed to decode");
+
+			let att = Attestation::new(
+				att_created.about,
+				att_created.key,
+				att_data.get_value(),
+				Some(att_data.get_message()),
+			);
+
+			let signed_attestation =
+				SignedAttestation::new(att, att_created.creator, att_data.get_signature());
+
+			signed.push(signed_attestation);
+		}
+
+		Ok(signed)
+	}
+
+	/// Verify an attestation from a raw proof
 	pub async fn verify(&self, proof_raw: ProofRaw) -> Result<(), ClientError> {
 		let addr_res = self.config.et_verifier_wrapper_address.parse::<Address>();
 		let addr = addr_res.map_err(|_| ClientError::ParseError)?;
