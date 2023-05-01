@@ -145,7 +145,7 @@ struct Aggregator {
 	// Instances
 	instances: Vec<Fr>,
 	// Accumulation Scheme Proof
-	as_proof: Vec<u8>,
+	as_proof: Value<Vec<u8>>,
 }
 
 impl Clone for Aggregator {
@@ -194,7 +194,12 @@ impl Aggregator {
 			.map(|v| Integer::<_, _, NUM_LIMBS, NUM_BITS, Bn256_4_68>::from_w(v).limbs)
 			.concat();
 
-		Self { svk, snarks: snarks.into_iter().map_into().collect(), instances, as_proof }
+		Self {
+			svk,
+			snarks: snarks.into_iter().map_into().collect(),
+			instances,
+			as_proof: Value::known(as_proof),
+		}
 	}
 }
 
@@ -227,7 +232,7 @@ impl Circuit<Fr> for Aggregator {
 			svk: self.svk,
 			snarks: self.snarks.iter().map(SnarkWitness::without_witnesses).collect(),
 			instances: Vec::new(),
-			as_proof: Vec::new(),
+			as_proof: Value::unknown(),
 		}
 	}
 
@@ -332,8 +337,9 @@ impl Circuit<Fr> for Aggregator {
 			accumulators.extend(res);
 		}
 
+		let as_proof = self.as_proof.as_ref().map(Vec::as_slice);
 		let mut transcript: PoseidonReadChipset<&[u8], G1Affine, _, Bn256_4_68, Params> =
-			PoseidonReadChipset::new(Value::known(&self.as_proof), loader_config);
+			PoseidonReadChipset::new(as_proof, loader_config);
 		let proof =
 			KzgAs::<Bn256, Gwc19>::read_proof(&Default::default(), &accumulators, &mut transcript)
 				.unwrap();

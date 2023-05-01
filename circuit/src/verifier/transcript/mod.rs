@@ -141,9 +141,16 @@ where
 			if reader.read_exact(data.as_mut()).is_err() {
 				return Value::unknown();
 			}
-			Option::<C::Scalar>::from(C::Scalar::from_repr(data))
-				.map(Value::known)
-				.unwrap_or_else(Value::unknown)
+			let value = Option::<C::Scalar>::from(C::Scalar::from_repr(data))
+				.ok_or_else(|| {
+					VerifierError::Transcript(
+						ErrorKind::Other,
+						"invalid field element encoding in proof".to_string(),
+					)
+				})
+				.unwrap();
+
+			Value::known(value)
 		});
 		let loader = self.loader.clone();
 		let mut layouter = loader.layouter.lock().unwrap();
@@ -177,9 +184,16 @@ where
 			let coords = C::from_bytes(&compressed).unwrap().coordinates().unwrap();
 			x = Some(Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_w(*coords.x()));
 			y = Some(Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_w(*coords.y()));
-			Option::<C>::from(C::from_bytes(&compressed))
-				.map(Value::known)
-				.unwrap_or_else(Value::unknown)
+			let value = Option::<C>::from(C::from_bytes(&compressed))
+				.ok_or_else(|| {
+					VerifierError::Transcript(
+						ErrorKind::Other,
+						"invalid field element encoding in proof".to_string(),
+					)
+				})
+				.unwrap();
+
+			Value::known(value)
 		});
 
 		let loader = self.loader.clone();
