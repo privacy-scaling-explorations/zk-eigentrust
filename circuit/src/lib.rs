@@ -44,6 +44,8 @@ pub mod params;
 pub mod poseidon;
 /// Rescue Prime hash function gadgets + native version
 pub mod rescue_prime;
+/// Residue Number System
+pub mod rns;
 /// Utilities for proving and verifying
 pub mod utils;
 /// PLONK verifier and aggregator
