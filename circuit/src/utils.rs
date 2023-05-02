@@ -162,14 +162,14 @@ pub fn to_bits(num: &[u8]) -> Vec<bool> {
 pub fn field_to_bits_vec<F: FieldExt>(num: F) -> Vec<F> {
 	let bits = to_bits(num.to_repr().as_ref());
 	let sliced_bits = bits[..F::NUM_BITS as usize].to_vec();
-	sliced_bits.iter().map(|&x| F::from(x as u64)).collect()
+	sliced_bits.iter().map(|&x| F::from(u64::from(x))).collect()
 }
 
 /// Converts given field element to the bits.
 pub fn field_to_bits<F: FieldExt, const B: usize>(num: F) -> [F; B] {
 	let bits = to_bits(num.to_repr().as_ref());
 	let sliced_bits = bits[..B].to_vec();
-	let vec: Vec<F> = sliced_bits.iter().map(|&x| F::from(x as u64)).collect();
+	let vec: Vec<F> = sliced_bits.iter().map(|&x| F::from(u64::from(x))).collect();
 	vec.try_into().unwrap()
 }
 
