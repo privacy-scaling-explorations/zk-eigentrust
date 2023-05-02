@@ -1,12 +1,12 @@
 //! Helper functions for generating params, pk/vk pairs, creating and verifying
 //! proofs, etc.
-
+use crate::FieldExt;
 use halo2::{
 	circuit::AssignedCell,
 	halo2curves::{
+		ff::{PrimeField, WithSmallOrderMulGroup},
 		pairing::{Engine, MultiMillerLoop},
 		serde::SerdeObject,
-		FieldExt,
 	},
 	plonk::{
 		create_proof, keygen_pk, keygen_vk, verify_proof, Circuit, Error, ProvingKey, VerifyingKey,
@@ -131,7 +131,7 @@ pub fn assigned_as_bool<F: FieldExt>(bit: AssignedCell<F, F>) -> bool {
 	let bit_value = bit.value();
 	let mut is_one = false;
 	bit_value.map(|f| {
-		is_one = F::one() == *f;
+		is_one = F::ONE == *f;
 		f
 	});
 	is_one
@@ -140,7 +140,7 @@ pub fn assigned_as_bool<F: FieldExt>(bit: AssignedCell<F, F>) -> bool {
 /// Returns field value from the assigned cell value
 pub fn assigned_to_field<F: FieldExt>(cell: AssignedCell<F, F>) -> F {
 	let cell_value = cell.value();
-	let mut arr = F::zero();
+	let mut arr = F::ZERO;
 	cell_value.map(|f| {
 		arr = *f;
 	});
@@ -162,14 +162,14 @@ pub fn to_bits(num: &[u8]) -> Vec<bool> {
 pub fn field_to_bits_vec<F: FieldExt>(num: F) -> Vec<F> {
 	let bits = to_bits(num.to_repr().as_ref());
 	let sliced_bits = bits[..F::NUM_BITS as usize].to_vec();
-	sliced_bits.iter().map(|&x| F::from(x)).collect()
+	sliced_bits.iter().map(|&x| F::from(x as u64)).collect()
 }
 
 /// Converts given field element to the bits.
 pub fn field_to_bits<F: FieldExt, const B: usize>(num: F) -> [F; B] {
 	let bits = to_bits(num.to_repr().as_ref());
 	let sliced_bits = bits[..B].to_vec();
-	let vec: Vec<F> = sliced_bits.iter().map(|&x| F::from(x)).collect();
+	let vec: Vec<F> = sliced_bits.iter().map(|&x| F::from(x as u64)).collect();
 	vec.try_into().unwrap()
 }
 
@@ -199,6 +199,7 @@ pub fn generate_params<E: Engine + Debug>(k: u32) -> ParamsKZG<E>
 where
 	E::G1Affine: SerdeObject,
 	E::G2Affine: SerdeObject,
+	E::Scalar: PrimeField,
 {
 	ParamsKZG::<E>::new(k)
 }
@@ -208,6 +209,7 @@ pub fn write_params<E: Engine + Debug>(params: &ParamsKZG<E>)
 where
 	E::G1Affine: SerdeObject,
 	E::G2Affine: SerdeObject,
+	E::Scalar: PrimeField,
 {
 	let mut buffer: Vec<u8> = Vec::new();
 	params.write(&mut buffer).unwrap();
@@ -220,6 +222,7 @@ pub fn read_params<E: Engine + Debug>(k: u32) -> ParamsKZG<E>
 where
 	E::G1Affine: SerdeObject,
 	E::G2Affine: SerdeObject,
+	E::Scalar: PrimeField,
 {
 	let buffer: Vec<u8> = read_bytes_data(&format!("params-{}", k));
 	ParamsKZG::<E>::read(&mut &buffer[..]).unwrap()
@@ -232,6 +235,7 @@ pub fn keygen<E: Engine + Debug, C: Circuit<E::Scalar>>(
 where
 	E::G1Affine: SerdeObject,
 	E::G2Affine: SerdeObject,
+	E::Scalar: FieldExt,
 {
 	let vk = keygen_vk::<<E as Engine>::G1Affine, ParamsKZG<E>, _>(params, &circuit)?;
 	let pk = keygen_pk::<<E as Engine>::G1Affine, ParamsKZG<E>, _>(params, vk, &circuit)?;
@@ -251,6 +255,7 @@ pub fn finalize_verify<
 where
 	E::G1Affine: SerdeObject,
 	E::G2Affine: SerdeObject,
+	E::Scalar: PrimeField,
 {
 	v.finalize()
 }
@@ -264,6 +269,7 @@ pub fn prove<E: Engine + Debug, C: Circuit<E::Scalar>, R: Rng + Clone>(
 where
 	E::G1Affine: SerdeObject,
 	E::G2Affine: SerdeObject,
+	E::Scalar: FieldExt + WithSmallOrderMulGroup<3>,
 {
 	let mut transcript = Blake2bWrite::<_, E::G1Affine, Challenge255<_>>::init(vec![]);
 	create_proof::<KZGCommitmentScheme<E>, ProverGWC<_>, _, _, _, _>(
@@ -287,6 +293,7 @@ pub fn verify<E: MultiMillerLoop + Debug>(
 where
 	E::G1Affine: SerdeObject,
 	E::G2Affine: SerdeObject,
+	E::Scalar: FieldExt + WithSmallOrderMulGroup<3>,
 {
 	let strategy = AccumulatorStrategy::<E>::new(params);
 	let mut transcript = Blake2bRead::<_, E::G1Affine, Challenge255<_>>::init(proof);
@@ -309,6 +316,7 @@ pub fn prove_and_verify<E: MultiMillerLoop + Debug, C: Circuit<E::Scalar> + Clon
 where
 	E::G1Affine: SerdeObject,
 	E::G2Affine: SerdeObject,
+	E::Scalar: FieldExt + WithSmallOrderMulGroup<3>,
 {
 	let pk = keygen(&params, circuit.clone())?;
 	let start = Instant::now();

@@ -9,7 +9,7 @@ use crate::{
 };
 use halo2::{
 	arithmetic::Field,
-	halo2curves::{bn256::Fr, group::ff::PrimeField, FieldExt},
+	halo2curves::{bn256::Fr, ff::FromUniformBytes, group::ff::PrimeField},
 };
 use num_bigint::BigUint;
 use rand::RngCore;
@@ -48,10 +48,10 @@ impl SecretKey {
 		let a = Fr::random(rng);
 		let hash: Vec<u8> = blh(&a.to_bytes());
 		let bytes_wide = to_wide(&hash[..32]);
-		let sk0 = Fr::from_bytes_wide(&bytes_wide);
+		let sk0 = Fr::from_uniform_bytes(&bytes_wide);
 
 		let bytes_wide = to_wide(&hash[32..]);
-		let sk1 = Fr::from_bytes_wide(&bytes_wide);
+		let sk1 = Fr::from_uniform_bytes(&bytes_wide);
 		SecretKey(sk0, sk1)
 	}
 
@@ -121,7 +121,7 @@ pub fn sign(sk: &SecretKey, pk: &PublicKey, m: Fr) -> Signature {
 	let s = r_bn + &sk0 * m_hash_bn;
 	let suborder = BabyJubJub::suborder();
 	let s = s % BigUint::from_bytes_le(&suborder.to_bytes());
-	let s = Fr::from_bytes_wide(&to_wide(&s.to_bytes_le()));
+	let s = Fr::from_uniform_bytes(&to_wide(&s.to_bytes_le()));
 
 	Signature { big_r, s }
 }

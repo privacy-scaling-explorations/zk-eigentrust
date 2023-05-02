@@ -8,7 +8,7 @@ use crate::{
 	params::RoundParams,
 	poseidon::sponge::PoseidonSpongeChipset,
 	rns::RnsParams,
-	Chipset, RegionCtx,
+	Chipset, FieldExt, RegionCtx,
 };
 use halo2::{
 	arithmetic::Field,
@@ -36,6 +36,8 @@ pub struct PoseidonReadChipset<RD: Read, C: CurveAffine, L: Layouter<C::Scalar>,
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	R: RoundParams<C::Scalar, WIDTH>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
 {
 	// Reader
 	reader: RD,
@@ -51,6 +53,8 @@ impl<RD: Read, C: CurveAffine, L: Layouter<C::Scalar>, P, R> PoseidonReadChipset
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	R: RoundParams<C::Scalar, WIDTH>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
 {
 	/// Construct a new PoseidonReadChipset
 	pub fn new(reader: RD, loader: LoaderConfig<C, L, P>) -> Self {
@@ -65,7 +69,7 @@ where
 				|| "assigned_zero",
 				|region: Region<'_, C::Scalar>| {
 					let mut ctx = RegionCtx::new(region, 0);
-					Ok(ctx.assign_fixed(loader.common.fixed[0], C::Scalar::zero())?)
+					Ok(ctx.assign_fixed(loader.common.fixed[0], <C::Scalar as Field>::ZERO)?)
 				},
 			)
 			.unwrap()
@@ -77,6 +81,8 @@ impl<RD: Read, C: CurveAffine, L: Layouter<C::Scalar>, P, R> Transcript<C, Loade
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	R: RoundParams<C::Scalar, WIDTH>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
 {
 	/// Returns [`LoaderConfig`].
 	fn loader(&self) -> &LoaderConfig<C, L, P> {
@@ -134,6 +140,8 @@ impl<RD: Read, C: CurveAffine, L: Layouter<C::Scalar>, P, R>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	R: RoundParams<C::Scalar, WIDTH>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
 {
 	/// Read a scalar.
 	fn read_scalar(&mut self) -> Result<Halo2LScalar<C, L, P>, snark_verifier::Error> {

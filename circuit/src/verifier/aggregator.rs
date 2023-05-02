@@ -29,7 +29,7 @@ use crate::{
 	Chip, CommonConfig, RegionCtx, ADVICE,
 };
 use halo2::{
-	circuit::{Layouter, Region, SimpleFloorPlanner, Value},
+	circuit::{Layouter, Region, SimpleFloorPlanner},
 	halo2curves::bn256::{Bn256, Fq, Fr, G1Affine},
 	plonk::{create_proof, Circuit, ConstraintSystem, Error},
 	poly::{

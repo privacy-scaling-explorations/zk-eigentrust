@@ -12,10 +12,9 @@ use crate::{
 	},
 	rns::RnsParams,
 	utils::assigned_as_bool,
-	Chip, Chipset, CommonConfig,
+	Chip, Chipset, CommonConfig, FieldExt,
 };
 use halo2::{
-	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter},
 	plonk::{Error, Selector},
 };

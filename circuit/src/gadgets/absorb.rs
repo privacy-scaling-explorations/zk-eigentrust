@@ -1,6 +1,5 @@
-use crate::{Chip, CommonConfig, RegionCtx};
+use crate::{Chip, CommonConfig, FieldExt, RegionCtx};
 use halo2::{
-	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region},
 	plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
 	poly::Rotation,
@@ -41,7 +40,7 @@ impl<F: FieldExt, const WIDTH: usize> Chip<F> for AbsorbChip<F, WIDTH> {
 		let absorb_selector = meta.selector();
 
 		meta.create_gate("absorb", |v_cells| {
-			let mut exprs = [(); WIDTH].map(|_| Expression::Constant(F::zero()));
+			let mut exprs = [(); WIDTH].map(|_| Expression::Constant(F::ZERO));
 
 			let s = v_cells.query_selector(absorb_selector);
 			for i in 0..WIDTH {

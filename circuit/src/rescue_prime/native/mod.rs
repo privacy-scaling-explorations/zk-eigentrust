@@ -1,8 +1,7 @@
 /// Native sponge implementation
 pub mod sponge;
 
-use crate::params::RoundParams;
-use halo2::arithmetic::FieldExt;
+use crate::{params::RoundParams, FieldExt};
 use std::marker::PhantomData;
 
 /// Constructs objects.
