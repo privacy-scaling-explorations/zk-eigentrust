@@ -140,18 +140,28 @@ where
 		let scalar = self.reader.as_mut().and_then(|reader| {
 			let mut data = <C::Scalar as PrimeField>::Repr::default();
 			if reader.read_exact(data.as_mut()).is_err() {
-				return Value::unknown();
-			}
-			let value = Option::<C::Scalar>::from(C::Scalar::from_repr(data))
-				.ok_or_else(|| {
+				eprintln!(
+					"{:?}",
 					VerifierError::Transcript(
 						ErrorKind::Other,
 						"invalid field element encoding in proof".to_string(),
 					)
-				})
-				.unwrap();
+				);
+				return Value::unknown();
+			}
+			let value = Option::<C::Scalar>::from(C::Scalar::from_repr(data)).ok_or_else(|| {
+				VerifierError::Transcript(
+					ErrorKind::Other,
+					"invalid point encoding in proof".to_string(),
+				)
+			});
 
-			Value::known(value)
+			if value.is_err() {
+				eprintln!("{:?}", value.err());
+				return Value::unknown();
+			} else {
+				Value::known(value.unwrap())
+			}
 		});
 		let loader = self.loader.clone();
 		let mut layouter = loader.layouter.lock().unwrap();
@@ -180,21 +190,32 @@ where
 		let _ = self.reader.as_mut().and_then(|reader| {
 			let mut compressed = C::Repr::default();
 			if reader.read_exact(compressed.as_mut()).is_err() {
-				return Value::unknown();
-			}
-			let coords = C::from_bytes(&compressed).unwrap().coordinates().unwrap();
-			x = Some(Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_w(*coords.x()));
-			y = Some(Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_w(*coords.y()));
-			let value = Option::<C>::from(C::from_bytes(&compressed))
-				.ok_or_else(|| {
+				eprintln!(
+					"{:?}",
 					VerifierError::Transcript(
 						ErrorKind::Other,
 						"invalid field element encoding in proof".to_string(),
 					)
-				})
-				.unwrap();
+				);
+				return Value::unknown();
+			};
 
-			Value::known(value)
+			let coords = C::from_bytes(&compressed).unwrap().coordinates().unwrap();
+			x = Some(Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_w(*coords.x()));
+			y = Some(Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_w(*coords.y()));
+			let value = Option::<C>::from(C::from_bytes(&compressed)).ok_or_else(|| {
+				VerifierError::Transcript(
+					ErrorKind::Other,
+					"invalid point encoding in proof".to_string(),
+				)
+			});
+
+			if value.is_err() {
+				eprintln!("{:?}", value.err());
+				return Value::unknown();
+			} else {
+				Value::known(value.unwrap())
+			}
 		});
 
 		let loader = self.loader.clone();
