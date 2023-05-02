@@ -13,7 +13,6 @@ use eigen_trust_circuit::{
 		halo2curves::{
 			bn256::{Bn256, Fr as Scalar, G1Affine},
 			group::ff::PrimeField,
-			FieldExt,
 		},
 		plonk::ProvingKey,
 		poly::kzg::commitment::ParamsKZG,
