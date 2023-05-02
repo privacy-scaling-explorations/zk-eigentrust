@@ -263,7 +263,11 @@ mod test {
 	const NUM_ITERATIONS: usize = 10;
 	const INITIAL_SCORE: u128 = 2437;
 
-	fn sign_opinion(
+	fn sign_opinion<
+		const NUM_NEIGHBOURS: usize,
+		const NUM_ITERATIONS: usize,
+		const INITIAL_SCORE: u128,
+	>(
 		sk: &SecretKey, pk: &PublicKey, pks: &[PublicKey; NUM_NEIGHBOURS],
 		scores: &[Fr; NUM_NEIGHBOURS],
 	) -> Opinion<NUM_NEIGHBOURS> {
@@ -352,7 +356,9 @@ mod test {
 		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
 		scores[1] = Fr::from_u128(INITIAL_SCORE);
 
-		let op1 = sign_opinion(&sk1, &pk1, &pks, &scores);
+		let op1 = sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
+			&sk1, &pk1, &pks, &scores,
+		);
 
 		set.update_op(pk1, op1);
 
@@ -382,7 +388,9 @@ mod test {
 		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
 		scores[1] = Fr::from_u128(INITIAL_SCORE);
 
-		let op1 = sign_opinion(&sk1, &pk1, &pks, &scores);
+		let op1 = sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
+			&sk1, &pk1, &pks, &scores,
+		);
 
 		set.update_op(pk1, op1);
 
@@ -394,7 +402,9 @@ mod test {
 		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
 		scores[1] = Fr::from_u128(INITIAL_SCORE);
 
-		let op2 = sign_opinion(&sk2, &pk2, &pks, &scores);
+		let op2 = sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
+			&sk2, &pk2, &pks, &scores,
+		);
 
 		set.update_op(pk2, op2);
 
@@ -429,7 +439,9 @@ mod test {
 		scores[1] = Fr::from_u128(300);
 		scores[2] = Fr::from_u128(700);
 
-		let op1 = sign_opinion(&sk1, &pk1, &pks, &scores);
+		let op1 = sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
+			&sk1, &pk1, &pks, &scores,
+		);
 
 		set.update_op(pk1, op1);
 
@@ -443,7 +455,9 @@ mod test {
 		scores[0] = Fr::from_u128(600);
 		scores[2] = Fr::from_u128(400);
 
-		let op2 = sign_opinion(&sk2, &pk2, &pks, &scores);
+		let op2 = sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
+			&sk2, &pk2, &pks, &scores,
+		);
 
 		set.update_op(pk2, op2);
 
@@ -457,7 +471,9 @@ mod test {
 		scores[0] = Fr::from_u128(600);
 		scores[1] = Fr::from_u128(400);
 
-		let op3 = sign_opinion(&sk3, &pk3, &pks, &scores);
+		let op3 = sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
+			&sk3, &pk3, &pks, &scores,
+		);
 
 		set.update_op(pk3, op3);
 
@@ -492,7 +508,9 @@ mod test {
 		scores[1] = Fr::from_u128(300);
 		scores[2] = Fr::from_u128(700);
 
-		let op1 = sign_opinion(&sk1, &pk1, &pks, &scores);
+		let op1 = sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
+			&sk1, &pk1, &pks, &scores,
+		);
 
 		set.update_op(pk1, op1);
 
@@ -506,7 +524,9 @@ mod test {
 		scores[0] = Fr::from_u128(600);
 		scores[2] = Fr::from_u128(400);
 
-		let op2 = sign_opinion(&sk2, &pk2, &pks, &scores);
+		let op2 = sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
+			&sk2, &pk2, &pks, &scores,
+		);
 
 		set.update_op(pk2, op2);
 
@@ -542,7 +562,9 @@ mod test {
 		scores[1] = Fr::from_u128(300);
 		scores[2] = Fr::from_u128(700);
 
-		let op1 = sign_opinion(&sk1, &pk1, &pks, &scores);
+		let op1 = sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
+			&sk1, &pk1, &pks, &scores,
+		);
 
 		set.update_op(pk1, op1);
 
@@ -556,7 +578,9 @@ mod test {
 		scores[0] = Fr::from_u128(600);
 		scores[2] = Fr::from_u128(400);
 
-		let op2 = sign_opinion(&sk2, &pk2, &pks, &scores);
+		let op2 = sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
+			&sk2, &pk2, &pks, &scores,
+		);
 
 		set.update_op(pk2, op2);
 
@@ -570,7 +594,9 @@ mod test {
 		scores[0] = Fr::from_u128(600);
 		scores[1] = Fr::from_u128(400);
 
-		let op3 = sign_opinion(&sk3, &pk3, &pks, &scores);
+		let op3 = sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
+			&sk3, &pk3, &pks, &scores,
+		);
 
 		set.update_op(pk3, op3);
 
@@ -610,7 +636,9 @@ mod test {
 		scores[1] = Fr::from_u128(300);
 		scores[2] = Fr::from_u128(700);
 
-		let op1 = sign_opinion(&sk1, &pk1, &pks, &scores);
+		let op1 = sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
+			&sk1, &pk1, &pks, &scores,
+		);
 
 		set.update_op(pk1, op1);
 
@@ -624,7 +652,9 @@ mod test {
 		scores[0] = Fr::from_u128(600);
 		scores[2] = Fr::from_u128(400);
 
-		let op2 = sign_opinion(&sk2, &pk2, &pks, &scores);
+		let op2 = sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
+			&sk2, &pk2, &pks, &scores,
+		);
 
 		set.update_op(pk2, op2);
 
@@ -669,7 +699,9 @@ mod test {
 		scores[0] = Fr::from_u128(10);
 		scores[1] = Fr::from_u128(10);
 
-		let op1 = sign_opinion(&sk1, &pk1, &pks, &scores);
+		let op1 = sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
+			&sk1, &pk1, &pks, &scores,
+		);
 
 		// Peer2(pk2) signs the opinion
 		let mut pks = [PublicKey::default(); NUM_NEIGHBOURS];
@@ -680,7 +712,9 @@ mod test {
 		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
 		scores[2] = Fr::from_u128(30);
 
-		let op2 = sign_opinion(&sk2, &pk2, &pks, &scores);
+		let op2 = sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
+			&sk2, &pk2, &pks, &scores,
+		);
 
 		// Peer3(pk3) signs the opinion
 		let mut pks = [PublicKey::default(); NUM_NEIGHBOURS];
@@ -691,7 +725,9 @@ mod test {
 		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
 		scores[0] = Fr::from_u128(10);
 
-		let op3 = sign_opinion(&sk3, &pk3, &pks, &scores);
+		let op3 = sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
+			&sk3, &pk3, &pks, &scores,
+		);
 
 		// Setup EigenTrustSet
 		let mut set = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
@@ -718,4 +754,107 @@ mod test {
 	// INITIAL_SCORE - from 100 to 10000000;
 	//
 	// Write tests for each version
+
+	fn eigen_trust_set_testing_helper<
+		const NUM_NEIGHBOURS: usize,
+		const NUM_ITERATIONS: usize,
+		const INITIAL_SCORE: u128,
+	>(
+		is_random_score: bool,
+	) {
+		let mut set = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
+
+		let rng = &mut thread_rng();
+
+		let sks = [(); NUM_NEIGHBOURS].map(|__| SecretKey::random(rng));
+		let pks = sks.clone().map(|s| s.public());
+
+		// Add the publicKey to the set
+		let _: Vec<_> = pks.iter().map(|pk| set.add_member(*pk)).collect();
+
+		// Update the opinions
+		for i in 0..NUM_NEIGHBOURS {
+			let scores = [(); NUM_NEIGHBOURS].map(|_| {
+				let score = rng.gen::<u128>();
+				if is_random_score {
+					Fr::from_u128(score)
+				} else {
+					Fr::from_u128(1)
+				}
+			});
+
+			let op_i = sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
+				&sks[i], &pks[i], &pks, &scores,
+			);
+
+			set.update_op(pks[i], op_i);
+		}
+
+		set.converge();
+	}
+
+	#[test]
+	fn test_scaling_1() {
+		// 0.25s
+		const NUM_NEIGHBOURS: usize = 5;
+		const NUM_ITERATIONS: usize = 10;
+		const INITIAL_SCORE: u128 = 100;
+		let is_random_score = true;
+
+		eigen_trust_set_testing_helper::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
+			is_random_score,
+		)
+	}
+
+	#[test]
+	fn test_scaling_2() {
+		// 2578.38s
+		const NUM_NEIGHBOURS: usize = 750; // max value, higher values lead to stack overflow
+		const NUM_ITERATIONS: usize = 100;
+		const INITIAL_SCORE: u128 = 10000000;
+		let is_random_score = true;
+
+		eigen_trust_set_testing_helper::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
+			is_random_score,
+		)
+	}
+
+	#[test]
+	fn test_scaling_3() {
+		// 536.51s
+		const NUM_NEIGHBOURS: usize = 333;
+		const NUM_ITERATIONS: usize = 12;
+		const INITIAL_SCORE: u128 = 11111;
+		let is_random_score = true;
+
+		eigen_trust_set_testing_helper::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
+			is_random_score,
+		)
+	}
+
+	#[test]
+	fn test_scaling_4() {
+		// 83.12s
+		const NUM_NEIGHBOURS: usize = 128;
+		const NUM_ITERATIONS: usize = 18;
+		const INITIAL_SCORE: u128 = 1048576;
+		let is_random_score = true;
+
+		eigen_trust_set_testing_helper::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
+			is_random_score,
+		)
+	}
+
+	#[test]
+	fn test_scaling_5() {
+		// 22.19s
+		const NUM_NEIGHBOURS: usize = 64;
+		const NUM_ITERATIONS: usize = 10;
+		const INITIAL_SCORE: u128 = 4096;
+		let is_random_score = true;
+
+		eigen_trust_set_testing_helper::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
+			is_random_score,
+		)
+	}
 }
