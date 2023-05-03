@@ -137,32 +137,27 @@ where
 {
 	/// Read a scalar.
 	fn read_scalar(&mut self) -> Result<Halo2LScalar<C, L, P>, snark_verifier::Error> {
-		let scalar = self.reader.as_mut().and_then(|reader| {
-			let mut data = <C::Scalar as PrimeField>::Repr::default();
-			if reader.read_exact(data.as_mut()).is_err() {
-				eprintln!(
-					"{:?}",
-					VerifierError::Transcript(
-						ErrorKind::Other,
-						"invalid field element encoding in proof".to_string(),
-					)
-				);
-				return Value::unknown();
-			}
-			let value = Option::<C::Scalar>::from(C::Scalar::from_repr(data)).ok_or_else(|| {
-				VerifierError::Transcript(
-					ErrorKind::Other,
-					"invalid point encoding in proof".to_string(),
-				)
-			});
-
-			if value.is_err() {
-				eprintln!("{:?}", value.err());
-				return Value::unknown();
-			} else {
-				Value::known(value.unwrap())
-			}
+		// Taking out reader from Value for a proper error handling
+		let mut reader_out: Option<&mut RD> = None;
+		let _ = self.reader.as_mut().and_then(|reader| {
+			reader_out = Some(reader);
+			Value::known(<C::Scalar as PrimeField>::Repr::default())
 		});
+
+		let mut data = <C::Scalar as PrimeField>::Repr::default();
+		reader_out.unwrap().read_exact(data.as_mut()).map_err(|err| {
+			VerifierError::Transcript(
+				err.kind(),
+				"invalid field element encoding in proof".to_string(),
+			)
+		})?;
+		let scalar = Option::<C::Scalar>::from(C::Scalar::from_repr(data)).ok_or_else(|| {
+			VerifierError::Transcript(
+				ErrorKind::Other,
+				"invalid field element encoding in proof".to_string(),
+			)
+		})?;
+
 		let loader = self.loader.clone();
 		let mut layouter = loader.layouter.lock().unwrap();
 		let assigned_scalar = layouter
@@ -170,7 +165,8 @@ where
 				|| "assign_scalar",
 				|region: Region<'_, C::Scalar>| {
 					let mut ctx = RegionCtx::new(region, 0);
-					let scalar = ctx.assign_advice(self.loader.common.advice[0], scalar)?;
+					let scalar =
+						ctx.assign_advice(self.loader.common.advice[0], Value::known(scalar))?;
 					Ok(scalar)
 				},
 			)
@@ -184,39 +180,31 @@ where
 
 	/// Read an elliptic curve point.
 	fn read_ec_point(&mut self) -> Result<Halo2LEcPoint<C, L, P>, snark_verifier::Error> {
-		let mut x: Option<Integer<_, _, NUM_LIMBS, NUM_BITS, P>> = None;
-		let mut y: Option<Integer<_, _, NUM_LIMBS, NUM_BITS, P>> = None;
-
+		// Taking out reader from Value for a proper error handling
+		let mut reader_out: Option<&mut RD> = None;
 		let _ = self.reader.as_mut().and_then(|reader| {
-			let mut compressed = C::Repr::default();
-			if reader.read_exact(compressed.as_mut()).is_err() {
-				eprintln!(
-					"{:?}",
-					VerifierError::Transcript(
-						ErrorKind::Other,
-						"invalid field element encoding in proof".to_string(),
-					)
-				);
-				return Value::unknown();
-			};
-
-			let coords = C::from_bytes(&compressed).unwrap().coordinates().unwrap();
-			x = Some(Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_w(*coords.x()));
-			y = Some(Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_w(*coords.y()));
-			let value = Option::<C>::from(C::from_bytes(&compressed)).ok_or_else(|| {
-				VerifierError::Transcript(
-					ErrorKind::Other,
-					"invalid point encoding in proof".to_string(),
-				)
-			});
-
-			if value.is_err() {
-				eprintln!("{:?}", value.err());
-				return Value::unknown();
-			} else {
-				Value::known(value.unwrap())
-			}
+			reader_out = Some(reader);
+			Value::known(C::Repr::default())
 		});
+
+		let mut compressed = C::Repr::default();
+		reader_out.unwrap().read_exact(compressed.as_mut()).map_err(|err| {
+			VerifierError::Transcript(
+				err.kind(),
+				"invalid field element encoding in proof".to_string(),
+			)
+		})?;
+
+		let point: C = Option::from(C::from_bytes(&compressed)).ok_or_else(|| {
+			VerifierError::Transcript(
+				ErrorKind::Other,
+				"invalid point encoding in proof".to_string(),
+			)
+		})?;
+
+		let coordinates = point.coordinates().unwrap();
+		let x = Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_w(*coordinates.x());
+		let y = Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_w(*coordinates.y());
 
 		let loader = self.loader.clone();
 		let mut layouter = loader.layouter.lock().unwrap();
@@ -233,14 +221,14 @@ where
 						x_limbs[i] = Some(
 							ctx.assign_advice(
 								self.loader.common.advice[i],
-								Value::known(x.clone().unwrap().limbs[i]),
+								Value::known(x.clone().limbs[i]),
 							)
 							.unwrap(),
 						);
 						y_limbs[i] = Some(
 							ctx.assign_advice(
 								self.loader.common.advice[i + NUM_LIMBS],
-								Value::known(y.clone().unwrap().limbs[i]),
+								Value::known(y.clone().limbs[i]),
 							)
 							.unwrap(),
 						);
@@ -250,14 +238,10 @@ where
 			)
 			.unwrap();
 		drop(layouter);
-		let assigned_integer_x = AssignedInteger::<_, _, NUM_LIMBS, NUM_BITS, P>::new(
-			x.unwrap(),
-			assigned_coordinates.0,
-		);
-		let assigned_integer_y = AssignedInteger::<_, _, NUM_LIMBS, NUM_BITS, P>::new(
-			y.unwrap(),
-			assigned_coordinates.1,
-		);
+		let assigned_integer_x =
+			AssignedInteger::<_, _, NUM_LIMBS, NUM_BITS, P>::new(x, assigned_coordinates.0);
+		let assigned_integer_y =
+			AssignedInteger::<_, _, NUM_LIMBS, NUM_BITS, P>::new(y, assigned_coordinates.1);
 
 		let assigned_point = AssignedPoint::<_, _, NUM_LIMBS, NUM_BITS, P>::new(
 			assigned_integer_x, assigned_integer_y,
