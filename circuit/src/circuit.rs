@@ -18,12 +18,12 @@ use crate::{
 		sponge::{PoseidonSpongeChipset, PoseidonSpongeConfig},
 		FullRoundChip, PartialRoundChip, PoseidonChipset, PoseidonConfig,
 	},
-	Chip, Chipset, CommonConfig, RegionCtx, ADVICE,
+	Chip, Chipset, CommonConfig, FieldExt, RegionCtx, ADVICE,
 };
 use halo2::{
 	arithmetic::Field,
 	circuit::{Layouter, Region, SimpleFloorPlanner, Value},
-	halo2curves::{bn256::Fr as Scalar, FieldExt},
+	halo2curves::{bn256::Fr as Scalar, ff::PrimeField},
 	plonk::{Circuit, ConstraintSystem, Error},
 };
 use rand::Rng;
@@ -443,7 +443,7 @@ pub fn native<F: FieldExt, const N: usize, const I: usize, const S: u128>(
 			distributions.push(local_distr);
 		}
 
-		let mut new_s = vec![F::zero(); N];
+		let mut new_s = vec![F::ZERO; N];
 		for i in 0..N {
 			for j in 0..N {
 				new_s[i] += distributions[j][i];
@@ -460,7 +460,7 @@ pub fn native<F: FieldExt, const N: usize, const I: usize, const S: u128>(
 		println!("unscaled: {:?}", s[i]);
 	}
 
-	let mut sum = F::zero();
+	let mut sum = F::ZERO;
 	for x in s.iter() {
 		sum += x;
 	}

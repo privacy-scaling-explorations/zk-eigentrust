@@ -1,5 +1,7 @@
-use crate::poseidon::{native::Poseidon, RoundParams};
-use halo2::arithmetic::FieldExt;
+use crate::{
+	poseidon::{native::Poseidon, RoundParams},
+	FieldExt,
+};
 use std::marker::PhantomData;
 
 /// Constructs objects.
@@ -22,7 +24,7 @@ where
 {
 	/// Create objects.
 	pub fn new() -> Self {
-		Self { inputs: Vec::new(), state: [F::zero(); WIDTH], _params: PhantomData }
+		Self { inputs: Vec::new(), state: [F::ZERO; WIDTH], _params: PhantomData }
 	}
 
 	/// Clones and appends all elements from a slice to the vec.
@@ -34,7 +36,7 @@ where
 	/// chunks of size WIDTH.
 	pub fn load_state(chunk: &[F]) -> [F; WIDTH] {
 		assert!(chunk.len() <= WIDTH);
-		let mut fixed_chunk = [F::zero(); WIDTH];
+		let mut fixed_chunk = [F::ZERO; WIDTH];
 		fixed_chunk[..chunk.len()].copy_from_slice(chunk);
 		fixed_chunk
 	}
@@ -46,7 +48,7 @@ where
 
 		for chunk in self.inputs.chunks(WIDTH) {
 			let loaded_state = Self::load_state(chunk);
-			let mut input = [F::zero(); WIDTH];
+			let mut input = [F::ZERO; WIDTH];
 			for i in 0..WIDTH {
 				input[i] = loaded_state[i] + self.state[i];
 			}

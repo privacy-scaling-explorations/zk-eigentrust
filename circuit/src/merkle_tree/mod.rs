@@ -5,11 +5,10 @@ use crate::{
 	gadgets::set::{SetChipset, SetConfig},
 	params::RoundParams,
 	poseidon::{PoseidonChipset, PoseidonConfig},
-	Chipset, CommonConfig, RegionCtx,
+	Chipset, CommonConfig, FieldExt, RegionCtx,
 };
 use halo2::{
 	circuit::{AssignedCell, Layouter, Region},
-	halo2curves::FieldExt,
 	plonk::Error,
 };
 use std::marker::PhantomData;
@@ -67,7 +66,7 @@ where
 			|| "assign_zero",
 			|region: Region<'_, F>| {
 				let mut ctx = RegionCtx::new(region, 0);
-				ctx.assign_from_constant(common.advice[0], F::zero())
+				ctx.assign_from_constant(common.advice[0], F::ZERO)
 			},
 		)?;
 
@@ -99,7 +98,7 @@ where
 				|region: Region<'_, F>| {
 					let mut ctx = RegionCtx::new(region, 0);
 					let is_inside_copied = ctx.copy_assign(common.advice[0], is_inside.clone())?;
-					ctx.constrain_to_constant(is_inside_copied, F::one())?;
+					ctx.constrain_to_constant(is_inside_copied, F::ONE)?;
 					Ok(())
 				},
 			)?;
@@ -168,7 +167,7 @@ mod test {
 		type FloorPlanner = SimpleFloorPlanner;
 
 		fn without_witnesses(&self) -> Self {
-			Self { path_arr: [[F::zero(); 2]; LENGTH], _params: PhantomData }
+			Self { path_arr: [[F::ZERO; 2]; LENGTH], _params: PhantomData }
 		}
 
 		fn configure(meta: &mut ConstraintSystem<F>) -> TestConfig {

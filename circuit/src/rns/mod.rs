@@ -1,9 +1,9 @@
 use crate::{
 	integer::native::Integer,
 	utils::{big_to_fe, fe_to_big},
+	FieldExt,
 };
 use halo2::{
-	arithmetic::FieldExt,
 	halo2curves::{
 		bn256::Fr,
 		group::{ff::PrimeField, Curve},
@@ -25,7 +25,10 @@ pub mod bn256;
 /// Secp256K1 curve RNS params
 pub mod secp256k1;
 
-pub(crate) fn make_mul_aux<C: CurveAffine>(aux_to_add: C) -> C {
+pub(crate) fn make_mul_aux<C: CurveAffine>(aux_to_add: C) -> C
+where
+	C::Scalar: FieldExt,
+{
 	let n = <C::Scalar>::NUM_BITS as usize;
 	let mut k0 = BigUint::one();
 	let one = BigUint::one();
@@ -72,7 +75,7 @@ pub trait RnsParams<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_
 		let rsh2 = Self::right_shifters()[2];
 
 		let mut res = Vec::new();
-		let mut carry = N::zero();
+		let mut carry = N::ZERO;
 		for i in (0..NUM_LIMBS).step_by(2) {
 			let (t_0, t_1) = (t[i], t[i + 1]);
 			let (r_0, r_1) = (n[i], n[i + 1]);
@@ -154,7 +157,7 @@ pub trait RnsParams<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_
 		let lsh_two = Self::left_shifters()[2];
 
 		let mut is_satisfied = true;
-		let mut v = N::zero();
+		let mut v = N::ZERO;
 		for i in (0..NUM_LIMBS).step_by(2) {
 			let (t_lo, t_hi) = (t[i], t[i + 1]);
 			let (r_lo, r_hi) = (result[i], result[i + 1]);
@@ -176,7 +179,7 @@ pub trait RnsParams<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_
 		let lsh_one = Self::left_shifters()[1];
 		let lsh_two = Self::left_shifters()[2];
 
-		let mut v = Expression::Constant(N::zero());
+		let mut v = Expression::Constant(N::ZERO);
 		let mut constraints = Vec::new();
 		for i in (0..NUM_LIMBS).step_by(2) {
 			let (t_lo, t_hi) = (t[i].clone(), t[i + 1].clone());
@@ -194,7 +197,7 @@ pub trait RnsParams<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_
 	/// Composes integer limbs into single [`FieldExt`] value.
 	fn compose(input: [N; NUM_LIMBS]) -> N {
 		let left_shifters = Self::left_shifters();
-		let mut sum = N::zero();
+		let mut sum = N::ZERO;
 		for i in 0..NUM_LIMBS {
 			sum += input[i] * left_shifters[i];
 		}
@@ -204,7 +207,7 @@ pub trait RnsParams<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_
 	/// Composes integer limbs as Expressions into single Expression value.
 	fn compose_exp(input: [Expression<N>; NUM_LIMBS]) -> Expression<N> {
 		let left_shifters = Self::left_shifters();
-		let mut sum = Expression::Constant(N::zero());
+		let mut sum = Expression::Constant(N::ZERO);
 		for i in 0..NUM_LIMBS {
 			sum = sum + input[i].clone() * left_shifters[i];
 		}
@@ -217,7 +220,7 @@ pub fn decompose_big<F: FieldExt, const NUM_LIMBS: usize, const BIT_LEN: usize>(
 	mut e: BigUint,
 ) -> [F; NUM_LIMBS] {
 	let mask = BigUint::from(1usize).shl(BIT_LEN) - 1usize;
-	let mut limbs = [F::zero(); NUM_LIMBS];
+	let mut limbs = [F::ZERO; NUM_LIMBS];
 	for i in 0..NUM_LIMBS {
 		let limb = mask.clone() & e.clone();
 		e = e.clone() >> BIT_LEN;

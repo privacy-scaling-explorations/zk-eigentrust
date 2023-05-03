@@ -7,7 +7,7 @@ use eigen_trust_circuit::{
 };
 use halo2::halo2curves::{
 	bn256::{Bn256, Fr as Scalar},
-	FieldExt,
+	ff::PrimeField,
 };
 use rand::thread_rng;
 use std::env::current_dir;

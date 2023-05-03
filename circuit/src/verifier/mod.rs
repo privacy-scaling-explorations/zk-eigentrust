@@ -141,15 +141,12 @@ mod test {
 	use crate::{
 		utils::{generate_params, prove_and_verify, read_params},
 		verifier::evm_verify,
-		RegionCtx,
+		FieldExt, RegionCtx,
 	};
 	use halo2::{
 		circuit::{Layouter, Region, SimpleFloorPlanner, Value},
 		dev::MockProver,
-		halo2curves::{
-			bn256::{Bn256, Fr},
-			FieldExt,
-		},
+		halo2curves::bn256::{Bn256, Fr},
 		plonk::{
 			Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, Instance, Selector,
 		},
@@ -203,7 +200,7 @@ mod test {
 				let advice_set_exp = advice.map(|c| v_cells.query_advice(c, Rotation::cur()));
 				let fixed_set_exp = fixed.map(|c| v_cells.query_fixed(c, Rotation::cur()));
 
-				let mut sum = Expression::Constant(F::zero());
+				let mut sum = Expression::Constant(F::ZERO);
 				for i in 0..advice_set_exp.len() {
 					sum = sum + advice_set_exp[i].clone();
 				}
@@ -238,7 +235,7 @@ mod test {
 							ctx.assign_fixed(config.fixed[i], self.fixed[i])?;
 						}
 
-						let mut sum = Value::known(F::zero());
+						let mut sum = Value::known(F::ZERO);
 						for i in 0..self.advice.len() {
 							sum = sum + self.advice[i];
 						}

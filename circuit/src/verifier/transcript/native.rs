@@ -4,6 +4,7 @@ use crate::{
 	poseidon::native::sponge::PoseidonSponge,
 	rns::RnsParams,
 	verifier::loader::native::{NUM_BITS, NUM_LIMBS},
+	FieldExt,
 };
 use halo2::{
 	halo2curves::{Coordinates, CurveAffine},
@@ -33,6 +34,8 @@ pub struct PoseidonRead<RD: Read, C: CurveAffine, P, R>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	R: RoundParams<C::Scalar, WIDTH>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
 {
 	// Reader
 	pub(crate) reader: RD,
@@ -48,6 +51,8 @@ impl<RD: Read, C: CurveAffine, P, R> PoseidonRead<RD, C, P, R>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	R: RoundParams<C::Scalar, WIDTH>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
 {
 	/// Create a new PoseidonRead transcript
 	pub fn new(reader: RD, loader: NativeSVLoader) -> Self {
@@ -59,6 +64,8 @@ impl<RD: Read, C: CurveAffine, P, R> Transcript<C, NativeSVLoader> for PoseidonR
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	R: RoundParams<C::Scalar, WIDTH>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
 {
 	/// Returns [`NativeSVLoader`].
 	fn loader(&self) -> &NativeSVLoader {
@@ -104,6 +111,8 @@ impl<RD: Read, C: CurveAffine, P, R> TranscriptRead<C, NativeSVLoader> for Posei
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	R: RoundParams<C::Scalar, WIDTH>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
 {
 	/// Read a scalar.
 	fn read_scalar(&mut self) -> Result<C::ScalarExt, VerifierError> {
@@ -154,6 +163,8 @@ pub struct PoseidonWrite<W: Write, C: CurveAffine, P, R>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	R: RoundParams<C::Scalar, WIDTH>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
 {
 	// Writer
 	writer: W,
@@ -169,6 +180,8 @@ impl<W: Write, C: CurveAffine, P, R> PoseidonWrite<W, C, P, R>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	R: RoundParams<C::Scalar, WIDTH>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
 {
 	/// Create a new PoseidonWrite transcript.
 	pub fn new(writer: W) -> Self {
@@ -180,6 +193,8 @@ impl<W: Write, C: CurveAffine, P, R> Transcript<C, NativeSVLoader> for PoseidonW
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	R: RoundParams<C::Scalar, WIDTH>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
 {
 	/// Returns [`NativeSVLoader`].
 	fn loader(&self) -> &NativeSVLoader {
@@ -226,8 +241,9 @@ where
 impl<W: Write, C: CurveAffine, P, R> TranscriptWrite<C> for PoseidonWrite<W, C, P, R>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
-
 	R: RoundParams<C::Scalar, WIDTH>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
 {
 	/// Write a scalar.
 	fn write_scalar(&mut self, scalar: C::Scalar) -> Result<(), VerifierError> {
@@ -272,6 +288,8 @@ impl<RD: Read, C: CurveAffine, P, R> Halo2Transcript<C, ChallengeScalar<C>>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	R: RoundParams<C::Scalar, WIDTH>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
 {
 	/// Squeeze an encoded verifier challenge from the transcript.
 	fn squeeze_challenge(&mut self) -> ChallengeScalar<C> {
@@ -305,6 +323,8 @@ impl<RD: Read, C: CurveAffine, P, R> Halo2TranscriptRead<C, ChallengeScalar<C>>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	R: RoundParams<C::Scalar, WIDTH>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
 {
 	/// Read a curve point from the prover.
 	fn read_point(&mut self) -> IoResult<C> {
@@ -330,6 +350,8 @@ impl<RD: Read, C: CurveAffine, P, R> TranscriptReadBuffer<RD, C, ChallengeScalar
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	R: RoundParams<C::Scalar, WIDTH>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
 {
 	/// Initialize a transcript given an input buffer.
 	fn init(reader: RD) -> Self {
@@ -342,6 +364,8 @@ impl<W: Write, C: CurveAffine, P, R> Halo2Transcript<C, ChallengeScalar<C>>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	R: RoundParams<C::Scalar, WIDTH>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
 {
 	/// Squeeze an encoded verifier challenge from the transcript.
 	fn squeeze_challenge(&mut self) -> ChallengeScalar<C> {
@@ -374,6 +398,8 @@ impl<W: Write, C: CurveAffine, P, R> Halo2TranscriptWrite<C, ChallengeScalar<C>>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	R: RoundParams<C::Scalar, WIDTH>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
 {
 	/// Write a curve point to the proof and the transcript.
 	fn write_point(&mut self, point: C) -> IoResult<()> {
@@ -399,6 +425,8 @@ impl<W: Write, C: CurveAffine, P, R> TranscriptWriterBuffer<W, C, ChallengeScala
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	R: RoundParams<C::Scalar, WIDTH>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
 {
 	/// Initialize a transcript given an output buffer.
 	fn init(writer: W) -> Self {

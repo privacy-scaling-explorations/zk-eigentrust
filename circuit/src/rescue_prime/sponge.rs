@@ -1,9 +1,8 @@
 use crate::{
 	gadgets::absorb::AbsorbChip, params::RoundParams, rescue_prime::RescuePrimeChip, Chip, Chipset,
-	CommonConfig, RegionCtx,
+	CommonConfig, FieldExt, RegionCtx,
 };
 use halo2::{
-	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region},
 	plonk::{Error, Selector},
 };
@@ -68,7 +67,7 @@ where
 
 				let mut state: [Option<AssignedCell<F, F>>; WIDTH] = [(); WIDTH].map(|_| None);
 				for i in 0..WIDTH {
-					let zero_asgn = ctx.assign_from_constant(common.advice[i], F::zero())?;
+					let zero_asgn = ctx.assign_from_constant(common.advice[i], F::ZERO)?;
 					state[i] = Some(zero_asgn);
 				}
 				Ok(state.map(|item| item.unwrap()))

@@ -1,5 +1,4 @@
-use crate::{params::RoundParams, poseidon::native::Poseidon};
-use halo2::halo2curves::FieldExt;
+use crate::{params::RoundParams, poseidon::native::Poseidon, FieldExt};
 use num_traits::pow;
 use std::{collections::HashMap, marker::PhantomData};
 
@@ -32,7 +31,7 @@ where
 		let mut nodes = HashMap::new();
 		// Assign zero to the leaf values if they are empty
 		for _i in leaves.len()..pow(2, height) {
-			leaves.push(F::zero());
+			leaves.push(F::ZERO);
 		}
 		nodes.insert(0, leaves);
 
@@ -43,7 +42,7 @@ where
 					continue;
 				}
 				let pos_inputs =
-					[nodes[&level][i], nodes[&level][i + 1], F::zero(), F::zero(), F::zero()];
+					[nodes[&level][i], nodes[&level][i + 1], F::ZERO, F::ZERO, F::ZERO];
 				let hasher: Poseidon<F, WIDTH, P> = Poseidon::new(pos_inputs);
 				hashes.push(hasher.permute()[0]);
 			}
@@ -78,7 +77,7 @@ where
 		// TODO: This way of finding index will fail if we have same inputs
 		//
 		let mut value_index = merkle_tree.nodes[&0].iter().position(|x| x == &value).unwrap();
-		let mut path_arr: [[F; 2]; LENGTH] = [[F::zero(); 2]; LENGTH];
+		let mut path_arr: [[F; 2]; LENGTH] = [[F::ZERO; 2]; LENGTH];
 		// Childs for a parent node is 2n and 2n + 1.
 		// value_index keeps index of that nodes in reverse order to apply this
 		// algorithm.
@@ -100,8 +99,7 @@ where
 	pub fn verify(&self) -> bool {
 		let mut is_satisfied = true;
 		for i in 0..self.path_arr.len() - 1 {
-			let pos_inputs =
-				[self.path_arr[i][0], self.path_arr[i][1], F::zero(), F::zero(), F::zero()];
+			let pos_inputs = [self.path_arr[i][0], self.path_arr[i][1], F::ZERO, F::ZERO, F::ZERO];
 			let hasher: Poseidon<F, WIDTH, P> = Poseidon::new(pos_inputs);
 			is_satisfied = is_satisfied | self.path_arr[i + 1].contains(&(hasher.permute()[0]));
 		}
