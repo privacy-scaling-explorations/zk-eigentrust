@@ -30,6 +30,7 @@ use ethers::{
 };
 use serde::de::DeserializeOwned;
 use std::{
+	collections::HashMap,
 	env,
 	fs::{self, write, File},
 	io::{BufReader, Error},
@@ -269,6 +270,27 @@ pub fn eddsa_sk_from_mnemonic(mnemonic: &str, count: u32) -> Result<Vec<SecretKe
 	}
 
 	Ok(secret_keys)
+}
+
+/// Returns a HashMap of Ethereum addresses to EDDSA public keys
+/// In a real implementation this would be an external table
+/// Temporary due to implementing ECDSA
+pub fn ecdsa_eddsa_map(mnemonic: &str) -> HashMap<Address, PublicKey> {
+	let ecdsa = eth_wallets_from_mnemonic(mnemonic, 10)
+		.unwrap()
+		.iter()
+		.map(|wallet| wallet.address())
+		.collect::<Vec<Address>>();
+	let eddsa: Vec<PublicKey> = eddsa_sk_from_mnemonic(mnemonic, 10)
+		.unwrap()
+		.iter()
+		.map(|sk| {
+			let pk = sk.public();
+			pk
+		})
+		.collect();
+
+	ecdsa.into_iter().zip(eddsa.into_iter()).collect()
 }
 
 #[cfg(test)]

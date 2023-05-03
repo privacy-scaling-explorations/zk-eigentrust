@@ -1,22 +1,22 @@
 use clap::{Args, Parser, Subcommand};
 use eigen_trust_circuit::{
-	utils::{read_bytes_data, read_json_data, write_json_data},
-	ProofRaw,
+	circuit::EigenTrust,
+	utils::{keygen, read_bytes_data, read_json_data, read_params, write_json_data},
 };
 use eigen_trust_client::{
-	manager::{Manager, MANAGER_STORE},
 	utils::{
 		compile_sol_contract, compile_yul_contracts, deploy_as, deploy_et_wrapper, deploy_verifier,
-		get_attestations, read_csv_data,
+		read_csv_data,
 	},
-	Client, ClientConfig,
+	Client, ClientConfig, INITIAL_SCORE, NUM_ITER, NUM_NEIGHBOURS, SCALE,
 };
 use ethers::{
 	abi::Address,
 	providers::Http,
 	signers::coins_bip39::{English, Mnemonic},
 };
-use std::{str::FromStr, sync::Arc};
+use rand::thread_rng;
+use std::str::FromStr;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -69,7 +69,14 @@ async fn main() {
 	let user_secrets_raw: Vec<[String; 3]> =
 		read_csv_data("bootstrap-nodes").expect("Failed to read bootstrap nodes");
 	let mut config: ClientConfig = read_json_data("client-config").expect("Failed to read config");
-	let mng_store = Arc::clone(&MANAGER_STORE);
+
+	// Temporary client setup values
+	let k = 14;
+	let params = read_params(k);
+	let rng = &mut thread_rng();
+
+	let et = EigenTrust::<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, SCALE>::random(rng);
+	let proving_key = keygen(&params, et).unwrap();
 
 	user_secrets_raw
 		.iter()
@@ -78,7 +85,7 @@ async fn main() {
 
 	match cli.mode {
 		Mode::Attest => {
-			let client = Client::new(config.clone());
+			let client = Client::new(config.clone(), params, proving_key);
 			println!("Attestations:\n{:#?}", config.ops);
 			client.attest().await.unwrap();
 		},
@@ -108,30 +115,8 @@ async fn main() {
 			println!("EtVerifierWrapper contract deployed. Address: {}", w_addr);
 		},
 		Mode::GenerateProof => {
-			let attestations = match get_attestations(&config).await {
-				Ok(attestations) => attestations,
-				Err(e) => {
-					eprintln!("Failed to get attestations: {:?}", e);
-					return;
-				},
-			};
-
-			let mut manager = match mng_store.lock() {
-				Ok(manager) => manager,
-				Err(_) => {
-					eprintln!("Failed to lock manager store");
-					return;
-				},
-			};
-
-			manager.generate_initial_attestations();
-
-			if let Err(e) = manager.add_attestations(attestations) {
-				eprintln!("Error adding attestations: {:?}", e);
-				return;
-			}
-
-			if let Err(e) = manager.calculate_proofs() {
+			let mut client = Client::new(config, params, proving_key);
+			if let Err(e) = client.calculate_proofs().await {
 				eprintln!("Error calculating proofs: {:?}", e);
 			}
 		},
@@ -141,17 +126,9 @@ async fn main() {
 			Err(e) => eprintln!("Failed to update client configuration.\n{}", e),
 		},
 		Mode::Verify => {
-			let client = Client::new(config);
+			let client = Client::new(config, params, proving_key);
 
-			let last_proof = match Manager::get_last_proof() {
-				Ok(proof) => ProofRaw::from(proof),
-				Err(e) => {
-					eprintln!("Failed to get the last proof: {:?}", e);
-					return;
-				},
-			};
-
-			if let Err(e) = client.verify(last_proof).await {
+			if let Err(e) = client.verify().await {
 				eprintln!("Failed to verify the proof: {:?}", e);
 				return;
 			}

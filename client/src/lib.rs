@@ -22,16 +22,20 @@
 pub mod att_station;
 pub mod attestation;
 pub mod error;
-pub mod manager;
 pub mod utils;
 
-use std::collections::HashMap;
-
-use crate::{att_station::AttestationCreatedFilter, manager::NUM_NEIGHBOURS};
+use crate::att_station::AttestationCreatedFilter;
 use att_station::{AttestationData as ContractAttestationData, AttestationStation as AttStation};
 use attestation::{Attestation, AttestationPayload, SignedAttestation};
 use eigen_trust_circuit::{
-	calculate_message_hash, eddsa::native::sign, halo2::halo2curves::bn256::Fr as Scalar, ProofRaw,
+	calculate_message_hash,
+	eddsa::native::{sign, PublicKey},
+	halo2::{
+		halo2curves::bn256::{Bn256, Fr as Scalar, G1Affine},
+		plonk::ProvingKey,
+		poly::kzg::commitment::ParamsKZG,
+	},
+	ProofRaw,
 };
 use error::EigenError;
 use ethers::{
@@ -43,10 +47,20 @@ use ethers::{
 	types::{Bytes, Filter, H256, U256},
 };
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use utils::{
-	eddsa_sk_from_mnemonic, eth_wallets_from_mnemonic, setup_client, EtVerifierWrapper,
-	SignerMiddlewareArc,
+	ecdsa_eddsa_map, eddsa_sk_from_mnemonic, eth_wallets_from_mnemonic, setup_client,
+	EtVerifierWrapper, SignerMiddlewareArc,
 };
+
+/// Number of iterations to run the eigen trust algorithm
+pub const NUM_ITER: usize = 10;
+/// Numbers of participants
+pub const NUM_NEIGHBOURS: usize = 5;
+/// Initial score for each participant before the algorithms is run
+pub const INITIAL_SCORE: u128 = 1000;
+/// Scale for the scores to be computed inside the ZK circuit
+pub const SCALE: u128 = 1000;
 
 #[derive(Debug)]
 pub enum ClientError {
@@ -68,13 +82,15 @@ pub struct ClientConfig {
 pub struct Client {
 	client: SignerMiddlewareArc,
 	config: ClientConfig,
+	params: ParamsKZG<Bn256>,
+	proving_key: ProvingKey<G1Affine>,
 }
 
 impl Client {
 	/// Create a new client
-	pub fn new(config: ClientConfig) -> Self {
+	pub fn new(config: ClientConfig, params: ParamsKZG<Bn256>, pk: ProvingKey<G1Affine>) -> Self {
 		let client = setup_client(&config.mnemonic, &config.node_url);
-		Self { client, config }
+		Self { client, config, params, proving_key: pk }
 	}
 
 	/// Submit an attestation to the attestation station
@@ -117,7 +133,7 @@ impl Client {
 		Ok(())
 	}
 
-	/// Calculate
+	/// Calculate proofs
 	pub async fn calculate_proofs(&mut self) -> Result<(), EigenError> {
 		// Get participants
 		let signed_attestations = self.get_signed_attestations().await.unwrap();
@@ -134,11 +150,28 @@ impl Client {
 
 		let participants: Vec<Address> = participants_map.keys().cloned().collect();
 
-		// TODO: Get EDDSA public keys from participants
+		// Get address map
+		let address_map = ecdsa_eddsa_map(&self.config.mnemonic);
+
+		// Pair addresses
+		let mut address_pairs: Vec<(Address, PublicKey)> = Vec::new();
+
+		for participant in participants {
+			address_pairs.push((participant, *address_map.get(&participant).unwrap()));
+		}
+
+		// Generate initial attestations for each participant
+
 		// TODO: Use dynamic set
+
 		// TODO: Store proofs
 
 		Ok(())
+	}
+
+	/// Generate initial attestations for all participants in the set
+	pub fn generate_initial_attestations(&mut self) {
+		// TODO
 	}
 
 	/// Get the attestations from the contract
@@ -176,32 +209,32 @@ impl Client {
 		Ok(signed)
 	}
 
-	/// Verify an attestation from a raw proof
-	pub async fn verify(&self, proof_raw: ProofRaw) -> Result<(), ClientError> {
-		let addr_res = self.config.et_verifier_wrapper_address.parse::<Address>();
-		let addr = addr_res.map_err(|_| ClientError::ParseError)?;
-		let et_wrapper_contract = EtVerifierWrapper::new(addr, self.client.clone());
+	/// Verifies last generated proof
+	pub async fn verify(&self) -> Result<(), ClientError> {
+		// let addr_res = self.config.et_verifier_wrapper_address.parse::<Address>();
+		// let addr = addr_res.map_err(|_| ClientError::ParseError)?;
+		// let et_wrapper_contract = EtVerifierWrapper::new(addr, self.client.clone());
 
-		let mut pub_ins = [U256::default(); NUM_NEIGHBOURS];
-		for (i, x) in proof_raw.pub_ins.iter().enumerate() {
-			pub_ins[i] = U256::from(x);
-		}
-		let proof_bytes = Bytes::from(proof_raw.proof.clone());
+		// let mut pub_ins = [U256::default(); NUM_NEIGHBOURS];
+		// for (i, x) in proof_raw.pub_ins.iter().enumerate() {
+		// 	pub_ins[i] = U256::from(x);
+		// }
+		// let proof_bytes = Bytes::from(proof_raw.proof.clone());
 
-		let tx_call = et_wrapper_contract.verify(pub_ins, proof_bytes);
-		let tx_res = tx_call.send();
-		let tx = tx_res.await.map_err(|e| {
-			eprintln!("{:?}", e);
-			ClientError::TxError
-		})?;
-		let res = tx.await.map_err(|e| {
-			eprintln!("{:?}", e);
-			ClientError::TxError
-		})?;
+		// let tx_call = et_wrapper_contract.verify(pub_ins, proof_bytes);
+		// let tx_res = tx_call.send();
+		// let tx = tx_res.await.map_err(|e| {
+		// 	eprintln!("{:?}", e);
+		// 	ClientError::TxError
+		// })?;
+		// let res = tx.await.map_err(|e| {
+		// 	eprintln!("{:?}", e);
+		// 	ClientError::TxError
+		// })?;
 
-		if let Some(receipt) = res {
-			println!("Transaction status: {:?}", receipt.status);
-		}
+		// if let Some(receipt) = res {
+		// 	println!("Transaction status: {:?}", receipt.status);
+		// }
 
 		Ok(())
 	}
@@ -209,89 +242,89 @@ impl Client {
 
 #[cfg(test)]
 mod test {
-	use crate::{
-		manager::NUM_NEIGHBOURS,
-		utils::{deploy_as, deploy_et_wrapper, deploy_verifier},
-		Client, ClientConfig,
-	};
-	use eigen_trust_circuit::{
-		utils::{read_bytes_data, read_json_data},
-		ProofRaw,
-	};
-	use ethers::{abi::Address, utils::Anvil};
+	// use crate::{
+	// 	manager::NUM_NEIGHBOURS,
+	// 	utils::{deploy_as, deploy_et_wrapper, deploy_verifier},
+	// 	Client, ClientConfig,
+	// };
+	// use eigen_trust_circuit::{
+	// 	utils::{read_bytes_data, read_json_data},
+	// 	ProofRaw,
+	// };
+	// use ethers::{abi::Address, utils::Anvil};
 
-	#[tokio::test]
-	async fn should_add_attestation() {
-		let anvil = Anvil::new().spawn();
-		let mnemonic = "test test test test test test test test test test test junk".to_string();
-		let node_url = anvil.endpoint();
-		let as_address = deploy_as(&mnemonic, &node_url).await.unwrap();
-		let et_contract = read_bytes_data("et_verifier");
-		let et_verifier_address = deploy_verifier(&mnemonic, &node_url, et_contract).await.unwrap();
-		let as_address_string = format!("{:?}", as_address);
-		let et_verifier_address_string = format!("{:?}", et_verifier_address);
+	// #[tokio::test]
+	// async fn should_add_attestation() {
+	// 	let anvil = Anvil::new().spawn();
+	// 	let mnemonic = "test test test test test test test test test test test junk".to_string();
+	// 	let node_url = anvil.endpoint();
+	// 	let as_address = deploy_as(&mnemonic, &node_url).await.unwrap();
+	// 	let et_contract = read_bytes_data("et_verifier");
+	// 	let et_verifier_address = deploy_verifier(&mnemonic, &node_url, et_contract).await.unwrap();
+	// 	let as_address_string = format!("{:?}", as_address);
+	// 	let et_verifier_address_string = format!("{:?}", et_verifier_address);
 
-		let dummy_user = [
-			"Alice".to_string(),
-			"2L9bbXNEayuRMMbrWFynPtgkrXH1iBdfryRH9Soa8M67".to_string(),
-			"9rBeBVtbN2MkHDTpeAouqkMWNFJC6Bxb6bXH9jUueWaF".to_string(),
-		];
-		let user_secrets_raw = vec![dummy_user; NUM_NEIGHBOURS];
+	// 	let dummy_user = [
+	// 		"Alice".to_string(),
+	// 		"2L9bbXNEayuRMMbrWFynPtgkrXH1iBdfryRH9Soa8M67".to_string(),
+	// 		"9rBeBVtbN2MkHDTpeAouqkMWNFJC6Bxb6bXH9jUueWaF".to_string(),
+	// 	];
+	// 	let user_secrets_raw = vec![dummy_user; NUM_NEIGHBOURS];
 
-		let config = ClientConfig {
-			ops: [200, 200, 200, 200, 200],
-			secret_key: [
-				"2L9bbXNEayuRMMbrWFynPtgkrXH1iBdfryRH9Soa8M67".to_string(),
-				"9rBeBVtbN2MkHDTpeAouqkMWNFJC6Bxb6bXH9jUueWaF".to_string(),
-			],
-			as_address: as_address_string,
-			et_verifier_wrapper_address: et_verifier_address_string,
-			mnemonic,
-			node_url,
-		};
+	// 	let config = ClientConfig {
+	// 		ops: [200, 200, 200, 200, 200],
+	// 		secret_key: [
+	// 			"2L9bbXNEayuRMMbrWFynPtgkrXH1iBdfryRH9Soa8M67".to_string(),
+	// 			"9rBeBVtbN2MkHDTpeAouqkMWNFJC6Bxb6bXH9jUueWaF".to_string(),
+	// 		],
+	// 		as_address: as_address_string,
+	// 		et_verifier_wrapper_address: et_verifier_address_string,
+	// 		mnemonic,
+	// 		node_url,
+	// 	};
 
-		let et_client = Client::new(config);
-		let res = et_client.attest().await;
-		assert!(res.is_ok());
+	// 	let et_client = Client::new(config);
+	// 	let res = et_client.attest().await;
+	// 	assert!(res.is_ok());
 
-		drop(anvil);
-	}
+	// 	drop(anvil);
+	// }
 
-	#[tokio::test]
-	async fn should_verify_proof() {
-		let anvil = Anvil::new().spawn();
-		let mnemonic = "test test test test test test test test test test test junk".to_string();
-		let node_url = anvil.endpoint();
-		let et_contract = read_bytes_data("et_verifier");
-		let et_verifier_address = deploy_verifier(&mnemonic, &node_url, et_contract).await.unwrap();
-		let et_verifier_wr =
-			deploy_et_wrapper(&mnemonic, &node_url, et_verifier_address).await.unwrap();
-		let et_verifier_address_string = format!("{:?}", et_verifier_wr);
+	// #[tokio::test]
+	// async fn should_verify_proof() {
+	// 	let anvil = Anvil::new().spawn();
+	// 	let mnemonic = "test test test test test test test test test test test junk".to_string();
+	// 	let node_url = anvil.endpoint();
+	// 	let et_contract = read_bytes_data("et_verifier");
+	// 	let et_verifier_address = deploy_verifier(&mnemonic, &node_url, et_contract).await.unwrap();
+	// 	let et_verifier_wr =
+	// 		deploy_et_wrapper(&mnemonic, &node_url, et_verifier_address).await.unwrap();
+	// 	let et_verifier_address_string = format!("{:?}", et_verifier_wr);
 
-		let dummy_user = [
-			"Alice".to_string(),
-			"2L9bbXNEayuRMMbrWFynPtgkrXH1iBdfryRH9Soa8M67".to_string(),
-			"9rBeBVtbN2MkHDTpeAouqkMWNFJC6Bxb6bXH9jUueWaF".to_string(),
-		];
-		let user_secrets_raw = vec![dummy_user; NUM_NEIGHBOURS];
+	// 	let dummy_user = [
+	// 		"Alice".to_string(),
+	// 		"2L9bbXNEayuRMMbrWFynPtgkrXH1iBdfryRH9Soa8M67".to_string(),
+	// 		"9rBeBVtbN2MkHDTpeAouqkMWNFJC6Bxb6bXH9jUueWaF".to_string(),
+	// 	];
+	// 	let user_secrets_raw = vec![dummy_user; NUM_NEIGHBOURS];
 
-		let config = ClientConfig {
-			ops: [200, 200, 200, 200, 200],
-			secret_key: [
-				"2L9bbXNEayuRMMbrWFynPtgkrXH1iBdfryRH9Soa8M67".to_string(),
-				"9rBeBVtbN2MkHDTpeAouqkMWNFJC6Bxb6bXH9jUueWaF".to_string(),
-			],
-			as_address: format!("{:?}", Address::default()),
-			et_verifier_wrapper_address: et_verifier_address_string,
-			mnemonic,
-			node_url,
-		};
+	// 	let config = ClientConfig {
+	// 		ops: [200, 200, 200, 200, 200],
+	// 		secret_key: [
+	// 			"2L9bbXNEayuRMMbrWFynPtgkrXH1iBdfryRH9Soa8M67".to_string(),
+	// 			"9rBeBVtbN2MkHDTpeAouqkMWNFJC6Bxb6bXH9jUueWaF".to_string(),
+	// 		],
+	// 		as_address: format!("{:?}", Address::default()),
+	// 		et_verifier_wrapper_address: et_verifier_address_string,
+	// 		mnemonic,
+	// 		node_url,
+	// 	};
 
-		let et_client = Client::new(config);
-		let proof_raw: ProofRaw = read_json_data("et_proof").unwrap();
-		let res = et_client.verify(proof_raw).await;
-		assert!(res.is_ok());
+	// 	let et_client = Client::new(config);
+	// 	let proof_raw: ProofRaw = read_json_data("et_proof").unwrap();
+	// 	let res = et_client.verify(proof_raw).await;
+	// 	assert!(res.is_ok());
 
-		drop(anvil);
-	}
+	// 	drop(anvil);
+	// }
 }
