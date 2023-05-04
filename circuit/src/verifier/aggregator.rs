@@ -29,7 +29,7 @@ use crate::{
 	Chip, CommonConfig, RegionCtx, ADVICE,
 };
 use halo2::{
-	circuit::{Layouter, Region, SimpleFloorPlanner},
+	circuit::{Layouter, Region, SimpleFloorPlanner, Value},
 	halo2curves::bn256::{Bn256, Fq, Fr, G1Affine},
 	plonk::{create_proof, Circuit, ConstraintSystem, Error},
 	poly::{
@@ -41,6 +41,7 @@ use halo2::{
 	},
 	transcript::{TranscriptReadBuffer, TranscriptWriterBuffer},
 };
+use itertools::Itertools;
 use rand::{thread_rng, RngCore};
 use snark_verifier::{
 	pcs::{
@@ -59,14 +60,6 @@ type PSV = PlonkSuccinctVerifier<KzgAs<Bn256, Gwc19>>;
 type SVK = KzgSuccinctVerifyingKey<G1Affine>;
 
 #[derive(Clone)]
-// TODO: Make SnarkWitness and functions to convert from Snark to SnarkWitness,
-// without witness function
-// pub struct SnarkWitness {
-// 	protocol: PlonkProtocol<G1Affine>,
-// 	instances: Vec<Vec<Value<Fr>>>,
-// 	proof: Value<Vec<u8>>,
-// }
-
 /// Snark structure
 pub struct Snark {
 	// Protocol
@@ -105,15 +98,55 @@ impl Snark {
 	}
 }
 
+#[derive(Clone)]
+/// UnassignedSnark structure
+pub struct UnassignedSnark {
+	protocol: PlonkProtocol<G1Affine>,
+	instances: Vec<Vec<Value<Fr>>>,
+	proof: Option<Vec<u8>>,
+}
+
+impl From<Snark> for UnassignedSnark {
+	fn from(snark: Snark) -> Self {
+		Self {
+			protocol: snark.protocol,
+			instances: snark
+				.instances
+				.into_iter()
+				.map(|instances| instances.into_iter().map(Value::known).collect_vec())
+				.collect(),
+			proof: Some(snark.proof),
+		}
+	}
+}
+
+impl UnassignedSnark {
+	fn without_witnesses(&self) -> Self {
+		UnassignedSnark {
+			protocol: self.protocol.clone(),
+			instances: self
+				.instances
+				.iter()
+				.map(|instances| vec![Value::unknown(); instances.len()])
+				.collect(),
+			proof: None,
+		}
+	}
+
+	fn proof(&self) -> Option<&[u8]> {
+		self.proof.as_ref().map(Vec::as_slice)
+	}
+}
+
 struct Aggregator {
 	// Succinct Verifying Key
 	svk: SVK,
 	// Snarks for the aggregation
-	snarks: Vec<Snark>,
+	snarks: Vec<UnassignedSnark>,
 	// Instances
 	instances: Vec<Fr>,
 	// Accumulation Scheme Proof
-	as_proof: Vec<u8>,
+	as_proof: Option<Vec<u8>>,
 }
 
 impl Clone for Aggregator {
@@ -162,7 +195,12 @@ impl Aggregator {
 			.map(|v| Integer::<_, _, NUM_LIMBS, NUM_BITS, Bn256_4_68>::from_w(v).limbs)
 			.concat();
 
-		Self { svk, snarks, instances, as_proof }
+		Self {
+			svk,
+			snarks: snarks.into_iter().map_into().collect(),
+			instances,
+			as_proof: Some(as_proof),
+		}
 	}
 }
 
@@ -191,9 +229,12 @@ impl Circuit<Fr> for Aggregator {
 
 	/// Returns a copy of this circuit with no witness values
 	fn without_witnesses(&self) -> Self {
-		// TODO: Return Value::unknown() for each value, after Implementing
-		// SnarkWitness
-		Self::clone(self)
+		Self {
+			svk: self.svk,
+			snarks: self.snarks.iter().map(UnassignedSnark::without_witnesses).collect(),
+			instances: Vec::new(),
+			as_proof: None,
+		}
 	}
 
 	/// Configure the circuit.
@@ -243,32 +284,27 @@ impl Circuit<Fr> for Aggregator {
 			config.main,
 			config.poseidon_sponge,
 		);
-
 		let mut accumulators = Vec::new();
 		for snark in &self.snarks {
 			let protocol = snark.protocol.loaded(&loader_config);
 			let mut transcript_read: PoseidonReadChipset<&[u8], G1Affine, _, Bn256_4_68, Params> =
-				PoseidonReadChipset::new(snark.proof.as_slice(), loader_config.clone());
-
+				PoseidonReadChipset::new(snark.proof(), loader_config.clone());
 			let mut lb = layouter_rc.lock().unwrap();
 			let mut instances: Vec<Vec<Halo2LScalar<G1Affine, _, Bn256_4_68>>> = Vec::new();
 			let mut instance_collector: Vec<Halo2LScalar<G1Affine, _, Bn256_4_68>> = Vec::new();
 			let instance_flatten =
-				snark.instances.clone().into_iter().flatten().collect::<Vec<Fr>>();
+				snark.instances.clone().into_iter().flatten().collect::<Vec<Value<Fr>>>();
 			let mut instance_chunks = instance_flatten.chunks(ADVICE);
 			lb.assign_region(
 				|| "assign_instances",
 				|region: Region<'_, Fr>| {
 					let mut ctx = RegionCtx::new(region, 0);
+					// TODO: When it is assign_advice, it assings one none cell. Fix it.
 					for _ in 0..instance_chunks.len() {
 						let chunk = instance_chunks.next().unwrap();
 						for i in 0..chunk.len() {
-							let assigned =
-								ctx.assign_from_constant(config.common.advice[i], chunk[i])?;
-
-							let lscalar =
-								Halo2LScalar::new(assigned.clone(), loader_config.clone());
-
+							let value = ctx.assign_advice(config.common.advice[i], chunk[i])?;
+							let lscalar = Halo2LScalar::new(value, loader_config.clone());
 							instance_collector.push(lscalar.clone());
 						}
 
@@ -302,8 +338,9 @@ impl Circuit<Fr> for Aggregator {
 			accumulators.extend(res);
 		}
 
+		let as_proof = self.as_proof.as_ref().map(Vec::as_slice);
 		let mut transcript: PoseidonReadChipset<&[u8], G1Affine, _, Bn256_4_68, Params> =
-			PoseidonReadChipset::new(&self.as_proof, loader_config);
+			PoseidonReadChipset::new(as_proof, loader_config);
 		let proof =
 			KzgAs::<Bn256, Gwc19>::read_proof(&Default::default(), &accumulators, &mut transcript)
 				.unwrap();
@@ -537,10 +574,10 @@ mod test {
 		let k = 22;
 		let params = generate_params::<Bn256>(k);
 
-		let random_circuit_1 = MulChip::new(Fr::one() + Fr::one(), Fr::one());
+		let random_circuit_1 = MulChip::new(Fr::one(), Fr::one());
 		let random_circuit_2 = MulChip::new(Fr::one(), Fr::one());
 
-		let instances_1: Vec<Vec<Fr>> = vec![vec![Fr::one() + Fr::one()]];
+		let instances_1: Vec<Vec<Fr>> = vec![vec![Fr::one()]];
 		let instances_2: Vec<Vec<Fr>> = vec![vec![Fr::one()]];
 
 		let snark_1 = Snark::new(&params.clone(), random_circuit_1, instances_1, rng);
