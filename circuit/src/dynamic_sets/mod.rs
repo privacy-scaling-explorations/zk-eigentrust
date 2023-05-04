@@ -769,7 +769,7 @@ mod test {
 				signatures.push(sig.clone());
 
 				let scores = [0, 1, 2, 3, 4].map(|j| (op_pub_keys[i][j], ops[i][j]));
-				let op = native::Opinion::new(sig, message_hashes[0], scores);
+				let op = native::Opinion::new(sig, message_hashes[0], scores.to_vec());
 				et.update_op(pub_keys[i].clone(), op);
 			}
 			let s = et.converge();
@@ -829,7 +829,7 @@ mod test {
 				signatures.push(sig.clone());
 
 				let scores = [0, 1, 2, 3, 4].map(|j| (op_pub_keys[i][j], ops[i][j]));
-				let op = native::Opinion::new(sig, message_hashes[0], scores);
+				let op = native::Opinion::new(sig, message_hashes[0], scores.to_vec());
 				et.update_op(pub_keys[i].clone(), op);
 			}
 			let s = et.converge();
@@ -887,7 +887,7 @@ mod test {
 				signatures.push(sig.clone());
 
 				let scores = [0, 1, 2, 3, 4].map(|j| (op_pub_keys[i][j], ops[i][j]));
-				let op = native::Opinion::new(sig, message_hashes[0], scores);
+				let op = native::Opinion::new(sig, message_hashes[0], scores.to_vec());
 				et.update_op(pub_keys[i].clone(), op);
 			}
 			let s = et.converge();
