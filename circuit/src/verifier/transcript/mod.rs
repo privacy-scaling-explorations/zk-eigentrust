@@ -253,6 +253,8 @@ where
 						assigned_x_limbs.push(assigned_x_limb);
 					}
 
+					ctx.next();
+
 					for i in 0..NUM_LIMBS {
 						let assigned_y_limb =
 							ctx.assign_advice(self.loader.common.advice[i], y_limbs[i]).unwrap();
@@ -698,12 +700,12 @@ mod test {
 
 	#[derive(Clone)]
 	struct TestReadEcPointCircuit {
-		reader: Vec<u8>,
+		reader: Option<Vec<u8>>,
 	}
 
 	impl TestReadEcPointCircuit {
 		fn new(reader: Vec<u8>) -> Self {
-			Self { reader }
+			Self { reader: Some(reader) }
 		}
 	}
 
@@ -712,7 +714,7 @@ mod test {
 		type FloorPlanner = SimpleFloorPlanner;
 
 		fn without_witnesses(&self) -> Self {
-			self.clone()
+			Self { reader: None }
 		}
 
 		fn configure(meta: &mut ConstraintSystem<Scalar>) -> TestConfig {
@@ -731,8 +733,10 @@ mod test {
 				config.poseidon_sponge.clone(),
 			);
 
-			let mut poseidon_read =
-				PoseidonReadChipset::<_, C, _, P, R>::new(Some(self.reader.as_slice()), loader);
+			let mut poseidon_read = PoseidonReadChipset::<_, C, _, P, R>::new(
+				self.reader.as_ref().map(Vec::as_slice),
+				loader,
+			);
 			let res = poseidon_read.read_ec_point().unwrap();
 
 			let mut lb = layouter_rc.lock().unwrap();
