@@ -98,7 +98,15 @@ impl Snark {
 	}
 }
 
-impl From<Snark> for SnarkWitness {
+#[derive(Clone)]
+/// UnassignedSnark structure
+pub struct UnassignedSnark {
+	protocol: PlonkProtocol<G1Affine>,
+	instances: Vec<Vec<Value<Fr>>>,
+	proof: Option<Vec<u8>>,
+}
+
+impl From<Snark> for UnassignedSnark {
 	fn from(snark: Snark) -> Self {
 		Self {
 			protocol: snark.protocol,
@@ -112,17 +120,9 @@ impl From<Snark> for SnarkWitness {
 	}
 }
 
-/// SnarkWitness structure
-#[derive(Clone)]
-pub struct SnarkWitness {
-	protocol: PlonkProtocol<G1Affine>,
-	instances: Vec<Vec<Value<Fr>>>,
-	proof: Option<Vec<u8>>,
-}
-
-impl SnarkWitness {
+impl UnassignedSnark {
 	fn without_witnesses(&self) -> Self {
-		SnarkWitness {
+		UnassignedSnark {
 			protocol: self.protocol.clone(),
 			instances: self
 				.instances
@@ -142,7 +142,7 @@ struct Aggregator {
 	// Succinct Verifying Key
 	svk: SVK,
 	// Snarks for the aggregation
-	snarks: Vec<SnarkWitness>,
+	snarks: Vec<UnassignedSnark>,
 	// Instances
 	instances: Vec<Fr>,
 	// Accumulation Scheme Proof
@@ -231,7 +231,7 @@ impl Circuit<Fr> for Aggregator {
 	fn without_witnesses(&self) -> Self {
 		Self {
 			svk: self.svk,
-			snarks: self.snarks.iter().map(SnarkWitness::without_witnesses).collect(),
+			snarks: self.snarks.iter().map(UnassignedSnark::without_witnesses).collect(),
 			instances: Vec::new(),
 			as_proof: None,
 		}
