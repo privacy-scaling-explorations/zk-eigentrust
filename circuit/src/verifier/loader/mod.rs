@@ -1,10 +1,11 @@
 use crate::{
 	ecc::{AssignedPoint, EccAddChipset, EccMulChipset, EccMulConfig},
 	gadgets::main::{AddChipset, InverseChipset, MainConfig, MulChipset, SubChipset},
-	integer::{native::Integer, rns::RnsParams, AssignedInteger},
+	integer::{native::Integer, AssignedInteger},
 	poseidon::sponge::PoseidonSpongeConfig,
+	rns::RnsParams,
 	utils::assigned_to_field,
-	Chipset, CommonConfig, RegionCtx,
+	Chipset, CommonConfig, FieldExt, RegionCtx,
 };
 use halo2::{
 	circuit::{AssignedCell, Layouter, Region},
@@ -27,10 +28,22 @@ use std::{
 /// Native version of the loader
 pub mod native;
 
+/// TODO: Mutex Layouter optimizer
+/*
+fn layouter<T>(func: FnOnce(layouter) -> T) -> T {
+	let layouter = self.layouter.lock();
+	let res = func(layouter);
+	drop(layouter);
+	res
+}
+*/
+
 /// LoaderConfig structure
 pub struct LoaderConfig<C: CurveAffine, L: Layouter<C::Scalar>, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
 {
 	// Layouter
 	pub(crate) layouter: Rc<Mutex<L>>,
@@ -52,6 +65,8 @@ where
 impl<C: CurveAffine, L: Layouter<C::Scalar>, P> LoaderConfig<C, L, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
 {
 	/// Construct a new LoaderConfig
 	pub fn new(
@@ -137,6 +152,8 @@ where
 impl<C: CurveAffine, L: Layouter<C::Scalar>, P> Clone for LoaderConfig<C, L, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
 {
 	/// Returns a copy of the value.
 	fn clone(&self) -> Self {
@@ -156,6 +173,8 @@ where
 impl<C: CurveAffine, L: Layouter<C::Scalar>, P> Debug for LoaderConfig<C, L, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
 {
 	/// Formats the value using the given formatter.
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -167,6 +186,8 @@ where
 pub struct Halo2LScalar<C: CurveAffine, L: Layouter<C::Scalar>, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
 {
 	// Inner value for the halo2 loaded scalar
 	pub(crate) inner: AssignedCell<C::Scalar, C::Scalar>,
@@ -177,6 +198,8 @@ where
 impl<C: CurveAffine, L: Layouter<C::Scalar>, P> Halo2LScalar<C, L, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
 {
 	/// Creates a new Halo2LScalar
 	pub fn new(value: AssignedCell<C::Scalar, C::Scalar>, loader: LoaderConfig<C, L, P>) -> Self {
@@ -187,6 +210,8 @@ where
 impl<C: CurveAffine, L: Layouter<C::Scalar>, P> Clone for Halo2LScalar<C, L, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
 {
 	/// Returns a copy of the value.
 	fn clone(&self) -> Self {
@@ -197,6 +222,8 @@ where
 impl<C: CurveAffine, L: Layouter<C::Scalar>, P> Debug for Halo2LScalar<C, L, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
 {
 	/// Formats the value using the given formatter.
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -207,6 +234,8 @@ where
 impl<C: CurveAffine, L: Layouter<C::Scalar>, P> PartialEq for Halo2LScalar<C, L, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
 {
 	///  This method tests for `self` and `other` values to be equal, and is
 	/// used by `==`.
@@ -221,6 +250,8 @@ where
 impl<C: CurveAffine, L: Layouter<C::Scalar>, P> FieldOps for Halo2LScalar<C, L, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
 {
 	/// Returns multiplicative inversion if any.
 	fn invert(&self) -> Option<Self> {
@@ -240,6 +271,8 @@ where
 impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P> Add<&'a Self> for Halo2LScalar<C, L, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
 {
 	type Output = Self;
 
@@ -261,6 +294,8 @@ where
 impl<C: CurveAffine, L: Layouter<C::Scalar>, P> Add<Self> for Halo2LScalar<C, L, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
 {
 	type Output = Self;
 
@@ -273,6 +308,8 @@ where
 impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P> AddAssign<&'a Self> for Halo2LScalar<C, L, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
 {
 	/// Performs the `+=` operation.
 	fn add_assign(&mut self, rhs: &'a Self) {
@@ -283,6 +320,8 @@ where
 impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P> AddAssign<Self> for Halo2LScalar<C, L, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
 {
 	/// Performs the `+=` operation.
 	fn add_assign(&mut self, rhs: Self) {
@@ -295,6 +334,8 @@ where
 impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P> Mul<&'a Self> for Halo2LScalar<C, L, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
 {
 	type Output = Self;
 
@@ -316,6 +357,8 @@ where
 impl<C: CurveAffine, L: Layouter<C::Scalar>, P> Mul<Self> for Halo2LScalar<C, L, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
 {
 	type Output = Self;
 
@@ -328,6 +371,8 @@ where
 impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P> MulAssign<&'a Self> for Halo2LScalar<C, L, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
 {
 	/// Performs the `*=` operation.
 	fn mul_assign(&mut self, rhs: &'a Self) {
@@ -338,6 +383,8 @@ where
 impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P> MulAssign<Self> for Halo2LScalar<C, L, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
 {
 	/// Performs the `*=` operation.
 	fn mul_assign(&mut self, rhs: Self) {
@@ -350,6 +397,8 @@ where
 impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P> Sub<&'a Self> for Halo2LScalar<C, L, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
 {
 	type Output = Self;
 
@@ -371,6 +420,8 @@ where
 impl<C: CurveAffine, L: Layouter<C::Scalar>, P> Sub<Self> for Halo2LScalar<C, L, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
 {
 	type Output = Self;
 
@@ -383,6 +434,8 @@ where
 impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P> SubAssign<&'a Self> for Halo2LScalar<C, L, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
 {
 	/// Performs the `-=` operation.
 	fn sub_assign(&mut self, rhs: &'a Self) {
@@ -393,6 +446,8 @@ where
 impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P> SubAssign<Self> for Halo2LScalar<C, L, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
 {
 	/// Performs the `-=` operation.
 	fn sub_assign(&mut self, rhs: Self) {
@@ -405,6 +460,8 @@ where
 impl<C: CurveAffine, L: Layouter<C::Scalar>, P> Neg for Halo2LScalar<C, L, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
 {
 	type Output = Self;
 
@@ -434,6 +491,8 @@ where
 impl<C: CurveAffine, L: Layouter<C::Scalar>, P> LoadedScalar<C::Scalar> for Halo2LScalar<C, L, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
 {
 	type Loader = LoaderConfig<C, L, P>;
 
@@ -446,6 +505,8 @@ where
 impl<C: CurveAffine, L: Layouter<C::Scalar>, P> ScalarLoader<C::Scalar> for LoaderConfig<C, L, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
 {
 	type LoadedScalar = Halo2LScalar<C, L, P>;
 
@@ -474,8 +535,8 @@ where
 				|| "assert_eq",
 				|region: Region<'_, C::Scalar>| {
 					let mut ctx = RegionCtx::new(region, 0);
-					let eq = ctx.constrain_equal(lhs.inner.clone(), rhs.inner.clone())?;
-					Ok(eq)
+					ctx.constrain_equal(lhs.inner.clone(), rhs.inner.clone())?;
+					Ok(())
 				},
 			)
 			.ok()
@@ -487,6 +548,8 @@ where
 pub struct Halo2LEcPoint<C: CurveAffine, L: Layouter<C::Scalar>, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
 {
 	// Inner value for the halo2 loaded point
 	pub(crate) inner: AssignedPoint<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS, P>,
@@ -497,6 +560,8 @@ where
 impl<C: CurveAffine, L: Layouter<C::Scalar>, P> Halo2LEcPoint<C, L, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
 {
 	/// Creates a new Halo2LScalar
 	pub fn new(
@@ -510,6 +575,8 @@ where
 impl<C: CurveAffine, L: Layouter<C::Scalar>, P> Clone for Halo2LEcPoint<C, L, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
 {
 	/// Returns a copy of the value.
 	fn clone(&self) -> Self {
@@ -520,6 +587,8 @@ where
 impl<C: CurveAffine, L: Layouter<C::Scalar>, P> Debug for Halo2LEcPoint<C, L, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
 {
 	/// Formats the value using the given formatter.
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -530,6 +599,8 @@ where
 impl<C: CurveAffine, L: Layouter<C::Scalar>, P> PartialEq for Halo2LEcPoint<C, L, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
 {
 	/// This method tests for `self` and `other` values to be equal, and is used
 	/// by `==`.
@@ -542,6 +613,8 @@ where
 impl<C: CurveAffine, L: Layouter<C::Scalar>, P> LoadedEcPoint<C> for Halo2LEcPoint<C, L, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
 {
 	type Loader = LoaderConfig<C, L, P>;
 
@@ -554,6 +627,8 @@ where
 impl<C: CurveAffine, L: Layouter<C::Scalar>, P> EcPointLoader<C> for LoaderConfig<C, L, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
 {
 	type LoadedEcPoint = Halo2LEcPoint<C, L, P>;
 
@@ -629,9 +704,8 @@ where
 			.iter()
 			.cloned()
 			.map(|(scalar, base)| {
-				// TODO: Test stucks here, fix it.
-				let config = pairs[0].0.loader.clone();
-				let auxes = pairs[0].1.loader.auxes.clone();
+				let config = base.loader.clone();
+				let auxes = base.loader.auxes.clone();
 				let (aux_init, aux_fin) = auxes;
 				let mut layouter = base.loader.layouter.lock().unwrap();
 				let chip = EccMulChipset::new(
@@ -650,7 +724,7 @@ where
 				Halo2LEcPoint::new(mul, config.clone())
 			})
 			.reduce(|acc, value| {
-				let config = pairs[0].0.loader.clone();
+				let config = value.loader.clone();
 				let mut layouter = value.loader.layouter.lock().unwrap();
 				let chip = EccAddChipset::new(acc.inner.clone(), value.inner.clone());
 				let add = chip
@@ -667,8 +741,11 @@ where
 	}
 }
 
-impl<C: CurveAffine, L: Layouter<C::Scalar>, P> Loader<C> for LoaderConfig<C, L, P> where
-	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>
+impl<C: CurveAffine, L: Layouter<C::Scalar>, P> Loader<C> for LoaderConfig<C, L, P>
+where
+	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
 {
 }
 
@@ -690,10 +767,11 @@ mod test {
 			main::{MainChip, MainConfig},
 		},
 		integer::{
-			native::Integer, rns::Bn256_4_68, AssignedInteger, IntegerAddChip, IntegerDivChip,
-			IntegerMulChip, IntegerReduceChip, IntegerSubChip,
+			native::Integer, AssignedInteger, IntegerAddChip, IntegerDivChip, IntegerMulChip,
+			IntegerReduceChip, IntegerSubChip,
 		},
 		poseidon::{sponge::PoseidonSpongeConfig, PoseidonConfig},
+		rns::bn256::Bn256_4_68,
 		verifier::transcript::native::WIDTH,
 		Chip, CommonConfig, RegionCtx,
 	};
@@ -796,9 +874,10 @@ mod test {
 							config.common.advice[0],
 							Value::known(self.pairs[i].0.inner),
 						)?;
-						ctx.next();
+
 						let halo2_scalar =
 							Halo2LScalar::new(assigned_scalar, loader_config.clone());
+						ctx.next();
 
 						let mut x_limbs: [Option<AssignedCell<Scalar, Scalar>>; NUM_LIMBS] =
 							[(); NUM_LIMBS].map(|_| None);
@@ -828,11 +907,18 @@ mod test {
 					Ok(())
 				},
 			)?;
+			drop(lb);
 
-			let borrowed_pairs: Vec<(&Halo2LScalar<C, _, P>, &Halo2LEcPoint<C, _, P>)> =
+			// TODO: Assigned_pairs returns double. Can be because of the multithread.
+			// research and fix it
+			let borrowed_pairs_2x: Vec<(&Halo2LScalar<C, _, P>, &Halo2LEcPoint<C, _, P>)> =
 				assigned_pairs.iter().map(|x| (&x.0, &x.1)).collect();
+			let borrowed_pairs: Vec<(&Halo2LScalar<C, _, P>, &Halo2LEcPoint<C, _, P>)> =
+				borrowed_pairs_2x[3..6].to_vec();
+
 			let res = LoaderConfig::multi_scalar_multiplication(borrowed_pairs.as_slice());
 
+			let mut lb = layouter_rc.lock().unwrap();
 			for i in 0..NUM_LIMBS {
 				lb.constrain_instance(
 					res.inner.clone().x.limbs[i].cell(),
@@ -850,7 +936,6 @@ mod test {
 		}
 	}
 
-	#[ignore = "Stuck infinitely in MSM circuit"]
 	#[test]
 	fn test_multi_scalar_multiplication() {
 		// Testing MSM
@@ -865,8 +950,9 @@ mod test {
 				rng.clone(),
 			));
 			let points = EcPoint::new(x, y);
-			let scalar = LScalar::new(Scalar::random(rng.clone()), loader.clone());
 			let ec_point = LEcPoint::new(points, loader.clone());
+			let scalar = LScalar::new(Scalar::random(rng.clone()), loader.clone());
+
 			pairs.push((scalar, ec_point));
 		}
 		let borrowed_pairs: Vec<(&LScalar<C, P>, &LEcPoint<C, P>)> =
@@ -877,7 +963,7 @@ mod test {
 		p_ins.extend(res.inner.x.limbs);
 		p_ins.extend(res.inner.y.limbs);
 		let circuit = TestCircuit::new(pairs);
-		let k = 9;
+		let k = 17;
 		let prover = MockProver::run(k, &circuit, vec![p_ins]).unwrap();
 
 		assert_eq!(prover.verify(), Ok(()));

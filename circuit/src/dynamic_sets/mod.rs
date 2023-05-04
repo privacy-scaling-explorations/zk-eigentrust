@@ -24,7 +24,7 @@ use crate::{
 };
 use halo2::{
 	circuit::{Layouter, Region, SimpleFloorPlanner, Value},
-	halo2curves::{bn256::Fr as Scalar, FieldExt},
+	halo2curves::{bn256::Fr as Scalar, ff::PrimeField},
 	plonk::{Circuit, ConstraintSystem, Error},
 };
 

@@ -4,10 +4,10 @@ pub mod native;
 pub mod sponge;
 
 use crate::{
-	gadgets::absorb::copy_state, params::RoundParams, Chip, Chipset, CommonConfig, RegionCtx,
+	gadgets::absorb::copy_state, params::RoundParams, Chip, Chipset, CommonConfig, FieldExt,
+	RegionCtx,
 };
 use halo2::{
-	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region, Value},
 	plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Selector},
 	poly::Rotation,

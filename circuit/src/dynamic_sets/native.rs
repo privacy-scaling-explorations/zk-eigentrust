@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::eddsa::native::{PublicKey, Signature};
 use halo2::{
 	arithmetic::Field,
-	halo2curves::{bn256::Fr, FieldExt},
+	halo2curves::{bn256::Fr, ff::PrimeField},
 };
 
 /// Opinion info of peer
@@ -256,7 +256,8 @@ mod test {
 		calculate_message_hash,
 		eddsa::native::{sign, PublicKey, SecretKey},
 	};
-	use halo2::halo2curves::{bn256::Fr, FieldExt};
+
+	use halo2::halo2curves::{bn256::Fr, ff::PrimeField};
 	use rand::{thread_rng, Rng};
 
 	const NUM_NEIGHBOURS: usize = 123;

@@ -1,7 +1,6 @@
-use crate::{integer::rns::decompose_big, utils::fe_to_big, RegionCtx};
+use crate::{rns::decompose_big, utils::fe_to_big, FieldExt, RegionCtx};
 use halo2::{
 	circuit::{AssignedCell, Layouter, Region, Value},
-	halo2curves::FieldExt,
 	plonk::{ConstraintSystem, Constraints, Error, Selector},
 	poly::Rotation,
 };
@@ -196,7 +195,7 @@ impl<F: FieldExt, const K: usize, const N: usize> MockChip<F> for LookupRangeChe
 					z = ctx.assign_advice(mock_common.common.advice[0], z_next)?;
 				}
 
-				ctx.constrain_to_constant(z.clone(), F::zero())?;
+				ctx.constrain_to_constant(z.clone(), F::ZERO)?;
 
 				Ok((self.x.clone(), last_word_cell))
 			},

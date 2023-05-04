@@ -4,9 +4,9 @@ use super::{
 	main::MainConfig,
 	range::{RangeChipset, RangeChipsetConfig},
 };
+use crate::FieldExt;
 use crate::{gadgets::main::IsZeroChipset, Chip, Chipset, CommonConfig};
 use halo2::{
-	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter},
 	plonk::{ConstraintSystem, Error, Selector, TableColumn},
 };
@@ -168,7 +168,10 @@ mod test {
 	use halo2::{
 		circuit::{Region, SimpleFloorPlanner, Value},
 		dev::MockProver,
-		halo2curves::bn256::{Bn256, Fr},
+		halo2curves::{
+			bn256::{Bn256, Fr},
+			ff::FromUniformBytes,
+		},
 		plonk::Circuit,
 	};
 
@@ -305,7 +308,7 @@ mod test {
 	#[test]
 	fn test_less_than_x252_y() {
 		// Testing x = biggest 252 bit number.
-		let bit252: Fr = FieldExt::from_bytes_wide(&to_wide(&N_SHIFTED));
+		let bit252 = Fr::from_uniform_bytes(&to_wide(&N_SHIFTED));
 		let x = bit252.sub(&Fr::one());
 		let y = Fr::from(9);
 
@@ -320,7 +323,7 @@ mod test {
 	#[test]
 	fn test_less_than_x_y252() {
 		// Testing y = biggest 252 bit number.
-		let bit252: Fr = FieldExt::from_bytes_wide(&to_wide(&N_SHIFTED));
+		let bit252 = Fr::from_uniform_bytes(&to_wide(&N_SHIFTED));
 		let x = Fr::from(2);
 		let y = bit252.sub(&Fr::from(1));
 
@@ -335,7 +338,7 @@ mod test {
 	#[test]
 	fn test_less_than_x252_y252() {
 		// Testing x = y = biggest 252 bit number.
-		let bit252: Fr = FieldExt::from_bytes_wide(&to_wide(&N_SHIFTED));
+		let bit252 = Fr::from_uniform_bytes(&to_wide(&N_SHIFTED));
 		let x = bit252.sub(&Fr::from(1));
 		let y = bit252.sub(&Fr::from(1));
 

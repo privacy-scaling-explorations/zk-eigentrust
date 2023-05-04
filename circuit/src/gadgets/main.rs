@@ -7,9 +7,8 @@
 //! public_input +
 //! q_constant = 0
 
-use crate::{Chip, Chipset, CommonConfig, RegionCtx};
+use crate::{Chip, Chipset, CommonConfig, FieldExt, RegionCtx};
 use halo2::{
-	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Value},
 	plonk::{ConstraintSystem, Error, Selector},
 	poly::Rotation,
@@ -159,7 +158,7 @@ impl<F: FieldExt> Chipset<F> for AddChipset<F> {
 			|| "assign_values",
 			|region| {
 				let mut ctx = RegionCtx::new(region, 0);
-				let zero = ctx.assign_advice(common.advice[0], Value::known(F::zero()))?;
+				let zero = ctx.assign_advice(common.advice[0], Value::known(F::ZERO))?;
 				let sum =
 					ctx.assign_advice(common.advice[1], self.x.value().cloned() + self.y.value())?;
 				Ok((zero, sum))
@@ -167,8 +166,8 @@ impl<F: FieldExt> Chipset<F> for AddChipset<F> {
 		)?;
 
 		let advices = [self.x, self.y, sum.clone(), zero.clone(), zero];
-		let fixed_add = [F::one(), F::one(), -F::one(), F::zero(), F::zero()];
-		let fixed_mul = [F::zero(), F::zero(), F::zero()];
+		let fixed_add = [F::ONE, F::ONE, -F::ONE, F::ZERO, F::ZERO];
+		let fixed_mul = [F::ZERO, F::ZERO, F::ZERO];
 		let main_chip = MainChip::new(advices, fixed_add, fixed_mul);
 		main_chip.synthesize(common, &config.selector, layouter.namespace(|| "main_add"))?;
 
@@ -208,7 +207,7 @@ impl<F: FieldExt> Chipset<F> for SubChipset<F> {
 			|| "assign_values",
 			|region| {
 				let mut ctx = RegionCtx::new(region, 0);
-				let zero = ctx.assign_advice(common.advice[0], Value::known(F::zero()))?;
+				let zero = ctx.assign_advice(common.advice[0], Value::known(F::ZERO))?;
 				let diff =
 					ctx.assign_advice(common.advice[1], self.x.value().cloned() - self.y.value())?;
 				Ok((zero, diff))
@@ -216,8 +215,8 @@ impl<F: FieldExt> Chipset<F> for SubChipset<F> {
 		)?;
 
 		let advices = [self.x, self.y, diff.clone(), zero.clone(), zero];
-		let fixed_add = [F::one(), -F::one(), -F::one(), F::zero(), F::zero()];
-		let fixed_mul = [F::zero(), F::zero(), F::zero()];
+		let fixed_add = [F::ONE, -F::ONE, -F::ONE, F::ZERO, F::ZERO];
+		let fixed_mul = [F::ZERO, F::ZERO, F::ZERO];
 		let main_chip = MainChip::new(advices, fixed_add, fixed_mul);
 		main_chip.synthesize(common, &config.selector, layouter.namespace(|| "main_sub"))?;
 
@@ -257,7 +256,7 @@ impl<F: FieldExt> Chipset<F> for MulChipset<F> {
 			|| "assign_values",
 			|region| {
 				let mut ctx = RegionCtx::new(region, 0);
-				let zero = ctx.assign_advice(common.advice[0], Value::known(F::zero()))?;
+				let zero = ctx.assign_advice(common.advice[0], Value::known(F::ZERO))?;
 				let product =
 					ctx.assign_advice(common.advice[1], self.x.value().cloned() * self.y.value())?;
 				Ok((zero, product))
@@ -265,8 +264,8 @@ impl<F: FieldExt> Chipset<F> for MulChipset<F> {
 		)?;
 
 		let advices = [self.x, self.y, product.clone(), zero.clone(), zero];
-		let fixed_add = [F::zero(), F::zero(), -F::one(), F::zero(), F::zero()];
-		let fixed_mul = [F::one(), F::zero(), F::zero()];
+		let fixed_add = [F::ZERO, F::ZERO, -F::ONE, F::ZERO, F::ZERO];
+		let fixed_mul = [F::ONE, F::ZERO, F::ZERO];
 		let main_chip = MainChip::new(advices, fixed_add, fixed_mul);
 		main_chip.synthesize(common, &config.selector, layouter.namespace(|| "main_mul"))?;
 
@@ -306,7 +305,7 @@ impl<F: FieldExt> Chipset<F> for IsBoolChipset<F> {
 			|| "assign_values",
 			|region| {
 				let mut ctx = RegionCtx::new(region, 0);
-				let zero = ctx.assign_advice(common.advice[0], Value::known(F::zero()))?;
+				let zero = ctx.assign_advice(common.advice[0], Value::known(F::ZERO))?;
 				Ok(zero)
 			},
 		)?;
@@ -314,8 +313,8 @@ impl<F: FieldExt> Chipset<F> for IsBoolChipset<F> {
 		// [a, b, c, d, e]
 		let advices = [self.x.clone(), zero.clone(), self.x.clone(), self.x.clone(), zero];
 		// [s_a, s_b, s_c, s_d, s_e, s_mul_ab, s_mul_cd, s_constant]
-		let fixed_add = [F::one(), F::zero(), F::zero(), F::zero(), F::zero()];
-		let fixed_mul = [F::zero(), -F::one(), F::zero()];
+		let fixed_add = [F::ONE, F::ZERO, F::ZERO, F::ZERO, F::ZERO];
+		let fixed_mul = [F::ZERO, -F::ONE, F::ZERO];
 		let main_chip = MainChip::new(advices, fixed_add, fixed_mul);
 		main_chip.synthesize(
 			common,
@@ -412,13 +411,13 @@ impl<F: FieldExt> Chipset<F> for InverseChipset<F> {
 					.value()
 					.map(|v| {
 						Option::from(v.invert())
-							.map(|v_inv| (F::zero(), v_inv))
-							.unwrap_or_else(|| (F::one(), F::one()))
+							.map(|v_inv| (F::ZERO, v_inv))
+							.unwrap_or_else(|| (F::ONE, F::ONE))
 					})
 					.unzip();
 
 				let mut ctx = RegionCtx::new(region, 0);
-				let zero = ctx.assign_advice(common.advice[0], Value::known(F::zero()))?;
+				let zero = ctx.assign_advice(common.advice[0], Value::known(F::ZERO))?;
 				let x_inv = ctx.assign_advice(common.advice[1], x_inv)?;
 				let r = ctx.assign_advice(common.advice[2], r)?;
 				Ok((zero, x_inv, r))
@@ -434,8 +433,8 @@ impl<F: FieldExt> Chipset<F> for InverseChipset<F> {
 		// | - | ----- | - |
 		// | x | x_inv | r |
 		let advices = [self.x.clone(), x_inv.clone(), r.clone(), zero.clone(), zero.clone()];
-		let fixed_add = [F::zero(), F::zero(), F::one(), F::zero(), F::zero()];
-		let fixed_mul = [F::one(), F::zero(), -F::one()];
+		let fixed_add = [F::ZERO, F::ZERO, F::ONE, F::ZERO, F::ZERO];
+		let fixed_mul = [F::ONE, F::ZERO, -F::ONE];
 		let main_chip = MainChip::new(advices, fixed_add, fixed_mul);
 		main_chip.synthesize(
 			common,
@@ -448,8 +447,8 @@ impl<F: FieldExt> Chipset<F> for InverseChipset<F> {
 		// | - | ----- | - |
 		// | r | x_inv | r |
 		let advices = [r.clone(), x_inv.clone(), r, zero.clone(), zero.clone()];
-		let fixed_add = [F::zero(), F::zero(), -F::one(), F::zero(), F::zero()];
-		let fixed_mul = [F::one(), F::zero(), F::zero()];
+		let fixed_add = [F::ZERO, F::ZERO, -F::ONE, F::ZERO, F::ZERO];
+		let fixed_mul = [F::ONE, F::ZERO, F::ZERO];
 		let main_chip = MainChip::new(advices, fixed_add, fixed_mul);
 		main_chip.synthesize(
 			common,
@@ -497,11 +496,11 @@ impl<F: FieldExt> Chipset<F> for IsZeroChipset<F> {
 		let (zero, x_inv, res) = layouter.assign_region(
 			|| "assign_values",
 			|region| {
-				let x_inv = self.x.clone().value().map(|v| v.invert().unwrap_or(F::zero()));
-				let res = Value::known(F::one()) - self.x.clone().value().cloned() * x_inv.clone();
+				let x_inv = self.x.clone().value().map(|v| v.invert().unwrap_or(F::ZERO));
+				let res = Value::known(F::ONE) - self.x.clone().value().cloned() * x_inv.clone();
 
 				let mut ctx = RegionCtx::new(region, 0);
-				let zero = ctx.assign_advice(common.advice[0], Value::known(F::zero()))?;
+				let zero = ctx.assign_advice(common.advice[0], Value::known(F::ZERO))?;
 				let x_inv = ctx.assign_advice(common.advice[1], x_inv)?;
 				let res = ctx.assign_advice(common.advice[2], res)?;
 				Ok((zero, x_inv, res))
@@ -511,8 +510,8 @@ impl<F: FieldExt> Chipset<F> for IsZeroChipset<F> {
 		// [a, b, c, d, e]
 		let advices = [self.x.clone(), x_inv, res.clone(), zero.clone(), zero.clone()];
 		// [s_a, s_b, s_c, s_d, s_e, s_mul_ab, s_mul_cd, s_constant]
-		let fixed_add = [F::zero(), F::zero(), F::one(), F::zero(), F::zero()];
-		let fixed_mul = [F::one(), F::zero(), -F::one()];
+		let fixed_add = [F::ZERO, F::ZERO, F::ONE, F::ZERO, F::ZERO];
+		let fixed_mul = [F::ONE, F::ZERO, -F::ONE];
 		let main_chip = MainChip::new(advices, fixed_add, fixed_mul);
 		main_chip.synthesize(common, &config.selector, layouter.namespace(|| "is_zero"))?;
 
@@ -520,8 +519,8 @@ impl<F: FieldExt> Chipset<F> for IsZeroChipset<F> {
 		// [a, b, c, d, e]
 		let advices = [self.x, res.clone(), zero.clone(), zero.clone(), zero];
 		// [s_a, s_b, s_c, s_d, s_e, s_mul_ab, s_mul_cd, s_constant]
-		let fixed_add = [F::zero(), F::zero(), F::zero(), F::zero(), F::zero()];
-		let fixed_mul = [F::one(), F::zero(), F::zero()];
+		let fixed_add = [F::ZERO, F::ZERO, F::ZERO, F::ZERO, F::ZERO];
+		let fixed_mul = [F::ONE, F::ZERO, F::ZERO];
 		let main_chip = MainChip::new(advices, fixed_add, fixed_mul);
 		main_chip.synthesize(common, &config.selector, layouter.namespace(|| "mul"))?;
 
@@ -564,7 +563,7 @@ impl<F: FieldExt> Chipset<F> for SelectChipset<F> {
 			|region| {
 				let res = self.x.value().zip(self.y.value()).zip(self.bit.value()).map(
 					|((x, y), bit)| {
-						if *bit == F::one() {
+						if *bit == F::ONE {
 							*x
 						} else {
 							*y
@@ -584,8 +583,8 @@ impl<F: FieldExt> Chipset<F> for SelectChipset<F> {
 		// [a, b, c, d, e]
 		let advices = [self.bit.clone(), self.x, self.bit.clone(), self.y, res.clone()];
 		// [s_a, s_b, s_c, s_d, s_e, s_mul_ab, s_mul_cd, s_constant]
-		let fixed_add = [F::zero(), F::zero(), F::zero(), F::one(), -F::one()];
-		let fixed_mul = [F::one(), -F::one(), F::zero()];
+		let fixed_add = [F::ZERO, F::ZERO, F::ZERO, F::ONE, -F::ONE];
+		let fixed_mul = [F::ONE, -F::ONE, F::ZERO];
 		let main_chip = MainChip::new(advices, fixed_add, fixed_mul);
 		main_chip.synthesize(
 			common,
@@ -666,7 +665,7 @@ impl<F: FieldExt> Chipset<F> for OrChipset<F> {
 				let res = self.x.value().zip(self.y.value()).map(|(x, y)| *x + *y - *x * *y);
 				let mut ctx = RegionCtx::new(region, 0);
 				let res = ctx.assign_advice(common.advice[0], res)?;
-				let zero = ctx.assign_advice(common.advice[1], Value::known(F::zero()))?;
+				let zero = ctx.assign_advice(common.advice[1], Value::known(F::ZERO))?;
 				Ok((res, zero))
 			},
 		)?;
@@ -680,8 +679,8 @@ impl<F: FieldExt> Chipset<F> for OrChipset<F> {
 		// [a, b, c, d, e]
 		let advices = [self.x, self.y, res.clone(), zero.clone(), zero];
 		// [s_a, s_b, s_c, s_d, s_e, s_mul_ab, s_mul_cd, s_constant]
-		let fixed_add = [F::one(), F::one(), -F::one(), F::zero(), F::zero()];
-		let fixed_mul = [-F::one(), F::zero(), F::zero()];
+		let fixed_add = [F::ONE, F::ONE, -F::ONE, F::ZERO, F::ZERO];
+		let fixed_mul = [-F::ONE, F::ZERO, F::ZERO];
 		let main_chip = MainChip::new(advices, fixed_add, fixed_mul);
 		main_chip.synthesize(common, &config.selector, layouter.namespace(|| "main_or"))?;
 
@@ -998,7 +997,7 @@ mod tests {
 	fn test_is_bool_production() {
 		let test_chip = IsBoolTestCircuit::new(Fr::from(0));
 
-		let k = 4;
+		let k = 5;
 		let rng = &mut thread_rng();
 		let params = generate_params(k);
 		let dummy_instance = vec![Fr::zero()];
@@ -1085,7 +1084,7 @@ mod tests {
 	fn test_is_equal_production() {
 		let test_chip = IsEqualTestCircuit::new(Fr::from(123), Fr::from(123));
 
-		let k = 4;
+		let k = 5;
 		let rng = &mut thread_rng();
 		let params = generate_params(k);
 		let res = prove_and_verify::<Bn256, _, _>(params, test_chip, &[&[Fr::one()]], rng).unwrap();
@@ -1168,7 +1167,7 @@ mod tests {
 	fn test_is_zero_production() {
 		let test_chip = IsZeroTestCircuit::new(Fr::from(0));
 
-		let k = 4;
+		let k = 5;
 		let rng = &mut thread_rng();
 		let params = generate_params(k);
 		let res = prove_and_verify::<Bn256, _, _>(params, test_chip, &[&[Fr::one()]], rng).unwrap();
@@ -1264,7 +1263,7 @@ mod tests {
 	fn test_add_production() {
 		let test_chip = AddTestCircuit::new(Fr::from(5), Fr::from(2));
 
-		let k = 4;
+		let k = 5;
 		let rng = &mut thread_rng();
 		let params = generate_params(k);
 		let res =
@@ -1361,7 +1360,7 @@ mod tests {
 	fn test_mul_production() {
 		let test_chip = MulTestCircuit::new(Fr::from(5), Fr::from(2));
 
-		let k = 4;
+		let k = 5;
 		let rng = &mut thread_rng();
 		let params = generate_params(k);
 		let res =
@@ -1461,7 +1460,7 @@ mod tests {
 	fn test_select_production() {
 		let test_chip = SelectTestCircuit::new(Fr::from(0), Fr::from(2), Fr::from(3));
 
-		let k = 4;
+		let k = 5;
 		let rng = &mut thread_rng();
 		let params = generate_params(k);
 		let res =

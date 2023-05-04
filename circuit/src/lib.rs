@@ -11,10 +11,14 @@
 
 use crate::circuit::{PoseidonNativeHasher, PoseidonNativeSponge};
 use eddsa::native::PublicKey;
+use halo2::halo2curves::bn256::Fr as Scalar;
 use halo2::{
-	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region, Value},
-	halo2curves::bn256::Fr as Scalar,
+	halo2curves::{
+		bn256::{Fq as BnBase, Fr as BnScalar},
+		ff::{FromUniformBytes, PrimeField},
+		secp256k1::{Fp as SecpBase, Fq as SecpScalar},
+	},
 	plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Instance, Selector},
 };
 
@@ -44,10 +48,19 @@ pub mod params;
 pub mod poseidon;
 /// Rescue Prime hash function gadgets + native version
 pub mod rescue_prime;
+/// Residue Number System
+pub mod rns;
 /// Utilities for proving and verifying
 pub mod utils;
 /// PLONK verifier and aggregator
 pub mod verifier;
+
+/// Extention to the traits provided by halo2
+pub trait FieldExt: PrimeField + FromUniformBytes<64> {}
+impl FieldExt for BnBase {}
+impl FieldExt for BnScalar {}
+impl FieldExt for SecpBase {}
+impl FieldExt for SecpScalar {}
 
 #[derive(Debug)]
 /// Region Context struct for managing region assignments

@@ -5,11 +5,10 @@ pub mod params;
 
 use crate::{
 	gadgets::bits2num::Bits2NumChip, utils::assigned_as_bool, Chip, Chipset, CommonConfig,
-	RegionCtx,
+	FieldExt, RegionCtx,
 };
 use halo2::{
 	circuit::{AssignedCell, Layouter, Region, Value},
-	halo2curves::FieldExt,
 	plonk::{ConstraintSystem, Error, Expression, Selector},
 	poly::Rotation,
 };
@@ -172,7 +171,7 @@ impl<F: FieldExt> Chip<F> for IntoAffineChip<F> {
 		meta.create_gate("into_affine", |v_cells| {
 			let s_exp = v_cells.query_selector(selector);
 
-			let one = Expression::Constant(F::one());
+			let one = Expression::Constant(F::ONE);
 			let r_x_exp = v_cells.query_advice(common.advice[0], Rotation::cur());
 			let r_y_exp = v_cells.query_advice(common.advice[1], Rotation::cur());
 			let r_z_exp = v_cells.query_advice(common.advice[2], Rotation::cur());
@@ -309,9 +308,9 @@ impl<F: FieldExt, P: EdwardsParams<F>> Chip<F> for ScalarMulChip<F, P> {
 			|| "scalar_mul",
 			|region: Region<'_, F>| {
 				let mut ctx = RegionCtx::new(region, 0);
-				let mut r_x = ctx.assign_from_constant(common.advice[1], F::zero())?;
-				let mut r_y = ctx.assign_from_constant(common.advice[2], F::one())?;
-				let mut r_z = ctx.assign_from_constant(common.advice[3], F::one())?;
+				let mut r_x = ctx.assign_from_constant(common.advice[1], F::ZERO)?;
+				let mut r_y = ctx.assign_from_constant(common.advice[2], F::ONE)?;
+				let mut r_z = ctx.assign_from_constant(common.advice[3], F::ONE)?;
 				let mut e_x = ctx.copy_assign(common.advice[4], self.e.x.clone())?;
 				let mut e_y = ctx.copy_assign(common.advice[5], self.e.y.clone())?;
 				let mut e_z = ctx.copy_assign(common.advice[6], self.e.z.clone())?;

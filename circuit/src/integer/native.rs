@@ -1,6 +1,8 @@
-use super::rns::{compose_big, decompose_big, RnsParams};
-use crate::utils::fe_to_big;
-use halo2::arithmetic::FieldExt;
+use crate::{
+	rns::{compose_big, decompose_big, RnsParams},
+	utils::fe_to_big,
+	FieldExt,
+};
 use num_bigint::BigUint;
 use num_traits::{One, Zero};
 use std::marker::PhantomData;
@@ -145,7 +147,7 @@ where
 		let (q, res) = P::construct_reduce_qr(a);
 
 		// Calculate the intermediate values for the ReductionWitness.
-		let mut t = [N::zero(); NUM_LIMBS];
+		let mut t = [N::ZERO; NUM_LIMBS];
 		for i in 0..NUM_LIMBS {
 			t[i] = self.limbs[i] + p_prime[i] * q;
 		}
@@ -157,7 +159,7 @@ where
 		assert!(satisfied);
 
 		let native_constraint = P::compose(self.limbs) - q * p_in_n - P::compose(res);
-		assert!(native_constraint == N::zero());
+		assert!(native_constraint == N::ZERO);
 
 		// Construct correct type for the ReductionWitness
 		let result_int = Integer::from_limbs(res);
@@ -176,7 +178,7 @@ where
 		let (q, res) = P::construct_add_qr(a, b);
 
 		// Calculate the intermediate values for the ReductionWitness.
-		let mut t = [N::zero(); NUM_LIMBS];
+		let mut t = [N::ZERO; NUM_LIMBS];
 		for i in 0..NUM_LIMBS {
 			t[i] = self.limbs[i] + other.limbs[i] + p_prime[i] * q;
 		}
@@ -189,7 +191,7 @@ where
 
 		let native_constraint =
 			P::compose(self.limbs) + P::compose(other.limbs) - q * p_in_n - P::compose(res);
-		assert!(native_constraint == N::zero());
+		assert!(native_constraint == N::ZERO);
 
 		// Construct correct type for the ReductionWitness
 		let result_int = Integer::from_limbs(res);
@@ -208,7 +210,7 @@ where
 		let (q, res) = P::construct_sub_qr(a, b);
 
 		// Calculate the intermediate values for the ReductionWitness.
-		let mut t = [N::zero(); NUM_LIMBS];
+		let mut t = [N::ZERO; NUM_LIMBS];
 		for i in 0..NUM_LIMBS {
 			t[i] = self.limbs[i] - other.limbs[i] + p_prime[i] * q;
 		}
@@ -221,7 +223,7 @@ where
 
 		let native_constraint =
 			P::compose(self.limbs) - P::compose(other.limbs) + q * p_in_n - P::compose(res);
-		assert!(native_constraint == N::zero());
+		assert!(native_constraint == N::ZERO);
 
 		// Construct correct type for the ReductionWitness
 		let result_int = Integer::from_limbs(res);
@@ -241,7 +243,7 @@ where
 		let (q, res) = P::construct_mul_qr(a, b);
 
 		// Calculate the intermediate values for the ReductionWitness.
-		let mut t: [N; NUM_LIMBS] = [N::zero(); NUM_LIMBS];
+		let mut t: [N; NUM_LIMBS] = [N::ZERO; NUM_LIMBS];
 		for k in 0..NUM_LIMBS {
 			for i in 0..=k {
 				let j = k - i;
@@ -258,7 +260,7 @@ where
 		let native_constraint = P::compose(self.limbs) * P::compose(other.limbs)
 			- P::compose(q) * p_in_n
 			- P::compose(res);
-		assert!(native_constraint == N::zero());
+		assert!(native_constraint == N::ZERO);
 
 		// Construct correct type for the ReductionWitness.
 		let result_int = Integer::from_limbs(res);
@@ -277,7 +279,7 @@ where
 		let (q, res) = P::construct_div_qr(a, b);
 
 		// Calculate the intermediate values for the ReductionWitness.
-		let mut t: [N; NUM_LIMBS] = [N::zero(); NUM_LIMBS];
+		let mut t: [N; NUM_LIMBS] = [N::ZERO; NUM_LIMBS];
 		for k in 0..NUM_LIMBS {
 			for i in 0..=k {
 				let j = k - i;
@@ -294,7 +296,7 @@ where
 		let native_constraints = P::compose(other.limbs) * P::compose(res)
 			- P::compose(self.limbs)
 			- P::compose(q) * p_in_n;
-		assert!(native_constraints == N::zero());
+		assert!(native_constraints == N::ZERO);
 
 		// Construct correct type for the ReductionWitness.
 		let result_int = Integer::from_limbs(res);
@@ -314,7 +316,7 @@ where
 #[cfg(test)]
 mod test {
 	use super::*;
-	use crate::integer::rns::Bn256_4_68;
+	use crate::rns::bn256::Bn256_4_68;
 	use halo2::halo2curves::bn256::{Fq, Fr};
 	use num_integer::Integer as NumInteger;
 	use num_traits::{FromPrimitive, One, Zero};

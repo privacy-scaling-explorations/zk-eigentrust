@@ -1,8 +1,5 @@
-use halo2::{
-	circuit::Value,
-	halo2curves::{bn256::Fr, FieldExt},
-	plonk::Expression,
-};
+use crate::FieldExt;
+use halo2::{circuit::Value, halo2curves::bn256::Fr, plonk::Expression};
 
 /// Trait for defining point A and D for Edward curves
 pub trait EdwardsParams<F: FieldExt> {

@@ -7,14 +7,14 @@ use crate::{
 		main::{MainConfig, SelectChipset},
 	},
 	integer::{
-		rns::RnsParams, AssignedInteger, IntegerAddChip, IntegerDivChip, IntegerMulChip,
-		IntegerReduceChip, IntegerSubChip,
+		AssignedInteger, IntegerAddChip, IntegerDivChip, IntegerMulChip, IntegerReduceChip,
+		IntegerSubChip,
 	},
+	rns::RnsParams,
 	utils::assigned_as_bool,
-	Chip, Chipset, CommonConfig,
+	Chip, Chipset, CommonConfig, FieldExt,
 };
 use halo2::{
-	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter},
 	plonk::{Error, Selector},
 };
@@ -839,11 +839,10 @@ mod test {
 			main::{MainChip, MainConfig},
 		},
 		integer::{
-			native::Integer,
-			rns::{Bn256_4_68, RnsParams},
-			AssignedInteger, IntegerAddChip, IntegerDivChip, IntegerMulChip, IntegerReduceChip,
-			IntegerSubChip,
+			native::Integer, AssignedInteger, IntegerAddChip, IntegerDivChip, IntegerMulChip,
+			IntegerReduceChip, IntegerSubChip,
 		},
+		rns::{bn256::Bn256_4_68, RnsParams},
 		Chip, Chipset, CommonConfig, RegionCtx,
 	};
 	use halo2::{

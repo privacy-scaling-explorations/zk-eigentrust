@@ -5,7 +5,8 @@ pub mod poseidon_bn254_5x5;
 /// Rescue Prime Bn254 with WIDTH = 5 and EXPONENTIATION = 5
 pub mod rescue_prime_bn254_5x5;
 
-use halo2::{arithmetic::FieldExt, circuit::Value, plonk::Expression};
+use crate::FieldExt;
+use halo2::{circuit::Value, plonk::Expression};
 
 /// Trait definition of Round parameters of Poseidon
 pub trait RoundParams<F: FieldExt, const WIDTH: usize>: Sbox + Clone {
@@ -31,7 +32,7 @@ pub trait RoundParams<F: FieldExt, const WIDTH: usize>: Sbox + Clone {
 
 	/// Returns relevant constants for the given round.
 	fn load_round_constants(round: usize, round_consts: &[F]) -> [F; WIDTH] {
-		let mut result = [F::zero(); WIDTH];
+		let mut result = [F::ZERO; WIDTH];
 		for i in 0..WIDTH {
 			result[i] = round_consts[round * WIDTH + i];
 		}
@@ -51,7 +52,7 @@ pub trait RoundParams<F: FieldExt, const WIDTH: usize>: Sbox + Clone {
 	/// Add round constants to the state values
 	/// for the AddRoundConstants operation.
 	fn apply_round_constants(state: &[F; WIDTH], round_consts: &[F; WIDTH]) -> [F; WIDTH] {
-		let mut next_state = [F::zero(); WIDTH];
+		let mut next_state = [F::ZERO; WIDTH];
 		for i in 0..WIDTH {
 			let state = state[i];
 			let round_const = round_consts[i];
@@ -62,7 +63,7 @@ pub trait RoundParams<F: FieldExt, const WIDTH: usize>: Sbox + Clone {
 	}
 	/// Compute MDS matrix for MixLayer operation.
 	fn apply_mds(state: &[F; WIDTH]) -> [F; WIDTH] {
-		let mut new_state = [F::zero(); WIDTH];
+		let mut new_state = [F::ZERO; WIDTH];
 		let mds = Self::mds();
 		for i in 0..WIDTH {
 			for j in 0..WIDTH {
@@ -90,7 +91,7 @@ pub trait RoundParams<F: FieldExt, const WIDTH: usize>: Sbox + Clone {
 
 	/// Compute MDS matrix for MixLayer operation.
 	fn apply_mds_val(next_state: &[Value<F>; WIDTH]) -> [Value<F>; WIDTH] {
-		let mut new_state = [Value::known(F::zero()); WIDTH];
+		let mut new_state = [Value::known(F::ZERO); WIDTH];
 		let mds = Self::mds();
 		for i in 0..WIDTH {
 			for j in 0..WIDTH {
@@ -107,7 +108,7 @@ pub trait RoundParams<F: FieldExt, const WIDTH: usize>: Sbox + Clone {
 	fn apply_round_constants_expr(
 		curr_state: &[Expression<F>; WIDTH], round_constants: &[Expression<F>; WIDTH],
 	) -> [Expression<F>; WIDTH] {
-		let mut exprs = [(); WIDTH].map(|_| Expression::Constant(F::zero()));
+		let mut exprs = [(); WIDTH].map(|_| Expression::Constant(F::ZERO));
 		for i in 0..WIDTH {
 			exprs[i] = curr_state[i].clone() + round_constants[i].clone();
 		}
@@ -116,7 +117,7 @@ pub trait RoundParams<F: FieldExt, const WIDTH: usize>: Sbox + Clone {
 
 	/// Compute MDS matrix for MixLayer operation in the circuit.
 	fn apply_mds_expr(exprs: &[Expression<F>; WIDTH]) -> [Expression<F>; WIDTH] {
-		let mut new_exprs = [(); WIDTH].map(|_| Expression::Constant(F::zero()));
+		let mut new_exprs = [(); WIDTH].map(|_| Expression::Constant(F::ZERO));
 		// Mat mul with MDS
 		let mds = Self::mds();
 		for i in 0..WIDTH {
@@ -145,5 +146,5 @@ pub fn hex_to_field<F: FieldExt>(s: &str) -> F {
 	bytes.reverse();
 	let mut bytes_wide: [u8; 64] = [0; 64];
 	bytes_wide[..bytes.len()].copy_from_slice(&bytes[..]);
-	F::from_bytes_wide(&bytes_wide)
+	F::from_uniform_bytes(&bytes_wide)
 }
