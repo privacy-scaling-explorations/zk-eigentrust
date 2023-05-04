@@ -107,7 +107,7 @@ impl From<Snark> for SnarkWitness {
 				.into_iter()
 				.map(|instances| instances.into_iter().map(Value::known).collect_vec())
 				.collect(),
-			proof: Value::known(snark.proof),
+			proof: Some(snark.proof),
 		}
 	}
 }
@@ -117,7 +117,7 @@ impl From<Snark> for SnarkWitness {
 pub struct SnarkWitness {
 	protocol: PlonkProtocol<G1Affine>,
 	instances: Vec<Vec<Value<Fr>>>,
-	proof: Value<Vec<u8>>,
+	proof: Option<Vec<u8>>,
 }
 
 impl SnarkWitness {
@@ -129,11 +129,11 @@ impl SnarkWitness {
 				.iter()
 				.map(|instances| vec![Value::unknown(); instances.len()])
 				.collect(),
-			proof: Value::unknown(),
+			proof: None,
 		}
 	}
 
-	fn proof(&self) -> Value<&[u8]> {
+	fn proof(&self) -> Option<&[u8]> {
 		self.proof.as_ref().map(Vec::as_slice)
 	}
 }
@@ -146,7 +146,7 @@ struct Aggregator {
 	// Instances
 	instances: Vec<Fr>,
 	// Accumulation Scheme Proof
-	as_proof: Value<Vec<u8>>,
+	as_proof: Option<Vec<u8>>,
 }
 
 impl Clone for Aggregator {
@@ -199,7 +199,7 @@ impl Aggregator {
 			svk,
 			snarks: snarks.into_iter().map_into().collect(),
 			instances,
-			as_proof: Value::known(as_proof),
+			as_proof: Some(as_proof),
 		}
 	}
 }
@@ -233,7 +233,7 @@ impl Circuit<Fr> for Aggregator {
 			svk: self.svk,
 			snarks: self.snarks.iter().map(SnarkWitness::without_witnesses).collect(),
 			instances: Vec::new(),
-			as_proof: Value::unknown(),
+			as_proof: None,
 		}
 	}
 
