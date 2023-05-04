@@ -9,11 +9,10 @@ use crate::{
 	gadgets::lt_eq::{LessEqualChipset, LessEqualConfig},
 	params::RoundParams,
 	poseidon::{PoseidonChipset, PoseidonConfig},
-	Chip, Chipset, CommonConfig, RegionCtx,
+	Chip, Chipset, CommonConfig, FieldExt, RegionCtx,
 };
 use halo2::{
 	circuit::{AssignedCell, Layouter, Region},
-	halo2curves::FieldExt,
 	plonk::{Error, Selector},
 };
 use std::marker::PhantomData;
@@ -89,7 +88,7 @@ where
 				let mut ctx = RegionCtx::new(region, 0);
 				let b8_x = ctx.assign_from_constant(common.advice[0], P::b8().0)?;
 				let b8_y = ctx.assign_from_constant(common.advice[1], P::b8().1)?;
-				let one = ctx.assign_from_constant(common.advice[2], F::one())?;
+				let one = ctx.assign_from_constant(common.advice[2], F::ONE)?;
 				let suborder = ctx.assign_from_constant(common.advice[3], P::suborder())?;
 				Ok((b8_x, b8_y, one, suborder))
 			},
@@ -170,7 +169,7 @@ where
 
 				region_ctx.constrain_equal(cl_affine_x, cr_affine_x)?;
 				region_ctx.constrain_equal(cl_affine_y, cr_affine_y)?;
-				region_ctx.constrain_to_constant(lt_eq, F::one())?;
+				region_ctx.constrain_to_constant(lt_eq, F::ONE)?;
 				Ok(())
 			},
 		)?;

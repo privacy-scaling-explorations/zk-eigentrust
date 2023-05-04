@@ -1,7 +1,8 @@
 use super::{bits2num::Bits2NumChip, main::MainConfig};
-use crate::{gadgets::main::IsZeroChipset, utils::to_wide, Chip, Chipset, CommonConfig, RegionCtx};
+use crate::{
+	gadgets::main::IsZeroChipset, utils::to_wide, Chip, Chipset, CommonConfig, FieldExt, RegionCtx,
+};
 use halo2::{
-	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region, Value},
 	plonk::{ConstraintSystem, Error, Expression, Selector},
 	poly::Rotation,
@@ -35,7 +36,7 @@ impl<F: FieldExt> Chip<F> for NShiftedChip<F> {
 
 	fn configure(common: &CommonConfig, meta: &mut ConstraintSystem<F>) -> Selector {
 		let selector = meta.selector();
-		let n_shifted = F::from_bytes_wide(&to_wide(&N_SHIFTED));
+		let n_shifted = F::from_uniform_bytes(&to_wide(&N_SHIFTED));
 
 		meta.create_gate("x + n_shifted - y", |v_cells| {
 			let n_shifted_exp = Expression::Constant(n_shifted);
@@ -76,7 +77,7 @@ impl<F: FieldExt> Chip<F> for NShiftedChip<F> {
 				let assigned_x = ctx.copy_assign(common.advice[0], self.x.clone())?;
 				let assigned_y = ctx.copy_assign(common.advice[1], self.y.clone())?;
 
-				let n_shifted = Value::known(F::from_bytes_wide(&to_wide(&N_SHIFTED)));
+				let n_shifted = Value::known(F::from_uniform_bytes(&to_wide(&N_SHIFTED)));
 				let res = assigned_x.value().cloned() + n_shifted - assigned_y.value();
 
 				let assigned_res = ctx.assign_advice(common.advice[2], res)?;
@@ -177,7 +178,10 @@ mod test {
 	use halo2::{
 		circuit::{SimpleFloorPlanner, Value},
 		dev::MockProver,
-		halo2curves::bn256::{Bn256, Fr},
+		halo2curves::{
+			bn256::{Bn256, Fr},
+			ff::FromUniformBytes,
+		},
 		plonk::Circuit,
 	};
 
@@ -289,7 +293,7 @@ mod test {
 	#[test]
 	fn test_less_than_x252_y() {
 		// Testing x = biggest 252 bit number.
-		let bit252: Fr = FieldExt::from_bytes_wide(&to_wide(&N_SHIFTED));
+		let bit252 = Fr::from_uniform_bytes(&to_wide(&N_SHIFTED));
 		let x = bit252.sub(&Fr::one());
 		let y = Fr::from(9);
 
@@ -304,7 +308,7 @@ mod test {
 	#[test]
 	fn test_less_than_x_y252() {
 		// Testing y = biggest 252 bit number.
-		let bit252: Fr = FieldExt::from_bytes_wide(&to_wide(&N_SHIFTED));
+		let bit252 = Fr::from_uniform_bytes(&to_wide(&N_SHIFTED));
 		let x = Fr::from(2);
 		let y = bit252.sub(&Fr::from(1));
 
@@ -319,7 +323,7 @@ mod test {
 	#[test]
 	fn test_less_than_x252_y252() {
 		// Testing x = y = biggest 252 bit number.
-		let bit252: Fr = FieldExt::from_bytes_wide(&to_wide(&N_SHIFTED));
+		let bit252 = Fr::from_uniform_bytes(&to_wide(&N_SHIFTED));
 		let x = bit252.sub(&Fr::from(1));
 		let y = bit252.sub(&Fr::from(1));
 

@@ -1,9 +1,8 @@
 use crate::{
 	utils::{assigned_to_field, field_to_bits, field_to_bits_vec},
-	Chip, CommonConfig, RegionCtx,
+	Chip, CommonConfig, FieldExt, RegionCtx,
 };
 use halo2::{
-	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region, Value},
 	plonk::{ConstraintSystem, Error, Expression, Selector},
 	poly::Rotation,
@@ -43,7 +42,7 @@ impl<F: FieldExt> Chip<F> for Bits2NumChip<F> {
 		let selector = meta.selector();
 
 		meta.create_gate("bits2num", |v_cells| {
-			let one_exp = Expression::Constant(F::one());
+			let one_exp = Expression::Constant(F::ONE);
 			let bit_exp = v_cells.query_advice(common.advice[0], Rotation::cur());
 
 			let e2_exp = v_cells.query_advice(common.advice[1], Rotation::cur());
@@ -87,8 +86,8 @@ impl<F: FieldExt> Chip<F> for Bits2NumChip<F> {
 			|| "bits2num",
 			|region: Region<'_, F>| {
 				let mut ctx = RegionCtx::new(region, 0);
-				let mut lc1 = ctx.assign_from_constant(common.advice[2], F::zero())?;
-				let mut e2 = ctx.assign_from_constant(common.advice[1], F::one())?;
+				let mut lc1 = ctx.assign_from_constant(common.advice[2], F::ZERO)?;
+				let mut e2 = ctx.assign_from_constant(common.advice[1], F::ONE)?;
 
 				let mut bits = Vec::new();
 				for i in 0..self.bits.len() {

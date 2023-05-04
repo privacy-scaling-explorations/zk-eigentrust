@@ -13,8 +13,7 @@
 // r_x = m_1 * m_1 - p_x - f
 // r_y = m_1 * (r_x - p_x) - p_y
 
-use crate::{integer::native::Integer, rns::RnsParams, utils::to_bits};
-use halo2::{self, arithmetic::FieldExt};
+use crate::{integer::native::Integer, rns::RnsParams, utils::to_bits, FieldExt};
 
 /// Structure for the EcPoint
 #[derive(Clone, Default, Debug, PartialEq)]

@@ -31,7 +31,7 @@ use attestation::{Attestation, AttestationData};
 use eigen_trust_circuit::{
 	calculate_message_hash,
 	eddsa::native::{sign, SecretKey},
-	halo2::halo2curves::{bn256::Fr as Scalar, FieldExt},
+	halo2::halo2curves::{bn256::Fr as Scalar, ff::PrimeField},
 	utils::to_short,
 	ProofRaw,
 };

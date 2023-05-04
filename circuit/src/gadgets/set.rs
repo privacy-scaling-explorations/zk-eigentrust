@@ -1,6 +1,5 @@
-use crate::{gadgets::main::IsZeroChipset, Chip, Chipset, CommonConfig, RegionCtx};
+use crate::{gadgets::main::IsZeroChipset, Chip, Chipset, CommonConfig, FieldExt, RegionCtx};
 use halo2::{
-	arithmetic::FieldExt,
 	circuit::{AssignedCell, Layouter, Region},
 	plonk::{ConstraintSystem, Error, Selector},
 	poly::Rotation,
@@ -66,7 +65,7 @@ impl<F: FieldExt> Chip<F> for SetChip<F> {
 			|region: Region<'_, F>| {
 				let mut ctx = RegionCtx::new(region, 0);
 
-				let mut assigned_product = ctx.assign_from_constant(common.advice[3], F::one())?;
+				let mut assigned_product = ctx.assign_from_constant(common.advice[3], F::ONE)?;
 				let mut assigned_target = ctx.copy_assign(common.advice[0], self.target.clone())?;
 				for i in 0..self.items.len() {
 					ctx.enable(selector.clone())?;

@@ -1,7 +1,6 @@
-use crate::utils::to_bits;
+use crate::{utils::to_bits, FieldExt};
 
 use super::params::EdwardsParams;
-use halo2::halo2curves::FieldExt;
 use std::marker::PhantomData;
 
 #[derive(Clone, Copy, Debug)]
@@ -21,7 +20,7 @@ impl<F: FieldExt, P: EdwardsParams<F>> PointProjective<F, P> {
 	/// representation.
 	pub fn affine(&self) -> Point<F, P> {
 		if bool::from(self.z.is_zero()) {
-			return Point { x: F::zero(), y: F::zero(), _p: PhantomData };
+			return Point { x: F::ZERO, y: F::ZERO, _p: PhantomData };
 		}
 
 		let zinv = self.z.invert().unwrap();
@@ -67,13 +66,13 @@ impl<F: FieldExt, P: EdwardsParams<F>> Point<F, P> {
 	/// Returns projective space representation from the given affine
 	/// representation.
 	pub fn projective(&self) -> PointProjective<F, P> {
-		PointProjective { x: self.x, y: self.y, z: F::one(), _p: PhantomData }
+		PointProjective { x: self.x, y: self.y, z: F::ONE, _p: PhantomData }
 	}
 
 	/// Returns scalar multiplication of the element.
 	pub fn mul_scalar(&self, scalar: F) -> PointProjective<F, P> {
 		let mut r: PointProjective<F, P> =
-			PointProjective { x: F::zero(), y: F::one(), z: F::one(), _p: PhantomData };
+			PointProjective { x: F::ZERO, y: F::ONE, z: F::ONE, _p: PhantomData };
 		let mut exp: PointProjective<F, P> = self.projective();
 		let scalar_bits = to_bits(scalar.to_repr().as_ref());
 		// Double and add operation.

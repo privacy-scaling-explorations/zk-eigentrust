@@ -4,10 +4,11 @@ pub mod native;
 /// Implementation of a RescuePrime sponge
 pub mod sponge;
 
-use crate::{gadgets::absorb::copy_state, params::RoundParams, Chip, CommonConfig, RegionCtx};
+use crate::{
+	gadgets::absorb::copy_state, params::RoundParams, Chip, CommonConfig, FieldExt, RegionCtx,
+};
 use halo2::{
 	circuit::{AssignedCell, Layouter, Value},
-	halo2curves::FieldExt,
 	plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Selector},
 	poly::Rotation,
 };
