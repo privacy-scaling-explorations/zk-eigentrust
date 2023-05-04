@@ -89,12 +89,12 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITERATIONS: usize, const INITIAL_SCO
 	}
 
 	/// Compute the EigenTrust score
-	pub fn converge(&self) -> Vec<(PublicKey, Fr)> {
-		let (filtered_set, mut filtered_ops) = self.filter_peers();
+	pub fn converge(&self) -> Vec<Fr> {
+		let mut filtered_ops: HashMap<PublicKey, Opinion<NUM_NEIGHBOURS>> = self.filter_peers_ops();
 
 		// Normalize the opinion scores
 		for i in 0..NUM_NEIGHBOURS {
-			let (pk, _) = filtered_set[i];
+			let (pk, _) = self.set[i];
 			if pk == PublicKey::default() {
 				continue;
 			}
@@ -110,15 +110,16 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITERATIONS: usize, const INITIAL_SCO
 		}
 
 		// There should be at least 2 valid peers(valid opinions) for calculation
-		let valid_peers = filtered_set.iter().filter(|(pk, _)| pk != &PublicKey::default()).count();
+		let valid_peers = self.set.iter().filter(|(pk, _)| pk != &PublicKey::default()).count();
 		assert!(valid_peers >= 2, "Insufficient peers for calculation!");
 
-		// By this point we should use filtered_set and filtered_opinions
-		let mut s = filtered_set.clone();
+		// By this point we should use filtered_opinions
+		let mut s: Vec<Fr> = self.set.iter().map(|(_, score)| score.clone()).collect();
 		for _ in 0..NUM_ITERATIONS {
 			let mut sop = Vec::new();
 			for i in 0..NUM_NEIGHBOURS {
-				let (pk_i, n_score) = s[i];
+				let pk_i = self.set[i].0.clone();
+				let n_score = s[i];
 				if pk_i == PublicKey::default() {
 					sop.push(vec![Fr::zero(); NUM_NEIGHBOURS]);
 					continue;
@@ -140,37 +141,31 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITERATIONS: usize, const INITIAL_SCO
 				for j in 0..NUM_NEIGHBOURS {
 					new_score += sop[j][i];
 				}
-				s[i].1 = new_score;
+				s[i] = new_score;
 			}
 		}
 
-		println!("new s: {:#?}", s.iter().map(|p| p.1));
+		println!("new s: {:#?}", s.iter().map(|p| p));
 
 		// Apply scaling for converting large final scores to small values (easy to read)
 		let scale_factor = Fr::from_u128(10).pow(&[NUM_ITERATIONS as u64, 0, 0, 0]);
-		println!("scaled new s: {:#?}", s.iter().map(|p| p.1 * scale_factor));
+		println!("scaled new s: {:#?}", s.iter().map(|p| p * scale_factor));
 
 		// Assert the score sum for checking the possible reputation leak
-		let sum_initial = filtered_set.iter().fold(Fr::zero(), |acc, &(_, score)| acc + score);
-		let sum_final = s.iter().fold(Fr::zero(), |acc, &(_, score)| acc + score);
+		let sum_initial = self.set.iter().fold(Fr::zero(), |acc, &(_, score)| acc + score);
+		let sum_final = s.iter().fold(Fr::zero(), |acc, &score| acc + score);
 		assert!(sum_initial == sum_final);
 		println!("sum before: {:?}, sum after: {:?}", sum_initial, sum_final);
 
 		s
 	}
 
-	fn filter_peers(
-		&self,
-	) -> (
-		Vec<(PublicKey, Fr)>,
-		HashMap<PublicKey, Opinion<NUM_NEIGHBOURS>>,
-	) {
-		let filtered_set: Vec<(PublicKey, Fr)> = self.set.clone();
+	fn filter_peers_ops(&self) -> HashMap<PublicKey, Opinion<NUM_NEIGHBOURS>> {
 		let mut filtered_ops: HashMap<PublicKey, Opinion<NUM_NEIGHBOURS>> = HashMap::new();
 
 		// Distribute the scores to valid peers
 		for i in 0..NUM_NEIGHBOURS {
-			let (pk_i, _) = filtered_set[i].clone();
+			let (pk_i, _) = self.set[i].clone();
 			if pk_i == PublicKey::default() {
 				continue;
 			}
@@ -180,18 +175,18 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITERATIONS: usize, const INITIAL_SCO
 			// Update the opinion array - pairs of (key, score)
 			//
 			// Example 1:
-			// 	filtered_set => [p1, null, p3]
+			// 	set => [p1, null, p3]
 			//	Peer1 opinion
 			// 		[(p1, 10), (p6, 10),  (p3, 10)]
 			//   => [(p1, 0), (null, 0), (p3, 10)]
 			//
 			// Example 2:
-			// 	filtered_set => [p1, p2, null]
+			// 	set => [p1, p2, null]
 			//	Peer1 opinion
 			// 		[(p1, 0), (p3, 10), (null, 10)]
 			//   => [(p1, 0), (p2, 0),  (p3, 0)]
 			for j in 0..NUM_NEIGHBOURS {
-				let (set_pk_j, _) = filtered_set[j];
+				let (set_pk_j, _) = self.set[j];
 				let (op_pk_j, _) = ops_i.scores[j].clone();
 
 				let is_diff_pk_j = set_pk_j != op_pk_j;
@@ -216,13 +211,13 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITERATIONS: usize, const INITIAL_SCO
 			// Distribute the scores
 			//
 			// Example 1:
-			// 	filtered_set => [p1, p2, p3]
+			// 	set => [p1, p2, p3]
 			//	Peer1 opinion
 			// 		[(p1, 0), (p2, 0), (p3, 10)]
 			//   => [(p1, 0), (p2, 0), (p3, 10)]
 			//
 			// Example 2:
-			// 	filtered_set => [p1, p2, p3]
+			// 	set => [p1, p2, p3]
 			//	Peer1 opinion
 			//      [(p1, 0), (p2, 0), (p3, 0)]
 			//   => [(p1, 0), (p2, 1), (p3, 1)]
@@ -246,7 +241,7 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITERATIONS: usize, const INITIAL_SCO
 			filtered_ops.insert(pk_i, ops_i);
 		}
 
-		(filtered_set, filtered_ops)
+		filtered_ops
 	}
 }
 
@@ -669,7 +664,7 @@ mod test {
 	}
 
 	#[test]
-	fn test_filter_peers() {
+	fn test_filter_peers_ops() {
 		//	Filter the peers with following opinions:
 		//			1	2	3	4	 5
 		//		-----------------------
@@ -732,20 +727,21 @@ mod test {
 		);
 
 		// Setup EigenTrustSet
-		let mut set = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
+		let mut eigen_trust_set =
+			EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
 
-		set.add_member(pk1);
-		set.add_member(pk2);
-		set.add_member(pk3);
+		eigen_trust_set.add_member(pk1);
+		eigen_trust_set.add_member(pk2);
+		eigen_trust_set.add_member(pk3);
 
-		set.update_op(pk1, op1);
-		set.update_op(pk2, op2);
-		set.update_op(pk3, op3);
+		eigen_trust_set.update_op(pk1, op1);
+		eigen_trust_set.update_op(pk2, op2);
+		eigen_trust_set.update_op(pk3, op3);
 
-		let (filtered_set, filtered_ops) = set.filter_peers();
+		let filtered_ops = eigen_trust_set.filter_peers_ops();
 
 		let final_peers_cnt =
-			filtered_set.iter().filter(|&&(pk, _)| pk != PublicKey::default()).count();
+			eigen_trust_set.set.iter().filter(|&&(pk, _)| pk != PublicKey::default()).count();
 		let final_ops_cnt = filtered_ops.keys().count();
 		assert!(final_peers_cnt == final_ops_cnt);
 	}
@@ -806,7 +802,7 @@ mod test {
 		)
 	}
 
-	// #[test]
+	#[test]
 	fn test_scaling_2() {
 		const NUM_NEIGHBOURS: usize = 2_usize.pow(16);
 		const NUM_ITERATIONS: usize = 20;
@@ -838,9 +834,9 @@ mod test {
 	fn test_scaling_4() {
 		const NUM_NEIGHBOURS: usize = 2_usize.pow(16);
 		const NUM_ITERATIONS: usize = 20;
-		const INITIAL_SCORE: u128 = 32768;
+		const INITIAL_SCORE: u128 = 1000000;
 
-		let real_neighbors = 2;
+		let real_neighbors = 32768;
 		let is_random_score = true;
 
 		eigen_trust_set_testing_helper::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(

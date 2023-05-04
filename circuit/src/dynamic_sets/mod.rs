@@ -773,7 +773,7 @@ mod test {
 				et.update_op(pub_keys[i].clone(), op);
 			}
 			let s = et.converge();
-			let res: Vec<Scalar> = s.iter().map(|(_, score)| score.clone()).collect();
+			let res: Vec<Scalar> = s.iter().map(|score| score.clone()).collect();
 
 			(res, signatures)
 		};
@@ -833,7 +833,7 @@ mod test {
 				et.update_op(pub_keys[i].clone(), op);
 			}
 			let s = et.converge();
-			let res: Vec<Scalar> = s.iter().map(|(_, score)| score.clone()).collect();
+			let res: Vec<Scalar> = s.iter().map(|score| score.clone()).collect();
 
 			(res, signatures)
 		};
@@ -891,7 +891,7 @@ mod test {
 				et.update_op(pub_keys[i].clone(), op);
 			}
 			let s = et.converge();
-			let res: Vec<Scalar> = s.iter().map(|(_, score)| score.clone()).collect();
+			let res: Vec<Scalar> = s.iter().map(|score| score.clone()).collect();
 
 			(res, signatures)
 		};
