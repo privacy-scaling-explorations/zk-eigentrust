@@ -38,6 +38,8 @@ use std::{
 	sync::Arc,
 };
 
+pub const PARTICIPANTS: &[&str] = &["Alice", "Bob", "Carol", "Dave", "Eve"];
+
 /// Reads the json file and deserialize it into the provided type
 pub fn read_csv_file<T: DeserializeOwned>(path: impl AsRef<Path>) -> Result<Vec<T>, Error> {
 	let path = path.as_ref();
@@ -281,14 +283,8 @@ pub fn ecdsa_eddsa_map(mnemonic: &str) -> HashMap<Address, PublicKey> {
 		.iter()
 		.map(|wallet| wallet.address())
 		.collect::<Vec<Address>>();
-	let eddsa: Vec<PublicKey> = eddsa_sk_from_mnemonic(mnemonic, 10)
-		.unwrap()
-		.iter()
-		.map(|sk| {
-			let pk = sk.public();
-			pk
-		})
-		.collect();
+	let eddsa: Vec<PublicKey> =
+		eddsa_sk_from_mnemonic(mnemonic, 10).unwrap().iter().map(|sk| sk.public()).collect();
 
 	ecdsa.into_iter().zip(eddsa.into_iter()).collect()
 }
