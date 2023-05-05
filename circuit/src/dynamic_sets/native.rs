@@ -5,6 +5,7 @@ use halo2::{
 	arithmetic::Field,
 	halo2curves::{bn256::Fr, ff::PrimeField},
 };
+use itertools::Itertools;
 
 /// Opinion info of peer
 #[derive(Debug, Clone)]
@@ -38,13 +39,18 @@ pub struct EigenTrustSet<
 	const NUM_NEIGHBOURS: usize,
 	const NUM_ITERATIONS: usize,
 	const INITIAL_SCORE: u128,
+	const SCALE: u128,
 > {
 	set: Vec<(PublicKey, Fr)>,
 	ops: HashMap<PublicKey, Opinion<NUM_NEIGHBOURS>>,
 }
 
-impl<const NUM_NEIGHBOURS: usize, const NUM_ITERATIONS: usize, const INITIAL_SCORE: u128>
-	EigenTrustSet<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>
+impl<
+		const NUM_NEIGHBOURS: usize,
+		const NUM_ITERATIONS: usize,
+		const INITIAL_SCORE: u128,
+		const SCALE: u128,
+	> EigenTrustSet<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE, SCALE>
 {
 	/// Constructs new instance
 	pub fn new() -> Self {
@@ -88,8 +94,13 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITERATIONS: usize, const INITIAL_SCO
 		self.ops.insert(from, op);
 	}
 
+	/// Get a specific opinion from a peer
+	pub fn get_op(&self, from: &PublicKey) -> Opinion<NUM_NEIGHBOURS> {
+		self.ops.get(from).cloned().unwrap_or(Opinion::default())
+	}
+
 	/// Compute the EigenTrust score
-	pub fn converge(&self) -> Vec<Fr> {
+	pub fn converge(&self) -> (Vec<Fr>, Vec<Fr>) {
 		let mut filtered_ops: HashMap<PublicKey, Opinion<NUM_NEIGHBOURS>> = self.filter_peers_ops();
 
 		// Normalize the opinion scores
@@ -145,19 +156,16 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITERATIONS: usize, const INITIAL_SCO
 			}
 		}
 
-		println!("new s: {:#?}", s.iter().map(|p| p));
-
 		// Apply scaling for converting large final scores to small values (easy to read)
-		let scale_factor = Fr::from_u128(10).pow(&[NUM_ITERATIONS as u64, 0, 0, 0]);
-		println!("scaled new s: {:#?}", s.iter().map(|p| p * scale_factor));
+		let scale_factor = Fr::from_u128(SCALE);
+		let scaled: Vec<Fr> = s.iter().map(|p| p * scale_factor).collect_vec();
 
 		// Assert the score sum for checking the possible reputation leak
 		let sum_initial = self.set.iter().fold(Fr::zero(), |acc, &(_, score)| acc + score);
 		let sum_final = s.iter().fold(Fr::zero(), |acc, &score| acc + score);
 		assert!(sum_initial == sum_final);
-		println!("sum before: {:?}, sum after: {:?}", sum_initial, sum_final);
 
-		s
+		(s, scaled)
 	}
 
 	fn filter_peers_ops(&self) -> HashMap<PublicKey, Opinion<NUM_NEIGHBOURS>> {
@@ -247,27 +255,33 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITERATIONS: usize, const INITIAL_SCO
 
 #[cfg(test)]
 mod test {
+	use std::time::Instant;
+
 	use super::{EigenTrustSet, Opinion};
 	use crate::{
 		calculate_message_hash,
 		eddsa::native::{sign, PublicKey, SecretKey},
+		utils::fe_to_big,
 	};
 
 	use halo2::halo2curves::{bn256::Fr, ff::PrimeField};
-	use rand::{thread_rng, Rng};
+	use rand::thread_rng;
 
-	const NUM_NEIGHBOURS: usize = 123;
+	const NUM_NEIGHBOURS: usize = 12;
 	const NUM_ITERATIONS: usize = 10;
-	const INITIAL_SCORE: u128 = 2437;
+	const INITIAL_SCORE: u128 = 1000;
+	const SCALE: u128 = 100000;
 
 	fn sign_opinion<
 		const NUM_NEIGHBOURS: usize,
 		const NUM_ITERATIONS: usize,
 		const INITIAL_SCORE: u128,
 	>(
-		sk: &SecretKey, pk: &PublicKey, pks: &[PublicKey; NUM_NEIGHBOURS],
-		scores: &[Fr; NUM_NEIGHBOURS],
+		sk: &SecretKey, pk: &PublicKey, pks: &[PublicKey], scores: &[Fr],
 	) -> Opinion<NUM_NEIGHBOURS> {
+		assert!(pks.len() == NUM_NEIGHBOURS);
+		assert!(scores.len() == NUM_NEIGHBOURS);
+
 		let (_, message_hashes) =
 			calculate_message_hash::<NUM_NEIGHBOURS, 1>(pks.to_vec(), vec![scores.to_vec()]);
 		let sig = sign(sk, pk, message_hashes[0]);
@@ -284,7 +298,7 @@ mod test {
 	#[test]
 	#[should_panic]
 	fn test_add_member_in_initial_set() {
-		let mut set = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
+		let mut set = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE, SCALE>::new();
 
 		let rng = &mut thread_rng();
 
@@ -300,7 +314,7 @@ mod test {
 	#[test]
 	#[should_panic]
 	fn test_one_member_converge() {
-		let mut set = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
+		let mut set = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE, SCALE>::new();
 
 		let rng = &mut thread_rng();
 
@@ -314,7 +328,7 @@ mod test {
 
 	#[test]
 	fn test_add_two_members_without_opinions() {
-		let mut set = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
+		let mut set = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE, SCALE>::new();
 
 		let rng = &mut thread_rng();
 
@@ -332,7 +346,7 @@ mod test {
 
 	#[test]
 	fn test_add_two_members_with_one_opinion() {
-		let mut set = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
+		let mut set = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE, SCALE>::new();
 
 		let rng = &mut thread_rng();
 
@@ -364,7 +378,7 @@ mod test {
 
 	#[test]
 	fn test_add_two_members_with_opinions() {
-		let mut set = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
+		let mut set = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE, SCALE>::new();
 
 		let rng = &mut thread_rng();
 
@@ -410,7 +424,7 @@ mod test {
 
 	#[test]
 	fn test_add_three_members_with_opinions() {
-		let mut set = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
+		let mut set = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE, SCALE>::new();
 
 		let rng = &mut thread_rng();
 
@@ -479,7 +493,7 @@ mod test {
 
 	#[test]
 	fn test_add_three_members_with_two_opinions() {
-		let mut set = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
+		let mut set = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE, SCALE>::new();
 
 		let rng = &mut thread_rng();
 
@@ -532,7 +546,7 @@ mod test {
 
 	#[test]
 	fn test_add_3_members_with_3_ops_quit_1_member() {
-		let mut set = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
+		let mut set = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE, SCALE>::new();
 
 		let rng = &mut thread_rng();
 
@@ -607,7 +621,7 @@ mod test {
 
 	#[test]
 	fn test_add_3_members_with_2_ops_quit_1_member_1_op() {
-		let mut set = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
+		let mut set = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE, SCALE>::new();
 
 		let rng = &mut thread_rng();
 
@@ -679,12 +693,10 @@ mod test {
 		let sk1 = SecretKey::random(rng);
 		let sk2 = SecretKey::random(rng);
 		let sk3 = SecretKey::random(rng);
-		let sk8 = SecretKey::random(rng);
 
 		let pk1 = sk1.public();
 		let pk2 = sk2.public();
 		let pk3 = sk3.public();
-		let pk8 = sk8.public();
 
 		// Peer1(pk1) signs the opinion
 		let mut pks = [PublicKey::default(); NUM_NEIGHBOURS];
@@ -728,7 +740,7 @@ mod test {
 
 		// Setup EigenTrustSet
 		let mut eigen_trust_set =
-			EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
+			EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE, SCALE>::new();
 
 		eigen_trust_set.add_member(pk1);
 		eigen_trust_set.add_member(pk2);
@@ -746,33 +758,70 @@ mod test {
 		assert!(final_peers_cnt == final_ops_cnt);
 	}
 
-	// NUM_NEIGHBOURS - 2^16;
-	// NUM_ITERATIONS - 20;
-	// INITIAL_SCORE - 1000000;
+	fn native_float<
+		const NUM_NEIGHBOURS: usize,
+		const NUM_ITERATIONS: usize,
+		const INITIAL_SCORE: u128,
+		const SCALE: u128,
+	>() {
+		let mut s: [f32; NUM_NEIGHBOURS] = [INITIAL_SCORE as f32; NUM_NEIGHBOURS];
+
+		let ops = [
+			[0.0, 0.2, 0.3, 0.5, 0.0], // - Peer 0 opinions
+			[0.1, 0.0, 0.1, 0.1, 0.7], // - Peer 1 opinions
+			[0.4, 0.1, 0.0, 0.2, 0.3], // - Peer 2 opinions
+			[0.1, 0.1, 0.7, 0.0, 0.1], // - Peer 3 opinions
+			[0.3, 0.1, 0.4, 0.2, 0.0], // = Peer 4 opinions
+		];
+
+		let mut new_s = s.clone();
+		for _ in 0..NUM_ITERATIONS {
+			for i in 0..NUM_NEIGHBOURS {
+				let mut score_i_sum = 0.;
+				for j in 0..NUM_NEIGHBOURS {
+					let score = ops[j][i] * s[j];
+					score_i_sum += score;
+				}
+				new_s[i] = score_i_sum;
+			}
+			s = new_s;
+		}
+
+		println!(
+			"NATIVE FLOAT RESULT: [{}]",
+			s.map(|v| format!("{:>9.4}", v)).join(", ")
+		);
+	}
 
 	fn eigen_trust_set_testing_helper<
 		const NUM_NEIGHBOURS: usize,
 		const NUM_ITERATIONS: usize,
 		const INITIAL_SCORE: u128,
-	>(
-		real_neighbors: usize,
-	) {
-		let mut set = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
+		const SCALE: u128,
+	>() {
+		let mut set = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE, SCALE>::new();
 
 		let rng = &mut thread_rng();
 
-		let sks = [(); NUM_NEIGHBOURS].map(|__| SecretKey::random(rng));
-		let pks = sks.clone().map(|s| s.public());
+		let sks: Vec<SecretKey> =
+			(0..NUM_NEIGHBOURS).into_iter().map(|__| SecretKey::random(rng)).collect();
+		let pks: Vec<PublicKey> = sks.clone().iter().map(|s| s.public()).collect();
 
 		// Add the publicKey to the set
-		let _: Vec<_> = pks.iter().map(|pk| set.add_member(*pk)).collect();
+		pks.iter().for_each(|pk| set.add_member(*pk));
+
+		let ops = [
+			[0, 2, 3, 5, 0], // - Peer 0 opinions
+			[1, 0, 1, 1, 7], // - Peer 1 opinions
+			[4, 1, 0, 2, 3], // - Peer 2 opinions
+			[1, 1, 7, 0, 1], // - Peer 3 opinions
+			[3, 1, 4, 2, 0], // = Peer 4 opinions
+		]
+		.map(|arr| arr.map(|x| Fr::from_u128(x)));
 
 		// Update the opinions
-		for i in 0..real_neighbors {
-			let scores = [(); NUM_NEIGHBOURS].map(|_| {
-				let score = rng.gen::<u8>() as u128;
-				Fr::from_u128(score)
-			});
+		for i in 0..NUM_NEIGHBOURS {
+			let scores = ops[i].to_vec();
 
 			let op_i = sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
 				&sks[i], &pks[i], &pks, &scores,
@@ -781,71 +830,25 @@ mod test {
 			set.update_op(pks[i], op_i);
 		}
 
-		set.converge();
+		let (s, scaled) = set.converge();
+		let s_formatted: Vec<String> = s.iter().map(|&x| fe_to_big(x).to_str_radix(10)).collect();
+		println!("new s: {:#?}", s_formatted);
+		let scaled_formatted: Vec<String> =
+			scaled.iter().map(|&x| fe_to_big(x).to_str_radix(10)).collect();
+		println!("scaled new s: {:#?}", scaled_formatted);
 	}
 
 	#[test]
 	fn test_scaling_1() {
-		const NUM_NEIGHBOURS: usize = 2_usize.pow(16);
-		const NUM_ITERATIONS: usize = 20;
-		const INITIAL_SCORE: u128 = 1000000;
+		const NUM_NEIGHBOURS: usize = 5;
+		const NUM_ITERATIONS: usize = 10;
+		const INITIAL_SCORE: u128 = 100;
+		const SCALE: u128 = 10000000000;
 
-		let real_neighbors = 2;
-
-		eigen_trust_set_testing_helper::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
-			real_neighbors,
-		)
-	}
-
-	#[test]
-	fn test_scaling_2() {
-		const NUM_NEIGHBOURS: usize = 2_usize.pow(16);
-		const NUM_ITERATIONS: usize = 20;
-		const INITIAL_SCORE: u128 = 1000000;
-
-		let real_neighbors = 256;
-
-		eigen_trust_set_testing_helper::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
-			real_neighbors,
-		)
-	}
-
-	#[test]
-	fn test_scaling_3() {
-		const NUM_NEIGHBOURS: usize = 2_usize.pow(16);
-		const NUM_ITERATIONS: usize = 20;
-		const INITIAL_SCORE: u128 = 1000000;
-
-		let real_neighbors = 8172;
-
-		eigen_trust_set_testing_helper::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
-			real_neighbors,
-		)
-	}
-
-	#[test]
-	fn test_scaling_4() {
-		const NUM_NEIGHBOURS: usize = 2_usize.pow(16);
-		const NUM_ITERATIONS: usize = 20;
-		const INITIAL_SCORE: u128 = 1000000;
-
-		let real_neighbors = 32768;
-
-		eigen_trust_set_testing_helper::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
-			real_neighbors,
-		)
-	}
-
-	#[test]
-	fn test_scaling_5() {
-		const NUM_NEIGHBOURS: usize = 2_usize.pow(16);
-		const NUM_ITERATIONS: usize = 20;
-		const INITIAL_SCORE: u128 = 1000000;
-
-		let real_neighbors = 65000;
-
-		eigen_trust_set_testing_helper::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
-			real_neighbors,
-		)
+		let start = Instant::now();
+		eigen_trust_set_testing_helper::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE, SCALE>();
+		native_float::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE, SCALE>();
+		let end = start.elapsed();
+		println!("Convergence time: {:?}", end);
 	}
 }
