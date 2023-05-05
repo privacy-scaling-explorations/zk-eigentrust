@@ -28,7 +28,7 @@ impl<const NUM_NEIGHBOURS: usize> Default for Opinion<NUM_NEIGHBOURS> {
 	fn default() -> Self {
 		let sig = Signature::new(Fr::zero(), Fr::zero(), Fr::zero());
 		let message_hash = Fr::zero();
-		let scores = [(PublicKey::default(), Fr::zero()); NUM_NEIGHBOURS].to_vec();
+		let scores = vec![(PublicKey::default(), Fr::zero()); NUM_NEIGHBOURS];
 		Self { sig, message_hash, scores }
 	}
 }
@@ -49,7 +49,7 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITERATIONS: usize, const INITIAL_SCO
 	/// Constructs new instance
 	pub fn new() -> Self {
 		Self {
-			set: [(PublicKey::default(), Fr::zero()); NUM_NEIGHBOURS].to_vec(),
+			set: vec![(PublicKey::default(), Fr::zero()); NUM_NEIGHBOURS],
 			ops: HashMap::new(),
 		}
 	}
@@ -273,9 +273,9 @@ mod test {
 		let sig = sign(sk, pk, message_hashes[0]);
 
 		// let scores = pks.zip(*scores);
-		let mut op_scores = [(PublicKey::default(), Fr::zero()); NUM_NEIGHBOURS];
+		let mut op_scores = vec![];
 		for i in 0..NUM_NEIGHBOURS {
-			op_scores[i] = (pks[i], scores[i]);
+			op_scores.push((pks[i], scores[i]));
 		}
 		let op = Opinion::new(sig, message_hashes[0], op_scores.to_vec());
 		op
@@ -755,7 +755,7 @@ mod test {
 		const NUM_ITERATIONS: usize,
 		const INITIAL_SCORE: u128,
 	>(
-		real_neighbors: usize, is_random_score: bool,
+		real_neighbors: usize,
 	) {
 		let mut set = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
 
@@ -771,11 +771,7 @@ mod test {
 		for i in 0..real_neighbors {
 			let scores = [(); NUM_NEIGHBOURS].map(|_| {
 				let score = rng.gen::<u8>() as u128;
-				if is_random_score {
-					Fr::from_u128(score)
-				} else {
-					Fr::from_u128(1)
-				}
+				Fr::from_u128(score)
 			});
 
 			let op_i = sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
@@ -790,15 +786,14 @@ mod test {
 
 	#[test]
 	fn test_scaling_1() {
-		const NUM_NEIGHBOURS: usize = 2_usize.pow(10);
+		const NUM_NEIGHBOURS: usize = 2_usize.pow(16);
 		const NUM_ITERATIONS: usize = 20;
 		const INITIAL_SCORE: u128 = 1000000;
 
 		let real_neighbors = 2;
-		let is_random_score = true;
 
 		eigen_trust_set_testing_helper::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
-			real_neighbors, is_random_score,
+			real_neighbors,
 		)
 	}
 
@@ -809,52 +804,48 @@ mod test {
 		const INITIAL_SCORE: u128 = 1000000;
 
 		let real_neighbors = 256;
-		let is_random_score = true;
 
 		eigen_trust_set_testing_helper::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
-			real_neighbors, is_random_score,
+			real_neighbors,
 		)
 	}
 
-	// #[test]
+	#[test]
 	fn test_scaling_3() {
 		const NUM_NEIGHBOURS: usize = 2_usize.pow(16);
 		const NUM_ITERATIONS: usize = 20;
 		const INITIAL_SCORE: u128 = 1000000;
 
 		let real_neighbors = 8172;
-		let is_random_score = true;
 
 		eigen_trust_set_testing_helper::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
-			real_neighbors, is_random_score,
+			real_neighbors,
 		)
 	}
 
-	// #[test]
+	#[test]
 	fn test_scaling_4() {
 		const NUM_NEIGHBOURS: usize = 2_usize.pow(16);
 		const NUM_ITERATIONS: usize = 20;
 		const INITIAL_SCORE: u128 = 1000000;
 
 		let real_neighbors = 32768;
-		let is_random_score = true;
 
 		eigen_trust_set_testing_helper::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
-			real_neighbors, is_random_score,
+			real_neighbors,
 		)
 	}
 
-	// #[test]
+	#[test]
 	fn test_scaling_5() {
 		const NUM_NEIGHBOURS: usize = 2_usize.pow(16);
 		const NUM_ITERATIONS: usize = 20;
 		const INITIAL_SCORE: u128 = 1000000;
 
 		let real_neighbors = 65000;
-		let is_random_score = true;
 
 		eigen_trust_set_testing_helper::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
-			real_neighbors, is_random_score,
+			real_neighbors,
 		)
 	}
 }
