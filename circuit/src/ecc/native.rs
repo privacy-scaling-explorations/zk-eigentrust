@@ -58,6 +58,15 @@ where
 		}
 	}
 
+	/// Selection function for the table
+	fn select_vec(bit: bool, table: Vec<Self>) -> Self {
+		if bit {
+			table[1].clone()
+		} else {
+			table[0].clone()
+		}
+	}
+
 	/// AuxInit
 	pub fn to_add() -> Self {
 		let x_limbs = P::to_add_x();
@@ -173,6 +182,63 @@ where
 		acc = acc.add(&aux_fin);
 
 		acc
+	}
+
+	/// Multi-multiplication for given points with using ladder (without sliding window)
+	pub fn multi_mul_scalar(points: &[Self], scalars: &[N]) -> Vec<Self> {
+		let mut aux_inits: Vec<EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>> = vec![];
+		let mut aux_init = Self::to_add();
+		for _ in 0..points.len() {
+			aux_inits.push(aux_init.clone());
+			aux_init = aux_init.double();
+		}
+		let exps: Vec<EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>> = points.to_vec();
+		let bits: Vec<Vec<bool>> = scalars
+			.iter()
+			.map(|scalar| {
+				let mut bits = to_bits(scalar.to_repr().as_ref());
+				bits = bits[..N::NUM_BITS as usize].to_vec();
+				bits.reverse();
+				bits
+			})
+			.collect();
+
+		let mut table: Vec<Vec<EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>>> = vec![];
+		for i in 0..exps.len() {
+			table[i].push(aux_inits[i].clone());
+			table[i].push(exps[i].clone().add(&aux_inits[i]));
+		}
+
+		let mut accs: Vec<EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>> = vec![];
+
+		for i in 0..exps.len() {
+			let mut acc_i = Self::select_vec(bits[i][0], table[i].clone());
+
+			// To avoid P_0 == P_1
+			acc_i = acc_i.double();
+			acc_i = acc_i.add(&Self::select_vec(bits[i][1], table[i].clone()));
+			accs.push(acc_i);
+		}
+
+		// Double and Add operation with ladder
+		for i in 0..exps.len() {
+			for bit in &bits[i][2..] {
+				let item = Self::select_vec(*bit, table[i].clone());
+				accs[i] = accs[i].ladder(&item);
+			}
+		}
+
+		let mut aux_fins: Vec<EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>> = vec![];
+		let mut aux_fin = Self::to_sub();
+		for _ in 0..points.len() {
+			aux_fins.push(aux_fin.clone());
+			aux_fin = aux_fin.double();
+		}
+		for i in 0..exps.len() {
+			accs[i] = accs[i].add(&aux_fins[i]);
+		}
+
+		accs
 	}
 
 	/// Check if two points are equal
