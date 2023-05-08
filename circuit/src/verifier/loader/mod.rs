@@ -22,21 +22,11 @@ use std::{
 	marker::PhantomData,
 	ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 	rc::Rc,
-	sync::Mutex,
+	sync::{Mutex, MutexGuard},
 };
 
 /// Native version of the loader
 pub mod native;
-
-/// TODO: Mutex Layouter optimizer
-/*
-fn layouter<T>(func: FnOnce(layouter) -> T) -> T {
-	let layouter = self.layouter.lock();
-	let res = func(layouter);
-	drop(layouter);
-	res
-}
-*/
 
 /// LoaderConfig structure
 pub struct LoaderConfig<C: CurveAffine, L: Layouter<C::Scalar>, P>
@@ -68,12 +58,24 @@ where
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
 {
+	/// TODO: Mutex Layouter optimizer
+	pub fn layouter_drop<F>(func: F, layouter: Rc<Mutex<L>>) -> MutexGuard<'static, L>
+	where
+		F: FnOnce(Rc<Mutex<L>>) -> MutexGuard<'static, L>,
+	{
+		let res = func(layouter.clone());
+		drop(layouter);
+		res
+	}
+
 	/// Construct a new LoaderConfig
 	pub fn new(
 		layouter: Rc<Mutex<L>>, common: CommonConfig, ecc_mul_scalar: EccMulConfig,
 		main: MainConfig, poseidon_sponge: PoseidonSpongeConfig,
 	) -> Self {
 		let binding = layouter.clone();
+		//let test = Self::layouter_drop::<_>(|z| z.clone().lock().unwrap(), binding.clone());
+
 		let mut layouter_reg = binding.lock().unwrap();
 		let (aux_init_x_limbs, aux_init_y_limbs, aux_fin_x_limbs, aux_fin_y_limbs) = layouter_reg
 			.assign_region(

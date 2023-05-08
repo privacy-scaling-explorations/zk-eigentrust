@@ -77,7 +77,7 @@ impl Snark {
 	) -> Self {
 		let pk = gen_pk(params, &circuit);
 		// TODO: Calculate number of instances from `instances` parameter
-		let config = Config::kzg().with_num_instance(vec![1]);
+		let config = Config::kzg().with_num_instance(vec![instances.len()]);
 
 		let protocol = compile(params, pk.get_vk(), config);
 
@@ -289,42 +289,40 @@ impl Circuit<Fr> for Aggregator {
 			let protocol = snark.protocol.loaded(&loader_config);
 			let mut transcript_read: PoseidonReadChipset<&[u8], G1Affine, _, Bn256_4_68, Params> =
 				PoseidonReadChipset::new(snark.proof(), loader_config.clone());
-			let mut lb = layouter_rc.lock().unwrap();
 			let mut instances: Vec<Vec<Halo2LScalar<G1Affine, _, Bn256_4_68>>> = Vec::new();
-			let mut instance_collector: Vec<Halo2LScalar<G1Affine, _, Bn256_4_68>> = Vec::new();
 			let instance_flatten =
 				snark.instances.clone().into_iter().flatten().collect::<Vec<Value<Fr>>>();
 			let mut instance_chunks = instance_flatten.chunks(ADVICE);
+			let mut instance_collector: Vec<Option<Halo2LScalar<G1Affine, _, Bn256_4_68>>> =
+				vec![None; instance_flatten.len()];
+
+			let mut lb = layouter_rc.lock().unwrap();
 			lb.assign_region(
 				|| "assign_instances",
 				|region: Region<'_, Fr>| {
 					let mut ctx = RegionCtx::new(region, 0);
-					// TODO: When it is assign_advice, it assings one none cell. Fix it.
-					for _ in 0..instance_chunks.len() {
-						let chunk = instance_chunks.next().unwrap();
-						for i in 0..chunk.len() {
-							let value = ctx.assign_advice(config.common.advice[i], chunk[i])?;
-							let lscalar = Halo2LScalar::new(value, loader_config.clone());
-							instance_collector.push(lscalar.clone());
-						}
-
-						ctx.next();
-					}
+					//for j in 0..instance_chunks.len() {
+					//let chunk = instance_chunks.next().unwrap();
+					//for i in 0..chunk.len() {
+					//println!("chunk = {:#?}", chunk);
+					let value = ctx.assign_advice(config.common.advice[0], instance_flatten[0])?;
+					let lscalar = Halo2LScalar::new(value, loader_config.clone());
+					instance_collector[0] = Some(lscalar.clone());
+					//}
+					ctx.next();
+					//}
 					Ok(())
 				},
 			)?;
-
-			// TODO: Check if it is a square 2D vector or not and fix this algorithm for the
-			// complex circuits. This for loops are working only for one instance inputs.
-			for _ in 0..snark.instances.len() {
-				for _ in 0..snark.instances[0].len() {
-					instances.push(vec![instance_collector[0].clone()]);
-				}
-			}
-
 			// Drop the layouter reference
 			drop(lb);
 
+			for i in 0..snark.instances.len() {
+				for j in 0..snark.instances[i].len() {
+					instances.push(vec![instance_collector[j].clone().unwrap()]);
+				}
+			}
+			println!("{:#?}", instances);
 			let proof = PlonkSuccinctVerifier::<KzgAs<Bn256, Gwc19>>::read_proof(
 				&self.svk, &protocol, &instances, &mut transcript_read,
 			)
@@ -574,10 +572,10 @@ mod test {
 		let k = 22;
 		let params = generate_params::<Bn256>(k);
 
-		let random_circuit_1 = MulChip::new(Fr::one(), Fr::one());
+		let random_circuit_1 = MulChip::new(Fr::one() + Fr::one(), Fr::one());
 		let random_circuit_2 = MulChip::new(Fr::one(), Fr::one());
 
-		let instances_1: Vec<Vec<Fr>> = vec![vec![Fr::one()]];
+		let instances_1: Vec<Vec<Fr>> = vec![vec![Fr::one() + Fr::one()]];
 		let instances_2: Vec<Vec<Fr>> = vec![vec![Fr::one()]];
 
 		let snark_1 = Snark::new(&params.clone(), random_circuit_1, instances_1, rng);
