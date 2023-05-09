@@ -261,11 +261,14 @@ mod test {
 	use crate::{
 		calculate_message_hash,
 		eddsa::native::{sign, PublicKey, SecretKey},
+		integer::native::Integer,
+		rns::decompose_big,
 		utils::fe_to_big,
 	};
 
 	use halo2::halo2curves::{bn256::Fr, ff::PrimeField};
-	use rand::thread_rng;
+	use itertools::Itertools;
+	use rand::{thread_rng, Rng};
 
 	const NUM_NEIGHBOURS: usize = 12;
 	const NUM_ITERATIONS: usize = 10;
@@ -763,16 +766,14 @@ mod test {
 		const NUM_ITERATIONS: usize,
 		const INITIAL_SCORE: u128,
 		const SCALE: u128,
-	>() {
-		let mut s: [f32; NUM_NEIGHBOURS] = [INITIAL_SCORE as f32; NUM_NEIGHBOURS];
-
-		let ops = [
-			[0.0, 0.2, 0.3, 0.5, 0.0], // - Peer 0 opinions
-			[0.1, 0.0, 0.1, 0.1, 0.7], // - Peer 1 opinions
-			[0.4, 0.1, 0.0, 0.2, 0.3], // - Peer 2 opinions
-			[0.1, 0.1, 0.7, 0.0, 0.1], // - Peer 3 opinions
-			[0.3, 0.1, 0.4, 0.2, 0.0], // = Peer 4 opinions
-		];
+	>(
+		ops: Vec<Vec<f32>>,
+	) {
+		assert!(ops.len() == NUM_NEIGHBOURS);
+		for op in &ops {
+			assert!(op.len() == NUM_NEIGHBOURS);
+		}
+		let mut s: Vec<f32> = vec![INITIAL_SCORE as f32; NUM_NEIGHBOURS];
 
 		let mut new_s = s.clone();
 		for _ in 0..NUM_ITERATIONS {
@@ -784,13 +785,11 @@ mod test {
 				}
 				new_s[i] = score_i_sum;
 			}
-			s = new_s;
+			s = new_s.clone();
 		}
 
-		println!(
-			"NATIVE FLOAT RESULT: [{}]",
-			s.map(|v| format!("{:>9.4}", v)).join(", ")
-		);
+		let s_f: String = s.iter().map(|v| format!("{:>9.4}", v)).join(", ");
+		println!("NATIVE FLOAT RESULT: [{}]", s_f);
 	}
 
 	fn eigen_trust_set_testing_helper<
@@ -798,7 +797,14 @@ mod test {
 		const NUM_ITERATIONS: usize,
 		const INITIAL_SCORE: u128,
 		const SCALE: u128,
-	>() {
+	>(
+		ops: Vec<Vec<Fr>>,
+	) {
+		assert!(ops.len() == NUM_NEIGHBOURS);
+		for op in &ops {
+			assert!(op.len() == NUM_NEIGHBOURS);
+		}
+
 		let mut set = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE, SCALE>::new();
 
 		let rng = &mut thread_rng();
@@ -809,15 +815,6 @@ mod test {
 
 		// Add the publicKey to the set
 		pks.iter().for_each(|pk| set.add_member(*pk));
-
-		let ops = [
-			[0, 2, 3, 5, 0], // - Peer 0 opinions
-			[1, 0, 1, 1, 7], // - Peer 1 opinions
-			[4, 1, 0, 2, 3], // - Peer 2 opinions
-			[1, 1, 7, 0, 1], // - Peer 3 opinions
-			[3, 1, 4, 2, 0], // = Peer 4 opinions
-		]
-		.map(|arr| arr.map(|x| Fr::from_u128(x)));
 
 		// Update the opinions
 		for i in 0..NUM_NEIGHBOURS {
@@ -840,14 +837,49 @@ mod test {
 
 	#[test]
 	fn test_scaling_1() {
-		const NUM_NEIGHBOURS: usize = 5;
-		const NUM_ITERATIONS: usize = 10;
-		const INITIAL_SCORE: u128 = 100;
-		const SCALE: u128 = 10000000000;
+		const NUM_NEIGHBOURS: usize = 10;
+		const NUM_ITERATIONS: usize = 20;
+		const INITIAL_SCORE: u128 = 100000000000000000000000000000000000000;
+		const SCALE: u128 = 100000000000000000000000000000000000000;
+
+		let ops = [
+			// 0 + 15 + 154 + 165 + 0 + 123 + 56 + 222 + 253 + 12 = 1000
+			[0, 15, 154, 165, 0, 123, 56, 222, 253, 12], // - Peer 0 opinions
+			// 210 + 0 + 10 + 210 + 20 + 10 + 20 + 30 + 440 + 50 = 1000
+			[210, 0, 10, 210, 20, 10, 20, 30, 440, 50], // - Peer 1 opinions
+			// 40 + 10 + 0 + 20 + 30 + 410 + 20 + 445 + 23 + 2 = 1000
+			[40, 10, 0, 20, 30, 410, 20, 445, 23, 2], // - Peer 2 opinions
+			// 10 + 18 + 20 + 0 + 310 + 134 + 45 + 12 + 439 + 12 = 1000
+			[10, 18, 20, 0, 310, 134, 45, 12, 439, 12], // - Peer 3 opinions
+			// 30 + 130 + 44 + 210 + 0 + 12 + 445 + 62 + 12 + 55 = 1000
+			[30, 130, 44, 210, 0, 12, 445, 62, 12, 55], // = Peer 4 opinions
+			[0, 15, 154, 165, 123, 0, 56, 222, 253, 12], // - Peer 5 opinions
+			[210, 20, 10, 210, 20, 10, 0, 30, 440, 50], // - Peer 6 opinions
+			[40, 10, 445, 20, 30, 410, 20, 0, 23, 2],   // - Peer 7 opinions
+			[10, 18, 20, 439, 310, 134, 45, 12, 0, 12], // - Peer 8 opinions
+			[30, 130, 44, 210, 55, 12, 445, 62, 12, 0], // = Peer 9 opinions
+		]
+		.map(|arr| arr.map(|x| Fr::from_u128(x)).to_vec())
+		.to_vec();
+
+		let ops_native = [
+			[0.000, 0.015, 0.154, 0.165, 0.000, 0.123, 0.056, 0.222, 0.253, 0.012], // - Peer 0 opinions
+			[0.210, 0.000, 0.010, 0.210, 0.020, 0.010, 0.020, 0.030, 0.440, 0.050], // - Peer 1 opinions
+			[0.040, 0.010, 0.000, 0.020, 0.030, 0.410, 0.020, 0.445, 0.023, 0.002], // - Peer 2 opinions
+			[0.010, 0.018, 0.020, 0.000, 0.310, 0.134, 0.045, 0.012, 0.439, 0.012], // - Peer 3 opinions
+			[0.030, 0.130, 0.044, 0.210, 0.000, 0.012, 0.445, 0.062, 0.012, 0.055], // = Peer 4 opinions
+			[0.000, 0.015, 0.154, 0.165, 0.123, 0.000, 0.056, 0.222, 0.253, 0.012], // - Peer 5 opinions
+			[0.210, 0.020, 0.010, 0.210, 0.020, 0.010, 0.000, 0.030, 0.440, 0.050], // - Peer 6 opinions
+			[0.040, 0.010, 0.445, 0.020, 0.030, 0.410, 0.020, 0.000, 0.023, 0.002], // - Peer 7 opinions
+			[0.010, 0.018, 0.020, 0.439, 0.310, 0.134, 0.045, 0.012, 0.000, 0.012], // - Peer 8 opinions
+			[0.030, 0.130, 0.044, 0.210, 0.055, 0.012, 0.445, 0.062, 0.012, 0.000], // = Peer 9 opinions
+		]
+		.map(|x| x.to_vec())
+		.to_vec();
 
 		let start = Instant::now();
-		eigen_trust_set_testing_helper::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE, SCALE>();
-		native_float::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE, SCALE>();
+		eigen_trust_set_testing_helper::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE, SCALE>(ops);
+		native_float::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE, SCALE>(ops_native);
 		let end = start.elapsed();
 		println!("Convergence time: {:?}", end);
 	}
