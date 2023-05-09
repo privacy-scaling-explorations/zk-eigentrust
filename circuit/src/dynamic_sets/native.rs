@@ -267,9 +267,7 @@ mod test {
 	use halo2::halo2curves::{bn256::Fr, ff::PrimeField};
 	use itertools::Itertools;
 	use num_bigint::BigUint;
-	use num_integer::Integer;
-	use num_traits::Zero;
-	use rand::{thread_rng, Rng};
+	use rand::thread_rng;
 
 	const NUM_NEIGHBOURS: usize = 12;
 	const NUM_ITERATIONS: usize = 10;
@@ -906,7 +904,7 @@ mod test {
 		.map(|arr| arr.map(|x| Fr::from_u128(x)).to_vec())
 		.to_vec();
 
-		let ops_bn = [
+		let _ops_bn = [
 			// 0 + 15 + 154 + 165 + 0 + 123 + 56 + 222 + 253 + 12 = 1000
 			[0u128, 15, 154, 165, 0, 123, 56, 222, 253, 12], // - Peer 0 opinions
 			// 210 + 0 + 10 + 210 + 20 + 10 + 20 + 30 + 440 + 50 = 1000
@@ -960,25 +958,25 @@ mod test {
 		// 	println!("{:?}", arr_f);
 		// }
 
-		let mut multiples = Vec::new();
-		for i in 1..1000000000000u128 {
-			let mul_1 = 1000 * i;
-			let mul_2 = 2000 * i;
-			let mul_5 = 5000 * i;
-			multiples.push(mul_1);
-			multiples.push(mul_2);
-			multiples.push(mul_5);
-		}
+		// let mut multiples = Vec::new();
+		// for i in 1..1000000000000u128 {
+		// 	let mul_1 = 1000 * i;
+		// 	let mul_2 = 2000 * i;
+		// 	let mul_5 = 5000 * i;
+		// 	multiples.push(mul_1);
+		// 	multiples.push(mul_2);
+		// 	multiples.push(mul_5);
+		// }
 
-		let rng = &mut thread_rng();
-		let rng_arr = rng.gen::<[u8; 32]>();
-		let sum: u128 = rng_arr.iter().map(|&x| u128::from(x)).sum();
+		// let rng = &mut thread_rng();
+		// let rng_arr = rng.gen::<[u8; 32]>();
+		// let sum: u128 = rng_arr.iter().map(|&x| u128::from(x)).sum();
 
-		for mult in multiples {
-			let res = mult % sum;
-			if res == 0 {
-				println!("i = {:?}", mult);
-			}
-		}
+		// for mult in multiples {
+		// 	let res = mult % sum;
+		// 	if res == 0 {
+		// 		println!("i = {:?}", mult);
+		// 	}
+		// }
 	}
 }
