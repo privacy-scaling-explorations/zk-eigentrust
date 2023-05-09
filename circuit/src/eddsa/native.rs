@@ -102,6 +102,17 @@ impl Signature {
 	}
 }
 
+impl Default for Signature {
+	fn default() -> Self {
+		let r_x = Fr::zero();
+		let r_y = Fr::zero();
+		let s = Fr::zero();
+
+		let point = Point::new(r_x, r_y);
+		Self { big_r: point, s }
+	}
+}
+
 /// Returns a signature from given keys and message.
 pub fn sign(sk: &SecretKey, pk: &PublicKey, m: Fr) -> Signature {
 	let inputs = [Fr::zero(), sk.1, m, Fr::zero(), Fr::zero()];
