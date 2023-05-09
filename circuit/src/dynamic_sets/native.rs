@@ -261,13 +261,14 @@ mod test {
 	use crate::{
 		calculate_message_hash,
 		eddsa::native::{sign, PublicKey, SecretKey},
-		integer::native::Integer,
-		rns::decompose_big,
 		utils::fe_to_big,
 	};
 
 	use halo2::halo2curves::{bn256::Fr, ff::PrimeField};
 	use itertools::Itertools;
+	use num_bigint::BigUint;
+	use num_integer::Integer;
+	use num_traits::Zero;
 	use rand::{thread_rng, Rng};
 
 	const NUM_NEIGHBOURS: usize = 12;
@@ -761,6 +762,48 @@ mod test {
 		assert!(final_peers_cnt == final_ops_cnt);
 	}
 
+	// fn native_bn<
+	// 	const NUM_NEIGHBOURS: usize,
+	// 	const NUM_ITERATIONS: usize,
+	// 	const INITIAL_SCORE: u128,
+	// 	const SCALE: u128,
+	// >(
+	// 	ops: Vec<Vec<BigUint>>,
+	// ) {
+	// 	assert!(ops.len() == NUM_NEIGHBOURS);
+	// 	for op in &ops {
+	// 		assert!(op.len() == NUM_NEIGHBOURS);
+	// 	}
+	// 	let mut s: Vec<BigUint> = vec![BigUint::from(INITIAL_SCORE); NUM_NEIGHBOURS];
+
+	// 	let mut ops_norm = ops.clone();
+	// 	for i in 0..NUM_NEIGHBOURS {
+	// 		let op_score_sum = ops[i].iter().fold(BigUint::zero(), |acc, score| acc + score);
+	// 		let sum_inverse = op_score_sum.invert().unwrap();
+
+	// 		for j in 0..NUM_NEIGHBOURS {
+	// 			let score = ops[i][j].clone();
+	// 			ops_norm[i][j] = score * sum_inverse;
+	// 		}
+	// 	}
+
+	// 	let mut new_s = s.clone();
+	// 	for _ in 0..NUM_ITERATIONS {
+	// 		for i in 0..NUM_NEIGHBOURS {
+	// 			let mut score_i_sum = BigUint::zero();
+	// 			for j in 0..NUM_NEIGHBOURS {
+	// 				let score = ops_norm[j][i].clone() * s[j].clone();
+	// 				score_i_sum += score;
+	// 			}
+	// 			new_s[i] = score_i_sum;
+	// 		}
+	// 		s = new_s.clone();
+	// 	}
+
+	// 	let s_f: String = s.iter().map(|v| v.to_str_radix(10)).join(", ");
+	// 	println!("NATIVE BIG_UINT RESULT: [{}]", s_f);
+	// }
+
 	fn native_float<
 		const NUM_NEIGHBOURS: usize,
 		const NUM_ITERATIONS: usize,
@@ -827,19 +870,20 @@ mod test {
 			set.update_op(pks[i], op_i);
 		}
 
-		let (s, scaled) = set.converge();
+		let (s, s_scaled) = set.converge();
+
 		let s_formatted: Vec<String> = s.iter().map(|&x| fe_to_big(x).to_str_radix(10)).collect();
 		println!("new s: {:#?}", s_formatted);
 		let scaled_formatted: Vec<String> =
-			scaled.iter().map(|&x| fe_to_big(x).to_str_radix(10)).collect();
+			s_scaled.iter().map(|&x| fe_to_big(x).to_str_radix(10)).collect();
 		println!("scaled new s: {:#?}", scaled_formatted);
 	}
 
 	#[test]
 	fn test_scaling_1() {
 		const NUM_NEIGHBOURS: usize = 10;
-		const NUM_ITERATIONS: usize = 20;
-		const INITIAL_SCORE: u128 = 100000000000000000000000000000000000000;
+		const NUM_ITERATIONS: usize = 30;
+		const INITIAL_SCORE: u128 = 1000;
 		const SCALE: u128 = 100000000000000000000000000000000000000;
 
 		let ops = [
@@ -862,6 +906,26 @@ mod test {
 		.map(|arr| arr.map(|x| Fr::from_u128(x)).to_vec())
 		.to_vec();
 
+		let ops_bn = [
+			// 0 + 15 + 154 + 165 + 0 + 123 + 56 + 222 + 253 + 12 = 1000
+			[0u128, 15, 154, 165, 0, 123, 56, 222, 253, 12], // - Peer 0 opinions
+			// 210 + 0 + 10 + 210 + 20 + 10 + 20 + 30 + 440 + 50 = 1000
+			[210, 0, 10, 210, 20, 10, 20, 30, 440, 50], // - Peer 1 opinions
+			// 40 + 10 + 0 + 20 + 30 + 410 + 20 + 445 + 23 + 2 = 1000
+			[40, 10, 0, 20, 30, 410, 20, 445, 23, 2], // - Peer 2 opinions
+			// 10 + 18 + 20 + 0 + 310 + 134 + 45 + 12 + 439 + 12 = 1000
+			[10, 18, 20, 0, 310, 134, 45, 12, 439, 12], // - Peer 3 opinions
+			// 30 + 130 + 44 + 210 + 0 + 12 + 445 + 62 + 12 + 55 = 1000
+			[30, 130, 44, 210, 0, 12, 445, 62, 12, 55], // = Peer 4 opinions
+			[0, 15, 154, 165, 123, 0, 56, 222, 253, 12], // - Peer 5 opinions
+			[210, 20, 10, 210, 20, 10, 0, 30, 440, 50], // - Peer 6 opinions
+			[40, 10, 445, 20, 30, 410, 20, 0, 23, 2],   // - Peer 7 opinions
+			[10, 18, 20, 439, 310, 134, 45, 12, 0, 12], // - Peer 8 opinions
+			[30, 130, 44, 210, 55, 12, 445, 62, 12, 0], // = Peer 9 opinions
+		]
+		.map(|arr| arr.map(|x| BigUint::from(x)).to_vec())
+		.to_vec();
+
 		let ops_native = [
 			[0.000, 0.015, 0.154, 0.165, 0.000, 0.123, 0.056, 0.222, 0.253, 0.012], // - Peer 0 opinions
 			[0.210, 0.000, 0.010, 0.210, 0.020, 0.010, 0.020, 0.030, 0.440, 0.050], // - Peer 1 opinions
@@ -880,7 +944,41 @@ mod test {
 		let start = Instant::now();
 		eigen_trust_set_testing_helper::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE, SCALE>(ops);
 		native_float::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE, SCALE>(ops_native);
+		// native_bn::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE, SCALE>(ops_bn);
 		let end = start.elapsed();
 		println!("Convergence time: {:?}", end);
+
+		// let rng = &mut thread_rng();
+
+		// for _ in 0..100 {
+		// 	let rng_arr = rng.gen::<[u8; 32]>();
+		// 	let sum: u16 = rng_arr.iter().map(|&x| u16::from(x)).sum();
+
+		// 	let sum_f = f64::from(sum);
+		// 	let arr_f = rng_arr.map(|x| f64::from(x) / sum_f);
+
+		// 	println!("{:?}", arr_f);
+		// }
+
+		let mut multiples = Vec::new();
+		for i in 1..1000000000000u128 {
+			let mul_1 = 1000 * i;
+			let mul_2 = 2000 * i;
+			let mul_5 = 5000 * i;
+			multiples.push(mul_1);
+			multiples.push(mul_2);
+			multiples.push(mul_5);
+		}
+
+		let rng = &mut thread_rng();
+		let rng_arr = rng.gen::<[u8; 32]>();
+		let sum: u128 = rng_arr.iter().map(|&x| u128::from(x)).sum();
+
+		for mult in multiples {
+			let res = mult % sum;
+			if res == 0 {
+				println!("i = {:?}", mult);
+			}
+		}
 	}
 }
