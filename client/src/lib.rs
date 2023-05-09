@@ -116,78 +116,60 @@ impl Client {
 		// Get attestations
 		let signed_attestations = self.get_signed_attestations().await.unwrap();
 
-		// Asume unique key -> [0;32]
+		// Asume unique key
 		// TODO: Update function to map all attestation keys
 
-		// Get all participants
+		// Get participants (attesters and attested)
 		let mut participants_map = HashMap::<Address, ()>::new();
-
 		for att in signed_attestations.clone() {
-			// Insert attested
 			participants_map.insert(att.attestation.about, ());
-
-			// Insert attester
 			participants_map.insert(att.attester, ());
 		}
-
-		// Create participants vector
 		let participants: Vec<Address> = participants_map.keys().cloned().collect();
 
-		// Create eddsa public keys vector
-		let mut eddsa_pub_keys: Vec<PublicKey> = Vec::new();
-
-		// Get address map
+		// Get EDDSA public keys
 		// Temporary, in future implementations we'll recover the ecdsa public key from the transaction signature
-		let address_map = ecdsa_eddsa_map(&self.config.mnemonic);
+		let address_map: HashMap<Address, PublicKey> = ecdsa_eddsa_map(&self.config.mnemonic);
+		let eddsa_pub_keys: Vec<PublicKey> =
+			participants.iter().map(|participant| *address_map.get(participant).unwrap()).collect();
 
-		for participant in participants.clone() {
-			eddsa_pub_keys.push(*address_map.get(&participant).unwrap());
+		// Create a HashMap for quick lookup of attestations by attester and attested
+		let mut attestation_map: HashMap<(Address, Address), SignedAttestation> = HashMap::new();
+		for attestation in signed_attestations.iter() {
+			let attester = attestation.attester;
+			let attested_address = attestation.attestation.about;
+			attestation_map.insert((attester, attested_address), attestation.clone());
 		}
 
-		// Create signatures vector
-		// Temporary - Still based on multiple attestation format
-		let mut signatures: Vec<Signature> = Vec::new();
-
-		for _ in 0..participants.len() {
-			signatures.push(Signature::default());
-		}
-
-		// Create opinion public keys and scores vectors
-		let mut attested_pub_keys: Vec<Vec<PublicKey>> = Vec::new();
+		// Get scores
 		let mut scores: Vec<Vec<Scalar>> = Vec::new();
 
-		// Group attestations by attester
-		let mut attester_groups: HashMap<Address, Vec<SignedAttestation>> = HashMap::new();
-		for attestation in signed_attestations.iter() {
-			attester_groups
-				.entry(attestation.attester)
-				.or_insert_with(Vec::new)
-				.push(attestation.clone());
-		}
-
-		// Iterate through attester groups and fill attested_pub_keys and scores vectors
-		for (_attester, attestations) in attester_groups {
-			let mut current_attested_pub_keys: Vec<PublicKey> = Vec::new();
+		for attester in &participants {
 			let mut current_scores: Vec<Scalar> = Vec::new();
 
-			for attestation in attestations {
-				let attested_address = attestation.attestation.about;
-				let attested_pub_key = *address_map.get(&attested_address).unwrap();
-				let score = Scalar::from(attestation.attestation.value as u64);
+			for attested in &participants {
+				let score = if attester == attested {
+					Scalar::zero()
+				} else {
+					match attestation_map.get(&(*attester, *attested)) {
+						Some(attestation) => Scalar::from(attestation.attestation.value as u64),
+						None => Scalar::zero(),
+					}
+				};
 
-				current_attested_pub_keys.push(attested_pub_key);
 				current_scores.push(score);
 			}
 
-			attested_pub_keys.push(current_attested_pub_keys);
 			scores.push(current_scores);
 		}
+
+		println!("Scores: {:?}", scores);
 
 		// Construct native set
 		let mut eigentrust_set = EigenTrustSet::new();
 
 		// Add eddsa public keys to the set
-		for pub_key in eddsa_pub_keys {
+		for pub_key in eddsa_pub_keys.clone() {
 			eigentrust_set.add_member(pub_key);
 		}
 
@@ -197,7 +179,7 @@ impl Client {
 			let attester_pub_key = address_map.get(attester).unwrap();
 
 			// Create an array for the Opinion scores
-			let opinion_array = attested_pub_keys[i]
+			let opinion_array = eddsa_pub_keys
 				.iter()
 				.zip(&scores[i])
 				.map(|(pub_key, score)| (*pub_key, *score))
@@ -220,7 +202,7 @@ impl Client {
 		// Converge the EigenTrust scores
 		eigentrust_set.converge();
 
-		// TODO: Store proofs
+		// TODO: Generate and store proof. The native dynamic set is missing the Circuit trait
 
 		Ok(())
 	}

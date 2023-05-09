@@ -1,8 +1,3 @@
-use crate::{
-	attestation::{Attestation, AttestationPayload},
-	error::EigenError,
-	ClientConfig,
-};
 use csv::Reader as CsvReader;
 use eigen_trust_circuit::{
 	eddsa::native::{PublicKey, SecretKey},
@@ -12,8 +7,7 @@ use eigen_trust_circuit::{
 	Proof as NativeProof,
 };
 use ethers::{
-	abi::{Address, RawLog},
-	contract::EthEvent,
+	abi::Address,
 	middleware::SignerMiddleware,
 	prelude::{
 		abigen,
@@ -26,7 +20,7 @@ use ethers::{
 		LocalWallet, MnemonicBuilder, Signer, Wallet,
 	},
 	solc::{artifacts::ContractBytecode, Solc},
-	types::{Filter, TransactionRequest, H256},
+	types::TransactionRequest,
 };
 use serde::de::DeserializeOwned;
 use std::{
@@ -200,39 +194,6 @@ pub fn keyset_from_raw<const N: usize>(
 	(sks, pks)
 }
 
-/// Get the attestations from the contract
-pub async fn get_attestations(config: &ClientConfig) -> Result<Vec<Attestation>, EigenError> {
-	let client = setup_client(&config.mnemonic, &config.node_url);
-	let filter = Filter::new()
-		.address(config.as_address.parse::<Address>().unwrap())
-		.event("AttestationCreated(address,address,bytes32,bytes)")
-		.topic1(Vec::<H256>::new())
-		.topic2(Vec::<H256>::new())
-		.from_block(0);
-	let logs = client.get_logs(&filter).await.unwrap();
-	let mut attestations = Vec::new();
-
-	println!("Indexed attestations: {}", logs.iter().len());
-
-	for log in logs.iter() {
-		let raw_log = RawLog::from((log.topics.clone(), log.data.to_vec()));
-		let att_created = AttestationCreatedFilter::decode_log(&raw_log).unwrap();
-		let att_data =
-			AttestationPayload::from_bytes(att_created.val.to_vec()).expect("Failed to decode");
-
-		let att = Attestation {
-			about: att_created.about,
-			key: att_created.key,
-			value: att_data.get_value(),
-			message: att_data.get_message(),
-		};
-
-		attestations.push(att);
-	}
-
-	Ok(attestations)
-}
-
 /// Returns a vector of Ethereum wallets derived from the given mnemonic phrase
 pub fn eth_wallets_from_mnemonic(
 	mnemonic: &str, count: u32,
@@ -278,13 +239,13 @@ pub fn eddsa_sk_from_mnemonic(mnemonic: &str, count: u32) -> Result<Vec<SecretKe
 /// In a real implementation this would be an external table
 /// Temporary due to implementing ECDSA
 pub fn ecdsa_eddsa_map(mnemonic: &str) -> HashMap<Address, PublicKey> {
-	let ecdsa = eth_wallets_from_mnemonic(mnemonic, 10)
+	let ecdsa = eth_wallets_from_mnemonic(mnemonic, 5)
 		.unwrap()
 		.iter()
 		.map(|wallet| wallet.address())
 		.collect::<Vec<Address>>();
 	let eddsa: Vec<PublicKey> =
-		eddsa_sk_from_mnemonic(mnemonic, 10).unwrap().iter().map(|sk| sk.public()).collect();
+		eddsa_sk_from_mnemonic(mnemonic, 5).unwrap().iter().map(|sk| sk.public()).collect();
 
 	ecdsa.into_iter().zip(eddsa.into_iter()).collect()
 }
