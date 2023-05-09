@@ -48,12 +48,14 @@ use utils::{
 	SignerMiddlewareArc,
 };
 
-#[derive(Debug)]
-pub enum ClientError {
-	DecodeError,
-	ParseError,
-	TxError,
-}
+/// Max amount of participants
+const CIRCUIT_SIZE: usize = 2;
+/// Number of iterations to run the eigen trust algorithm
+const NUM_ITERATIONS: usize = 10;
+/// Initial score for each participant before the algorithms is run
+const INITIAL_SCORE: u128 = 1000;
+/// Scale for the scores to be computed inside the ZK circuit
+const SCALE: u128 = 1000;
 
 #[derive(Serialize, Deserialize, Debug, EthDisplay, Clone)]
 pub struct ClientConfig {
@@ -77,7 +79,7 @@ impl Client {
 	}
 
 	/// Submit an attestation to the attestation station
-	pub async fn attest(&self) -> Result<(), ClientError> {
+	pub async fn attest(&self) -> Result<(), EigenError> {
 		let sk_vec = eddsa_sk_from_mnemonic(&self.config.mnemonic, 2).unwrap();
 		let wallets = eth_wallets_from_mnemonic(&self.config.mnemonic, 2).unwrap();
 
@@ -96,13 +98,13 @@ impl Client {
 		let signed_attestation = SignedAttestation::new(attestation, user_address, signature);
 
 		let as_address_res = self.config.as_address.parse::<Address>();
-		let as_address = as_address_res.map_err(|_| ClientError::ParseError)?;
+		let as_address = as_address_res.map_err(|_| EigenError::ParseError)?;
 		let as_contract = AttStation::new(as_address, self.client.clone());
 
 		let tx_call = as_contract.attest(vec![ContractAttestationData::from(signed_attestation)]);
 		let tx_res = tx_call.send();
-		let tx = tx_res.await.map_err(|_| ClientError::TxError)?;
-		let res = tx.await.map_err(|_| ClientError::TxError)?;
+		let tx = tx_res.await.map_err(|_| EigenError::TransactionError)?;
+		let res = tx.await.map_err(|_| EigenError::TransactionError)?;
 
 		if let Some(receipt) = res {
 			println!("Transaction status: {:?}", receipt.status);
@@ -166,7 +168,8 @@ impl Client {
 		println!("Scores: {:?}", scores);
 
 		// Construct native set
-		let mut eigentrust_set = EigenTrustSet::new();
+		let mut eigentrust_set =
+			EigenTrustSet::<CIRCUIT_SIZE, NUM_ITERATIONS, INITIAL_SCORE, SCALE>::new();
 
 		// Add eddsa public keys to the set
 		for pub_key in eddsa_pub_keys.clone() {
@@ -185,22 +188,17 @@ impl Client {
 				.map(|(pub_key, score)| (*pub_key, *score))
 				.collect::<Vec<(PublicKey, Scalar)>>();
 
-			// Convert the Vec into an array [(PublicKey, Scalar); 5]
-			let opinion_scores: [(PublicKey, Scalar); 5] =
-				opinion_array.try_into().expect("Failed to convert the Vec into an array");
-
-			// Create an Opinion
-			let opinion = Opinion {
-				sig: Signature::default(),
-				message_hash: Scalar::zero(),
-				scores: opinion_scores,
-			};
+			let opinion =
+				Opinion::<CIRCUIT_SIZE>::new(Signature::default(), Scalar::zero(), opinion_array);
 
 			eigentrust_set.update_op(*attester_pub_key, opinion);
 		}
 
 		// Converge the EigenTrust scores
-		eigentrust_set.converge();
+		let (scores, scores_scaled) = eigentrust_set.converge();
+
+		println!("Scores: {:?}", scores);
+		println!("Scores scaled: {:?}", scores_scaled);
 
 		// TODO: Write the resulting scores to a CSV file
 
@@ -245,7 +243,7 @@ impl Client {
 	}
 
 	/// Verifies last generated proof
-	pub async fn verify(&self) -> Result<(), ClientError> {
+	pub async fn verify(&self) -> Result<(), EigenError> {
 		// TODO: Verify proof
 		Ok(())
 	}
