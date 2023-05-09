@@ -202,7 +202,7 @@ impl Client {
 		// Converge the EigenTrust scores
 		eigentrust_set.converge();
 
-		// TODO: Generate and store proof. The native dynamic set is missing the Circuit trait
+		// TODO: Write the resulting scores to a CSV file
 
 		Ok(())
 	}
