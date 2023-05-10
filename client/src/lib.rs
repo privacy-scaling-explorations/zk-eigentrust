@@ -49,7 +49,7 @@ use utils::{
 };
 
 /// Max amount of participants
-const CIRCUIT_SIZE: usize = 2;
+const MAX_NEIGHBOURS: usize = 2;
 /// Number of iterations to run the eigen trust algorithm
 const NUM_ITERATIONS: usize = 10;
 /// Initial score for each participant before the algorithms is run
@@ -169,7 +169,7 @@ impl Client {
 
 		// Construct native set
 		let mut eigentrust_set =
-			EigenTrustSet::<CIRCUIT_SIZE, NUM_ITERATIONS, INITIAL_SCORE, SCALE>::new();
+			EigenTrustSet::<MAX_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE, SCALE>::new();
 
 		// Add eddsa public keys to the set
 		for pub_key in eddsa_pub_keys.clone() {
@@ -189,7 +189,7 @@ impl Client {
 				.collect::<Vec<(PublicKey, Scalar)>>();
 
 			let opinion =
-				Opinion::<CIRCUIT_SIZE>::new(Signature::default(), Scalar::zero(), opinion_array);
+				Opinion::<MAX_NEIGHBOURS>::new(Signature::default(), Scalar::zero(), opinion_array);
 
 			eigentrust_set.update_op(*attester_pub_key, opinion);
 		}
