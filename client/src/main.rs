@@ -84,7 +84,7 @@ async fn main() {
 			}
 		},
 		Mode::Show => println!("Client config:\n{:#?}", config),
-		Mode::Update(update_data) => match config_update(&mut config, update_data) {
+		Mode::Update(update_data) => match handle_update(&mut config, update_data) {
 			Ok(_) => println!("Client configuration updated."),
 			Err(e) => eprintln!("Failed to update client configuration: {}", e),
 		},

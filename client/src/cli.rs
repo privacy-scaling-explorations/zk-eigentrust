@@ -35,60 +35,44 @@ pub enum Mode {
 	Verify,
 }
 
-/// Configuration update input
-#[derive(Args)]
+/// Configuration update subcommand input
+#[derive(Args, Debug)]
 pub struct UpdateData {
-	field: Option<String>,
-	new_data: Option<String>,
-}
-
-/// Configuration keys
-pub enum ConfigKeys {
-	AttestationStationAddress,
-	Mnemonic,
-	NodeUrl,
-	VerifierAddress,
-}
-
-/// Implement `FromStr` for `ConfigKeys`
-impl FromStr for ConfigKeys {
-	type Err = &'static str;
-
-	fn from_str(s: &str) -> Result<Self, Self::Err> {
-		match s {
-			"as_address" => Ok(ConfigKeys::AttestationStationAddress),
-			"mnemonic" => Ok(ConfigKeys::Mnemonic),
-			"node_url" => Ok(ConfigKeys::NodeUrl),
-			"et_verifier_wrapper_address" => Ok(ConfigKeys::VerifierAddress),
-			_ => Err("Invalid config field"),
-		}
-	}
+	/// Address of the AttestationStation contract (20-byte ethereum address)
+	#[clap(long = "att")]
+	as_address: Option<String>,
+	/// Ethereum wallet mnemonic phrase
+	#[clap(long = "mnemonic")]
+	mnemonic: Option<String>,
+	/// URL of the Ethereum node to connect to
+	#[clap(long = "node")]
+	node_url: Option<String>,
+	/// Address of the Verifier contract (20-byte ethereum address)
+	#[clap(long = "verifier")]
+	verifier_address: Option<String>,
 }
 
 /// Handle the CLI project configuration update
-pub fn config_update(config: &mut ClientConfig, data: UpdateData) -> Result<(), &'static str> {
-	let field = data.field.ok_or("Please provide a field to update.")?;
-	let new_data =
-		data.new_data.ok_or("Please provide the update data, e.g. update score \"Alice 100\"")?;
+pub fn handle_update(config: &mut ClientConfig, data: UpdateData) -> Result<(), &'static str> {
+	if let Some(as_address) = data.as_address {
+		config.as_address =
+			Address::from_str(&as_address).map_err(|_| "Failed to parse address.")?.to_string();
+	}
 
-	match field.parse()? {
-		ConfigKeys::AttestationStationAddress => {
-			config.as_address =
-				Address::from_str(&new_data).map_err(|_| "Failed to parse address.")?.to_string();
-		},
-		ConfigKeys::Mnemonic => {
-			Mnemonic::<English>::new_from_phrase(&new_data)
-				.map_err(|_| "Failed to parse mnemonic.")?;
-			config.mnemonic = new_data;
-		},
-		ConfigKeys::NodeUrl => {
-			Http::from_str(&new_data).map_err(|_| "Failed to parse node url.")?;
-			config.node_url = new_data;
-		},
-		ConfigKeys::VerifierAddress => {
-			config.et_verifier_wrapper_address =
-				Address::from_str(&new_data).map_err(|_| "Failed to parse address.")?.to_string();
-		},
+	if let Some(mnemonic) = data.mnemonic {
+		Mnemonic::<English>::new_from_phrase(&mnemonic).map_err(|_| "Failed to parse mnemonic.")?;
+		config.mnemonic = mnemonic;
+	}
+
+	if let Some(node_url) = data.node_url {
+		Http::from_str(&node_url).map_err(|_| "Failed to parse node url.")?;
+		config.node_url = node_url;
+	}
+
+	if let Some(verifier_address) = data.verifier_address {
+		config.et_verifier_wrapper_address = Address::from_str(&verifier_address)
+			.map_err(|_| "Failed to parse address.")?
+			.to_string();
 	}
 
 	write_json_data(config, "client-config").map_err(|_| "Failed to write config data.")
@@ -97,16 +81,16 @@ pub fn config_update(config: &mut ClientConfig, data: UpdateData) -> Result<(), 
 /// Attestation subcommand input
 #[derive(Args, Debug)]
 pub struct AttestData {
-	/// The attested address - 20-byte ethereum address
+	/// Attested address (20-byte ethereum address)
 	#[clap(long = "to")]
 	address: Option<String>,
-	/// The given score - Max 255
+	/// Given score (0-255)
 	#[clap(long = "score")]
 	score: Option<String>,
-	/// The attestation message - Hexadecimal value
+	/// Attestation message (hex-encoded)
 	#[clap(long = "message")]
 	message: Option<String>,
-	/// The attestation key
+	/// Attestation key
 	#[clap(long = "key")]
 	key: Option<String>,
 }
