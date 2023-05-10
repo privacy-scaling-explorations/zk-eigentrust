@@ -39,7 +39,7 @@ pub enum Mode {
 #[derive(Args, Debug)]
 pub struct UpdateData {
 	/// Address of the AttestationStation contract (20-byte ethereum address)
-	#[clap(long = "att")]
+	#[clap(long = "att-address")]
 	as_address: Option<String>,
 	/// Ethereum wallet mnemonic phrase
 	#[clap(long = "mnemonic")]
