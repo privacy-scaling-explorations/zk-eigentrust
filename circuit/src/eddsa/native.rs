@@ -42,17 +42,23 @@ impl SecretKey {
 		[part0, part1]
 	}
 
-	/// Randomly generates a field element and returns
-	/// two hashed values from it.
-	pub fn random<R: RngCore + Clone>(rng: &mut R) -> Self {
-		let a = Fr::random(rng);
-		let hash: Vec<u8> = blh(&a.to_bytes());
+	/// Returns a secret key from a byte array.
+	/// Used to produce deterministic outputs.
+	pub fn from_byte_array(b: &[u8]) -> Self {
+		let hash: Vec<u8> = blh(b);
 		let bytes_wide = to_wide(&hash[..32]);
 		let sk0 = Fr::from_uniform_bytes(&bytes_wide);
 
 		let bytes_wide = to_wide(&hash[32..]);
 		let sk1 = Fr::from_uniform_bytes(&bytes_wide);
 		SecretKey(sk0, sk1)
+	}
+
+	/// Randomly generates a field element and returns
+	/// two hashed values from it.
+	pub fn random<R: RngCore + Clone>(rng: &mut R) -> Self {
+		let a = Fr::random(rng);
+		SecretKey::from_byte_array(&a.to_bytes())
 	}
 
 	/// Returns a public key from the secret key.

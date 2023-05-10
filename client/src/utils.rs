@@ -1,8 +1,3 @@
-use crate::{
-	attestation::{Attestation, AttestationData},
-	error::EigenError,
-	ClientConfig,
-};
 use csv::Reader as CsvReader;
 use eigen_trust_circuit::{
 	eddsa::native::{PublicKey, SecretKey},
@@ -12,23 +7,32 @@ use eigen_trust_circuit::{
 	Proof as NativeProof,
 };
 use ethers::{
-	abi::{Address, RawLog},
-	contract::EthEvent,
+	abi::Address,
 	middleware::SignerMiddleware,
-	prelude::{abigen, Abigen, ContractError},
+	prelude::{
+		abigen,
+		k256::ecdsa::{self, SigningKey},
+		Abigen, ContractError,
+	},
 	providers::{Http, Middleware, Provider},
-	signers::{coins_bip39::English, LocalWallet, MnemonicBuilder, Signer},
+	signers::{
+		coins_bip39::{English, Mnemonic},
+		LocalWallet, MnemonicBuilder, Signer, Wallet,
+	},
 	solc::{artifacts::ContractBytecode, Solc},
-	types::{Filter, TransactionRequest, H256},
+	types::TransactionRequest,
 };
 use serde::de::DeserializeOwned;
 use std::{
+	collections::HashMap,
 	env,
 	fs::{self, write, File},
 	io::{BufReader, Error},
 	path::Path,
 	sync::Arc,
 };
+
+pub const PARTICIPANTS: &[&str] = &["Alice", "Bob", "Carol", "Dave", "Eve"];
 
 /// Reads the json file and deserialize it into the provided type
 pub fn read_csv_file<T: DeserializeOwned>(path: impl AsRef<Path>) -> Result<Vec<T>, Error> {
@@ -190,30 +194,60 @@ pub fn keyset_from_raw<const N: usize>(
 	(sks, pks)
 }
 
-/// Get the attestations from the contract
-pub async fn get_attestations(config: &ClientConfig) -> Result<Vec<Attestation>, EigenError> {
-	let client = setup_client(&config.mnemonic, &config.node_url);
-	let filter = Filter::new()
-		.address(config.as_address.parse::<Address>().unwrap())
-		.event("AttestationCreated(address,address,bytes32,bytes)")
-		.topic1(Vec::<H256>::new())
-		.topic2(Vec::<H256>::new())
-		.from_block(0);
-	let logs = client.get_logs(&filter).await.unwrap();
-	let mut attestations = Vec::new();
+/// Returns a vector of Ethereum wallets derived from the given mnemonic phrase
+pub fn eth_wallets_from_mnemonic(
+	mnemonic: &str, count: u32,
+) -> Result<Vec<Wallet<SigningKey>>, &'static str> {
+	let wallet = MnemonicBuilder::<English>::default().phrase(mnemonic);
+	let mut wallets = Vec::new();
 
-	println!("Indexed attestations: {}", logs.iter().len());
-
-	for log in logs.iter() {
-		let raw_log = RawLog::from((log.topics.clone(), log.data.to_vec()));
-		let att_created = AttestationCreatedFilter::decode_log(&raw_log).unwrap();
-		let att_data = AttestationData::from_bytes(att_created.val.to_vec());
-		let att = Attestation::from(att_data);
-
-		attestations.push(att);
+	for i in 0..count {
+		let child_key = wallet.clone().index(i).unwrap().build().unwrap();
+		wallets.push(child_key);
 	}
 
-	Ok(attestations)
+	Ok(wallets)
+}
+
+/// Returns a vector of EDDSA secret keys generated from the given mnemonic phrase
+pub fn eddsa_sk_from_mnemonic(mnemonic: &str, count: u32) -> Result<Vec<SecretKey>, &'static str> {
+	let mnemonic = Mnemonic::<English>::new_from_phrase(mnemonic).unwrap();
+	let mut secret_keys = Vec::new();
+
+	// The hardened derivation flag.
+	const BIP32_HARDEN: u32 = 0x8000_0000;
+
+	for i in 0..count {
+		// Set standard derivation path 44'/60'/0'/0/i
+		let derivation_path: Vec<u32> =
+			vec![44 + BIP32_HARDEN, 60 + BIP32_HARDEN, BIP32_HARDEN, 0, i];
+
+		let derived_pk =
+			mnemonic.derive_key(&derivation_path, None).expect("Failed to derive signing key");
+
+		let raw_pk: &ecdsa::SigningKey = derived_pk.as_ref();
+
+		let hash_input = raw_pk.to_bytes();
+
+		secret_keys.push(SecretKey::from_byte_array(&hash_input));
+	}
+
+	Ok(secret_keys)
+}
+
+/// Returns a HashMap of Ethereum addresses to EDDSA public keys
+/// In a real implementation this would be an external table
+/// Temporary due to implementing ECDSA
+pub fn ecdsa_eddsa_map(mnemonic: &str) -> HashMap<Address, PublicKey> {
+	let ecdsa = eth_wallets_from_mnemonic(mnemonic, 5)
+		.unwrap()
+		.iter()
+		.map(|wallet| wallet.address())
+		.collect::<Vec<Address>>();
+	let eddsa: Vec<PublicKey> =
+		eddsa_sk_from_mnemonic(mnemonic, 5).unwrap().iter().map(|sk| sk.public()).collect();
+
+	ecdsa.into_iter().zip(eddsa.into_iter()).collect()
 }
 
 #[cfg(test)]

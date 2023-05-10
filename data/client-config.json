@@ -1,17 +1,7 @@
 {
-    "ops": [
-        300,
-        100,
-        100,
-        300,
-        200
-    ],
-    "secret_key": [
-        "2L9bbXNEayuRMMbrWFynPtgkrXH1iBdfryRH9Soa8M67",
-        "9rBeBVtbN2MkHDTpeAouqkMWNFJC6Bxb6bXH9jUueWaF"
-    ],
-    "as_address": "0x5fbdb2315678afecb367f032d93f642f64180aa3",
-    "et_verifier_wrapper_address": "0x9fe46736679d2d9a65f0992f2272de9f3c7fa6e0",
-    "mnemonic": "test test test test test test test test test test test junk",
-    "node_url": "http://localhost:8545"
+  "ops": [1, 1, 1, 1, 1],
+  "as_address": "0x5fbdb2315678afecb367f032d93f642f64180aa3",
+  "et_verifier_wrapper_address": "0x9fe46736679d2d9a65f0992f2272de9f3c7fa6e0",
+  "mnemonic": "test test test test test test test test test test test junk",
+  "node_url": "http://localhost:8545"
 }
