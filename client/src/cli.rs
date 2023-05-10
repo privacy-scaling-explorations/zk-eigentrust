@@ -5,6 +5,7 @@ use ethers::{
 	abi::Address,
 	providers::Http,
 	signers::coins_bip39::{English, Mnemonic},
+	utils::hex,
 };
 use std::str::FromStr;
 
@@ -96,10 +97,18 @@ pub fn config_update(config: &mut ClientConfig, data: UpdateData) -> Result<(), 
 /// Attestation subcommand input
 #[derive(Args, Debug)]
 pub struct AttestData {
+	/// The attested address - 20-byte ethereum address
+	#[clap(long = "to")]
 	address: Option<String>,
+	/// The given score - Max 255
+	#[clap(long = "score")]
 	score: Option<String>,
-	key: Option<String>,
+	/// The attestation message - Hexadecimal value
+	#[clap(long = "message")]
 	message: Option<String>,
+	/// The attestation key
+	#[clap(long = "key")]
+	key: Option<String>,
 }
 
 impl AttestData {
@@ -119,35 +128,33 @@ impl AttestData {
 			.as_ref()
 			.ok_or("Missing score")?
 			.parse()
-			.map_err(|_| "Failed to parse score.")?;
-
-		// Parse key
-		let key_array = [0; 32];
-		// if let Some(key) = &self.key {
-		// 	let key_bytes = key.as_bytes();
-		// 	if key_bytes.len() > 32 {
-		// 		// If the key is longer than 32 bytes, store the keccak256 hash of the key
-		// 		let key_hash = keccak256(key_bytes);
-		// 		key_array.copy_from_slice(&key_hash);
-		// 	} else {
-		// 		key_array[..key_bytes.len()].copy_from_slice(&key_bytes);
-		// 	}
-		// }
+			.map_err(|_| "Failed to parse score. It must be a number between 0 and 255.")?;
 
 		// Parse message
-		let mut message_array = [0; 32];
+		let mut message_array = [0u8; 32];
 		if let Some(message) = &self.message {
-			let message_bytes = message.as_bytes();
-			// Limit messages to 32 bytes
+			let message = message.trim_start_matches("0x");
+
+			// If the message has an odd number of characters, prepend a '0'
+			let message = if message.len() % 2 == 1 {
+				format!("0{}", message)
+			} else {
+				message.to_string()
+			};
+
+			let message_bytes = hex::decode(&message).map_err(|_| "Failed to parse message.")?;
 			if message_bytes.len() > 32 {
 				return Err("Message too long.");
 			}
-			message_array[..message_bytes.len()].copy_from_slice(&message_bytes);
+
+			// Calculate the starting index for the copy operation
+			let start_index = 32 - message_bytes.len();
+			message_array[start_index..].copy_from_slice(&message_bytes);
 		}
 
 		Ok(Attestation::new(
 			parsed_address,
-			key_array,
+			[0; 32],
 			parsed_score,
 			Some(message_array),
 		))
