@@ -20,6 +20,10 @@ pub enum EigenError {
 	InvalidAttestation,
 	/// Proof not found
 	ProofNotFound,
+	/// Parsing error
+	ParseError,
+	/// Transaction error
+	TransactionError,
 	/// Unknown error.
 	Unknown,
 }
@@ -35,6 +39,8 @@ impl From<EigenError> for u8 {
 			EigenError::AttestationNotFound => 5,
 			EigenError::ProofNotFound => 6,
 			EigenError::InvalidAttestation => 7,
+			EigenError::ParseError => 8,
+			EigenError::TransactionError => 9,
 			EigenError::Unknown => 255,
 		}
 	}
@@ -51,6 +57,8 @@ impl From<u8> for EigenError {
 			5 => EigenError::AttestationNotFound,
 			6 => EigenError::ProofNotFound,
 			7 => EigenError::InvalidAttestation,
+			8 => EigenError::ParseError,
+			9 => EigenError::TransactionError,
 			_ => EigenError::Unknown,
 		}
 	}

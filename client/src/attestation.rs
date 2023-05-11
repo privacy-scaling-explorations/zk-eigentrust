@@ -1,168 +1,266 @@
-use crate::NUM_NEIGHBOURS;
+use crate::att_station::AttestationData as ContractAttestationData;
 use eigen_trust_circuit::{
-	eddsa::native::{PublicKey, Signature},
+	circuit::PoseidonNativeHasher, eddsa::native::Signature,
 	halo2::halo2curves::bn256::Fr as Scalar,
 };
-use serde::{Deserialize, Serialize};
+use ethers::types::{Address, Bytes};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-/// Raw data for the attestation
-pub struct AttestationData {
-	sig_r_x: [u8; 32],
-	sig_r_y: [u8; 32],
-	sig_s: [u8; 32],
-	pk: [[u8; 32]; 2],
-	neighbours: Vec<[[u8; 32]; 2]>,
-	scores: Vec<[u8; 32]>,
-}
-
-impl AttestationData {
-	/// Convert the struct into a vector of bytes
-	pub fn to_bytes(self) -> Vec<u8> {
-		let mut bytes = Vec::new();
-		bytes.extend_from_slice(&self.sig_r_x);
-		bytes.extend_from_slice(&self.sig_r_y);
-		bytes.extend_from_slice(&self.sig_s);
-		bytes.extend_from_slice(&self.pk[0]);
-		bytes.extend_from_slice(&self.pk[1]);
-		for i in 0..NUM_NEIGHBOURS {
-			bytes.extend_from_slice(&self.neighbours[i][0]);
-			bytes.extend_from_slice(&self.neighbours[i][1]);
-		}
-		for score in self.scores {
-			bytes.extend_from_slice(&score);
-		}
-		bytes
-	}
-
-	/// Construct the struct from raw bytes
-	pub fn from_bytes(mut bytes: Vec<u8>) -> Self {
-		let bytes = &mut bytes;
-
-		let mut sig_r_x: [u8; 32] = [0; 32];
-		sig_r_x.copy_from_slice(bytes.drain(..32).as_slice());
-
-		let mut sig_r_y: [u8; 32] = [0; 32];
-		sig_r_y.copy_from_slice(bytes.drain(..32).as_slice());
-
-		let mut sig_s: [u8; 32] = [0; 32];
-		sig_s.copy_from_slice(bytes.drain(..32).as_slice());
-
-		let mut pk_x: [u8; 32] = [0; 32];
-		pk_x.copy_from_slice(bytes.drain(..32).as_slice());
-
-		let mut pk_y: [u8; 32] = [0; 32];
-		pk_y.copy_from_slice(bytes.drain(..32).as_slice());
-
-		let pk = [pk_x, pk_y];
-
-		let mut neighbours = Vec::new();
-		for _ in 0..NUM_NEIGHBOURS {
-			let mut neighbour_x: [u8; 32] = [0; 32];
-			neighbour_x.copy_from_slice(bytes.drain(..32).as_slice());
-
-			let mut neighbour_y: [u8; 32] = [0; 32];
-			neighbour_y.copy_from_slice(bytes.drain(..32).as_slice());
-
-			neighbours.push([neighbour_x, neighbour_y]);
-		}
-
-		let mut scores = Vec::new();
-		while !bytes.is_empty() {
-			let mut score: [u8; 32] = [0; 32];
-			score.copy_from_slice(bytes.drain(..32).as_slice());
-
-			scores.push(score);
-		}
-
-		Self { sig_r_x, sig_r_y, sig_s, pk, neighbours, scores }
-	}
-}
-
-impl From<Attestation> for AttestationData {
-	fn from(att: Attestation) -> Self {
-		let sig_r_x = att.sig.big_r.x.to_bytes();
-		let sig_r_y = att.sig.big_r.y.to_bytes();
-		let sig_s = att.sig.s.to_bytes();
-		let pk_bytes = att.pk.to_raw();
-		let neighbours = att.neighbours.into_iter().map(|v| v.to_raw()).collect();
-		let scores = att.scores.into_iter().map(|v| v.to_bytes()).collect();
-
-		Self { sig_r_x, sig_r_y, sig_s, pk: pk_bytes, neighbours, scores }
-	}
-}
-
+/// Attestation submission struct
 #[derive(Clone)]
-/// Attestation struct holding the signatures of participants
+pub struct SignedAttestation {
+	/// Attestation
+	pub attestation: Attestation,
+	/// Attester Address
+	pub attester: Address,
+	/// Signature
+	pub signature: Signature,
+}
+
+impl SignedAttestation {
+	pub fn new(attestation: Attestation, attester: Address, signature: Signature) -> Self {
+		Self { attestation, attester, signature }
+	}
+}
+
+/// Conversion from `AttestationSubmission` to `att_station::AttestationData`.
+impl From<SignedAttestation> for ContractAttestationData {
+	fn from(submission: SignedAttestation) -> Self {
+		Self(
+			submission.attestation.about,
+			submission.attestation.key,
+			Bytes::from(AttestationPayload::from(&submission).to_bytes()),
+		)
+	}
+}
+
+/// Attestation struct
+#[derive(Clone)]
 pub struct Attestation {
-	/// Signature over a message hash
-	pub sig: Signature,
-	/// Public key of the sender
-	pub pk: PublicKey,
-	/// Neighbours of the sender
-	pub neighbours: Vec<PublicKey>,
-	/// Scores for each of the neighbours
-	pub scores: Vec<Scalar>,
+	/// Ethereum address of peer being rated
+	pub about: Address,
+	/// Unique identifier for the action being rated
+	pub key: [u8; 32],
+	/// Given rating for the action
+	pub value: u8,
+	/// Optional field for attaching additional information to the attestation
+	pub message: [u8; 32],
 }
 
 impl Attestation {
-	/// Construct a new attestation for given data
-	pub fn new(
-		sig: Signature, pk: PublicKey, neighbours: Vec<PublicKey>, scores: Vec<Scalar>,
-	) -> Self {
-		Self { sig, pk, neighbours, scores }
+	/// Construct a new attestation struct
+	pub fn new(about: Address, key: [u8; 32], value: u8, message: Option<[u8; 32]>) -> Self {
+		Self { about, key, value, message: message.unwrap_or([0; 32]) }
 	}
 }
 
-impl From<AttestationData> for Attestation {
-	fn from(att: AttestationData) -> Self {
-		let pk = PublicKey::from_raw(att.pk);
-		let sig_r_x = Scalar::from_bytes(&att.sig_r_x).unwrap();
-		let sig_r_y = Scalar::from_bytes(&att.sig_r_y).unwrap();
-		let sig_s = Scalar::from_bytes(&att.sig_s).unwrap();
-		let sig = Signature::new(sig_r_x, sig_r_y, sig_s);
+/// Conversion from `Attestation` to `bn256::Fr`
+impl From<&Attestation> for Scalar {
+	fn from(attestation: &Attestation) -> Self {
+		let about_bytes = attestation.about.as_bytes();
+		let mut about_bytes_array = [0u8; 32];
+		about_bytes_array[..about_bytes.len()].copy_from_slice(about_bytes);
 
-		let mut neighbours = vec![PublicKey::default(); NUM_NEIGHBOURS];
-		let mut scores = vec![Scalar::zero(); NUM_NEIGHBOURS];
-		for (i, n) in att.neighbours.iter().enumerate().take(NUM_NEIGHBOURS) {
-			neighbours[i] = PublicKey::from_raw(*n);
-		}
-		for (i, n) in att.scores.iter().enumerate().take(NUM_NEIGHBOURS) {
-			scores[i] = Scalar::from_bytes(n).unwrap();
+		let hash_input = [
+			Scalar::from_bytes(&about_bytes_array).unwrap(),
+			Scalar::from_bytes(&attestation.key).unwrap(),
+			Scalar::from(attestation.value as u64),
+			Scalar::from_bytes(&attestation.message).unwrap(),
+			Scalar::zero(),
+		];
+
+		PoseidonNativeHasher::new(hash_input).permute()[0]
+	}
+}
+
+/// Attestation raw data
+#[derive(Debug)]
+pub struct AttestationPayload {
+	sig_r_x: [u8; 32],
+	sig_r_y: [u8; 32],
+	sig_s: [u8; 32],
+	value: u8,
+	message: [u8; 32],
+}
+
+impl AttestationPayload {
+	/// Convert a vector of bytes into the struct
+	pub fn from_bytes(mut bytes: Vec<u8>) -> Result<Self, &'static str> {
+		if bytes.len() != 129 {
+			return Err("Input bytes vector should be of length 129");
 		}
 
-		Attestation { sig, pk, neighbours, scores }
+		let mut sig_r_x = [0u8; 32];
+		let mut sig_r_y = [0u8; 32];
+		let mut sig_s = [0u8; 32];
+		let mut message = [0u8; 32];
+
+		let sig_r_x_bytes = bytes.drain(0..32).collect::<Vec<u8>>();
+		sig_r_x.copy_from_slice(&sig_r_x_bytes);
+
+		let sig_r_y_bytes = bytes.drain(0..32).collect::<Vec<u8>>();
+		sig_r_y.copy_from_slice(&sig_r_y_bytes);
+
+		let sig_s_bytes = bytes.drain(0..32).collect::<Vec<u8>>();
+		sig_s.copy_from_slice(&sig_s_bytes);
+
+		let value = bytes.remove(0);
+
+		let message_bytes = bytes.drain(0..32).collect::<Vec<u8>>();
+		message.copy_from_slice(&message_bytes);
+
+		Ok(Self { sig_r_x, sig_r_y, sig_s, value, message })
+	}
+
+	/// Convert the struct into a vector of bytes
+	pub fn to_bytes(self) -> Vec<u8> {
+		let mut bytes = Vec::new();
+
+		bytes.extend_from_slice(&self.sig_r_x);
+		bytes.extend_from_slice(&self.sig_r_y);
+		bytes.extend_from_slice(&self.sig_s);
+		bytes.push(self.value);
+		bytes.extend_from_slice(&self.message);
+
+		bytes
+	}
+
+	/// Get the EDDSA signature
+	pub fn get_signature(&self) -> Signature {
+		Signature::new(
+			Scalar::from_bytes(&self.sig_r_x).unwrap(),
+			Scalar::from_bytes(&self.sig_r_y).unwrap(),
+			Scalar::from_bytes(&self.sig_s).unwrap(),
+		)
+	}
+
+	/// Get the value
+	pub fn get_value(&self) -> u8 {
+		self.value
+	}
+
+	/// Get the message
+	pub fn get_message(&self) -> [u8; 32] {
+		self.message
+	}
+}
+
+/// Conversion from `AttestationSubmission` to `AttestationPayload`
+impl From<&SignedAttestation> for AttestationPayload {
+	fn from(submission: &SignedAttestation) -> Self {
+		Self {
+			sig_r_x: submission.signature.big_r.x.to_bytes(),
+			sig_r_y: submission.signature.big_r.y.to_bytes(),
+			sig_s: submission.signature.s.to_bytes(),
+			value: submission.attestation.value,
+			message: submission.attestation.message,
+		}
 	}
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
 	use super::*;
 
 	#[test]
-	fn sig_from_data() {
-		let pk = [[0; 32]; 2];
-		let sig_r_x = [0; 32];
-		let sig_r_y = [0; 32];
-		let sig_s = [0; 32];
-		let neighbours = vec![[[0; 32]; 2]];
-		let scores = vec![[0; 32]];
+	fn test_signed_attestation_to_contract_attestation_data() {
+		let attestation = Attestation::new(Address::random(), [0u8; 32], 5, Some([0u8; 32]));
+		let attester = Address::random();
+		let signature = Signature::default();
 
-		let att_data = AttestationData {
-			sig_r_x,
-			sig_r_y,
-			sig_s,
-			pk,
-			neighbours: neighbours.clone(),
-			scores: scores.clone(),
-		};
-		let att = Attestation::from(att_data);
+		let signed_attestation =
+			SignedAttestation::new(attestation.clone(), attester, signature.clone());
 
-		assert_eq!(att.pk.to_raw(), pk);
-		assert_eq!(att.sig.big_r.x.to_bytes(), sig_r_x);
-		assert_eq!(att.sig.big_r.y.to_bytes(), sig_r_y);
-		assert_eq!(att.sig.s.to_bytes(), sig_s);
-		assert_eq!(att.neighbours[0].clone().to_raw(), neighbours[0]);
-		assert_eq!(att.scores[0].clone().to_bytes(), scores[0]);
+		let contract_attestation_data: ContractAttestationData = signed_attestation.clone().into();
+
+		assert_eq!(contract_attestation_data.0, attestation.about);
+		assert_eq!(contract_attestation_data.1, attestation.key);
+
+		let payload = AttestationPayload::from(&signed_attestation);
+		let payload_bytes = payload.to_bytes();
+
+		assert_eq!(Bytes::from(payload_bytes), contract_attestation_data.2);
+	}
+
+	#[test]
+	fn test_attestation_to_scalar() {
+		let attestation = Attestation::new(Address::random(), [0u8; 32], 5, Some([0u8; 32]));
+
+		let scalar_from_attestation: Scalar = (&attestation).into();
+
+		let about_bytes = attestation.about.as_bytes();
+		let mut about_bytes_array = [0u8; 32];
+		about_bytes_array[..about_bytes.len()].copy_from_slice(about_bytes);
+
+		let hash_input = [
+			Scalar::from_bytes(&about_bytes_array).unwrap(),
+			Scalar::from_bytes(&attestation.key).unwrap(),
+			Scalar::from(attestation.value as u64),
+			Scalar::from_bytes(&attestation.message).unwrap(),
+			Scalar::zero(),
+		];
+
+		let expected_scalar = PoseidonNativeHasher::new(hash_input).permute()[0];
+
+		assert_eq!(scalar_from_attestation, expected_scalar);
+	}
+
+	#[test]
+	fn test_attestation_payload_to_signed_attestation() {
+		let attestation = Attestation::new(Address::random(), [0u8; 32], 5, Some([0u8; 32]));
+		let attester = Address::random();
+		let signature = Signature::default();
+
+		let signed_attestation =
+			SignedAttestation::new(attestation.clone(), attester, signature.clone());
+
+		let attestation_payload = AttestationPayload::from(&signed_attestation);
+
+		let reconstructed_signature = attestation_payload.get_signature();
+		let value = attestation_payload.get_value();
+		let message = attestation_payload.get_message();
+
+		assert_eq!(reconstructed_signature, signature);
+		assert_eq!(value, attestation.value);
+		assert_eq!(message, attestation.message);
+	}
+
+	#[test]
+	fn test_attestation_payload_bytes_to_struct_and_back() {
+		let sig_r_x = [0u8; 32];
+		let sig_r_y = [0u8; 32];
+		let sig_s = [0u8; 32];
+		let value = 5;
+		let message = [0u8; 32];
+
+		let mut input_bytes = Vec::new();
+		input_bytes.extend_from_slice(&sig_r_x);
+		input_bytes.extend_from_slice(&sig_r_y);
+		input_bytes.extend_from_slice(&sig_s);
+		input_bytes.push(value);
+		input_bytes.extend_from_slice(&message);
+
+		let attestation_payload =
+			AttestationPayload::from_bytes(input_bytes.clone()).expect("Valid input bytes");
+
+		assert_eq!(attestation_payload.sig_r_x, sig_r_x);
+		assert_eq!(attestation_payload.sig_r_y, sig_r_y);
+		assert_eq!(attestation_payload.sig_s, sig_s);
+		assert_eq!(attestation_payload.value, value);
+		assert_eq!(attestation_payload.message, message);
+
+		let output_bytes = attestation_payload.to_bytes();
+		assert_eq!(input_bytes, output_bytes);
+	}
+
+	#[test]
+	fn test_attestation_payload_from_bytes_error_handling() {
+		let invalid_payload_bytes = vec![0u8; 128]; // Incorrect length
+		let result = AttestationPayload::from_bytes(invalid_payload_bytes);
+
+		assert!(result.is_err());
+		assert_eq!(
+			result.unwrap_err(),
+			"Input bytes vector should be of length 129"
+		);
 	}
 }

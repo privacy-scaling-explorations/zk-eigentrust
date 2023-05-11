@@ -1,13 +1,9 @@
 use clap::{Args, Parser, Subcommand};
-use eigen_trust_circuit::{
-	utils::{read_bytes_data, read_json_data, write_json_data},
-	ProofRaw,
-};
+use eigen_trust_circuit::utils::{read_bytes_data, read_json_data, write_json_data};
 use eigen_trust_client::{
-	manager::{Manager, MANAGER_STORE},
 	utils::{
 		compile_sol_contract, compile_yul_contracts, deploy_as, deploy_et_wrapper, deploy_verifier,
-		get_attestations, read_csv_data,
+		PARTICIPANTS,
 	},
 	Client, ClientConfig,
 };
@@ -16,7 +12,7 @@ use ethers::{
 	providers::Http,
 	signers::coins_bip39::{English, Mnemonic},
 };
-use std::{str::FromStr, sync::Arc};
+use std::str::FromStr;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -47,7 +43,6 @@ enum Config {
 	Mnemonic,
 	NodeUrl,
 	Score,
-	SecretKey,
 }
 
 impl Config {
@@ -57,7 +52,6 @@ impl Config {
 			"mnemonic" => Ok(Config::Mnemonic),
 			"score" => Ok(Config::Score),
 			"node_url" => Ok(Config::NodeUrl),
-			"sk" => Ok(Config::SecretKey),
 			_ => Err("Invalid config field"),
 		}
 	}
@@ -66,19 +60,11 @@ impl Config {
 #[tokio::main]
 async fn main() {
 	let cli = Cli::parse();
-	let user_secrets_raw: Vec<[String; 3]> =
-		read_csv_data("bootstrap-nodes").expect("Failed to read bootstrap nodes");
 	let mut config: ClientConfig = read_json_data("client-config").expect("Failed to read config");
-	let mng_store = Arc::clone(&MANAGER_STORE);
-
-	user_secrets_raw
-		.iter()
-		.position(|x| config.secret_key == x[1..])
-		.expect("No user found with the given secret key");
 
 	match cli.mode {
 		Mode::Attest => {
-			let client = Client::new(config.clone(), user_secrets_raw);
+			let client = Client::new(config.clone());
 			println!("Attestations:\n{:#?}", config.ops);
 			client.attest().await.unwrap();
 		},
@@ -108,50 +94,20 @@ async fn main() {
 			println!("EtVerifierWrapper contract deployed. Address: {}", w_addr);
 		},
 		Mode::GenerateProof => {
-			let attestations = match get_attestations(&config).await {
-				Ok(attestations) => attestations,
-				Err(e) => {
-					eprintln!("Failed to get attestations: {:?}", e);
-					return;
-				},
-			};
-
-			let mut manager = match mng_store.lock() {
-				Ok(manager) => manager,
-				Err(_) => {
-					eprintln!("Failed to lock manager store");
-					return;
-				},
-			};
-
-			manager.generate_initial_attestations();
-
-			if let Err(e) = manager.add_attestations(attestations) {
-				eprintln!("Error adding attestations: {:?}", e);
-				return;
-			}
-
-			if let Err(e) = manager.calculate_proofs() {
+			let mut client = Client::new(config);
+			if let Err(e) = client.calculate_proofs().await {
 				eprintln!("Error calculating proofs: {:?}", e);
 			}
 		},
 		Mode::Show => println!("Client config:\n{:#?}", config),
-		Mode::Update(data) => match config_update(&mut config, data, user_secrets_raw) {
+		Mode::Update(data) => match config_update(&mut config, data) {
 			Ok(_) => println!("Client configuration updated."),
 			Err(e) => eprintln!("Failed to update client configuration.\n{}", e),
 		},
 		Mode::Verify => {
-			let client = Client::new(config, user_secrets_raw);
+			let client = Client::new(config);
 
-			let last_proof = match Manager::get_last_proof() {
-				Ok(proof) => ProofRaw::from(proof),
-				Err(e) => {
-					eprintln!("Failed to get the last proof: {:?}", e);
-					return;
-				},
-			};
-
-			if let Err(e) = client.verify(last_proof).await {
+			if let Err(e) = client.verify().await {
 				eprintln!("Failed to verify the proof: {:?}", e);
 				return;
 			}
@@ -161,9 +117,7 @@ async fn main() {
 	}
 }
 
-fn config_update(
-	config: &mut ClientConfig, data: UpdateData, user_secrets_raw: Vec<[String; 3]>,
-) -> Result<(), String> {
+fn config_update(config: &mut ClientConfig, data: UpdateData) -> Result<(), String> {
 	let UpdateData { field, new_data } = data;
 
 	if field.is_none() {
@@ -203,48 +157,23 @@ fn config_update(
 			let name = input[0].clone();
 			let score = input[1].clone();
 
-			let score_parsed: Result<u128, _> = score.parse();
+			let score_parsed: Result<u8, _> = score.parse();
 			if score_parsed.is_err() {
 				return Err("Failed to parse score.".to_string());
 			}
 
-			let available_names: Vec<String> =
-				user_secrets_raw.iter().map(|x| x[0].clone()).collect();
-			let pos = available_names.iter().position(|x| &name == x);
+			let pos = PARTICIPANTS.iter().position(|x| &name == x);
 
 			if pos.is_none() {
 				return Err(format!(
 					"Invalid neighbour name: {:?}, available: {:?}",
-					name, available_names
+					name, PARTICIPANTS
 				));
 			}
 
 			let pos = pos.unwrap();
 
 			config.ops[pos] = score_parsed.unwrap();
-		},
-		Config::SecretKey => {
-			let sk_vec: Vec<String> = data.split(',').map(|x| x.to_string()).collect();
-			if sk_vec.len() != 2 {
-				return Err(
-					"Invalid secret key passed, expected 2 bs58 values separated by commas, \
-					 e.g.:\n\"2L9bbXNEayuRMMbrWFynPtgkrXH1iBdfryRH9Soa8M67,\
-					 9rBeBVtbN2MkHDTpeAouqkMWNFJC6Bxb6bXH9jUueWaF\""
-						.to_string(),
-				);
-			}
-
-			let sk: [String; 2] = sk_vec.try_into().unwrap();
-			let sk0_decoded = bs58::decode(&sk[0]).into_vec();
-			let sk1_decoded = bs58::decode(&sk[1]).into_vec();
-
-			if sk0_decoded.is_err() || sk1_decoded.is_err() {
-				return Err(
-					"Failed to decode secret key. Expecting bs58 encoded values.".to_string(),
-				);
-			}
-
-			config.secret_key = sk;
 		},
 	}
 

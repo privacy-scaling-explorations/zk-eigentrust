@@ -22,38 +22,44 @@
 pub mod att_station;
 pub mod attestation;
 pub mod error;
-pub mod manager;
 pub mod utils;
 
-use crate::manager::NUM_NEIGHBOURS;
-use att_station::{AttestationData as AttData, AttestationStation as AttStation};
-use attestation::{Attestation, AttestationData};
+use crate::att_station::AttestationCreatedFilter;
+use att_station::{AttestationData as ContractAttestationData, AttestationStation as AttStation};
+use attestation::{Attestation, AttestationPayload, SignedAttestation};
 use eigen_trust_circuit::{
-	calculate_message_hash,
-	eddsa::native::{sign, SecretKey},
-	halo2::halo2curves::{bn256::Fr as Scalar, ff::PrimeField},
-	utils::to_short,
-	ProofRaw,
+	dynamic_sets::native::{EigenTrustSet, Opinion},
+	eddsa::native::{sign, PublicKey, Signature},
+	halo2::halo2curves::bn256::Fr as Scalar,
 };
+use error::EigenError;
 use ethers::{
-	abi::Address,
+	abi::{Address, RawLog},
+	contract::EthEvent,
 	prelude::EthDisplay,
-	types::{Bytes, U256},
+	providers::Middleware,
+	signers::Signer,
+	types::{Filter, H256},
 };
 use serde::{Deserialize, Serialize};
-use utils::{setup_client, EtVerifierWrapper, SignerMiddlewareArc};
+use std::collections::HashMap;
+use utils::{
+	ecdsa_eddsa_map, eddsa_sk_from_mnemonic, eth_wallets_from_mnemonic, setup_client,
+	SignerMiddlewareArc,
+};
 
-#[derive(Debug)]
-pub enum ClientError {
-	DecodeError,
-	ParseError,
-	TxError,
-}
+/// Max amount of participants
+const MAX_NEIGHBOURS: usize = 2;
+/// Number of iterations to run the eigen trust algorithm
+const NUM_ITERATIONS: usize = 10;
+/// Initial score for each participant before the algorithms is run
+const INITIAL_SCORE: u128 = 1000;
+/// Scale for the scores to be computed inside the ZK circuit
+const SCALE: u128 = 1000;
 
 #[derive(Serialize, Deserialize, Debug, EthDisplay, Clone)]
 pub struct ClientConfig {
-	pub ops: [u128; NUM_NEIGHBOURS],
-	pub secret_key: [String; 2],
+	pub ops: Vec<u8>,
 	pub as_address: String,
 	pub et_verifier_wrapper_address: String,
 	pub mnemonic: String,
@@ -63,75 +69,42 @@ pub struct ClientConfig {
 pub struct Client {
 	client: SignerMiddlewareArc,
 	config: ClientConfig,
-	user_secrets_raw: Vec<[String; 3]>,
 }
 
 impl Client {
-	pub fn new(config: ClientConfig, user_secrets_raw: Vec<[String; 3]>) -> Self {
+	/// Create a new client
+	pub fn new(config: ClientConfig) -> Self {
 		let client = setup_client(&config.mnemonic, &config.node_url);
-		Self { client, config, user_secrets_raw }
+		Self { client, config }
 	}
 
-	pub async fn attest(&self) -> Result<(), ClientError> {
-		let mut sk_vec = Vec::new();
-		for x in &self.user_secrets_raw {
-			let sk0_decoded_bytes = bs58::decode(&x[1]).into_vec();
-			let sk1_decoded_bytes = bs58::decode(&x[2]).into_vec();
+	/// Submit an attestation to the attestation station
+	pub async fn attest(&self) -> Result<(), EigenError> {
+		let sk_vec = eddsa_sk_from_mnemonic(&self.config.mnemonic, 2).unwrap();
+		let wallets = eth_wallets_from_mnemonic(&self.config.mnemonic, 2).unwrap();
 
-			let sk0_decoded = sk0_decoded_bytes.map_err(|_| ClientError::DecodeError)?;
-			let sk1_decoded = sk1_decoded_bytes.map_err(|_| ClientError::DecodeError)?;
+		// User keys
+		let user_address = wallets[0].address();
+		let user_sk = &sk_vec[0];
 
-			let sk0 = to_short(&sk0_decoded);
-			let sk1 = to_short(&sk1_decoded);
-			let sk = SecretKey::from_raw([sk0, sk1]);
-			sk_vec.push(sk);
-		}
+		// Attest for neighbour 1
+		let neighbour_score = self.config.ops[1];
+		let neighbour_address = wallets[1].address();
 
-		let user_secrets: [SecretKey; NUM_NEIGHBOURS] =
-			sk_vec.try_into().map_err(|_| ClientError::DecodeError)?;
-		let user_publics = user_secrets.map(|s| s.public());
+		let attestation = Attestation::new(neighbour_address, [0; 32], neighbour_score, None);
 
-		let sk0_bytes_vec = bs58::decode(&self.config.secret_key[0]).into_vec();
-		let sk1_bytes_vec = bs58::decode(&self.config.secret_key[1]).into_vec();
+		let signature = sign(user_sk, &user_sk.public(), Scalar::from(&attestation));
 
-		let sk0_bytes = sk0_bytes_vec.map_err(|_| ClientError::DecodeError)?;
-		let sk1_bytes = sk1_bytes_vec.map_err(|_| ClientError::DecodeError)?;
-
-		let mut sk0: [u8; 32] = [0; 32];
-		sk0[..].copy_from_slice(&sk0_bytes);
-
-		let mut sk1: [u8; 32] = [0; 32];
-		sk1[..].copy_from_slice(&sk1_bytes);
-
-		let sk = SecretKey::from_raw([sk0, sk1]);
-		let pk = sk.public();
-
-		let ops = self.config.ops.map(Scalar::from_u128);
-
-		let (pks_hash, message_hash) =
-			calculate_message_hash::<NUM_NEIGHBOURS, 1>(user_publics.to_vec(), vec![ops.to_vec()]);
-
-		let sig = sign(&sk, &pk, message_hash[0]);
-
-		let att = Attestation::new(sig, pk, user_publics.to_vec(), ops.to_vec());
-		let att_data = AttestationData::from(att);
-		let bytes = att_data.to_bytes();
+		let signed_attestation = SignedAttestation::new(attestation, user_address, signature);
 
 		let as_address_res = self.config.as_address.parse::<Address>();
-		let as_address = as_address_res.map_err(|_| ClientError::ParseError)?;
+		let as_address = as_address_res.map_err(|_| EigenError::ParseError)?;
 		let as_contract = AttStation::new(as_address, self.client.clone());
 
-		let as_data = AttData(
-			Address::zero(),
-			pks_hash.to_bytes(),
-			Bytes::from(bytes.clone()),
-		);
-		let as_data_vec = vec![as_data];
-
-		let tx_call = as_contract.attest(as_data_vec);
+		let tx_call = as_contract.attest(vec![ContractAttestationData::from(signed_attestation)]);
 		let tx_res = tx_call.send();
-		let tx = tx_res.await.map_err(|_| ClientError::TxError)?;
-		let res = tx.await.map_err(|_| ClientError::TxError)?;
+		let tx = tx_res.await.map_err(|_| EigenError::TransactionError)?;
+		let res = tx.await.map_err(|_| EigenError::TransactionError)?;
 
 		if let Some(receipt) = res {
 			println!("Transaction status: {:?}", receipt.status);
@@ -140,32 +113,138 @@ impl Client {
 		Ok(())
 	}
 
-	pub async fn verify(&self, proof_raw: ProofRaw) -> Result<(), ClientError> {
-		let addr_res = self.config.et_verifier_wrapper_address.parse::<Address>();
-		let addr = addr_res.map_err(|_| ClientError::ParseError)?;
-		let et_wrapper_contract = EtVerifierWrapper::new(addr, self.client.clone());
+	/// Calculate proofs
+	pub async fn calculate_proofs(&mut self) -> Result<(), EigenError> {
+		// Get attestations
+		let signed_attestations = self.get_signed_attestations().await.unwrap();
 
-		let mut pub_ins = [U256::default(); NUM_NEIGHBOURS];
-		for (i, x) in proof_raw.pub_ins.iter().enumerate() {
-			pub_ins[i] = U256::from(x);
+		// Asume unique key
+		// TODO: Update function to map all attestation keys
+
+		// Get participants (attesters and attested)
+		let mut participants_map = HashMap::<Address, ()>::new();
+		for att in signed_attestations.clone() {
+			participants_map.insert(att.attestation.about, ());
+			participants_map.insert(att.attester, ());
 		}
-		let proof_bytes = Bytes::from(proof_raw.proof.clone());
+		let participants: Vec<Address> = participants_map.keys().cloned().collect();
 
-		let tx_call = et_wrapper_contract.verify(pub_ins, proof_bytes);
-		let tx_res = tx_call.send();
-		let tx = tx_res.await.map_err(|e| {
-			eprintln!("{:?}", e);
-			ClientError::TxError
-		})?;
-		let res = tx.await.map_err(|e| {
-			eprintln!("{:?}", e);
-			ClientError::TxError
-		})?;
+		// Get EDDSA public keys
+		// Temporary, in future implementations we'll recover the ecdsa public key from the transaction signature
+		let address_map: HashMap<Address, PublicKey> = ecdsa_eddsa_map(&self.config.mnemonic);
+		let eddsa_pub_keys: Vec<PublicKey> =
+			participants.iter().map(|participant| *address_map.get(participant).unwrap()).collect();
 
-		if let Some(receipt) = res {
-			println!("Transaction status: {:?}", receipt.status);
+		// Create a HashMap for quick lookup of attestations by attester and attested
+		let mut attestation_map: HashMap<(Address, Address), SignedAttestation> = HashMap::new();
+		for attestation in signed_attestations.iter() {
+			let attester = attestation.attester;
+			let attested_address = attestation.attestation.about;
+			attestation_map.insert((attester, attested_address), attestation.clone());
 		}
 
+		// Get scores
+		let mut scores: Vec<Vec<Scalar>> = Vec::new();
+
+		for attester in &participants {
+			let mut current_scores: Vec<Scalar> = Vec::new();
+
+			for attested in &participants {
+				let score = if attester == attested {
+					Scalar::zero()
+				} else {
+					match attestation_map.get(&(*attester, *attested)) {
+						Some(attestation) => Scalar::from(attestation.attestation.value as u64),
+						None => Scalar::zero(),
+					}
+				};
+
+				current_scores.push(score);
+			}
+
+			scores.push(current_scores);
+		}
+
+		println!("Scores: {:?}", scores);
+
+		// Construct native set
+		let mut eigentrust_set =
+			EigenTrustSet::<MAX_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE, SCALE>::new();
+
+		// Add eddsa public keys to the set
+		for pub_key in eddsa_pub_keys.clone() {
+			eigentrust_set.add_member(pub_key);
+		}
+
+		// Update opinions in the set
+		for i in 0..participants.len() {
+			let attester = &participants[i];
+			let attester_pub_key = address_map.get(attester).unwrap();
+
+			// Create an array for the Opinion scores
+			let opinion_array = eddsa_pub_keys
+				.iter()
+				.zip(&scores[i])
+				.map(|(pub_key, score)| (*pub_key, *score))
+				.collect::<Vec<(PublicKey, Scalar)>>();
+
+			let opinion =
+				Opinion::<MAX_NEIGHBOURS>::new(Signature::default(), Scalar::zero(), opinion_array);
+
+			eigentrust_set.update_op(*attester_pub_key, opinion);
+		}
+
+		// Converge the EigenTrust scores
+		let (scores, scores_scaled) = eigentrust_set.converge();
+
+		println!("Scores: {:?}", scores);
+		println!("Scores scaled: {:?}", scores_scaled);
+
+		// TODO: Write the resulting scores to a CSV file
+
+		Ok(())
+	}
+
+	/// Get the attestations from the contract
+	pub async fn get_signed_attestations(&self) -> Result<Vec<SignedAttestation>, EigenError> {
+		let filter = Filter::new()
+			.address(self.config.as_address.parse::<Address>().unwrap())
+			.event("AttestationCreated(address,address,bytes32,bytes)")
+			.topic1(Vec::<H256>::new())
+			.topic2(Vec::<H256>::new())
+			.from_block(0);
+		let logs = &self.client.get_logs(&filter).await.unwrap();
+		let mut signed = Vec::new();
+
+		println!("Indexed attestations: {}", logs.iter().len());
+
+		for log in logs.iter() {
+			let raw_log = RawLog::from((log.topics.clone(), log.data.to_vec()));
+			let att_created = AttestationCreatedFilter::decode_log(&raw_log).unwrap();
+			let att_data =
+				AttestationPayload::from_bytes(att_created.val.to_vec()).expect("Failed to decode");
+
+			let att = Attestation::new(
+				att_created.about,
+				att_created.key,
+				att_data.get_value(),
+				Some(att_data.get_message()),
+			);
+
+			let signed_attestation =
+				SignedAttestation::new(att, att_created.creator, att_data.get_signature());
+
+			signed.push(signed_attestation);
+		}
+
+		// TODO: For future impl, reconstruct ECDSA public keys from transaction signature
+
+		Ok(signed)
+	}
+
+	/// Verifies last generated proof
+	pub async fn verify(&self) -> Result<(), EigenError> {
+		// TODO: Verify proof
 		Ok(())
 	}
 }
@@ -173,15 +252,11 @@ impl Client {
 #[cfg(test)]
 mod test {
 	use crate::{
-		manager::NUM_NEIGHBOURS,
-		utils::{deploy_as, deploy_et_wrapper, deploy_verifier},
+		utils::{deploy_as, deploy_verifier},
 		Client, ClientConfig,
 	};
-	use eigen_trust_circuit::{
-		utils::{read_bytes_data, read_json_data},
-		ProofRaw,
-	};
-	use ethers::{abi::Address, utils::Anvil};
+	use eigen_trust_circuit::utils::read_bytes_data;
+	use ethers::utils::Anvil;
 
 	#[tokio::test]
 	async fn should_add_attestation() {
@@ -194,65 +269,16 @@ mod test {
 		let as_address_string = format!("{:?}", as_address);
 		let et_verifier_address_string = format!("{:?}", et_verifier_address);
 
-		let dummy_user = [
-			"Alice".to_string(),
-			"2L9bbXNEayuRMMbrWFynPtgkrXH1iBdfryRH9Soa8M67".to_string(),
-			"9rBeBVtbN2MkHDTpeAouqkMWNFJC6Bxb6bXH9jUueWaF".to_string(),
-		];
-		let user_secrets_raw = vec![dummy_user; NUM_NEIGHBOURS];
-
 		let config = ClientConfig {
-			ops: [200, 200, 200, 200, 200],
-			secret_key: [
-				"2L9bbXNEayuRMMbrWFynPtgkrXH1iBdfryRH9Soa8M67".to_string(),
-				"9rBeBVtbN2MkHDTpeAouqkMWNFJC6Bxb6bXH9jUueWaF".to_string(),
-			],
+			ops: vec![4, 4],
 			as_address: as_address_string,
 			et_verifier_wrapper_address: et_verifier_address_string,
 			mnemonic,
 			node_url,
 		};
 
-		let et_client = Client::new(config, user_secrets_raw);
+		let et_client = Client::new(config);
 		let res = et_client.attest().await;
-		assert!(res.is_ok());
-
-		drop(anvil);
-	}
-
-	#[tokio::test]
-	async fn should_verify_proof() {
-		let anvil = Anvil::new().spawn();
-		let mnemonic = "test test test test test test test test test test test junk".to_string();
-		let node_url = anvil.endpoint();
-		let et_contract = read_bytes_data("et_verifier");
-		let et_verifier_address = deploy_verifier(&mnemonic, &node_url, et_contract).await.unwrap();
-		let et_verifier_wr =
-			deploy_et_wrapper(&mnemonic, &node_url, et_verifier_address).await.unwrap();
-		let et_verifier_address_string = format!("{:?}", et_verifier_wr);
-
-		let dummy_user = [
-			"Alice".to_string(),
-			"2L9bbXNEayuRMMbrWFynPtgkrXH1iBdfryRH9Soa8M67".to_string(),
-			"9rBeBVtbN2MkHDTpeAouqkMWNFJC6Bxb6bXH9jUueWaF".to_string(),
-		];
-		let user_secrets_raw = vec![dummy_user; NUM_NEIGHBOURS];
-
-		let config = ClientConfig {
-			ops: [200, 200, 200, 200, 200],
-			secret_key: [
-				"2L9bbXNEayuRMMbrWFynPtgkrXH1iBdfryRH9Soa8M67".to_string(),
-				"9rBeBVtbN2MkHDTpeAouqkMWNFJC6Bxb6bXH9jUueWaF".to_string(),
-			],
-			as_address: format!("{:?}", Address::default()),
-			et_verifier_wrapper_address: et_verifier_address_string,
-			mnemonic,
-			node_url,
-		};
-
-		let et_client = Client::new(config, user_secrets_raw);
-		let proof_raw: ProofRaw = read_json_data("et_proof").unwrap();
-		let res = et_client.verify(proof_raw).await;
 		assert!(res.is_ok());
 
 		drop(anvil);
