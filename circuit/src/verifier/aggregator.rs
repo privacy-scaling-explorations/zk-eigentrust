@@ -292,7 +292,7 @@ impl Circuit<Fr> for Aggregator {
 			let mut instances: Vec<Vec<Halo2LScalar<G1Affine, _, Bn256_4_68>>> = Vec::new();
 			let instance_flatten =
 				snark.instances.clone().into_iter().flatten().collect::<Vec<Value<Fr>>>();
-			let mut instance_chunks = instance_flatten.chunks(ADVICE);
+			let instance_chunks = instance_flatten.chunks(ADVICE);
 			let mut instance_collector: Vec<Option<Halo2LScalar<G1Affine, _, Bn256_4_68>>> =
 				vec![None; instance_flatten.len()];
 
@@ -301,16 +301,15 @@ impl Circuit<Fr> for Aggregator {
 				|| "assign_instances",
 				|region: Region<'_, Fr>| {
 					let mut ctx = RegionCtx::new(region, 0);
-					//for j in 0..instance_chunks.len() {
-					//let chunk = instance_chunks.next().unwrap();
-					//for i in 0..chunk.len() {
-					//println!("chunk = {:#?}", chunk);
-					let value = ctx.assign_advice(config.common.advice[0], instance_flatten[0])?;
-					let lscalar = Halo2LScalar::new(value, loader_config.clone());
-					instance_collector[0] = Some(lscalar.clone());
-					//}
-					ctx.next();
-					//}
+					for j in 0..instance_chunks.len() {
+						for i in 0..1 {
+							let value =
+								ctx.assign_advice(config.common.advice[i], instance_flatten[j])?;
+							let lscalar = Halo2LScalar::new(value, loader_config.clone());
+							instance_collector[i] = Some(lscalar.clone());
+						}
+						ctx.next();
+					}
 					Ok(())
 				},
 			)?;
