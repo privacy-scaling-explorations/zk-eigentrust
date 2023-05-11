@@ -817,7 +817,7 @@ mod tests {
 	fn test_and_production() {
 		let test_chip = AndTestCircuit::new(Fr::from(1), Fr::from(1));
 
-		let k = 5;
+		let k = 9;
 		let rng = &mut thread_rng();
 		let params = generate_params(k);
 		let res =
@@ -997,7 +997,7 @@ mod tests {
 	fn test_is_bool_production() {
 		let test_chip = IsBoolTestCircuit::new(Fr::from(0));
 
-		let k = 5;
+		let k = 9;
 		let rng = &mut thread_rng();
 		let params = generate_params(k);
 		let dummy_instance = vec![Fr::zero()];
@@ -1084,7 +1084,7 @@ mod tests {
 	fn test_is_equal_production() {
 		let test_chip = IsEqualTestCircuit::new(Fr::from(123), Fr::from(123));
 
-		let k = 5;
+		let k = 9;
 		let rng = &mut thread_rng();
 		let params = generate_params(k);
 		let res = prove_and_verify::<Bn256, _, _>(params, test_chip, &[&[Fr::one()]], rng).unwrap();
@@ -1167,7 +1167,7 @@ mod tests {
 	fn test_is_zero_production() {
 		let test_chip = IsZeroTestCircuit::new(Fr::from(0));
 
-		let k = 5;
+		let k = 9;
 		let rng = &mut thread_rng();
 		let params = generate_params(k);
 		let res = prove_and_verify::<Bn256, _, _>(params, test_chip, &[&[Fr::one()]], rng).unwrap();
@@ -1263,7 +1263,7 @@ mod tests {
 	fn test_add_production() {
 		let test_chip = AddTestCircuit::new(Fr::from(5), Fr::from(2));
 
-		let k = 5;
+		let k = 9;
 		let rng = &mut thread_rng();
 		let params = generate_params(k);
 		let res =
@@ -1360,7 +1360,7 @@ mod tests {
 	fn test_mul_production() {
 		let test_chip = MulTestCircuit::new(Fr::from(5), Fr::from(2));
 
-		let k = 5;
+		let k = 9;
 		let rng = &mut thread_rng();
 		let params = generate_params(k);
 		let res =
@@ -1460,7 +1460,7 @@ mod tests {
 	fn test_select_production() {
 		let test_chip = SelectTestCircuit::new(Fr::from(0), Fr::from(2), Fr::from(3));
 
-		let k = 5;
+		let k = 9;
 		let rng = &mut thread_rng();
 		let params = generate_params(k);
 		let res =

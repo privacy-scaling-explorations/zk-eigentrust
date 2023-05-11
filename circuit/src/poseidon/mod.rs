@@ -458,7 +458,7 @@ mod test {
 
 		let poseidon_tester = PoseidonTester::new(inputs);
 
-		let k = 7;
+		let k = 9;
 		let rng = &mut rand::thread_rng();
 		let params = generate_params(k);
 		let res =

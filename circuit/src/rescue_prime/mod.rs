@@ -319,7 +319,7 @@ mod test {
 
 		let rescue_prime_tester = RescuePrimeTester::new(inputs);
 
-		let k = 7;
+		let k = 9;
 		let rng = &mut rand::thread_rng();
 		let params = generate_params(k);
 		let res =
