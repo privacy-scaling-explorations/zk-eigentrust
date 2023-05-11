@@ -21,7 +21,6 @@
 
 pub mod att_station;
 pub mod attestation;
-pub mod cli;
 pub mod error;
 pub mod utils;
 

@@ -1,6 +1,7 @@
-use crate::{attestation::Attestation, ClientConfig};
+use crate::ClientConfig;
 use clap::{Args, Parser, Subcommand};
 use eigen_trust_circuit::utils::write_json_data;
+use eigen_trust_client::attestation::Attestation;
 use ethers::{
 	abi::Address,
 	providers::Http,

@@ -1,7 +1,9 @@
+mod cli;
+
 use clap::Parser;
+use cli::*;
 use eigen_trust_circuit::utils::{read_bytes_data, read_json_data};
 use eigen_trust_client::{
-	cli::*,
 	utils::{
 		compile_sol_contract, compile_yul_contracts, deploy_as, deploy_et_wrapper, deploy_verifier,
 	},
