@@ -304,6 +304,8 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITERATIONS: usize, const INITIAL_SCO
 		s
 	}
 
+	// TODO: Scale the ratio to the standardised decimal position
+	// TODO: Find `NUM_LIMBS` and `POWER_OF_TEN` for standardised decimal position
 	/// Method for checking the threshold for a given score
 	pub fn check_threshold<const NUM_LIMBS: usize, const POWER_OF_TEN: usize>(
 		&self, score: Fr, ratio: BigRational, threshold: Fr,
