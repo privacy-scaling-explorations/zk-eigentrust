@@ -59,12 +59,14 @@ where
 	C::Scalar: FieldExt,
 {
 	/// TODO: Mutex Layouter optimizer
-	pub fn layouter_drop<F>(func: F, layouter: Rc<Mutex<L>>) -> MutexGuard<'static, L>
+	pub fn layouter<'a, F>(layouter: Rc<Mutex<L>>, func: F) -> MutexGuard<'a, L>
 	where
-		F: FnOnce(Rc<Mutex<L>>) -> MutexGuard<'static, L>,
+		F: FnOnce(MutexGuard<L>) -> MutexGuard<'a, L>,
 	{
-		let res = func(layouter.clone());
-		drop(layouter);
+		let binding = layouter.clone();
+		let layouter = binding.lock().unwrap();
+		let res = func(layouter);
+		drop(binding);
 		res
 	}
 
@@ -74,9 +76,8 @@ where
 		main: MainConfig, poseidon_sponge: PoseidonSpongeConfig,
 	) -> Self {
 		let binding = layouter.clone();
-		//let test = Self::layouter_drop::<_>(|z| z.clone().lock().unwrap(), binding.clone());
 
-		let mut layouter_reg = binding.lock().unwrap();
+		let mut layouter_reg = Self::layouter(binding, |x| x);
 		let (aux_init_x_limbs, aux_init_y_limbs, aux_fin_x_limbs, aux_fin_y_limbs) = layouter_reg
 			.assign_region(
 				|| "aux",

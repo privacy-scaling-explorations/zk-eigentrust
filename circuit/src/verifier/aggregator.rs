@@ -321,7 +321,6 @@ impl Circuit<Fr> for Aggregator {
 					instances.push(vec![instance_collector[j].clone().unwrap()]);
 				}
 			}
-			println!("{:#?}", instances);
 			let proof = PlonkSuccinctVerifier::<KzgAs<Bn256, Gwc19>>::read_proof(
 				&self.svk, &protocol, &instances, &mut transcript_read,
 			)
