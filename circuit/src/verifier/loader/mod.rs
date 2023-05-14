@@ -76,8 +76,8 @@ where
 		main: MainConfig, poseidon_sponge: PoseidonSpongeConfig,
 	) -> Self {
 		let binding = layouter.clone();
-
-		let mut layouter_reg = Self::layouter(binding, |x| x);
+		let mut layouter_reg = binding.lock().unwrap();
+		//let mut layouter_reg = Self::layouter(binding, |x| x);
 		let (aux_init_x_limbs, aux_init_y_limbs, aux_fin_x_limbs, aux_fin_y_limbs) = layouter_reg
 			.assign_region(
 				|| "aux",

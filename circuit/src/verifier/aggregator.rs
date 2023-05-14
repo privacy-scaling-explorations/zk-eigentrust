@@ -562,7 +562,7 @@ mod test {
 		}
 	}
 
-	#[ignore = "Aggregator fails"]
+	//#[ignore = "Aggregator fails"]
 	#[test]
 	fn test_aggregator() {
 		// Testing Aggregator
