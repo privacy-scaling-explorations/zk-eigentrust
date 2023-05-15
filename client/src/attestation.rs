@@ -34,7 +34,7 @@ impl From<SignedAttestation> for ContractAttestationData {
 }
 
 /// Attestation struct
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Attestation {
 	/// Ethereum address of peer being rated
 	pub about: Address,
@@ -159,7 +159,7 @@ impl From<&SignedAttestation> for AttestationPayload {
 
 #[cfg(test)]
 mod tests {
-	use super::*;
+	use crate::attestation::*;
 
 	#[test]
 	fn test_signed_attestation_to_contract_attestation_data() {

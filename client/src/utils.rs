@@ -32,8 +32,6 @@ use std::{
 	sync::Arc,
 };
 
-pub const PARTICIPANTS: &[&str] = &["Alice", "Bob", "Carol", "Dave", "Eve"];
-
 /// Reads the json file and deserialize it into the provided type
 pub fn read_csv_file<T: DeserializeOwned>(path: impl AsRef<Path>) -> Result<Vec<T>, Error> {
 	let path = path.as_ref();
@@ -168,32 +166,6 @@ pub fn compile_yul_contracts() {
 	}
 }
 
-/// Construct the secret keys and public keys from the given raw data
-pub fn keyset_from_raw<const N: usize>(
-	sks_raw: [[&str; 2]; N],
-) -> (Vec<SecretKey>, Vec<PublicKey>) {
-	let mut sks = Vec::new();
-	let mut pks = Vec::new();
-
-	for sk_raw in sks_raw {
-		let sk0_raw = bs58::decode(sk_raw[0]).into_vec().unwrap();
-		let sk1_raw = bs58::decode(sk_raw[1]).into_vec().unwrap();
-
-		let mut sk0_bytes: [u8; 32] = [0; 32];
-		sk0_bytes.copy_from_slice(&sk0_raw);
-		let mut sk1_bytes: [u8; 32] = [0; 32];
-		sk1_bytes.copy_from_slice(&sk1_raw);
-
-		let sk = SecretKey::from_raw([sk0_bytes, sk1_bytes]);
-		let pk = sk.public();
-
-		sks.push(sk);
-		pks.push(pk);
-	}
-
-	(sks, pks)
-}
-
 /// Returns a vector of Ethereum wallets derived from the given mnemonic phrase
 pub fn eth_wallets_from_mnemonic(
 	mnemonic: &str, count: u32,
@@ -251,7 +223,7 @@ pub fn ecdsa_eddsa_map(mnemonic: &str) -> HashMap<Address, PublicKey> {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
 	use super::{call_verifier, deploy_as, deploy_verifier};
 	use eigen_trust_circuit::{
 		utils::{read_bytes_data, read_json_data},
