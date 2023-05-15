@@ -986,7 +986,6 @@ dependencies = [
 name = "eigen-trust-client"
 version = "0.1.0"
 dependencies = [
- "bs58",
  "clap",
  "csv",
  "eigen-trust-circuit",
