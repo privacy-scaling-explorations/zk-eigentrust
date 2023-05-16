@@ -54,8 +54,6 @@ const MAX_NEIGHBOURS: usize = 2;
 const NUM_ITERATIONS: usize = 10;
 /// Initial score for each participant before the algorithms is run
 const INITIAL_SCORE: u128 = 1000;
-/// Scale for the scores to be computed inside the ZK circuit
-const SCALE: u128 = 1000;
 
 #[derive(Serialize, Deserialize, Debug, EthDisplay, Clone)]
 pub struct ClientConfig {
@@ -162,7 +160,7 @@ impl Client {
 
 		// Construct native set
 		let mut eigentrust_set =
-			EigenTrustSet::<MAX_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE, SCALE>::new();
+			EigenTrustSet::<MAX_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
 
 		// Add eddsa public keys to the set
 		for pub_key in eddsa_pub_keys.clone() {
@@ -188,10 +186,9 @@ impl Client {
 		}
 
 		// Converge the EigenTrust scores
-		let (scores, scores_scaled) = eigentrust_set.converge();
+		let scores = eigentrust_set.converge();
 
 		println!("Scores: {:?}", scores);
-		println!("Scores scaled: {:?}", scores_scaled);
 
 		// TODO: Write the resulting scores to a CSV file
 
