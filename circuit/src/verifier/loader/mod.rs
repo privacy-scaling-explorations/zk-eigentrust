@@ -73,52 +73,53 @@ where
 		layouter: Rc<Mutex<L>>, common: CommonConfig, ecc_mul_scalar: EccMulConfig,
 		main: MainConfig, poseidon_sponge: PoseidonSpongeConfig,
 	) -> Self {
-		let binding = layouter.clone();
-		let mut layouter_reg = binding.lock().unwrap();
-		let (aux_init_x_limbs, aux_init_y_limbs, aux_fin_x_limbs, aux_fin_y_limbs) = layouter_reg
-			.assign_region(
-				|| "aux",
-				|region: Region<'_, C::Scalar>| {
-					let mut ctx = RegionCtx::new(region, 0);
-					let mut init_x_limbs: [Option<AssignedCell<C::Scalar, C::Scalar>>; NUM_LIMBS] =
-						[(); NUM_LIMBS].map(|_| None);
-					let mut init_y_limbs: [Option<AssignedCell<C::Scalar, C::Scalar>>; NUM_LIMBS] =
-						[(); NUM_LIMBS].map(|_| None);
-					for i in 0..NUM_LIMBS {
-						let x = ctx.assign_fixed(common.fixed[i], P::to_add_x()[i])?;
-						init_x_limbs[i] = Some(x);
-					}
-					ctx.next();
-					for i in 0..NUM_LIMBS {
-						let y = ctx.assign_fixed(common.fixed[i], P::to_add_y()[i])?;
-						init_y_limbs[i] = Some(y);
-					}
+		let (aux_init_x_limbs, aux_init_y_limbs, aux_fin_x_limbs, aux_fin_y_limbs) = {
+			let mut layouter_reg = layouter.lock().unwrap();
+			layouter_reg
+				.assign_region(
+					|| "aux",
+					|region: Region<'_, C::Scalar>| {
+						let mut ctx = RegionCtx::new(region, 0);
+						let mut init_x_limbs: [Option<AssignedCell<C::Scalar, C::Scalar>>;
+							NUM_LIMBS] = [(); NUM_LIMBS].map(|_| None);
+						let mut init_y_limbs: [Option<AssignedCell<C::Scalar, C::Scalar>>;
+							NUM_LIMBS] = [(); NUM_LIMBS].map(|_| None);
+						for i in 0..NUM_LIMBS {
+							let x = ctx.assign_fixed(common.fixed[i], P::to_add_x()[i])?;
+							init_x_limbs[i] = Some(x);
+						}
+						ctx.next();
+						for i in 0..NUM_LIMBS {
+							let y = ctx.assign_fixed(common.fixed[i], P::to_add_y()[i])?;
+							init_y_limbs[i] = Some(y);
+						}
 
-					ctx.next();
-					let mut fin_x_limbs: [Option<AssignedCell<C::Scalar, C::Scalar>>; NUM_LIMBS] =
-						[(); NUM_LIMBS].map(|_| None);
-					let mut fin_y_limbs: [Option<AssignedCell<C::Scalar, C::Scalar>>; NUM_LIMBS] =
-						[(); NUM_LIMBS].map(|_| None);
-					for i in 0..NUM_LIMBS {
-						let x = ctx.assign_fixed(common.fixed[i], P::to_sub_x()[i])?;
+						ctx.next();
+						let mut fin_x_limbs: [Option<AssignedCell<C::Scalar, C::Scalar>>;
+							NUM_LIMBS] = [(); NUM_LIMBS].map(|_| None);
+						let mut fin_y_limbs: [Option<AssignedCell<C::Scalar, C::Scalar>>;
+							NUM_LIMBS] = [(); NUM_LIMBS].map(|_| None);
+						for i in 0..NUM_LIMBS {
+							let x = ctx.assign_fixed(common.fixed[i], P::to_sub_x()[i])?;
 
-						fin_x_limbs[i] = Some(x);
-					}
-					ctx.next();
-					for i in 0..NUM_LIMBS {
-						let y = ctx.assign_fixed(common.fixed[i], P::to_sub_y()[i])?;
-						fin_y_limbs[i] = Some(y);
-					}
+							fin_x_limbs[i] = Some(x);
+						}
+						ctx.next();
+						for i in 0..NUM_LIMBS {
+							let y = ctx.assign_fixed(common.fixed[i], P::to_sub_y()[i])?;
+							fin_y_limbs[i] = Some(y);
+						}
 
-					Ok((
-						init_x_limbs.map(|x| x.unwrap()),
-						init_y_limbs.map(|x| x.unwrap()),
-						fin_x_limbs.map(|x| x.unwrap()),
-						fin_y_limbs.map(|x| x.unwrap()),
-					))
-				},
-			)
-			.unwrap();
+						Ok((
+							init_x_limbs.map(|x| x.unwrap()),
+							init_y_limbs.map(|x| x.unwrap()),
+							fin_x_limbs.map(|x| x.unwrap()),
+							fin_y_limbs.map(|x| x.unwrap()),
+						))
+					},
+				)
+				.unwrap()
+		};
 
 		let aux_init_x_int =
 			Integer::<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS, P>::from_limbs(P::to_add_x());
@@ -710,33 +711,39 @@ where
 				let config = base.loader.clone();
 				let auxes = base.loader.auxes.clone();
 				let (aux_init, aux_fin) = auxes;
-				let mut layouter = base.loader.layouter.lock().unwrap();
-				let chip = EccMulChipset::new(
-					base.inner.clone(),
-					scalar.inner.clone(),
-					aux_init.clone(),
-					aux_fin.clone(),
-				);
-				let mul = chip
-					.synthesize(
-						&config.common,
-						&config.ecc_mul_scalar,
-						layouter.namespace(|| "ecc_mul"),
-					)
-					.unwrap();
+				let mul = {
+					let mut layouter = base.loader.layouter.lock().unwrap();
+					let chip = EccMulChipset::new(
+						base.inner.clone(),
+						scalar.inner.clone(),
+						aux_init.clone(),
+						aux_fin.clone(),
+					);
+					let mul = chip
+						.synthesize(
+							&config.common,
+							&config.ecc_mul_scalar,
+							layouter.namespace(|| "ecc_mul"),
+						)
+						.unwrap();
+					mul
+				};
 				Halo2LEcPoint::new(mul, config.clone())
 			})
 			.reduce(|acc, value| {
 				let config = value.loader.clone();
-				let mut layouter = value.loader.layouter.lock().unwrap();
-				let chip = EccAddChipset::new(acc.inner.clone(), value.inner.clone());
-				let add = chip
-					.synthesize(
-						&config.common,
-						&config.ecc_mul_scalar.add,
-						layouter.namespace(|| "ecc_add"),
-					)
-					.unwrap();
+				let add = {
+					let mut layouter = value.loader.layouter.lock().unwrap();
+					let chip = EccAddChipset::new(acc.inner.clone(), value.inner.clone());
+					let add = chip
+						.synthesize(
+							&config.common,
+							&config.ecc_mul_scalar.add,
+							layouter.namespace(|| "ecc_add"),
+						)
+						.unwrap();
+					add
+				};
 				Halo2LEcPoint::new(add, config.clone())
 			})
 			.unwrap();
@@ -867,50 +874,53 @@ mod test {
 
 			let mut assigned_pairs: Vec<(Halo2LScalar<C, _, P>, Halo2LEcPoint<C, _, P>)> =
 				Vec::new();
-			let mut lb = layouter_rc.lock().unwrap();
-			lb.assign_region(
-				|| "assign_pairs",
-				|region: Region<'_, Scalar>| {
-					let mut ctx = RegionCtx::new(region, 0);
-					for i in 0..self.pairs.len() {
-						let assigned_scalar = ctx.assign_advice(
-							config.common.advice[0],
-							Value::known(self.pairs[i].0.inner),
-						)?;
+			{
+				let mut lb = layouter_rc.lock().unwrap();
+				lb.assign_region(
+					|| "assign_pairs",
+					|region: Region<'_, Scalar>| {
+						let mut ctx = RegionCtx::new(region, 0);
+						for i in 0..self.pairs.len() {
+							let assigned_scalar = ctx.assign_advice(
+								config.common.advice[0],
+								Value::known(self.pairs[i].0.inner),
+							)?;
 
-						let halo2_scalar =
-							Halo2LScalar::new(assigned_scalar, loader_config.clone());
-						ctx.next();
+							let halo2_scalar =
+								Halo2LScalar::new(assigned_scalar, loader_config.clone());
+							ctx.next();
 
-						let mut x_limbs: [Option<AssignedCell<Scalar, Scalar>>; NUM_LIMBS] =
-							[(); NUM_LIMBS].map(|_| None);
-						let mut y_limbs: [Option<AssignedCell<Scalar, Scalar>>; NUM_LIMBS] =
-							[(); NUM_LIMBS].map(|_| None);
-						for j in 0..NUM_LIMBS {
-							x_limbs[j] = Some(ctx.assign_advice(
-								config.common.advice[j],
-								Value::known(self.pairs[i].1.inner.x.limbs[j]),
-							)?);
-							y_limbs[j] = Some(ctx.assign_advice(
-								config.common.advice[j + NUM_LIMBS],
-								Value::known(self.pairs[i].1.inner.y.limbs[j]),
-							)?);
+							let mut x_limbs: [Option<AssignedCell<Scalar, Scalar>>; NUM_LIMBS] =
+								[(); NUM_LIMBS].map(|_| None);
+							let mut y_limbs: [Option<AssignedCell<Scalar, Scalar>>; NUM_LIMBS] =
+								[(); NUM_LIMBS].map(|_| None);
+							for j in 0..NUM_LIMBS {
+								x_limbs[j] = Some(ctx.assign_advice(
+									config.common.advice[j],
+									Value::known(self.pairs[i].1.inner.x.limbs[j]),
+								)?);
+								y_limbs[j] = Some(ctx.assign_advice(
+									config.common.advice[j + NUM_LIMBS],
+									Value::known(self.pairs[i].1.inner.y.limbs[j]),
+								)?);
+							}
+							ctx.next();
+							let x_limbs = x_limbs.map(|x| x.unwrap());
+							let y_limbs = y_limbs.map(|x| x.unwrap());
+
+							let x = AssignedInteger::new(self.pairs[i].1.inner.x.clone(), x_limbs);
+							let y = AssignedInteger::new(self.pairs[i].1.inner.y.clone(), y_limbs);
+
+							let assigned_point = AssignedPoint::new(x, y);
+							let halo2_point =
+								Halo2LEcPoint::new(assigned_point, loader_config.clone());
+							assigned_pairs.push((halo2_scalar, halo2_point));
 						}
-						ctx.next();
-						let x_limbs = x_limbs.map(|x| x.unwrap());
-						let y_limbs = y_limbs.map(|x| x.unwrap());
-
-						let x = AssignedInteger::new(self.pairs[i].1.inner.x.clone(), x_limbs);
-						let y = AssignedInteger::new(self.pairs[i].1.inner.y.clone(), y_limbs);
-
-						let assigned_point = AssignedPoint::new(x, y);
-						let halo2_point = Halo2LEcPoint::new(assigned_point, loader_config.clone());
-						assigned_pairs.push((halo2_scalar, halo2_point));
-					}
-					Ok(())
-				},
-			)?;
-			drop(lb);
+						Ok(())
+					},
+				)?;
+				// drop(lb);
+			}
 
 			// TODO: Assigned_pairs returns double. Can be because of the multithread.
 			// research and fix it
@@ -921,18 +931,20 @@ mod test {
 
 			let res = LoaderConfig::multi_scalar_multiplication(borrowed_pairs.as_slice());
 
-			let mut lb = layouter_rc.lock().unwrap();
-			for i in 0..NUM_LIMBS {
-				lb.constrain_instance(
-					res.inner.clone().x.limbs[i].cell(),
-					config.common.instance,
-					i,
-				)?;
-				lb.constrain_instance(
-					res.inner.clone().y.limbs[i].cell(),
-					config.common.instance,
-					i + NUM_LIMBS,
-				)?;
+			{
+				let mut lb = layouter_rc.lock().unwrap();
+				for i in 0..NUM_LIMBS {
+					lb.constrain_instance(
+						res.inner.clone().x.limbs[i].cell(),
+						config.common.instance,
+						i,
+					)?;
+					lb.constrain_instance(
+						res.inner.clone().y.limbs[i].cell(),
+						config.common.instance,
+						i + NUM_LIMBS,
+					)?;
+				}
 			}
 
 			Ok(())

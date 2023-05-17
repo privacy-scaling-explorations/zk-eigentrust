@@ -165,19 +165,21 @@ where
 			},
 		)?;
 
-		let loader = self.loader.clone();
-		let mut layouter = loader.layouter.lock().unwrap();
-		let assigned_scalar = layouter
-			.assign_region(
-				|| "assign_scalar",
-				|region: Region<'_, C::Scalar>| {
-					let mut ctx = RegionCtx::new(region, 0);
-					let scalar = ctx.assign_advice(self.loader.common.advice[0], scalar)?;
-					Ok(scalar)
-				},
-			)
-			.unwrap();
-		drop(layouter);
+		let assigned_scalar = {
+			let mut layouter = self.loader.layouter.lock().unwrap();
+			layouter
+				.assign_region(
+					|| "assign_scalar",
+					|region: Region<'_, C::Scalar>| {
+						let mut ctx = RegionCtx::new(region, 0);
+						let scalar = ctx.assign_advice(self.loader.common.advice[0], scalar)?;
+						Ok(scalar)
+					},
+				)
+				.unwrap()
+			// drop(layouter);
+		};
+
 		let assigned_lscalar = Halo2LScalar::new(assigned_scalar, self.loader.clone());
 		Self::common_scalar(self, &assigned_lscalar)?;
 
@@ -238,33 +240,36 @@ where
 			},
 		)?;
 
-		let loader = self.loader.clone();
-		let mut layouter = loader.layouter.lock().unwrap();
-		let (assigned_x, assigned_y) = layouter
-			.assign_region(
-				|| "assign_coordinates",
-				|region: Region<'_, C::Scalar>| {
-					let mut ctx = RegionCtx::new(region, 0);
-					let mut assigned_x_limbs = Vec::new();
-					let mut assigned_y_limbs = Vec::new();
-					for i in 0..NUM_LIMBS {
-						let assigned_x_limb =
-							ctx.assign_advice(self.loader.common.advice[i], x_limbs[i]).unwrap();
-						assigned_x_limbs.push(assigned_x_limb);
-					}
+		let (assigned_x, assigned_y) = {
+			let mut layouter = self.loader.layouter.lock().unwrap();
+			layouter
+				.assign_region(
+					|| "assign_coordinates",
+					|region: Region<'_, C::Scalar>| {
+						let mut ctx = RegionCtx::new(region, 0);
+						let mut assigned_x_limbs = Vec::new();
+						let mut assigned_y_limbs = Vec::new();
+						for i in 0..NUM_LIMBS {
+							let assigned_x_limb = ctx
+								.assign_advice(self.loader.common.advice[i], x_limbs[i])
+								.unwrap();
+							assigned_x_limbs.push(assigned_x_limb);
+						}
 
-					ctx.next();
+						ctx.next();
 
-					for i in 0..NUM_LIMBS {
-						let assigned_y_limb =
-							ctx.assign_advice(self.loader.common.advice[i], y_limbs[i]).unwrap();
-						assigned_y_limbs.push(assigned_y_limb);
-					}
-					Ok((assigned_x_limbs, assigned_y_limbs))
-				},
-			)
-			.unwrap();
-		drop(layouter);
+						for i in 0..NUM_LIMBS {
+							let assigned_y_limb = ctx
+								.assign_advice(self.loader.common.advice[i], y_limbs[i])
+								.unwrap();
+							assigned_y_limbs.push(assigned_y_limb);
+						}
+						Ok((assigned_x_limbs, assigned_y_limbs))
+					},
+				)
+				.unwrap()
+			// drop(layouter);
+		};
 
 		let assigned_integer_x =
 			AssignedInteger::<_, _, NUM_LIMBS, NUM_BITS, P>::new(x, assigned_x.try_into().unwrap());
@@ -274,7 +279,7 @@ where
 		let assigned_point = AssignedPoint::<_, _, NUM_LIMBS, NUM_BITS, P>::new(
 			assigned_integer_x, assigned_integer_y,
 		);
-		let loaded_point = Halo2LEcPoint::new(assigned_point, loader.clone());
+		let loaded_point = Halo2LEcPoint::new(assigned_point, self.loader.clone());
 		self.common_ec_point(&loaded_point)?;
 
 		Ok(loaded_point)
@@ -414,8 +419,10 @@ mod test {
 				PoseidonReadChipset::<_, C, _, P, R>::new(Some(reader.as_slice()), loader);
 			let res = poseidon_read.squeeze_challenge();
 
-			let mut lb = layouter_rc.lock().unwrap();
-			lb.constrain_instance(res.inner.clone().cell(), config.common.instance, 0)?;
+			{
+				let mut lb = layouter_rc.lock().unwrap();
+				lb.constrain_instance(res.inner.clone().cell(), config.common.instance, 0)?;
+			}
 
 			Ok(())
 		}
@@ -475,9 +482,9 @@ mod test {
 			let x = Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_w(*coordinates.x());
 			let y = Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_w(*coordinates.y());
 
-			let mut lb = layouter_rc.lock().unwrap();
-			let assigned_coordinates = lb
-				.assign_region(
+			let assigned_coordinates = {
+				let mut lb = layouter_rc.lock().unwrap();
+				lb.assign_region(
 					|| "assign",
 					|region: Region<'_, Scalar>| {
 						let mut ctx = RegionCtx::new(region, 0);
@@ -504,7 +511,8 @@ mod test {
 						Ok((x_limbs.map(|x| x.unwrap()), y_limbs.map(|x| x.unwrap())))
 					},
 				)
-				.unwrap();
+				.unwrap()
+			};
 
 			let assigned_integer_x = AssignedInteger::<_, _, NUM_LIMBS, NUM_BITS, P>::new(
 				x.clone(),
@@ -520,18 +528,22 @@ mod test {
 			);
 			let ec_point = Halo2LEcPoint::new(assigned_point, loader.clone());
 
-			drop(lb);
+			// drop(lb);
 			let reader = Vec::new();
 			let mut poseidon_read =
 				PoseidonReadChipset::<_, C, _, P, R>::new(Some(reader.as_slice()), loader);
 			poseidon_read.common_ec_point(&ec_point).unwrap();
-			let mut lb = layouter_rc.lock().unwrap();
-			let res = poseidon_read.state.synthesize(
-				&config.common,
-				&config.poseidon_sponge,
-				lb.namespace(|| "squeeze"),
-			)?;
-			lb.constrain_instance(res.clone().cell(), config.common.instance, 0)?;
+
+			{
+				let mut lb = layouter_rc.lock().unwrap();
+				let res = poseidon_read.state.synthesize(
+					&config.common,
+					&config.poseidon_sponge,
+					lb.namespace(|| "squeeze"),
+				)?;
+				lb.constrain_instance(res.clone().cell(), config.common.instance, 0)?;
+			}
+
 			Ok(())
 		}
 	}
@@ -588,9 +600,9 @@ mod test {
 				config.poseidon_sponge.clone(),
 			);
 
-			let mut lb = layouter_rc.lock().unwrap();
-			let assigned_scalar = lb
-				.assign_region(
+			let assigned_scalar = {
+				let mut lb = layouter_rc.lock().unwrap();
+				lb.assign_region(
 					|| "assign_scalar",
 					|region: Region<'_, Scalar>| {
 						let mut ctx = RegionCtx::new(region, 0);
@@ -599,20 +611,24 @@ mod test {
 						Ok(scalar)
 					},
 				)
-				.unwrap();
+				.unwrap()
+			};
+
 			let scalar = Halo2LScalar::new(assigned_scalar, loader.clone());
-			drop(lb);
+			// drop(lb);
 			let reader = Vec::new();
 			let mut poseidon_read =
 				PoseidonReadChipset::<_, C, _, P, R>::new(Some(reader.as_slice()), loader);
 			poseidon_read.common_scalar(&scalar).unwrap();
-			let mut lb = layouter_rc.lock().unwrap();
-			let res = poseidon_read.state.synthesize(
-				&config.common,
-				&config.poseidon_sponge,
-				lb.namespace(|| "squeeze"),
-			)?;
-			lb.constrain_instance(res.clone().cell(), config.common.instance, 0)?;
+			{
+				let mut lb = layouter_rc.lock().unwrap();
+				let res = poseidon_read.state.synthesize(
+					&config.common,
+					&config.poseidon_sponge,
+					lb.namespace(|| "squeeze"),
+				)?;
+				lb.constrain_instance(res.clone().cell(), config.common.instance, 0)?;
+			}
 
 			Ok(())
 		}
@@ -673,9 +689,10 @@ mod test {
 			let mut poseidon_read =
 				PoseidonReadChipset::<_, C, _, P, R>::new(Some(self.reader.as_slice()), loader);
 			let res = poseidon_read.read_scalar().unwrap();
-
-			let mut lb = layouter_rc.lock().unwrap();
-			lb.constrain_instance(res.inner.clone().cell(), config.common.instance, 0)?;
+			{
+				let mut lb = layouter_rc.lock().unwrap();
+				lb.constrain_instance(res.inner.clone().cell(), config.common.instance, 0)?;
+			}
 
 			Ok(())
 		}
@@ -739,19 +756,22 @@ mod test {
 			);
 			let res = poseidon_read.read_ec_point().unwrap();
 
-			let mut lb = layouter_rc.lock().unwrap();
-			for i in 0..NUM_LIMBS {
-				lb.constrain_instance(
-					res.inner.clone().x.limbs[i].cell(),
-					config.common.instance,
-					i,
-				)?;
-				lb.constrain_instance(
-					res.inner.clone().y.limbs[i].cell(),
-					config.common.instance,
-					i + NUM_LIMBS,
-				)?;
+			{
+				let mut lb = layouter_rc.lock().unwrap();
+				for i in 0..NUM_LIMBS {
+					lb.constrain_instance(
+						res.inner.clone().x.limbs[i].cell(),
+						config.common.instance,
+						i,
+					)?;
+					lb.constrain_instance(
+						res.inner.clone().y.limbs[i].cell(),
+						config.common.instance,
+						i + NUM_LIMBS,
+					)?;
+				}
 			}
+
 			Ok(())
 		}
 	}
@@ -818,46 +838,53 @@ mod test {
 			let mut poseidon_read =
 				PoseidonReadChipset::<_, C, _, P, R>::new(Some(self.reader.as_slice()), loader);
 			let res = poseidon_read.read_ec_point().unwrap();
-			let mut lb = layouter_rc.lock().unwrap();
-			for i in 0..NUM_LIMBS {
-				lb.constrain_instance(
-					res.inner.clone().x.limbs[i].cell(),
-					config.common.instance,
-					i,
-				)?;
-				lb.constrain_instance(
-					res.inner.clone().y.limbs[i].cell(),
-					config.common.instance,
-					i + NUM_LIMBS,
-				)?;
+			{
+				let mut lb = layouter_rc.lock().unwrap();
+				for i in 0..NUM_LIMBS {
+					lb.constrain_instance(
+						res.inner.clone().x.limbs[i].cell(),
+						config.common.instance,
+						i,
+					)?;
+					lb.constrain_instance(
+						res.inner.clone().y.limbs[i].cell(),
+						config.common.instance,
+						i + NUM_LIMBS,
+					)?;
+				}
+				// drop(lb);
 			}
-			drop(lb);
 
 			let res = poseidon_read.read_scalar().unwrap();
-			let mut lb = layouter_rc.lock().unwrap();
-			lb.constrain_instance(res.inner.clone().cell(), config.common.instance, 8)?;
-			drop(lb);
+			{
+				let mut lb = layouter_rc.lock().unwrap();
+				lb.constrain_instance(res.inner.clone().cell(), config.common.instance, 8)?;
+				// drop(lb);
+			}
 
 			let res = poseidon_read.read_ec_point().unwrap();
-
-			let mut lb = layouter_rc.lock().unwrap();
-			for i in 0..NUM_LIMBS {
-				lb.constrain_instance(
-					res.inner.clone().x.limbs[i].cell(),
-					config.common.instance,
-					i + (2 * NUM_LIMBS) + 1,
-				)?;
-				lb.constrain_instance(
-					res.inner.clone().y.limbs[i].cell(),
-					config.common.instance,
-					i + (3 * NUM_LIMBS) + 1,
-				)?;
+			{
+				let mut lb = layouter_rc.lock().unwrap();
+				for i in 0..NUM_LIMBS {
+					lb.constrain_instance(
+						res.inner.clone().x.limbs[i].cell(),
+						config.common.instance,
+						i + (2 * NUM_LIMBS) + 1,
+					)?;
+					lb.constrain_instance(
+						res.inner.clone().y.limbs[i].cell(),
+						config.common.instance,
+						i + (3 * NUM_LIMBS) + 1,
+					)?;
+				}
+				// drop(lb);
 			}
-			drop(lb);
 
 			let res = poseidon_read.read_scalar().unwrap();
-			let mut lb = layouter_rc.lock().unwrap();
-			lb.constrain_instance(res.inner.clone().cell(), config.common.instance, 17)?;
+			{
+				let mut lb = layouter_rc.lock().unwrap();
+				lb.constrain_instance(res.inner.clone().cell(), config.common.instance, 17)?;
+			}
 			Ok(())
 		}
 	}
