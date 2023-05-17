@@ -637,29 +637,32 @@ where
 		let coords: Coordinates<C> = Option::from(value.coordinates()).unwrap();
 		let x = Integer::from_w(coords.x().clone());
 		let y = Integer::from_w(coords.y().clone());
-		let mut layouter = self.layouter.lock().unwrap();
-		let (x_limbs, y_limbs) = layouter
-			.assign_region(
-				|| "assign_limbs",
-				|region: Region<'_, C::Scalar>| {
-					let mut ctx = RegionCtx::new(region, 0);
-					let mut x_limbs: [Option<AssignedCell<C::Scalar, C::Scalar>>; NUM_LIMBS] =
-						[(); NUM_LIMBS].map(|_| None);
-					let mut y_limbs: [Option<AssignedCell<C::Scalar, C::Scalar>>; NUM_LIMBS] =
-						[(); NUM_LIMBS].map(|_| None);
-					for i in 0..NUM_LIMBS {
-						x_limbs[i] =
-							Some(ctx.assign_fixed(self.common.fixed[i], x.limbs[i]).unwrap());
-					}
-					ctx.next();
-					for i in 0..NUM_LIMBS {
-						y_limbs[i] =
-							Some(ctx.assign_fixed(self.common.fixed[i], y.limbs[i]).unwrap());
-					}
-					Ok((x_limbs.map(|x| x.unwrap()), y_limbs.map(|x| x.unwrap())))
-				},
-			)
-			.unwrap();
+
+		let (x_limbs, y_limbs) = {
+			let mut layouter = self.layouter.lock().unwrap();
+			layouter
+				.assign_region(
+					|| "assign_limbs",
+					|region: Region<'_, C::Scalar>| {
+						let mut ctx = RegionCtx::new(region, 0);
+						let mut x_limbs: [Option<AssignedCell<C::Scalar, C::Scalar>>; NUM_LIMBS] =
+							[(); NUM_LIMBS].map(|_| None);
+						let mut y_limbs: [Option<AssignedCell<C::Scalar, C::Scalar>>; NUM_LIMBS] =
+							[(); NUM_LIMBS].map(|_| None);
+						for i in 0..NUM_LIMBS {
+							x_limbs[i] =
+								Some(ctx.assign_fixed(self.common.fixed[i], x.limbs[i]).unwrap());
+						}
+						ctx.next();
+						for i in 0..NUM_LIMBS {
+							y_limbs[i] =
+								Some(ctx.assign_fixed(self.common.fixed[i], y.limbs[i]).unwrap());
+						}
+						Ok((x_limbs.map(|x| x.unwrap()), y_limbs.map(|x| x.unwrap())))
+					},
+				)
+				.unwrap()
+		};
 		let x_assigned = AssignedInteger::new(x, x_limbs);
 		let y_assigned = AssignedInteger::new(y, y_limbs);
 

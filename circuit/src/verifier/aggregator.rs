@@ -76,8 +76,7 @@ impl Snark {
 		params: &ParamsKZG<Bn256>, circuit: C, instances: Vec<Vec<Fr>>, rng: &mut R,
 	) -> Self {
 		let pk = gen_pk(params, &circuit);
-		// TODO: Calculate number of instances from `instances` parameter
-		let config = Config::kzg().with_num_instance(vec![1]);
+		let config = Config::kzg().with_num_instance(vec![instances.len()]);
 
 		let protocol = compile(params, pk.get_vk(), config);
 
@@ -175,8 +174,31 @@ impl Aggregator {
 			)
 			.unwrap();
 			let res = PSV::verify(&svk, &snark.protocol, &snark.instances, &proof).unwrap();
+
+			let t_x: Vec<_> = res
+				.iter()
+				.map(|r| Integer::<_, _, NUM_LIMBS, NUM_BITS, Bn256_4_68>::from_w(r.lhs.x).limbs)
+				.collect();
+			println!("res(out): {:?}", t_x);
+			let t_y: Vec<_> = res
+				.iter()
+				.map(|r| Integer::<_, _, NUM_LIMBS, NUM_BITS, Bn256_4_68>::from_w(r.lhs.y).limbs)
+				.collect();
+			println!("res(out): {:?}", t_y);
+
 			plonk_proofs.extend(res);
 		}
+		// let temp: Vec<_> = plonk_proofs
+		// 	.iter()
+		// 	.map(|p| Integer::<_, _, NUM_LIMBS, NUM_BITS, Bn256_4_68>::from_w(p.lhs.x).limbs)
+		// 	.collect();
+		// println!("temp_x: {:?}", temp);
+		// let temp: Vec<_> = plonk_proofs
+		// 	.iter()
+		// 	.map(|p| Integer::<_, _, NUM_LIMBS, NUM_BITS, Bn256_4_68>::from_w(p.lhs.y).limbs)
+		// 	.collect();
+		// println!("temp_y: {:?}", temp);
+		// println!("plonk_proofs outside circuit: {:?}", plonk_proofs);
 
 		let mut transcript_write =
 			PoseidonWrite::<Vec<u8>, G1Affine, Bn256_4_68, Params>::new(Vec::new());
@@ -284,46 +306,55 @@ impl Circuit<Fr> for Aggregator {
 			config.main,
 			config.poseidon_sponge,
 		);
-		let mut accumulators = Vec::new();
+		let mut plonk_proofs = Vec::new();
 		for snark in &self.snarks {
 			let protocol = snark.protocol.loaded(&loader_config);
 			let mut transcript_read: PoseidonReadChipset<&[u8], G1Affine, _, Bn256_4_68, Params> =
 				PoseidonReadChipset::new(snark.proof(), loader_config.clone());
-			let mut lb = layouter_rc.lock().unwrap();
+
 			let mut instances: Vec<Vec<Halo2LScalar<G1Affine, _, Bn256_4_68>>> = Vec::new();
-			let mut instance_collector: Vec<Halo2LScalar<G1Affine, _, Bn256_4_68>> = Vec::new();
 			let instance_flatten =
 				snark.instances.clone().into_iter().flatten().collect::<Vec<Value<Fr>>>();
-			let mut instance_chunks = instance_flatten.chunks(ADVICE);
-			lb.assign_region(
-				|| "assign_instances",
-				|region: Region<'_, Fr>| {
-					let mut ctx = RegionCtx::new(region, 0);
-					// TODO: When it is assign_advice, it assings one none cell. Fix it.
-					for _ in 0..instance_chunks.len() {
-						let chunk = instance_chunks.next().unwrap();
-						for i in 0..chunk.len() {
-							let value = ctx.assign_advice(config.common.advice[i], chunk[i])?;
+			let mut instance_collector: Vec<Option<Halo2LScalar<G1Affine, _, Bn256_4_68>>> =
+				vec![None; instance_flatten.len()];
+
+			{
+				let mut lb = layouter_rc.lock().unwrap();
+				lb.assign_region(
+					|| "assign_instances",
+					|region: Region<'_, Fr>| {
+						let mut ctx = RegionCtx::new(region, 0);
+
+						let mut id = 0;
+						while id < instance_flatten.len() {
+							let value = ctx.assign_advice(
+								config.common.advice[id % ADVICE],
+								instance_flatten[id],
+							)?;
 							let lscalar = Halo2LScalar::new(value, loader_config.clone());
-							instance_collector.push(lscalar.clone());
+							instance_collector[id] = Some(lscalar.clone());
+
+							id += 1;
+							if 0 < id && id % ADVICE == 0 {
+								ctx.next();
+							}
 						}
-
-						ctx.next();
-					}
-					Ok(())
-				},
-			)?;
-
-			// TODO: Check if it is a square 2D vector or not and fix this algorithm for the
-			// complex circuits. This for loops are working only for one instance inputs.
-			for _ in 0..snark.instances.len() {
-				for _ in 0..snark.instances[0].len() {
-					instances.push(vec![instance_collector[0].clone()]);
-				}
+						Ok(())
+					},
+				)?;
+				// // Drop the layouter reference
+				// drop(lb);
 			}
 
-			// Drop the layouter reference
-			drop(lb);
+			let mut id = 0;
+			for i in 0..snark.instances.len() {
+				let mut temp: Vec<Halo2LScalar<G1Affine, _, Bn256_4_68>> = Vec::new();
+				for _ in 0..snark.instances[i].len() {
+					temp.push(instance_collector[id].clone().unwrap());
+					id += 1;
+				}
+				instances.push(temp);
+			}
 
 			let proof = PlonkSuccinctVerifier::<KzgAs<Bn256, Gwc19>>::read_proof(
 				&self.svk, &protocol, &instances, &mut transcript_read,
@@ -335,48 +366,48 @@ impl Circuit<Fr> for Aggregator {
 			)
 			.unwrap();
 
-			accumulators.extend(res);
+			println!("res: {:?}", res);
+
+			plonk_proofs.extend(res);
 		}
+		// println!("plonk_proofs inside circuit: {:?}", plonk_proofs);
 
 		let as_proof = self.as_proof.as_ref().map(Vec::as_slice);
 		let mut transcript: PoseidonReadChipset<&[u8], G1Affine, _, Bn256_4_68, Params> =
 			PoseidonReadChipset::new(as_proof, loader_config);
 		let proof =
-			KzgAs::<Bn256, Gwc19>::read_proof(&Default::default(), &accumulators, &mut transcript)
+			KzgAs::<Bn256, Gwc19>::read_proof(&Default::default(), &plonk_proofs, &mut transcript)
 				.unwrap();
 
 		let accumulator =
-			KzgAs::<Bn256, Gwc19>::verify(&Default::default(), &accumulators, &proof).unwrap();
+			KzgAs::<Bn256, Gwc19>::verify(&Default::default(), &plonk_proofs, &proof).unwrap();
 
+		// println!("Accumulator inside circuit: {:?}", accumulator);
 		let lhs_x = accumulator.lhs.inner.x;
 		let lhs_y = accumulator.lhs.inner.y;
 
 		let rhs_x = accumulator.rhs.inner.x;
 		let rhs_y = accumulator.rhs.inner.y;
 
-		let mut row = 0;
-		let mut lb = layouter_rc.lock().unwrap();
-		for limb in lhs_x.limbs {
-			lb.constrain_instance(limb.cell(), config.common.instance, row)?;
-			row += 1;
-		}
-		drop(lb);
-		let mut lb = layouter_rc.lock().unwrap();
-		for limb in lhs_y.limbs {
-			lb.constrain_instance(limb.cell(), config.common.instance, row)?;
-			row += 1;
-		}
-		drop(lb);
-		let mut lb = layouter_rc.lock().unwrap();
-		for limb in rhs_x.limbs {
-			lb.constrain_instance(limb.cell(), config.common.instance, row)?;
-			row += 1;
-		}
-		drop(lb);
-		let mut lb = layouter_rc.lock().unwrap();
-		for limb in rhs_y.limbs {
-			lb.constrain_instance(limb.cell(), config.common.instance, row)?;
-			row += 1;
+		{
+			let mut row = 0;
+			let mut lb = layouter_rc.lock().unwrap();
+			for limb in lhs_x.limbs {
+				lb.constrain_instance(limb.cell(), config.common.instance, row)?;
+				row += 1;
+			}
+			for limb in lhs_y.limbs {
+				lb.constrain_instance(limb.cell(), config.common.instance, row)?;
+				row += 1;
+			}
+			for limb in rhs_x.limbs {
+				lb.constrain_instance(limb.cell(), config.common.instance, row)?;
+				row += 1;
+			}
+			for limb in rhs_y.limbs {
+				lb.constrain_instance(limb.cell(), config.common.instance, row)?;
+				row += 1;
+			}
 		}
 
 		Ok(())
@@ -554,7 +585,7 @@ mod test {
 						ctx.assign_advice(config.common.advice[1], Value::known(self.y))?;
 
 					let out = assigned_x.value().cloned() * assigned_y.value();
-
+					ctx.next();
 					let res = ctx.assign_advice(config.common.advice[0], out)?;
 
 					Ok(res)
@@ -566,13 +597,17 @@ mod test {
 		}
 	}
 
-	#[ignore = "Aggregator fails"]
+	// #[ignore = "Aggregator fails"]
 	#[test]
 	fn test_aggregator() {
+		use std::time::Instant;
+		let start = Instant::now();
 		// Testing Aggregator
 		let rng = &mut thread_rng();
-		let k = 22;
+		let k = 21;
 		let params = generate_params::<Bn256>(k);
+		let end = start.elapsed();
+		println!("Generate params: {:?}", end);
 
 		let random_circuit_1 = MulChip::new(Fr::one(), Fr::one());
 		let random_circuit_2 = MulChip::new(Fr::one(), Fr::one());
@@ -581,13 +616,22 @@ mod test {
 		let instances_2: Vec<Vec<Fr>> = vec![vec![Fr::one()]];
 
 		let snark_1 = Snark::new(&params.clone(), random_circuit_1, instances_1, rng);
+		println!("snark_1: Takes: {:?}", start.elapsed());
 		let snark_2 = Snark::new(&params.clone(), random_circuit_2, instances_2, rng);
+		println!("snark_2: Takes: {:?}", start.elapsed());
 
-		let snarks = vec![snark_1, snark_2];
+		// let snarks = vec![snark_1, snark_2];
+		let snarks = vec![snark_1];
 		let aggregator = Aggregator::new(&params, snarks.clone());
+		// println!(
+		// 	"Aggregator instances(accumulator): {:?}\nTakes: {:?}",
+		// 	aggregator.instances,
+		// 	start.elapsed()
+		// );
 
 		let circuit = TestCircuit::new(aggregator.clone());
 		let prover = MockProver::run(k, &circuit, vec![aggregator.instances]).unwrap();
+		print!("Total time: {:?}", start.elapsed());
 
 		assert_eq!(prover.verify(), Ok(()));
 	}
