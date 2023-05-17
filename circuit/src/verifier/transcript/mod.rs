@@ -177,7 +177,6 @@ where
 					},
 				)
 				.unwrap()
-			// drop(layouter);
 		};
 
 		let assigned_lscalar = Halo2LScalar::new(assigned_scalar, self.loader.clone());
@@ -268,7 +267,6 @@ where
 					},
 				)
 				.unwrap()
-			// drop(layouter);
 		};
 
 		let assigned_integer_x =
@@ -528,7 +526,6 @@ mod test {
 			);
 			let ec_point = Halo2LEcPoint::new(assigned_point, loader.clone());
 
-			// drop(lb);
 			let reader = Vec::new();
 			let mut poseidon_read =
 				PoseidonReadChipset::<_, C, _, P, R>::new(Some(reader.as_slice()), loader);
@@ -615,7 +612,6 @@ mod test {
 			};
 
 			let scalar = Halo2LScalar::new(assigned_scalar, loader.clone());
-			// drop(lb);
 			let reader = Vec::new();
 			let mut poseidon_read =
 				PoseidonReadChipset::<_, C, _, P, R>::new(Some(reader.as_slice()), loader);
@@ -852,14 +848,12 @@ mod test {
 						i + NUM_LIMBS,
 					)?;
 				}
-				// drop(lb);
 			}
 
 			let res = poseidon_read.read_scalar().unwrap();
 			{
 				let mut lb = layouter_rc.lock().unwrap();
 				lb.constrain_instance(res.inner.clone().cell(), config.common.instance, 8)?;
-				// drop(lb);
 			}
 
 			let res = poseidon_read.read_ec_point().unwrap();
@@ -877,7 +871,6 @@ mod test {
 						i + (3 * NUM_LIMBS) + 1,
 					)?;
 				}
-				// drop(lb);
 			}
 
 			let res = poseidon_read.read_scalar().unwrap();

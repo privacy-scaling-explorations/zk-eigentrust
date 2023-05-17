@@ -919,7 +919,6 @@ mod test {
 						Ok(())
 					},
 				)?;
-				// drop(lb);
 			}
 
 			// TODO: Assigned_pairs returns double. Can be because of the multithread.

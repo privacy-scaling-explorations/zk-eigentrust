@@ -174,31 +174,8 @@ impl Aggregator {
 			)
 			.unwrap();
 			let res = PSV::verify(&svk, &snark.protocol, &snark.instances, &proof).unwrap();
-
-			let t_x: Vec<_> = res
-				.iter()
-				.map(|r| Integer::<_, _, NUM_LIMBS, NUM_BITS, Bn256_4_68>::from_w(r.lhs.x).limbs)
-				.collect();
-			println!("res(out): {:?}", t_x);
-			let t_y: Vec<_> = res
-				.iter()
-				.map(|r| Integer::<_, _, NUM_LIMBS, NUM_BITS, Bn256_4_68>::from_w(r.lhs.y).limbs)
-				.collect();
-			println!("res(out): {:?}", t_y);
-
 			plonk_proofs.extend(res);
 		}
-		// let temp: Vec<_> = plonk_proofs
-		// 	.iter()
-		// 	.map(|p| Integer::<_, _, NUM_LIMBS, NUM_BITS, Bn256_4_68>::from_w(p.lhs.x).limbs)
-		// 	.collect();
-		// println!("temp_x: {:?}", temp);
-		// let temp: Vec<_> = plonk_proofs
-		// 	.iter()
-		// 	.map(|p| Integer::<_, _, NUM_LIMBS, NUM_BITS, Bn256_4_68>::from_w(p.lhs.y).limbs)
-		// 	.collect();
-		// println!("temp_y: {:?}", temp);
-		// println!("plonk_proofs outside circuit: {:?}", plonk_proofs);
 
 		let mut transcript_write =
 			PoseidonWrite::<Vec<u8>, G1Affine, Bn256_4_68, Params>::new(Vec::new());
@@ -365,12 +342,8 @@ impl Circuit<Fr> for Aggregator {
 				&self.svk, &protocol, &instances, &proof,
 			)
 			.unwrap();
-
-			println!("res: {:?}", res);
-
 			plonk_proofs.extend(res);
 		}
-		// println!("plonk_proofs inside circuit: {:?}", plonk_proofs);
 
 		let as_proof = self.as_proof.as_ref().map(Vec::as_slice);
 		let mut transcript: PoseidonReadChipset<&[u8], G1Affine, _, Bn256_4_68, Params> =
@@ -382,7 +355,6 @@ impl Circuit<Fr> for Aggregator {
 		let accumulator =
 			KzgAs::<Bn256, Gwc19>::verify(&Default::default(), &plonk_proofs, &proof).unwrap();
 
-		// println!("Accumulator inside circuit: {:?}", accumulator);
 		let lhs_x = accumulator.lhs.inner.x;
 		let lhs_y = accumulator.lhs.inner.y;
 
@@ -616,22 +588,16 @@ mod test {
 		let instances_2: Vec<Vec<Fr>> = vec![vec![Fr::one()]];
 
 		let snark_1 = Snark::new(&params.clone(), random_circuit_1, instances_1, rng);
-		println!("snark_1: Takes: {:?}", start.elapsed());
+		println!("snark_1: {:?}", start.elapsed());
 		let snark_2 = Snark::new(&params.clone(), random_circuit_2, instances_2, rng);
-		println!("snark_2: Takes: {:?}", start.elapsed());
+		println!("snark_2: {:?}", start.elapsed());
 
-		// let snarks = vec![snark_1, snark_2];
-		let snarks = vec![snark_1];
+		let snarks = vec![snark_1, snark_2];
 		let aggregator = Aggregator::new(&params, snarks.clone());
-		// println!(
-		// 	"Aggregator instances(accumulator): {:?}\nTakes: {:?}",
-		// 	aggregator.instances,
-		// 	start.elapsed()
-		// );
 
 		let circuit = TestCircuit::new(aggregator.clone());
 		let prover = MockProver::run(k, &circuit, vec![aggregator.instances]).unwrap();
-		print!("Total time: {:?}", start.elapsed());
+		println!("Total time: {:?}", start.elapsed());
 
 		assert_eq!(prover.verify(), Ok(()));
 	}
