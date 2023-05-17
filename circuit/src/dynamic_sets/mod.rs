@@ -732,7 +732,6 @@ mod test {
 	const NUM_NEIGHBOURS: usize = 5;
 	const NUM_ITERATIONS: usize = 20;
 	const INITIAL_SCORE: u128 = 1000;
-	const SCALE: u128 = 1000;
 
 	#[test]
 	fn test_closed_graph_circut() {
@@ -758,8 +757,7 @@ mod test {
 			let mut signatures = vec![];
 
 			let mut et =
-				native::EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE, SCALE>::new(
-				);
+				native::EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
 			for i in 0..NUM_NEIGHBOURS {
 				et.add_member(pub_keys[i].clone());
 
@@ -774,7 +772,7 @@ mod test {
 				let op = native::Opinion::new(sig, message_hashes[0], scores.to_vec());
 				et.update_op(pub_keys[i].clone(), op);
 			}
-			let (s, _) = et.converge();
+			let s = et.converge();
 
 			(s, signatures)
 		};
@@ -818,8 +816,7 @@ mod test {
 			let mut signatures = vec![];
 
 			let mut et =
-				native::EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE, SCALE>::new(
-				);
+				native::EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
 			for i in 0..NUM_NEIGHBOURS {
 				et.add_member(pub_keys[i].clone());
 
@@ -834,7 +831,7 @@ mod test {
 				let op = native::Opinion::new(sig, message_hashes[0], scores.to_vec());
 				et.update_op(pub_keys[i].clone(), op);
 			}
-			let (s, _) = et.converge();
+			let s = et.converge();
 
 			(s, signatures)
 		};
@@ -876,8 +873,7 @@ mod test {
 			let mut signatures = vec![];
 
 			let mut et =
-				native::EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE, SCALE>::new(
-				);
+				native::EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
 			for i in 0..NUM_NEIGHBOURS {
 				et.add_member(pub_keys[i].clone());
 
@@ -892,7 +888,7 @@ mod test {
 				let op = native::Opinion::new(sig, message_hashes[0], scores.to_vec());
 				et.update_op(pub_keys[i].clone(), op);
 			}
-			let (s, _) = et.converge();
+			let s = et.converge();
 
 			(s, signatures)
 		};
