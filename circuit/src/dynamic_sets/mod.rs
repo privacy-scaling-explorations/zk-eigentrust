@@ -30,6 +30,12 @@ use halo2::{
 
 const HASHER_WIDTH: usize = 5;
 
+/// UnassignedValue Trait
+pub trait UnassignedValue {
+	/// Returns unknown value type
+	fn without_witness(&self) -> Self;
+}
+
 #[derive(Clone, Debug)]
 /// The columns config for the EigenTrustSet circuit.
 pub struct EigenTrustSetConfig {
@@ -93,13 +99,10 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u1
 	}
 }
 
-impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u128> Circuit<Scalar>
+impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u128> UnassignedValue
 	for EigenTrustSet<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE>
 {
-	type Config = EigenTrustSetConfig;
-	type FloorPlanner = SimpleFloorPlanner;
-
-	fn without_witnesses(&self) -> Self {
+	fn without_witness(&self) -> Self {
 		Self {
 			pk_x: vec![Value::unknown(); NUM_NEIGHBOURS],
 			pk_y: vec![Value::unknown(); NUM_NEIGHBOURS],
@@ -110,6 +113,17 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u1
 			op_pk_y: vec![vec![Value::unknown(); NUM_NEIGHBOURS]; NUM_NEIGHBOURS],
 			ops: vec![vec![Value::unknown(); NUM_NEIGHBOURS]; NUM_NEIGHBOURS],
 		}
+	}
+}
+
+impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u128> Circuit<Scalar>
+	for EigenTrustSet<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE>
+{
+	type Config = EigenTrustSetConfig;
+	type FloorPlanner = SimpleFloorPlanner;
+
+	fn without_witnesses(&self) -> Self {
+		Self::without_witness(&self)
 	}
 
 	fn configure(meta: &mut ConstraintSystem<Scalar>) -> Self::Config {

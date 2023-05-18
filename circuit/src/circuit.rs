@@ -1,4 +1,5 @@
 use crate::{
+	dynamic_sets::UnassignedValue,
 	eddsa::{
 		native::{sign, PublicKey, SecretKey, Signature},
 		EddsaChipset, EddsaConfig,
@@ -132,12 +133,9 @@ impl<
 		const NUM_ITER: usize,
 		const INITIAL_SCORE: u128,
 		const SCALE: u128,
-	> Circuit<Scalar> for EigenTrust<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, SCALE>
+	> UnassignedValue for EigenTrust<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, SCALE>
 {
-	type Config = EigenTrustConfig;
-	type FloorPlanner = SimpleFloorPlanner;
-
-	fn without_witnesses(&self) -> Self {
+	fn without_witness(&self) -> Self {
 		Self {
 			pk_x: vec![Value::unknown(); NUM_NEIGHBOURS],
 			pk_y: vec![Value::unknown(); NUM_NEIGHBOURS],
@@ -146,6 +144,21 @@ impl<
 			s: vec![Value::unknown(); NUM_NEIGHBOURS],
 			ops: vec![vec![Value::unknown(); NUM_NEIGHBOURS]; NUM_NEIGHBOURS],
 		}
+	}
+}
+
+impl<
+		const NUM_NEIGHBOURS: usize,
+		const NUM_ITER: usize,
+		const INITIAL_SCORE: u128,
+		const SCALE: u128,
+	> Circuit<Scalar> for EigenTrust<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, SCALE>
+{
+	type Config = EigenTrustConfig;
+	type FloorPlanner = SimpleFloorPlanner;
+
+	fn without_witnesses(&self) -> Self {
+		Self::without_witness(&self)
 	}
 
 	fn configure(meta: &mut ConstraintSystem<Scalar>) -> EigenTrustConfig {
