@@ -4,7 +4,7 @@ pub mod native;
 use crate::{
 	circuit::{Eddsa, FullRoundHasher, PartialRoundHasher, PoseidonHasher, SpongeHasher},
 	eddsa::{
-		native::{PublicKey, Signature},
+		native::{PublicKey, UnassignedSignature},
 		EddsaConfig,
 	},
 	edwards::{
@@ -71,7 +71,7 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u1
 {
 	/// Constructs a new EigenTrustSet circuit
 	pub fn new(
-		pks: Vec<PublicKey>, signatures: Vec<Signature>, op_pks: Vec<Vec<PublicKey>>,
+		pks: Vec<PublicKey>, signatures: Vec<UnassignedSignature>, op_pks: Vec<Vec<PublicKey>>,
 		ops: Vec<Vec<Scalar>>,
 	) -> Self {
 		// Pubkey values
@@ -79,9 +79,9 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u1
 		let pk_y = pks.iter().map(|pk| Value::known(pk.0.y.clone())).collect();
 
 		// Signature values
-		let big_r_x = signatures.iter().map(|sig| Value::known(sig.big_r.x.clone())).collect();
-		let big_r_y = signatures.iter().map(|sig| Value::known(sig.big_r.y.clone())).collect();
-		let s = signatures.iter().map(|sig| Value::known(sig.s.clone())).collect();
+		let big_r_x = signatures.iter().map(|sig| sig.big_r.x.clone()).collect();
+		let big_r_y = signatures.iter().map(|sig| sig.big_r.y.clone()).collect();
+		let s = signatures.iter().map(|sig| sig.s.clone()).collect();
 
 		// Opinions
 		let op_pk_x = op_pks
@@ -780,7 +780,7 @@ mod test {
 					vec![ops[i].clone()],
 				);
 				let sig = sign(&secret_keys[i], &pub_keys[i], message_hashes[0]);
-				signatures.push(sig.clone());
+				signatures.push(UnassignedSignature::from(sig.clone()));
 
 				let scores = [0, 1, 2, 3, 4].map(|j| (op_pub_keys[i][j], ops[i][j]));
 				let op = native::Opinion::new(sig, message_hashes[0], scores.to_vec());
@@ -839,7 +839,7 @@ mod test {
 					vec![ops[i].clone()],
 				);
 				let sig = sign(&secret_keys[i], &pub_keys[i], message_hashes[0]);
-				signatures.push(sig.clone());
+				signatures.push(UnassignedSignature::from(sig.clone()));
 
 				let scores = [0, 1, 2, 3, 4].map(|j| (op_pub_keys[i][j], ops[i][j]));
 				let op = native::Opinion::new(sig, message_hashes[0], scores.to_vec());
@@ -896,7 +896,7 @@ mod test {
 					vec![ops[i].clone()],
 				);
 				let sig = sign(&secret_keys[i], &pub_keys[i], message_hashes[0]);
-				signatures.push(sig.clone());
+				signatures.push(UnassignedSignature::from(sig.clone()));
 
 				let scores = [0, 1, 2, 3, 4].map(|j| (op_pub_keys[i][j], ops[i][j]));
 				let op = native::Opinion::new(sig, message_hashes[0], scores.to_vec());
