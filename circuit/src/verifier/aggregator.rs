@@ -11,7 +11,6 @@ use super::{
 };
 use crate::{
 	circuit::{FullRoundHasher, PartialRoundHasher},
-	dynamic_sets::UnassignedValue,
 	ecc::{
 		EccAddConfig, EccDoubleConfig, EccMulConfig, EccTableSelectConfig, EccUnreducedLadderConfig,
 	},
@@ -122,12 +121,6 @@ impl From<Snark> for UnassignedSnark {
 }
 
 impl UnassignedSnark {
-	fn proof(&self) -> Option<&[u8]> {
-		self.proof.as_ref().map(Vec::as_slice)
-	}
-}
-
-impl UnassignedValue for UnassignedSnark {
 	fn without_witness(&self) -> Self {
 		UnassignedSnark {
 			protocol: self.protocol.clone(),
@@ -138,6 +131,10 @@ impl UnassignedValue for UnassignedSnark {
 				.collect(),
 			proof: None,
 		}
+	}
+
+	fn proof(&self) -> Option<&[u8]> {
+		self.proof.as_ref().map(Vec::as_slice)
 	}
 }
 

@@ -1,10 +1,10 @@
 /// Native version of EigenTrustSet
 pub mod native;
-
+use crate::eddsa::native::UnassignedValue;
 use crate::{
 	circuit::{Eddsa, FullRoundHasher, PartialRoundHasher, PoseidonHasher, SpongeHasher},
 	eddsa::{
-		native::{PublicKey, UnassignedSignature},
+		native::{PublicKey, UnassignedPublicKey, UnassignedSignature},
 		EddsaConfig,
 	},
 	edwards::{
@@ -29,12 +29,6 @@ use halo2::{
 };
 
 const HASHER_WIDTH: usize = 5;
-
-/// UnassignedValue Trait
-pub trait UnassignedValue {
-	/// Returns unknown value type
-	fn without_witness(&self) -> Self;
-}
 
 #[derive(Clone, Debug)]
 /// The columns config for the EigenTrustSet circuit.
@@ -71,12 +65,12 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u1
 {
 	/// Constructs a new EigenTrustSet circuit
 	pub fn new(
-		pks: Vec<PublicKey>, signatures: Vec<UnassignedSignature>, op_pks: Vec<Vec<PublicKey>>,
-		ops: Vec<Vec<Scalar>>,
+		pks: Vec<UnassignedPublicKey>, signatures: Vec<UnassignedSignature>,
+		op_pks: Vec<Vec<UnassignedPublicKey>>, ops: Vec<Vec<Scalar>>,
 	) -> Self {
 		// Pubkey values
-		let pk_x = pks.iter().map(|pk| Value::known(pk.0.x.clone())).collect();
-		let pk_y = pks.iter().map(|pk| Value::known(pk.0.y.clone())).collect();
+		let pk_x = pks.iter().map(|pk| pk.0.x.clone()).collect();
+		let pk_y = pks.iter().map(|pk| pk.0.y.clone()).collect();
 
 		// Signature values
 		let big_r_x = signatures.iter().map(|sig| sig.big_r.x.clone()).collect();
@@ -84,35 +78,14 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u1
 		let s = signatures.iter().map(|sig| sig.s.clone()).collect();
 
 		// Opinions
-		let op_pk_x = op_pks
-			.iter()
-			.map(|pks| pks.iter().map(|pk| Value::known(pk.0.x.clone())).collect())
-			.collect();
-		let op_pk_y = op_pks
-			.iter()
-			.map(|pks| pks.iter().map(|pk| Value::known(pk.0.y.clone())).collect())
-			.collect();
+		let op_pk_x =
+			op_pks.iter().map(|pks| pks.iter().map(|pk| pk.0.x.clone()).collect()).collect();
+		let op_pk_y =
+			op_pks.iter().map(|pks| pks.iter().map(|pk| pk.0.y.clone()).collect()).collect();
 		let ops =
 			ops.iter().map(|vals| vals.iter().map(|x| Value::known(x.clone())).collect()).collect();
 
 		Self { pk_x, pk_y, big_r_x, big_r_y, s, op_pk_x, op_pk_y, ops }
-	}
-}
-
-impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u128> UnassignedValue
-	for EigenTrustSet<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE>
-{
-	fn without_witness(&self) -> Self {
-		Self {
-			pk_x: vec![Value::unknown(); NUM_NEIGHBOURS],
-			pk_y: vec![Value::unknown(); NUM_NEIGHBOURS],
-			big_r_x: vec![Value::unknown(); NUM_NEIGHBOURS],
-			big_r_y: vec![Value::unknown(); NUM_NEIGHBOURS],
-			s: vec![Value::unknown(); NUM_NEIGHBOURS],
-			op_pk_x: vec![vec![Value::unknown(); NUM_NEIGHBOURS]; NUM_NEIGHBOURS],
-			op_pk_y: vec![vec![Value::unknown(); NUM_NEIGHBOURS]; NUM_NEIGHBOURS],
-			ops: vec![vec![Value::unknown(); NUM_NEIGHBOURS]; NUM_NEIGHBOURS],
-		}
 	}
 }
 
@@ -123,7 +96,19 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u1
 	type FloorPlanner = SimpleFloorPlanner;
 
 	fn without_witnesses(&self) -> Self {
-		Self::without_witness(&self)
+		let pk = UnassignedPublicKey::without_witnesses();
+		let sig = UnassignedSignature::without_witnesses();
+		let op_pk = UnassignedPublicKey::without_witnesses();
+		Self {
+			pk_x: vec![pk.0.x; NUM_NEIGHBOURS],
+			pk_y: vec![pk.0.y; NUM_NEIGHBOURS],
+			big_r_x: vec![sig.big_r.x; NUM_NEIGHBOURS],
+			big_r_y: vec![sig.big_r.y; NUM_NEIGHBOURS],
+			s: vec![sig.s; NUM_NEIGHBOURS],
+			op_pk_x: vec![vec![op_pk.0.x; NUM_NEIGHBOURS]; NUM_NEIGHBOURS],
+			op_pk_y: vec![vec![op_pk.0.y; NUM_NEIGHBOURS]; NUM_NEIGHBOURS],
+			ops: vec![vec![Value::unknown(); NUM_NEIGHBOURS]; NUM_NEIGHBOURS],
+		}
 	}
 
 	fn configure(meta: &mut ConstraintSystem<Scalar>) -> Self::Config {
@@ -741,6 +726,7 @@ mod test {
 		verifier::{evm_verify, gen_evm_verifier, gen_pk, gen_proof},
 	};
 	use halo2::{dev::MockProver, halo2curves::bn256::Bn256};
+	use itertools::Itertools;
 	use rand::thread_rng;
 
 	const NUM_NEIGHBOURS: usize = 5;
@@ -792,9 +778,12 @@ mod test {
 		};
 
 		let et = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new(
-			pub_keys.to_vec(),
+			pub_keys.map(|x| UnassignedPublicKey::from(x)).to_vec(),
 			signatures,
-			op_pub_keys,
+			op_pub_keys
+				.into_iter()
+				.map(|x| x.into_iter().map(|y| UnassignedPublicKey::from(y)).collect())
+				.collect_vec(),
 			ops,
 		);
 
@@ -851,9 +840,12 @@ mod test {
 		};
 
 		let et = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new(
-			pub_keys.to_vec(),
+			pub_keys.map(|x| UnassignedPublicKey::from(x)).to_vec(),
 			signatures,
-			op_pub_keys,
+			op_pub_keys
+				.into_iter()
+				.map(|x| x.into_iter().map(|y| UnassignedPublicKey::from(y)).collect())
+				.collect_vec(),
 			ops,
 		);
 
@@ -908,9 +900,12 @@ mod test {
 		};
 
 		let et = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new(
-			pub_keys.to_vec(),
+			pub_keys.map(|x| UnassignedPublicKey::from(x)).to_vec(),
 			signatures,
-			op_pub_keys,
+			op_pub_keys
+				.into_iter()
+				.map(|x| x.into_iter().map(|y| UnassignedPublicKey::from(y)).collect())
+				.collect_vec(),
 			ops,
 		);
 

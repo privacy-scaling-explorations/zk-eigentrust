@@ -1,7 +1,6 @@
 use std::marker::PhantomData;
 
 use crate::{
-	dynamic_sets::UnassignedValue,
 	edwards::{
 		native::{Point, UnassignedPoint},
 		params::{BabyJubJub, EdwardsParams},
@@ -19,6 +18,12 @@ use num_bigint::BigUint;
 use rand::RngCore;
 
 type Hasher = Poseidon<Fr, 5, Params>;
+
+/// UnassignedValue Trait
+pub trait UnassignedValue {
+	/// Returns unknown value type
+	fn without_witnesses() -> Self;
+}
 
 /// Hashes the input with using the BLAKE hash function.
 fn blh(b: &[u8]) -> Vec<u8> {
@@ -95,6 +100,26 @@ impl PublicKey {
 	}
 }
 
+impl From<PublicKey> for UnassignedPublicKey {
+	fn from(sig: PublicKey) -> Self {
+		Self(UnassignedPoint {
+			x: Value::known(sig.0.x),
+			y: Value::known(sig.0.y),
+			_p: PhantomData,
+		})
+	}
+}
+
+/// Configures a structure for the public key.
+#[derive(Clone, Copy, Default, Debug)]
+pub struct UnassignedPublicKey(pub UnassignedPoint<Fr, BabyJubJub>);
+
+impl UnassignedValue for UnassignedPublicKey {
+	fn without_witnesses() -> Self {
+		Self(UnassignedPoint { x: Value::unknown(), y: Value::unknown(), _p: PhantomData })
+	}
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 /// Configures signature objects.
 pub struct Signature {
@@ -109,6 +134,17 @@ impl Signature {
 	pub fn new(r_x: Fr, r_y: Fr, s: Fr) -> Self {
 		let big_r = Point::new(r_x, r_y);
 		Self { big_r, s }
+	}
+}
+
+impl Default for Signature {
+	fn default() -> Self {
+		let r_x = Fr::zero();
+		let r_y = Fr::zero();
+		let s = Fr::zero();
+
+		let point = Point::new(r_x, r_y);
+		Self { big_r: point, s }
 	}
 }
 
@@ -135,22 +171,11 @@ pub struct UnassignedSignature {
 }
 
 impl UnassignedValue for UnassignedSignature {
-	fn without_witness(&self) -> Self {
+	fn without_witnesses() -> Self {
 		Self {
 			big_r: UnassignedPoint { x: Value::unknown(), y: Value::unknown(), _p: PhantomData },
 			s: Value::unknown(),
 		}
-	}
-}
-
-impl Default for Signature {
-	fn default() -> Self {
-		let r_x = Fr::zero();
-		let r_y = Fr::zero();
-		let s = Fr::zero();
-
-		let point = Point::new(r_x, r_y);
-		Self { big_r: point, s }
 	}
 }
 
