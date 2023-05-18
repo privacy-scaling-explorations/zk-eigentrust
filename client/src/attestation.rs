@@ -55,7 +55,6 @@ impl Attestation {
 pub struct AttestationPayload {
 	sig_r: [u8; 32],
 	sig_s: [u8; 32],
-	rec_id: u8,
 	value: u8,
 	message: [u8; 32],
 }
