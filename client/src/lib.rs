@@ -22,31 +22,37 @@
 pub mod att_station;
 pub mod attestation;
 pub mod error;
+pub mod eth;
 pub mod utils;
 
-use crate::att_station::AttestationCreatedFilter;
-use att_station::{AttestationData as ContractAttestationData, AttestationStation as AttStation};
-use attestation::{Attestation, AttestationPayload, SignedAttestation};
+use att_station::{
+	AttestationCreatedFilter, AttestationData as ContractAttestationData,
+	AttestationStation as AttStation,
+};
+use attestation::{Attestation, AttestationPayload};
 use eigen_trust_circuit::{
 	dynamic_sets::native::{EigenTrustSet, Opinion},
 	eddsa::native::{sign, PublicKey, Signature},
 	halo2::halo2curves::bn256::Fr as Scalar,
 };
 use error::EigenError;
+use eth::{ecdsa_eddsa_map, eddsa_sk_from_mnemonic, eth_wallets_from_mnemonic};
 use ethers::{
 	abi::{Address, RawLog},
 	contract::EthEvent,
 	prelude::EthDisplay,
 	providers::Middleware,
-	signers::Signer,
-	types::{Filter, H256},
+	signers::{LocalWallet, Signer},
+	types::{Filter, Transaction, H256},
+};
+use ethers::{
+	middleware::SignerMiddleware,
+	providers::{Http, Provider},
+	signers::{coins_bip39::English, MnemonicBuilder},
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use utils::{
-	ecdsa_eddsa_map, eddsa_sk_from_mnemonic, eth_wallets_from_mnemonic, setup_client,
-	SignerMiddlewareArc,
-};
+use std::sync::Arc;
 
 /// Max amount of participants
 const MAX_NEIGHBOURS: usize = 2;
@@ -63,6 +69,10 @@ pub struct ClientConfig {
 	pub node_url: String,
 }
 
+/// Signer middleware type alias
+pub type SignerMiddlewareArc = Arc<SignerMiddleware<Provider<Http>, LocalWallet>>;
+
+/// Client
 pub struct Client {
 	client: SignerMiddlewareArc,
 	config: ClientConfig,
@@ -215,19 +225,21 @@ impl Client {
 				AttestationPayload::from_bytes(att_created.val.to_vec()).expect("Failed to decode");
 
 			let att = Attestation::new(
-				att_created.about,
-				att_created.key,
+				att_created.about.into(),
+				att_created.key.into(),
 				att_data.get_value(),
-				Some(att_data.get_message()),
+				Some(att_data.get_message().into()),
 			);
 
 			let signed_attestation =
 				SignedAttestation::new(att, att_created.creator, att_data.get_signature());
 
 			signed.push(signed_attestation);
-		}
 
-		// TODO: For future impl, reconstruct ECDSA public keys from transaction signature
+			// fetch transaction
+			let transaction: Transaction =
+				self.client.get_transaction(log.transaction_hash.unwrap()).await.unwrap().unwrap();
+		}
 
 		Ok(signed)
 	}
@@ -239,11 +251,20 @@ impl Client {
 	}
 }
 
+/// Setup Client middleware
+fn setup_client(mnemonic_phrase: &str, node_url: &str) -> SignerMiddlewareArc {
+	let provider = Provider::<Http>::try_from(node_url).unwrap();
+	let wallet = MnemonicBuilder::<English>::default().phrase(mnemonic_phrase).build().unwrap();
+	let client = SignerMiddleware::new(provider, wallet.with_chain_id(31337u64));
+
+	Arc::new(client)
+}
+
 #[cfg(test)]
 mod lib_tests {
 	use crate::{
 		attestation::Attestation,
-		utils::{deploy_as, deploy_verifier, eth_wallets_from_mnemonic},
+		eth::{deploy_as, deploy_verifier, eth_wallets_from_mnemonic},
 		Client, ClientConfig,
 	};
 	use eigen_trust_circuit::utils::read_bytes_data;

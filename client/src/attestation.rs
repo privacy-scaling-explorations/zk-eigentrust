@@ -1,37 +1,21 @@
 use crate::att_station::AttestationData as ContractAttestationData;
 use eigen_trust_circuit::{
-	circuit::PoseidonNativeHasher, eddsa::native::Signature,
+	dynamic_sets::native::{AttestationFr, SignedAttestation},
+	eddsa::native::Signature,
 	halo2::halo2curves::bn256::Fr as Scalar,
 };
-use ethers::types::{Address, Bytes};
+use revm_primitives::{Address, B256};
 
-/// Attestation submission struct
-#[derive(Clone)]
-pub struct SignedAttestation {
-	/// Attestation
-	pub attestation: Attestation,
-	/// Attester Address
-	pub attester: Address,
-	/// Signature
-	pub signature: Signature,
-}
-
-impl SignedAttestation {
-	pub fn new(attestation: Attestation, attester: Address, signature: Signature) -> Self {
-		Self { attestation, attester, signature }
-	}
-}
-
-/// Conversion from `AttestationSubmission` to `att_station::AttestationData`.
-impl From<SignedAttestation> for ContractAttestationData {
-	fn from(submission: SignedAttestation) -> Self {
-		Self(
-			submission.attestation.about,
-			submission.attestation.key,
-			Bytes::from(AttestationPayload::from(&submission).to_bytes()),
-		)
-	}
-}
+// impl ContractAttestationData {
+// 	/// Conversion from `SignedAttestation` to `att_station::AttestationData`.
+// 	fn new_from_signed_attestation(submission: SignedAttestation) -> Self {
+// 		Self(
+// 			submission.attestation.about,
+// 			submission.attestation.key,
+// 			Bytes::from(AttestationPayload::from(&submission).to_bytes()),
+// 		)
+// 	}
+// }
 
 /// Attestation struct
 #[derive(Clone, Debug)]
@@ -39,45 +23,39 @@ pub struct Attestation {
 	/// Ethereum address of peer being rated
 	pub about: Address,
 	/// Unique identifier for the action being rated
-	pub key: [u8; 32],
+	pub key: B256,
 	/// Given rating for the action
 	pub value: u8,
 	/// Optional field for attaching additional information to the attestation
-	pub message: [u8; 32],
+	pub message: B256,
 }
 
 impl Attestation {
 	/// Construct a new attestation struct
-	pub fn new(about: Address, key: [u8; 32], value: u8, message: Option<[u8; 32]>) -> Self {
-		Self { about, key, value, message: message.unwrap_or([0; 32]) }
+	pub fn new(about: Address, key: B256, value: u8, message: Option<B256>) -> Self {
+		Self { about, key, value, message: message.unwrap_or_else(|| B256::default()) }
 	}
-}
 
-/// Conversion from `Attestation` to `bn256::Fr`
-impl From<&Attestation> for Scalar {
-	fn from(attestation: &Attestation) -> Self {
-		let about_bytes = attestation.about.as_bytes();
+	pub fn to_attestation_fr(&self) -> AttestationFr {
+		let about_bytes = self.about.as_bytes();
 		let mut about_bytes_array = [0u8; 32];
 		about_bytes_array[..about_bytes.len()].copy_from_slice(about_bytes);
 
-		let hash_input = [
-			Scalar::from_bytes(&about_bytes_array).unwrap(),
-			Scalar::from_bytes(&attestation.key).unwrap(),
-			Scalar::from(attestation.value as u64),
-			Scalar::from_bytes(&attestation.message).unwrap(),
-			Scalar::zero(),
-		];
-
-		PoseidonNativeHasher::new(hash_input).permute()[0]
+		AttestationFr {
+			about: Scalar::from_bytes(&about_bytes_array).unwrap(),
+			key: Scalar::from_bytes(&self.key).unwrap(),
+			value: Scalar::from(self.value as u64),
+			message: Scalar::from_bytes(&self.message).unwrap(),
+		}
 	}
 }
 
-/// Attestation raw data
+/// Attestation raw data payload
 #[derive(Debug)]
 pub struct AttestationPayload {
-	sig_r_x: [u8; 32],
-	sig_r_y: [u8; 32],
+	sig_r: [u8; 32],
 	sig_s: [u8; 32],
+	rec_id: u8,
 	value: u8,
 	message: [u8; 32],
 }
@@ -124,6 +102,16 @@ impl AttestationPayload {
 		bytes
 	}
 
+	pub fn from_signed_attestation(signed_attestation: &SignedAttestation) -> Self {
+		Self {
+			sig_r: signed_attestation.signature.big_r.x.to_bytes(),
+			sig_s: signed_attestation.signature.big_r.y.to_bytes(),
+			sig_v: signed_attestation.signature.s.to_bytes(),
+			value: signed_attestation.attestation.value.into(),
+			message: signed_attestation.attestation.message.into(),
+		}
+	}
+
 	/// Get the EDDSA signature
 	pub fn get_signature(&self) -> Signature {
 		Signature::new(
@@ -141,19 +129,6 @@ impl AttestationPayload {
 	/// Get the message
 	pub fn get_message(&self) -> [u8; 32] {
 		self.message
-	}
-}
-
-/// Conversion from `AttestationSubmission` to `AttestationPayload`
-impl From<&SignedAttestation> for AttestationPayload {
-	fn from(submission: &SignedAttestation) -> Self {
-		Self {
-			sig_r_x: submission.signature.big_r.x.to_bytes(),
-			sig_r_y: submission.signature.big_r.y.to_bytes(),
-			sig_s: submission.signature.s.to_bytes(),
-			value: submission.attestation.value,
-			message: submission.attestation.message,
-		}
 	}
 }
 
