@@ -62,6 +62,12 @@ impl FieldExt for BnScalar {}
 impl FieldExt for SecpBase {}
 impl FieldExt for SecpScalar {}
 
+/// UnassignedValue Trait
+pub trait UnassignedValue {
+	/// Returns unknown value type
+	fn without_witnesses() -> Self;
+}
+
 #[derive(Debug)]
 /// Region Context struct for managing region assignments
 pub struct RegionCtx<'a, F: FieldExt> {

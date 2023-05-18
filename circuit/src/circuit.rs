@@ -1,9 +1,6 @@
 use crate::{
 	eddsa::{
-		native::{
-			sign, PublicKey, SecretKey, Signature, UnassignedPublicKey, UnassignedSignature,
-			UnassignedValue,
-		},
+		native::{sign, PublicKey, SecretKey, Signature, UnassignedPublicKey, UnassignedSignature},
 		EddsaChipset, EddsaConfig,
 	},
 	edwards::{
@@ -21,7 +18,7 @@ use crate::{
 		sponge::{PoseidonSpongeChipset, PoseidonSpongeConfig},
 		FullRoundChip, PartialRoundChip, PoseidonChipset, PoseidonConfig,
 	},
-	Chip, Chipset, CommonConfig, FieldExt, RegionCtx, ADVICE,
+	Chip, Chipset, CommonConfig, FieldExt, RegionCtx, UnassignedValue, ADVICE,
 };
 use halo2::{
 	arithmetic::Field,

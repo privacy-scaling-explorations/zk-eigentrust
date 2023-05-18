@@ -1,6 +1,7 @@
 /// Native version of EigenTrustSet
 pub mod native;
-use crate::eddsa::native::UnassignedValue;
+use crate::eddsa::native::Signature;
+use crate::UnassignedValue;
 use crate::{
 	circuit::{Eddsa, FullRoundHasher, PartialRoundHasher, PoseidonHasher, SpongeHasher},
 	eddsa::{
@@ -27,6 +28,7 @@ use halo2::{
 	halo2curves::{bn256::Fr as Scalar, ff::PrimeField},
 	plonk::{Circuit, ConstraintSystem, Error},
 };
+use itertools::Itertools;
 
 const HASHER_WIDTH: usize = 5;
 
@@ -65,19 +67,25 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u1
 {
 	/// Constructs a new EigenTrustSet circuit
 	pub fn new(
-		pks: Vec<UnassignedPublicKey>, signatures: Vec<UnassignedSignature>,
-		op_pks: Vec<Vec<UnassignedPublicKey>>, ops: Vec<Vec<Scalar>>,
+		pks: Vec<PublicKey>, signatures: Vec<Signature>, op_pks: Vec<Vec<PublicKey>>,
+		ops: Vec<Vec<Scalar>>,
 	) -> Self {
 		// Pubkey values
+		let pks = pks.into_iter().map(|x| UnassignedPublicKey::from(x)).collect_vec();
 		let pk_x = pks.iter().map(|pk| pk.0.x.clone()).collect();
 		let pk_y = pks.iter().map(|pk| pk.0.y.clone()).collect();
 
 		// Signature values
+		let signatures = signatures.into_iter().map(|x| UnassignedSignature::from(x)).collect_vec();
 		let big_r_x = signatures.iter().map(|sig| sig.big_r.x.clone()).collect();
 		let big_r_y = signatures.iter().map(|sig| sig.big_r.y.clone()).collect();
 		let s = signatures.iter().map(|sig| sig.s.clone()).collect();
 
 		// Opinions
+		let op_pks = op_pks
+			.into_iter()
+			.map(|pks| pks.into_iter().map(|pk| UnassignedPublicKey::from(pk)).collect_vec())
+			.collect_vec();
 		let op_pk_x =
 			op_pks.iter().map(|pks| pks.iter().map(|pk| pk.0.x.clone()).collect()).collect();
 		let op_pk_y =
@@ -726,7 +734,6 @@ mod test {
 		verifier::{evm_verify, gen_evm_verifier, gen_pk, gen_proof},
 	};
 	use halo2::{dev::MockProver, halo2curves::bn256::Bn256};
-	use itertools::Itertools;
 	use rand::thread_rng;
 
 	const NUM_NEIGHBOURS: usize = 5;
@@ -766,7 +773,7 @@ mod test {
 					vec![ops[i].clone()],
 				);
 				let sig = sign(&secret_keys[i], &pub_keys[i], message_hashes[0]);
-				signatures.push(UnassignedSignature::from(sig.clone()));
+				signatures.push(sig.clone());
 
 				let scores = [0, 1, 2, 3, 4].map(|j| (op_pub_keys[i][j], ops[i][j]));
 				let op = native::Opinion::new(sig, message_hashes[0], scores.to_vec());
@@ -778,12 +785,9 @@ mod test {
 		};
 
 		let et = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new(
-			pub_keys.map(|x| UnassignedPublicKey::from(x)).to_vec(),
+			pub_keys.to_vec(),
 			signatures,
-			op_pub_keys
-				.into_iter()
-				.map(|x| x.into_iter().map(|y| UnassignedPublicKey::from(y)).collect())
-				.collect_vec(),
+			op_pub_keys,
 			ops,
 		);
 
@@ -828,7 +832,7 @@ mod test {
 					vec![ops[i].clone()],
 				);
 				let sig = sign(&secret_keys[i], &pub_keys[i], message_hashes[0]);
-				signatures.push(UnassignedSignature::from(sig.clone()));
+				signatures.push(sig.clone());
 
 				let scores = [0, 1, 2, 3, 4].map(|j| (op_pub_keys[i][j], ops[i][j]));
 				let op = native::Opinion::new(sig, message_hashes[0], scores.to_vec());
@@ -840,12 +844,9 @@ mod test {
 		};
 
 		let et = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new(
-			pub_keys.map(|x| UnassignedPublicKey::from(x)).to_vec(),
+			pub_keys.to_vec(),
 			signatures,
-			op_pub_keys
-				.into_iter()
-				.map(|x| x.into_iter().map(|y| UnassignedPublicKey::from(y)).collect())
-				.collect_vec(),
+			op_pub_keys,
 			ops,
 		);
 
@@ -888,7 +889,7 @@ mod test {
 					vec![ops[i].clone()],
 				);
 				let sig = sign(&secret_keys[i], &pub_keys[i], message_hashes[0]);
-				signatures.push(UnassignedSignature::from(sig.clone()));
+				signatures.push(sig.clone());
 
 				let scores = [0, 1, 2, 3, 4].map(|j| (op_pub_keys[i][j], ops[i][j]));
 				let op = native::Opinion::new(sig, message_hashes[0], scores.to_vec());
@@ -900,12 +901,9 @@ mod test {
 		};
 
 		let et = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new(
-			pub_keys.map(|x| UnassignedPublicKey::from(x)).to_vec(),
+			pub_keys.to_vec(),
 			signatures,
-			op_pub_keys
-				.into_iter()
-				.map(|x| x.into_iter().map(|y| UnassignedPublicKey::from(y)).collect())
-				.collect_vec(),
+			op_pub_keys,
 			ops,
 		);
 

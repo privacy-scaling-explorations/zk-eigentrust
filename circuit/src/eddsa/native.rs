@@ -8,6 +8,7 @@ use crate::{
 	params::poseidon_bn254_5x5::Params,
 	poseidon::native::Poseidon,
 	utils::to_wide,
+	UnassignedValue,
 };
 use halo2::{
 	arithmetic::Field,
@@ -18,12 +19,6 @@ use num_bigint::BigUint;
 use rand::RngCore;
 
 type Hasher = Poseidon<Fr, 5, Params>;
-
-/// UnassignedValue Trait
-pub trait UnassignedValue {
-	/// Returns unknown value type
-	fn without_witnesses() -> Self;
-}
 
 /// Hashes the input with using the BLAKE hash function.
 fn blh(b: &[u8]) -> Vec<u8> {
@@ -110,7 +105,7 @@ impl From<PublicKey> for UnassignedPublicKey {
 	}
 }
 
-/// Configures a structure for the public key.
+/// Configures a structure for the unassigned public key.
 #[derive(Clone, Copy, Default, Debug)]
 pub struct UnassignedPublicKey(pub UnassignedPoint<Fr, BabyJubJub>);
 
