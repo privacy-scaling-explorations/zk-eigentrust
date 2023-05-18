@@ -54,7 +54,7 @@ use snark_verifier::{
 		SnarkVerifier,
 	},
 };
-use std::{rc::Rc, sync::Mutex};
+use std::{cell::RefCell, rc::Rc, sync::Mutex};
 
 type PSV = PlonkSuccinctVerifier<KzgAs<Bn256, Gwc19>>;
 type SVK = KzgSuccinctVerifyingKey<G1Affine>;
@@ -276,9 +276,8 @@ impl Circuit<Fr> for Aggregator {
 	fn synthesize(
 		&self, config: Self::Config, mut layouter: impl Layouter<Fr>,
 	) -> Result<(), Error> {
-		let layouter_rc = Rc::new(Mutex::new(layouter.namespace(|| "loader")));
-		let loader_config = LoaderConfig::<G1Affine, _, Bn256_4_68>::new(
-			layouter_rc.clone(),
+		let loader_config = LoaderConfig::<'_, G1Affine, _, Bn256_4_68>::new(
+			layouter.namespace(|| "loader"),
 			config.common.clone(),
 			config.ecc_mul_scalar,
 			config.main,
@@ -289,13 +288,12 @@ impl Circuit<Fr> for Aggregator {
 			let protocol = snark.protocol.loaded(&loader_config);
 			let mut transcript_read: PoseidonReadChipset<&[u8], G1Affine, _, Bn256_4_68, Params> =
 				PoseidonReadChipset::new(snark.proof(), loader_config.clone());
-			let mut lb = layouter_rc.lock().unwrap();
 			let mut instances: Vec<Vec<Halo2LScalar<G1Affine, _, Bn256_4_68>>> = Vec::new();
 			let mut instance_collector: Vec<Halo2LScalar<G1Affine, _, Bn256_4_68>> = Vec::new();
 			let instance_flatten =
 				snark.instances.clone().into_iter().flatten().collect::<Vec<Value<Fr>>>();
 			let mut instance_chunks = instance_flatten.chunks(ADVICE);
-			lb.assign_region(
+			layouter.assign_region(
 				|| "assign_instances",
 				|region: Region<'_, Fr>| {
 					let mut ctx = RegionCtx::new(region, 0);
@@ -321,9 +319,6 @@ impl Circuit<Fr> for Aggregator {
 					instances.push(vec![instance_collector[0].clone()]);
 				}
 			}
-
-			// Drop the layouter reference
-			drop(lb);
 
 			let proof = PlonkSuccinctVerifier::<KzgAs<Bn256, Gwc19>>::read_proof(
 				&self.svk, &protocol, &instances, &mut transcript_read,
@@ -355,27 +350,23 @@ impl Circuit<Fr> for Aggregator {
 		let rhs_y = accumulator.rhs.inner.y;
 
 		let mut row = 0;
-		let mut lb = layouter_rc.lock().unwrap();
 		for limb in lhs_x.limbs {
-			lb.constrain_instance(limb.cell(), config.common.instance, row)?;
+			layouter.constrain_instance(limb.cell(), config.common.instance, row)?;
 			row += 1;
 		}
-		drop(lb);
-		let mut lb = layouter_rc.lock().unwrap();
+
 		for limb in lhs_y.limbs {
-			lb.constrain_instance(limb.cell(), config.common.instance, row)?;
+			layouter.constrain_instance(limb.cell(), config.common.instance, row)?;
 			row += 1;
 		}
-		drop(lb);
-		let mut lb = layouter_rc.lock().unwrap();
+
 		for limb in rhs_x.limbs {
-			lb.constrain_instance(limb.cell(), config.common.instance, row)?;
+			layouter.constrain_instance(limb.cell(), config.common.instance, row)?;
 			row += 1;
 		}
-		drop(lb);
-		let mut lb = layouter_rc.lock().unwrap();
+
 		for limb in rhs_y.limbs {
-			lb.constrain_instance(limb.cell(), config.common.instance, row)?;
+			layouter.constrain_instance(limb.cell(), config.common.instance, row)?;
 			row += 1;
 		}
 
