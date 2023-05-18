@@ -1,11 +1,18 @@
 use std::collections::HashMap;
 
-use crate::eddsa::native::{PublicKey, Signature};
+use crate::{
+	eddsa::native::{PublicKey, Signature},
+	rns::{compose_big_decimal_f, decompose_big_decimal},
+	utils::fe_to_big,
+};
 use halo2::{
 	arithmetic::Field,
 	halo2curves::{bn256::Fr, ff::PrimeField},
 };
 use itertools::Itertools;
+use num_bigint::{BigInt, ToBigInt};
+use num_rational::BigRational;
+use num_traits::{FromPrimitive, Zero};
 
 /// Opinion info of peer
 #[derive(Debug, Clone)]
@@ -34,23 +41,26 @@ impl<const NUM_NEIGHBOURS: usize> Default for Opinion<NUM_NEIGHBOURS> {
 	}
 }
 
+/// Witness structure for proving threshold checks
+pub struct ThresholdWitness<const NUM_LIMBS: usize> {
+	threshold: Fr,
+	is_bigger: bool,
+	num_decomposed: [Fr; NUM_LIMBS],
+	den_decomposed: [Fr; NUM_LIMBS],
+}
+
 /// Dynamic set for EigenTrust
 pub struct EigenTrustSet<
 	const NUM_NEIGHBOURS: usize,
 	const NUM_ITERATIONS: usize,
 	const INITIAL_SCORE: u128,
-	const SCALE: u128,
 > {
 	set: Vec<(PublicKey, Fr)>,
 	ops: HashMap<PublicKey, Opinion<NUM_NEIGHBOURS>>,
 }
 
-impl<
-		const NUM_NEIGHBOURS: usize,
-		const NUM_ITERATIONS: usize,
-		const INITIAL_SCORE: u128,
-		const SCALE: u128,
-	> EigenTrustSet<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE, SCALE>
+impl<const NUM_NEIGHBOURS: usize, const NUM_ITERATIONS: usize, const INITIAL_SCORE: u128>
+	EigenTrustSet<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>
 {
 	/// Constructs new instance
 	pub fn new() -> Self {
@@ -99,75 +109,7 @@ impl<
 		self.ops.get(from).cloned().unwrap_or(Opinion::default())
 	}
 
-	/// Compute the EigenTrust score
-	pub fn converge(&self) -> (Vec<Fr>, Vec<Fr>) {
-		let mut filtered_ops: HashMap<PublicKey, Opinion<NUM_NEIGHBOURS>> = self.filter_peers_ops();
-
-		// Normalize the opinion scores
-		for i in 0..NUM_NEIGHBOURS {
-			let (pk, _) = self.set[i];
-			if pk == PublicKey::default() {
-				continue;
-			}
-			let ops_i = filtered_ops.get_mut(&pk).unwrap();
-
-			let op_score_sum = ops_i.scores.iter().fold(Fr::zero(), |acc, &(_, score)| acc + score);
-			let inverted_sum = op_score_sum.invert().unwrap_or(Fr::zero());
-
-			for j in 0..NUM_NEIGHBOURS {
-				let (_, op_score) = ops_i.scores[j].clone();
-				ops_i.scores[j].1 = op_score * inverted_sum;
-			}
-		}
-
-		// There should be at least 2 valid peers(valid opinions) for calculation
-		let valid_peers = self.set.iter().filter(|(pk, _)| pk != &PublicKey::default()).count();
-		assert!(valid_peers >= 2, "Insufficient peers for calculation!");
-
-		// By this point we should use filtered_opinions
-		let mut s: Vec<Fr> = self.set.iter().map(|(_, score)| score.clone()).collect();
-		for _ in 0..NUM_ITERATIONS {
-			let mut sop = Vec::new();
-			for i in 0..NUM_NEIGHBOURS {
-				let pk_i = self.set[i].0.clone();
-				let n_score = s[i];
-				if pk_i == PublicKey::default() {
-					sop.push(vec![Fr::zero(); NUM_NEIGHBOURS]);
-					continue;
-				}
-
-				let op_i = filtered_ops.get(&pk_i).unwrap();
-
-				let mut sop_i = Vec::new();
-				for j in 0..NUM_NEIGHBOURS {
-					let score = op_i.scores[j].1;
-					let res = score * n_score;
-					sop_i.push(res);
-				}
-				sop.push(sop_i);
-			}
-
-			for i in 0..NUM_NEIGHBOURS {
-				let mut new_score = Fr::zero();
-				for j in 0..NUM_NEIGHBOURS {
-					new_score += sop[j][i];
-				}
-				s[i] = new_score;
-			}
-		}
-
-		// Apply scaling for converting large final scores to small values (easy to read)
-		let scale_factor = Fr::from_u128(SCALE);
-		let scaled: Vec<Fr> = s.iter().map(|p| p * scale_factor).collect_vec();
-
-		// Assert the score sum for checking the possible reputation leak
-		let sum_initial = self.set.iter().fold(Fr::zero(), |acc, &(_, score)| acc + score);
-		let sum_final = s.iter().fold(Fr::zero(), |acc, &score| acc + score);
-		assert!(sum_initial == sum_final);
-
-		(s, scaled)
-	}
-
+	/// Method for filtering invalid opinions
 	fn filter_peers_ops(&self) -> HashMap<PublicKey, Opinion<NUM_NEIGHBOURS>> {
 		let mut filtered_ops: HashMap<PublicKey, Opinion<NUM_NEIGHBOURS>> = HashMap::new();
 
@@ -251,28 +193,172 @@ impl<
 
 		filtered_ops
 	}
+
+	/// Compute the EigenTrust score
+	pub fn converge(&self) -> Vec<Fr> {
+		// There should be at least 2 valid peers(valid opinions) for calculation
+		let valid_peers = self.set.iter().filter(|(pk, _)| pk != &PublicKey::default()).count();
+		assert!(valid_peers >= 2, "Insufficient peers for calculation!");
+
+		let mut filtered_ops: HashMap<PublicKey, Opinion<NUM_NEIGHBOURS>> = self.filter_peers_ops();
+
+		let mut ops = Vec::new();
+		for i in 0..NUM_NEIGHBOURS {
+			let (pk, _) = self.set[i];
+			if pk == PublicKey::default() {
+				ops.push(vec![Fr::zero(); NUM_NEIGHBOURS]);
+			} else {
+				let ops_i = filtered_ops.get_mut(&pk).unwrap();
+				let scores = ops_i.scores.iter().map(|&(_, score)| score).collect_vec();
+				ops.push(scores);
+			}
+		}
+
+		let mut ops_norm = vec![vec![Fr::zero(); NUM_NEIGHBOURS]; NUM_NEIGHBOURS];
+		// Normalize the opinion scores
+		for i in 0..NUM_NEIGHBOURS {
+			let op_score_sum: Fr = ops[i].iter().sum();
+			let inverted_sum = op_score_sum.invert().unwrap_or(Fr::zero());
+
+			for j in 0..NUM_NEIGHBOURS {
+				let ops_ij = ops[i][j];
+				ops_norm[i][j] = ops_ij * inverted_sum;
+			}
+		}
+
+		// By this point we should use filtered_opinions
+		let mut s: Vec<Fr> = self.set.iter().map(|(_, score)| score.clone()).collect();
+		let mut new_s: Vec<Fr> = self.set.iter().map(|(_, score)| score.clone()).collect();
+		for _ in 0..NUM_ITERATIONS {
+			for i in 0..NUM_NEIGHBOURS {
+				let mut score_i_sum = Fr::zero();
+				for j in 0..NUM_NEIGHBOURS {
+					let score = ops_norm[j][i].clone() * s[j].clone();
+					score_i_sum = score + score_i_sum;
+				}
+				new_s[i] = score_i_sum;
+			}
+			s = new_s.clone();
+		}
+
+		// Assert the score sum for checking the possible reputation leak
+		let sum_initial = self.set.iter().fold(Fr::zero(), |acc, &(_, score)| acc + score);
+		let sum_final = s.iter().fold(Fr::zero(), |acc, &score| acc + score);
+		assert!(sum_initial == sum_final);
+
+		s
+	}
+
+	/// Compute the EigenTrust score using BigRational numbers
+	pub fn converge_rational(&self) -> Vec<BigRational> {
+		let mut filtered_ops: HashMap<PublicKey, Opinion<NUM_NEIGHBOURS>> = self.filter_peers_ops();
+
+		let mut ops = Vec::new();
+		for i in 0..NUM_NEIGHBOURS {
+			let (pk, _) = self.set[i];
+			if pk == PublicKey::default() {
+				ops.push(vec![BigInt::zero(); NUM_NEIGHBOURS]);
+			} else {
+				let ops_i = filtered_ops.get_mut(&pk).unwrap();
+				let scores = ops_i
+					.scores
+					.iter()
+					.map(|&(_, score)| fe_to_big(score).to_bigint().unwrap())
+					.collect_vec();
+				ops.push(scores);
+			}
+		}
+
+		// Sanity check
+		assert!(ops.len() == NUM_NEIGHBOURS);
+		for op in &ops {
+			assert!(op.len() == NUM_NEIGHBOURS);
+		}
+
+		let init_score_bn = BigInt::from_u128(INITIAL_SCORE).unwrap();
+		let mut s: Vec<BigRational> =
+			vec![BigRational::from_integer(init_score_bn); NUM_NEIGHBOURS];
+
+		let mut ops_norm = vec![vec![BigRational::zero(); NUM_NEIGHBOURS]; NUM_NEIGHBOURS];
+		for i in 0..NUM_NEIGHBOURS {
+			let op_score_sum = ops[i].iter().fold(BigInt::zero(), |acc, score| acc + score);
+
+			for j in 0..NUM_NEIGHBOURS {
+				let score = ops[i][j].clone();
+				ops_norm[i][j] = BigRational::new(score, op_score_sum.clone());
+			}
+		}
+
+		let mut new_s = s.clone();
+		for _ in 0..NUM_ITERATIONS {
+			for i in 0..NUM_NEIGHBOURS {
+				let mut score_i_sum = BigRational::zero();
+				for j in 0..NUM_NEIGHBOURS {
+					let score = ops_norm[j][i].clone() * s[j].clone();
+					score_i_sum = score + score_i_sum;
+				}
+				new_s[i] = score_i_sum;
+			}
+			s = new_s.clone();
+		}
+		s
+	}
+
+	// TODO: Scale the ratio to the standardised decimal position
+	// TODO: Find `NUM_LIMBS` and `POWER_OF_TEN` for standardised decimal position
+	/// Method for checking the threshold for a given score
+	pub fn check_threshold<const NUM_LIMBS: usize, const POWER_OF_TEN: usize>(
+		&self, score: Fr, ratio: BigRational, threshold: Fr,
+	) -> ThresholdWitness<NUM_LIMBS> {
+		let x = ratio;
+
+		let num = x.numer();
+		let den = x.denom();
+
+		let num_decomposed =
+			decompose_big_decimal::<Fr, NUM_LIMBS, POWER_OF_TEN>(num.to_biguint().unwrap());
+		let den_decomposed =
+			decompose_big_decimal::<Fr, NUM_LIMBS, POWER_OF_TEN>(den.to_biguint().unwrap());
+
+		// Constraint checks - circuits should implement from this point
+		let composed_num_f = compose_big_decimal_f::<Fr, NUM_LIMBS, POWER_OF_TEN>(num_decomposed);
+		let composed_den_f = compose_big_decimal_f::<Fr, NUM_LIMBS, POWER_OF_TEN>(den_decomposed);
+		let composed_den_f_inv = composed_den_f.invert().unwrap();
+		let res_f = composed_num_f * composed_den_f_inv;
+		assert!(res_f == score);
+
+		// Take the highest POWER_OF_TEN digits for comparison
+		// This just means lower precision
+		let first_limb_num = *num_decomposed.last().unwrap();
+		let first_limb_den = *den_decomposed.last().unwrap();
+		let comp = first_limb_den * threshold;
+		let is_bigger = first_limb_num >= comp;
+
+		ThresholdWitness { threshold, is_bigger, num_decomposed, den_decomposed }
+	}
 }
 
 #[cfg(test)]
 mod test {
 	use std::time::Instant;
 
-	use super::{EigenTrustSet, Opinion};
+	use super::{EigenTrustSet, Opinion, ThresholdWitness};
 	use crate::{
 		calculate_message_hash,
 		eddsa::native::{sign, PublicKey, SecretKey},
+		rns::compose_big_decimal,
 		utils::fe_to_big,
 	};
 
 	use halo2::halo2curves::{bn256::Fr, ff::PrimeField};
 	use itertools::Itertools;
-	use num_bigint::BigUint;
+	use num_bigint::ToBigInt;
+	use num_rational::BigRational;
 	use rand::thread_rng;
 
 	const NUM_NEIGHBOURS: usize = 12;
 	const NUM_ITERATIONS: usize = 10;
 	const INITIAL_SCORE: u128 = 1000;
-	const SCALE: u128 = 100000;
 
 	fn sign_opinion<
 		const NUM_NEIGHBOURS: usize,
@@ -300,7 +386,7 @@ mod test {
 	#[test]
 	#[should_panic]
 	fn test_add_member_in_initial_set() {
-		let mut set = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE, SCALE>::new();
+		let mut set = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
 
 		let rng = &mut thread_rng();
 
@@ -316,7 +402,7 @@ mod test {
 	#[test]
 	#[should_panic]
 	fn test_one_member_converge() {
-		let mut set = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE, SCALE>::new();
+		let mut set = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
 
 		let rng = &mut thread_rng();
 
@@ -330,7 +416,7 @@ mod test {
 
 	#[test]
 	fn test_add_two_members_without_opinions() {
-		let mut set = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE, SCALE>::new();
+		let mut set = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
 
 		let rng = &mut thread_rng();
 
@@ -348,7 +434,7 @@ mod test {
 
 	#[test]
 	fn test_add_two_members_with_one_opinion() {
-		let mut set = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE, SCALE>::new();
+		let mut set = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
 
 		let rng = &mut thread_rng();
 
@@ -380,7 +466,7 @@ mod test {
 
 	#[test]
 	fn test_add_two_members_with_opinions() {
-		let mut set = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE, SCALE>::new();
+		let mut set = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
 
 		let rng = &mut thread_rng();
 
@@ -426,7 +512,7 @@ mod test {
 
 	#[test]
 	fn test_add_three_members_with_opinions() {
-		let mut set = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE, SCALE>::new();
+		let mut set = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
 
 		let rng = &mut thread_rng();
 
@@ -495,7 +581,7 @@ mod test {
 
 	#[test]
 	fn test_add_three_members_with_two_opinions() {
-		let mut set = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE, SCALE>::new();
+		let mut set = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
 
 		let rng = &mut thread_rng();
 
@@ -548,7 +634,7 @@ mod test {
 
 	#[test]
 	fn test_add_3_members_with_3_ops_quit_1_member() {
-		let mut set = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE, SCALE>::new();
+		let mut set = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
 
 		let rng = &mut thread_rng();
 
@@ -623,7 +709,7 @@ mod test {
 
 	#[test]
 	fn test_add_3_members_with_2_ops_quit_1_member_1_op() {
-		let mut set = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE, SCALE>::new();
+		let mut set = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
 
 		let rng = &mut thread_rng();
 
@@ -742,7 +828,7 @@ mod test {
 
 		// Setup EigenTrustSet
 		let mut eigen_trust_set =
-			EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE, SCALE>::new();
+			EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
 
 		eigen_trust_set.add_member(pk1);
 		eigen_trust_set.add_member(pk2);
@@ -760,93 +846,21 @@ mod test {
 		assert!(final_peers_cnt == final_ops_cnt);
 	}
 
-	// fn native_bn<
-	// 	const NUM_NEIGHBOURS: usize,
-	// 	const NUM_ITERATIONS: usize,
-	// 	const INITIAL_SCORE: u128,
-	// 	const SCALE: u128,
-	// >(
-	// 	ops: Vec<Vec<BigUint>>,
-	// ) {
-	// 	assert!(ops.len() == NUM_NEIGHBOURS);
-	// 	for op in &ops {
-	// 		assert!(op.len() == NUM_NEIGHBOURS);
-	// 	}
-	// 	let mut s: Vec<BigUint> = vec![BigUint::from(INITIAL_SCORE); NUM_NEIGHBOURS];
-
-	// 	let mut ops_norm = ops.clone();
-	// 	for i in 0..NUM_NEIGHBOURS {
-	// 		let op_score_sum = ops[i].iter().fold(BigUint::zero(), |acc, score| acc + score);
-	// 		let sum_inverse = op_score_sum.invert().unwrap();
-
-	// 		for j in 0..NUM_NEIGHBOURS {
-	// 			let score = ops[i][j].clone();
-	// 			ops_norm[i][j] = score * sum_inverse;
-	// 		}
-	// 	}
-
-	// 	let mut new_s = s.clone();
-	// 	for _ in 0..NUM_ITERATIONS {
-	// 		for i in 0..NUM_NEIGHBOURS {
-	// 			let mut score_i_sum = BigUint::zero();
-	// 			for j in 0..NUM_NEIGHBOURS {
-	// 				let score = ops_norm[j][i].clone() * s[j].clone();
-	// 				score_i_sum += score;
-	// 			}
-	// 			new_s[i] = score_i_sum;
-	// 		}
-	// 		s = new_s.clone();
-	// 	}
-
-	// 	let s_f: String = s.iter().map(|v| v.to_str_radix(10)).join(", ");
-	// 	println!("NATIVE BIG_UINT RESULT: [{}]", s_f);
-	// }
-
-	fn native_float<
-		const NUM_NEIGHBOURS: usize,
-		const NUM_ITERATIONS: usize,
-		const INITIAL_SCORE: u128,
-		const SCALE: u128,
-	>(
-		ops: Vec<Vec<f32>>,
-	) {
-		assert!(ops.len() == NUM_NEIGHBOURS);
-		for op in &ops {
-			assert!(op.len() == NUM_NEIGHBOURS);
-		}
-		let mut s: Vec<f32> = vec![INITIAL_SCORE as f32; NUM_NEIGHBOURS];
-
-		let mut new_s = s.clone();
-		for _ in 0..NUM_ITERATIONS {
-			for i in 0..NUM_NEIGHBOURS {
-				let mut score_i_sum = 0.;
-				for j in 0..NUM_NEIGHBOURS {
-					let score = ops[j][i] * s[j];
-					score_i_sum += score;
-				}
-				new_s[i] = score_i_sum;
-			}
-			s = new_s.clone();
-		}
-
-		let s_f: String = s.iter().map(|v| format!("{:>9.4}", v)).join(", ");
-		println!("NATIVE FLOAT RESULT: [{}]", s_f);
-	}
-
 	fn eigen_trust_set_testing_helper<
 		const NUM_NEIGHBOURS: usize,
 		const NUM_ITERATIONS: usize,
 		const INITIAL_SCORE: u128,
-		const SCALE: u128,
+		const NUM_LIMBS: usize,
+		const POWER_OF_TEN: usize,
 	>(
 		ops: Vec<Vec<Fr>>,
-	) {
+	) -> (Vec<Fr>, Vec<BigRational>, Vec<ThresholdWitness<NUM_LIMBS>>) {
 		assert!(ops.len() == NUM_NEIGHBOURS);
 		for op in &ops {
 			assert!(op.len() == NUM_NEIGHBOURS);
 		}
 
-		let mut set = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE, SCALE>::new();
+		let mut set = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
 
 		let rng = &mut thread_rng();
 
@@ -868,13 +882,17 @@ mod test {
 			set.update_op(pks[i], op_i);
 		}
 
-		let (s, s_scaled) = set.converge();
+		let s = set.converge();
+		let s_ratios = set.converge_rational();
 
-		let s_formatted: Vec<String> = s.iter().map(|&x| fe_to_big(x).to_str_radix(10)).collect();
-		println!("new s: {:#?}", s_formatted);
-		let scaled_formatted: Vec<String> =
-			s_scaled.iter().map(|&x| fe_to_big(x).to_str_radix(10)).collect();
-		println!("scaled new s: {:#?}", scaled_formatted);
+		let mut tws = Vec::new();
+		let threshold = Fr::from_u128(435);
+		for (&score, ratio) in s.iter().zip(s_ratios.clone()) {
+			let tw = set.check_threshold::<NUM_LIMBS, POWER_OF_TEN>(score, ratio, threshold);
+			tws.push(tw);
+		}
+
+		(s, s_ratios, tws)
 	}
 
 	#[test]
@@ -882,9 +900,11 @@ mod test {
 		const NUM_NEIGHBOURS: usize = 10;
 		const NUM_ITERATIONS: usize = 30;
 		const INITIAL_SCORE: u128 = 1000;
-		const SCALE: u128 = 100000000000000000000000000000000000000;
+		// Constants related to threshold check
+		const NUM_LIMBS: usize = 2;
+		const POWER_OF_TEN: usize = 50;
 
-		let ops = [
+		let ops_raw = [
 			// 0 + 15 + 154 + 165 + 0 + 123 + 56 + 222 + 253 + 12 = 1000
 			[0, 15, 154, 165, 0, 123, 56, 222, 253, 12], // - Peer 0 opinions
 			// 210 + 0 + 10 + 210 + 20 + 10 + 20 + 30 + 440 + 50 = 1000
@@ -900,83 +920,36 @@ mod test {
 			[40, 10, 445, 20, 30, 410, 20, 0, 23, 2],   // - Peer 7 opinions
 			[10, 18, 20, 439, 310, 134, 45, 12, 0, 12], // - Peer 8 opinions
 			[30, 130, 44, 210, 55, 12, 445, 62, 12, 0], // = Peer 9 opinions
-		]
-		.map(|arr| arr.map(|x| Fr::from_u128(x)).to_vec())
-		.to_vec();
+		];
 
-		let _ops_bn = [
-			// 0 + 15 + 154 + 165 + 0 + 123 + 56 + 222 + 253 + 12 = 1000
-			[0u128, 15, 154, 165, 0, 123, 56, 222, 253, 12], // - Peer 0 opinions
-			// 210 + 0 + 10 + 210 + 20 + 10 + 20 + 30 + 440 + 50 = 1000
-			[210, 0, 10, 210, 20, 10, 20, 30, 440, 50], // - Peer 1 opinions
-			// 40 + 10 + 0 + 20 + 30 + 410 + 20 + 445 + 23 + 2 = 1000
-			[40, 10, 0, 20, 30, 410, 20, 445, 23, 2], // - Peer 2 opinions
-			// 10 + 18 + 20 + 0 + 310 + 134 + 45 + 12 + 439 + 12 = 1000
-			[10, 18, 20, 0, 310, 134, 45, 12, 439, 12], // - Peer 3 opinions
-			// 30 + 130 + 44 + 210 + 0 + 12 + 445 + 62 + 12 + 55 = 1000
-			[30, 130, 44, 210, 0, 12, 445, 62, 12, 55], // = Peer 4 opinions
-			[0, 15, 154, 165, 123, 0, 56, 222, 253, 12], // - Peer 5 opinions
-			[210, 20, 10, 210, 20, 10, 0, 30, 440, 50], // - Peer 6 opinions
-			[40, 10, 445, 20, 30, 410, 20, 0, 23, 2],   // - Peer 7 opinions
-			[10, 18, 20, 439, 310, 134, 45, 12, 0, 12], // - Peer 8 opinions
-			[30, 130, 44, 210, 55, 12, 445, 62, 12, 0], // = Peer 9 opinions
-		]
-		.map(|arr| arr.map(|x| BigUint::from(x)).to_vec())
-		.to_vec();
-
-		let ops_native = [
-			[0.000, 0.015, 0.154, 0.165, 0.000, 0.123, 0.056, 0.222, 0.253, 0.012], // - Peer 0 opinions
-			[0.210, 0.000, 0.010, 0.210, 0.020, 0.010, 0.020, 0.030, 0.440, 0.050], // - Peer 1 opinions
-			[0.040, 0.010, 0.000, 0.020, 0.030, 0.410, 0.020, 0.445, 0.023, 0.002], // - Peer 2 opinions
-			[0.010, 0.018, 0.020, 0.000, 0.310, 0.134, 0.045, 0.012, 0.439, 0.012], // - Peer 3 opinions
-			[0.030, 0.130, 0.044, 0.210, 0.000, 0.012, 0.445, 0.062, 0.012, 0.055], // = Peer 4 opinions
-			[0.000, 0.015, 0.154, 0.165, 0.123, 0.000, 0.056, 0.222, 0.253, 0.012], // - Peer 5 opinions
-			[0.210, 0.020, 0.010, 0.210, 0.020, 0.010, 0.000, 0.030, 0.440, 0.050], // - Peer 6 opinions
-			[0.040, 0.010, 0.445, 0.020, 0.030, 0.410, 0.020, 0.000, 0.023, 0.002], // - Peer 7 opinions
-			[0.010, 0.018, 0.020, 0.439, 0.310, 0.134, 0.045, 0.012, 0.000, 0.012], // - Peer 8 opinions
-			[0.030, 0.130, 0.044, 0.210, 0.055, 0.012, 0.445, 0.062, 0.012, 0.000], // = Peer 9 opinions
-		]
-		.map(|x| x.to_vec())
-		.to_vec();
+		let ops = ops_raw.map(|arr| arr.map(|x| Fr::from_u128(x)).to_vec()).to_vec();
 
 		let start = Instant::now();
-		eigen_trust_set_testing_helper::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE, SCALE>(ops);
-		native_float::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE, SCALE>(ops_native);
-		// native_bn::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE, SCALE>(ops_bn);
+
+		let (s, s_ratios, tws) = eigen_trust_set_testing_helper::<
+			NUM_NEIGHBOURS,
+			NUM_ITERATIONS,
+			INITIAL_SCORE,
+			NUM_LIMBS,
+			POWER_OF_TEN,
+		>(ops);
+
 		let end = start.elapsed();
 		println!("Convergence time: {:?}", end);
 
-		// let rng = &mut thread_rng();
-
-		// for _ in 0..100 {
-		// 	let rng_arr = rng.gen::<[u8; 32]>();
-		// 	let sum: u16 = rng_arr.iter().map(|&x| u16::from(x)).sum();
-
-		// 	let sum_f = f64::from(sum);
-		// 	let arr_f = rng_arr.map(|x| f64::from(x) / sum_f);
-
-		// 	println!("{:?}", arr_f);
-		// }
-
-		// let mut multiples = Vec::new();
-		// for i in 1..1000000000000u128 {
-		// 	let mul_1 = 1000 * i;
-		// 	let mul_2 = 2000 * i;
-		// 	let mul_5 = 5000 * i;
-		// 	multiples.push(mul_1);
-		// 	multiples.push(mul_2);
-		// 	multiples.push(mul_5);
-		// }
-
-		// let rng = &mut thread_rng();
-		// let rng_arr = rng.gen::<[u8; 32]>();
-		// let sum: u128 = rng_arr.iter().map(|&x| u128::from(x)).sum();
-
-		// for mult in multiples {
-		// 	let res = mult % sum;
-		// 	if res == 0 {
-		// 		println!("i = {:?}", mult);
-		// 	}
-		// }
+		let s_int: String = s_ratios.iter().map(|v| v.to_integer().to_str_radix(10)).join(", ");
+		println!("NATIVE BIG_RATIONAL RESULT: [{}]", s_int);
+		let s_formatted: Vec<String> = s.iter().map(|&x| fe_to_big(x).to_str_radix(10)).collect();
+		println!("new s: {:#?}", s_formatted);
+		for tw in tws {
+			let num = compose_big_decimal::<Fr, NUM_LIMBS, POWER_OF_TEN>(tw.num_decomposed);
+			let den = compose_big_decimal::<Fr, NUM_LIMBS, POWER_OF_TEN>(tw.den_decomposed);
+			let ratio = BigRational::new(num.to_bigint().unwrap(), den.to_bigint().unwrap());
+			println!(
+				"real score: {:?}, is bigger than 435: {:?}",
+				ratio.to_integer().to_str_radix(10),
+				tw.is_bigger,
+			);
+		}
 	}
 }

@@ -54,12 +54,9 @@ const MAX_NEIGHBOURS: usize = 2;
 const NUM_ITERATIONS: usize = 10;
 /// Initial score for each participant before the algorithms is run
 const INITIAL_SCORE: u128 = 1000;
-/// Scale for the scores to be computed inside the ZK circuit
-const SCALE: u128 = 1000;
 
 #[derive(Serialize, Deserialize, Debug, EthDisplay, Clone)]
 pub struct ClientConfig {
-	pub ops: Vec<u8>,
 	pub as_address: String,
 	pub et_verifier_wrapper_address: String,
 	pub mnemonic: String,
@@ -79,19 +76,13 @@ impl Client {
 	}
 
 	/// Submit an attestation to the attestation station
-	pub async fn attest(&self) -> Result<(), EigenError> {
-		let sk_vec = eddsa_sk_from_mnemonic(&self.config.mnemonic, 2).unwrap();
-		let wallets = eth_wallets_from_mnemonic(&self.config.mnemonic, 2).unwrap();
+	pub async fn attest(&self, attestation: Attestation) -> Result<(), EigenError> {
+		let sk_vec = eddsa_sk_from_mnemonic(&self.config.mnemonic, 1).unwrap();
+		let wallets = eth_wallets_from_mnemonic(&self.config.mnemonic, 1).unwrap();
 
 		// User keys
 		let user_address = wallets[0].address();
 		let user_sk = &sk_vec[0];
-
-		// Attest for neighbour 1
-		let neighbour_score = self.config.ops[1];
-		let neighbour_address = wallets[1].address();
-
-		let attestation = Attestation::new(neighbour_address, [0; 32], neighbour_score, None);
 
 		let signature = sign(user_sk, &user_sk.public(), Scalar::from(&attestation));
 
@@ -169,7 +160,7 @@ impl Client {
 
 		// Construct native set
 		let mut eigentrust_set =
-			EigenTrustSet::<MAX_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE, SCALE>::new();
+			EigenTrustSet::<MAX_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
 
 		// Add eddsa public keys to the set
 		for pub_key in eddsa_pub_keys.clone() {
@@ -195,10 +186,9 @@ impl Client {
 		}
 
 		// Converge the EigenTrust scores
-		let (scores, scores_scaled) = eigentrust_set.converge();
+		let scores = eigentrust_set.converge();
 
 		println!("Scores: {:?}", scores);
-		println!("Scores scaled: {:?}", scores_scaled);
 
 		// TODO: Write the resulting scores to a CSV file
 
@@ -250,36 +240,41 @@ impl Client {
 }
 
 #[cfg(test)]
-mod test {
+mod lib_tests {
 	use crate::{
-		utils::{deploy_as, deploy_verifier},
+		attestation::Attestation,
+		utils::{deploy_as, deploy_verifier, eth_wallets_from_mnemonic},
 		Client, ClientConfig,
 	};
 	use eigen_trust_circuit::utils::read_bytes_data;
+	use ethers::signers::Signer;
 	use ethers::utils::Anvil;
 
 	#[tokio::test]
-	async fn should_add_attestation() {
+	async fn test_attest() {
 		let anvil = Anvil::new().spawn();
-		let mnemonic = "test test test test test test test test test test test junk".to_string();
 		let node_url = anvil.endpoint();
+		let mnemonic = "test test test test test test test test test test test junk".to_string();
+
 		let as_address = deploy_as(&mnemonic, &node_url).await.unwrap();
-		let et_contract = read_bytes_data("et_verifier");
-		let et_verifier_address = deploy_verifier(&mnemonic, &node_url, et_contract).await.unwrap();
-		let as_address_string = format!("{:?}", as_address);
-		let et_verifier_address_string = format!("{:?}", et_verifier_address);
+		let et_verifier_address =
+			deploy_verifier(&mnemonic, &node_url, read_bytes_data("et_verifier")).await.unwrap();
 
 		let config = ClientConfig {
-			ops: vec![4, 4],
-			as_address: as_address_string,
-			et_verifier_wrapper_address: et_verifier_address_string,
-			mnemonic,
+			as_address: format!("{:?}", as_address),
+			et_verifier_wrapper_address: format!("{:?}", et_verifier_address),
+			mnemonic: mnemonic.clone(),
 			node_url,
 		};
 
-		let et_client = Client::new(config);
-		let res = et_client.attest().await;
-		assert!(res.is_ok());
+		let attestation = Attestation::new(
+			eth_wallets_from_mnemonic(&mnemonic, 2).unwrap()[1].address(),
+			[0; 32],
+			1,
+			None,
+		);
+
+		assert!(Client::new(config).attest(attestation).await.is_ok());
 
 		drop(anvil);
 	}
