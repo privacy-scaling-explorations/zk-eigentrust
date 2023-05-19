@@ -93,15 +93,14 @@ where
 							let y = ctx.assign_fixed(common.fixed[i], P::to_add_y()[i])?;
 							init_y_limbs[i] = Some(y);
 						}
-
 						ctx.next();
+
 						let mut fin_x_limbs: [Option<AssignedCell<C::Scalar, C::Scalar>>;
 							NUM_LIMBS] = [(); NUM_LIMBS].map(|_| None);
 						let mut fin_y_limbs: [Option<AssignedCell<C::Scalar, C::Scalar>>;
 							NUM_LIMBS] = [(); NUM_LIMBS].map(|_| None);
 						for i in 0..NUM_LIMBS {
 							let x = ctx.assign_fixed(common.fixed[i], P::to_sub_x()[i])?;
-
 							fin_x_limbs[i] = Some(x);
 						}
 						ctx.next();
@@ -256,13 +255,16 @@ where
 {
 	/// Returns multiplicative inversion if any.
 	fn invert(&self) -> Option<Self> {
-		let mut loader_ref = self.loader.layouter.lock().unwrap();
-		let inv_chipset = InverseChipset::new(self.inner.clone());
-		let inv_op = inv_chipset.synthesize(
-			&self.loader.common,
-			&self.loader.main,
-			loader_ref.namespace(|| "loader_inverse"),
-		);
+		let inv_op = {
+			let mut loader_ref = self.loader.layouter.lock().unwrap();
+			let inv_chipset = InverseChipset::new(self.inner.clone());
+			let inv_op = inv_chipset.synthesize(
+				&self.loader.common,
+				&self.loader.main,
+				loader_ref.namespace(|| "loader_inverse"),
+			);
+			inv_op
+		};
 		inv_op.ok().map(|x| Self { inner: x, loader: self.loader.clone() })
 	}
 }
@@ -279,15 +281,18 @@ where
 
 	/// Performs the `+` operation.
 	fn add(self, rhs: &'a Self) -> Self {
-		let mut loader_ref = self.loader.layouter.lock().unwrap();
-		let add_chipset = AddChipset::new(self.inner, rhs.inner.clone());
-		let add = add_chipset
-			.synthesize(
-				&self.loader.common,
-				&self.loader.main,
-				loader_ref.namespace(|| "loader_add"),
-			)
-			.unwrap();
+		let add = {
+			let mut loader_ref = self.loader.layouter.lock().unwrap();
+			let add_chipset = AddChipset::new(self.inner, rhs.inner.clone());
+			let add = add_chipset
+				.synthesize(
+					&self.loader.common,
+					&self.loader.main,
+					loader_ref.namespace(|| "loader_add"),
+				)
+				.unwrap();
+			add
+		};
 		Self { inner: add, loader: self.loader.clone() }
 	}
 }
@@ -342,15 +347,18 @@ where
 
 	/// Performs the `*` operation.
 	fn mul(self, rhs: &'a Self) -> Self {
-		let mut loader_ref = self.loader.layouter.lock().unwrap();
-		let mul_chipset = MulChipset::new(self.inner, rhs.inner.clone());
-		let mul = mul_chipset
-			.synthesize(
-				&self.loader.common,
-				&self.loader.main,
-				loader_ref.namespace(|| "loader_mul"),
-			)
-			.unwrap();
+		let mul = {
+			let mut loader_ref = self.loader.layouter.lock().unwrap();
+			let mul_chipset = MulChipset::new(self.inner, rhs.inner.clone());
+			let mul = mul_chipset
+				.synthesize(
+					&self.loader.common,
+					&self.loader.main,
+					loader_ref.namespace(|| "loader_mul"),
+				)
+				.unwrap();
+			mul
+		};
 		Self { inner: mul, loader: self.loader.clone() }
 	}
 }
@@ -405,15 +413,18 @@ where
 
 	/// Performs the `-` operation.
 	fn sub(self, rhs: &'a Self) -> Self {
-		let mut loader_ref = self.loader.layouter.lock().unwrap();
-		let sub_chipset = SubChipset::new(self.inner, rhs.inner.clone());
-		let sub = sub_chipset
-			.synthesize(
-				&self.loader.common,
-				&self.loader.main,
-				loader_ref.namespace(|| "loader_sub"),
-			)
-			.unwrap();
+		let sub = {
+			let mut loader_ref = self.loader.layouter.lock().unwrap();
+			let sub_chipset = SubChipset::new(self.inner, rhs.inner.clone());
+			let sub = sub_chipset
+				.synthesize(
+					&self.loader.common,
+					&self.loader.main,
+					loader_ref.namespace(|| "loader_sub"),
+				)
+				.unwrap();
+			sub
+		};
 		Self { inner: sub, loader: self.loader.clone() }
 	}
 }
@@ -468,23 +479,31 @@ where
 
 	/// Performs the unary `-` operation.
 	fn neg(self) -> Self {
-		let mut loader_ref = self.loader.layouter.lock().unwrap();
-		let sub_chipset = SubChipset::new(self.inner.clone(), self.inner.clone());
-		let zero = sub_chipset
-			.synthesize(
-				&self.loader.common,
-				&self.loader.main,
-				loader_ref.namespace(|| "loader_zero"),
-			)
-			.unwrap();
-		let sub_chipset = SubChipset::new(zero, self.inner);
-		let neg = sub_chipset
-			.synthesize(
-				&self.loader.common,
-				&self.loader.main,
-				loader_ref.namespace(|| "loader_neg"),
-			)
-			.unwrap();
+		let zero = {
+			let mut loader_ref = self.loader.layouter.lock().unwrap();
+			let sub_chipset = SubChipset::new(self.inner.clone(), self.inner.clone());
+			let zero = sub_chipset
+				.synthesize(
+					&self.loader.common,
+					&self.loader.main,
+					loader_ref.namespace(|| "loader_zero"),
+				)
+				.unwrap();
+			zero
+		};
+
+		let neg = {
+			let mut loader_ref = self.loader.layouter.lock().unwrap();
+			let sub_chipset = SubChipset::new(zero, self.inner);
+			let neg = sub_chipset
+				.synthesize(
+					&self.loader.common,
+					&self.loader.main,
+					loader_ref.namespace(|| "loader_neg"),
+				)
+				.unwrap();
+			neg
+		};
 		Self { inner: neg, loader: self.loader.clone() }
 	}
 }
@@ -513,16 +532,19 @@ where
 
 	/// Load a constant field element.
 	fn load_const(&self, value: &C::Scalar) -> Self::LoadedScalar {
-		let mut layouter = self.layouter.lock().unwrap();
-		let assigned_value = layouter
-			.assign_region(
-				|| "load_const",
-				|region: Region<'_, C::Scalar>| {
-					let mut ctx = RegionCtx::new(region, 0);
-					ctx.assign_fixed(self.common.fixed[0], value.clone())
-				},
-			)
-			.unwrap();
+		let assigned_value = {
+			let mut layouter = self.layouter.lock().unwrap();
+			let assigned_value = layouter
+				.assign_region(
+					|| "load_const",
+					|region: Region<'_, C::Scalar>| {
+						let mut ctx = RegionCtx::new(region, 0);
+						ctx.assign_fixed(self.common.fixed[0], value.clone())
+					},
+				)
+				.unwrap();
+			assigned_value
+		};
 		Halo2LScalar::new(assigned_value, self.clone())
 	}
 
@@ -885,10 +907,9 @@ mod test {
 								config.common.advice[0],
 								Value::known(self.pairs[i].0.inner),
 							)?;
-
+							ctx.next();
 							let halo2_scalar =
 								Halo2LScalar::new(assigned_scalar, loader_config.clone());
-							ctx.next();
 
 							let mut x_limbs: [Option<AssignedCell<Scalar, Scalar>>; NUM_LIMBS] =
 								[(); NUM_LIMBS].map(|_| None);

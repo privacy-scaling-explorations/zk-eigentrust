@@ -286,67 +286,61 @@ impl Circuit<Fr> for Aggregator {
 		let mut plonk_proofs = Vec::new();
 		for snark in &self.snarks {
 			let protocol = snark.protocol.loaded(&loader_config);
-			let mut transcript_read: PoseidonReadChipset<&[u8], G1Affine, _, Bn256_4_68, Params> =
-				PoseidonReadChipset::new(snark.proof(), loader_config.clone());
+			let instances = {
+				let mut instances: Vec<Vec<Halo2LScalar<G1Affine, _, Bn256_4_68>>> = Vec::new();
+				let instance_flatten =
+					snark.instances.clone().into_iter().flatten().collect::<Vec<Value<Fr>>>();
+				let mut instance_collector: Vec<Option<Halo2LScalar<G1Affine, _, Bn256_4_68>>> =
+					vec![None; instance_flatten.len()];
 
-			let mut instances: Vec<Vec<Halo2LScalar<G1Affine, _, Bn256_4_68>>> = Vec::new();
-			let instance_flatten =
-				snark.instances.clone().into_iter().flatten().collect::<Vec<Value<Fr>>>();
-			let mut instance_collector: Vec<Option<Halo2LScalar<G1Affine, _, Bn256_4_68>>> =
-				vec![None; instance_flatten.len()];
+				{
+					let mut lb = layouter_rc.lock().unwrap();
+					lb.assign_region(
+						|| "assign_instances",
+						|region: Region<'_, Fr>| {
+							let mut ctx = RegionCtx::new(region, 0);
 
-			{
-				let mut lb = layouter_rc.lock().unwrap();
-				lb.assign_region(
-					|| "assign_instances",
-					|region: Region<'_, Fr>| {
-						let mut ctx = RegionCtx::new(region, 0);
+							let mut id = 0;
+							while id < instance_flatten.len() {
+								let value = ctx.assign_advice(
+									config.common.advice[id % ADVICE],
+									instance_flatten[id],
+								)?;
+								let lscalar = Halo2LScalar::new(value, loader_config.clone());
+								instance_collector[id] = Some(lscalar.clone());
 
-						let mut id = 0;
-						while id < instance_flatten.len() {
-							let value = ctx.assign_advice(
-								config.common.advice[id % ADVICE],
-								instance_flatten[id],
-							)?;
-							let lscalar = Halo2LScalar::new(value, loader_config.clone());
-							instance_collector[id] = Some(lscalar.clone());
-
-							id += 1;
-							if 0 < id && id % ADVICE == 0 {
-								ctx.next();
+								id += 1;
+								if 0 < id && id % ADVICE == 0 {
+									ctx.next();
+								}
 							}
-						}
-						Ok(())
-					},
-				)?;
-				// // Drop the layouter reference
-				// drop(lb);
-			}
-
-			let mut id = 0;
-			for i in 0..snark.instances.len() {
-				let mut temp: Vec<Halo2LScalar<G1Affine, _, Bn256_4_68>> = Vec::new();
-				for _ in 0..snark.instances[i].len() {
-					temp.push(instance_collector[id].clone().unwrap());
-					id += 1;
+							Ok(())
+						},
+					)?;
 				}
-				instances.push(temp);
-			}
 
-			let proof = PlonkSuccinctVerifier::<KzgAs<Bn256, Gwc19>>::read_proof(
-				&self.svk, &protocol, &instances, &mut transcript_read,
-			)
-			.unwrap();
+				let mut id = 0;
+				for i in 0..snark.instances.len() {
+					let mut temp: Vec<Halo2LScalar<G1Affine, _, Bn256_4_68>> = Vec::new();
+					for _ in 0..snark.instances[i].len() {
+						temp.push(instance_collector[id].clone().unwrap());
+						id += 1;
+					}
+					instances.push(temp);
+				}
+				instances
+			};
 
-			let res = PlonkSuccinctVerifier::<KzgAs<Bn256, Gwc19>>::verify(
-				&self.svk, &protocol, &instances, &proof,
-			)
-			.unwrap();
+			let mut transcript_read: PoseidonReadChipset<_, G1Affine, _, Bn256_4_68, Params> =
+				PoseidonReadChipset::new(snark.proof(), loader_config.clone());
+			let proof =
+				PSV::read_proof(&self.svk, &protocol, &instances, &mut transcript_read).unwrap();
+			let res = PSV::verify(&self.svk, &protocol, &instances, &proof).unwrap();
 			plonk_proofs.extend(res);
 		}
 
 		let as_proof = self.as_proof.as_ref().map(Vec::as_slice);
-		let mut transcript: PoseidonReadChipset<&[u8], G1Affine, _, Bn256_4_68, Params> =
+		let mut transcript: PoseidonReadChipset<_, G1Affine, _, Bn256_4_68, Params> =
 			PoseidonReadChipset::new(as_proof, loader_config);
 		let proof =
 			KzgAs::<Bn256, Gwc19>::read_proof(&Default::default(), &plonk_proofs, &mut transcript)
@@ -574,12 +568,12 @@ mod test {
 	fn test_aggregator() {
 		use std::time::Instant;
 		let start = Instant::now();
+
 		// Testing Aggregator
 		let rng = &mut thread_rng();
-		let k = 21;
+		let k = 22;
 		let params = generate_params::<Bn256>(k);
-		let end = start.elapsed();
-		println!("Generate params: {:?}", end);
+		println!("Generate params: {:?}", start.elapsed());
 
 		let random_circuit_1 = MulChip::new(Fr::one(), Fr::one());
 		let random_circuit_2 = MulChip::new(Fr::one(), Fr::one());

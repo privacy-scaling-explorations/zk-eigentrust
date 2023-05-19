@@ -94,14 +94,17 @@ where
 		let default = Self::assigned_zero(self.loader.clone());
 		self.state.update(&[default]);
 		let hasher = self.state.clone();
-		let mut loader_ref = self.loader.layouter.lock().unwrap();
-		let value = hasher
-			.synthesize(
-				&self.loader.common,
-				&self.loader.poseidon_sponge,
-				loader_ref.namespace(|| "squeeze_challenge"),
-			)
-			.unwrap();
+		let value = {
+			let mut loader_ref = self.loader.layouter.lock().unwrap();
+			let value = hasher
+				.synthesize(
+					&self.loader.common,
+					&self.loader.poseidon_sponge,
+					loader_ref.namespace(|| "squeeze_challenge"),
+				)
+				.unwrap();
+			value
+		};
 		Halo2LScalar::new(value, self.loader.clone())
 	}
 
@@ -254,7 +257,6 @@ where
 								.unwrap();
 							assigned_x_limbs.push(assigned_x_limb);
 						}
-
 						ctx.next();
 
 						for i in 0..NUM_LIMBS {
