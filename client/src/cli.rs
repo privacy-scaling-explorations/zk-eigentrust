@@ -139,9 +139,9 @@ impl AttestData {
 
 		Ok(Attestation::new(
 			parsed_address,
-			[0; 32],
+			[0; 32].into(),
 			parsed_score,
-			Some(message_array),
+			Some(message_array.into()),
 		))
 	}
 }
