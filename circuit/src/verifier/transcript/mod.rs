@@ -95,14 +95,16 @@ where
 		let default = Self::assigned_zero(self.loader.clone());
 		self.state.update(&[default]);
 		let hasher = self.state.clone();
-		let mut loader_ref = self.loader.layouter.borrow_mut();
-		let value = hasher
-			.synthesize(
-				&self.loader.common,
-				&self.loader.poseidon_sponge,
-				loader_ref.namespace(|| "squeeze_challenge"),
-			)
-			.unwrap();
+		let value = {
+			let mut loader_ref = self.loader.layouter.borrow_mut();
+			hasher
+				.synthesize(
+					&self.loader.common,
+					&self.loader.poseidon_sponge,
+					loader_ref.namespace(|| "squeeze_challenge"),
+				)
+				.unwrap()
+		};
 		Halo2LScalar::new(value, self.loader.clone())
 	}
 
@@ -149,7 +151,7 @@ where
 				if let Err(e) = res {
 					return Err(VerifierError::Transcript(
 						e.kind(),
-						"invalid field element encoding in proof".to_string(),
+						"invalid field element encoding in proof - halo2".to_string(),
 					));
 				}
 
@@ -157,7 +159,7 @@ where
 				if let None = scalar_opt {
 					return Err(VerifierError::Transcript(
 						ErrorKind::Other,
-						"invalid field element encoding in proof".to_string(),
+						"invalid field element encoding in proof - halo2".to_string(),
 					));
 				}
 
@@ -166,19 +168,19 @@ where
 			},
 		)?;
 
-		let loader = self.loader.clone();
-		let mut layouter = loader.layouter.borrow_mut();
-		let assigned_scalar = layouter
-			.assign_region(
-				|| "assign_scalar",
-				|region: Region<'_, C::Scalar>| {
-					let mut ctx = RegionCtx::new(region, 0);
-					let scalar = ctx.assign_advice(self.loader.common.advice[0], scalar)?;
-					Ok(scalar)
-				},
-			)
-			.unwrap();
-		drop(layouter);
+		let assigned_scalar = {
+			let mut layouter = self.loader.layouter.borrow_mut();
+			layouter
+				.assign_region(
+					|| "assign_scalar",
+					|region: Region<'_, C::Scalar>| {
+						let mut ctx = RegionCtx::new(region, 0);
+						let scalar = ctx.assign_advice(self.loader.common.advice[0], scalar)?;
+						Ok(scalar)
+					},
+				)
+				.unwrap()
+		};
 		let assigned_lscalar = Halo2LScalar::new(assigned_scalar, self.loader.clone());
 		Self::common_scalar(self, &assigned_lscalar)?;
 
@@ -203,7 +205,7 @@ where
 				if let Err(e) = res {
 					return Err(VerifierError::Transcript(
 						e.kind(),
-						"invalid field element encoding in proof".to_string(),
+						"invalid field element encoding in proof - halo2".to_string(),
 					));
 				}
 
@@ -211,7 +213,7 @@ where
 				if let None = point_opt {
 					return Err(VerifierError::Transcript(
 						ErrorKind::Other,
-						"invalid point encoding in proof".to_string(),
+						"invalid point encoding in proof - halo2".to_string(),
 					));
 				}
 
@@ -219,7 +221,7 @@ where
 				if let None = coordinates_opt {
 					return Err(VerifierError::Transcript(
 						ErrorKind::Other,
-						"invalid point coordinates in proof".to_string(),
+						"invalid point coordinates in proof - halo2".to_string(),
 					));
 				}
 				let coordinates: Coordinates<C> = coordinates_opt.unwrap();
@@ -240,32 +242,35 @@ where
 		)?;
 
 		let loader = self.loader.clone();
-		let mut layouter = loader.layouter.borrow_mut();
-		let (assigned_x, assigned_y) = layouter
-			.assign_region(
-				|| "assign_coordinates",
-				|region: Region<'_, C::Scalar>| {
-					let mut ctx = RegionCtx::new(region, 0);
-					let mut assigned_x_limbs = Vec::new();
-					let mut assigned_y_limbs = Vec::new();
-					for i in 0..NUM_LIMBS {
-						let assigned_x_limb =
-							ctx.assign_advice(self.loader.common.advice[i], x_limbs[i]).unwrap();
-						assigned_x_limbs.push(assigned_x_limb);
-					}
+		let (assigned_x, assigned_y) = {
+			let mut layouter = loader.layouter.borrow_mut();
+			layouter
+				.assign_region(
+					|| "assign_coordinates",
+					|region: Region<'_, C::Scalar>| {
+						let mut ctx = RegionCtx::new(region, 0);
+						let mut assigned_x_limbs = Vec::new();
+						let mut assigned_y_limbs = Vec::new();
+						for i in 0..NUM_LIMBS {
+							let assigned_x_limb = ctx
+								.assign_advice(self.loader.common.advice[i], x_limbs[i])
+								.unwrap();
+							assigned_x_limbs.push(assigned_x_limb);
+						}
 
-					ctx.next();
+						ctx.next();
 
-					for i in 0..NUM_LIMBS {
-						let assigned_y_limb =
-							ctx.assign_advice(self.loader.common.advice[i], y_limbs[i]).unwrap();
-						assigned_y_limbs.push(assigned_y_limb);
-					}
-					Ok((assigned_x_limbs, assigned_y_limbs))
-				},
-			)
-			.unwrap();
-		drop(layouter);
+						for i in 0..NUM_LIMBS {
+							let assigned_y_limb = ctx
+								.assign_advice(self.loader.common.advice[i], y_limbs[i])
+								.unwrap();
+							assigned_y_limbs.push(assigned_y_limb);
+						}
+						Ok((assigned_x_limbs, assigned_y_limbs))
+					},
+				)
+				.unwrap()
+		};
 
 		let assigned_integer_x =
 			AssignedInteger::<_, _, NUM_LIMBS, NUM_BITS, P>::new(x, assigned_x.try_into().unwrap());
@@ -813,7 +818,7 @@ mod test {
 		fn synthesize(
 			&self, config: TestConfig, mut layouter: impl Layouter<Scalar>,
 		) -> Result<(), Error> {
-			let (x1_limbs, y1_limbs, x2_limbs, y2_limbs, scalar) = {
+			let (x1_limbs, y1_limbs, scalar1, x2_limbs, y2_limbs, scalar2) = {
 				let loader = LoaderConfig::<C, _, P>::new(
 					layouter.namespace(|| "loader"),
 					config.common.clone(),
@@ -825,18 +830,21 @@ mod test {
 				let mut poseidon_read =
 					PoseidonReadChipset::<_, C, _, P, R>::new(Some(self.reader.as_slice()), loader);
 
-				let res1 = poseidon_read.read_ec_point().unwrap();
-				let x1_limbs = res1.inner.clone().x.limbs;
-				let y1_limbs = res1.inner.clone().y.limbs;
-
-				let res2 = poseidon_read.read_ec_point().unwrap();
-				let x2_limbs = res2.inner.clone().x.limbs;
-				let y2_limbs = res2.inner.clone().y.limbs;
+				let res = poseidon_read.read_ec_point().unwrap();
+				let x1_limbs = res.inner.clone().x.limbs;
+				let y1_limbs = res.inner.clone().y.limbs;
 
 				let res = poseidon_read.read_scalar().unwrap();
-				let scalar = res.inner;
+				let scalar1 = res.inner;
 
-				(x1_limbs, y1_limbs, x2_limbs, y2_limbs, scalar)
+				let res = poseidon_read.read_ec_point().unwrap();
+				let x2_limbs = res.inner.clone().x.limbs;
+				let y2_limbs = res.inner.clone().y.limbs;
+
+				let res = poseidon_read.read_scalar().unwrap();
+				let scalar2 = res.inner;
+
+				(x1_limbs, y1_limbs, scalar1, x2_limbs, y2_limbs, scalar2)
 			};
 
 			let mut i = 0;
@@ -849,6 +857,9 @@ mod test {
 				i += 1;
 			}
 
+			layouter.constrain_instance(scalar1.cell(), config.common.instance, i)?;
+			i += 1;
+
 			for j in 0..NUM_LIMBS {
 				layouter.constrain_instance(x2_limbs[j].cell(), config.common.instance, i)?;
 				i += 1;
@@ -858,7 +869,7 @@ mod test {
 				i += 1;
 			}
 
-			layouter.constrain_instance(scalar.cell(), config.common.instance, i)?;
+			layouter.constrain_instance(scalar2.cell(), config.common.instance, i)?;
 
 			Ok(())
 		}
