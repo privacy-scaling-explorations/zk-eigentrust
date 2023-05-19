@@ -96,9 +96,6 @@ impl Client {
 			&secret_keys[0],
 		);
 
-		// User keys
-		let user_address: secp256k1::PublicKey = secret_keys[0].public_key(ctx);
-
 		let signed_attestation = SignedAttestation::new(attestation_fr, signature);
 
 		let as_address_res = self.config.as_address.parse::<Address>();
@@ -181,35 +178,30 @@ mod lib_tests {
 		Client, ClientConfig,
 	};
 	use eigen_trust_circuit::utils::read_bytes_data;
-	use ethers::signers::Signer;
-	use ethers::utils::Anvil;
+	use ethers::abi::Address;
+	use ethers::{types::U256, utils::Anvil};
 
-	// #[tokio::test]
-	// async fn test_attest() {
-	// 	let anvil = Anvil::new().spawn();
-	// 	let node_url = anvil.endpoint();
-	// 	let mnemonic = "test test test test test test test test test test test junk".to_string();
+	#[tokio::test]
+	async fn test_attest() {
+		let anvil = Anvil::new().spawn();
+		let node_url = anvil.endpoint();
+		let mnemonic = "test test test test test test test test test test test junk".to_string();
 
-	// 	let as_address = deploy_as(&mnemonic, &node_url).await.unwrap();
-	// 	let et_verifier_address =
-	// 		deploy_verifier(&mnemonic, &node_url, read_bytes_data("et_verifier")).await.unwrap();
+		let as_address = deploy_as(&mnemonic, &node_url).await.unwrap();
+		let et_verifier_address =
+			deploy_verifier(&mnemonic, &node_url, read_bytes_data("et_verifier")).await.unwrap();
 
-	// 	let config = ClientConfig {
-	// 		as_address: format!("{:?}", as_address),
-	// 		et_verifier_wrapper_address: format!("{:?}", et_verifier_address),
-	// 		mnemonic: mnemonic.clone(),
-	// 		node_url,
-	// 	};
+		let config = ClientConfig {
+			as_address: format!("{:?}", as_address),
+			et_verifier_wrapper_address: format!("{:?}", et_verifier_address),
+			mnemonic: mnemonic.clone(),
+			node_url,
+		};
 
-	// 	let attestation = Attestation::new(
-	// 		eth_wallets_from_mnemonic(&mnemonic, 2).unwrap()[1].address(),
-	// 		[0; 32],
-	// 		1,
-	// 		None,
-	// 	);
+		let attestation = Attestation::new(Address::default(), U256::default(), 1, None);
 
-	// 	assert!(Client::new(config).attest(attestation).await.is_ok());
+		assert!(Client::new(config).attest(attestation).await.is_ok());
 
-	// 	drop(anvil);
-	// }
+		drop(anvil);
+	}
 }
