@@ -12,31 +12,39 @@ use itertools::Itertools;
 use num_bigint::{BigInt, ToBigInt};
 use num_rational::BigRational;
 use num_traits::{FromPrimitive, Zero};
-use secp256k1::ecdsa;
+use secp256k1::{ecdsa, Message};
 use std::collections::HashMap;
 
 /// ECDSA public key
 pub type ECDSAPublicKey = secp256k1::PublicKey;
 /// ECDSA signature
-pub type ECDSASignature = ecdsa::Signature;
+pub type ECDSASignature = ecdsa::RecoverableSignature;
 
 /// Attestation submission struct
 #[derive(Clone)]
 pub struct SignedAttestation {
 	/// Attestation
 	pub attestation: AttestationFr,
-	/// Attester public key
-	pub attester: ECDSAPublicKey,
 	/// Signature
 	pub signature: ECDSASignature,
 }
 
 impl SignedAttestation {
 	/// Constructs a new instance
-	pub fn new(
-		attestation: AttestationFr, attester: ECDSAPublicKey, signature: ECDSASignature,
-	) -> Self {
-		Self { attestation, attester, signature }
+	pub fn new(attestation: AttestationFr, signature: ECDSASignature) -> Self {
+		Self { attestation, signature }
+	}
+
+	/// Recover the public key from the attestation signature
+	pub fn recover_public_key(&self) -> Result<ECDSAPublicKey, &'static str> {
+		let message = self.attestation.hash().to_bytes();
+
+		let public_key = self
+			.signature
+			.recover(&Message::from_slice(message.as_slice()).unwrap())
+			.map_err(|_| "Failed to recover public key")?;
+
+		Ok(public_key)
 	}
 }
 

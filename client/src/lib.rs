@@ -206,7 +206,7 @@ impl Client {
 	}
 
 	/// Get the attestations from the contract
-	pub async fn get_signed_attestations(&self) -> Result<Vec<SignedAttestation>, EigenError> {
+	pub async fn get_attestations(&self) -> Result<Vec<Attestation>, EigenError> {
 		let filter = Filter::new()
 			.address(self.config.as_address.parse::<Address>().unwrap())
 			.event("AttestationCreated(address,address,bytes32,bytes)")
@@ -214,7 +214,7 @@ impl Client {
 			.topic2(Vec::<H256>::new())
 			.from_block(0);
 		let logs = &self.client.get_logs(&filter).await.unwrap();
-		let mut signed = Vec::new();
+		let mut attestations = Vec::new();
 
 		println!("Indexed attestations: {}", logs.iter().len());
 
@@ -231,17 +231,10 @@ impl Client {
 				Some(att_data.get_message().into()),
 			);
 
-			let signed_attestation =
-				SignedAttestation::new(att, att_created.creator, att_data.get_signature());
-
-			signed.push(signed_attestation);
-
-			// fetch transaction
-			let transaction: Transaction =
-				self.client.get_transaction(log.transaction_hash.unwrap()).await.unwrap().unwrap();
+			attestations.push(att);
 		}
 
-		Ok(signed)
+		Ok(attestations)
 	}
 
 	/// Verifies last generated proof

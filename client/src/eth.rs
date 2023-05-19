@@ -3,8 +3,6 @@
 /// This module provides types and functionalities for Ethereum blockchain interactions.
 use crate::setup_client;
 use eigen_trust_circuit::{
-	dynamic_sets::native::ECDSAPublicKey,
-	eddsa::native::{PublicKey, SecretKey},
 	halo2::halo2curves::bn256::Fr as Scalar,
 	utils::{read_yul_data, write_bytes_data},
 	verifier::{compile_yul, encode_calldata},
@@ -15,19 +13,18 @@ use ethers::{
 	middleware::SignerMiddleware,
 	prelude::{
 		abigen,
-		k256::ecdsa::{self, SigningKey},
+		k256::ecdsa::{self},
 		Abigen, ContractError,
 	},
 	providers::{Http, Middleware, Provider},
 	signers::{
 		coins_bip39::{English, Mnemonic},
-		LocalWallet, MnemonicBuilder, Signer, Wallet,
+		LocalWallet,
 	},
 	solc::{artifacts::ContractBytecode, Solc},
-	types::{Signature as TransactionSignature, Transaction, TransactionRequest, H256},
+	types::TransactionRequest,
 };
 use std::{
-	collections::HashMap,
 	env,
 	fs::{self, write},
 };
@@ -137,25 +134,12 @@ pub fn compile_yul_contracts() {
 	}
 }
 
-/// Returns a vector of Ethereum wallets derived from the given mnemonic phrase
-pub fn eth_wallets_from_mnemonic(
+/// Returns a vector of ECDSA private keys derived from the given mnemonic phrase
+pub fn ecdsa_secret_from_mnemonic(
 	mnemonic: &str, count: u32,
-) -> Result<Vec<Wallet<SigningKey>>, &'static str> {
-	let wallet = MnemonicBuilder::<English>::default().phrase(mnemonic);
-	let mut wallets = Vec::new();
-
-	for i in 0..count {
-		let child_key = wallet.clone().index(i).unwrap().build().unwrap();
-		wallets.push(child_key);
-	}
-
-	Ok(wallets)
-}
-
-/// Returns a vector of EDDSA secret keys generated from the given mnemonic phrase
-pub fn eddsa_sk_from_mnemonic(mnemonic: &str, count: u32) -> Result<Vec<SecretKey>, &'static str> {
+) -> Result<Vec<secp256k1::SecretKey>, &'static str> {
 	let mnemonic = Mnemonic::<English>::new_from_phrase(mnemonic).unwrap();
-	let mut secret_keys = Vec::new();
+	let mut keys = Vec::new();
 
 	// The hardened derivation flag.
 	const BIP32_HARDEN: u32 = 0x8000_0000;
@@ -170,51 +154,13 @@ pub fn eddsa_sk_from_mnemonic(mnemonic: &str, count: u32) -> Result<Vec<SecretKe
 
 		let raw_pk: &ecdsa::SigningKey = derived_pk.as_ref();
 
-		let hash_input = raw_pk.to_bytes();
+		let secret_key = secp256k1::SecretKey::from_slice(&raw_pk.to_bytes())
+			.expect("32 bytes, within curve order");
 
-		secret_keys.push(SecretKey::from_byte_array(&hash_input));
+		keys.push(secret_key);
 	}
 
-	Ok(secret_keys)
-}
-
-/// Returns a HashMap of Ethereum addresses to EDDSA public keys
-/// In a real implementation this would be an external table
-/// Temporary due to implementing ECDSA
-pub fn ecdsa_eddsa_map(mnemonic: &str) -> HashMap<Address, PublicKey> {
-	let ecdsa = eth_wallets_from_mnemonic(mnemonic, 5)
-		.unwrap()
-		.iter()
-		.map(|wallet| wallet.address())
-		.collect::<Vec<Address>>();
-	let eddsa: Vec<PublicKey> =
-		eddsa_sk_from_mnemonic(mnemonic, 5).unwrap().iter().map(|sk| sk.public()).collect();
-
-	ecdsa.into_iter().zip(eddsa.into_iter()).collect()
-}
-
-/// Extracts and formats the signature from a provided Ethereum transaction.
-pub fn get_signature_from_transaction(transaction: Transaction) -> TransactionSignature {
-	TransactionSignature { r: transaction.r, s: transaction.s, v: transaction.v.as_u64() }
-}
-
-/// Recovers the ECDSA public key from a provided signature and transaction hash.
-pub fn recover_ecdsa_pub_key_from_signature(
-	signature: TransactionSignature, transaction_hash: H256,
-) -> Result<ECDSAPublicKey, &'static str> {
-	// let mut sig: [u8; 65] = [0; 65];
-
-	// ecdsa::public_key_from_sig(&B256::from(transaction_hash), &signature).unwrap();
-
-	// ecdsa::VerifyingKey::
-
-	// let mut sig_r: &mut [u8] = &mut [];
-	// let mut sig_s: &mut [u8] = &mut [];
-
-	// signature.r.to_big_endian(sig_r);
-	// signature.s.to_big_endian(sig_s);
-
-	Err("")
+	return Ok(keys);
 }
 
 #[cfg(test)]
