@@ -28,16 +28,6 @@ use std::{
 /// Native version of the loader
 pub mod native;
 
-/// TODO: Mutex Layouter optimizer
-/*
-fn layouter<T>(func: FnOnce(layouter) -> T) -> T {
-	let layouter = self.layouter.lock();
-	let res = func(layouter);
-	drop(layouter);
-	res
-}
-*/
-
 /// LoaderConfig structure
 pub struct LoaderConfig<'a, C: CurveAffine, L: Layouter<C::Scalar>, P>
 where
@@ -759,223 +749,224 @@ where
 {
 }
 
-// #[cfg(test)]
-// mod test {
-// 	use super::{
-// 		native::{LEcPoint, LScalar, NativeLoader, NUM_BITS, NUM_LIMBS},
-// 		Halo2LEcPoint, Halo2LScalar, LoaderConfig,
-// 	};
-// 	use crate::{
-// 		circuit::{FullRoundHasher, PartialRoundHasher},
-// 		ecc::{
-// 			native::EcPoint, AssignedPoint, EccAddConfig, EccDoubleConfig, EccMulConfig,
-// 			EccTableSelectConfig, EccUnreducedLadderConfig,
-// 		},
-// 		gadgets::{
-// 			absorb::AbsorbChip,
-// 			bits2num::Bits2NumChip,
-// 			main::{MainChip, MainConfig},
-// 		},
-// 		integer::{
-// 			native::Integer, AssignedInteger, IntegerAddChip, IntegerDivChip, IntegerMulChip,
-// 			IntegerReduceChip, IntegerSubChip,
-// 		},
-// 		poseidon::{sponge::PoseidonSpongeConfig, PoseidonConfig},
-// 		rns::bn256::Bn256_4_68,
-// 		verifier::transcript::native::WIDTH,
-// 		Chip, CommonConfig, RegionCtx,
-// 	};
-// 	use halo2::{
-// 		arithmetic::Field,
-// 		circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner, Value},
-// 		dev::MockProver,
-// 		halo2curves::bn256::{Fq, Fr, G1Affine},
-// 		plonk::{Circuit, ConstraintSystem, Error},
-// 	};
-// 	use rand::thread_rng;
-// 	use snark_verifier::loader::EcPointLoader;
-// 	use std::{rc::Rc, sync::Mutex};
+#[cfg(test)]
+mod test {
+	use super::{
+		native::{LEcPoint, LScalar, NativeLoader, NUM_BITS, NUM_LIMBS},
+		Halo2LEcPoint, Halo2LScalar, LoaderConfig,
+	};
+	use crate::{
+		circuit::{FullRoundHasher, PartialRoundHasher},
+		ecc::{
+			native::EcPoint, AssignedPoint, EccAddConfig, EccDoubleConfig, EccMulConfig,
+			EccTableSelectConfig, EccUnreducedLadderConfig,
+		},
+		gadgets::{
+			absorb::AbsorbChip,
+			bits2num::Bits2NumChip,
+			main::{MainChip, MainConfig},
+		},
+		integer::{
+			native::Integer, AssignedInteger, IntegerAddChip, IntegerDivChip, IntegerMulChip,
+			IntegerReduceChip, IntegerSubChip,
+		},
+		poseidon::{sponge::PoseidonSpongeConfig, PoseidonConfig},
+		rns::bn256::Bn256_4_68,
+		verifier::transcript::native::WIDTH,
+		Chip, CommonConfig, RegionCtx,
+	};
+	use halo2::{
+		arithmetic::Field,
+		circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner, Value},
+		dev::MockProver,
+		halo2curves::bn256::{Fq, Fr, G1Affine},
+		plonk::{Circuit, ConstraintSystem, Error},
+	};
+	use rand::thread_rng;
+	use snark_verifier::loader::EcPointLoader;
 
-// 	type C = G1Affine;
-// 	type P = Bn256_4_68;
-// 	type Scalar = Fr;
-// 	type Base = Fq;
-// 	#[derive(Clone)]
-// 	struct TestConfig {
-// 		common: CommonConfig,
-// 		main: MainConfig,
-// 		poseidon_sponge: PoseidonSpongeConfig,
-// 		ecc_mul_scalar: EccMulConfig,
-// 	}
+	type C = G1Affine;
+	type P = Bn256_4_68;
+	type Scalar = Fr;
+	type Base = Fq;
+	#[derive(Clone)]
+	struct TestConfig {
+		common: CommonConfig,
+		main: MainConfig,
+		poseidon_sponge: PoseidonSpongeConfig,
+		ecc_mul_scalar: EccMulConfig,
+	}
 
-// 	#[derive(Clone)]
-// 	struct TestCircuit {
-// 		pairs: Vec<(LScalar<C, P>, LEcPoint<C, P>)>,
-// 	}
+	#[derive(Clone)]
+	struct TestCircuit {
+		pairs: Vec<(LScalar<C, P>, LEcPoint<C, P>)>,
+	}
 
-// 	impl TestCircuit {
-// 		fn new(pairs: Vec<(LScalar<C, P>, LEcPoint<C, P>)>) -> Self {
-// 			Self { pairs }
-// 		}
-// 	}
+	impl TestCircuit {
+		fn new(pairs: Vec<(LScalar<C, P>, LEcPoint<C, P>)>) -> Self {
+			Self { pairs }
+		}
+	}
 
-// 	impl Circuit<Scalar> for TestCircuit {
-// 		type Config = TestConfig;
-// 		type FloorPlanner = SimpleFloorPlanner;
+	impl Circuit<Scalar> for TestCircuit {
+		type Config = TestConfig;
+		type FloorPlanner = SimpleFloorPlanner;
 
-// 		fn without_witnesses(&self) -> Self {
-// 			self.clone()
-// 		}
+		fn without_witnesses(&self) -> Self {
+			self.clone()
+		}
 
-// 		fn configure(meta: &mut ConstraintSystem<Scalar>) -> TestConfig {
-// 			let common = CommonConfig::new(meta);
-// 			let main_selector = MainChip::configure(&common, meta);
-// 			let main = MainConfig::new(main_selector);
+		fn configure(meta: &mut ConstraintSystem<Scalar>) -> TestConfig {
+			let common = CommonConfig::new(meta);
+			let main_selector = MainChip::configure(&common, meta);
+			let main = MainConfig::new(main_selector);
 
-// 			let full_round_selector = FullRoundHasher::configure(&common, meta);
-// 			let partial_round_selector = PartialRoundHasher::configure(&common, meta);
-// 			let poseidon = PoseidonConfig::new(full_round_selector, partial_round_selector);
+			let full_round_selector = FullRoundHasher::configure(&common, meta);
+			let partial_round_selector = PartialRoundHasher::configure(&common, meta);
+			let poseidon = PoseidonConfig::new(full_round_selector, partial_round_selector);
 
-// 			let absorb_selector = AbsorbChip::<Scalar, WIDTH>::configure(&common, meta);
-// 			let poseidon_sponge = PoseidonSpongeConfig::new(poseidon.clone(), absorb_selector);
+			let absorb_selector = AbsorbChip::<Scalar, WIDTH>::configure(&common, meta);
+			let poseidon_sponge = PoseidonSpongeConfig::new(poseidon.clone(), absorb_selector);
 
-// 			let bits2num = Bits2NumChip::configure(&common, meta);
+			let bits2num = Bits2NumChip::configure(&common, meta);
 
-// 			let int_red =
-// 				IntegerReduceChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
-// 			let int_add =
-// 				IntegerAddChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
-// 			let int_sub =
-// 				IntegerSubChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
-// 			let int_mul =
-// 				IntegerMulChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
-// 			let int_div =
-// 				IntegerDivChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
+			let int_red =
+				IntegerReduceChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
+			let int_add =
+				IntegerAddChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
+			let int_sub =
+				IntegerSubChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
+			let int_mul =
+				IntegerMulChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
+			let int_div =
+				IntegerDivChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
 
-// 			let ladder = EccUnreducedLadderConfig::new(int_add, int_sub, int_mul, int_div);
-// 			let add = EccAddConfig::new(int_red, int_sub, int_mul, int_div);
-// 			let double = EccDoubleConfig::new(int_red, int_add, int_sub, int_mul, int_div);
-// 			let table_select = EccTableSelectConfig::new(main.clone());
-// 			let ecc_mul_scalar = EccMulConfig::new(ladder, add, double, table_select, bits2num);
-// 			TestConfig { common, main, poseidon_sponge, ecc_mul_scalar }
-// 		}
+			let ladder = EccUnreducedLadderConfig::new(int_add, int_sub, int_mul, int_div);
+			let add = EccAddConfig::new(int_red, int_sub, int_mul, int_div);
+			let double = EccDoubleConfig::new(int_red, int_add, int_sub, int_mul, int_div);
+			let table_select = EccTableSelectConfig::new(main.clone());
+			let ecc_mul_scalar = EccMulConfig::new(ladder, add, double, table_select, bits2num);
+			TestConfig { common, main, poseidon_sponge, ecc_mul_scalar }
+		}
 
-// 		fn synthesize(
-// 			&self, config: TestConfig, mut layouter: impl Layouter<Scalar>,
-// 		) -> Result<(), Error> {
-// 			let layouter_rc = Rc::new(Mutex::new(layouter.namespace(|| "loader")));
-// 			let loader_config = LoaderConfig::<C, _, P>::new(
-// 				layouter_rc.clone(),
-// 				config.common.clone(),
-// 				config.ecc_mul_scalar,
-// 				config.main,
-// 				config.poseidon_sponge,
-// 			);
+		fn synthesize(
+			&self, config: TestConfig, mut layouter: impl Layouter<Scalar>,
+		) -> Result<(), Error> {
+			let pairs = layouter.assign_region(
+				|| "assign_pairs",
+				|region: Region<'_, Scalar>| {
+					let mut ctx = RegionCtx::new(region, 0);
 
-// 			let mut assigned_pairs: Vec<(Halo2LScalar<C, _, P>, Halo2LEcPoint<C, _, P>)> =
-// 				Vec::new();
-// 			let mut lb = layouter_rc.lock().unwrap();
-// 			lb.assign_region(
-// 				|| "assign_pairs",
-// 				|region: Region<'_, Scalar>| {
-// 					let mut ctx = RegionCtx::new(region, 0);
-// 					for i in 0..self.pairs.len() {
-// 						let assigned_scalar = ctx.assign_advice(
-// 							config.common.advice[0],
-// 							Value::known(self.pairs[i].0.inner),
-// 						)?;
+					let mut pairs = Vec::new();
+					for i in 0..self.pairs.len() {
+						let assigned_scalar = ctx.assign_advice(
+							config.common.advice[0],
+							Value::known(self.pairs[i].0.inner),
+						)?;
+						ctx.next();
 
-// 						let halo2_scalar =
-// 							Halo2LScalar::new(assigned_scalar, loader_config.clone());
-// 						ctx.next();
+						let mut x_limbs: [Option<AssignedCell<Scalar, Scalar>>; NUM_LIMBS] =
+							[(); NUM_LIMBS].map(|_| None);
+						let mut y_limbs: [Option<AssignedCell<Scalar, Scalar>>; NUM_LIMBS] =
+							[(); NUM_LIMBS].map(|_| None);
+						for j in 0..NUM_LIMBS {
+							x_limbs[j] = Some(ctx.assign_advice(
+								config.common.advice[j],
+								Value::known(self.pairs[i].1.inner.x.limbs[j]),
+							)?);
+							y_limbs[j] = Some(ctx.assign_advice(
+								config.common.advice[j + NUM_LIMBS],
+								Value::known(self.pairs[i].1.inner.y.limbs[j]),
+							)?);
+						}
+						ctx.next();
+						let x_limbs = x_limbs.map(|x| x.unwrap());
+						let y_limbs = y_limbs.map(|x| x.unwrap());
 
-// 						let mut x_limbs: [Option<AssignedCell<Scalar, Scalar>>; NUM_LIMBS] =
-// 							[(); NUM_LIMBS].map(|_| None);
-// 						let mut y_limbs: [Option<AssignedCell<Scalar, Scalar>>; NUM_LIMBS] =
-// 							[(); NUM_LIMBS].map(|_| None);
-// 						for j in 0..NUM_LIMBS {
-// 							x_limbs[j] = Some(ctx.assign_advice(
-// 								config.common.advice[j],
-// 								Value::known(self.pairs[i].1.inner.x.limbs[j]),
-// 							)?);
-// 							y_limbs[j] = Some(ctx.assign_advice(
-// 								config.common.advice[j + NUM_LIMBS],
-// 								Value::known(self.pairs[i].1.inner.y.limbs[j]),
-// 							)?);
-// 						}
-// 						ctx.next();
-// 						let x_limbs = x_limbs.map(|x| x.unwrap());
-// 						let y_limbs = y_limbs.map(|x| x.unwrap());
+						pairs.push((assigned_scalar, x_limbs, y_limbs));
+					}
+					Ok(pairs)
+				},
+			)?;
 
-// 						let x = AssignedInteger::new(self.pairs[i].1.inner.x.clone(), x_limbs);
-// 						let y = AssignedInteger::new(self.pairs[i].1.inner.y.clone(), y_limbs);
+			let (x_limbs, y_limbs) = {
+				let loader_config = LoaderConfig::<C, _, P>::new(
+					layouter.namespace(|| "loader"),
+					config.common.clone(),
+					config.ecc_mul_scalar,
+					config.main,
+					config.poseidon_sponge,
+				);
 
-// 						let assigned_point = AssignedPoint::new(x, y);
-// 						let halo2_point = Halo2LEcPoint::new(assigned_point, loader_config.clone());
-// 						assigned_pairs.push((halo2_scalar, halo2_point));
-// 					}
-// 					Ok(())
-// 				},
-// 			)?;
-// 			drop(lb);
+				let mut halo2_pairs = Vec::new();
+				for (assigned_pair, nloaded_pair) in pairs.iter().zip(self.pairs.clone()) {
+					let (scalar, x_limbs, y_limbs) = assigned_pair;
+					let (_, lpoint) = nloaded_pair;
+					let halo2_scalar = Halo2LScalar::new(scalar.clone(), loader_config.clone());
 
-// 			// TODO: Assigned_pairs returns double. Can be because of the multithread.
-// 			// research and fix it
-// 			let borrowed_pairs_2x: Vec<(&Halo2LScalar<C, _, P>, &Halo2LEcPoint<C, _, P>)> =
-// 				assigned_pairs.iter().map(|x| (&x.0, &x.1)).collect();
-// 			let borrowed_pairs: Vec<(&Halo2LScalar<C, _, P>, &Halo2LEcPoint<C, _, P>)> =
-// 				borrowed_pairs_2x[3..6].to_vec();
+					let x = AssignedInteger::new(lpoint.inner.x.clone(), x_limbs.clone());
+					let y = AssignedInteger::new(lpoint.inner.y.clone(), y_limbs.clone());
 
-// 			let res = LoaderConfig::multi_scalar_multiplication(borrowed_pairs.as_slice());
+					let assigned_point = AssignedPoint::new(x, y);
+					let halo2_point = Halo2LEcPoint::new(assigned_point, loader_config.clone());
 
-// 			let mut lb = layouter_rc.lock().unwrap();
-// 			for i in 0..NUM_LIMBS {
-// 				lb.constrain_instance(
-// 					res.inner.clone().x.limbs[i].cell(),
-// 					config.common.instance,
-// 					i,
-// 				)?;
-// 				lb.constrain_instance(
-// 					res.inner.clone().y.limbs[i].cell(),
-// 					config.common.instance,
-// 					i + NUM_LIMBS,
-// 				)?;
-// 			}
+					halo2_pairs.push((halo2_scalar, halo2_point));
+				}
 
-// 			Ok(())
-// 		}
-// 	}
+				let borrowed_pairs: Vec<(&Halo2LScalar<C, _, P>, &Halo2LEcPoint<C, _, P>)> =
+					halo2_pairs.iter().map(|x| (&x.0, &x.1)).collect();
 
-// 	#[test]
-// 	fn test_multi_scalar_multiplication() {
-// 		// Testing MSM
-// 		let rng = &mut thread_rng();
-// 		let loader = NativeLoader::<C, P>::new();
-// 		let mut pairs: Vec<(LScalar<C, P>, LEcPoint<C, P>)> = Vec::new();
-// 		for _ in 0..3 {
-// 			let x = Integer::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::from_n(Scalar::random(
-// 				rng.clone(),
-// 			));
-// 			let y = Integer::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::from_n(Scalar::random(
-// 				rng.clone(),
-// 			));
-// 			let points = EcPoint::new(x, y);
-// 			let ec_point = LEcPoint::new(points, loader.clone());
-// 			let scalar = LScalar::new(Scalar::random(rng.clone()), loader.clone());
+				let res = LoaderConfig::multi_scalar_multiplication(borrowed_pairs.as_slice());
 
-// 			pairs.push((scalar, ec_point));
-// 		}
-// 		let borrowed_pairs: Vec<(&LScalar<C, P>, &LEcPoint<C, P>)> =
-// 			pairs.iter().map(|x| (&x.0, &x.1)).collect();
-// 		let res = NativeLoader::multi_scalar_multiplication(borrowed_pairs.as_slice());
+				let x_limbs = res.inner.x.limbs;
+				let y_limbs = res.inner.y.limbs;
 
-// 		let mut p_ins = Vec::new();
-// 		p_ins.extend(res.inner.x.limbs);
-// 		p_ins.extend(res.inner.y.limbs);
-// 		let circuit = TestCircuit::new(pairs);
-// 		let k = 17;
-// 		let prover = MockProver::run(k, &circuit, vec![p_ins]).unwrap();
+				(x_limbs, y_limbs)
+			};
 
-// 		assert_eq!(prover.verify(), Ok(()));
-// 	}
-// }
+			for i in 0..NUM_LIMBS {
+				layouter.constrain_instance(x_limbs[i].cell(), config.common.instance, i)?;
+				layouter.constrain_instance(
+					y_limbs[i].cell(),
+					config.common.instance,
+					i + NUM_LIMBS,
+				)?;
+			}
+
+			Ok(())
+		}
+	}
+
+	#[test]
+	fn test_multi_scalar_multiplication() {
+		// Testing MSM
+		let rng = &mut thread_rng();
+		let loader = NativeLoader::<C, P>::new();
+		let mut pairs: Vec<(LScalar<C, P>, LEcPoint<C, P>)> = Vec::new();
+		for _ in 0..3 {
+			let x = Integer::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::from_n(Scalar::random(
+				rng.clone(),
+			));
+			let y = Integer::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::from_n(Scalar::random(
+				rng.clone(),
+			));
+			let points = EcPoint::new(x, y);
+			let ec_point = LEcPoint::new(points, loader.clone());
+			let scalar = LScalar::new(Scalar::random(rng.clone()), loader.clone());
+
+			pairs.push((scalar, ec_point));
+		}
+		let borrowed_pairs: Vec<(&LScalar<C, P>, &LEcPoint<C, P>)> =
+			pairs.iter().map(|x| (&x.0, &x.1)).collect();
+		let res = NativeLoader::multi_scalar_multiplication(borrowed_pairs.as_slice());
+
+		let mut p_ins = Vec::new();
+		p_ins.extend(res.inner.x.limbs);
+		p_ins.extend(res.inner.y.limbs);
+		let circuit = TestCircuit::new(pairs);
+		let k = 17;
+		let prover = MockProver::run(k, &circuit, vec![p_ins]).unwrap();
+
+		assert_eq!(prover.verify(), Ok(()));
+	}
+}

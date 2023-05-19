@@ -54,7 +54,6 @@ use snark_verifier::{
 		SnarkVerifier,
 	},
 };
-use std::{cell::RefCell, rc::Rc, sync::Mutex};
 
 type PSV = PlonkSuccinctVerifier<KzgAs<Bn256, Gwc19>>;
 type SVK = KzgSuccinctVerifyingKey<G1Affine>;
@@ -276,34 +275,21 @@ impl Circuit<Fr> for Aggregator {
 	fn synthesize(
 		&self, config: Self::Config, mut layouter: impl Layouter<Fr>,
 	) -> Result<(), Error> {
-		let loader_config = LoaderConfig::<'_, G1Affine, _, Bn256_4_68>::new(
-			layouter.namespace(|| "loader"),
-			config.common.clone(),
-			config.ecc_mul_scalar,
-			config.main,
-			config.poseidon_sponge,
-		);
-		let mut accumulators = Vec::new();
+		let mut inst_chunks = Vec::new();
 		for snark in &self.snarks {
-			let protocol = snark.protocol.loaded(&loader_config);
-			let mut transcript_read: PoseidonReadChipset<&[u8], G1Affine, _, Bn256_4_68, Params> =
-				PoseidonReadChipset::new(snark.proof(), loader_config.clone());
-			let mut instances: Vec<Vec<Halo2LScalar<G1Affine, _, Bn256_4_68>>> = Vec::new();
-			let mut instance_collector: Vec<Halo2LScalar<G1Affine, _, Bn256_4_68>> = Vec::new();
 			let instance_flatten =
 				snark.instances.clone().into_iter().flatten().collect::<Vec<Value<Fr>>>();
 			let mut instance_chunks = instance_flatten.chunks(ADVICE);
+			let mut instance_collector = Vec::new();
 			layouter.assign_region(
 				|| "assign_instances",
 				|region: Region<'_, Fr>| {
 					let mut ctx = RegionCtx::new(region, 0);
-					// TODO: When it is assign_advice, it assings one none cell. Fix it.
 					for _ in 0..instance_chunks.len() {
 						let chunk = instance_chunks.next().unwrap();
 						for i in 0..chunk.len() {
 							let value = ctx.assign_advice(config.common.advice[i], chunk[i])?;
-							let lscalar = Halo2LScalar::new(value, loader_config.clone());
-							instance_collector.push(lscalar.clone());
+							instance_collector.push(value);
 						}
 
 						ctx.next();
@@ -312,42 +298,73 @@ impl Circuit<Fr> for Aggregator {
 				},
 			)?;
 
-			// TODO: Check if it is a square 2D vector or not and fix this algorithm for the
-			// complex circuits. This for loops are working only for one instance inputs.
-			for _ in 0..snark.instances.len() {
-				for _ in 0..snark.instances[0].len() {
-					instances.push(vec![instance_collector[0].clone()]);
-				}
-			}
-
-			let proof = PlonkSuccinctVerifier::<KzgAs<Bn256, Gwc19>>::read_proof(
-				&self.svk, &protocol, &instances, &mut transcript_read,
-			)
-			.unwrap();
-
-			let res = PlonkSuccinctVerifier::<KzgAs<Bn256, Gwc19>>::verify(
-				&self.svk, &protocol, &instances, &proof,
-			)
-			.unwrap();
-
-			accumulators.extend(res);
+			inst_chunks.push(instance_collector);
 		}
 
-		let as_proof = self.as_proof.as_ref().map(Vec::as_slice);
-		let mut transcript: PoseidonReadChipset<&[u8], G1Affine, _, Bn256_4_68, Params> =
-			PoseidonReadChipset::new(as_proof, loader_config);
-		let proof =
-			KzgAs::<Bn256, Gwc19>::read_proof(&Default::default(), &accumulators, &mut transcript)
+		let [lhs_x, lhs_y, rhs_x, rhs_y] = {
+			let mut accumulators = Vec::new();
+			let loader_config = LoaderConfig::<'_, G1Affine, _, Bn256_4_68>::new(
+				layouter.namespace(|| "loader"),
+				config.common.clone(),
+				config.ecc_mul_scalar,
+				config.main,
+				config.poseidon_sponge,
+			);
+			for (i, snark) in self.snarks.iter().enumerate() {
+				let protocol = snark.protocol.loaded(&loader_config);
+				let mut transcript_read: PoseidonReadChipset<
+					&[u8],
+					G1Affine,
+					_,
+					Bn256_4_68,
+					Params,
+				> = PoseidonReadChipset::new(snark.proof(), loader_config.clone());
+
+				let loaded_instances = inst_chunks[i]
+					.iter()
+					.map(|x| Halo2LScalar::new(x.clone(), loader_config.clone()))
+					.collect::<Vec<Halo2LScalar<G1Affine, _, Bn256_4_68>>>();
+
+				let proof = PlonkSuccinctVerifier::<KzgAs<Bn256, Gwc19>>::read_proof(
+					&self.svk,
+					&protocol,
+					&[loaded_instances.clone()],
+					&mut transcript_read,
+				)
 				.unwrap();
 
-		let accumulator =
-			KzgAs::<Bn256, Gwc19>::verify(&Default::default(), &accumulators, &proof).unwrap();
+				let res = PlonkSuccinctVerifier::<KzgAs<Bn256, Gwc19>>::verify(
+					&self.svk,
+					&protocol,
+					&[loaded_instances],
+					&proof,
+				)
+				.unwrap();
 
-		let lhs_x = accumulator.lhs.inner.x;
-		let lhs_y = accumulator.lhs.inner.y;
+				accumulators.extend(res);
+			}
 
-		let rhs_x = accumulator.rhs.inner.x;
-		let rhs_y = accumulator.rhs.inner.y;
+			let as_proof = self.as_proof.as_ref().map(Vec::as_slice);
+			let mut transcript: PoseidonReadChipset<&[u8], G1Affine, _, Bn256_4_68, Params> =
+				PoseidonReadChipset::new(as_proof, loader_config);
+			let proof = KzgAs::<Bn256, Gwc19>::read_proof(
+				&Default::default(),
+				&accumulators,
+				&mut transcript,
+			)
+			.unwrap();
+
+			let accumulator =
+				KzgAs::<Bn256, Gwc19>::verify(&Default::default(), &accumulators, &proof).unwrap();
+
+			let lhs_x = accumulator.lhs.inner.x;
+			let lhs_y = accumulator.lhs.inner.y;
+
+			let rhs_x = accumulator.rhs.inner.x;
+			let rhs_y = accumulator.rhs.inner.y;
+
+			[lhs_x, lhs_y, rhs_x, rhs_y]
+		};
 
 		let mut row = 0;
 		for limb in lhs_x.limbs {
