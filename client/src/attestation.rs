@@ -1,12 +1,11 @@
-use crate::att_station::AttestationData as ContractAttestationData;
+use crate::{
+	att_station::AttestationData as ContractAttestationData, eth::address_from_public_key,
+};
 use eigen_trust_circuit::{
 	dynamic_sets::native::{AttestationFr, SignedAttestation},
 	halo2::halo2curves::bn256::Fr as Scalar,
 };
-use ethers::{
-	types::{Address, Bytes, U256},
-	utils::keccak256,
-};
+use ethers::types::{Address, Bytes, U256};
 use secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
 
 /// Attestation struct
@@ -111,23 +110,23 @@ impl AttestationPayload {
 	}
 }
 
-pub fn recover_ethereum_address(
+/// Recover the signing Ethereum address from a signed attestation
+pub fn address_from_signed_att(
 	signed_attestation: &SignedAttestation,
-) -> Result<ethers::core::types::Address, &'static str> {
+) -> Result<Address, &'static str> {
+	// Get the signing key
 	let public_key = signed_attestation.recover_public_key()?;
-	let public_key_bytes = public_key.serialize_uncompressed();
-	let hashed_public_key = keccak256(&public_key_bytes[1..]);
-	let address_bytes = &hashed_public_key[hashed_public_key.len() - 20..];
-	let address = ethers::core::types::Address::from_slice(address_bytes);
 
-	Ok(address)
+	// Get the address from the public key
+	address_from_public_key(&public_key)
 }
 
+/// Construct the contract attestation data from a signed attestation
 pub fn get_contract_attestation_data(
 	signed_attestation: &SignedAttestation,
 ) -> Result<ContractAttestationData, &'static str> {
 	// Recover the Ethereum address from the signed attestation
-	let address = recover_ethereum_address(signed_attestation)?;
+	let address = address_from_signed_att(signed_attestation)?;
 
 	// Calculate the hash of the attestation
 	let attestation_hash = signed_attestation.attestation.hash().to_bytes();
@@ -145,8 +144,7 @@ pub fn get_contract_attestation_data(
 #[cfg(test)]
 mod tests {
 	use crate::attestation::*;
-	use ethers::signers::Signer;
-	use ethers::signers::Wallet;
+	use ethers::signers::{Signer, Wallet};
 	use secp256k1::{ecdsa::RecoveryId, Message, Secp256k1, SecretKey};
 
 	#[test]
@@ -230,7 +228,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_recover_ethereum_address() {
+	fn test_address_from_signed_att() {
 		let secp = Secp256k1::new();
 
 		let secret_key_as_bytes = [0xcd; 32];
@@ -262,7 +260,7 @@ mod tests {
 		.address();
 
 		assert_eq!(
-			recover_ethereum_address(&signed_attestation).unwrap(),
+			address_from_signed_att(&signed_attestation).unwrap(),
 			expected_address
 		);
 	}
