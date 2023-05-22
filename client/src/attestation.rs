@@ -71,6 +71,27 @@ impl AttestationPayload {
 		Ok(Self { sig_r, sig_s, rec_id, value, message })
 	}
 
+	/// Create AttestationPayload from SignedAttestation
+	pub fn from_signed_attestation(
+		signed_attestation: &SignedAttestation,
+	) -> Result<Self, &'static str> {
+		let (rec_id, signature) = signed_attestation.signature.serialize_compact();
+
+		let mut sig_r = [0u8; 32];
+		let mut sig_s = [0u8; 32];
+
+		sig_r.copy_from_slice(&signature[0..32]);
+		sig_s.copy_from_slice(&signature[32..64]);
+
+		let rec_id = rec_id.to_i32() as u8;
+
+		let value = signed_attestation.attestation.value.to_bytes()[0];
+
+		let message = signed_attestation.attestation.message.to_bytes();
+
+		Ok(Self { sig_r, sig_s, rec_id, value, message })
+	}
+
 	/// Convert the struct into a vector of bytes
 	pub fn to_bytes(&self) -> Vec<u8> {
 		let mut bytes = Vec::with_capacity(98);
@@ -82,13 +103,6 @@ impl AttestationPayload {
 		bytes.extend_from_slice(&self.message);
 
 		bytes
-	}
-
-	/// Create AttestationPayload from SignedAttestation
-	pub fn from_signed_attestation(
-		signed_attestation: SignedAttestation,
-	) -> Result<Self, &'static str> {
-		todo!()
 	}
 
 	/// Get the ECDSA recoverable signature
@@ -148,7 +162,7 @@ mod tests {
 	use secp256k1::{ecdsa::RecoveryId, Message, Secp256k1, SecretKey};
 
 	#[test]
-	fn test_attestation_to_scalar() {
+	fn test_attestation_to_scalar_att() {
 		let attestation = Attestation::new(
 			Address::zero(),
 			U256::from(140317563),
@@ -170,7 +184,48 @@ mod tests {
 	}
 
 	#[test]
-	fn test_attestation_payload_to_signed_attestation() {
+	fn test_attestation_payload_from_signed_att() {
+		let secp = Secp256k1::new();
+		let secret_key_as_bytes = [0x40; 32];
+		let secret_key = SecretKey::from_slice(&secret_key_as_bytes).unwrap();
+
+		let attestation = AttestationFr {
+			about: Scalar::zero(),
+			key: Scalar::zero(),
+			value: Scalar::zero(),
+			message: Scalar::zero(),
+		};
+
+		let message = attestation.hash().to_bytes();
+
+		let signature = secp.sign_ecdsa_recoverable(
+			&Message::from_slice(message.as_slice()).unwrap(),
+			&secret_key,
+		);
+
+		let signed_attestation = SignedAttestation { attestation, signature };
+
+		// Convert the signed attestation to attestation payload
+		let attestation_payload =
+			AttestationPayload::from_signed_attestation(&signed_attestation).unwrap();
+
+		// Check the attestation payload
+		let (recid, sig) = signed_attestation.signature.serialize_compact();
+		assert_eq!(attestation_payload.sig_r, sig[0..32]);
+		assert_eq!(attestation_payload.sig_s, sig[32..64]);
+		assert_eq!(attestation_payload.rec_id, recid.to_i32() as u8);
+		assert_eq!(
+			attestation_payload.value,
+			signed_attestation.attestation.value.to_bytes()[0]
+		);
+		assert_eq!(
+			attestation_payload.message,
+			signed_attestation.attestation.message.to_bytes()
+		);
+	}
+
+	#[test]
+	fn test_attestation_payload_to_signed_att() {
 		let secp = Secp256k1::new();
 		let secret_key = SecretKey::from_slice(&[0xcd; 32]).expect("32 bytes, within curve order");
 		let message = Message::from_slice(&[0xab; 32]).expect("32 bytes");
@@ -215,6 +270,7 @@ mod tests {
 		};
 
 		let bytes = payload.clone().to_bytes();
+		
 		let result_payload = AttestationPayload::from_bytes(bytes).unwrap();
 
 		assert_eq!(payload, result_payload);
