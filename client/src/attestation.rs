@@ -5,7 +5,7 @@ use eigen_trust_circuit::{
 	dynamic_sets::native::{AttestationFr, SignedAttestation},
 	halo2::halo2curves::bn256::Fr as Scalar,
 };
-use ethers::types::{Address, Bytes, U256};
+use ethers::types::{Address, U256};
 use secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
 
 /// Attestation struct
@@ -136,7 +136,7 @@ pub fn address_from_signed_att(
 }
 
 /// Construct the contract attestation data from a signed attestation
-pub fn get_contract_attestation_data(
+pub fn att_data_from_signed_att(
 	signed_attestation: &SignedAttestation,
 ) -> Result<ContractAttestationData, &'static str> {
 	// Recover the Ethereum address from the signed attestation
@@ -145,13 +145,13 @@ pub fn get_contract_attestation_data(
 	// Calculate the hash of the attestation
 	let attestation_hash = signed_attestation.attestation.hash().to_bytes();
 
-	// Get the signature bytes
-	let signature = signed_attestation.signature.serialize_compact().1;
+	// Get the payload bytes
+	let payload = AttestationPayload::from_signed_attestation(&signed_attestation)?;
 
 	Ok(ContractAttestationData(
 		address,
 		attestation_hash,
-		Bytes::from(signature.to_vec()),
+		payload.to_bytes().into(),
 	))
 }
 
@@ -270,7 +270,7 @@ mod tests {
 		};
 
 		let bytes = payload.clone().to_bytes();
-		
+
 		let result_payload = AttestationPayload::from_bytes(bytes).unwrap();
 
 		assert_eq!(payload, result_payload);
@@ -322,5 +322,46 @@ mod tests {
 	}
 
 	#[test]
-	fn test_get_contract_attestation_data() {}
+	fn test_contract_att_data_from_signed_att() {
+		let secp = Secp256k1::new();
+		let secret_key_as_bytes = [0x40; 32];
+		let secret_key =
+			SecretKey::from_slice(&secret_key_as_bytes).expect("32 bytes, within curve order");
+
+		let attestation = Attestation::new(
+			Address::zero(),
+			U256::from(140317563),
+			10,
+			Some(U256::from(140317564)),
+		);
+
+		let message = attestation.to_attestation_fr().hash().to_bytes();
+
+		let signature = secp.sign_ecdsa_recoverable(
+			&Message::from_slice(message.as_slice()).unwrap(),
+			&secret_key,
+		);
+
+		let signed_attestation =
+			SignedAttestation { attestation: attestation.to_attestation_fr(), signature };
+
+		let contract_att_data = att_data_from_signed_att(&signed_attestation).unwrap();
+
+		let expected_address = Wallet::from(
+			ethers::core::k256::ecdsa::SigningKey::from_bytes(secret_key_as_bytes.as_ref())
+				.unwrap(),
+		)
+		.address();
+		assert_eq!(contract_att_data.0, expected_address);
+
+		let expected_attestation_hash = signed_attestation.attestation.hash().to_bytes();
+		assert_eq!(contract_att_data.1, expected_attestation_hash);
+
+		let expected_payload: ethers::types::Bytes =
+			AttestationPayload::from_signed_attestation(&signed_attestation)
+				.unwrap()
+				.to_bytes()
+				.into();
+		assert_eq!(contract_att_data.2, expected_payload);
+	}
 }
