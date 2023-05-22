@@ -75,8 +75,7 @@ impl Snark {
 		params: &ParamsKZG<Bn256>, circuit: C, instances: Vec<Vec<Fr>>, rng: &mut R,
 	) -> Self {
 		let pk = gen_pk(params, &circuit);
-		// TODO: Calculate number of instances from `instances` parameter
-		let config = Config::kzg().with_num_instance(vec![1]);
+		let config = Config::kzg().with_num_instance(vec![instances.len()]);
 
 		let protocol = compile(params, pk.get_vk(), config);
 
@@ -563,6 +562,7 @@ mod test {
 
 					let out = assigned_x.value().cloned() * assigned_y.value();
 
+					ctx.next();
 					let res = ctx.assign_advice(config.common.advice[0], out)?;
 
 					Ok(res)

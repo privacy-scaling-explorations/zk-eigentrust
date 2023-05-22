@@ -503,9 +503,10 @@ mod test {
 				)
 				.unwrap();
 
-			let poseidon_state = {
+			let res = {
+				let loader_layouter = layouter.namespace(|| "loader");
 				let loader = LoaderConfig::<C, _, P>::new(
-					layouter.namespace(|| "loader"),
+					loader_layouter,
 					config.common.clone(),
 					config.ecc_mul_scalar,
 					config.main,
@@ -530,14 +531,12 @@ mod test {
 				let mut poseidon_read =
 					PoseidonReadChipset::<_, C, _, P, R>::new(Some(reader.as_slice()), loader);
 				poseidon_read.common_ec_point(&ec_point).unwrap();
-				poseidon_read.state
+
+				let res = poseidon_read.squeeze_challenge();
+
+				res.inner
 			};
 
-			let res = poseidon_state.synthesize(
-				&config.common,
-				&config.poseidon_sponge,
-				layouter.namespace(|| "squeeze"),
-			)?;
 			layouter.constrain_instance(res.clone().cell(), config.common.instance, 0)?;
 
 			Ok(())
@@ -554,7 +553,7 @@ mod test {
 		let ec_point = C::random(rng);
 		poseidon_read.common_ec_point(&ec_point).unwrap();
 
-		let res = poseidon_read.state.squeeze();
+		let res = poseidon_read.squeeze_challenge();
 		let circuit = TestCommonEcPointCircuit::new(ec_point);
 		let k = 8;
 		let prover = MockProver::run(k, &circuit, vec![vec![res]]).unwrap();
@@ -587,7 +586,7 @@ mod test {
 		fn synthesize(
 			&self, config: TestConfig, mut layouter: impl Layouter<Scalar>,
 		) -> Result<(), Error> {
-			let poseidon_state = {
+			let res = {
 				let assigned_scalar = layouter
 					.assign_region(
 						|| "assign_scalar",
@@ -615,14 +614,10 @@ mod test {
 					PoseidonReadChipset::<_, C, _, P, R>::new(Some(reader.as_slice()), loader);
 				poseidon_read.common_scalar(&scalar).unwrap();
 
-				poseidon_read.state
+				let res = poseidon_read.squeeze_challenge();
+				res.inner
 			};
 
-			let res = poseidon_state.synthesize(
-				&config.common,
-				&config.poseidon_sponge,
-				layouter.namespace(|| "squeeze"),
-			)?;
 			layouter.constrain_instance(res.clone().cell(), config.common.instance, 0)?;
 
 			Ok(())
@@ -911,6 +906,86 @@ mod test {
 		let circuit = TestReadMultipleEcPointCircuit::new(reader);
 		let k = 7;
 		let prover = MockProver::run(k, &circuit, vec![p_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[derive(Clone)]
+	struct TestSqueezeChallengeCircuit {
+		reader: Vec<u8>,
+	}
+
+	impl TestSqueezeChallengeCircuit {
+		fn new(reader: Vec<u8>) -> Self {
+			Self { reader }
+		}
+	}
+
+	impl Circuit<Scalar> for TestSqueezeChallengeCircuit {
+		type Config = TestConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			self.clone()
+		}
+
+		fn configure(meta: &mut ConstraintSystem<Scalar>) -> TestConfig {
+			TestConfig::new(meta)
+		}
+
+		fn synthesize(
+			&self, config: TestConfig, mut layouter: impl Layouter<Scalar>,
+		) -> Result<(), Error> {
+			let res = {
+				let loader = LoaderConfig::<C, _, P>::new(
+					layouter.namespace(|| "loader"),
+					config.common.clone(),
+					config.ecc_mul_scalar,
+					config.main,
+					config.poseidon_sponge.clone(),
+				);
+
+				let mut poseidon_read =
+					PoseidonReadChipset::<_, C, _, P, R>::new(Some(self.reader.as_slice()), loader);
+
+				poseidon_read.read_ec_point().unwrap();
+				poseidon_read.read_scalar().unwrap();
+				poseidon_read.read_ec_point().unwrap();
+				poseidon_read.read_scalar().unwrap();
+
+				let res = poseidon_read.squeeze_challenge();
+				res.inner
+			};
+
+			layouter.constrain_instance(res.cell(), config.common.instance, 0)?;
+
+			Ok(())
+		}
+	}
+
+	#[test]
+	fn test_squeeze_challange() {
+		// Test read ec point
+		let rng = &mut thread_rng();
+		let mut reader = Vec::new();
+		for _ in 0..2 {
+			let random = C::random(rng.clone()).to_bytes();
+			let scalar = Scalar::random(rng.clone());
+			reader.write_all(random.as_ref()).unwrap();
+			reader.write_all(scalar.to_bytes().as_slice()).unwrap();
+		}
+		let mut poseidon_read =
+			PoseidonRead::<_, G1Affine, Bn256_4_68, Params>::new(reader.as_slice(), NativeSVLoader);
+
+		poseidon_read.read_ec_point().unwrap();
+		poseidon_read.read_scalar().unwrap();
+		poseidon_read.read_ec_point().unwrap();
+		poseidon_read.read_scalar().unwrap();
+
+		let res = poseidon_read.squeeze_challenge();
+
+		let circuit = TestSqueezeChallengeCircuit::new(reader);
+		let k = 9;
+		let prover = MockProver::run(k, &circuit, vec![vec![res]]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
 	}
 }
