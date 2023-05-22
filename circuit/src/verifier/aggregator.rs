@@ -498,7 +498,7 @@ mod test {
 		let snarks = vec![snark_1, snark_2];
 		let aggregator = Aggregator::new(&params, snarks.clone());
 
-		let prover = MockProver::run(k, &aggregator, vec![]).unwrap();
+		let prover = MockProver::run(k, &aggregator, vec![aggregator.instances.to_vec()]).unwrap();
 
 		assert_eq!(prover.verify(), Ok(()));
 	}
