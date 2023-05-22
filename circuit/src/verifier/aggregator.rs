@@ -393,115 +393,19 @@ impl Circuit<Fr> for Aggregator {
 #[cfg(test)]
 mod test {
 
-	use crate::{
-		circuit::{FullRoundHasher, PartialRoundHasher},
-		ecc::{
-			EccAddConfig, EccDoubleConfig, EccMulConfig, EccTableSelectConfig,
-			EccUnreducedLadderConfig,
-		},
-		gadgets::{
-			absorb::AbsorbChip,
-			bits2num::Bits2NumChip,
-			main::{MainChip, MainConfig},
-		},
-		integer::{
-			IntegerAddChip, IntegerDivChip, IntegerMulChip, IntegerReduceChip, IntegerSubChip,
-		},
-		poseidon::{sponge::PoseidonSpongeConfig, PoseidonConfig},
-		rns::bn256::Bn256_4_68,
-		utils::generate_params,
-		verifier::{
-			loader::native::{NUM_BITS, NUM_LIMBS},
-			transcript::native::WIDTH,
-		},
-		Chip, CommonConfig, RegionCtx,
-	};
+	use crate::{utils::generate_params, CommonConfig, RegionCtx};
 	use halo2::{
 		circuit::{Layouter, Region, SimpleFloorPlanner, Value},
 		dev::MockProver,
-		halo2curves::bn256::{Bn256, Fq, Fr},
+		halo2curves::bn256::{Bn256, Fr},
 		plonk::{Circuit, ConstraintSystem, Error},
 		poly::Rotation,
 	};
 	use rand::thread_rng;
 
-	use super::{Aggregator, AggregatorConfig, Snark};
+	use super::{Aggregator, Snark};
 
-	type P = Bn256_4_68;
 	type Scalar = Fr;
-	type Base = Fq;
-	#[derive(Clone)]
-	struct TestConfig {
-		common: CommonConfig,
-		main: MainConfig,
-		poseidon_sponge: PoseidonSpongeConfig,
-		ecc_mul_scalar: EccMulConfig,
-	}
-
-	#[derive(Clone)]
-	struct TestCircuit {
-		aggregator: Aggregator,
-	}
-
-	impl TestCircuit {
-		fn new(aggregator: Aggregator) -> Self {
-			Self { aggregator }
-		}
-	}
-
-	impl Circuit<Scalar> for TestCircuit {
-		type Config = TestConfig;
-		type FloorPlanner = SimpleFloorPlanner;
-
-		fn without_witnesses(&self) -> Self {
-			self.clone()
-		}
-
-		fn configure(meta: &mut ConstraintSystem<Scalar>) -> TestConfig {
-			let common = CommonConfig::new(meta);
-			let main_selector = MainChip::configure(&common, meta);
-			let main = MainConfig::new(main_selector);
-
-			let full_round_selector = FullRoundHasher::configure(&common, meta);
-			let partial_round_selector = PartialRoundHasher::configure(&common, meta);
-			let poseidon = PoseidonConfig::new(full_round_selector, partial_round_selector);
-
-			let absorb_selector = AbsorbChip::<Scalar, WIDTH>::configure(&common, meta);
-			let poseidon_sponge = PoseidonSpongeConfig::new(poseidon.clone(), absorb_selector);
-
-			let bits2num = Bits2NumChip::configure(&common, meta);
-
-			let int_red =
-				IntegerReduceChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
-			let int_add =
-				IntegerAddChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
-			let int_sub =
-				IntegerSubChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
-			let int_mul =
-				IntegerMulChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
-			let int_div =
-				IntegerDivChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
-
-			let ladder = EccUnreducedLadderConfig::new(int_add, int_sub, int_mul, int_div);
-			let add = EccAddConfig::new(int_red, int_sub, int_mul, int_div);
-			let double = EccDoubleConfig::new(int_red, int_add, int_sub, int_mul, int_div);
-			let table_select = EccTableSelectConfig::new(main.clone());
-			let ecc_mul_scalar = EccMulConfig::new(ladder, add, double, table_select, bits2num);
-			TestConfig { common, main, poseidon_sponge, ecc_mul_scalar }
-		}
-
-		fn synthesize(
-			&self, config: TestConfig, mut layouter: impl Layouter<Scalar>,
-		) -> Result<(), Error> {
-			let aggregator_config = AggregatorConfig::new(
-				config.common, config.main, config.poseidon_sponge, config.ecc_mul_scalar,
-			);
-
-			self.aggregator.synthesize(aggregator_config, layouter.namespace(|| "aggregate"))?;
-
-			Ok(())
-		}
-	}
 
 	#[derive(Clone)]
 	pub struct MulConfig {
@@ -594,8 +498,7 @@ mod test {
 		let snarks = vec![snark_1, snark_2];
 		let aggregator = Aggregator::new(&params, snarks.clone());
 
-		let circuit = TestCircuit::new(aggregator.clone());
-		let prover = MockProver::run(k, &circuit, vec![aggregator.instances]).unwrap();
+		let prover = MockProver::run(k, &aggregator, vec![]).unwrap();
 
 		assert_eq!(prover.verify(), Ok(()));
 	}
