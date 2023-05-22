@@ -1,6 +1,5 @@
-use std::collections::HashMap;
-
 use crate::{
+	circuit::PoseidonNativeHasher,
 	eddsa::native::{PublicKey, Signature},
 	rns::{compose_big_decimal_f, decompose_big_decimal},
 	utils::fe_to_big,
@@ -13,6 +12,67 @@ use itertools::Itertools;
 use num_bigint::{BigInt, ToBigInt};
 use num_rational::BigRational;
 use num_traits::{FromPrimitive, Zero};
+use secp256k1::{ecdsa, Message};
+use std::collections::HashMap;
+
+/// ECDSA public key
+pub type ECDSAPublicKey = secp256k1::PublicKey;
+/// ECDSA signature
+pub type ECDSASignature = ecdsa::RecoverableSignature;
+
+/// Attestation submission struct
+#[derive(Clone)]
+pub struct SignedAttestation {
+	/// Attestation
+	pub attestation: AttestationFr,
+	/// Signature
+	pub signature: ECDSASignature,
+}
+
+impl SignedAttestation {
+	/// Constructs a new instance
+	pub fn new(attestation: AttestationFr, signature: ECDSASignature) -> Self {
+		Self { attestation, signature }
+	}
+
+	/// Recover the public key from the attestation signature
+	pub fn recover_public_key(&self) -> Result<ECDSAPublicKey, &'static str> {
+		let message = self.attestation.hash().to_bytes();
+
+		let public_key = self
+			.signature
+			.recover(&Message::from_slice(message.as_slice()).unwrap())
+			.map_err(|_| "Failed to recover public key")?;
+
+		Ok(public_key)
+	}
+}
+
+/// Attestation struct
+#[derive(Clone, Debug)]
+pub struct AttestationFr {
+	/// Ethereum address of peer being rated
+	pub about: Fr,
+	/// Unique identifier for the action being rated
+	pub key: Fr,
+	/// Given rating for the action
+	pub value: Fr,
+	/// Optional field for attaching additional information to the attestation
+	pub message: Fr,
+}
+
+impl AttestationFr {
+	/// Construct a new attestation struct
+	pub fn new(about: Fr, key: Fr, value: Fr, message: Fr) -> Self {
+		Self { about, key, value, message }
+	}
+
+	/// Hash attestation
+	pub fn hash(&self) -> Fr {
+		PoseidonNativeHasher::new([self.about, self.key, self.value, self.message, Fr::zero()])
+			.permute()[0]
+	}
+}
 
 /// Opinion info of peer
 #[derive(Debug, Clone)]
