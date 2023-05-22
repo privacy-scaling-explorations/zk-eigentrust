@@ -43,7 +43,7 @@ use ethers::{
 	providers::{Http, Provider},
 	signers::{coins_bip39::English, MnemonicBuilder},
 };
-use secp256k1::{ecdsa::RecoverableSignature, SECP256K1};
+use secp256k1::{ecdsa::RecoverableSignature, Message, SecretKey, SECP256K1};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -81,7 +81,7 @@ impl Client {
 	/// Submit an attestation to the attestation station
 	pub async fn attest(&self, attestation: Attestation) -> Result<(), EigenError> {
 		let ctx = SECP256K1;
-		let secret_keys: Vec<secp256k1::SecretKey> =
+		let secret_keys: Vec<SecretKey> =
 			ecdsa_secret_from_mnemonic(&self.config.mnemonic, 1).unwrap();
 
 		// Get AttestationFr
@@ -92,7 +92,7 @@ impl Client {
 
 		// Sign attestation
 		let signature: RecoverableSignature = ctx.sign_ecdsa_recoverable(
-			&secp256k1::Message::from_slice(att_hash.to_bytes().as_slice()).unwrap(),
+			&Message::from_slice(att_hash.to_bytes().as_slice()).unwrap(),
 			&secret_keys[0],
 		);
 
