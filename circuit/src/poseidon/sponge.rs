@@ -66,27 +66,36 @@ where
 	) -> Result<Self::Output, Error> {
 		assert!(!self.inputs.is_empty());
 
-		let mut state = self.state.clone();
-		for (i, chunk) in self.inputs.chunks(WIDTH).enumerate() {
-			let mut curr_chunk_opt: [Option<AssignedCell<F, F>>; WIDTH] = [(); WIDTH].map(|_| None);
-			for j in 0..chunk.len() {
-				curr_chunk_opt[j] = Some(chunk[j].clone());
-			}
-			let curr_chunk = curr_chunk_opt.map(|x| x.unwrap());
+		let zero = layouter.assign_region(
+			|| "load_initial_state",
+			|region: Region<'_, F>| {
+				let mut ctx = RegionCtx::new(region, 0);
+				let zero_asgn = ctx.assign_from_constant(common.advice[0], F::ZERO)?;
+				Ok(zero_asgn)
+			},
+		)?;
 
-			let absorb = AbsorbChip::new(state, curr_chunk);
+		let zero_chunk = [(); WIDTH].map(|_| zero.clone());
+		let state = self.state.clone();
+		for (i, chunk) in self.inputs.chunks(WIDTH).enumerate() {
+			let mut curr_chunk = zero_chunk.clone();
+			for j in 0..chunk.len() {
+				curr_chunk[j] = chunk[j].clone();
+			}
+
+			let absorb = AbsorbChip::new(state.clone(), curr_chunk);
 			let inputs = absorb.synthesize(
 				common,
 				&config.absorb_selector,
 				layouter.namespace(|| format!("absorb_{}", i)),
 			)?;
 
-			let pos = PoseidonChipset::<_, WIDTH, P>::new(inputs);
-			state = pos.synthesize(
-				common,
-				&config.poseidon,
-				layouter.namespace(|| format!("poseidon_permute_{}", i)),
-			)?;
+			// let pos = PoseidonChipset::<_, WIDTH, P>::new(inputs);
+			// state = pos.synthesize(
+			// 	common,
+			// 	&config.poseidon,
+			// 	layouter.namespace(|| format!("poseidon_permute_{}", i)),
+			// )?;
 		}
 
 		Ok(state)
@@ -108,19 +117,15 @@ where
 {
 	/// Initialise the sponge
 	pub fn init(common: &CommonConfig, mut layouter: impl Layouter<F>) -> Result<Self, Error> {
-		let zero_state = layouter.assign_region(
+		let zero = layouter.assign_region(
 			|| "load_initial_state",
 			|region: Region<'_, F>| {
 				let mut ctx = RegionCtx::new(region, 0);
-
-				let mut state: [Option<AssignedCell<F, F>>; WIDTH] = [(); WIDTH].map(|_| None);
-				for i in 0..WIDTH {
-					let zero_asgn = ctx.assign_from_constant(common.advice[i], F::ZERO)?;
-					state[i] = Some(zero_asgn);
-				}
-				Ok(state.map(|item| item.unwrap()))
+				let zero_asgn = ctx.assign_from_constant(common.advice[0], F::ZERO)?;
+				Ok(zero_asgn)
 			},
 		)?;
+		let zero_state = [(); WIDTH].map(|_| zero.clone());
 		let pos = PoseidonSpongeChipset::new(zero_state);
 		Ok(Self { chipset: pos })
 	}
