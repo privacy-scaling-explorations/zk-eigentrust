@@ -1,6 +1,9 @@
 /// Native version of EigenTrustSet
 pub mod native;
 
+/// Native version of EigenTrustAttestationSet
+pub mod attest_native;
+
 use crate::{
 	circuit::{Eddsa, FullRoundHasher, PartialRoundHasher, PoseidonHasher, SpongeHasher},
 	eddsa::{
