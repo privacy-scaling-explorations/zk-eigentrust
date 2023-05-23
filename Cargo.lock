@@ -3434,7 +3434,6 @@ checksum = "a507befe795404456341dfab10cef66ead4c041f62b8b11bbb92bffe5d0953e0"
 [[package]]
 name = "snark-verifier"
 version = "0.1.0"
-source = "git+https://github.com/privacy-scaling-explorations/snark-verifier?rev=e5d5e4a#e5d5e4a6ccff2bba71baf77ab7a12b124d6364a1"
 dependencies = [
  "bytes",
  "halo2_proofs",
