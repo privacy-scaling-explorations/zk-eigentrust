@@ -299,7 +299,8 @@ impl<
 				},
 			)?;
 
-		let mut pk_sponge = SpongeHasher::new();
+		let zero_state = [zero.clone(), zero.clone(), zero.clone(), zero.clone(), zero.clone()];
+		let mut pk_sponge = SpongeHasher::new(zero_state.clone());
 		pk_sponge.update(&pk_x);
 		pk_sponge.update(&pk_y);
 		let keys_message_hash = pk_sponge.synthesize(
@@ -308,7 +309,7 @@ impl<
 			layouter.namespace(|| "keys_sponge"),
 		)?;
 		for i in 0..NUM_NEIGHBOURS {
-			let mut scores_sponge = SpongeHasher::new();
+			let mut scores_sponge = SpongeHasher::new(zero_state.clone());
 			scores_sponge.update(&ops[i]);
 			let scores_message_hash = scores_sponge.synthesize(
 				&config.common,
@@ -316,8 +317,8 @@ impl<
 				layouter.namespace(|| "scores_sponge"),
 			)?;
 			let message_hash_input = [
-				keys_message_hash.clone(),
-				scores_message_hash,
+				keys_message_hash[0].clone(),
+				scores_message_hash[0].clone(),
 				zero.clone(),
 				zero.clone(),
 				zero.clone(),

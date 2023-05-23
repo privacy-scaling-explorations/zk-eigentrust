@@ -34,7 +34,7 @@ where
 
 	/// Absorb the data in and split it into
 	/// chunks of size WIDTH.
-	pub fn load_state(chunk: &[F]) -> [F; WIDTH] {
+	fn load_state(chunk: &[F]) -> [F; WIDTH] {
 		assert!(chunk.len() <= WIDTH);
 		let mut fixed_chunk = [F::ZERO; WIDTH];
 		fixed_chunk[..chunk.len()].copy_from_slice(chunk);

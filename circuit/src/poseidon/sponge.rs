@@ -30,6 +30,7 @@ pub struct PoseidonSpongeChipset<F: FieldExt, const WIDTH: usize, P>
 where
 	P: RoundParams<F, WIDTH>,
 {
+	state: [AssignedCell<F, F>; WIDTH],
 	/// Constructs a cell vector for the inputs.
 	inputs: Vec<AssignedCell<F, F>>,
 	/// Constructs a phantom data for the parameters.
@@ -41,8 +42,8 @@ where
 	P: RoundParams<F, WIDTH>,
 {
 	/// Create a new chip.
-	pub fn new() -> Self {
-		Self { inputs: Vec::new(), _params: PhantomData }
+	pub fn new(initial_state: [AssignedCell<F, F>; WIDTH]) -> Self {
+		Self { state: initial_state, inputs: Vec::new(), _params: PhantomData }
 	}
 
 	/// Clones and appends all elements from a slice to the vec.
@@ -56,7 +57,7 @@ where
 	P: RoundParams<F, WIDTH>,
 {
 	type Config = PoseidonSpongeConfig;
-	type Output = AssignedCell<F, F>;
+	type Output = [AssignedCell<F, F>; WIDTH];
 
 	/// Squeeze the data out by
 	/// permuting until no more chunks are left.
@@ -65,26 +66,13 @@ where
 	) -> Result<Self::Output, Error> {
 		assert!(!self.inputs.is_empty());
 
-		let zero_state = layouter.assign_region(
-			|| "load_initial_state",
-			|region: Region<'_, F>| {
-				let mut ctx = RegionCtx::new(region, 0);
-
-				let mut state: [Option<AssignedCell<F, F>>; WIDTH] = [(); WIDTH].map(|_| None);
-				for i in 0..WIDTH {
-					let zero_asgn = ctx.assign_from_constant(common.advice[i], F::ZERO)?;
-					state[i] = Some(zero_asgn);
-				}
-				Ok(state.map(|item| item.unwrap()))
-			},
-		)?;
-
-		let mut state = zero_state.clone();
+		let mut state = self.state.clone();
 		for (i, chunk) in self.inputs.chunks(WIDTH).enumerate() {
-			let mut curr_chunk = zero_state.clone();
+			let mut curr_chunk_opt: [Option<AssignedCell<F, F>>; WIDTH] = [(); WIDTH].map(|_| None);
 			for j in 0..chunk.len() {
-				curr_chunk[j] = chunk[j].clone();
+				curr_chunk_opt[j] = Some(chunk[j].clone());
 			}
+			let curr_chunk = curr_chunk_opt.map(|x| x.unwrap());
 
 			let absorb = AbsorbChip::new(state, curr_chunk);
 			let inputs = absorb.synthesize(
@@ -101,7 +89,56 @@ where
 			)?;
 		}
 
-		Ok(state[0].clone())
+		Ok(state)
+	}
+}
+
+/// Sponge implementation that perserves its state
+#[derive(Clone, Debug)]
+pub struct StatefulSpongeChipset<F: FieldExt, const WIDTH: usize, P>
+where
+	P: RoundParams<F, WIDTH>,
+{
+	chipset: PoseidonSpongeChipset<F, WIDTH, P>,
+}
+
+impl<F: FieldExt, const WIDTH: usize, P> StatefulSpongeChipset<F, WIDTH, P>
+where
+	P: RoundParams<F, WIDTH>,
+{
+	/// Initialise the sponge
+	pub fn init(common: &CommonConfig, mut layouter: impl Layouter<F>) -> Result<Self, Error> {
+		let zero_state = layouter.assign_region(
+			|| "load_initial_state",
+			|region: Region<'_, F>| {
+				let mut ctx = RegionCtx::new(region, 0);
+
+				let mut state: [Option<AssignedCell<F, F>>; WIDTH] = [(); WIDTH].map(|_| None);
+				for i in 0..WIDTH {
+					let zero_asgn = ctx.assign_from_constant(common.advice[i], F::ZERO)?;
+					state[i] = Some(zero_asgn);
+				}
+				Ok(state.map(|item| item.unwrap()))
+			},
+		)?;
+		let pos = PoseidonSpongeChipset::new(zero_state);
+		Ok(Self { chipset: pos })
+	}
+
+	/// Clones and appends all elements from a slice to the vec.
+	pub fn update(&mut self, inputs: &[AssignedCell<F, F>]) {
+		self.chipset.update(inputs);
+	}
+
+	/// Squeeze the data out by
+	/// permuting until no more chunks are left.
+	pub fn squeeze(
+		&mut self, common: &CommonConfig, config: &PoseidonSpongeConfig, layouter: impl Layouter<F>,
+	) -> Result<AssignedCell<F, F>, Error> {
+		let res = self.chipset.clone().synthesize(common, config, layouter)?;
+		let ret_value = res[0].clone();
+		self.chipset = PoseidonSpongeChipset::new(res);
+		Ok(ret_value)
 	}
 }
 
@@ -171,6 +208,21 @@ mod test {
 		fn synthesize(
 			&self, config: Self::Config, mut layouter: impl Layouter<Fr>,
 		) -> Result<(), Error> {
+			let zero_state = layouter.assign_region(
+				|| "load_initial_state",
+				|region: Region<'_, Fr>| {
+					let mut ctx = RegionCtx::new(region, 0);
+
+					let mut state: [Option<AssignedCell<Fr, Fr>>; 5] = [(); 5].map(|_| None);
+					for i in 0..5 {
+						let zero_asgn =
+							ctx.assign_from_constant(config.common.advice[i], Fr::zero())?;
+						state[i] = Some(zero_asgn);
+					}
+					Ok(state.map(|item| item.unwrap()))
+				},
+			)?;
+
 			let inputs1 = layouter.assign_region(
 				|| "load_state1",
 				|region: Region<'_, Fr>| {
@@ -199,7 +251,7 @@ mod test {
 				},
 			)?;
 
-			let mut poseidon_sponge = TestPoseidonSpongeChipset::new();
+			let mut poseidon_sponge = TestPoseidonSpongeChipset::new(zero_state);
 			poseidon_sponge.update(&inputs1);
 			poseidon_sponge.update(&inputs2);
 			let result_state = poseidon_sponge.synthesize(
@@ -208,7 +260,7 @@ mod test {
 				layouter.namespace(|| "poseidon_sponge"),
 			)?;
 
-			layouter.constrain_instance(result_state.cell(), config.common.instance, 0)?;
+			layouter.constrain_instance(result_state[0].cell(), config.common.instance, 0)?;
 			Ok(())
 		}
 	}

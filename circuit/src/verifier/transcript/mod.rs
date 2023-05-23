@@ -6,9 +6,9 @@ use crate::{
 	ecc::AssignedPoint,
 	integer::{native::Integer, AssignedInteger},
 	params::RoundParams,
-	poseidon::sponge::PoseidonSpongeChipset,
+	poseidon::sponge::StatefulSpongeChipset,
 	rns::RnsParams,
-	Chipset, FieldExt, RegionCtx,
+	FieldExt, RegionCtx,
 };
 use halo2::{
 	arithmetic::Field,
@@ -42,7 +42,7 @@ where
 	// Reader
 	reader: Option<RD>,
 	// PoseidonSponge
-	state: PoseidonSpongeChipset<C::Scalar, WIDTH, R>,
+	state: StatefulSpongeChipset<C::Scalar, WIDTH, R>,
 	// Loader
 	loader: LoaderConfig<'a, C, L, P>,
 	// PhantomData
@@ -59,7 +59,15 @@ where
 {
 	/// Construct a new PoseidonReadChipset
 	pub fn new(reader: Option<RD>, loader: LoaderConfig<'a, C, L, P>) -> Self {
-		Self { reader, state: PoseidonSpongeChipset::new(), loader, _p: PhantomData }
+		let sponge = {
+			let mut layouter_mut = loader.layouter.borrow_mut();
+			StatefulSpongeChipset::init(
+				&loader.common,
+				layouter_mut.namespace(|| "stateful_sponge"),
+			)
+			.unwrap()
+		};
+		Self { reader, state: sponge, loader, _p: PhantomData }
 	}
 
 	/// Construct a new `assigned zero` value
@@ -94,18 +102,20 @@ where
 	fn squeeze_challenge(&mut self) -> Halo2LScalar<'a, C, L, P> {
 		let default = Self::assigned_zero(self.loader.clone());
 		self.state.update(&[default]);
-		let hasher = self.state.clone();
-		let value = {
+		let result = {
 			let mut loader_ref = self.loader.layouter.borrow_mut();
-			hasher
-				.synthesize(
+			let res = self
+				.state
+				.squeeze(
 					&self.loader.common,
 					&self.loader.poseidon_sponge,
 					loader_ref.namespace(|| "squeeze_challenge"),
 				)
-				.unwrap()
+				.unwrap();
+			res
 		};
-		Halo2LScalar::new(value, self.loader.clone())
+
+		Halo2LScalar::new(result, self.loader.clone())
 	}
 
 	/// Update with an elliptic curve point.
@@ -315,7 +325,7 @@ mod test {
 			},
 			transcript::native::WIDTH,
 		},
-		Chip, Chipset, CommonConfig, RegionCtx,
+		Chip, CommonConfig, RegionCtx,
 	};
 	use halo2::{
 		arithmetic::Field,
