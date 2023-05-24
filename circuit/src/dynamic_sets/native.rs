@@ -7,7 +7,6 @@ use halo2::{
 	arithmetic::Field,
 	halo2curves::{bn256::Fr, ff::PrimeField},
 };
-use itertools::Itertools;
 use num_bigint::{BigInt, ToBigInt};
 use num_rational::BigRational;
 use num_traits::{FromPrimitive, Zero};
@@ -143,10 +142,8 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITERATIONS: usize, const INITIAL_SCO
 	}
 
 	/// Add new set member and initial score
-	pub fn add_member(&mut self, pk: PublicKey) {
-		let pk_fr = recover_ethereum_address_from_pk(pk);
-
-		let pos = self.set.iter().position(|&(x, _)| x == pk_fr);
+	pub fn add_member(&mut self, pk: Fr) {
+		let pos = self.set.iter().position(|&(x, _)| x == pk);
 		// Make sure not already in the set
 		assert!(pos.is_none());
 
@@ -155,13 +152,11 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITERATIONS: usize, const INITIAL_SCO
 
 		// Give the initial score.
 		let initial_score = Fr::from_u128(INITIAL_SCORE);
-		self.set[index] = (pk_fr, initial_score);
+		self.set[index] = (pk, initial_score);
 	}
 
 	/// Remove the member and its opinion
-	pub fn remove_member(&mut self, pk: PublicKey) {
-		let pk = recover_ethereum_address_from_pk(pk);
-
+	pub fn remove_member(&mut self, pk: Fr) {
 		let pos = self.set.iter().position(|&(x, _)| x == pk);
 		// Make sure already in the set
 		assert!(pos.is_some());
@@ -422,7 +417,7 @@ mod test {
 		const NUM_ITERATIONS: usize,
 		const INITIAL_SCORE: u128,
 	>(
-		sk: &SecretKey, pks: &[Option<PublicKey>], scores: &[Fr],
+		sk: &SecretKey, pks: &[Fr], scores: &[Fr],
 	) -> Vec<SignedAttestation> {
 		assert!(pks.len() == NUM_NEIGHBOURS);
 		assert!(scores.len() == NUM_NEIGHBOURS);
@@ -431,10 +426,10 @@ mod test {
 
 		let mut res = Vec::new();
 		for i in 0..NUM_NEIGHBOURS {
-			if pks[i].is_none() {
+			if pks[i] == Fr::zero() {
 				res.push(SignedAttestation::default())
 			} else {
-				let about = recover_ethereum_address_from_pk(pks[i].clone().unwrap());
+				let about = pks[i];
 				let key = Fr::one();
 				let value = scores[i].clone();
 				let message = Fr::one();
@@ -459,6 +454,7 @@ mod test {
 		let rng = &mut thread_rng();
 
 		let (_sk, pk) = generate_keypair(rng);
+		let pk = recover_ethereum_address_from_pk(pk);
 
 		set.add_member(pk);
 
@@ -474,8 +470,9 @@ mod test {
 		let rng = &mut thread_rng();
 
 		let (_sk, pk) = generate_keypair(rng);
+		let pk_fr = recover_ethereum_address_from_pk(pk);
 
-		set.add_member(pk);
+		set.add_member(pk_fr);
 
 		set.converge();
 	}
@@ -488,6 +485,9 @@ mod test {
 
 		let (_sk1, pk1) = generate_keypair(rng);
 		let (_sk2, pk2) = generate_keypair(rng);
+
+		let pk1 = recover_ethereum_address_from_pk(pk1);
+		let pk2 = recover_ethereum_address_from_pk(pk2);
 
 		set.add_member(pk1);
 		set.add_member(pk2);
@@ -504,13 +504,16 @@ mod test {
 		let (sk1, pk1) = generate_keypair(rng);
 		let (_sk2, pk2) = generate_keypair(rng);
 
-		set.add_member(pk1);
-		set.add_member(pk2);
+		let pk1_fr = recover_ethereum_address_from_pk(pk1);
+		let pk2_fr = recover_ethereum_address_from_pk(pk2);
+
+		set.add_member(pk1_fr);
+		set.add_member(pk2_fr);
 
 		// Peer1(pk1) signs the opinion
-		let mut pks = [None; NUM_NEIGHBOURS];
-		pks[0] = Some(pk1);
-		pks[1] = Some(pk2);
+		let mut pks = [Fr::zero(); NUM_NEIGHBOURS];
+		pks[0] = pk1_fr;
+		pks[1] = pk2_fr;
 
 		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
 		scores[1] = Fr::from_u128(INITIAL_SCORE);
@@ -532,13 +535,16 @@ mod test {
 		let (sk1, pk1) = generate_keypair(rng);
 		let (sk2, pk2) = generate_keypair(rng);
 
-		set.add_member(pk1);
-		set.add_member(pk2);
+		let pk1_fr = recover_ethereum_address_from_pk(pk1);
+		let pk2_fr = recover_ethereum_address_from_pk(pk2);
+
+		set.add_member(pk1_fr);
+		set.add_member(pk2_fr);
 
 		// Peer1(pk1) signs the opinion
-		let mut pks = [None; NUM_NEIGHBOURS];
-		pks[0] = Some(pk1);
-		pks[1] = Some(pk2);
+		let mut pks = [Fr::zero(); NUM_NEIGHBOURS];
+		pks[0] = pk1_fr;
+		pks[1] = pk2_fr;
 
 		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
 		scores[1] = Fr::from_u128(INITIAL_SCORE);
@@ -549,9 +555,9 @@ mod test {
 		set.update_op(pk1, op1);
 
 		// Peer2(pk2) signs the opinion
-		let mut pks = [None; NUM_NEIGHBOURS];
-		pks[0] = Some(pk1);
-		pks[1] = Some(pk2);
+		let mut pks = [Fr::zero(); NUM_NEIGHBOURS];
+		pks[0] = pk1_fr;
+		pks[1] = pk2_fr;
 
 		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
 		scores[0] = Fr::from_u128(INITIAL_SCORE);
@@ -573,15 +579,19 @@ mod test {
 		let (sk2, pk2) = generate_keypair(rng);
 		let (sk3, pk3) = generate_keypair(rng);
 
-		set.add_member(pk1);
-		set.add_member(pk2);
-		set.add_member(pk3);
+		let pk1_fr = recover_ethereum_address_from_pk(pk1);
+		let pk2_fr = recover_ethereum_address_from_pk(pk2);
+		let pk3_fr = recover_ethereum_address_from_pk(pk3);
+
+		set.add_member(pk1_fr);
+		set.add_member(pk2_fr);
+		set.add_member(pk3_fr);
 
 		// Peer1(pk1) signs the opinion
-		let mut pks = [None; NUM_NEIGHBOURS];
-		pks[0] = Some(pk1);
-		pks[1] = Some(pk2);
-		pks[2] = Some(pk3);
+		let mut pks = [Fr::zero(); NUM_NEIGHBOURS];
+		pks[0] = pk1_fr;
+		pks[1] = pk2_fr;
+		pks[2] = pk3_fr;
 
 		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
 		scores[1] = Fr::from_u128(300);
@@ -593,10 +603,10 @@ mod test {
 		set.update_op(pk1, op1);
 
 		// Peer2(pk2) signs the opinion
-		let mut pks = [None; NUM_NEIGHBOURS];
-		pks[0] = Some(pk1);
-		pks[1] = Some(pk2);
-		pks[2] = Some(pk3);
+		let mut pks = [Fr::zero(); NUM_NEIGHBOURS];
+		pks[0] = pk1_fr;
+		pks[1] = pk2_fr;
+		pks[2] = pk3_fr;
 
 		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
 		scores[0] = Fr::from_u128(600);
@@ -608,10 +618,10 @@ mod test {
 		set.update_op(pk2, op2);
 
 		// Peer3(pk3) signs the opinion
-		let mut pks = [None; NUM_NEIGHBOURS];
-		pks[0] = Some(pk1);
-		pks[1] = Some(pk2);
-		pks[2] = Some(pk3);
+		let mut pks = [Fr::zero(); NUM_NEIGHBOURS];
+		pks[0] = pk1_fr;
+		pks[1] = pk2_fr;
+		pks[2] = pk3_fr;
 
 		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
 		scores[0] = Fr::from_u128(600);
@@ -635,15 +645,19 @@ mod test {
 		let (sk2, pk2) = generate_keypair(rng);
 		let (sk3, pk3) = generate_keypair(rng);
 
-		set.add_member(pk1);
-		set.add_member(pk2);
-		set.add_member(pk3);
+		let pk1_fr = recover_ethereum_address_from_pk(pk1);
+		let pk2_fr = recover_ethereum_address_from_pk(pk2);
+		let pk3_fr = recover_ethereum_address_from_pk(pk3);
+
+		set.add_member(pk1_fr);
+		set.add_member(pk2_fr);
+		set.add_member(pk3_fr);
 
 		// Peer1(pk1) signs the opinion
-		let mut pks = [None; NUM_NEIGHBOURS];
-		pks[0] = Some(pk1);
-		pks[1] = Some(pk2);
-		pks[2] = Some(pk3);
+		let mut pks = [Fr::zero(); NUM_NEIGHBOURS];
+		pks[0] = pk1_fr;
+		pks[1] = pk2_fr;
+		pks[2] = pk3_fr;
 
 		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
 		scores[1] = Fr::from_u128(300);
@@ -655,10 +669,10 @@ mod test {
 		set.update_op(pk1, op1);
 
 		// Peer2(pk2) signs the opinion
-		let mut pks = [None; NUM_NEIGHBOURS];
-		pks[0] = Some(pk1);
-		pks[1] = Some(pk2);
-		pks[2] = Some(pk3);
+		let mut pks = [Fr::zero(); NUM_NEIGHBOURS];
+		pks[0] = pk1_fr;
+		pks[1] = pk2_fr;
+		pks[2] = pk3_fr;
 
 		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
 		scores[0] = Fr::from_u128(600);
@@ -677,19 +691,24 @@ mod test {
 		let mut set = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
 
 		let rng = &mut thread_rng();
+
 		let (sk1, pk1) = generate_keypair(rng);
 		let (sk2, pk2) = generate_keypair(rng);
 		let (sk3, pk3) = generate_keypair(rng);
 
-		set.add_member(pk1);
-		set.add_member(pk2);
-		set.add_member(pk3);
+		let pk1_fr = recover_ethereum_address_from_pk(pk1);
+		let pk2_fr = recover_ethereum_address_from_pk(pk2);
+		let pk3_fr = recover_ethereum_address_from_pk(pk3);
+
+		set.add_member(pk1_fr);
+		set.add_member(pk2_fr);
+		set.add_member(pk3_fr);
 
 		// Peer1(pk1) signs the opinion
-		let mut pks = [None; NUM_NEIGHBOURS];
-		pks[0] = Some(pk1);
-		pks[1] = Some(pk2);
-		pks[2] = Some(pk3);
+		let mut pks = [Fr::zero(); NUM_NEIGHBOURS];
+		pks[0] = pk1_fr;
+		pks[1] = pk2_fr;
+		pks[2] = pk3_fr;
 
 		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
 		scores[1] = Fr::from_u128(300);
@@ -701,10 +720,10 @@ mod test {
 		set.update_op(pk1, op1);
 
 		// Peer2(pk2) signs the opinion
-		let mut pks = [None; NUM_NEIGHBOURS];
-		pks[0] = Some(pk1);
-		pks[1] = Some(pk2);
-		pks[2] = Some(pk3);
+		let mut pks = [Fr::zero(); NUM_NEIGHBOURS];
+		pks[0] = pk1_fr;
+		pks[1] = pk2_fr;
+		pks[2] = pk3_fr;
 
 		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
 		scores[0] = Fr::from_u128(600);
@@ -716,10 +735,10 @@ mod test {
 		set.update_op(pk2, op2);
 
 		// Peer3(pk3) signs the opinion
-		let mut pks = [None; NUM_NEIGHBOURS];
-		pks[0] = Some(pk1);
-		pks[1] = Some(pk2);
-		pks[2] = Some(pk3);
+		let mut pks = [Fr::zero(); NUM_NEIGHBOURS];
+		pks[0] = pk1_fr;
+		pks[1] = pk2_fr;
+		pks[2] = pk3_fr;
 
 		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
 		scores[0] = Fr::from_u128(600);
@@ -733,7 +752,7 @@ mod test {
 		set.converge();
 
 		// Peer2 quits
-		set.remove_member(pk2);
+		set.remove_member(pk2_fr);
 
 		set.converge();
 	}
@@ -748,15 +767,19 @@ mod test {
 		let (sk2, pk2) = generate_keypair(rng);
 		let (sk3, pk3) = generate_keypair(rng);
 
-		set.add_member(pk1);
-		set.add_member(pk2);
-		set.add_member(pk3);
+		let pk1_fr = recover_ethereum_address_from_pk(pk1);
+		let pk2_fr = recover_ethereum_address_from_pk(pk2);
+		let pk3_fr = recover_ethereum_address_from_pk(pk3);
+
+		set.add_member(pk1_fr);
+		set.add_member(pk2_fr);
+		set.add_member(pk3_fr);
 
 		// Peer1(pk1) signs the opinion
-		let mut pks = [None; NUM_NEIGHBOURS];
-		pks[0] = Some(pk1);
-		pks[1] = Some(pk2);
-		pks[2] = Some(pk3);
+		let mut pks = [Fr::zero(); NUM_NEIGHBOURS];
+		pks[0] = pk1_fr;
+		pks[1] = pk2_fr;
+		pks[2] = pk3_fr;
 
 		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
 		scores[1] = Fr::from_u128(300);
@@ -768,10 +791,10 @@ mod test {
 		set.update_op(pk1, op1);
 
 		// Peer2(pk2) signs the opinion
-		let mut pks = [None; NUM_NEIGHBOURS];
-		pks[0] = Some(pk1);
-		pks[1] = Some(pk2);
-		pks[2] = Some(pk3);
+		let mut pks = [Fr::zero(); NUM_NEIGHBOURS];
+		pks[0] = pk1_fr;
+		pks[1] = pk2_fr;
+		pks[2] = pk3_fr;
 
 		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
 		scores[0] = Fr::from_u128(600);
@@ -807,11 +830,15 @@ mod test {
 		let (sk2, pk2) = generate_keypair(rng);
 		let (sk3, pk3) = generate_keypair(rng);
 
+		let pk1_fr = recover_ethereum_address_from_pk(pk1);
+		let pk2_fr = recover_ethereum_address_from_pk(pk2);
+		let pk3_fr = recover_ethereum_address_from_pk(pk3);
+
 		// Peer1(pk1) signs the opinion
-		let mut pks = [None; NUM_NEIGHBOURS];
-		pks[0] = Some(pk1);
-		pks[1] = Some(pk2);
-		pks[2] = Some(pk3);
+		let mut pks = [Fr::zero(); NUM_NEIGHBOURS];
+		pks[0] = pk1_fr;
+		pks[1] = pk2_fr;
+		pks[2] = pk3_fr;
 
 		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
 		scores[0] = Fr::from_u128(10);
@@ -821,10 +848,10 @@ mod test {
 			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&sk1, &pks, &scores);
 
 		// Peer2(pk2) signs the opinion
-		let mut pks = [None; NUM_NEIGHBOURS];
-		pks[0] = Some(pk1);
-		pks[1] = Some(pk2);
-		pks[2] = Some(pk3);
+		let mut pks = [Fr::zero(); NUM_NEIGHBOURS];
+		pks[0] = pk1_fr;
+		pks[1] = pk2_fr;
+		pks[2] = pk3_fr;
 
 		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
 		scores[2] = Fr::from_u128(30);
@@ -833,10 +860,10 @@ mod test {
 			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&sk2, &pks, &scores);
 
 		// Peer3(pk3) signs the opinion
-		let mut pks = [None; NUM_NEIGHBOURS];
-		pks[0] = Some(pk1);
-		pks[1] = Some(pk2);
-		pks[2] = Some(pk3);
+		let mut pks = [Fr::zero(); NUM_NEIGHBOURS];
+		pks[0] = pk1_fr;
+		pks[1] = pk2_fr;
+		pks[2] = pk3_fr;
 
 		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
 		scores[0] = Fr::from_u128(10);
@@ -848,9 +875,9 @@ mod test {
 		let mut eigen_trust_set =
 			EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
 
-		eigen_trust_set.add_member(pk1);
-		eigen_trust_set.add_member(pk2);
-		eigen_trust_set.add_member(pk3);
+		eigen_trust_set.add_member(pk1_fr);
+		eigen_trust_set.add_member(pk2_fr);
+		eigen_trust_set.add_member(pk3_fr);
 
 		eigen_trust_set.update_op(pk1, op1);
 		eigen_trust_set.update_op(pk2, op2);
@@ -885,20 +912,23 @@ mod test {
 		let keys: Vec<(SecretKey, PublicKey)> =
 			(0..NUM_NEIGHBOURS).into_iter().map(|_| generate_keypair(rng)).collect();
 		let sks: Vec<SecretKey> = keys.iter().map(|(sk, _)| sk.clone()).collect();
-		let pks: Vec<Option<PublicKey>> = keys.iter().map(|(_, pk)| Some(pk.clone())).collect();
+		let pks: Vec<PublicKey> = keys.iter().map(|(_, pk)| pk.clone()).collect();
 
 		// Add the publicKey to the set
-		pks.iter().for_each(|pk| set.add_member(pk.unwrap()));
+		pks.iter().for_each(|pk| set.add_member(recover_ethereum_address_from_pk(pk.clone())));
+
+		let pks_fr: Vec<Fr> =
+			pks.iter().map(|pk| recover_ethereum_address_from_pk(pk.clone())).collect();
 
 		// Update the opinions
 		for i in 0..NUM_NEIGHBOURS {
 			let scores = ops[i].to_vec();
 
 			let op_i = sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
-				&sks[i], &pks, &scores,
+				&sks[i], &pks_fr, &scores,
 			);
 
-			let pk_i = pks[i].unwrap();
+			let pk_i = pks[i];
 			set.update_op(pk_i, op_i);
 		}
 
