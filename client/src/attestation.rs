@@ -142,15 +142,15 @@ pub fn att_data_from_signed_att(
 	// Recover the Ethereum address from the signed attestation
 	let address = address_from_signed_att(signed_attestation)?;
 
-	// Calculate the hash of the attestation
-	let attestation_hash = signed_attestation.attestation.hash().to_bytes();
+	// Get the attestation key
+	let key = signed_attestation.attestation.key.to_bytes();
 
 	// Get the payload bytes
 	let payload = AttestationPayload::from_signed_attestation(&signed_attestation)?;
 
 	Ok(ContractAttestationData(
 		address,
-		attestation_hash,
+		key,
 		payload.to_bytes().into(),
 	))
 }
@@ -352,8 +352,8 @@ mod tests {
 			Wallet::from(SigningKey::from_bytes(secret_key_as_bytes.as_ref()).unwrap()).address();
 		assert_eq!(contract_att_data.0, expected_address);
 
-		let expected_attestation_hash = signed_attestation.attestation.hash().to_bytes();
-		assert_eq!(contract_att_data.1, expected_attestation_hash);
+		let expected_key = signed_attestation.attestation.key.to_bytes();
+		assert_eq!(contract_att_data.1, expected_key);
 
 		let expected_payload: Bytes =
 			AttestationPayload::from_signed_attestation(&signed_attestation)
