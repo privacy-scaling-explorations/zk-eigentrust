@@ -1,6 +1,9 @@
 use crate::circuit::PoseidonNativeSponge;
 
-use halo2::halo2curves::{bn256::Fr, ff::PrimeField};
+use halo2::{
+	arithmetic::Field,
+	halo2curves::{bn256::Fr, ff::PrimeField},
+};
 use num_rational::BigRational;
 use secp256k1::{constants::ONE, ecdsa, Message, Secp256k1, SecretKey};
 use sha3::{Digest, Keccak256};
@@ -61,8 +64,8 @@ pub struct EigenTrustAttestationSet<
 	const NUM_ITERATIONS: usize,
 	const INITIAL_SCORE: u128,
 > {
-	set: Vec<(Option<Fr>, Fr)>,
-	ops: HashMap<ECDSAPublicKey, Vec<Fr>>,
+	set: Vec<(Fr, Fr)>,
+	ops: HashMap<Fr, Vec<Fr>>,
 }
 
 impl<const NUM_NEIGHBOURS: usize, const NUM_ITERATIONS: usize, const INITIAL_SCORE: u128>
@@ -70,54 +73,54 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITERATIONS: usize, const INITIAL_SCO
 {
 	/// Constructs new instance
 	pub fn new() -> Self {
-		Self { set: vec![(None, Fr::zero()); NUM_NEIGHBOURS], ops: HashMap::new() }
+		Self { set: vec![(Fr::zero(), Fr::zero()); NUM_NEIGHBOURS], ops: HashMap::new() }
 	}
 
 	/// Add new set member and initial score
 	pub fn add_member(&mut self, pk: ECDSAPublicKey) {
 		let pk_fr = recover_ethereum_address_from_pk(pk);
 
-		let pos = self.set.iter().position(|&(x, _)| x == Some(pk_fr));
+		let pos = self.set.iter().position(|&(x, _)| x == pk_fr);
 		// Make sure not already in the set
 		assert!(pos.is_none());
 
-		let first_available = self.set.iter().position(|&(x, _)| x.is_none());
+		let first_available = self.set.iter().position(|&(x, _)| x == Fr::zero());
 		let index = first_available.unwrap();
 
 		// Give the initial score.
 		let initial_score = Fr::from_u128(INITIAL_SCORE);
-		self.set[index] = (Some(pk_fr), initial_score);
+		self.set[index] = (pk_fr, initial_score);
 	}
 
 	/// Remove the member and its opinion
 	pub fn remove_member(&mut self, pk: ECDSAPublicKey) {
 		let pk_fr = recover_ethereum_address_from_pk(pk);
-		let pos = self.set.iter().position(|&(x, _)| x == Some(pk_fr));
+		let pos = self.set.iter().position(|&(x, _)| x == pk_fr);
 		// Make sure already in the set
 		assert!(pos.is_some());
 
 		let index = pos.unwrap();
-		self.set[index] = (None, Fr::zero());
+		self.set[index] = (Fr::zero(), Fr::zero());
 
-		self.ops.remove(&pk);
+		self.ops.remove(&pk_fr);
 	}
 
 	/// Update the opinion of the member
 	pub fn update_op(&mut self, from: ECDSAPublicKey, op: Vec<SignedAttestation>) -> Fr {
 		let from_pk = recover_ethereum_address_from_pk(from);
-		let pos_from = self.set.iter().position(|&(x, _)| x == Some(from_pk));
+		let pos_from = self.set.iter().position(|&(x, _)| x == from_pk);
 		assert!(pos_from.is_some());
 
 		let mut scores = vec![Fr::zero(); NUM_NEIGHBOURS];
 		let mut hashes = Vec::new();
 		for (i, att) in op.iter().enumerate() {
-			let is_default_pubkey = self.set[i].0.is_none();
+			let is_default_pubkey = self.set[i].0 == Fr::zero();
 
 			if is_default_pubkey {
 				scores[i] = Fr::default();
 				hashes.push(AttestationFr::default().hash());
 			} else {
-				assert!(att.attestation.about == self.set[i].0.unwrap());
+				assert!(att.attestation.about == self.set[i].0);
 
 				let recovered = att.recover_public_key().unwrap();
 				assert!(recovered == from);
@@ -129,7 +132,7 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITERATIONS: usize, const INITIAL_SCO
 			}
 		}
 
-		self.ops.insert(from, scores);
+		self.ops.insert(from_pk, scores);
 
 		let mut sponge_hasher = PoseidonNativeSponge::new();
 		sponge_hasher.update(&hashes);
@@ -138,13 +141,102 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITERATIONS: usize, const INITIAL_SCO
 		return op_hash;
 	}
 
-	fn filter_peers_ops(&self) {
-		todo!()
+	fn filter_peers_ops(&self) -> HashMap<Fr, Vec<Fr>> {
+		let mut filtered_ops: HashMap<Fr, Vec<Fr>> = HashMap::new();
+
+		// Distribute the scores to valid peers
+		for i in 0..NUM_NEIGHBOURS {
+			let (pk_i, _) = self.set[i].clone();
+			if pk_i == Fr::zero() {
+				continue;
+			}
+
+			let default_ops = vec![Fr::default(); NUM_NEIGHBOURS];
+			let mut ops_i = self.ops.get(&pk_i).unwrap_or(&default_ops).clone();
+
+			// Update the opinion array - pairs of (key, score)
+			for j in 0..NUM_NEIGHBOURS {
+				// Conditions fro nullifying the score
+				// 1. i == j
+				let is_pk_i = i == j;
+				if is_pk_i {
+					ops_i[j] = Fr::zero();
+				}
+			}
+
+			// Distribute the scores
+			let op_score_sum = ops_i.iter().fold(Fr::zero(), |acc, &score| acc + score);
+			if op_score_sum == Fr::zero() {
+				for j in 0..NUM_NEIGHBOURS {
+					let is_diff_pk = i != j;
+					let is_not_null = self.set[j].0 == Fr::zero();
+
+					// Conditions for distributing the score
+					// 1. i != j
+					// 2. pk_i != Fr::default()
+					if is_diff_pk && is_not_null {
+						ops_i[j] = Fr::from(1);
+					}
+				}
+			}
+			filtered_ops.insert(pk_i, ops_i);
+		}
+
+		filtered_ops
 	}
 
 	/// Compute the EigenTrust score
 	pub fn converge(&self) -> Vec<Fr> {
-		todo!()
+		// There should be at least 2 valid peers(valid opinions) for calculation
+		let valid_peers = self.set.iter().filter(|(pk, _)| *pk != Fr::zero()).count();
+		assert!(valid_peers >= 2, "Insufficient peers for calculation!");
+
+		let filtered_ops: HashMap<Fr, Vec<Fr>> = self.filter_peers_ops();
+
+		let mut ops = Vec::new();
+		for i in 0..NUM_NEIGHBOURS {
+			let (pk, _) = self.set[i];
+			if pk == Fr::zero() {
+				ops.push(vec![Fr::zero(); NUM_NEIGHBOURS]);
+			} else {
+				let scores = filtered_ops.get(&pk).unwrap();
+				ops.push(scores.clone());
+			}
+		}
+
+		let mut ops_norm = vec![vec![Fr::zero(); NUM_NEIGHBOURS]; NUM_NEIGHBOURS];
+		// Normalize the opinion scores
+		for i in 0..NUM_NEIGHBOURS {
+			let op_score_sum: Fr = ops[i].iter().sum();
+			let inverted_sum = op_score_sum.invert().unwrap_or(Fr::zero());
+
+			for j in 0..NUM_NEIGHBOURS {
+				let ops_ij = ops[i][j];
+				ops_norm[i][j] = ops_ij * inverted_sum;
+			}
+		}
+
+		// By this point we should use filtered opinions
+		let mut s: Vec<Fr> = self.set.iter().map(|(_, score)| score.clone()).collect();
+		let mut new_s: Vec<Fr> = self.set.iter().map(|(_, score)| score.clone()).collect();
+		for _ in 0..NUM_ITERATIONS {
+			for i in 0..NUM_NEIGHBOURS {
+				let mut score_i_sum = Fr::zero();
+				for j in 0..NUM_NEIGHBOURS {
+					let score = ops_norm[j][i].clone() * s[j].clone();
+					score_i_sum = score + score_i_sum;
+				}
+				new_s[i] = score_i_sum;
+			}
+			s = new_s.clone();
+		}
+
+		// Assert the score sum for checking the possible reputation leak
+		let sum_initial = self.set.iter().fold(Fr::zero(), |acc, &(_, score)| acc + score);
+		let sum_final = s.iter().fold(Fr::zero(), |acc, &score| acc + score);
+		assert!(sum_initial == sum_final);
+
+		s
 	}
 
 	/// Compute the EigenTrust score using BigRational numbers
@@ -230,7 +322,6 @@ mod test {
 	}
 
 	#[test]
-	#[should_panic]
 	fn test_add_two_members_without_opinions() {
 		let mut set =
 			EigenTrustAttestationSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
@@ -245,7 +336,6 @@ mod test {
 		set.converge();
 	}
 
-	#[ignore = "converge unimplemented"]
 	#[test]
 	fn test_add_two_members_with_one_opinion() {
 		let mut set =
@@ -274,7 +364,6 @@ mod test {
 		set.converge();
 	}
 
-	#[ignore = "converge unimplemented"]
 	#[test]
 	fn test_add_two_members_with_opinions() {
 		let mut set =
