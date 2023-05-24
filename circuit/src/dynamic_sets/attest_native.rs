@@ -157,9 +157,11 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITERATIONS: usize, const INITIAL_SCO
 			// Update the opinion array - pairs of (key, score)
 			for j in 0..NUM_NEIGHBOURS {
 				// Conditions fro nullifying the score
-				// 1. i == j
+				// 1. pk_j == 0(null or default key)
+				// 2. i == j
+				let is_pk_j_null = self.set[j].0 == Fr::zero();
 				let is_pk_i = i == j;
-				if is_pk_i {
+				if is_pk_j_null || is_pk_i {
 					ops_i[j] = Fr::zero();
 				}
 			}
@@ -169,7 +171,7 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITERATIONS: usize, const INITIAL_SCO
 			if op_score_sum == Fr::zero() {
 				for j in 0..NUM_NEIGHBOURS {
 					let is_diff_pk = i != j;
-					let is_not_null = self.set[j].0 == Fr::zero();
+					let is_not_null = self.set[j].0 != Fr::zero();
 
 					// Conditions for distributing the score
 					// 1. i != j
@@ -181,6 +183,7 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITERATIONS: usize, const INITIAL_SCO
 			}
 			filtered_ops.insert(pk_i, ops_i);
 		}
+		println!("filtered_ops: {:?}", filtered_ops);
 
 		filtered_ops
 	}
@@ -572,6 +575,8 @@ mod test {
 			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&sk3, &pks, &scores);
 
 		set.update_op(pk3, op3);
+
+		set.converge();
 
 		// Peer2 quits
 		set.remove_member(pk2);
