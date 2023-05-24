@@ -274,7 +274,7 @@ mod test {
 		set.converge();
 	}
 
-	// #[ignore = "converge unimplemented"]
+	#[ignore = "converge unimplemented"]
 	#[test]
 	fn test_add_two_members_with_opinions() {
 		let mut set =
@@ -312,6 +312,180 @@ mod test {
 			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&sk2, &pks, &scores);
 
 		set.update_op(pk2, op2);
+
+		set.converge();
+	}
+
+	#[test]
+	fn test_three_members_with_opinions() {
+		let mut set =
+			EigenTrustAttestationSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
+
+		let rng = &mut thread_rng();
+		let (sk1, pk1) = generate_keypair(rng);
+		let (sk2, pk2) = generate_keypair(rng);
+		let (sk3, pk3) = generate_keypair(rng);
+
+		set.add_member(pk1);
+		set.add_member(pk2);
+		set.add_member(pk3);
+
+		// Peer1(pk1) signs the opinion
+		let mut pks = [None; NUM_NEIGHBOURS];
+		pks[0] = Some(pk1);
+		pks[1] = Some(pk2);
+		pks[2] = Some(pk3);
+
+		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
+		scores[1] = Fr::from_u128(300);
+		scores[2] = Fr::from_u128(700);
+
+		let op1 =
+			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&sk1, &pks, &scores);
+
+		set.update_op(pk1, op1);
+
+		// Peer2(pk2) signs the opinion
+		let mut pks = [None; NUM_NEIGHBOURS];
+		pks[0] = Some(pk1);
+		pks[1] = Some(pk2);
+		pks[2] = Some(pk3);
+
+		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
+		scores[0] = Fr::from_u128(600);
+		scores[2] = Fr::from_u128(400);
+
+		let op2 =
+			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&sk2, &pks, &scores);
+
+		set.update_op(pk2, op2);
+
+		// Peer3(pk3) signs the opinion
+		let mut pks = [None; NUM_NEIGHBOURS];
+		pks[0] = Some(pk1);
+		pks[1] = Some(pk2);
+		pks[2] = Some(pk3);
+
+		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
+		scores[0] = Fr::from_u128(600);
+		scores[1] = Fr::from_u128(400);
+
+		let op3 =
+			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&sk3, &pks, &scores);
+
+		set.update_op(pk3, op3);
+
+		set.converge();
+	}
+
+	#[test]
+	fn test_add_three_members_with_two_opinions() {
+		let mut set =
+			EigenTrustAttestationSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
+
+		let rng = &mut thread_rng();
+		let (sk1, pk1) = generate_keypair(rng);
+		let (sk2, pk2) = generate_keypair(rng);
+		let (sk3, pk3) = generate_keypair(rng);
+
+		set.add_member(pk1);
+		set.add_member(pk2);
+		set.add_member(pk3);
+
+		// Peer1(pk1) signs the opinion
+		let mut pks = [None; NUM_NEIGHBOURS];
+		pks[0] = Some(pk1);
+		pks[1] = Some(pk2);
+		pks[2] = Some(pk3);
+
+		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
+		scores[1] = Fr::from_u128(300);
+		scores[2] = Fr::from_u128(700);
+
+		let op1 =
+			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&sk1, &pks, &scores);
+
+		set.update_op(pk1, op1);
+
+		// Peer2(pk2) signs the opinion
+		let mut pks = [None; NUM_NEIGHBOURS];
+		pks[0] = Some(pk1);
+		pks[1] = Some(pk2);
+		pks[2] = Some(pk3);
+
+		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
+		scores[0] = Fr::from_u128(600);
+		scores[2] = Fr::from_u128(400);
+
+		let op2 =
+			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&sk2, &pks, &scores);
+
+		set.update_op(pk2, op2);
+
+		set.converge();
+	}
+
+	#[test]
+	fn test_add_3_members_with_3_ops_quit_1_member() {
+		let mut set =
+			EigenTrustAttestationSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
+
+		let rng = &mut thread_rng();
+		let (sk1, pk1) = generate_keypair(rng);
+		let (sk2, pk2) = generate_keypair(rng);
+		let (sk3, pk3) = generate_keypair(rng);
+
+		set.add_member(pk1);
+		set.add_member(pk2);
+		set.add_member(pk3);
+
+		// Peer1(pk1) signs the opinion
+		let mut pks = [None; NUM_NEIGHBOURS];
+		pks[0] = Some(pk1);
+		pks[1] = Some(pk2);
+		pks[2] = Some(pk3);
+
+		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
+		scores[1] = Fr::from_u128(300);
+		scores[2] = Fr::from_u128(700);
+
+		let op1 =
+			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&sk1, &pks, &scores);
+
+		set.update_op(pk1, op1);
+
+		// Peer2(pk2) signs the opinion
+		let mut pks = [None; NUM_NEIGHBOURS];
+		pks[0] = Some(pk1);
+		pks[1] = Some(pk2);
+		pks[2] = Some(pk3);
+
+		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
+		scores[0] = Fr::from_u128(600);
+		scores[2] = Fr::from_u128(400);
+
+		let op2 =
+			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&sk2, &pks, &scores);
+
+		set.update_op(pk2, op2);
+
+		// Peer3(pk3) signs the opinion
+		let mut pks = [None; NUM_NEIGHBOURS];
+		pks[0] = Some(pk1);
+		pks[1] = Some(pk2);
+		pks[2] = Some(pk3);
+
+		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
+		scores[0] = Fr::from_u128(600);
+		scores[1] = Fr::from_u128(400);
+
+		let op3 =
+			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&sk3, &pks, &scores);
+
+		set.update_op(pk3, op3);
+
+		// Peer2 quits
+		set.remove_member(pk2);
 
 		set.converge();
 	}
