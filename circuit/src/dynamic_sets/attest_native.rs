@@ -2,11 +2,11 @@ use crate::circuit::PoseidonNativeSponge;
 
 use halo2::halo2curves::{bn256::Fr, ff::PrimeField};
 use num_rational::BigRational;
-use secp256k1::ecdsa;
+use secp256k1::{constants::ONE, ecdsa, Message, Secp256k1, SecretKey};
 use sha3::{Digest, Keccak256};
 use std::collections::HashMap;
 
-use super::native::SignedAttestation;
+use super::native::{AttestationFr, SignedAttestation};
 
 /// ECDSA public key
 pub type ECDSAPublicKey = secp256k1::PublicKey;
@@ -28,6 +28,31 @@ fn recover_ethereum_address_from_pk(public_key: ECDSAPublicKey) -> Fr {
 	address_bytes_array[..address_bytes.len()].copy_from_slice(address_bytes);
 
 	Fr::from_bytes(&address_bytes_array).unwrap()
+}
+
+impl Default for AttestationFr {
+	fn default() -> Self {
+		AttestationFr {
+			about: Fr::default(),
+			key: Fr::default(),
+			value: Fr::default(),
+			message: Fr::default(),
+		}
+	}
+}
+
+impl Default for SignedAttestation {
+	fn default() -> Self {
+		let attestation = AttestationFr::default();
+
+		let s = Secp256k1::signing_only();
+		let msg = attestation.hash().to_bytes();
+		let sk = SecretKey::from_slice(&ONE).unwrap();
+		let signature =
+			s.sign_ecdsa_recoverable(&Message::from_slice(msg.as_slice()).unwrap(), &sk);
+
+		Self { attestation, signature }
+	}
 }
 
 /// Dynamic set for EigenTrust
@@ -78,7 +103,7 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITERATIONS: usize, const INITIAL_SCO
 	}
 
 	/// Update the opinion of the member
-	pub fn update_op(&mut self, from: ECDSAPublicKey, op: Vec<Option<SignedAttestation>>) -> Fr {
+	pub fn update_op(&mut self, from: ECDSAPublicKey, op: Vec<SignedAttestation>) -> Fr {
 		let from_pk = recover_ethereum_address_from_pk(from);
 		let pos_from = self.set.iter().position(|&(x, _)| x == Some(from_pk));
 		assert!(pos_from.is_some());
@@ -86,11 +111,12 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITERATIONS: usize, const INITIAL_SCO
 		let mut scores = vec![Fr::zero(); NUM_NEIGHBOURS];
 		let mut hashes = Vec::new();
 		for (i, att) in op.iter().enumerate() {
-			let is_assigned_attestation = att.is_some();
+			let is_default_pubkey = self.set[i].0.is_none();
 
-			if is_assigned_attestation {
-				let att = att.clone().unwrap();
-
+			if is_default_pubkey {
+				scores[i] = Fr::default();
+				hashes.push(AttestationFr::default().hash());
+			} else {
 				assert!(att.attestation.about == self.set[i].0.unwrap());
 
 				let recovered = att.recover_public_key().unwrap();
@@ -146,7 +172,7 @@ mod test {
 		const INITIAL_SCORE: u128,
 	>(
 		sk: &SecretKey, pks: &[Option<PublicKey>], scores: &[Fr],
-	) -> Vec<Option<SignedAttestation>> {
+	) -> Vec<SignedAttestation> {
 		assert!(pks.len() == NUM_NEIGHBOURS);
 		assert!(scores.len() == NUM_NEIGHBOURS);
 
@@ -155,7 +181,7 @@ mod test {
 		let mut res = Vec::new();
 		for i in 0..NUM_NEIGHBOURS {
 			if pks[i].is_none() {
-				res.push(None);
+				res.push(SignedAttestation::default())
 			} else {
 				let about = recover_ethereum_address_from_pk(pks[i].clone().unwrap());
 				let key = Fr::one();
@@ -168,7 +194,7 @@ mod test {
 					.sign_ecdsa_recoverable(&Message::from_slice(message.as_slice()).unwrap(), sk);
 
 				let signed_attestation = SignedAttestation::new(attestation, signature);
-				res.push(Some(signed_attestation));
+				res.push(signed_attestation);
 			}
 		}
 		res
@@ -248,7 +274,7 @@ mod test {
 		set.converge();
 	}
 
-	#[ignore = "converge unimplemented"]
+	// #[ignore = "converge unimplemented"]
 	#[test]
 	fn test_add_two_members_with_opinions() {
 		let mut set =
