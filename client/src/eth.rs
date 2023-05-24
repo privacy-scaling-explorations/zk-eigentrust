@@ -12,11 +12,7 @@ use eigen_trust_circuit::{
 use ethers::{
 	abi::Address,
 	middleware::SignerMiddleware,
-	prelude::{
-		abigen,
-		k256::ecdsa::{self},
-		Abigen, ContractError,
-	},
+	prelude::{abigen, k256::ecdsa::SigningKey, Abigen, ContractError},
 	providers::{Http, Middleware, Provider},
 	signers::{
 		coins_bip39::{English, Mnemonic},
@@ -155,7 +151,7 @@ pub fn ecdsa_secret_from_mnemonic(
 		let derived_pk =
 			mnemonic.derive_key(&derivation_path, None).expect("Failed to derive signing key");
 
-		let raw_pk: &ecdsa::SigningKey = derived_pk.as_ref();
+		let raw_pk: &SigningKey = derived_pk.as_ref();
 
 		let secret_key =
 			SecretKey::from_slice(&raw_pk.to_bytes()).expect("32 bytes, within curve order");
@@ -187,10 +183,11 @@ mod tests {
 		Proof, ProofRaw,
 	};
 	use ethers::{
+		prelude::k256::ecdsa::SigningKey,
 		signers::{Signer, Wallet},
 		utils::Anvil,
 	};
-	use secp256k1::{Secp256k1, SecretKey};
+	use secp256k1::{PublicKey, Secp256k1, SecretKey};
 
 	#[tokio::test]
 	async fn should_deploy_the_as_contract() {
@@ -240,15 +237,12 @@ mod tests {
 		let secret_key =
 			SecretKey::from_slice(&secret_key_as_bytes).expect("32 bytes, within curve order");
 
-		let pub_key = secp256k1::PublicKey::from_secret_key(&secp, &secret_key);
+		let pub_key = PublicKey::from_secret_key(&secp, &secret_key);
 
 		let recovered_address = address_from_public_key(&pub_key).unwrap();
 
-		let expected_address = Wallet::from(
-			ethers::core::k256::ecdsa::SigningKey::from_bytes(secret_key_as_bytes.as_ref())
-				.unwrap(),
-		)
-		.address();
+		let expected_address =
+			Wallet::from(SigningKey::from_bytes(secret_key_as_bytes.as_ref()).unwrap()).address();
 
 		assert_eq!(recovered_address, expected_address);
 	}

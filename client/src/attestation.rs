@@ -158,7 +158,11 @@ pub fn att_data_from_signed_att(
 #[cfg(test)]
 mod tests {
 	use crate::attestation::*;
-	use ethers::signers::{Signer, Wallet};
+	use ethers::{
+		prelude::k256::ecdsa::SigningKey,
+		signers::{Signer, Wallet},
+		types::Bytes,
+	};
 	use secp256k1::{ecdsa::RecoveryId, Message, Secp256k1, SecretKey};
 
 	#[test]
@@ -309,11 +313,8 @@ mod tests {
 		let signed_attestation = SignedAttestation { attestation, signature };
 
 		// Replace with expected address
-		let expected_address = Wallet::from(
-			ethers::core::k256::ecdsa::SigningKey::from_bytes(secret_key_as_bytes.as_ref())
-				.unwrap(),
-		)
-		.address();
+		let expected_address =
+			Wallet::from(SigningKey::from_bytes(secret_key_as_bytes.as_ref()).unwrap()).address();
 
 		assert_eq!(
 			address_from_signed_att(&signed_attestation).unwrap(),
@@ -347,17 +348,14 @@ mod tests {
 
 		let contract_att_data = att_data_from_signed_att(&signed_attestation).unwrap();
 
-		let expected_address = Wallet::from(
-			ethers::core::k256::ecdsa::SigningKey::from_bytes(secret_key_as_bytes.as_ref())
-				.unwrap(),
-		)
-		.address();
+		let expected_address =
+			Wallet::from(SigningKey::from_bytes(secret_key_as_bytes.as_ref()).unwrap()).address();
 		assert_eq!(contract_att_data.0, expected_address);
 
 		let expected_attestation_hash = signed_attestation.attestation.hash().to_bytes();
 		assert_eq!(contract_att_data.1, expected_attestation_hash);
 
-		let expected_payload: ethers::types::Bytes =
+		let expected_payload: Bytes =
 			AttestationPayload::from_signed_attestation(&signed_attestation)
 				.unwrap()
 				.to_bytes()
