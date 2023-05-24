@@ -1,15 +1,21 @@
-use crate::circuit::PoseidonNativeSponge;
+use crate::{
+	circuit::PoseidonNativeSponge,
+	rns::{compose_big_decimal_f, decompose_big_decimal},
+	utils::fe_to_big,
+};
 
 use halo2::{
 	arithmetic::Field,
 	halo2curves::{bn256::Fr, ff::PrimeField},
 };
+use num_bigint::{BigInt, ToBigInt};
 use num_rational::BigRational;
+use num_traits::{FromPrimitive, Zero};
 use secp256k1::{constants::ONE, ecdsa, Message, Secp256k1, SecretKey};
 use sha3::{Digest, Keccak256};
 use std::collections::HashMap;
 
-use super::native::{AttestationFr, SignedAttestation};
+use super::native::{AttestationFr, SignedAttestation, ThresholdWitness};
 
 /// ECDSA public key
 pub type ECDSAPublicKey = secp256k1::PublicKey;
@@ -156,11 +162,14 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITERATIONS: usize, const INITIAL_SCO
 
 			// Update the opinion array - pairs of (key, score)
 			for j in 0..NUM_NEIGHBOURS {
+				let (pk_j, _) = self.set[j];
+
 				// Conditions fro nullifying the score
 				// 1. pk_j == 0(null or default key)
-				// 2. i == j
-				let is_pk_j_null = self.set[j].0 == Fr::zero();
-				let is_pk_i = i == j;
+				// 2. pk_j == pk_i
+				let is_pk_j_null = pk_j == Fr::zero();
+				let is_pk_i = pk_j == pk_i;
+
 				if is_pk_j_null || is_pk_i {
 					ops_i[j] = Fr::zero();
 				}
@@ -170,12 +179,13 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITERATIONS: usize, const INITIAL_SCO
 			let op_score_sum = ops_i.iter().fold(Fr::zero(), |acc, &score| acc + score);
 			if op_score_sum == Fr::zero() {
 				for j in 0..NUM_NEIGHBOURS {
-					let is_diff_pk = i != j;
-					let is_not_null = self.set[j].0 != Fr::zero();
+					let (pk_j, _) = self.set[j];
+					let is_diff_pk = pk_j != pk_i;
+					let is_not_null = pk_j != Fr::zero();
 
 					// Conditions for distributing the score
-					// 1. i != j
-					// 2. pk_i != Fr::default()
+					// 1. pk_j != pk_i
+					// 2. pk_j != Fr::zero()
 					if is_diff_pk && is_not_null {
 						ops_i[j] = Fr::from(1);
 					}
@@ -183,7 +193,6 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITERATIONS: usize, const INITIAL_SCO
 			}
 			filtered_ops.insert(pk_i, ops_i);
 		}
-		println!("filtered_ops: {:?}", filtered_ops);
 
 		filtered_ops
 	}
@@ -244,16 +253,68 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITERATIONS: usize, const INITIAL_SCO
 
 	/// Compute the EigenTrust score using BigRational numbers
 	pub fn converge_rational(&self) -> Vec<BigRational> {
-		todo!()
+		let mut filtered_ops: HashMap<Fr, Vec<Fr>> = self.filter_peers_ops();
+
+		let mut ops = Vec::new();
+		for i in 0..NUM_NEIGHBOURS {
+			let (pk, _) = self.set[i];
+			if pk == Fr::zero() {
+				ops.push(vec![BigInt::zero(); NUM_NEIGHBOURS]);
+			} else {
+				let ops_i = filtered_ops.get(&pk).unwrap();
+				let scores =
+					ops_i.iter().map(|&score| fe_to_big(score).to_bigint().unwrap()).collect();
+				ops.push(scores);
+			}
+		}
+
+		// Sanity check
+		assert!(ops.len() == NUM_NEIGHBOURS);
+		for op in &ops {
+			assert!(op.len() == NUM_NEIGHBOURS);
+		}
+
+		let init_score_bn = BigInt::from_u128(INITIAL_SCORE).unwrap();
+		let mut s: Vec<BigRational> =
+			vec![BigRational::from_integer(init_score_bn); NUM_NEIGHBOURS];
+
+		let mut ops_norm = vec![vec![BigRational::zero(); NUM_NEIGHBOURS]; NUM_NEIGHBOURS];
+		for i in 0..NUM_NEIGHBOURS {
+			let op_score_sum = ops[i].iter().fold(BigInt::zero(), |acc, score| acc + score);
+
+			for j in 0..NUM_NEIGHBOURS {
+				let score = ops[i][j].clone();
+				ops_norm[i][j] = BigRational::new(score, op_score_sum.clone());
+			}
+		}
+
+		let mut new_s = s.clone();
+		for _ in 0..NUM_ITERATIONS {
+			for i in 0..NUM_NEIGHBOURS {
+				let mut score_i_sum = BigRational::zero();
+				for j in 0..NUM_NEIGHBOURS {
+					let score = ops_norm[j][i].clone() * s[j].clone();
+					score_i_sum = score + score_i_sum;
+				}
+				new_s[i] = score_i_sum;
+			}
+			s = new_s.clone();
+		}
+		s
 	}
 }
 
 #[cfg(test)]
 mod test {
+	use std::time::Instant;
+
 	use rand::thread_rng;
 	use secp256k1::{generate_keypair, Message, PublicKey, Secp256k1, SecretKey};
 
-	use crate::dynamic_sets::native::AttestationFr;
+	use crate::{
+		dynamic_sets::native::{AttestationFr, ThresholdWitness},
+		rns::compose_big_decimal,
+	};
 
 	use super::*;
 
@@ -582,5 +643,132 @@ mod test {
 		set.remove_member(pk2);
 
 		set.converge();
+	}
+
+	#[test]
+	fn test_add_3_members_with_2_ops_quit_1_member_1_op() {
+		let mut set =
+			EigenTrustAttestationSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
+
+		let rng = &mut thread_rng();
+
+		let (sk1, pk1) = generate_keypair(rng);
+		let (sk2, pk2) = generate_keypair(rng);
+		let (sk3, pk3) = generate_keypair(rng);
+
+		set.add_member(pk1);
+		set.add_member(pk2);
+		set.add_member(pk3);
+
+		// Peer1(pk1) signs the opinion
+		let mut pks = [None; NUM_NEIGHBOURS];
+		pks[0] = Some(pk1);
+		pks[1] = Some(pk2);
+		pks[2] = Some(pk3);
+
+		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
+		scores[1] = Fr::from_u128(300);
+		scores[2] = Fr::from_u128(700);
+
+		let op1 =
+			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&sk1, &pks, &scores);
+
+		set.update_op(pk1, op1);
+
+		// Peer2(pk2) signs the opinion
+		let mut pks = [None; NUM_NEIGHBOURS];
+		pks[0] = Some(pk1);
+		pks[1] = Some(pk2);
+		pks[2] = Some(pk3);
+
+		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
+		scores[0] = Fr::from_u128(600);
+		scores[2] = Fr::from_u128(400);
+
+		let op2 =
+			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&sk2, &pks, &scores);
+
+		set.update_op(pk2, op2);
+
+		set.converge();
+
+		// // Peer1 quits
+		// set.remove_member(pk1);
+
+		// set.converge();
+	}
+
+	#[test]
+	fn test_filter_peers_ops() {
+		//	Filter the peers with following opinions:
+		//			1	2	3	4	 5
+		//		-----------------------
+		//		1	10	10	.	.	10
+		//		2	.	.	30	.	.
+		//		3	10	.	.	.	.
+		//		4	.	.	.	.	.
+		//		5	.	.	.	.	.
+
+		let rng = &mut thread_rng();
+
+		let (sk1, pk1) = generate_keypair(rng);
+		let (sk2, pk2) = generate_keypair(rng);
+		let (sk3, pk3) = generate_keypair(rng);
+
+		// Peer1(pk1) signs the opinion
+		let mut pks = [None; NUM_NEIGHBOURS];
+		pks[0] = Some(pk1);
+		pks[1] = Some(pk2);
+		pks[2] = Some(pk3);
+
+		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
+		scores[0] = Fr::from_u128(10);
+		scores[1] = Fr::from_u128(10);
+
+		let op1 =
+			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&sk1, &pks, &scores);
+
+		// Peer2(pk2) signs the opinion
+		let mut pks = [None; NUM_NEIGHBOURS];
+		pks[0] = Some(pk1);
+		pks[1] = Some(pk2);
+		pks[2] = Some(pk3);
+
+		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
+		scores[2] = Fr::from_u128(30);
+
+		let op2 =
+			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&sk2, &pks, &scores);
+
+		// Peer3(pk3) signs the opinion
+		let mut pks = [None; NUM_NEIGHBOURS];
+		pks[0] = Some(pk1);
+		pks[1] = Some(pk2);
+		pks[2] = Some(pk3);
+
+		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
+		scores[0] = Fr::from_u128(10);
+
+		let op3 =
+			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&sk3, &pks, &scores);
+
+		// Setup EigenTrustSet
+		let mut eigen_trust_set =
+			EigenTrustAttestationSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
+
+		eigen_trust_set.add_member(pk1);
+		eigen_trust_set.add_member(pk2);
+		eigen_trust_set.add_member(pk3);
+
+		eigen_trust_set.update_op(pk1, op1);
+		eigen_trust_set.update_op(pk2, op2);
+		eigen_trust_set.update_op(pk3, op3);
+
+		let filtered_ops = eigen_trust_set.filter_peers_ops();
+
+		let final_peers_cnt =
+			eigen_trust_set.set.iter().filter(|&&(pk, _)| pk != Fr::zero()).count();
+		let final_ops_cnt = filtered_ops.keys().count();
+		assert!(final_peers_cnt == final_ops_cnt);
 	}
 }
