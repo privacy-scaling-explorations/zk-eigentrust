@@ -42,9 +42,11 @@ where
 	// Reader
 	reader: Option<RD>,
 	// PoseidonSponge
-	state: StatefulSpongeChipset<C::Scalar, WIDTH, R>,
+	sponge_hasher: StatefulSpongeChipset<C::Scalar, WIDTH, R>,
 	// Loader
 	loader: LoaderConfig<'a, C, L, P>,
+	// Asssigned zero
+	default: AssignedCell<C::Scalar, C::Scalar>,
 	// PhantomData
 	_p: PhantomData<P>,
 }
@@ -67,21 +69,30 @@ where
 			)
 			.unwrap()
 		};
-		Self { reader, state: sponge, loader, _p: PhantomData }
-	}
 
-	/// Construct a new `assigned zero` value
-	pub fn assigned_zero(loader: LoaderConfig<C, L, P>) -> AssignedCell<C::Scalar, C::Scalar> {
-		let mut layouter = loader.layouter.borrow_mut();
-		layouter
-			.assign_region(
-				|| "assigned_zero",
-				|region: Region<'_, C::Scalar>| {
-					let mut ctx = RegionCtx::new(region, 0);
-					Ok(ctx.assign_fixed(loader.common.fixed[0], <C::Scalar as Field>::ZERO)?)
-				},
-			)
-			.unwrap()
+		let default = {
+			let mut layouter = loader.layouter.borrow_mut();
+			let default_value = reader.as_ref().map_or(Value::unknown(), |_| {
+				Value::known(<C::Scalar as Field>::ZERO)
+			});
+			layouter
+				.assign_region(
+					|| "assigned_zero",
+					|region: Region<'_, C::Scalar>| {
+						let mut ctx = RegionCtx::new(region, 0);
+						let assigned_default =
+							ctx.assign_advice(loader.common.advice[0], default_value)?;
+						ctx.constrain_to_constant(
+							assigned_default.clone(),
+							<C::Scalar as Field>::ZERO,
+						)?;
+						Ok(assigned_default)
+					},
+				)
+				.unwrap()
+		};
+
+		Self { reader, sponge_hasher: sponge, loader, default, _p: PhantomData }
 	}
 }
 
@@ -100,12 +111,11 @@ where
 
 	/// Squeeze a challenge.
 	fn squeeze_challenge(&mut self) -> Halo2LScalar<'a, C, L, P> {
-		let default = Self::assigned_zero(self.loader.clone());
-		self.state.update(&[default]);
+		self.sponge_hasher.update(&[self.default.clone()]);
 		let result = {
 			let mut loader_ref = self.loader.layouter.borrow_mut();
 			let res = self
-				.state
+				.sponge_hasher
 				.squeeze(
 					&self.loader.common,
 					&self.loader.poseidon_sponge,
@@ -122,10 +132,9 @@ where
 	fn common_ec_point(
 		&mut self, ec_point: &Halo2LEcPoint<C, L, P>,
 	) -> Result<(), snark_verifier::Error> {
-		let default = Self::assigned_zero(self.loader.clone());
-		self.state.update(&[default]);
-		self.state.update(&ec_point.inner.x.limbs);
-		self.state.update(&ec_point.inner.y.limbs);
+		self.sponge_hasher.update(&[self.default.clone()]);
+		self.sponge_hasher.update(&ec_point.inner.x.limbs);
+		self.sponge_hasher.update(&ec_point.inner.y.limbs);
 
 		Ok(())
 	}
@@ -134,8 +143,7 @@ where
 	fn common_scalar(
 		&mut self, scalar: &Halo2LScalar<C, L, P>,
 	) -> Result<(), snark_verifier::Error> {
-		let default = Self::assigned_zero(self.loader.clone());
-		self.state.update(&[default, scalar.inner.clone()]);
+		self.sponge_hasher.update(&[self.default.clone(), scalar.inner.clone()]);
 
 		Ok(())
 	}

@@ -319,7 +319,7 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u1
 
 		// signature verification
 		let zero_state = [zero.clone(), zero.clone(), zero.clone(), zero.clone(), zero.clone()];
-		let mut pk_sponge = SpongeHasher::new(zero_state.clone());
+		let mut pk_sponge = SpongeHasher::new(zero_state.clone(), zero.clone());
 		pk_sponge.update(&pk_x);
 		pk_sponge.update(&pk_y);
 		let pks_hash = pk_sponge.synthesize(
@@ -329,7 +329,7 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u1
 		)?;
 		assert!(false, "Fix sponge");
 		for i in 0..NUM_NEIGHBOURS {
-			let mut scores_sponge = SpongeHasher::new(zero_state.clone());
+			let mut scores_sponge = SpongeHasher::new(zero_state.clone(), zero.clone());
 			scores_sponge.update(&ops[i]);
 			let scores_message_hash = scores_sponge.synthesize(
 				&config.common,

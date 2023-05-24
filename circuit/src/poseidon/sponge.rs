@@ -5,7 +5,7 @@ use crate::{
 	Chip, Chipset, CommonConfig, FieldExt, RegionCtx,
 };
 use halo2::{
-	circuit::{AssignedCell, Layouter, Region},
+	circuit::{AssignedCell, Layouter, Region, Value},
 	plonk::{Error, Selector},
 };
 use std::marker::PhantomData;
@@ -33,6 +33,8 @@ where
 	state: [AssignedCell<F, F>; WIDTH],
 	/// Constructs a cell vector for the inputs.
 	inputs: Vec<AssignedCell<F, F>>,
+	/// Default value to fill in the input
+	default: AssignedCell<F, F>,
 	/// Constructs a phantom data for the parameters.
 	_params: PhantomData<P>,
 }
@@ -42,8 +44,8 @@ where
 	P: RoundParams<F, WIDTH>,
 {
 	/// Create a new chip.
-	pub fn new(initial_state: [AssignedCell<F, F>; WIDTH]) -> Self {
-		Self { state: initial_state, inputs: Vec::new(), _params: PhantomData }
+	pub fn new(initial_state: [AssignedCell<F, F>; WIDTH], default: AssignedCell<F, F>) -> Self {
+		Self { state: initial_state, inputs: Vec::new(), default, _params: PhantomData }
 	}
 
 	/// Clones and appends all elements from a slice to the vec.
@@ -66,24 +68,14 @@ where
 	) -> Result<Self::Output, Error> {
 		assert!(!self.inputs.is_empty());
 
-		let zero = layouter.assign_region(
-			|| "load_initial_state",
-			|region: Region<'_, F>| {
-				let mut ctx = RegionCtx::new(region, 0);
-				let zero_asgn = ctx.assign_from_constant(common.advice[0], F::ZERO)?;
-				Ok(zero_asgn)
-			},
-		)?;
-
-		let zero_chunk = [(); WIDTH].map(|_| zero.clone());
+		let mut curr_chunk = [(); WIDTH].map(|_| self.default.clone());
 		let state = self.state.clone();
 		for (i, chunk) in self.inputs.chunks(WIDTH).enumerate() {
-			let mut curr_chunk = zero_chunk.clone();
 			for j in 0..chunk.len() {
 				curr_chunk[j] = chunk[j].clone();
 			}
-
-			let absorb = AbsorbChip::new(state.clone(), curr_chunk);
+			println!("absorb state {:#?} {:#?}", state.clone(), curr_chunk);
+			let absorb = AbsorbChip::new(state.clone(), curr_chunk.clone());
 			let inputs = absorb.synthesize(
 				common,
 				&config.absorb_selector,
@@ -109,6 +101,7 @@ where
 	P: RoundParams<F, WIDTH>,
 {
 	chipset: PoseidonSpongeChipset<F, WIDTH, P>,
+	default: AssignedCell<F, F>,
 }
 
 impl<F: FieldExt, const WIDTH: usize, P> StatefulSpongeChipset<F, WIDTH, P>
@@ -126,8 +119,8 @@ where
 			},
 		)?;
 		let zero_state = [(); WIDTH].map(|_| zero.clone());
-		let pos = PoseidonSpongeChipset::new(zero_state);
-		Ok(Self { chipset: pos })
+		let pos = PoseidonSpongeChipset::new(zero_state, zero.clone());
+		Ok(Self { chipset: pos, default: zero.clone() })
 	}
 
 	/// Clones and appends all elements from a slice to the vec.
@@ -142,7 +135,7 @@ where
 	) -> Result<AssignedCell<F, F>, Error> {
 		let res = self.chipset.clone().synthesize(common, config, layouter)?;
 		let ret_value = res[0].clone();
-		self.chipset = PoseidonSpongeChipset::new(res);
+		self.chipset = PoseidonSpongeChipset::new(res, self.default.clone());
 		Ok(ret_value)
 	}
 }
@@ -213,18 +206,14 @@ mod test {
 		fn synthesize(
 			&self, config: Self::Config, mut layouter: impl Layouter<Fr>,
 		) -> Result<(), Error> {
-			let zero_state = layouter.assign_region(
+			let zero = layouter.assign_region(
 				|| "load_initial_state",
 				|region: Region<'_, Fr>| {
 					let mut ctx = RegionCtx::new(region, 0);
 
-					let mut state: [Option<AssignedCell<Fr, Fr>>; 5] = [(); 5].map(|_| None);
-					for i in 0..5 {
-						let zero_asgn =
-							ctx.assign_from_constant(config.common.advice[i], Fr::zero())?;
-						state[i] = Some(zero_asgn);
-					}
-					Ok(state.map(|item| item.unwrap()))
+					let zero_asgn =
+						ctx.assign_from_constant(config.common.advice[0], Fr::zero())?;
+					Ok(zero_asgn)
 				},
 			)?;
 
@@ -256,7 +245,8 @@ mod test {
 				},
 			)?;
 
-			let mut poseidon_sponge = TestPoseidonSpongeChipset::new(zero_state);
+			let zero_state = [(); 5].map(|_| zero.clone());
+			let mut poseidon_sponge = TestPoseidonSpongeChipset::new(zero_state, zero.clone());
 			poseidon_sponge.update(&inputs1);
 			poseidon_sponge.update(&inputs2);
 			let result_state = poseidon_sponge.synthesize(
