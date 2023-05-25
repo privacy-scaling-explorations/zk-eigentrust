@@ -311,7 +311,7 @@ impl<F: FieldExt> Chipset<F> for IsBoolChipset<F> {
 		)?;
 
 		// [a, b, c, d, e]
-		let advices = [self.x.clone(), zero.clone(), self.x.clone(), self.x.clone(), zero];
+		let advices = [self.x.clone(), zero.clone(), self.x.clone(), self.x, zero];
 		// [s_a, s_b, s_c, s_d, s_e, s_mul_ab, s_mul_cd, s_constant]
 		let fixed_add = [F::ONE, F::ZERO, F::ZERO, F::ZERO, F::ZERO];
 		let fixed_mul = [F::ZERO, -F::ONE, F::ZERO];
@@ -446,7 +446,7 @@ impl<F: FieldExt> Chipset<F> for InverseChipset<F> {
 		// | A | B     | C |
 		// | - | ----- | - |
 		// | r | x_inv | r |
-		let advices = [r.clone(), x_inv.clone(), r, zero.clone(), zero.clone()];
+		let advices = [r.clone(), x_inv.clone(), r, zero.clone(), zero];
 		let fixed_add = [F::ZERO, F::ZERO, -F::ONE, F::ZERO, F::ZERO];
 		let fixed_mul = [F::ONE, F::ZERO, F::ZERO];
 		let main_chip = MainChip::new(advices, fixed_add, fixed_mul);

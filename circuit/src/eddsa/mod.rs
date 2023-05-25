@@ -132,7 +132,7 @@ where
 		)?;
 
 		// Cr = R + H(R || PK || M) * PK
-		let big_r_point = AssignedPoint::new(self.big_r_x.clone(), self.big_r_y.clone(), one);
+		let big_r_point = AssignedPoint::new(self.big_r_x.clone(), self.big_r_y, one);
 		let cr_chip = PointAddChip::<F, P>::new(big_r_point, pk_h);
 		let cr = cr_chip.synthesize(
 			common,

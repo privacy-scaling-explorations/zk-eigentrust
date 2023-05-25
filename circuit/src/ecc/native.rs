@@ -156,7 +156,7 @@ where
 		bits = bits[..N::NUM_BITS as usize].to_vec();
 		bits.reverse();
 
-		let table = [aux_init.clone(), exp.clone().add(&aux_init)];
+		let table = [aux_init.clone(), exp.add(&aux_init)];
 		let mut acc = Self::select(bits[0], table.clone());
 
 		// To avoid P_0 == P_1

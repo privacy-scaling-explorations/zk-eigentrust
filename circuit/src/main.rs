@@ -45,7 +45,7 @@ pub fn generate_et_verifier() {
 		vec![300, 100, 400, 200, 0],
 	]
 	.into_iter()
-	.map(|arr| arr.into_iter().map(|x| Scalar::from_u128(x)).collect())
+	.map(|arr| arr.into_iter().map(Scalar::from_u128).collect())
 	.collect();
 	let res = native::<Scalar, NUM_NEIGHBOURS, NUM_ITER, SCALE>(s, ops.clone());
 
@@ -53,8 +53,8 @@ pub fn generate_et_verifier() {
 	let secret_keys = [(); NUM_NEIGHBOURS].map(|_| SecretKey::random(rng));
 	let pub_keys = secret_keys.clone().map(|x| x.public());
 
-	let pk_x = pub_keys.clone().map(|pk| pk.0.x);
-	let pk_y = pub_keys.clone().map(|pk| pk.0.y);
+	let pk_x = pub_keys.map(|pk| pk.0.x);
+	let pk_y = pub_keys.map(|pk| pk.0.y);
 	let mut sponge = PoseidonNativeSponge::new();
 	sponge.update(&pk_x);
 	sponge.update(&pk_y);
@@ -64,7 +64,7 @@ pub fn generate_et_verifier() {
 		.iter()
 		.map(|scores| {
 			let mut sponge = PoseidonNativeSponge::new();
-			sponge.update(&scores);
+			sponge.update(scores);
 			let scores_message_hash = sponge.squeeze();
 
 			let m_inputs = [
@@ -75,15 +75,15 @@ pub fn generate_et_verifier() {
 				Scalar::zero(),
 			];
 			let poseidon = PoseidonNativeHasher::new(m_inputs);
-			let res = poseidon.permute()[0];
-			res
+			
+			poseidon.permute()[0]
 		})
 		.collect();
 
 	let signatures: Vec<Signature> = secret_keys
 		.into_iter()
-		.zip(pub_keys.clone())
-		.zip(messages.clone())
+		.zip(pub_keys)
+		.zip(messages)
 		.map(|((sk, pk), msg)| sign(&sk, &pk, msg))
 		.collect();
 
@@ -99,7 +99,7 @@ pub fn generate_et_verifier() {
 	let contract_code = gen_evm_verifier_code(&params, pk.get_vk(), vec![NUM_NEIGHBOURS]);
 	write_yul_data(contract_code, "et_verifier").unwrap();
 
-	let proof_bytes = gen_proof(&params, &pk, et.clone(), vec![res.clone()]);
+	let proof_bytes = gen_proof(&params, &pk, et, vec![res.clone()]);
 	let proof = Proof { pub_ins: res, proof: proof_bytes };
 	let proof_raw: ProofRaw = proof.into();
 	write_json_data(proof_raw, "et_proof").unwrap();

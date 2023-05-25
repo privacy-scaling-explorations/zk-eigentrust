@@ -926,7 +926,7 @@ mod test {
 
 		let sks: Vec<SecretKey> =
 			(0..NUM_NEIGHBOURS).into_iter().map(|__| SecretKey::random(rng)).collect();
-		let pks: Vec<PublicKey> = sks.clone().iter().map(|s| s.public()).collect();
+		let pks: Vec<PublicKey> = sks.iter().map(|s| s.public()).collect();
 
 		// Add the publicKey to the set
 		pks.iter().for_each(|pk| set.add_member(*pk));

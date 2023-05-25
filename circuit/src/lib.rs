@@ -17,7 +17,7 @@
 	clippy::cast_lossless,
 	clippy::cast_possible_wrap,
 	// Perf
-	// clippy::redundant_clone,
+	clippy::redundant_clone,
 	// Restriction
 	clippy::panic,
 	// Style
