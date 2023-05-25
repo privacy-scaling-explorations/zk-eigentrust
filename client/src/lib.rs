@@ -19,6 +19,31 @@
 //! The library is implemented according to the original [Eigen Trust paper](http://ilpubs.stanford.edu:8090/562/1/2002-56.pdf).
 //! It is developed under the Ethereum Foundation grant.
 
+// Rustc
+#![warn(trivial_casts)]
+// #![deny(
+// 	absolute_paths_not_starting_with_crate, deprecated, future_incompatible, missing_docs,
+// 	nonstandard_style, unreachable_code, unreachable_patterns
+// )]
+#![forbid(unsafe_code)]
+// Clippy
+// #![allow(clippy::tabs_in_doc_comments)]
+// #![deny(
+// 	// Complexity
+// 	clippy::unnecessary_cast,
+// 	// clippy::needless_question_mark,
+// 	// Pedantic
+// 	clippy::cast_lossless,
+// 	clippy::cast_possible_wrap,
+// 	// Perf
+// 	clippy::redundant_clone,
+// 	// Restriction
+// 	clippy::panic,
+// 	// Style
+// 	// clippy::let_and_return,
+// 	// clippy::needless_borrow
+// )]
+
 pub mod att_station;
 pub mod attestation;
 pub mod error;
