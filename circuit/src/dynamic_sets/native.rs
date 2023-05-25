@@ -10,7 +10,7 @@ use halo2::{
 use num_bigint::{BigInt, ToBigInt};
 use num_rational::BigRational;
 use num_traits::{FromPrimitive, Zero};
-use secp256k1::{constants::ONE, ecdsa, Message, PublicKey, Secp256k1, SecretKey};
+use secp256k1::{constants::ONE, ecdsa, Message, Secp256k1, SecretKey};
 use sha3::{Digest, Keccak256};
 use std::collections::HashMap;
 
@@ -175,12 +175,13 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITERATIONS: usize, const INITIAL_SCO
 
 		let mut scores = vec![Fr::zero(); NUM_NEIGHBOURS];
 		let mut hashes = Vec::new();
+		let default_hash = AttestationFr::default().hash();
 		for (i, att) in op.iter().enumerate() {
 			let is_default_pubkey = self.set[i].0 == Fr::zero();
 
 			if is_default_pubkey {
 				scores[i] = Fr::default();
-				hashes.push(AttestationFr::default().hash());
+				hashes.push(default_hash);
 			} else {
 				assert!(att.attestation.about == self.set[i].0);
 
@@ -222,12 +223,12 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITERATIONS: usize, const INITIAL_SCO
 				let (pk_j, _) = self.set[j];
 
 				// Conditions fro nullifying the score
-				// 1. pk_j == 0(null or default key)
+				// 1. pk_j == 0 (Default key)
 				// 2. pk_j == pk_i
-				let is_pk_j_null = pk_j == Fr::zero();
+				let is_pk_j_default = pk_j == Fr::zero();
 				let is_pk_i = pk_j == pk_i;
 
-				if is_pk_j_null || is_pk_i {
+				if is_pk_j_default || is_pk_i {
 					ops_i[j] = Fr::zero();
 				}
 			}
@@ -237,13 +238,14 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITERATIONS: usize, const INITIAL_SCO
 			if op_score_sum == Fr::zero() {
 				for j in 0..NUM_NEIGHBOURS {
 					let (pk_j, _) = self.set[j];
-					let is_diff_pk = pk_j != pk_i;
-					let is_not_null = pk_j != Fr::zero();
 
 					// Conditions for distributing the score
 					// 1. pk_j != pk_i
-					// 2. pk_j != Fr::zero()
-					if is_diff_pk && is_not_null {
+					// 2. pk_j != 0 (Default key)
+					let is_diff_pk = pk_j != pk_i;
+					let is_not_default = pk_j != Fr::zero();
+
+					if is_diff_pk && is_not_default {
 						ops_i[j] = Fr::from(1);
 					}
 				}
@@ -260,9 +262,9 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITERATIONS: usize, const INITIAL_SCO
 		let valid_peers = self.set.iter().filter(|(pk, _)| *pk != Fr::zero()).count();
 		assert!(valid_peers >= 2, "Insufficient peers for calculation!");
 
-		let filtered_ops: HashMap<Fr, Vec<Fr>> = self.filter_peers_ops();
-
+		// Prepare the opinion scores
 		let mut ops = Vec::new();
+		let filtered_ops: HashMap<Fr, Vec<Fr>> = self.filter_peers_ops();
 		for i in 0..NUM_NEIGHBOURS {
 			let (pk, _) = self.set[i];
 			if pk == Fr::zero() {
@@ -273,8 +275,8 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITERATIONS: usize, const INITIAL_SCO
 			}
 		}
 
-		let mut ops_norm = vec![vec![Fr::zero(); NUM_NEIGHBOURS]; NUM_NEIGHBOURS];
 		// Normalize the opinion scores
+		let mut ops_norm = vec![vec![Fr::zero(); NUM_NEIGHBOURS]; NUM_NEIGHBOURS];
 		for i in 0..NUM_NEIGHBOURS {
 			let op_score_sum: Fr = ops[i].iter().sum();
 			let inverted_sum = op_score_sum.invert().unwrap_or(Fr::zero());
@@ -285,7 +287,7 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITERATIONS: usize, const INITIAL_SCO
 			}
 		}
 
-		// By this point we should use filtered opinions
+		// Compute the EigenTrust scores using the filtered and normalized scores
 		let mut s: Vec<Fr> = self.set.iter().map(|(_, score)| score.clone()).collect();
 		let mut new_s: Vec<Fr> = self.set.iter().map(|(_, score)| score.clone()).collect();
 		for _ in 0..NUM_ITERATIONS {
@@ -406,7 +408,7 @@ mod test {
 	use num_bigint::ToBigInt;
 	use num_rational::BigRational;
 	use rand::thread_rng;
-	use secp256k1::generate_keypair;
+	use secp256k1::{generate_keypair, PublicKey};
 
 	const NUM_NEIGHBOURS: usize = 12;
 	const NUM_ITERATIONS: usize = 10;
@@ -429,17 +431,13 @@ mod test {
 			if pks[i] == Fr::zero() {
 				res.push(SignedAttestation::default())
 			} else {
-				let about = pks[i];
-				let key = Fr::one();
-				let value = scores[i].clone();
-				let message = Fr::one();
+				let (about, key, value, message) = (pks[i], Fr::zero(), scores[i], Fr::zero());
 				let attestation = AttestationFr::new(about, key, value, message);
-
-				let message = attestation.hash().to_bytes();
-				let signature = sign
-					.sign_ecdsa_recoverable(&Message::from_slice(message.as_slice()).unwrap(), sk);
-
+				let msg = attestation.hash().to_bytes();
+				let signature =
+					sign.sign_ecdsa_recoverable(&Message::from_slice(msg.as_slice()).unwrap(), sk);
 				let signed_attestation = SignedAttestation::new(attestation, signature);
+
 				res.push(signed_attestation);
 			}
 		}
