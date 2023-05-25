@@ -28,7 +28,7 @@
 #![forbid(unsafe_code)]
 // Clippy
 // #![allow(clippy::tabs_in_doc_comments)]
-// #![deny(
+#![deny(
 // 	// Complexity
 // 	clippy::unnecessary_cast,
 // 	// clippy::needless_question_mark,
@@ -36,13 +36,13 @@
 // 	clippy::cast_lossless,
 // 	clippy::cast_possible_wrap,
 // 	// Perf
-// 	clippy::redundant_clone,
+	clippy::redundant_clone,
 // 	// Restriction
 // 	clippy::panic,
 // 	// Style
 // 	// clippy::let_and_return,
 // 	// clippy::needless_borrow
-// )]
+)]
 
 pub mod att_station;
 pub mod attestation;
@@ -73,11 +73,11 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 /// Max amount of participants
-const MAX_NEIGHBOURS: usize = 2;
+const _MAX_NEIGHBOURS: usize = 2;
 /// Number of iterations to run the eigen trust algorithm
-const NUM_ITERATIONS: usize = 10;
+const _NUM_ITERATIONS: usize = 10;
 /// Initial score for each participant before the algorithms is run
-const INITIAL_SCORE: u128 = 1000;
+const _INITIAL_SCORE: u128 = 1000;
 
 #[derive(Serialize, Deserialize, Debug, EthDisplay, Clone)]
 pub struct ClientConfig {
@@ -166,7 +166,7 @@ impl Client {
 				AttestationPayload::from_bytes(att_created.val.to_vec()).expect("Failed to decode");
 
 			let att = Attestation::new(
-				att_created.about.into(),
+				att_created.about,
 				att_created.key.into(),
 				att_data.get_value(),
 				Some(att_data.get_message().into()),

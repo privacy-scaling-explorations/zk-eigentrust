@@ -146,7 +146,7 @@ pub fn att_data_from_signed_att(
 	let key = signed_attestation.attestation.key.to_bytes();
 
 	// Get the payload bytes
-	let payload = AttestationPayload::from_signed_attestation(&signed_attestation)?;
+	let payload = AttestationPayload::from_signed_attestation(signed_attestation)?;
 
 	Ok(ContractAttestationData(
 		address,
@@ -273,7 +273,7 @@ mod tests {
 			message: [0u8; 32],
 		};
 
-		let bytes = payload.clone().to_bytes();
+		let bytes = payload.to_bytes();
 
 		let result_payload = AttestationPayload::from_bytes(bytes).unwrap();
 

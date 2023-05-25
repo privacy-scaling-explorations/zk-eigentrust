@@ -127,7 +127,7 @@ impl AttestData {
 				message.to_string()
 			};
 
-			let message_bytes = hex::decode(&message).map_err(|_| "Failed to parse message.")?;
+			let message_bytes = hex::decode(message).map_err(|_| "Failed to parse message.")?;
 			if message_bytes.len() > 32 {
 				return Err("Message too long.");
 			}
