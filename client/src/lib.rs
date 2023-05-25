@@ -26,7 +26,7 @@ pub mod eth;
 pub mod utils;
 
 use att_station::{AttestationCreatedFilter, AttestationStation};
-use attestation::{get_contract_attestation_data, Attestation, AttestationPayload};
+use attestation::{att_data_from_signed_att, Attestation, AttestationPayload};
 use eigen_trust_circuit::dynamic_sets::native::SignedAttestation;
 use error::EigenError;
 use eth::ecdsa_secret_from_mnemonic;
@@ -43,7 +43,7 @@ use ethers::{
 	providers::{Http, Provider},
 	signers::{coins_bip39::English, MnemonicBuilder},
 };
-use secp256k1::{ecdsa::RecoverableSignature, SECP256K1};
+use secp256k1::{ecdsa::RecoverableSignature, Message, SecretKey, SECP256K1};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -81,7 +81,7 @@ impl Client {
 	/// Submit an attestation to the attestation station
 	pub async fn attest(&self, attestation: Attestation) -> Result<(), EigenError> {
 		let ctx = SECP256K1;
-		let secret_keys: Vec<secp256k1::SecretKey> =
+		let secret_keys: Vec<SecretKey> =
 			ecdsa_secret_from_mnemonic(&self.config.mnemonic, 1).unwrap();
 
 		// Get AttestationFr
@@ -92,7 +92,7 @@ impl Client {
 
 		// Sign attestation
 		let signature: RecoverableSignature = ctx.sign_ecdsa_recoverable(
-			&secp256k1::Message::from_slice(att_hash.to_bytes().as_slice()).unwrap(),
+			&Message::from_slice(att_hash.to_bytes().as_slice()).unwrap(),
 			&secret_keys[0],
 		);
 
@@ -102,9 +102,8 @@ impl Client {
 		let as_address = as_address_res.map_err(|_| EigenError::ParseError)?;
 		let as_contract = AttestationStation::new(as_address, self.client.clone());
 
-		let tx_call = as_contract.attest(vec![
-			get_contract_attestation_data(&signed_attestation).unwrap()
-		]);
+		let tx_call =
+			as_contract.attest(vec![att_data_from_signed_att(&signed_attestation).unwrap()]);
 		let tx_res = tx_call.send();
 		let tx = tx_res.await.map_err(|_| EigenError::TransactionError)?;
 		let res = tx.await.map_err(|_| EigenError::TransactionError)?;

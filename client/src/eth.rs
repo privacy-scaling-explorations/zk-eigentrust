@@ -3,6 +3,7 @@
 /// This module provides types and functionalities for Ethereum blockchain interactions.
 use crate::setup_client;
 use eigen_trust_circuit::{
+	dynamic_sets::native::ECDSAPublicKey,
 	halo2::halo2curves::bn256::Fr as Scalar,
 	utils::{read_yul_data, write_bytes_data},
 	verifier::{compile_yul, encode_calldata},
@@ -11,11 +12,7 @@ use eigen_trust_circuit::{
 use ethers::{
 	abi::Address,
 	middleware::SignerMiddleware,
-	prelude::{
-		abigen,
-		k256::ecdsa::{self},
-		Abigen, ContractError,
-	},
+	prelude::{abigen, k256::ecdsa::SigningKey, Abigen, ContractError},
 	providers::{Http, Middleware, Provider},
 	signers::{
 		coins_bip39::{English, Mnemonic},
@@ -23,7 +20,9 @@ use ethers::{
 	},
 	solc::{artifacts::ContractBytecode, Solc},
 	types::TransactionRequest,
+	utils::keccak256,
 };
+use secp256k1::SecretKey;
 use std::{
 	env,
 	fs::{self, write},
@@ -137,7 +136,7 @@ pub fn compile_yul_contracts() {
 /// Returns a vector of ECDSA private keys derived from the given mnemonic phrase
 pub fn ecdsa_secret_from_mnemonic(
 	mnemonic: &str, count: u32,
-) -> Result<Vec<secp256k1::SecretKey>, &'static str> {
+) -> Result<Vec<SecretKey>, &'static str> {
 	let mnemonic = Mnemonic::<English>::new_from_phrase(mnemonic).unwrap();
 	let mut keys = Vec::new();
 
@@ -152,10 +151,10 @@ pub fn ecdsa_secret_from_mnemonic(
 		let derived_pk =
 			mnemonic.derive_key(&derivation_path, None).expect("Failed to derive signing key");
 
-		let raw_pk: &ecdsa::SigningKey = derived_pk.as_ref();
+		let raw_pk: &SigningKey = derived_pk.as_ref();
 
-		let secret_key = secp256k1::SecretKey::from_slice(&raw_pk.to_bytes())
-			.expect("32 bytes, within curve order");
+		let secret_key =
+			SecretKey::from_slice(&raw_pk.to_bytes()).expect("32 bytes, within curve order");
 
 		keys.push(secret_key);
 	}
@@ -163,14 +162,32 @@ pub fn ecdsa_secret_from_mnemonic(
 	return Ok(keys);
 }
 
+/// Construct an Ethereum address for the given ECDSA public key
+pub fn address_from_public_key(pub_key: &ECDSAPublicKey) -> Result<Address, &'static str> {
+	let pub_key_bytes = pub_key.serialize_uncompressed();
+
+	// Hash with Keccak256
+	let hashed_public_key = keccak256(&pub_key_bytes[1..]);
+
+	// Get the last 20 bytes of the hash
+	let address_bytes = &hashed_public_key[hashed_public_key.len() - 20..];
+
+	Ok(Address::from_slice(address_bytes))
+}
+
 #[cfg(test)]
 mod tests {
-	use super::{call_verifier, deploy_as, deploy_verifier};
+	use crate::eth::{address_from_public_key, call_verifier, deploy_as, deploy_verifier};
 	use eigen_trust_circuit::{
 		utils::{read_bytes_data, read_json_data},
 		Proof, ProofRaw,
 	};
-	use ethers::utils::Anvil;
+	use ethers::{
+		prelude::k256::ecdsa::SigningKey,
+		signers::{Signer, Wallet},
+		utils::Anvil,
+	};
+	use secp256k1::{PublicKey, Secp256k1, SecretKey};
 
 	#[tokio::test]
 	async fn should_deploy_the_as_contract() {
@@ -209,5 +226,24 @@ mod tests {
 		call_verifier(mnemonic, &node_endpoint, addr, proof).await;
 
 		drop(anvil);
+	}
+
+	#[test]
+	fn test_address_from_public_key() {
+		let secp = Secp256k1::new();
+
+		let secret_key_as_bytes = [0x40; 32];
+
+		let secret_key =
+			SecretKey::from_slice(&secret_key_as_bytes).expect("32 bytes, within curve order");
+
+		let pub_key = PublicKey::from_secret_key(&secp, &secret_key);
+
+		let recovered_address = address_from_public_key(&pub_key).unwrap();
+
+		let expected_address =
+			Wallet::from(SigningKey::from_bytes(secret_key_as_bytes.as_ref()).unwrap()).address();
+
+		assert_eq!(recovered_address, expected_address);
 	}
 }
