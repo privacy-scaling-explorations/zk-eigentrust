@@ -132,10 +132,8 @@ impl EdwardsParams<Fr> for BabyJubJub {
 		// G = B+E
 		let r_g = r_b + r_e;
 		// X3 = A*F*((X1+Y1)*(X2+Y2)-C-D)
-		let r_x3 = r_a.clone()
-			* r_f.clone()
-			* ((r_x + r_y) * (e_x + e_y)
-				- r_c.clone() - r_d.clone());
+		let r_x3 =
+			r_a.clone() * r_f.clone() * ((r_x + r_y) * (e_x + e_y) - r_c.clone() - r_d.clone());
 		// Y3 = A*G*(D-a*C)
 		let r_y3 = r_a * r_g.clone() * (r_d - r_c * const_a.clone());
 		// Z3 = F*G

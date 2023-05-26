@@ -561,15 +561,12 @@ impl<F: FieldExt> Chipset<F> for SelectChipset<F> {
 		let res = layouter.assign_region(
 			|| "assign values",
 			|region| {
-				let res = self.x.value().zip(self.y.value()).zip(self.bit.value()).map(
-					|((x, y), bit)| {
-						if *bit == F::ONE {
-							*x
-						} else {
-							*y
-						}
-					},
-				);
+				let res = self
+					.x
+					.value()
+					.zip(self.y.value())
+					.zip(self.bit.value())
+					.map(|((x, y), bit)| if *bit == F::ONE { *x } else { *y });
 				let mut ctx = RegionCtx::new(region, 0);
 				let res = ctx.assign_advice(common.advice[0], res)?;
 				Ok(res)

@@ -506,14 +506,10 @@ mod test {
 				)
 				.unwrap();
 
-			let assigned_integer_x = AssignedInteger::<_, _, NUM_LIMBS, NUM_BITS, P>::new(
-				x,
-				assigned_coordinates.0,
-			);
-			let assigned_integer_y = AssignedInteger::<_, _, NUM_LIMBS, NUM_BITS, P>::new(
-				y,
-				assigned_coordinates.1,
-			);
+			let assigned_integer_x =
+				AssignedInteger::<_, _, NUM_LIMBS, NUM_BITS, P>::new(x, assigned_coordinates.0);
+			let assigned_integer_y =
+				AssignedInteger::<_, _, NUM_LIMBS, NUM_BITS, P>::new(y, assigned_coordinates.1);
 
 			let assigned_point = AssignedPoint::<_, _, NUM_LIMBS, NUM_BITS, P>::new(
 				assigned_integer_x, assigned_integer_y,

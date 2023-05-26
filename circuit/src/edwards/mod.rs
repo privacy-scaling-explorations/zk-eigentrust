@@ -91,14 +91,8 @@ impl<F: FieldExt, P: EdwardsParams<F>> Chip<F> for PointAddChip<F, P> {
 			let r_y_next_exp = v_cells.query_advice(common.advice[1], Rotation::next());
 			let r_z_next_exp = v_cells.query_advice(common.advice[2], Rotation::next());
 
-			let (r_x3, r_y3, r_z3) = P::add_exp(
-				r_x_exp,
-				r_y_exp,
-				r_z_exp,
-				e_x_exp,
-				e_y_exp,
-				e_z_exp,
-			);
+			let (r_x3, r_y3, r_z3) =
+				P::add_exp(r_x_exp, r_y_exp, r_z_exp, e_x_exp, e_y_exp, e_z_exp);
 
 			vec![
 				// Ensure the point addition of `r` and `e` is properly calculated.
@@ -283,8 +277,7 @@ impl<F: FieldExt, P: EdwardsParams<F>> Chip<F> for ScalarMulChip<F, P> {
 				bit_exp.clone() * (r_x3 - r_x_exp.clone()) - (r_x_next_exp - r_x_exp);
 			let selected_r_y =
 				bit_exp.clone() * (r_y3 - r_y_exp.clone()) - (r_y_next_exp - r_y_exp);
-			let selected_r_z =
-				bit_exp * (r_z3 - r_z_exp.clone()) - (r_z_next_exp - r_z_exp);
+			let selected_r_z = bit_exp * (r_z3 - r_z_exp.clone()) - (r_z_next_exp - r_z_exp);
 
 			vec![
 				// Ensure the point addition of `r` and `e` is properly calculated.

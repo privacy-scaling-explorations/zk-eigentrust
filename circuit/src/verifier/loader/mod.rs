@@ -708,12 +708,8 @@ where
 				let auxes = base.loader.auxes.clone();
 				let (aux_init, aux_fin) = auxes;
 				let mut layouter = base.loader.layouter.lock().unwrap();
-				let chip = EccMulChipset::new(
-					base.inner.clone(),
-					scalar.inner.clone(),
-					aux_init,
-					aux_fin,
-				);
+				let chip =
+					EccMulChipset::new(base.inner.clone(), scalar.inner.clone(), aux_init, aux_fin);
 				let mul = chip
 					.synthesize(
 						&config.common,

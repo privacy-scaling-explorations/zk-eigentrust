@@ -75,7 +75,7 @@ pub fn generate_et_verifier() {
 				Scalar::zero(),
 			];
 			let poseidon = PoseidonNativeHasher::new(m_inputs);
-			
+
 			poseidon.permute()[0]
 		})
 		.collect();
