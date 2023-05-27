@@ -57,6 +57,8 @@ pub mod gadgets;
 pub mod integer;
 /// MerkleTree
 pub mod merkle_tree;
+/// Opinion gadgets + native version
+pub mod opinion;
 /// A module for defining round parameters and MDS matrix for hash
 /// permutations
 pub mod params;

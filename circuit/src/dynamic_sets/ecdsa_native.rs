@@ -1,5 +1,6 @@
 use crate::{
-	circuit::{PoseidonNativeHasher, PoseidonNativeSponge},
+	circuit::PoseidonNativeHasher,
+	opinion::native::Opinion,
 	rns::{compose_big_decimal_f, decompose_big_decimal},
 	utils::fe_to_big,
 };
@@ -25,7 +26,8 @@ fn keccak256(data: &[u8]) -> Vec<u8> {
 	hasher.finalize().to_vec()
 }
 
-fn recover_ethereum_address_from_pk(pk: ECDSAPublicKey) -> Fr {
+/// Calculate the field value from public key
+pub fn recover_ethereum_address_from_pk(pk: ECDSAPublicKey) -> Fr {
 	let pk_bytes = pk.serialize_uncompressed();
 	let hashed_pk = keccak256(&pk_bytes[1..]);
 	let address_bytes = &hashed_pk[hashed_pk.len() - 20..];
@@ -169,37 +171,11 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITERATIONS: usize, const INITIAL_SCO
 
 	/// Update the opinion of the member
 	pub fn update_op(&mut self, from: ECDSAPublicKey, op: Vec<SignedAttestation>) -> Fr {
-		let from_pk = recover_ethereum_address_from_pk(from);
-		let pos_from = self.set.iter().position(|&(x, _)| x == from_pk);
-		assert!(pos_from.is_some());
-
-		let mut scores = vec![Fr::zero(); NUM_NEIGHBOURS];
-		let mut hashes = Vec::new();
-		let default_hash = AttestationFr::default().hash();
-		for (i, att) in op.iter().enumerate() {
-			let is_default_pubkey = self.set[i].0 == Fr::zero();
-
-			if is_default_pubkey {
-				scores[i] = Fr::default();
-				hashes.push(default_hash);
-			} else {
-				assert!(att.attestation.about == self.set[i].0);
-
-				let recovered = att.recover_public_key().unwrap();
-				assert!(recovered == from);
-
-				scores[i] = att.attestation.value;
-
-				let hash = att.attestation.hash();
-				hashes.push(hash);
-			}
-		}
+		let op = Opinion::new(from, op);
+		let set = self.set.iter().map(|&(pk, _)| pk.clone()).collect();
+		let (from_pk, scores, op_hash) = op.validate(set);
 
 		self.ops.insert(from_pk, scores);
-
-		let mut sponge_hasher = PoseidonNativeSponge::new();
-		sponge_hasher.update(&hashes);
-		let op_hash = sponge_hasher.squeeze();
 
 		return op_hash;
 	}
