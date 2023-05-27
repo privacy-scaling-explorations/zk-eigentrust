@@ -649,7 +649,7 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u1
 		};
 
 		// Compute the EigenTrust scores
-		let mut s = vec![init_score.clone(); NUM_NEIGHBOURS];
+		let mut s = vec![init_score; NUM_NEIGHBOURS];
 		for _ in 0..NUM_ITER {
 			let mut sop = Vec::new();
 			for i in 0..NUM_NEIGHBOURS {
@@ -698,7 +698,7 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u1
 		)?;
 
 		// Constrain the total reputation in the set
-		let mut sum = zero.clone();
+		let mut sum = zero;
 		for i in 0..NUM_NEIGHBOURS {
 			let add_chipset = AddChipset::new(sum.clone(), passed_s[i].clone());
 			sum = add_chipset.synthesize(
@@ -911,7 +911,7 @@ mod test {
 		let deployment_code = gen_evm_verifier(&params, pk.get_vk(), vec![NUM_NEIGHBOURS]);
 		dbg!(deployment_code.len());
 
-		let proof = gen_proof(&params, &pk, et.clone(), vec![res.clone()]);
+		let proof = gen_proof(&params, &pk, et, vec![res.clone()]);
 		evm_verify(deployment_code, vec![res], proof);
 	}
 }

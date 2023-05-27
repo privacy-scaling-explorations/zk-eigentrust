@@ -180,7 +180,7 @@ where
 		)?;
 
 		// r_x = m_squared_minus_p_x.result.sub(&q.x)
-		let r_x_chip = IntegerSubChip::new(m_squared_minus_p_x, q_x_reduced.clone());
+		let r_x_chip = IntegerSubChip::new(m_squared_minus_p_x, q_x_reduced);
 		let r_x = r_x_chip.synthesize(
 			&common,
 			&config.integer_sub_selector,
@@ -285,7 +285,7 @@ where
 		)?;
 
 		// Reduce p_y
-		let p_y = IntegerReduceChip::new(self.p.y.clone());
+		let p_y = IntegerReduceChip::new(self.p.y);
 		let p_y_reduced = p_y.synthesize(
 			&common,
 			&config.integer_reduce_selector,
@@ -671,13 +671,13 @@ where
 			let selected_x_integer =
 				AssignedInteger::new(self.p.x.integer.clone(), selected_x.map(|x| x.unwrap()));
 			let selected_y_integer =
-				AssignedInteger::new(self.p.y.integer.clone(), selected_y.map(|x| x.unwrap()));
+				AssignedInteger::new(self.p.y.integer, selected_y.map(|x| x.unwrap()));
 			AssignedPoint::new(selected_x_integer, selected_y_integer)
 		} else {
 			let selected_x_integer =
 				AssignedInteger::new(self.q.x.integer.clone(), selected_x.map(|x| x.unwrap()));
 			let selected_y_integer =
-				AssignedInteger::new(self.q.y.integer.clone(), selected_y.map(|x| x.unwrap()));
+				AssignedInteger::new(self.q.y.integer, selected_y.map(|x| x.unwrap()));
 			AssignedPoint::new(selected_x_integer, selected_y_integer)
 		};
 
@@ -1089,8 +1089,8 @@ mod test {
 		let a = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(a_big);
 		let b = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(b_big);
 		let c = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(c_big);
-		let p_point = EcPoint::<W, N, NUM_LIMBS, NUM_BITS, P>::new(a.clone(), b.clone());
-		let q_point = EcPoint::<W, N, NUM_LIMBS, NUM_BITS, P>::new(b.clone(), c.clone());
+		let p_point = EcPoint::<W, N, NUM_LIMBS, NUM_BITS, P>::new(a, b.clone());
+		let q_point = EcPoint::<W, N, NUM_LIMBS, NUM_BITS, P>::new(b, c);
 
 		let res = p_point.add(&q_point);
 		let test_chip = EccAddTestCircuit::new(p_point, q_point);
@@ -1159,7 +1159,7 @@ mod test {
 		let b_big = BigUint::from_str("65464575675").unwrap();
 		let a = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(a_big);
 		let b = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(b_big);
-		let p_point = EcPoint::<W, N, NUM_LIMBS, NUM_BITS, P>::new(a.clone(), b.clone());
+		let p_point = EcPoint::<W, N, NUM_LIMBS, NUM_BITS, P>::new(a, b);
 
 		let res = p_point.double();
 		let test_chip = EccDoubleTestCircuit::new(p_point);
@@ -1237,8 +1237,8 @@ mod test {
 		let a = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(a_big);
 		let b = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(b_big);
 		let c = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(c_big);
-		let p_point = EcPoint::<W, N, NUM_LIMBS, NUM_BITS, P>::new(a.clone(), c.clone());
-		let q_point = EcPoint::<W, N, NUM_LIMBS, NUM_BITS, P>::new(b.clone(), c.clone());
+		let p_point = EcPoint::<W, N, NUM_LIMBS, NUM_BITS, P>::new(a, c.clone());
+		let q_point = EcPoint::<W, N, NUM_LIMBS, NUM_BITS, P>::new(b, c);
 
 		let res = p_point.ladder(&q_point);
 		let test_chip = EccLadderTestCircuit::new(p_point, q_point);
@@ -1330,7 +1330,7 @@ mod test {
 		let b_big = BigUint::from_str("6546457298123794342352534089237495253453455675").unwrap();
 		let a = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(a_big);
 		let b = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(b_big);
-		let p_point = EcPoint::<W, N, NUM_LIMBS, NUM_BITS, P>::new(a.clone(), b.clone());
+		let p_point = EcPoint::<W, N, NUM_LIMBS, NUM_BITS, P>::new(a, b);
 
 		let res = p_point.mul_scalar(scalar);
 		let test_chip = EccMulTestCircuit::new(p_point, scalar);

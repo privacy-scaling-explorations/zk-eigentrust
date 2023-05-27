@@ -159,7 +159,7 @@ pub fn ecdsa_secret_from_mnemonic(
 		keys.push(secret_key);
 	}
 
-	return Ok(keys);
+	Ok(keys)
 }
 
 /// Construct an Ethereum address for the given ECDSA public key

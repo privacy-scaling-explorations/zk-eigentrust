@@ -19,6 +19,31 @@
 //! The library is implemented according to the original [Eigen Trust paper](http://ilpubs.stanford.edu:8090/562/1/2002-56.pdf).
 //! It is developed under the Ethereum Foundation grant.
 
+// Rustc
+#![warn(trivial_casts)]
+// #![deny(
+// 	absolute_paths_not_starting_with_crate, deprecated, future_incompatible, missing_docs,
+// 	nonstandard_style, unreachable_code, unreachable_patterns
+// )]
+#![forbid(unsafe_code)]
+// Clippy
+// #![allow(clippy::tabs_in_doc_comments)]
+#![deny(
+// 	// Complexity
+// 	clippy::unnecessary_cast,
+// 	// clippy::needless_question_mark,
+// 	// Pedantic
+// 	clippy::cast_lossless,
+// 	clippy::cast_possible_wrap,
+// 	// Perf
+	clippy::redundant_clone,
+// 	// Restriction
+// 	clippy::panic,
+// 	// Style
+// 	// clippy::let_and_return,
+// 	// clippy::needless_borrow
+)]
+
 pub mod att_station;
 pub mod attestation;
 pub mod error;
@@ -48,11 +73,11 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 /// Max amount of participants
-const MAX_NEIGHBOURS: usize = 2;
+const _MAX_NEIGHBOURS: usize = 2;
 /// Number of iterations to run the eigen trust algorithm
-const NUM_ITERATIONS: usize = 10;
+const _NUM_ITERATIONS: usize = 10;
 /// Initial score for each participant before the algorithms is run
-const INITIAL_SCORE: u128 = 1000;
+const _INITIAL_SCORE: u128 = 1000;
 
 #[derive(Serialize, Deserialize, Debug, EthDisplay, Clone)]
 pub struct ClientConfig {
@@ -141,7 +166,7 @@ impl Client {
 				AttestationPayload::from_bytes(att_created.val.to_vec()).expect("Failed to decode");
 
 			let att = Attestation::new(
-				att_created.about.into(),
+				att_created.about,
 				att_created.key.into(),
 				att_data.get_value(),
 				Some(att_data.get_message().into()),
