@@ -30,7 +30,6 @@ use std::{
 
 // Generate contract bindings
 abigen!(AttestationStation, "../data/AttestationStation.json");
-abigen!(EtVerifierWrapper, "../data/EtVerifierWrapper.json");
 
 /// ContractError type alias
 pub type CntrError = ContractError<SignerMiddleware<Provider<Http>, LocalWallet>>;
@@ -40,21 +39,6 @@ pub async fn deploy_as(mnemonic_phrase: &str, node_url: &str) -> Result<Address,
 	let client = setup_client(mnemonic_phrase, node_url);
 	let contract = AttestationStation::deploy(client, ())?.send().await?;
 	let addr = contract.address();
-
-	println!("Deployed contract address: {:?}", addr);
-
-	Ok(addr)
-}
-
-/// Deploy EtVerifierWrapper contract
-pub async fn deploy_et_wrapper(
-	mnemonic_phrase: &str, node_url: &str, verifier_address: Address,
-) -> Result<Address, CntrError> {
-	let client = setup_client(mnemonic_phrase, node_url);
-	let contract = EtVerifierWrapper::deploy(client, verifier_address)?.send().await?;
-	let addr = contract.address();
-
-	println!("Deployed contract address: {:?}", addr);
 
 	Ok(addr)
 }
@@ -71,7 +55,7 @@ pub async fn deploy_verifier(
 	let res = tx.unwrap();
 	let rec = res.unwrap();
 	let addr = rec.contract_address.unwrap();
-	println!("Deployed contract address: {:?}", addr);
+
 	Ok(addr)
 }
 
@@ -93,7 +77,6 @@ pub async fn call_verifier(
 pub fn compile_sol_contract() {
 	let curr_dir = env::current_dir().unwrap();
 	let contracts_dir = curr_dir.join("../data/");
-	println!("{:?}", contracts_dir);
 
 	// compile it
 	let contracts = Solc::default().compile_source(&contracts_dir).unwrap();
@@ -190,7 +173,7 @@ mod tests {
 	use secp256k1::{PublicKey, Secp256k1, SecretKey};
 
 	#[tokio::test]
-	async fn should_deploy_the_as_contract() {
+	async fn test_deploy_as() {
 		let anvil = Anvil::new().spawn();
 		let mnemonic = "test test test test test test test test test test test junk";
 		let node_endpoint = anvil.endpoint();
@@ -201,7 +184,7 @@ mod tests {
 	}
 
 	#[tokio::test]
-	async fn should_deploy_the_et_verifier_contract() {
+	async fn test_deploy_verifier() {
 		let anvil = Anvil::new().spawn();
 		let mnemonic = "test test test test test test test test test test test junk";
 		let node_endpoint = anvil.endpoint();
@@ -213,7 +196,7 @@ mod tests {
 	}
 
 	#[tokio::test]
-	async fn should_call_et_verifier_contract() {
+	async fn test_call_verifier() {
 		let anvil = Anvil::new().spawn();
 		let mnemonic = "test test test test test test test test test test test junk";
 		let node_endpoint = anvil.endpoint();

@@ -82,7 +82,7 @@ const _INITIAL_SCORE: u128 = 1000;
 #[derive(Serialize, Deserialize, Debug, EthDisplay, Clone)]
 pub struct ClientConfig {
 	pub as_address: String,
-	pub et_verifier_wrapper_address: String,
+	pub verifier_address: String,
 	pub mnemonic: String,
 	pub node_url: String,
 }
@@ -212,12 +212,12 @@ mod lib_tests {
 		let mnemonic = "test test test test test test test test test test test junk".to_string();
 
 		let as_address = deploy_as(&mnemonic, &node_url).await.unwrap();
-		let et_verifier_address =
+		let verifier_address =
 			deploy_verifier(&mnemonic, &node_url, read_bytes_data("et_verifier")).await.unwrap();
 
 		let config = ClientConfig {
 			as_address: format!("{:?}", as_address),
-			et_verifier_wrapper_address: format!("{:?}", et_verifier_address),
+			verifier_address: format!("{:?}", verifier_address),
 			mnemonic: mnemonic.clone(),
 			node_url,
 		};
