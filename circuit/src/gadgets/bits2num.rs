@@ -104,7 +104,7 @@ impl<F: FieldExt> Chip<F> for Bits2NumChip<F> {
 					e2 = ctx.assign_advice(common.advice[1], next_e2)?;
 					lc1 = ctx.assign_advice(common.advice[2], next_lc1)?;
 				}
-				ctx.constrain_equal(self.value.clone(), lc1.clone())?;
+				ctx.constrain_equal(self.value.clone(), lc1)?;
 
 				Ok(bits)
 			},

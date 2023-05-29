@@ -346,7 +346,7 @@ impl<
 			)?;
 		}
 
-		let mut s = vec![init_score.clone(); NUM_NEIGHBOURS];
+		let mut s = vec![init_score; NUM_NEIGHBOURS];
 		for _ in 0..NUM_ITER {
 			let mut distributions = Vec::new();
 			for i in 0..NUM_NEIGHBOURS {
@@ -390,7 +390,7 @@ impl<
 			passed_scaled.push(res);
 		}
 
-		let mut sum = zero.clone();
+		let mut sum = zero;
 		for i in 0..NUM_NEIGHBOURS {
 			let add_chipset = AddChipset::new(sum.clone(), passed_s[i].clone());
 			sum = add_chipset.synthesize(
@@ -536,7 +536,7 @@ mod test {
 		let signatures: Vec<Signature> = secret_keys
 			.into_iter()
 			.zip(pub_keys.clone())
-			.zip(messages.clone())
+			.zip(messages)
 			.map(|((sk, pk), msg)| sign(&sk, &pk, msg))
 			.collect();
 
@@ -604,7 +604,7 @@ mod test {
 		let signatures: Vec<Signature> = secret_keys
 			.into_iter()
 			.zip(pub_keys.clone())
-			.zip(messages.clone())
+			.zip(messages)
 			.map(|((sk, pk), msg)| sign(&sk, &pk, msg))
 			.collect();
 
@@ -670,7 +670,7 @@ mod test {
 		let signatures: Vec<Signature> = secret_keys
 			.into_iter()
 			.zip(pub_keys.clone())
-			.zip(messages.clone())
+			.zip(messages)
 			.map(|((sk, pk), msg)| sign(&sk, &pk, msg))
 			.collect();
 
@@ -686,7 +686,7 @@ mod test {
 		let deployment_code = gen_evm_verifier(&params, pk.get_vk(), vec![NUM_NEIGHBOURS]);
 		dbg!(deployment_code.len());
 
-		let proof = gen_proof(&params, &pk, et.clone(), vec![res.clone()]);
+		let proof = gen_proof(&params, &pk, et, vec![res.clone()]);
 		evm_verify(deployment_code, vec![res], proof);
 	}
 }

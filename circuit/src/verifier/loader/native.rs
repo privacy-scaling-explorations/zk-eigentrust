@@ -97,7 +97,7 @@ where
 	/// Performs the `+` operation.
 	fn add(self, rhs: &'a LScalar<C, P>) -> Self::Output {
 		let res = self.inner + rhs.inner;
-		Self { inner: res, loader: self.loader.clone() }
+		Self { inner: res, loader: self.loader }
 	}
 }
 
@@ -152,7 +152,7 @@ where
 	/// Performs the `*` operation.
 	fn mul(self, rhs: &'a LScalar<C, P>) -> Self::Output {
 		let res = self.inner * rhs.inner;
-		Self { inner: res, loader: self.loader.clone() }
+		Self { inner: res, loader: self.loader }
 	}
 }
 
@@ -207,7 +207,7 @@ where
 	/// Performs the `-` operation.
 	fn sub(self, rhs: &'a LScalar<C, P>) -> Self::Output {
 		let res = self.inner - rhs.inner;
-		Self { inner: res, loader: self.loader.clone() }
+		Self { inner: res, loader: self.loader }
 	}
 }
 
@@ -262,7 +262,7 @@ where
 	/// Performs the unary `-` operation.
 	fn neg(self) -> Self::Output {
 		let res = C::Scalar::neg(self.inner.clone());
-		Self { inner: res, loader: self.loader.clone() }
+		Self { inner: res, loader: self.loader }
 	}
 }
 

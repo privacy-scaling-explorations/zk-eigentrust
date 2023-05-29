@@ -1,18 +1,24 @@
+# Rustfmt configuration file
+# https://rust-lang.github.io/rustfmt/
+
+# Stable
 array_width = 90
-chain_width = 90
 attr_fn_like_width = 90
+chain_width = 90
 fn_params_layout = "Compressed"
 hard_tabs = true
-use_field_init_shorthand = true
 match_block_trailing_comma = true
 short_array_element_width_threshold = 40
 single_line_if_else_max_width = 80
 struct_lit_width = 80
 struct_variant_width = 80
-condense_wildcard_suffixes = true
-format_code_in_doc_comments = true
-imports_granularity="Crate"
-overflow_delimited_expr = true
-reorder_impl_items = true
-wrap_comments = true
-format_strings = true
+use_field_init_shorthand = true
+
+# Unstable
+# condense_wildcard_suffixes = true
+# format_code_in_doc_comments = true
+# format_strings = true
+# imports_granularity = "Crate"
+# overflow_delimited_expr = true
+# reorder_impl_items = true
+# wrap_comments = true 

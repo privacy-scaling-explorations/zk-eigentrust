@@ -372,7 +372,7 @@ mod test {
 			a_big.clone(),
 			a_big.clone(),
 			a_big.clone(),
-			a_big.clone(),
+			a_big,
 		];
 		let carry = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(BigUint::one());
 		let mut acc = carry.mul(&carry);
@@ -407,7 +407,7 @@ mod test {
 			a_big.clone(),
 			a_big.clone(),
 			a_big.clone(),
-			a_big.clone(),
+			a_big,
 		];
 		let carry = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(BigUint::one());
 		let mut acc = carry.mul(&carry);
@@ -486,7 +486,7 @@ mod test {
 			a_big.clone(),
 			a_big.clone(),
 			a_big.clone(),
-			a_big.clone(),
+			a_big,
 		];
 		let carry = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(BigUint::zero());
 		let mut acc = carry.add(&carry);
@@ -521,7 +521,7 @@ mod test {
 			a_big.clone(),
 			a_big.clone(),
 			a_big.clone(),
-			a_big.clone(),
+			a_big,
 		];
 		let carry = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(BigUint::one());
 		let mut acc = carry.mul(&carry);
@@ -556,7 +556,7 @@ mod test {
 		));
 		assert_eq!(
 			(c.result.value() + b_big).mod_floor(&Bn256_4_68::wrong_modulus()),
-			a_big.clone()
+			a_big
 		);
 	}
 
@@ -575,7 +575,7 @@ mod test {
 		));
 		assert_eq!(
 			(c.result.value() + b_big).mod_floor(&Bn256_4_68::wrong_modulus()),
-			a_big.clone()
+			a_big
 		);
 	}
 
