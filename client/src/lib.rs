@@ -82,9 +82,9 @@ const _INITIAL_SCORE: u128 = 1000;
 #[derive(Serialize, Deserialize, Debug, EthDisplay, Clone)]
 pub struct ClientConfig {
 	pub as_address: String,
-	pub verifier_address: String,
 	pub mnemonic: String,
 	pub node_url: String,
+	pub verifier_address: String,
 }
 
 /// Signer middleware type alias
@@ -217,9 +217,9 @@ mod lib_tests {
 
 		let config = ClientConfig {
 			as_address: format!("{:?}", as_address),
-			verifier_address: format!("{:?}", verifier_address),
 			mnemonic: mnemonic.clone(),
 			node_url,
+			verifier_address: format!("{:?}", verifier_address),
 		};
 
 		let attestation = Attestation::new(Address::default(), U256::default(), 1, None);

@@ -63,7 +63,7 @@ The command-line interface was built using [clap.rs](http://clap.rs/). There is 
 - `proof`: Calculates the global scores, generates the zk proof and stores it in `et-proof.json` at the `data` directory.
 - `show`: Displays the `client-config.json` file.
 - `update`: Updates the specified field in `client-config.json`. Takes the following options:
-  - `--att-address`: Updates the address of the AttestationStation contract.
+  - `--as-address`: Updates the address of the AttestationStation contract.
   - `--mnemonic`: Updates the Ethereum wallet mnemonic phrase.
   - `--node`: Updates the Ethereum node URL.
   - `--verifier`: Updates the address of the Verifier smart contract for the EigenTrust global scores zk proof.
@@ -86,8 +86,8 @@ cargo run --release -- attest --to 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 --
 The configuration file is stored in `data/client-config.json`. You may need to update these parameters if, for example, the smart contracts are redeployed to new addresses or if you want to connect to a different Ethereum node. You can modify the following parameters:
 
 - `as_address`: AttestationStation smart contract address. This is the contract that will receive the attestations.
-- `verifier_address`: Verifier smart contract for the EigenTrust global scores zk proof.
 - `mnemonic`: Ethereum wallet mnemonic phrase.
 - `node_url`: URL of the Ethereum node we are connecting to. The default is `http://localhost:8545` to work with a local `anvil` EVM blockchain.
+- `verifier_address`: Verifier smart contract for the EigenTrust global scores zk proof.
 
 These parameters can also be modified using the `update` CLI command.
