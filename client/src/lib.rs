@@ -82,6 +82,7 @@ const _INITIAL_SCORE: u128 = 1000;
 #[derive(Serialize, Deserialize, Debug, EthDisplay, Clone)]
 pub struct ClientConfig {
 	pub as_address: String,
+	pub domain: String,
 	pub mnemonic: String,
 	pub node_url: String,
 	pub verifier_address: String,
@@ -217,6 +218,7 @@ mod lib_tests {
 
 		let config = ClientConfig {
 			as_address: format!("{:?}", as_address),
+			domain: "0x0000000000000000000000000000000000000000".to_string(),
 			mnemonic: mnemonic.clone(),
 			node_url,
 			verifier_address: format!("{:?}", verifier_address),

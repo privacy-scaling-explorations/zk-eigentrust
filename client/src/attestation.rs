@@ -8,6 +8,11 @@ use eigen_trust_circuit::{
 use ethers::types::{Address, U256};
 use secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
 
+/// Domain prefix length
+pub const DOMAIN_PREFIX_LEN: usize = 12;
+/// Domain prefix
+pub const DOMAIN_PREFIX: [u8; DOMAIN_PREFIX_LEN] = *b"eigen_trust_";
+
 /// Attestation struct
 #[derive(Clone, Debug)]
 pub struct Attestation {
