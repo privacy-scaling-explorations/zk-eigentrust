@@ -1,8 +1,9 @@
 use crate::{
 	rns::{compose_big, decompose_big, RnsParams},
 	utils::fe_to_big,
-	FieldExt,
+	FieldExt, UnassignedValue,
 };
+use halo2::circuit::Value;
 use num_bigint::BigUint;
 use num_traits::{One, Zero};
 use std::marker::PhantomData;
@@ -310,6 +311,69 @@ where
 		let self_native = P::compose(self.limbs);
 		let other_native = P::compose(other.limbs);
 		self_native == other_native
+	}
+}
+
+impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
+	From<UnassignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>> for Integer<W, N, NUM_LIMBS, NUM_BITS, P>
+where
+	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
+{
+	fn from(int: UnassignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>) -> Self {
+		let mut limbs = [(); NUM_LIMBS].map(|_| None);
+		let _ = int.limbs.map(|x| x.and_then(|limb| ))
+		Self {
+			limbs,
+			_wrong_field: PhantomData,
+			_rns: PhantomData,
+		}
+	}
+}
+
+/// UnassignedInteger struct
+#[derive(Clone, Debug)]
+pub struct UnassignedInteger<
+	W: FieldExt,
+	N: FieldExt,
+	const NUM_LIMBS: usize,
+	const NUM_BITS: usize,
+	P,
+> where
+	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
+{
+	/// UnassignedInteger value limbs.
+	pub(crate) limbs: [Value<N>; NUM_LIMBS],
+	/// Phantom data for the Wrong Field.
+	_wrong_field: PhantomData<W>,
+	/// Phantom data for the RnsParams.
+	_rns: PhantomData<P>,
+}
+
+impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
+	From<Integer<W, N, NUM_LIMBS, NUM_BITS, P>> for UnassignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>
+where
+	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
+{
+	fn from(int: Integer<W, N, NUM_LIMBS, NUM_BITS, P>) -> Self {
+		Self {
+			limbs: int.limbs.map(|x| Value::known(x)),
+			_wrong_field: PhantomData,
+			_rns: PhantomData,
+		}
+	}
+}
+
+impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P> UnassignedValue
+	for UnassignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>
+where
+	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
+{
+	fn without_witnesses() -> Self {
+		Self {
+			limbs: [Value::unknown(); NUM_LIMBS],
+			_wrong_field: PhantomData,
+			_rns: PhantomData,
+		}
 	}
 }
 

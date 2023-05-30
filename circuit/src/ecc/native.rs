@@ -13,7 +13,12 @@
 // r_x = m_1 * m_1 - p_x - f
 // r_y = m_1 * (r_x - p_x) - p_y
 
-use crate::{integer::native::Integer, rns::RnsParams, utils::to_bits, FieldExt};
+use crate::{
+	integer::native::{Integer, UnassignedInteger},
+	rns::RnsParams,
+	utils::to_bits,
+	FieldExt, UnassignedValue,
+};
 
 /// Structure for the EcPoint
 #[derive(Clone, Default, Debug, PartialEq)]
@@ -178,6 +183,46 @@ where
 	/// Check if two points are equal
 	pub fn is_eq(&self, other: &Self) -> bool {
 		self.x.is_eq(&other.x) && self.y.is_eq(&other.y)
+	}
+}
+
+/// Structure for the UnassignedEcPoint
+#[derive(Clone, Debug)]
+pub struct UnassignedEcPoint<
+	W: FieldExt,
+	N: FieldExt,
+	const NUM_LIMBS: usize,
+	const NUM_BITS: usize,
+	P,
+> where
+	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
+{
+	/// X coordinate of the UnassignedEcPoint
+	pub x: UnassignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
+	/// Y coordinate of the UnassignedEcPoint
+	pub y: UnassignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
+}
+
+impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
+	From<EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>> for UnassignedEcPoint<W, N, NUM_LIMBS, NUM_BITS, P>
+where
+	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
+{
+	fn from(int: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>) -> Self {
+		Self { x: UnassignedInteger::from(int.x), y: UnassignedInteger::from(int.y) }
+	}
+}
+
+impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P> UnassignedValue
+	for UnassignedEcPoint<W, N, NUM_LIMBS, NUM_BITS, P>
+where
+	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
+{
+	fn without_witnesses() -> Self {
+		Self {
+			x: UnassignedInteger::without_witnesses(),
+			y: UnassignedInteger::without_witnesses(),
+		}
 	}
 }
 

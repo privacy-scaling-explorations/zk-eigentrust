@@ -146,7 +146,7 @@ mod test {
 	where
 		P: RoundParams<F, WIDTH>,
 	{
-		path_arr: [[F; 2]; LENGTH],
+		path_arr: [[Value<F>; 2]; LENGTH],
 		_params: PhantomData<P>,
 	}
 
@@ -155,7 +155,7 @@ mod test {
 		P: RoundParams<F, WIDTH>,
 	{
 		fn new(path_arr: [[F; 2]; LENGTH]) -> Self {
-			Self { path_arr, _params: PhantomData }
+			Self { path_arr: path_arr.map(|l| l.map(|x| Value::known(x))), _params: PhantomData }
 		}
 	}
 
@@ -167,7 +167,7 @@ mod test {
 		type FloorPlanner = SimpleFloorPlanner;
 
 		fn without_witnesses(&self) -> Self {
-			Self { path_arr: [[F::ZERO; 2]; LENGTH], _params: PhantomData }
+			Self { path_arr: [[Value::unknown(); 2]; LENGTH], _params: PhantomData }
 		}
 
 		fn configure(meta: &mut ConstraintSystem<F>) -> TestConfig {
@@ -195,12 +195,12 @@ mod test {
 						[[(); 2]; LENGTH].map(|_| [(); 2].map(|_| None));
 
 					for i in 0..LENGTH {
-						let l_val = Value::known(self.path_arr[i][0]);
-						let r_val = Value::known(self.path_arr[i][1]);
-						let l_assigned = ctx.assign_advice(config.common.advice[0], l_val)?;
-						let r_assigned = ctx.assign_advice(config.common.advice[1], r_val)?;
-						path_arr[i][0] = Some(l_assigned);
-						path_arr[i][1] = Some(r_assigned);
+						let left_assigned =
+							ctx.assign_advice(config.common.advice[0], self.path_arr[i][0])?;
+						let right_assigned =
+							ctx.assign_advice(config.common.advice[1], self.path_arr[i][1])?;
+						path_arr[i][0] = Some(left_assigned);
+						path_arr[i][1] = Some(right_assigned);
 
 						ctx.next();
 					}

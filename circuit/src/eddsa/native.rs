@@ -95,6 +95,10 @@ impl PublicKey {
 	}
 }
 
+/// Configures a structure for the unassigned public key.
+#[derive(Clone, Copy, Default, Debug)]
+pub struct UnassignedPublicKey(pub UnassignedPoint<Fr, BabyJubJub>);
+
 impl From<PublicKey> for UnassignedPublicKey {
 	fn from(sig: PublicKey) -> Self {
 		Self(UnassignedPoint {
@@ -104,10 +108,6 @@ impl From<PublicKey> for UnassignedPublicKey {
 		})
 	}
 }
-
-/// Configures a structure for the unassigned public key.
-#[derive(Clone, Copy, Default, Debug)]
-pub struct UnassignedPublicKey(pub UnassignedPoint<Fr, BabyJubJub>);
 
 impl UnassignedValue for UnassignedPublicKey {
 	fn without_witnesses() -> Self {
@@ -143,6 +143,15 @@ impl Default for Signature {
 	}
 }
 
+#[derive(Clone, Debug)]
+/// Configures unassigned signature objects.
+pub struct UnassignedSignature {
+	/// Constructs a unassigned point for the R.
+	pub big_r: UnassignedPoint<Fr, BabyJubJub>,
+	/// Constructs a unassigned field element for the s.
+	pub s: Value<Fr>,
+}
+
 impl From<Signature> for UnassignedSignature {
 	fn from(sig: Signature) -> Self {
 		Self {
@@ -154,15 +163,6 @@ impl From<Signature> for UnassignedSignature {
 			s: Value::known(sig.s),
 		}
 	}
-}
-
-#[derive(Clone, Debug)]
-/// Configures unassigned signature objects.
-pub struct UnassignedSignature {
-	/// Constructs a unassigned point for the R.
-	pub big_r: UnassignedPoint<Fr, BabyJubJub>,
-	/// Constructs a unassigned field element for the s.
-	pub s: Value<Fr>,
 }
 
 impl UnassignedValue for UnassignedSignature {

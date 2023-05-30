@@ -1,7 +1,7 @@
 /// Native implementation for the non-native field arithmetic
 pub mod native;
 /// RNS operations for the non-native field arithmetic
-use self::native::Integer;
+use self::native::{Integer, UnassignedInteger};
 use crate::{rns::RnsParams, Chip, CommonConfig, FieldExt, RegionCtx};
 use halo2::{
 	circuit::{AssignedCell, Layouter, Region, Value},
@@ -674,7 +674,7 @@ where
 #[cfg(test)]
 mod test {
 	use super::{native::Integer, *};
-	use crate::{rns::bn256::Bn256_4_68, Chipset, CommonConfig};
+	use crate::{rns::bn256::Bn256_4_68, Chipset, CommonConfig, UnassignedValue};
 	use halo2::{
 		circuit::{SimpleFloorPlanner, Value},
 		dev::MockProver,
@@ -719,11 +719,11 @@ mod test {
 	}
 
 	struct SingleAssigner {
-		x: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
+		x: UnassignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
 	}
 
 	impl SingleAssigner {
-		fn new(x: Integer<W, N, NUM_LIMBS, NUM_BITS, P>) -> Self {
+		fn new(x: UnassignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>) -> Self {
 			Self { x }
 		}
 	}
@@ -742,8 +742,7 @@ mod test {
 					let mut x_limbs: [Option<AssignedCell<N, N>>; NUM_LIMBS] =
 						[(); NUM_LIMBS].map(|_| None);
 					for i in 0..NUM_LIMBS {
-						let limb_value = Value::known(self.x.limbs[i]);
-						let x = ctx.assign_advice(common.advice[i], limb_value)?;
+						let x = ctx.assign_advice(common.advice[i], self.x.limbs[i])?;
 						x_limbs[i] = Some(x);
 					}
 					Ok(x_limbs)
@@ -810,12 +809,12 @@ mod test {
 
 	#[derive(Clone)]
 	struct ReduceTestCircuit {
-		x: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
+		x: UnassignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
 	}
 
 	impl ReduceTestCircuit {
 		fn new(x: Integer<W, N, NUM_LIMBS, NUM_BITS, P>) -> Self {
-			Self { x }
+			Self { x: UnassignedInteger::from(x) }
 		}
 	}
 
@@ -824,7 +823,7 @@ mod test {
 		type FloorPlanner = SimpleFloorPlanner;
 
 		fn without_witnesses(&self) -> Self {
-			self.clone()
+			Self { x: UnassignedInteger::without_witnesses() }
 		}
 
 		fn configure(meta: &mut ConstraintSystem<N>) -> TestConfig {
