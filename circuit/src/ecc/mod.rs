@@ -1027,15 +1027,15 @@ mod test {
 
 	#[derive(Clone)]
 	struct EccAddTestCircuit {
-		p: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
-		q: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
+		p: Value<EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>>,
+		q: Value<EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>>,
 	}
 
 	impl EccAddTestCircuit {
 		fn new(
 			p: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>, q: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
 		) -> Self {
-			Self { p, q }
+			Self { p: Value::known(p), q: Value::known(q) }
 		}
 	}
 
@@ -1044,7 +1044,7 @@ mod test {
 		type FloorPlanner = SimpleFloorPlanner;
 
 		fn without_witnesses(&self) -> Self {
-			self.clone()
+			Self { p: Value::unknown(), q: Value::unknown() }
 		}
 
 		fn configure(meta: &mut ConstraintSystem<N>) -> TestConfig {
@@ -1054,10 +1054,22 @@ mod test {
 		fn synthesize(
 			&self, config: TestConfig, mut layouter: impl Layouter<N>,
 		) -> Result<(), Error> {
-			let p_assigner = PointAssigner::new(self.p.clone());
+			let mut p = None;
+			let _ = self.p.clone().and_then(|x| {
+				p = Some(x.clone());
+				Value::known(x)
+			});
+
+			let mut q = None;
+			let _ = self.q.clone().and_then(|x| {
+				q = Some(x.clone());
+				Value::known(x)
+			});
+
+			let p_assigner = PointAssigner::new(p.clone().unwrap());
 			let p_assigned =
 				p_assigner.synthesize(&config.common, &(), layouter.namespace(|| "p assigner"))?;
-			let q_assigner = PointAssigner::new(self.q.clone());
+			let q_assigner = PointAssigner::new(q.clone().unwrap());
 			let q_assigned =
 				q_assigner.synthesize(&config.common, &(), layouter.namespace(|| "q assigner"))?;
 			let chip = EccAddChipset::new(p_assigned, q_assigned);
@@ -1105,12 +1117,12 @@ mod test {
 
 	#[derive(Clone)]
 	struct EccDoubleTestCircuit {
-		p: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
+		p: Value<EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>>,
 	}
 
 	impl EccDoubleTestCircuit {
 		fn new(p: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>) -> Self {
-			Self { p }
+			Self { p: Value::known(p) }
 		}
 	}
 
@@ -1119,7 +1131,7 @@ mod test {
 		type FloorPlanner = SimpleFloorPlanner;
 
 		fn without_witnesses(&self) -> Self {
-			self.clone()
+			Self { p: Value::unknown() }
 		}
 
 		fn configure(meta: &mut ConstraintSystem<N>) -> TestConfig {
@@ -1129,7 +1141,13 @@ mod test {
 		fn synthesize(
 			&self, config: TestConfig, mut layouter: impl Layouter<N>,
 		) -> Result<(), Error> {
-			let p_assigner = PointAssigner::new(self.p.clone());
+			let mut p = None;
+			let _ = self.p.clone().and_then(|x| {
+				p = Some(x.clone());
+				Value::known(x)
+			});
+
+			let p_assigner = PointAssigner::new(p.clone().unwrap());
 			let p_assigned =
 				p_assigner.synthesize(&config.common, &(), layouter.namespace(|| "p assigner"))?;
 			let chip = EccDoubleChipset::new(p_assigned);
@@ -1174,15 +1192,15 @@ mod test {
 
 	#[derive(Clone)]
 	struct EccLadderTestCircuit {
-		p: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
-		q: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
+		p: Value<EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>>,
+		q: Value<EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>>,
 	}
 
 	impl EccLadderTestCircuit {
 		fn new(
 			p: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>, q: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
 		) -> Self {
-			Self { p, q }
+			Self { p: Value::known(p), q: Value::known(q) }
 		}
 	}
 
@@ -1191,7 +1209,7 @@ mod test {
 		type FloorPlanner = SimpleFloorPlanner;
 
 		fn without_witnesses(&self) -> Self {
-			self.clone()
+			Self { p: Value::unknown(), q: Value::unknown() }
 		}
 
 		fn configure(meta: &mut ConstraintSystem<N>) -> TestConfig {
@@ -1201,11 +1219,23 @@ mod test {
 		fn synthesize(
 			&self, config: TestConfig, mut layouter: impl Layouter<N>,
 		) -> Result<(), Error> {
-			let p_assigner = PointAssigner::new(self.p.clone());
+			let mut p = None;
+			let _ = self.p.clone().and_then(|x| {
+				p = Some(x.clone());
+				Value::known(x)
+			});
+
+			let mut q = None;
+			let _ = self.q.clone().and_then(|x| {
+				q = Some(x.clone());
+				Value::known(x)
+			});
+
+			let p_assigner = PointAssigner::new(p.clone().unwrap());
 			let p_assigned =
 				p_assigner.synthesize(&config.common, &(), layouter.namespace(|| "p assigner"))?;
 
-			let q_assigner = PointAssigner::new(self.q.clone());
+			let q_assigner = PointAssigner::new(q.clone().unwrap());
 			let q_assigned =
 				q_assigner.synthesize(&config.common, &(), layouter.namespace(|| "q assigner"))?;
 			let chip = EccUnreducedLadderChipset::new(p_assigned, q_assigned);
@@ -1253,13 +1283,13 @@ mod test {
 
 	#[derive(Clone)]
 	struct EccMulTestCircuit {
-		p: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
-		value: N,
+		p: Value<EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>>,
+		value: Value<N>,
 	}
 
 	impl EccMulTestCircuit {
 		fn new(p: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>, value: N) -> Self {
-			Self { p, value }
+			Self { p: Value::known(p), value: Value::known(value) }
 		}
 	}
 
@@ -1268,7 +1298,7 @@ mod test {
 		type FloorPlanner = SimpleFloorPlanner;
 
 		fn without_witnesses(&self) -> Self {
-			self.clone()
+			Self { p: Value::unknown(), value: Value::unknown() }
 		}
 
 		fn configure(meta: &mut ConstraintSystem<N>) -> TestConfig {
@@ -1283,8 +1313,7 @@ mod test {
 				|region: Region<'_, N>| {
 					let mut ctx = RegionCtx::new(region, 0);
 
-					let value =
-						ctx.assign_advice(config.common.advice[0], Value::known(self.value))?;
+					let value = ctx.assign_advice(config.common.advice[0], self.value)?;
 					Ok(value)
 				},
 			)?;
@@ -1296,7 +1325,13 @@ mod test {
 				layouter.namespace(|| "aux assigner"),
 			)?;
 
-			let p_assigner = PointAssigner::new(self.p.clone());
+			let mut p = None;
+			let _ = self.p.clone().and_then(|x| {
+				p = Some(x.clone());
+				Value::known(x)
+			});
+
+			let p_assigner = PointAssigner::new(p.clone().unwrap());
 			let p_assigned =
 				p_assigner.synthesize(&config.common, &(), layouter.namespace(|| "p assigner"))?;
 

@@ -117,7 +117,7 @@ mod test {
 	use super::*;
 	use crate::{
 		utils::{generate_params, prove_and_verify},
-		CommonConfig,
+		CommonConfig, UnassignedValue,
 	};
 	use halo2::{
 		circuit::SimpleFloorPlanner,
@@ -134,12 +134,12 @@ mod test {
 
 	#[derive(Clone)]
 	struct TestCircuit<const B: usize> {
-		numba: Fr,
+		numba: Value<Fr>,
 	}
 
 	impl<const B: usize> TestCircuit<B> {
 		fn new(x: Fr) -> Self {
-			Self { numba: x }
+			Self { numba: Value::known(x) }
 		}
 	}
 
@@ -148,7 +148,7 @@ mod test {
 		type FloorPlanner = SimpleFloorPlanner;
 
 		fn without_witnesses(&self) -> Self {
-			self.clone()
+			Self { numba: Value::unknown() }
 		}
 
 		fn configure(meta: &mut ConstraintSystem<Fr>) -> TestConfig {
@@ -165,8 +165,7 @@ mod test {
 				|| "temp",
 				|region: Region<'_, Fr>| {
 					let mut ctx = RegionCtx::new(region, 0);
-					let numba_val = Value::known(self.numba);
-					ctx.assign_advice(config.common.advice[0], numba_val)
+					ctx.assign_advice(config.common.advice[0], self.numba)
 				},
 			)?;
 
