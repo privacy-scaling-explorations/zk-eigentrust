@@ -37,11 +37,17 @@ impl Attestation {
 		let mut about_bytes_array = [0u8; 32];
 		about_bytes_array[..about_bytes.len()].copy_from_slice(about_bytes);
 
+		let mut key = [0u8; 32];
+		self.key.to_little_endian(&mut key);
+
+		let mut message = [0u8; 32];
+		self.message.to_little_endian(&mut message);
+
 		AttestationFr {
 			about: Scalar::from_bytes(&about_bytes_array).unwrap(),
-			key: Scalar::from(self.key.0[0]),
+			key: Scalar::from_bytes(&key).unwrap(),
 			value: Scalar::from(self.value as u64),
-			message: Scalar::from(self.message.0[0]),
+			message: Scalar::from_bytes(&message).unwrap(),
 		}
 	}
 }
