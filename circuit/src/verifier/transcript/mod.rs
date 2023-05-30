@@ -451,7 +451,7 @@ mod test {
 		type FloorPlanner = SimpleFloorPlanner;
 
 		fn without_witnesses(&self) -> Self {
-			self.clone()
+			Self { ec_point: C::default() }
 		}
 
 		fn configure(meta: &mut ConstraintSystem<Scalar>) -> TestConfig {
@@ -565,7 +565,7 @@ mod test {
 		type FloorPlanner = SimpleFloorPlanner;
 
 		fn without_witnesses(&self) -> Self {
-			self.clone()
+			Self { scalar: Scalar::default() }
 		}
 
 		fn configure(meta: &mut ConstraintSystem<Scalar>) -> TestConfig {
@@ -647,7 +647,7 @@ mod test {
 		type FloorPlanner = SimpleFloorPlanner;
 
 		fn without_witnesses(&self) -> Self {
-			self.clone()
+			Self { reader: Vec::new() }
 		}
 
 		fn configure(meta: &mut ConstraintSystem<Scalar>) -> TestConfig {
@@ -792,7 +792,7 @@ mod test {
 		type FloorPlanner = SimpleFloorPlanner;
 
 		fn without_witnesses(&self) -> Self {
-			self.clone()
+			Self { reader: Vec::new() }
 		}
 
 		fn configure(meta: &mut ConstraintSystem<Scalar>) -> TestConfig {
