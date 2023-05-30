@@ -96,7 +96,7 @@ impl Snark {
 	}
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 /// UnassignedSnark structure
 pub struct UnassignedSnark {
 	protocol: PlonkProtocol<G1Affine>,
@@ -230,7 +230,7 @@ impl Circuit<Fr> for Aggregator {
 		Self {
 			svk: self.svk,
 			snarks: self.snarks.iter().map(UnassignedSnark::without_witnesses).collect(),
-			instances: Vec::new(),
+			instances: self.instances.clone(),
 			as_proof: None,
 		}
 	}
@@ -274,33 +274,39 @@ impl Circuit<Fr> for Aggregator {
 	fn synthesize(
 		&self, config: Self::Config, mut layouter: impl Layouter<Fr>,
 	) -> Result<(), Error> {
-		let mut inst_chunks = Vec::new();
-		for snark in &self.snarks {
-			let instance_flatten =
-				snark.instances.clone().into_iter().flatten().collect::<Vec<Value<Fr>>>();
-			let mut instance_chunks = instance_flatten.chunks(ADVICE);
-			let mut instance_collector = Vec::new();
-			layouter.assign_region(
-				|| "assign_instances",
-				|region: Region<'_, Fr>| {
-					let mut ctx = RegionCtx::new(region, 0);
-					for _ in 0..instance_chunks.len() {
-						let chunk = instance_chunks.next().unwrap();
-						for i in 0..chunk.len() {
-							let value = ctx.assign_advice(config.common.advice[i], chunk[i])?;
-							instance_collector.push(value);
+		let assigned_instances = layouter.assign_region(
+			|| "assign_instances",
+			|region: Region<'_, Fr>| {
+				let mut ctx = RegionCtx::new(region, 0);
+
+				let mut advice_i = 0;
+				let mut assigned_instances = Vec::new();
+				for snark in &self.snarks {
+					let mut instances_collector = Vec::new();
+					for inst_vec in &snark.instances {
+						let mut inst_vec_collector = Vec::new();
+						for inst in inst_vec {
+							let value =
+								ctx.assign_advice(config.common.advice[advice_i], inst.clone())?;
+							inst_vec_collector.push(value);
+
+							advice_i += 1;
+							if advice_i % ADVICE == 0 {
+								advice_i = 0;
+								ctx.next();
+							}
 						}
 
-						ctx.next();
+						instances_collector.push(inst_vec_collector);
 					}
-					Ok(())
-				},
-			)?;
+					assigned_instances.push(instances_collector);
+				}
 
-			inst_chunks.push(instance_collector);
-		}
+				Ok(assigned_instances)
+			},
+		)?;
 
-		{
+		let [lhs_x, lhs_y, rhs_x, rhs_y] = {
 			let loader_config = LoaderConfig::<'_, G1Affine, _, Bn256_4_68>::new(
 				layouter.namespace(|| "loader"),
 				config.common.clone(),
@@ -309,12 +315,18 @@ impl Circuit<Fr> for Aggregator {
 				config.poseidon_sponge,
 			);
 
-			// let mut accumulators = Vec::new();
+			let mut accumulators = Vec::new();
 			for (i, snark) in self.snarks.iter().enumerate() {
-				let loaded_instances = inst_chunks[i]
-					.iter()
-					.map(|x| Halo2LScalar::new(x.clone(), loader_config.clone()))
-					.collect::<Vec<Halo2LScalar<G1Affine, _, Bn256_4_68>>>();
+				let mut loaded_instances = Vec::new();
+				for inst_vec in &assigned_instances[i] {
+					let mut loaded_inst_vec = Vec::new();
+					for inst in inst_vec {
+						let loaded_instance =
+							Halo2LScalar::new(inst.clone(), loader_config.clone());
+						loaded_inst_vec.push(loaded_instance);
+					}
+					loaded_instances.push(loaded_inst_vec);
+				}
 
 				let protocol = snark.protocol.loaded(&loader_config);
 
@@ -327,66 +339,60 @@ impl Circuit<Fr> for Aggregator {
 				> = PoseidonReadChipset::new(snark.proof(), loader_config.clone());
 
 				let proof = PlonkSuccinctVerifier::<KzgAs<Bn256, Gwc19>>::read_proof(
-					&self.svk,
-					&protocol,
-					&[loaded_instances.clone()],
-					&mut transcript_read,
+					&self.svk, &protocol, &loaded_instances, &mut transcript_read,
 				)
 				.unwrap();
 
-				// let res = PlonkSuccinctVerifier::<KzgAs<Bn256, Gwc19>>::verify(
-				// 	&self.svk,
-				// 	&protocol,
-				// 	&[loaded_instances],
-				// 	&proof,
-				// )
-				// .unwrap();
+				let res = PlonkSuccinctVerifier::<KzgAs<Bn256, Gwc19>>::verify(
+					&self.svk, &protocol, &loaded_instances, &proof,
+				)
+				.unwrap();
 
-				// accumulators.extend(res);
+				accumulators.extend(res);
 			}
 
-			// let as_proof = self.as_proof.as_ref().map(Vec::as_slice);
-			// let mut transcript: PoseidonReadChipset<&[u8], G1Affine, _, Bn256_4_68, Params> =
-			// 	PoseidonReadChipset::new(as_proof, loader_config);
-			// let proof = KzgAs::<Bn256, Gwc19>::read_proof(
-			// 	&Default::default(),
-			// 	&accumulators,
-			// 	&mut transcript,
-			// )
-			// .unwrap();
+			let as_proof = self.as_proof.as_ref().map(Vec::as_slice);
+			let mut transcript: PoseidonReadChipset<&[u8], G1Affine, _, Bn256_4_68, Params> =
+				PoseidonReadChipset::new(as_proof, loader_config);
+			let proof = KzgAs::<Bn256, Gwc19>::read_proof(
+				&Default::default(),
+				&accumulators,
+				&mut transcript,
+			)
+			.unwrap();
 
-			// let accumulator =
-			// 	KzgAs::<Bn256, Gwc19>::verify(&Default::default(), &accumulators, &proof).unwrap();
+			let accumulator =
+				KzgAs::<Bn256, Gwc19>::verify(&Default::default(), &accumulators, &proof).unwrap();
 
-			// let lhs_x = accumulator.lhs.inner.x;
-			// let lhs_y = accumulator.lhs.inner.y;
+			let lhs_x = accumulator.lhs.inner.x;
+			let lhs_y = accumulator.lhs.inner.y;
 
-			// let rhs_x = accumulator.rhs.inner.x;
-			// let rhs_y = accumulator.rhs.inner.y;
+			let rhs_x = accumulator.rhs.inner.x;
+			let rhs_y = accumulator.rhs.inner.y;
 
-			// [lhs_x, lhs_y, rhs_x, rhs_y]
+			[lhs_x, lhs_y, rhs_x, rhs_y]
 		};
 
-		// let mut row = 0;
-		// for limb in lhs_x.limbs {
-		// 	layouter.constrain_instance(limb.cell(), config.common.instance, row)?;
-		// 	row += 1;
-		// }
+		let mut row = 0;
+		for limb in lhs_x.limbs {
+			layouter.constrain_instance(limb.cell(), config.common.instance, row)?;
+			row += 1;
+		}
 
-		// for limb in lhs_y.limbs {
-		// 	layouter.constrain_instance(limb.cell(), config.common.instance, row)?;
-		// 	row += 1;
-		// }
+		for limb in lhs_y.limbs {
+			layouter.constrain_instance(limb.cell(), config.common.instance, row)?;
+			row += 1;
+		}
 
-		// for limb in rhs_x.limbs {
-		// 	layouter.constrain_instance(limb.cell(), config.common.instance, row)?;
-		// 	row += 1;
-		// }
+		for limb in rhs_x.limbs {
+			layouter.constrain_instance(limb.cell(), config.common.instance, row)?;
+			row += 1;
+		}
 
-		// for limb in rhs_y.limbs {
-		// 	layouter.constrain_instance(limb.cell(), config.common.instance, row)?;
-		// 	row += 1;
-		// }
+		for limb in rhs_y.limbs {
+			layouter.constrain_instance(limb.cell(), config.common.instance, row)?;
+			row += 1;
+		}
 
 		Ok(())
 	}
@@ -480,7 +486,7 @@ mod test {
 		}
 	}
 
-	#[ignore = "Aggregator fails"]
+	// #[ignore = "Aggregator fails"]
 	#[test]
 	fn test_aggregator() {
 		// Testing Aggregator

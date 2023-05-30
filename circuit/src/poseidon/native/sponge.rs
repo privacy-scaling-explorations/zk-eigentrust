@@ -44,7 +44,9 @@ where
 	/// Squeeze the data out by
 	/// permuting until no more chunks are left.
 	pub fn squeeze(&mut self) -> F {
-		assert!(!self.inputs.is_empty());
+		if self.inputs.is_empty() {
+			self.inputs.push(F::ZERO);
+		}
 
 		for chunk in self.inputs.chunks(WIDTH) {
 			let mut input = [F::ZERO; WIDTH];

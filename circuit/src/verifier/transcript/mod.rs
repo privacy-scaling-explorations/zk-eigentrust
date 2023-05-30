@@ -175,7 +175,7 @@ where
 				.unwrap()
 		};
 		let assigned_lscalar = Halo2LScalar::new(assigned_scalar, self.loader.clone());
-		Self::common_scalar(self, &assigned_lscalar)?;
+		self.common_scalar(&assigned_lscalar)?;
 
 		Ok(assigned_lscalar)
 	}

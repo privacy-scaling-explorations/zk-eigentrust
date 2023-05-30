@@ -32,7 +32,7 @@ where
 {
 	state: [AssignedCell<F, F>; WIDTH],
 	/// Constructs a cell vector for the inputs.
-	inputs: Vec<AssignedCell<F, F>>,
+	pub inputs: Vec<AssignedCell<F, F>>,
 	/// Default value to fill in the input
 	default: AssignedCell<F, F>,
 	/// Constructs a phantom data for the parameters.
@@ -66,10 +66,13 @@ where
 	fn synthesize(
 		self, common: &CommonConfig, config: &PoseidonSpongeConfig, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
-		assert!(!self.inputs.is_empty());
+		let mut inputs = self.inputs.clone();
+		if self.inputs.is_empty() {
+			inputs.push(self.default.clone());
+		}
 
 		let mut state = self.state.clone();
-		for (i, chunk) in self.inputs.chunks(WIDTH).enumerate() {
+		for (i, chunk) in inputs.chunks(WIDTH).enumerate() {
 			let mut curr_chunk = [(); WIDTH].map(|_| self.default.clone());
 			for j in 0..chunk.len() {
 				curr_chunk[j] = chunk[j].clone();
@@ -100,7 +103,8 @@ pub struct StatefulSpongeChipset<F: FieldExt, const WIDTH: usize, P>
 where
 	P: RoundParams<F, WIDTH>,
 {
-	chipset: PoseidonSpongeChipset<F, WIDTH, P>,
+	/// Sponge chipset
+	pub chipset: PoseidonSpongeChipset<F, WIDTH, P>,
 	default: AssignedCell<F, F>,
 }
 
