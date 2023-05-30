@@ -314,22 +314,6 @@ where
 	}
 }
 
-impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
-	From<UnassignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>> for Integer<W, N, NUM_LIMBS, NUM_BITS, P>
-where
-	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
-{
-	fn from(int: UnassignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>) -> Self {
-		let mut limbs = [(); NUM_LIMBS].map(|_| None);
-		let _ = int.limbs.map(|x| x.and_then(|limb| ))
-		Self {
-			limbs,
-			_wrong_field: PhantomData,
-			_rns: PhantomData,
-		}
-	}
-}
-
 /// UnassignedInteger struct
 #[derive(Clone, Debug)]
 pub struct UnassignedInteger<
@@ -341,6 +325,8 @@ pub struct UnassignedInteger<
 > where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 {
+	// Original value of the unassigned integer.
+	pub(crate) integer: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
 	/// UnassignedInteger value limbs.
 	pub(crate) limbs: [Value<N>; NUM_LIMBS],
 	/// Phantom data for the Wrong Field.
@@ -356,6 +342,7 @@ where
 {
 	fn from(int: Integer<W, N, NUM_LIMBS, NUM_BITS, P>) -> Self {
 		Self {
+			integer: Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::from_limbs(int.limbs),
 			limbs: int.limbs.map(|x| Value::known(x)),
 			_wrong_field: PhantomData,
 			_rns: PhantomData,
@@ -370,6 +357,7 @@ where
 {
 	fn without_witnesses() -> Self {
 		Self {
+			integer: Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::default(),
 			limbs: [Value::unknown(); NUM_LIMBS],
 			_wrong_field: PhantomData,
 			_rns: PhantomData,

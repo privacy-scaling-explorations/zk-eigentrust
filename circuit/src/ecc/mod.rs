@@ -950,7 +950,7 @@ mod test {
 				},
 			)?;
 
-			let x_assigned = AssignedInteger::new(self.x, assigned_limbs);
+			let x_assigned = AssignedInteger::new(self.x.integer, assigned_limbs);
 			Ok(x_assigned)
 		}
 	}
