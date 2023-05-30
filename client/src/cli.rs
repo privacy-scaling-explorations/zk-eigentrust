@@ -136,7 +136,7 @@ impl AttestData {
 		let domain = H160::from_str(&config.domain).map_err(|_| "Failed to parse domain")?;
 		let mut key_bytes: [u8; 32] = [0; 32];
 		key_bytes[..DOMAIN_PREFIX_LEN].copy_from_slice(&DOMAIN_PREFIX);
-		key_bytes[DOMAIN_PREFIX_LEN..].copy_from_slice(&domain.as_bytes());
+		key_bytes[DOMAIN_PREFIX_LEN..].copy_from_slice(domain.as_bytes());
 		let key = U256::from(key_bytes);
 
 		Ok(Attestation::new(parsed_address, key, parsed_score, message))
