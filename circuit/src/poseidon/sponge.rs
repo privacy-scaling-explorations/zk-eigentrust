@@ -68,13 +68,13 @@ where
 	) -> Result<Self::Output, Error> {
 		assert!(!self.inputs.is_empty());
 
-		let mut curr_chunk = [(); WIDTH].map(|_| self.default.clone());
-		let state = self.state.clone();
+		let mut state = self.state.clone();
 		for (i, chunk) in self.inputs.chunks(WIDTH).enumerate() {
+			let mut curr_chunk = [(); WIDTH].map(|_| self.default.clone());
 			for j in 0..chunk.len() {
 				curr_chunk[j] = chunk[j].clone();
 			}
-			println!("absorb state {:#?} {:#?}", state.clone(), curr_chunk);
+
 			let absorb = AbsorbChip::new(state.clone(), curr_chunk.clone());
 			let inputs = absorb.synthesize(
 				common,
@@ -82,12 +82,12 @@ where
 				layouter.namespace(|| format!("absorb_{}", i)),
 			)?;
 
-			// let pos = PoseidonChipset::<_, WIDTH, P>::new(inputs);
-			// state = pos.synthesize(
-			// 	common,
-			// 	&config.poseidon,
-			// 	layouter.namespace(|| format!("poseidon_permute_{}", i)),
-			// )?;
+			let pos = PoseidonChipset::<_, WIDTH, P>::new(inputs);
+			state = pos.synthesize(
+				common,
+				&config.poseidon,
+				layouter.namespace(|| format!("poseidon_permute_{}", i)),
+			)?;
 		}
 
 		Ok(state)

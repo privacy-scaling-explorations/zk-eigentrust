@@ -47,12 +47,15 @@ where
 		assert!(!self.inputs.is_empty());
 
 		for chunk in self.inputs.chunks(WIDTH) {
-			let loaded_state = Self::load_state(chunk);
 			let mut input = [F::ZERO; WIDTH];
+
+			// Absorb
+			let loaded_state = Self::load_state(chunk);
 			for i in 0..WIDTH {
 				input[i] = loaded_state[i] + self.state[i];
 			}
 
+			// Permute
 			let pos = Poseidon::<_, WIDTH, P>::new(input);
 			self.state = pos.permute();
 		}

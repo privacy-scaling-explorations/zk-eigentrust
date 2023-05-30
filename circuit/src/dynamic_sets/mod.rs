@@ -327,7 +327,7 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u1
 			&config.sponge,
 			layouter.namespace(|| "pks_sponge"),
 		)?;
-		assert!(false, "Fix sponge");
+
 		for i in 0..NUM_NEIGHBOURS {
 			let mut scores_sponge = SpongeHasher::new(zero_state.clone(), zero.clone());
 			scores_sponge.update(&ops[i]);

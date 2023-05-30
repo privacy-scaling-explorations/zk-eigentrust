@@ -74,8 +74,6 @@ where
 
 	/// Squeeze a challenge.
 	fn squeeze_challenge(&mut self) -> C::ScalarExt {
-		let default = C::Scalar::default();
-		self.state.update(&[default]);
 		let mut hasher = self.state.clone();
 		let val = hasher.squeeze();
 		val
@@ -83,9 +81,6 @@ where
 
 	/// Update with an elliptic curve point.
 	fn common_ec_point(&mut self, ec_point: &C) -> Result<(), VerifierError> {
-		let default = C::Scalar::default();
-		self.state.update(&[default]);
-
 		let coordinates = ec_point.coordinates().unwrap();
 		let x_coordinate = coordinates.x();
 		let y_coordinate = coordinates.y();
@@ -100,8 +95,7 @@ where
 
 	/// Update with a scalar.
 	fn common_scalar(&mut self, scalar: &C::ScalarExt) -> Result<(), VerifierError> {
-		let default = C::Scalar::default();
-		self.state.update(&[default, *scalar]);
+		self.state.update(&[*scalar]);
 
 		Ok(())
 	}
@@ -203,16 +197,12 @@ where
 
 	/// Squeeze a challenge.
 	fn squeeze_challenge(&mut self) -> C::ScalarExt {
-		let default = C::Scalar::default();
-		self.state.update(&[default]);
 		let mut hasher = self.state.clone();
 		hasher.squeeze()
 	}
 
 	/// Update with an elliptic curve point.
 	fn common_ec_point(&mut self, ec_point: &C) -> Result<(), VerifierError> {
-		let default = C::Scalar::default();
-		self.state.update(&[default]);
 		let coords: Coordinates<C> = Option::from(ec_point.coordinates()).ok_or_else(|| {
 			VerifierError::Transcript(
 				ErrorKind::Other,
@@ -231,8 +221,7 @@ where
 
 	/// Update with a scalar.
 	fn common_scalar(&mut self, scalar: &C::ScalarExt) -> Result<(), VerifierError> {
-		let default = C::Scalar::default();
-		self.state.update(&[default, scalar.clone()]);
+		self.state.update(&[scalar.clone()]);
 
 		Ok(())
 	}

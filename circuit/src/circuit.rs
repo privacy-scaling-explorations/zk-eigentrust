@@ -308,7 +308,7 @@ impl<
 			&config.sponge,
 			layouter.namespace(|| "keys_sponge"),
 		)?;
-		assert!(false, "Fix sponge");
+
 		for i in 0..NUM_NEIGHBOURS {
 			let mut scores_sponge = SpongeHasher::new(zero_state.clone(), zero.clone());
 			scores_sponge.update(&ops[i]);
