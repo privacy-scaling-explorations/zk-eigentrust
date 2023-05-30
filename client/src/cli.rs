@@ -99,9 +99,6 @@ pub struct AttestData {
 	/// Attestation message (hex-encoded)
 	#[clap(long = "message")]
 	message: Option<String>,
-	/// Attestation key
-	#[clap(long = "key")]
-	key: Option<String>,
 }
 
 impl AttestData {
@@ -170,7 +167,6 @@ mod tests {
 			address: Some("0x5fbdb2315678afecb367f032d93f642f64180aa3".to_string()),
 			score: Some("5".to_string()),
 			message: Some("0x1234512345".to_string()),
-			key: None,
 		};
 
 		let attestation = data.to_attestation(&config).unwrap();
