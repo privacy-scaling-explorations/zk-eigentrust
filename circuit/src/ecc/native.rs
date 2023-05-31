@@ -13,7 +13,6 @@
 // r_x = m_1 * m_1 - p_x - f
 // r_y = m_1 * (r_x - p_x) - p_y
 
-
 use crate::{
 	integer::native::Integer,
 	rns::RnsParams,
@@ -215,7 +214,7 @@ where
 			.collect();
 
 		let sliding_window_integer = 2_u32.pow(sliding_window_size.try_into().unwrap());
-		
+
 		// Construct selector table for each mul
 		let mut table: Vec<Vec<EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>>> = vec![];
 		for i in 0..exps.len() {
