@@ -336,6 +336,19 @@ pub struct UnassignedInteger<
 }
 
 impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
+	UnassignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>
+where
+	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
+{
+	/// Creates a new unassigned integer object
+	pub fn new(
+		integer: Integer<W, N, NUM_LIMBS, NUM_BITS, P>, limbs: [Value<N>; NUM_LIMBS],
+	) -> Self {
+		Self { integer, limbs, _wrong_field: PhantomData, _rns: PhantomData }
+	}
+}
+
+impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
 	From<Integer<W, N, NUM_LIMBS, NUM_BITS, P>> for UnassignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>
 where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,

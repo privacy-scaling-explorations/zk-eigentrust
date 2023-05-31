@@ -204,12 +204,26 @@ pub struct UnassignedEcPoint<
 }
 
 impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
+	UnassignedEcPoint<W, N, NUM_LIMBS, NUM_BITS, P>
+where
+	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
+{
+	/// Creates a new unassigned ec point object
+	pub fn new(
+		x: UnassignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
+		y: UnassignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
+	) -> Self {
+		Self { x, y }
+	}
+}
+
+impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
 	From<EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>> for UnassignedEcPoint<W, N, NUM_LIMBS, NUM_BITS, P>
 where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 {
 	fn from(ec_point: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>) -> Self {
-		Self { x: UnassignedInteger::from(int.x), y: UnassignedInteger::from(int.y) }
+		Self { x: UnassignedInteger::from(ec_point.x), y: UnassignedInteger::from(ec_point.y) }
 	}
 }
 
