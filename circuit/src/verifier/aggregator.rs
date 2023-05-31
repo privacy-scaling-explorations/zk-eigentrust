@@ -248,7 +248,7 @@ impl Circuit<Fr> for Aggregator {
 		let poseidon = PoseidonConfig::new(full_round_selector, partial_round_selector);
 
 		let absorb_selector = AbsorbChip::<Fr, WIDTH>::configure(&common, meta);
-		let poseidon_sponge = PoseidonSpongeConfig::new(poseidon.clone(), absorb_selector);
+		let poseidon_sponge = PoseidonSpongeConfig::new(poseidon, absorb_selector);
 
 		let bits2num = Bits2NumChip::configure(&common, meta);
 
@@ -460,7 +460,7 @@ mod test {
 			let poseidon = PoseidonConfig::new(full_round_selector, partial_round_selector);
 
 			let absorb_selector = AbsorbChip::<Scalar, WIDTH>::configure(&common, meta);
-			let poseidon_sponge = PoseidonSpongeConfig::new(poseidon.clone(), absorb_selector);
+			let poseidon_sponge = PoseidonSpongeConfig::new(poseidon, absorb_selector);
 
 			let bits2num = Bits2NumChip::configure(&common, meta);
 
@@ -580,11 +580,11 @@ mod test {
 		let instances_1: Vec<Vec<Fr>> = vec![vec![Fr::one()]];
 		let instances_2: Vec<Vec<Fr>> = vec![vec![Fr::one()]];
 
-		let snark_1 = Snark::new(&params.clone(), random_circuit_1, instances_1, rng);
-		let snark_2 = Snark::new(&params.clone(), random_circuit_2, instances_2, rng);
+		let snark_1 = Snark::new(&params, random_circuit_1, instances_1, rng);
+		let snark_2 = Snark::new(&params, random_circuit_2, instances_2, rng);
 
 		let snarks = vec![snark_1, snark_2];
-		let aggregator = Aggregator::new(&params, snarks.clone());
+		let aggregator = Aggregator::new(&params, snarks);
 
 		let circuit = TestCircuit::new(aggregator.clone());
 		let prover = MockProver::run(k, &circuit, vec![aggregator.instances]).unwrap();

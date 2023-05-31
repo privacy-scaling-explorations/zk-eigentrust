@@ -127,8 +127,8 @@ impl<F: FieldExt, const K: usize, const N: usize> MockChip<F> for LookupRangeChe
 			// => a_i = z_i - 2^{K}⋅z_{i + 1}
 
 			let z_next = meta.query_advice(running_sum, Rotation::next());
-			let running_sum_word = z_cur.clone() - z_next * F::from(1 << K);
-			let running_sum_lookup = running_sum_selector.clone() * running_sum_word;
+			let running_sum_word = z_cur - z_next * F::from(1 << K);
+			let running_sum_lookup = running_sum_selector * running_sum_word;
 
 			// Combine the running sum and short lookups:
 			vec![(running_sum_lookup, mock_common.table)]
@@ -176,7 +176,7 @@ impl<F: FieldExt, const K: usize, const N: usize> MockChip<F> for LookupRangeChe
 				// z_{i + 1} = (z_i - a_i) / (2^K)
 
 				let mut z = x.clone();
-				let mut last_word_cell = x.clone();
+				let mut last_word_cell = x;
 				let words_len = words.len();
 				let inv_two_pow_k = F::from(1u64 << K).invert().unwrap();
 				for (id, word) in words.into_iter().enumerate() {
@@ -195,7 +195,7 @@ impl<F: FieldExt, const K: usize, const N: usize> MockChip<F> for LookupRangeChe
 					z = ctx.assign_advice(mock_common.common.advice[0], z_next)?;
 				}
 
-				ctx.constrain_to_constant(z.clone(), F::ZERO)?;
+				ctx.constrain_to_constant(z, F::ZERO)?;
 
 				Ok((self.x.clone(), last_word_cell))
 			},
@@ -241,7 +241,7 @@ impl<F: FieldExt, const K: usize, const N: usize, const S: usize> MockChipset<F>
 		mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
 		// First, check if x is less than 256 bits
-		let range_chip = LookupRangeCheckChip::<F, K, N>::new(self.x.clone());
+		let range_chip = LookupRangeCheckChip::<F, K, N>::new(self.x);
 		let (x, last_word_cell) = range_chip.synthesize(
 			mock_common,
 			&config.running_sum_selector,

@@ -1,168 +1,365 @@
-use crate::NUM_NEIGHBOURS;
+use crate::{
+	att_station::AttestationData as ContractAttestationData, eth::address_from_public_key,
+};
 use eigen_trust_circuit::{
-	eddsa::native::{PublicKey, Signature},
+	dynamic_sets::native::{AttestationFr, SignedAttestation},
 	halo2::halo2curves::bn256::Fr as Scalar,
 };
-use serde::{Deserialize, Serialize};
+use ethers::types::{Address, U256};
+use secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-/// Raw data for the attestation
-pub struct AttestationData {
-	sig_r_x: [u8; 32],
-	sig_r_y: [u8; 32],
-	sig_s: [u8; 32],
-	pk: [[u8; 32]; 2],
-	neighbours: Vec<[[u8; 32]; 2]>,
-	scores: Vec<[u8; 32]>,
-}
-
-impl AttestationData {
-	/// Convert the struct into a vector of bytes
-	pub fn to_bytes(self) -> Vec<u8> {
-		let mut bytes = Vec::new();
-		bytes.extend_from_slice(&self.sig_r_x);
-		bytes.extend_from_slice(&self.sig_r_y);
-		bytes.extend_from_slice(&self.sig_s);
-		bytes.extend_from_slice(&self.pk[0]);
-		bytes.extend_from_slice(&self.pk[1]);
-		for i in 0..NUM_NEIGHBOURS {
-			bytes.extend_from_slice(&self.neighbours[i][0]);
-			bytes.extend_from_slice(&self.neighbours[i][1]);
-		}
-		for score in self.scores {
-			bytes.extend_from_slice(&score);
-		}
-		bytes
-	}
-
-	/// Construct the struct from raw bytes
-	pub fn from_bytes(mut bytes: Vec<u8>) -> Self {
-		let bytes = &mut bytes;
-
-		let mut sig_r_x: [u8; 32] = [0; 32];
-		sig_r_x.copy_from_slice(bytes.drain(..32).as_slice());
-
-		let mut sig_r_y: [u8; 32] = [0; 32];
-		sig_r_y.copy_from_slice(bytes.drain(..32).as_slice());
-
-		let mut sig_s: [u8; 32] = [0; 32];
-		sig_s.copy_from_slice(bytes.drain(..32).as_slice());
-
-		let mut pk_x: [u8; 32] = [0; 32];
-		pk_x.copy_from_slice(bytes.drain(..32).as_slice());
-
-		let mut pk_y: [u8; 32] = [0; 32];
-		pk_y.copy_from_slice(bytes.drain(..32).as_slice());
-
-		let pk = [pk_x, pk_y];
-
-		let mut neighbours = Vec::new();
-		for _ in 0..NUM_NEIGHBOURS {
-			let mut neighbour_x: [u8; 32] = [0; 32];
-			neighbour_x.copy_from_slice(bytes.drain(..32).as_slice());
-
-			let mut neighbour_y: [u8; 32] = [0; 32];
-			neighbour_y.copy_from_slice(bytes.drain(..32).as_slice());
-
-			neighbours.push([neighbour_x, neighbour_y]);
-		}
-
-		let mut scores = Vec::new();
-		while !bytes.is_empty() {
-			let mut score: [u8; 32] = [0; 32];
-			score.copy_from_slice(bytes.drain(..32).as_slice());
-
-			scores.push(score);
-		}
-
-		Self { sig_r_x, sig_r_y, sig_s, pk, neighbours, scores }
-	}
-}
-
-impl From<Attestation> for AttestationData {
-	fn from(att: Attestation) -> Self {
-		let sig_r_x = att.sig.big_r.x.to_bytes();
-		let sig_r_y = att.sig.big_r.y.to_bytes();
-		let sig_s = att.sig.s.to_bytes();
-		let pk_bytes = att.pk.to_raw();
-		let neighbours = att.neighbours.into_iter().map(|v| v.to_raw()).collect();
-		let scores = att.scores.into_iter().map(|v| v.to_bytes()).collect();
-
-		Self { sig_r_x, sig_r_y, sig_s, pk: pk_bytes, neighbours, scores }
-	}
-}
-
-#[derive(Clone)]
-/// Attestation struct holding the signatures of participants
+/// Attestation struct
+#[derive(Clone, Debug)]
 pub struct Attestation {
-	/// Signature over a message hash
-	pub sig: Signature,
-	/// Public key of the sender
-	pub pk: PublicKey,
-	/// Neighbours of the sender
-	pub neighbours: Vec<PublicKey>,
-	/// Scores for each of the neighbours
-	pub scores: Vec<Scalar>,
+	/// Ethereum address of peer being rated
+	pub about: Address,
+	/// Unique identifier for the action being rated
+	pub key: U256,
+	/// Given rating for the action
+	pub value: u8,
+	/// Optional field for attaching additional information to the attestation
+	pub message: U256,
 }
 
 impl Attestation {
-	/// Construct a new attestation for given data
-	pub fn new(
-		sig: Signature, pk: PublicKey, neighbours: Vec<PublicKey>, scores: Vec<Scalar>,
-	) -> Self {
-		Self { sig, pk, neighbours, scores }
+	/// Construct a new attestation struct
+	pub fn new(about: Address, key: U256, value: u8, message: Option<U256>) -> Self {
+		Self { about, key, value, message: message.unwrap_or(U256::from(0)) }
+	}
+
+	pub fn to_attestation_fr(&self) -> AttestationFr {
+		let about_bytes = self.about.as_bytes();
+		let mut about_bytes_array = [0u8; 32];
+		about_bytes_array[..about_bytes.len()].copy_from_slice(about_bytes);
+
+		AttestationFr {
+			about: Scalar::from_bytes(&about_bytes_array).unwrap(),
+			key: Scalar::from(self.key.0[0]),
+			value: Scalar::from(self.value as u64),
+			message: Scalar::from(self.message.0[0]),
+		}
 	}
 }
 
-impl From<AttestationData> for Attestation {
-	fn from(att: AttestationData) -> Self {
-		let pk = PublicKey::from_raw(att.pk);
-		let sig_r_x = Scalar::from_bytes(&att.sig_r_x).unwrap();
-		let sig_r_y = Scalar::from_bytes(&att.sig_r_y).unwrap();
-		let sig_s = Scalar::from_bytes(&att.sig_s).unwrap();
-		let sig = Signature::new(sig_r_x, sig_r_y, sig_s);
+/// Attestation raw data payload
+#[derive(Clone, Debug, PartialEq)]
+pub struct AttestationPayload {
+	sig_r: [u8; 32],
+	sig_s: [u8; 32],
+	rec_id: u8,
+	value: u8,
+	message: [u8; 32],
+}
 
-		let mut neighbours = vec![PublicKey::default(); NUM_NEIGHBOURS];
-		let mut scores = vec![Scalar::zero(); NUM_NEIGHBOURS];
-		for (i, n) in att.neighbours.iter().enumerate().take(NUM_NEIGHBOURS) {
-			neighbours[i] = PublicKey::from_raw(*n);
-		}
-		for (i, n) in att.scores.iter().enumerate().take(NUM_NEIGHBOURS) {
-			scores[i] = Scalar::from_bytes(n).unwrap();
+impl AttestationPayload {
+	/// Convert a vector of bytes into the struct
+	pub fn from_bytes(bytes: Vec<u8>) -> Result<Self, &'static str> {
+		if bytes.len() != 98 {
+			return Err("Input bytes vector should be of length 98");
 		}
 
-		Attestation { sig, pk, neighbours, scores }
+		let mut sig_r = [0u8; 32];
+		let mut sig_s = [0u8; 32];
+		let mut message = [0u8; 32];
+
+		sig_r.copy_from_slice(&bytes[..32]);
+		sig_s.copy_from_slice(&bytes[32..64]);
+		let rec_id = bytes[64];
+		let value = bytes[65];
+		message.copy_from_slice(&bytes[66..98]);
+
+		Ok(Self { sig_r, sig_s, rec_id, value, message })
 	}
+
+	/// Create AttestationPayload from SignedAttestation
+	pub fn from_signed_attestation(
+		signed_attestation: &SignedAttestation,
+	) -> Result<Self, &'static str> {
+		let (rec_id, signature) = signed_attestation.signature.serialize_compact();
+
+		let mut sig_r = [0u8; 32];
+		let mut sig_s = [0u8; 32];
+
+		sig_r.copy_from_slice(&signature[0..32]);
+		sig_s.copy_from_slice(&signature[32..64]);
+
+		let rec_id = rec_id.to_i32() as u8;
+
+		let value = signed_attestation.attestation.value.to_bytes()[0];
+
+		let message = signed_attestation.attestation.message.to_bytes();
+
+		Ok(Self { sig_r, sig_s, rec_id, value, message })
+	}
+
+	/// Convert the struct into a vector of bytes
+	pub fn to_bytes(&self) -> Vec<u8> {
+		let mut bytes = Vec::with_capacity(98);
+
+		bytes.extend_from_slice(&self.sig_r);
+		bytes.extend_from_slice(&self.sig_s);
+		bytes.push(self.rec_id);
+		bytes.push(self.value);
+		bytes.extend_from_slice(&self.message);
+
+		bytes
+	}
+
+	/// Get the ECDSA recoverable signature
+	pub fn get_signature(&self) -> RecoverableSignature {
+		let concat_sig = [self.sig_r, self.sig_s].concat();
+		let recovery_id = RecoveryId::from_i32(self.rec_id as i32).unwrap();
+
+		RecoverableSignature::from_compact(concat_sig.as_slice(), recovery_id).unwrap()
+	}
+
+	/// Get the value
+	pub fn get_value(&self) -> u8 {
+		self.value
+	}
+
+	/// Get the message
+	pub fn get_message(&self) -> [u8; 32] {
+		self.message
+	}
+}
+
+/// Recover the signing Ethereum address from a signed attestation
+pub fn address_from_signed_att(
+	signed_attestation: &SignedAttestation,
+) -> Result<Address, &'static str> {
+	// Get the signing key
+	let public_key = signed_attestation.recover_public_key()?;
+
+	// Get the address from the public key
+	address_from_public_key(&public_key)
+}
+
+/// Construct the contract attestation data from a signed attestation
+pub fn att_data_from_signed_att(
+	signed_attestation: &SignedAttestation,
+) -> Result<ContractAttestationData, &'static str> {
+	// Recover the Ethereum address from the signed attestation
+	let address = address_from_signed_att(signed_attestation)?;
+
+	// Get the attestation key
+	let key = signed_attestation.attestation.key.to_bytes();
+
+	// Get the payload bytes
+	let payload = AttestationPayload::from_signed_attestation(signed_attestation)?;
+
+	Ok(ContractAttestationData(
+		address,
+		key,
+		payload.to_bytes().into(),
+	))
 }
 
 #[cfg(test)]
-mod test {
-	use super::*;
+mod tests {
+	use crate::attestation::*;
+	use ethers::{
+		prelude::k256::ecdsa::SigningKey,
+		signers::{Signer, Wallet},
+		types::Bytes,
+	};
+	use secp256k1::{ecdsa::RecoveryId, Message, Secp256k1, SecretKey};
 
 	#[test]
-	fn sig_from_data() {
-		let pk = [[0; 32]; 2];
-		let sig_r_x = [0; 32];
-		let sig_r_y = [0; 32];
-		let sig_s = [0; 32];
-		let neighbours = vec![[[0; 32]; 2]];
-		let scores = vec![[0; 32]];
+	fn test_attestation_to_scalar_att() {
+		let attestation = Attestation::new(
+			Address::zero(),
+			U256::from(140317563),
+			10,
+			Some(U256::from(140317564)),
+		);
 
-		let att_data = AttestationData {
-			sig_r_x,
-			sig_r_y,
-			sig_s,
-			pk,
-			neighbours: neighbours.clone(),
-			scores: scores.clone(),
+		let attestation_fr = attestation.to_attestation_fr();
+
+		let expected_about = Scalar::from(0u64);
+		let expected_key = Scalar::from(140317563u64);
+		let expected_value = Scalar::from(10u64);
+		let expected_message = Scalar::from(140317564u64);
+
+		assert_eq!(attestation_fr.about, expected_about);
+		assert_eq!(attestation_fr.key, expected_key);
+		assert_eq!(attestation_fr.value, expected_value);
+		assert_eq!(attestation_fr.message, expected_message);
+	}
+
+	#[test]
+	fn test_attestation_payload_from_signed_att() {
+		let secp = Secp256k1::new();
+		let secret_key_as_bytes = [0x40; 32];
+		let secret_key = SecretKey::from_slice(&secret_key_as_bytes).unwrap();
+
+		let attestation = AttestationFr {
+			about: Scalar::zero(),
+			key: Scalar::zero(),
+			value: Scalar::zero(),
+			message: Scalar::zero(),
 		};
-		let att = Attestation::from(att_data);
 
-		assert_eq!(att.pk.to_raw(), pk);
-		assert_eq!(att.sig.big_r.x.to_bytes(), sig_r_x);
-		assert_eq!(att.sig.big_r.y.to_bytes(), sig_r_y);
-		assert_eq!(att.sig.s.to_bytes(), sig_s);
-		assert_eq!(att.neighbours[0].clone().to_raw(), neighbours[0]);
-		assert_eq!(att.scores[0].clone().to_bytes(), scores[0]);
+		let message = attestation.hash().to_bytes();
+
+		let signature = secp.sign_ecdsa_recoverable(
+			&Message::from_slice(message.as_slice()).unwrap(),
+			&secret_key,
+		);
+
+		let signed_attestation = SignedAttestation { attestation, signature };
+
+		// Convert the signed attestation to attestation payload
+		let attestation_payload =
+			AttestationPayload::from_signed_attestation(&signed_attestation).unwrap();
+
+		// Check the attestation payload
+		let (recid, sig) = signed_attestation.signature.serialize_compact();
+		assert_eq!(attestation_payload.sig_r, sig[0..32]);
+		assert_eq!(attestation_payload.sig_s, sig[32..64]);
+		assert_eq!(attestation_payload.rec_id, recid.to_i32() as u8);
+		assert_eq!(
+			attestation_payload.value,
+			signed_attestation.attestation.value.to_bytes()[0]
+		);
+		assert_eq!(
+			attestation_payload.message,
+			signed_attestation.attestation.message.to_bytes()
+		);
+	}
+
+	#[test]
+	fn test_attestation_payload_to_signed_att() {
+		let secp = Secp256k1::new();
+		let secret_key = SecretKey::from_slice(&[0xcd; 32]).expect("32 bytes, within curve order");
+		let message = Message::from_slice(&[0xab; 32]).expect("32 bytes");
+
+		let signature = secp.sign_ecdsa_recoverable(&message, &secret_key);
+
+		let (recovery_id, serialized_sig) = signature.serialize_compact();
+
+		let mut sig_r = [0u8; 32];
+		let mut sig_s = [0u8; 32];
+		sig_r.copy_from_slice(&serialized_sig[0..32]);
+		sig_s.copy_from_slice(&serialized_sig[32..64]);
+
+		let payload = AttestationPayload {
+			sig_r,
+			sig_s,
+			rec_id: recovery_id.to_i32() as u8,
+			value: 5,
+			message: [3u8; 32],
+		};
+
+		let sig = payload.get_signature();
+
+		assert_eq!(
+			sig.serialize_compact().0,
+			RecoveryId::from_i32(payload.rec_id as i32).unwrap()
+		);
+		assert_eq!(
+			sig.serialize_compact().1.as_slice(),
+			[payload.sig_r, payload.sig_s].concat().as_slice()
+		);
+	}
+
+	#[test]
+	fn test_attestation_payload_bytes_to_struct_and_back() {
+		let payload = AttestationPayload {
+			sig_r: [0u8; 32],
+			sig_s: [0u8; 32],
+			rec_id: 0,
+			value: 10,
+			message: [0u8; 32],
+		};
+
+		let bytes = payload.to_bytes();
+
+		let result_payload = AttestationPayload::from_bytes(bytes).unwrap();
+
+		assert_eq!(payload, result_payload);
+	}
+
+	#[test]
+	fn test_attestation_payload_from_bytes_error_handling() {
+		let bytes = vec![0u8; 99];
+		let result = AttestationPayload::from_bytes(bytes);
+		assert!(result.is_err());
+	}
+
+	#[test]
+	fn test_address_from_signed_att() {
+		let secp = Secp256k1::new();
+
+		let secret_key_as_bytes = [0xcd; 32];
+
+		let secret_key =
+			SecretKey::from_slice(&secret_key_as_bytes).expect("32 bytes, within curve order");
+
+		let attestation = AttestationFr {
+			about: Scalar::zero(),
+			key: Scalar::zero(),
+			value: Scalar::zero(),
+			message: Scalar::zero(),
+		};
+
+		let message = attestation.hash().to_bytes();
+
+		let signature = secp.sign_ecdsa_recoverable(
+			&Message::from_slice(message.as_slice()).unwrap(),
+			&secret_key,
+		);
+
+		let signed_attestation = SignedAttestation { attestation, signature };
+
+		// Replace with expected address
+		let expected_address =
+			Wallet::from(SigningKey::from_bytes(secret_key_as_bytes.as_ref()).unwrap()).address();
+
+		assert_eq!(
+			address_from_signed_att(&signed_attestation).unwrap(),
+			expected_address
+		);
+	}
+
+	#[test]
+	fn test_contract_att_data_from_signed_att() {
+		let secp = Secp256k1::new();
+		let secret_key_as_bytes = [0x40; 32];
+		let secret_key =
+			SecretKey::from_slice(&secret_key_as_bytes).expect("32 bytes, within curve order");
+
+		let attestation = Attestation::new(
+			Address::zero(),
+			U256::from(140317563),
+			10,
+			Some(U256::from(140317564)),
+		);
+
+		let message = attestation.to_attestation_fr().hash().to_bytes();
+
+		let signature = secp.sign_ecdsa_recoverable(
+			&Message::from_slice(message.as_slice()).unwrap(),
+			&secret_key,
+		);
+
+		let signed_attestation =
+			SignedAttestation { attestation: attestation.to_attestation_fr(), signature };
+
+		let contract_att_data = att_data_from_signed_att(&signed_attestation).unwrap();
+
+		let expected_address =
+			Wallet::from(SigningKey::from_bytes(secret_key_as_bytes.as_ref()).unwrap()).address();
+		assert_eq!(contract_att_data.0, expected_address);
+
+		let expected_key = signed_attestation.attestation.key.to_bytes();
+		assert_eq!(contract_att_data.1, expected_key);
+
+		let expected_payload: Bytes =
+			AttestationPayload::from_signed_attestation(&signed_attestation)
+				.unwrap()
+				.to_bytes()
+				.into();
+		assert_eq!(contract_att_data.2, expected_payload);
 	}
 }

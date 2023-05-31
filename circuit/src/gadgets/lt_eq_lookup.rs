@@ -115,7 +115,7 @@ impl<F: FieldExt> MockChipset<F> for LessEqualChipset<F> {
 			layouter.namespace(|| "x range check"),
 		)?;
 
-		let lookup_range_check_chipset = RangeChipset::<F, K, N, S>::new(self.y.clone());
+		let lookup_range_check_chipset = RangeChipset::<F, K, N, S>::new(self.y);
 		let y = lookup_range_check_chipset.synthesize(
 			mock_common,
 			&config.lookup_range_check,

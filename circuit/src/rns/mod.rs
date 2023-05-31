@@ -13,7 +13,7 @@ use halo2::{
 };
 use num_bigint::BigUint;
 use num_integer::Integer as BigInteger;
-use num_traits::{FromPrimitive, One, Zero};
+use num_traits::{FromPrimitive, One, Pow, Zero};
 use std::{
 	fmt::Debug,
 	ops::{Shl, Sub},
@@ -227,6 +227,48 @@ pub fn decompose_big<F: FieldExt, const NUM_LIMBS: usize, const BIT_LEN: usize>(
 		limbs[i] = big_to_fe(limb);
 	}
 	limbs
+}
+
+/// Returns `limbs` by decomposing [`BigUint`].
+pub fn decompose_big_decimal<F: FieldExt, const NUM_LIMBS: usize, const POWER_OF_TEN: usize>(
+	mut e: BigUint,
+) -> [F; NUM_LIMBS] {
+	let scale = BigUint::from(10usize).pow(POWER_OF_TEN);
+	let mut limbs = [F::ZERO; NUM_LIMBS];
+	for i in 0..NUM_LIMBS {
+		let (new_e, rem) = e.div_mod_floor(&scale);
+		e = new_e;
+		limbs[i] = big_to_fe(rem);
+	}
+	limbs
+}
+
+/// Returns `limbs` by decomposing [`BigUint`].
+pub fn compose_big_decimal<F: FieldExt, const NUM_LIMBS: usize, const POWER_OF_TEN: usize>(
+	mut limbs: [F; NUM_LIMBS],
+) -> BigUint {
+	let scale = BigUint::from(10usize).pow(POWER_OF_TEN);
+	limbs.reverse();
+	let mut val = fe_to_big(limbs[0]);
+	for i in 1..NUM_LIMBS {
+		val *= scale.clone();
+		val += fe_to_big(limbs[i]);
+	}
+	val
+}
+
+/// Returns `limbs` by decomposing [`BigUint`].
+pub fn compose_big_decimal_f<F: FieldExt, const NUM_LIMBS: usize, const POWER_OF_TEN: usize>(
+	mut limbs: [F; NUM_LIMBS],
+) -> F {
+	let scale = F::from_u128(10).pow(&[POWER_OF_TEN as u64]);
+	limbs.reverse();
+	let mut val = limbs[0];
+	for i in 1..NUM_LIMBS {
+		val *= scale;
+		val += limbs[i];
+	}
+	val
 }
 
 /// Returns [`BigUint`] by composing `limbs`.

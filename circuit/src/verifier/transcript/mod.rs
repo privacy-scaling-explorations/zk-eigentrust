@@ -353,7 +353,7 @@ mod test {
 			let poseidon = PoseidonConfig::new(full_round_selector, partial_round_selector);
 
 			let absorb_selector = AbsorbChip::<Scalar, WIDTH>::configure(&common, meta);
-			let poseidon_sponge = PoseidonSpongeConfig::new(poseidon.clone(), absorb_selector);
+			let poseidon_sponge = PoseidonSpongeConfig::new(poseidon, absorb_selector);
 
 			let bits2num = Bits2NumChip::configure(&common, meta);
 
@@ -415,7 +415,7 @@ mod test {
 			let res = poseidon_read.squeeze_challenge();
 
 			let mut lb = layouter_rc.lock().unwrap();
-			lb.constrain_instance(res.inner.clone().cell(), config.common.instance, 0)?;
+			lb.constrain_instance(res.inner.cell(), config.common.instance, 0)?;
 
 			Ok(())
 		}
@@ -506,14 +506,10 @@ mod test {
 				)
 				.unwrap();
 
-			let assigned_integer_x = AssignedInteger::<_, _, NUM_LIMBS, NUM_BITS, P>::new(
-				x.clone(),
-				assigned_coordinates.0,
-			);
-			let assigned_integer_y = AssignedInteger::<_, _, NUM_LIMBS, NUM_BITS, P>::new(
-				y.clone(),
-				assigned_coordinates.1,
-			);
+			let assigned_integer_x =
+				AssignedInteger::<_, _, NUM_LIMBS, NUM_BITS, P>::new(x, assigned_coordinates.0);
+			let assigned_integer_y =
+				AssignedInteger::<_, _, NUM_LIMBS, NUM_BITS, P>::new(y, assigned_coordinates.1);
 
 			let assigned_point = AssignedPoint::<_, _, NUM_LIMBS, NUM_BITS, P>::new(
 				assigned_integer_x, assigned_integer_y,
@@ -531,7 +527,7 @@ mod test {
 				&config.poseidon_sponge,
 				lb.namespace(|| "squeeze"),
 			)?;
-			lb.constrain_instance(res.clone().cell(), config.common.instance, 0)?;
+			lb.constrain_instance(res.cell(), config.common.instance, 0)?;
 			Ok(())
 		}
 	}
@@ -612,7 +608,7 @@ mod test {
 				&config.poseidon_sponge,
 				lb.namespace(|| "squeeze"),
 			)?;
-			lb.constrain_instance(res.clone().cell(), config.common.instance, 0)?;
+			lb.constrain_instance(res.cell(), config.common.instance, 0)?;
 
 			Ok(())
 		}
@@ -675,7 +671,7 @@ mod test {
 			let res = poseidon_read.read_scalar().unwrap();
 
 			let mut lb = layouter_rc.lock().unwrap();
-			lb.constrain_instance(res.inner.clone().cell(), config.common.instance, 0)?;
+			lb.constrain_instance(res.inner.cell(), config.common.instance, 0)?;
 
 			Ok(())
 		}
@@ -835,7 +831,7 @@ mod test {
 
 			let res = poseidon_read.read_scalar().unwrap();
 			let mut lb = layouter_rc.lock().unwrap();
-			lb.constrain_instance(res.inner.clone().cell(), config.common.instance, 8)?;
+			lb.constrain_instance(res.inner.cell(), config.common.instance, 8)?;
 			drop(lb);
 
 			let res = poseidon_read.read_ec_point().unwrap();
@@ -857,7 +853,7 @@ mod test {
 
 			let res = poseidon_read.read_scalar().unwrap();
 			let mut lb = layouter_rc.lock().unwrap();
-			lb.constrain_instance(res.inner.clone().cell(), config.common.instance, 17)?;
+			lb.constrain_instance(res.inner.cell(), config.common.instance, 17)?;
 			Ok(())
 		}
 	}

@@ -8,4 +8,4 @@ fi
 
 sudo add-apt-repository ppa:ethereum/ethereum
 sudo apt-get update
-sudo apt-get install solc
+cargo install svm-rs && svm install 0.8.17

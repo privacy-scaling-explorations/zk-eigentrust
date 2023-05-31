@@ -1,6 +1,11 @@
 /// Native version of EigenTrustSet
 pub mod native;
 
+/// Native version of EigenTrustSet(ECDSA)  
+///
+/// NOTE: This is temporary since Halo2 version of ECDSA is not ready
+pub mod ecdsa_native;
+
 use crate::{
 	circuit::{Eddsa, FullRoundHasher, PartialRoundHasher, PoseidonHasher, SpongeHasher},
 	eddsa::{
@@ -644,7 +649,7 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u1
 		};
 
 		// Compute the EigenTrust scores
-		let mut s = vec![init_score.clone(); NUM_NEIGHBOURS];
+		let mut s = vec![init_score; NUM_NEIGHBOURS];
 		for _ in 0..NUM_ITER {
 			let mut sop = Vec::new();
 			for i in 0..NUM_NEIGHBOURS {
@@ -693,7 +698,7 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u1
 		)?;
 
 		// Constrain the total reputation in the set
-		let mut sum = zero.clone();
+		let mut sum = zero;
 		for i in 0..NUM_NEIGHBOURS {
 			let add_chipset = AddChipset::new(sum.clone(), passed_s[i].clone());
 			sum = add_chipset.synthesize(
@@ -729,9 +734,9 @@ mod test {
 	use halo2::{dev::MockProver, halo2curves::bn256::Bn256};
 	use rand::thread_rng;
 
-	pub const NUM_ITER: usize = 10;
-	pub const NUM_NEIGHBOURS: usize = 5;
-	pub const INITIAL_SCORE: u128 = 1000;
+	const NUM_NEIGHBOURS: usize = 5;
+	const NUM_ITERATIONS: usize = 20;
+	const INITIAL_SCORE: u128 = 1000;
 
 	#[test]
 	fn test_closed_graph_circut() {
@@ -756,7 +761,8 @@ mod test {
 		let (res, signatures) = {
 			let mut signatures = vec![];
 
-			let mut et = native::EigenTrustSet::new();
+			let mut et =
+				native::EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
 			for i in 0..NUM_NEIGHBOURS {
 				et.add_member(pub_keys[i].clone());
 
@@ -768,16 +774,15 @@ mod test {
 				signatures.push(sig.clone());
 
 				let scores = [0, 1, 2, 3, 4].map(|j| (op_pub_keys[i][j], ops[i][j]));
-				let op = native::Opinion::new(sig, message_hashes[0], scores);
+				let op = native::Opinion::new(sig, message_hashes[0], scores.to_vec());
 				et.update_op(pub_keys[i].clone(), op);
 			}
 			let s = et.converge();
-			let res: Vec<Scalar> = s.iter().map(|(_, score)| score.clone()).collect();
 
-			(res, signatures)
+			(s, signatures)
 		};
 
-		let et = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE>::new(
+		let et = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new(
 			pub_keys.to_vec(),
 			signatures,
 			op_pub_keys,
@@ -815,7 +820,8 @@ mod test {
 		let (res, signatures) = {
 			let mut signatures = vec![];
 
-			let mut et = native::EigenTrustSet::new();
+			let mut et =
+				native::EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
 			for i in 0..NUM_NEIGHBOURS {
 				et.add_member(pub_keys[i].clone());
 
@@ -827,16 +833,15 @@ mod test {
 				signatures.push(sig.clone());
 
 				let scores = [0, 1, 2, 3, 4].map(|j| (op_pub_keys[i][j], ops[i][j]));
-				let op = native::Opinion::new(sig, message_hashes[0], scores);
+				let op = native::Opinion::new(sig, message_hashes[0], scores.to_vec());
 				et.update_op(pub_keys[i].clone(), op);
 			}
 			let s = et.converge();
-			let res: Vec<Scalar> = s.iter().map(|(_, score)| score.clone()).collect();
 
-			(res, signatures)
+			(s, signatures)
 		};
 
-		let et = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE>::new(
+		let et = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new(
 			pub_keys.to_vec(),
 			signatures,
 			op_pub_keys,
@@ -872,7 +877,8 @@ mod test {
 		let (res, signatures) = {
 			let mut signatures = vec![];
 
-			let mut et = native::EigenTrustSet::new();
+			let mut et =
+				native::EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
 			for i in 0..NUM_NEIGHBOURS {
 				et.add_member(pub_keys[i].clone());
 
@@ -884,16 +890,15 @@ mod test {
 				signatures.push(sig.clone());
 
 				let scores = [0, 1, 2, 3, 4].map(|j| (op_pub_keys[i][j], ops[i][j]));
-				let op = native::Opinion::new(sig, message_hashes[0], scores);
+				let op = native::Opinion::new(sig, message_hashes[0], scores.to_vec());
 				et.update_op(pub_keys[i].clone(), op);
 			}
 			let s = et.converge();
-			let res: Vec<Scalar> = s.iter().map(|(_, score)| score.clone()).collect();
 
-			(res, signatures)
+			(s, signatures)
 		};
 
-		let et = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE>::new(
+		let et = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new(
 			pub_keys.to_vec(),
 			signatures,
 			op_pub_keys,
@@ -906,7 +911,7 @@ mod test {
 		let deployment_code = gen_evm_verifier(&params, pk.get_vk(), vec![NUM_NEIGHBOURS]);
 		dbg!(deployment_code.len());
 
-		let proof = gen_proof(&params, &pk, et.clone(), vec![res.clone()]);
+		let proof = gen_proof(&params, &pk, et, vec![res.clone()]);
 		evm_verify(deployment_code, vec![res], proof);
 	}
 }
