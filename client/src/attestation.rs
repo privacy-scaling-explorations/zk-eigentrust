@@ -3,7 +3,7 @@ use crate::{
 };
 use eigen_trust_circuit::{
 	dynamic_sets::native::{AttestationFr, SignedAttestation},
-	halo2::halo2curves::bn256::Fr as Scalar,
+	halo2::halo2curves::{bn256::Fr as Scalar, ff::FromUniformBytes},
 };
 use ethers::types::{Address, U256};
 use secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
@@ -34,32 +34,39 @@ impl Attestation {
 
 	/// Convert to scalar representation
 	pub fn to_attestation_fr(&self) -> Result<AttestationFr, &'static str> {
+		// About
+		let mut about_le_bytes = self.about.to_fixed_bytes();
+		about_le_bytes.reverse();
+
 		let mut about_bytes = [0u8; 32];
-		about_bytes[..20].copy_from_slice(&self.about.to_fixed_bytes());
+		about_bytes[..20].copy_from_slice(&about_le_bytes);
 
 		let about = match Scalar::from_bytes(&about_bytes).is_some().into() {
 			true => Scalar::from_bytes(&about_bytes).unwrap(),
 			false => return Err("Failed to convert about address to scalar"),
 		};
 
+		// Domain
 		let mut key_bytes = [0u8; 32];
-		self.key.to_big_endian(&mut key_bytes);
-		key_bytes[..DOMAIN_PREFIX_LEN].copy_from_slice(&[0; DOMAIN_PREFIX_LEN]);
+		self.key.to_little_endian(&mut key_bytes);
+		key_bytes[20..].copy_from_slice(&[0; DOMAIN_PREFIX_LEN]);
 
 		let domain = match Scalar::from_bytes(&key_bytes).is_some().into() {
 			true => Scalar::from_bytes(&key_bytes).unwrap(),
 			false => return Err("Failed to convert key to scalar"),
 		};
 
+		// Value
 		let value = Scalar::from(self.value as u64);
 
-		let mut message_bytes = [0u8; 32];
-		self.message.to_big_endian(&mut message_bytes);
+		// Message
+		let mut message_le = [0u8; 32];
+		self.message.to_little_endian(&mut message_le);
 
-		let message = match Scalar::from_bytes(&message_bytes).is_some().into() {
-			true => Scalar::from_bytes(&message_bytes).unwrap(),
-			false => return Err("Failed to convert message to scalar"),
-		};
+		let mut message_bytes = [0u8; 64];
+		message_bytes[32..].copy_from_slice(&message_le);
+
+		let message = Scalar::from_uniform_bytes(&message_bytes);
 
 		Ok(AttestationFr { about, domain, value, message })
 	}
@@ -193,8 +200,8 @@ mod tests {
 	fn test_attestation_to_scalar_att() {
 		// Build key
 		let domain_input = [
-			0x4c, 0x61, 0x4a, 0x6d, 0x59, 0x56, 0x2a, 0x42, 0x37, 0x72, 0x37, 0x76, 0x32, 0x4d,
-			0x36, 0x53, 0x62, 0x6d, 0x35, 0x00,
+			0xff, 0x61, 0x4a, 0x6d, 0x59, 0x56, 0x2a, 0x42, 0x37, 0x72, 0x37, 0x76, 0x32, 0x4d,
+			0x36, 0x53, 0x62, 0x6d, 0x35, 0xff,
 		];
 
 		let mut key_bytes: [u8; 32] = [0; 32];
@@ -202,16 +209,16 @@ mod tests {
 		key_bytes[DOMAIN_PREFIX_LEN..].copy_from_slice(&domain_input);
 
 		// Message input
-		let message = [
-			0x31, 0x75, 0x32, 0x45, 0x75, 0x79, 0x32, 0x77, 0x7a, 0x34, 0x58, 0x6c, 0x34, 0x34,
+		let mut message = [
+			0xff, 0x75, 0x32, 0x45, 0x75, 0x79, 0x32, 0x77, 0x7a, 0x34, 0x58, 0x6c, 0x34, 0x34,
 			0x4a, 0x74, 0x6a, 0x78, 0x68, 0x4c, 0x4a, 0x52, 0x67, 0x48, 0x45, 0x6c, 0x4e, 0x73,
-			0x65, 0x6e, 0x79, 0x00,
+			0x65, 0x6e, 0x79, 0xff,
 		];
 
 		// Address Input
-		let address = [
-			0x68, 0x47, 0x73, 0x4b, 0x6b, 0x42, 0x6e, 0x59, 0x61, 0x4c, 0x71, 0x4a, 0x45, 0x76,
-			0x79, 0x4c, 0x6a, 0x73, 0x46, 0x4a,
+		let mut address = [
+			0xff, 0x47, 0x73, 0x4b, 0x6b, 0x42, 0x6e, 0x59, 0x61, 0x4c, 0x71, 0x4a, 0x45, 0x76,
+			0x79, 0x4c, 0x6a, 0x73, 0x46, 0xff,
 		];
 
 		let attestation = Attestation::new(
@@ -223,17 +230,26 @@ mod tests {
 
 		let attestation_fr = attestation.to_attestation_fr().unwrap();
 
+		// Expected about
 		let mut expected_about_input = [0u8; 32];
+		address.reverse();
 		expected_about_input[..20].copy_from_slice(&address);
 		let expected_about = Scalar::from_bytes(&expected_about_input).unwrap();
 
+		// Expected domain
 		let mut expected_domain_input = [0u8; 32];
-		expected_domain_input[12..].copy_from_slice(&domain_input);
+		expected_domain_input[DOMAIN_PREFIX_LEN..].copy_from_slice(&domain_input);
+		expected_domain_input.reverse();
 		let expected_domain = Scalar::from_bytes(&expected_domain_input).unwrap();
 
+		// Expected value
 		let expected_value = Scalar::from(10u64);
 
-		let expected_message = Scalar::from_bytes(&message).unwrap();
+		// Expected message
+		let mut expected_message_input = [0u8; 64];
+		message.reverse();
+		expected_message_input[32..].copy_from_slice(&message);
+		let expected_message = Scalar::from_uniform_bytes(&expected_message_input);
 
 		assert_eq!(attestation_fr.about, expected_about);
 		assert_eq!(attestation_fr.domain, expected_domain);
@@ -383,7 +399,12 @@ mod tests {
 		let secret_key =
 			SecretKey::from_slice(&secret_key_as_bytes).expect("32 bytes, within curve order");
 
-		let attestation = Attestation::new(Address::zero(), U256::from(0), 10, Some(U256::from(0)));
+		let attestation = Attestation::new(
+			Address::default(),
+			U256::max_value(),
+			10,
+			Some(U256::max_value()),
+		);
 
 		let message = attestation.to_attestation_fr().unwrap().hash().to_bytes();
 
