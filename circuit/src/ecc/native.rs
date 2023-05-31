@@ -14,6 +14,7 @@
 // r_y = m_1 * (r_x - p_x) - p_y
 
 use crate::{integer::native::Integer, rns::RnsParams, utils::to_bits, FieldExt};
+use halo2::arithmetic::CurveAffine;
 
 /// Structure for the EcPoint
 #[derive(Clone, Default, Debug, PartialEq)]
@@ -157,7 +158,7 @@ where
 	}
 
 	/// Scalar multiplication for given point with using ladder
-	pub fn mul_scalar(&self, scalar: N) -> Self {
+	pub fn mul_scalar<S: FieldExt>(&self, scalar: S) -> Self {
 		let aux_init = Self::to_add();
 		let exp: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P> = self.clone();
 		// Converts given input to its bit by Scalar Field's bit size
@@ -185,7 +186,7 @@ where
 	}
 
 	/// Multi-multiplication for given points with using ladder (without sliding window)
-	pub fn multi_mul_scalar(points: &[Self], scalars: &[N]) -> Vec<Self> {
+	pub fn multi_mul_scalar<S: FieldExt>(points: &[Self], scalars: &[S]) -> Vec<Self> {
 		let mut aux_inits: Vec<EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>> = vec![];
 		let mut aux_init = Self::to_add();
 		for _ in 0..points.len() {
