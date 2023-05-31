@@ -208,7 +208,7 @@ impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
 where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 {
-	fn from(int: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>) -> Self {
+	fn from(ec_point: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>) -> Self {
 		Self { x: UnassignedInteger::from(int.x), y: UnassignedInteger::from(int.y) }
 	}
 }
