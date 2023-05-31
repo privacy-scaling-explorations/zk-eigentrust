@@ -215,8 +215,7 @@ where
 			.collect();
 
 		let sliding_window_integer = 2_u32.pow(sliding_window_size.try_into().unwrap());
-		let sliding_window_fe: S = big_to_fe(BigUint::from(sliding_window_integer));
-
+		
 		// Construct selector table for each mul
 		let mut table: Vec<Vec<EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>>> = vec![];
 		for i in 0..exps.len() {
@@ -250,12 +249,15 @@ where
 					if j == num_of_windows[i] + 1 {
 						let leftover_bits = &bits[i][(j * sliding_window_size)..];
 						let leftover_bits_usize = be_bits_to_usize(&leftover_bits);
-						let leftover_fe: S = big_to_fe(BigUint::from(leftover_bits_usize));
-						accs[i] = accs[i].mul_scalar(leftover_fe.clone());
+						for _ in 0..leftover_bits_usize {
+							accs[i] = accs[i].double();
+						}
 						let item = Self::select_vec(leftover_bits_usize, table[i].clone());
 						accs[i] = accs[i].add(&item);
 					} else {
-						accs[i] = accs[i].mul_scalar(sliding_window_fe.clone());
+						for _ in 0..sliding_window_size {
+							accs[i] = accs[i].double();
+						}
 						let item = Self::select_vec(
 							be_bits_to_usize(
 								&bits[i]
