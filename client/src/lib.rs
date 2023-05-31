@@ -111,7 +111,7 @@ impl Client {
 			ecdsa_secret_from_mnemonic(&self.config.mnemonic, 1).unwrap();
 
 		// Get AttestationFr
-		let attestation_fr = attestation.to_attestation_fr();
+		let attestation_fr = attestation.to_attestation_fr().unwrap();
 
 		// Format for signature
 		let att_hash = attestation_fr.hash();
