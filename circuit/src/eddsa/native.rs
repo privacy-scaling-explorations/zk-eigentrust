@@ -100,7 +100,7 @@ impl PublicKey {
 pub struct UnassignedPublicKey(pub UnassignedPoint<Fr, BabyJubJub>);
 
 impl From<PublicKey> for UnassignedPublicKey {
-	fn from(sig: PublicKey) -> Self {
+	fn from(pk: PublicKey) -> Self {
 		Self(UnassignedPoint {
 			x: Value::known(sig.0.x),
 			y: Value::known(sig.0.y),
