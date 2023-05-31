@@ -172,6 +172,7 @@ impl Aggregator {
 				&svk, &snark.protocol, &snark.instances, &mut transcript_read,
 			)
 			.unwrap();
+
 			let res = PSV::verify(&svk, &snark.protocol, &snark.instances, &proof).unwrap();
 			plonk_proofs.extend(res);
 		}
@@ -189,14 +190,14 @@ impl Aggregator {
 		let as_proof = transcript_write.finalize();
 
 		let KzgAccumulator { lhs, rhs } = accumulator;
-		let instances = [lhs.x, lhs.y, rhs.x, rhs.y]
+		let accumulator_limbs = [lhs.x, lhs.y, rhs.x, rhs.y]
 			.map(|v| Integer::<_, _, NUM_LIMBS, NUM_BITS, Bn256_4_68>::from_w(v).limbs)
 			.concat();
 
 		Self {
 			svk,
 			snarks: snarks.into_iter().map_into().collect(),
-			instances,
+			instances: accumulator_limbs,
 			as_proof: Some(as_proof),
 		}
 	}
@@ -296,17 +297,15 @@ impl Circuit<Fr> for Aggregator {
 								ctx.next();
 							}
 						}
-
 						instances_collector.push(inst_vec_collector);
 					}
 					assigned_instances.push(instances_collector);
 				}
-
 				Ok(assigned_instances)
 			},
 		)?;
 
-		let [lhs_x, lhs_y, rhs_x, rhs_y] = {
+		let accumulator_limbs = {
 			let loader_config = LoaderConfig::<'_, G1Affine, _, Bn256_4_68>::new(
 				layouter.namespace(|| "loader"),
 				config.common.clone(),
@@ -370,28 +369,11 @@ impl Circuit<Fr> for Aggregator {
 			let rhs_x = accumulator.rhs.inner.x;
 			let rhs_y = accumulator.rhs.inner.y;
 
-			[lhs_x, lhs_y, rhs_x, rhs_y]
+			[lhs_x, lhs_y, rhs_x, rhs_y].map(|v| v.limbs).into_iter().flatten()
 		};
 
-		let mut row = 0;
-		for limb in lhs_x.limbs {
-			layouter.constrain_instance(limb.cell(), config.common.instance, row)?;
-			row += 1;
-		}
-
-		for limb in lhs_y.limbs {
-			layouter.constrain_instance(limb.cell(), config.common.instance, row)?;
-			row += 1;
-		}
-
-		for limb in rhs_x.limbs {
-			layouter.constrain_instance(limb.cell(), config.common.instance, row)?;
-			row += 1;
-		}
-
-		for limb in rhs_y.limbs {
-			layouter.constrain_instance(limb.cell(), config.common.instance, row)?;
-			row += 1;
+		for (row, inst) in accumulator_limbs.enumerate() {
+			layouter.constrain_instance(inst.cell(), config.common.instance, row)?;
 		}
 
 		Ok(())
@@ -423,14 +405,14 @@ mod test {
 	/// Constructs individual cells for the configuration elements.
 	#[derive(Debug, Clone)]
 	pub struct MulChip<Scalar> {
-		x: Scalar,
-		y: Scalar,
+		x: Value<Scalar>,
+		y: Value<Scalar>,
 	}
 
 	impl MulChip<Scalar> {
 		/// Create a new chip.
 		pub fn new(x: Scalar, y: Scalar) -> Self {
-			MulChip { x, y }
+			MulChip { x: Value::known(x), y: Value::known(y) }
 		}
 	}
 
@@ -439,7 +421,7 @@ mod test {
 		type FloorPlanner = SimpleFloorPlanner;
 
 		fn without_witnesses(&self) -> Self {
-			self.clone()
+			Self { x: Value::unknown(), y: Value::unknown() }
 		}
 
 		/// Make the circuit config.
@@ -467,13 +449,9 @@ mod test {
 				|| "assign",
 				|region: Region<'_, Scalar>| {
 					let mut ctx = RegionCtx::new(region, 0);
-					let assigned_x =
-						ctx.assign_advice(config.common.advice[0], Value::known(self.x))?;
-					let assigned_y =
-						ctx.assign_advice(config.common.advice[1], Value::known(self.y))?;
-
+					let assigned_x = ctx.assign_advice(config.common.advice[0], self.x)?;
+					let assigned_y = ctx.assign_advice(config.common.advice[1], self.y)?;
 					let out = assigned_x.value().cloned() * assigned_y.value();
-
 					ctx.next();
 					let res = ctx.assign_advice(config.common.advice[0], out)?;
 
@@ -500,13 +478,13 @@ mod test {
 		let instances_1: Vec<Vec<Fr>> = vec![vec![Fr::one()]];
 		let instances_2: Vec<Vec<Fr>> = vec![vec![Fr::one()]];
 
-		let snark_1 = Snark::new(&params.clone(), random_circuit_1, instances_1, rng);
-		let snark_2 = Snark::new(&params.clone(), random_circuit_2, instances_2, rng);
+		let snark_1 = Snark::new(&params, random_circuit_1, instances_1, rng);
+		let snark_2 = Snark::new(&params, random_circuit_2, instances_2, rng);
 
 		let snarks = vec![snark_1, snark_2];
-		let aggregator = Aggregator::new(&params, snarks.clone());
+		let aggregator = Aggregator::new(&params, snarks);
 
-		let prover = MockProver::run(k, &aggregator, vec![aggregator.instances.to_vec()]).unwrap();
+		let prover = MockProver::run(k, &aggregator, vec![aggregator.instances.clone()]).unwrap();
 
 		assert_eq!(prover.verify(), Ok(()));
 	}

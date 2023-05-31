@@ -11,8 +11,7 @@ use crate::{
 	FieldExt, RegionCtx,
 };
 use halo2::{
-	arithmetic::Field,
-	circuit::{AssignedCell, Layouter, Region, Value},
+	circuit::{Layouter, Region, Value},
 	halo2curves::{Coordinates, CurveAffine},
 };
 use native::WIDTH;
@@ -294,7 +293,7 @@ mod test {
 			bits2num::Bits2NumChip,
 			main::{MainChip, MainConfig},
 		},
-		halo2::transcript::{TranscriptReadBuffer, TranscriptWriterBuffer},
+		halo2::transcript::TranscriptWriterBuffer,
 		integer::{
 			native::Integer, AssignedInteger, IntegerAddChip, IntegerDivChip, IntegerMulChip,
 			IntegerReduceChip, IntegerSubChip,
