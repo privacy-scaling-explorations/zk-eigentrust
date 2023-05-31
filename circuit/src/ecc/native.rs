@@ -13,8 +13,14 @@
 // r_x = m_1 * m_1 - p_x - f
 // r_y = m_1 * (r_x - p_x) - p_y
 
-use crate::{integer::native::Integer, rns::RnsParams, utils::to_bits, FieldExt};
-use halo2::arithmetic::CurveAffine;
+
+use crate::{
+	integer::native::Integer,
+	rns::RnsParams,
+	utils::{be_bits_to_usize, big_to_fe, to_bits},
+	FieldExt,
+};
+use num_bigint::BigUint;
 
 /// Structure for the EcPoint
 #[derive(Clone, Default, Debug, PartialEq)]
@@ -60,12 +66,8 @@ where
 	}
 
 	/// Selection function for the table
-	fn select_vec(bit: bool, table: Vec<Self>) -> Self {
-		if bit {
-			table[1].clone()
-		} else {
-			table[0].clone()
-		}
+	fn select_vec(index: usize, table: Vec<Self>) -> Self {
+		return table[index].clone();
 	}
 
 	/// AuxInit
@@ -185,50 +187,89 @@ where
 		acc
 	}
 
-	/// Multi-multiplication for given points with using ladder (without sliding window)
-	pub fn multi_mul_scalar<S: FieldExt>(points: &[Self], scalars: &[S]) -> Vec<Self> {
+	/// Multi-multiplication for given points with using ladder
+	pub fn multi_mul_scalar<S: FieldExt>(
+		points: &[Self], scalars: &[S], sliding_window_size: usize,
+	) -> Vec<Self> {
+		// AuxGens from article.
 		let mut aux_inits: Vec<EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>> = vec![];
 		let mut aux_init = Self::to_add();
 		for _ in 0..points.len() {
 			aux_inits.push(aux_init.clone());
 			aux_init = aux_init.double();
 		}
+
+		// Tricky thing is to take care of case where size of bits does not evenly divide sliding_window_size
+		let mut num_of_windows: Vec<usize> = vec![];
+
 		let exps: Vec<EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>> = points.to_vec();
 		let bits: Vec<Vec<bool>> = scalars
 			.iter()
 			.map(|scalar| {
 				let mut bits = to_bits(scalar.to_repr().as_ref());
 				bits = bits[..N::NUM_BITS as usize].to_vec();
+				num_of_windows.push(bits.len() / sliding_window_size);
 				bits.reverse();
 				bits
 			})
 			.collect();
 
+		let sliding_window_integer = 2_u32.pow(sliding_window_size.try_into().unwrap());
+		let sliding_window_fe: S = big_to_fe(BigUint::from(sliding_window_integer));
+
+		// Construct selector table for each mul
 		let mut table: Vec<Vec<EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>>> = vec![];
 		for i in 0..exps.len() {
-			table[i].push(aux_inits[i].clone());
-			table[i].push(exps[i].clone().add(&aux_inits[i]));
+			let mut table_i = aux_inits[i].clone();
+			for i in 0..sliding_window_integer as usize {
+				table[i].push(table_i.clone());
+				table_i = table_i.add(&exps[i]);
+			}
 		}
 
 		let mut accs: Vec<EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>> = vec![];
 
+		// Initialize accs
 		for i in 0..exps.len() {
-			let mut acc_i = Self::select_vec(bits[i][0], table[i].clone());
-
-			// To avoid P_0 == P_1
-			acc_i = acc_i.double();
-			acc_i = acc_i.add(&Self::select_vec(bits[i][1], table[i].clone()));
-			accs.push(acc_i);
-		}
-
-		// Double and Add operation with ladder
-		for i in 0..exps.len() {
-			for bit in &bits[i][2..] {
-				let item = Self::select_vec(*bit, table[i].clone());
-				accs[i] = accs[i].ladder(&item);
+			if num_of_windows[i] > 0 {
+				accs.push(Self::select_vec(
+					be_bits_to_usize(&bits[i][0..sliding_window_size]),
+					table[i].clone(),
+				));
+			} else {
+				accs.push(Self::select_vec(
+					be_bits_to_usize(&bits[i][0..]),
+					table[i].clone(),
+				));
 			}
 		}
 
+		for i in 0..exps.len() {
+			if num_of_windows[i] > 0 {
+				for j in 1..(num_of_windows[i] + 1) {
+					if j == num_of_windows[i] + 1 {
+						let leftover_bits = &bits[i][(j * sliding_window_size)..];
+						let leftover_bits_usize = be_bits_to_usize(&leftover_bits);
+						let leftover_fe: S = big_to_fe(BigUint::from(leftover_bits_usize));
+						accs[i] = accs[i].mul_scalar(leftover_fe.clone());
+						let item = Self::select_vec(leftover_bits_usize, table[i].clone());
+						accs[i] = accs[i].add(&item);
+					} else {
+						accs[i] = accs[i].mul_scalar(sliding_window_fe.clone());
+						let item = Self::select_vec(
+							be_bits_to_usize(
+								&bits[i]
+									[(j * sliding_window_size)..((j + 1) * sliding_window_size)],
+							),
+							table[i].clone(),
+						);
+						accs[i] = accs[i].add(&item);
+					}
+				}
+			}
+		}
+
+		// Have to subtract off all the added aux_inits.
 		let mut aux_fins: Vec<EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>> = vec![];
 		let mut aux_fin = Self::to_sub();
 		for _ in 0..points.len() {
