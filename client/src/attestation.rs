@@ -185,7 +185,7 @@ mod tests {
 	use ethers::{
 		prelude::k256::ecdsa::SigningKey,
 		signers::{Signer, Wallet},
-		types::{Bytes, H160},
+		types::Bytes,
 	};
 	use secp256k1::{ecdsa::RecoveryId, Message, Secp256k1, SecretKey};
 
@@ -194,19 +194,18 @@ mod tests {
 		// Build key
 		let domain_input = [
 			0x4c, 0x61, 0x4a, 0x6d, 0x59, 0x56, 0x2a, 0x42, 0x37, 0x72, 0x37, 0x76, 0x32, 0x4d,
-			0x36, 0x53, 0x62, 0x6d, 0x35, 0x37,
+			0x36, 0x53, 0x62, 0x6d, 0x35, 0x00,
 		];
-		let domain = H160::from(domain_input);
 
 		let mut key_bytes: [u8; 32] = [0; 32];
 		key_bytes[..DOMAIN_PREFIX_LEN].copy_from_slice(&DOMAIN_PREFIX);
-		key_bytes[DOMAIN_PREFIX_LEN..].copy_from_slice(domain.as_bytes());
+		key_bytes[DOMAIN_PREFIX_LEN..].copy_from_slice(&domain_input);
 
 		// Message input
 		let message = [
 			0x31, 0x75, 0x32, 0x45, 0x75, 0x79, 0x32, 0x77, 0x7a, 0x34, 0x58, 0x6c, 0x34, 0x34,
 			0x4a, 0x74, 0x6a, 0x78, 0x68, 0x4c, 0x4a, 0x52, 0x67, 0x48, 0x45, 0x6c, 0x4e, 0x73,
-			0x65, 0x6e, 0x79, 0x64,
+			0x65, 0x6e, 0x79, 0x00,
 		];
 
 		// Address Input
@@ -229,7 +228,7 @@ mod tests {
 		let expected_about = Scalar::from_bytes(&expected_about_input).unwrap();
 
 		let mut expected_domain_input = [0u8; 32];
-		expected_domain_input[12..32].copy_from_slice(domain.as_bytes());
+		expected_domain_input[12..].copy_from_slice(&domain_input);
 		let expected_domain = Scalar::from_bytes(&expected_domain_input).unwrap();
 
 		let expected_value = Scalar::from(10u64);
@@ -384,12 +383,7 @@ mod tests {
 		let secret_key =
 			SecretKey::from_slice(&secret_key_as_bytes).expect("32 bytes, within curve order");
 
-		let attestation = Attestation::new(
-			Address::zero(),
-			U256::from(140317563),
-			10,
-			Some(U256::from(140317564)),
-		);
+		let attestation = Attestation::new(Address::zero(), U256::from(0), 10, Some(U256::from(0)));
 
 		let message = attestation.to_attestation_fr().unwrap().hash().to_bytes();
 
