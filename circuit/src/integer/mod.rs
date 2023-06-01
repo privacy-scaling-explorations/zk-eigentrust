@@ -673,15 +673,19 @@ where
 
 #[cfg(test)]
 mod test {
-	use super::{native::Integer, *};
-	use crate::{rns::bn256::Bn256_4_68, Chipset, CommonConfig};
+	use super::{
+		native::{Integer, UnassignedInteger},
+		*,
+	};
+	use crate::{rns::bn256::Bn256_4_68, Chipset, CommonConfig, UnassignedValue};
 	use halo2::{
-		circuit::{SimpleFloorPlanner, Value},
+		circuit::SimpleFloorPlanner,
 		dev::MockProver,
 		halo2curves::bn256::{Fq, Fr},
 		plonk::Circuit,
 	};
 	use num_bigint::BigUint;
+
 	use std::str::FromStr;
 
 	type W = Fq;
@@ -719,11 +723,11 @@ mod test {
 	}
 
 	struct SingleAssigner {
-		x: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
+		x: UnassignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
 	}
 
 	impl SingleAssigner {
-		fn new(x: Integer<W, N, NUM_LIMBS, NUM_BITS, P>) -> Self {
+		fn new(x: UnassignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>) -> Self {
 			Self { x }
 		}
 	}
@@ -742,27 +746,28 @@ mod test {
 					let mut x_limbs: [Option<AssignedCell<N, N>>; NUM_LIMBS] =
 						[(); NUM_LIMBS].map(|_| None);
 					for i in 0..NUM_LIMBS {
-						let limb_value = Value::known(self.x.limbs[i]);
-						let x = ctx.assign_advice(common.advice[i], limb_value)?;
+						let x = ctx.assign_advice(common.advice[i], self.x.limbs[i])?;
 						x_limbs[i] = Some(x);
 					}
 					Ok(x_limbs)
 				},
 			)?;
 
-			let x = AssignedInteger::new(self.x.clone(), x_limbs_assigned.map(|x| x.unwrap()));
+			let x =
+				AssignedInteger::new(self.x.integer.clone(), x_limbs_assigned.map(|x| x.unwrap()));
 			Ok(x)
 		}
 	}
 
 	struct ToupleAssigner {
-		x: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
-		y: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
+		x: UnassignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
+		y: UnassignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
 	}
 
 	impl ToupleAssigner {
 		fn new(
-			x: Integer<W, N, NUM_LIMBS, NUM_BITS, P>, y: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
+			x: UnassignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
+			y: UnassignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
 		) -> Self {
 			Self { x, y }
 		}
@@ -785,8 +790,7 @@ mod test {
 					let mut x_limbs: [Option<AssignedCell<N, N>>; NUM_LIMBS] =
 						[(); NUM_LIMBS].map(|_| None);
 					for i in 0..NUM_LIMBS {
-						let limb_value = Value::known(self.x.limbs[i]);
-						let x = ctx.assign_advice(common.advice[i], limb_value)?;
+						let x = ctx.assign_advice(common.advice[i], self.x.limbs[i])?;
 						x_limbs[i] = Some(x);
 					}
 					ctx.next();
@@ -794,28 +798,29 @@ mod test {
 					let mut y_limbs: [Option<AssignedCell<N, N>>; NUM_LIMBS] =
 						[(); NUM_LIMBS].map(|_| None);
 					for i in 0..NUM_LIMBS {
-						let limb_value = Value::known(self.y.limbs[i]);
-						let y = ctx.assign_advice(common.advice[i], limb_value)?;
+						let y = ctx.assign_advice(common.advice[i], self.y.limbs[i])?;
 						y_limbs[i] = Some(y);
 					}
 					Ok((x_limbs, y_limbs))
 				},
 			)?;
 
-			let x = AssignedInteger::new(self.x.clone(), x_limbs_assigned.map(|x| x.unwrap()));
-			let y = AssignedInteger::new(self.y.clone(), y_limbs_assigned.map(|x| x.unwrap()));
+			let x =
+				AssignedInteger::new(self.x.integer.clone(), x_limbs_assigned.map(|x| x.unwrap()));
+			let y =
+				AssignedInteger::new(self.y.integer.clone(), y_limbs_assigned.map(|x| x.unwrap()));
 			Ok((x, y))
 		}
 	}
 
 	#[derive(Clone)]
 	struct ReduceTestCircuit {
-		x: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
+		x: UnassignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
 	}
 
 	impl ReduceTestCircuit {
 		fn new(x: Integer<W, N, NUM_LIMBS, NUM_BITS, P>) -> Self {
-			Self { x }
+			Self { x: UnassignedInteger::from(x) }
 		}
 	}
 
@@ -824,7 +829,7 @@ mod test {
 		type FloorPlanner = SimpleFloorPlanner;
 
 		fn without_witnesses(&self) -> Self {
-			self.clone()
+			Self { x: UnassignedInteger::without_witnesses() }
 		}
 
 		fn configure(meta: &mut ConstraintSystem<N>) -> TestConfig {
@@ -892,15 +897,15 @@ mod test {
 
 	#[derive(Clone)]
 	struct AddTestCircuit {
-		x: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
-		y: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
+		x: UnassignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
+		y: UnassignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
 	}
 
 	impl AddTestCircuit {
 		fn new(
 			x: Integer<W, N, NUM_LIMBS, NUM_BITS, P>, y: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
 		) -> Self {
-			Self { x, y }
+			Self { x: UnassignedInteger::from(x), y: UnassignedInteger::from(y) }
 		}
 	}
 
@@ -909,7 +914,10 @@ mod test {
 		type FloorPlanner = SimpleFloorPlanner;
 
 		fn without_witnesses(&self) -> Self {
-			self.clone()
+			Self {
+				x: UnassignedInteger::without_witnesses(),
+				y: UnassignedInteger::without_witnesses(),
+			}
 		}
 
 		fn configure(meta: &mut ConstraintSystem<N>) -> TestConfig {
@@ -962,15 +970,15 @@ mod test {
 
 	#[derive(Clone)]
 	struct SubTestCircuit {
-		x: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
-		y: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
+		x: UnassignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
+		y: UnassignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
 	}
 
 	impl SubTestCircuit {
 		fn new(
 			x: Integer<W, N, NUM_LIMBS, NUM_BITS, P>, y: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
 		) -> Self {
-			Self { x, y }
+			Self { x: UnassignedInteger::from(x), y: UnassignedInteger::from(y) }
 		}
 	}
 
@@ -979,7 +987,10 @@ mod test {
 		type FloorPlanner = SimpleFloorPlanner;
 
 		fn without_witnesses(&self) -> Self {
-			self.clone()
+			Self {
+				x: UnassignedInteger::without_witnesses(),
+				y: UnassignedInteger::without_witnesses(),
+			}
 		}
 
 		fn configure(meta: &mut ConstraintSystem<N>) -> TestConfig {
@@ -1031,15 +1042,15 @@ mod test {
 
 	#[derive(Clone)]
 	struct MulTestCircuit {
-		x: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
-		y: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
+		x: UnassignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
+		y: UnassignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
 	}
 
 	impl MulTestCircuit {
 		fn new(
 			x: Integer<W, N, NUM_LIMBS, NUM_BITS, P>, y: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
 		) -> Self {
-			Self { x, y }
+			Self { x: UnassignedInteger::from(x), y: UnassignedInteger::from(y) }
 		}
 	}
 
@@ -1048,7 +1059,10 @@ mod test {
 		type FloorPlanner = SimpleFloorPlanner;
 
 		fn without_witnesses(&self) -> Self {
-			self.clone()
+			Self {
+				x: UnassignedInteger::without_witnesses(),
+				y: UnassignedInteger::without_witnesses(),
+			}
 		}
 
 		fn configure(meta: &mut ConstraintSystem<N>) -> TestConfig {
@@ -1100,15 +1114,15 @@ mod test {
 
 	#[derive(Clone)]
 	struct DivTestCircuit {
-		x: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
-		y: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
+		x: UnassignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
+		y: UnassignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
 	}
 
 	impl DivTestCircuit {
 		fn new(
 			x: Integer<W, N, NUM_LIMBS, NUM_BITS, P>, y: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
 		) -> Self {
-			Self { x, y }
+			Self { x: UnassignedInteger::from(x), y: UnassignedInteger::from(y) }
 		}
 	}
 
@@ -1117,7 +1131,10 @@ mod test {
 		type FloorPlanner = SimpleFloorPlanner;
 
 		fn without_witnesses(&self) -> Self {
-			self.clone()
+			Self {
+				x: UnassignedInteger::without_witnesses(),
+				y: UnassignedInteger::without_witnesses(),
+			}
 		}
 
 		fn configure(meta: &mut ConstraintSystem<N>) -> TestConfig {

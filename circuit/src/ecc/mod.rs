@@ -828,9 +828,9 @@ where
 #[cfg(test)]
 mod test {
 	use super::{
-		AssignedPoint, EccAddChipset, EccAddConfig, EccDoubleChipset, EccDoubleConfig,
-		EccMulChipset, EccMulConfig, EccTableSelectConfig, EccUnreducedLadderChipset,
-		EccUnreducedLadderConfig,
+		native::UnassignedEcPoint, AssignedPoint, EccAddChipset, EccAddConfig, EccDoubleChipset,
+		EccDoubleConfig, EccMulChipset, EccMulConfig, EccTableSelectConfig,
+		EccUnreducedLadderChipset, EccUnreducedLadderConfig,
 	};
 	use crate::{
 		ecc::native::EcPoint,
@@ -839,11 +839,12 @@ mod test {
 			main::{MainChip, MainConfig},
 		},
 		integer::{
-			native::Integer, AssignedInteger, IntegerAddChip, IntegerDivChip, IntegerMulChip,
-			IntegerReduceChip, IntegerSubChip,
+			native::{Integer, UnassignedInteger},
+			AssignedInteger, IntegerAddChip, IntegerDivChip, IntegerMulChip, IntegerReduceChip,
+			IntegerSubChip,
 		},
 		rns::{bn256::Bn256_4_68, RnsParams},
-		Chip, Chipset, CommonConfig, RegionCtx,
+		Chip, Chipset, CommonConfig, RegionCtx, UnassignedValue,
 	};
 	use halo2::{
 		arithmetic::Field,
@@ -918,11 +919,11 @@ mod test {
 	}
 
 	struct IntegerAssigner {
-		x: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
+		x: UnassignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
 	}
 
 	impl IntegerAssigner {
-		fn new(x: Integer<W, N, NUM_LIMBS, NUM_BITS, P>) -> Self {
+		fn new(x: UnassignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>) -> Self {
 			Self { x }
 		}
 	}
@@ -939,27 +940,27 @@ mod test {
 				|region: Region<'_, N>| {
 					let mut ctx = RegionCtx::new(region, 0);
 					let x_limbs = [
-						ctx.assign_advice(common.advice[0], Value::known(self.x.limbs[0]))?,
-						ctx.assign_advice(common.advice[1], Value::known(self.x.limbs[1]))?,
-						ctx.assign_advice(common.advice[2], Value::known(self.x.limbs[2]))?,
-						ctx.assign_advice(common.advice[3], Value::known(self.x.limbs[3]))?,
+						ctx.assign_advice(common.advice[0], self.x.limbs[0])?,
+						ctx.assign_advice(common.advice[1], self.x.limbs[1])?,
+						ctx.assign_advice(common.advice[2], self.x.limbs[2])?,
+						ctx.assign_advice(common.advice[3], self.x.limbs[3])?,
 					];
 
 					Ok(x_limbs)
 				},
 			)?;
 
-			let x_assigned = AssignedInteger::new(self.x, assigned_limbs);
+			let x_assigned = AssignedInteger::new(self.x.integer, assigned_limbs);
 			Ok(x_assigned)
 		}
 	}
 
 	struct PointAssigner {
-		point: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
+		point: UnassignedEcPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
 	}
 
 	impl PointAssigner {
-		fn new(point: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>) -> Self {
+		fn new(point: UnassignedEcPoint<W, N, NUM_LIMBS, NUM_BITS, P>) -> Self {
 			Self { point }
 		}
 	}
@@ -1008,13 +1009,13 @@ mod test {
 			let to_add_point = EcPoint::new(to_add_x_int, to_add_y_int);
 			let to_sub_point = EcPoint::new(to_sub_x_int, to_sub_y_int);
 
-			let to_add_assigner = PointAssigner::new(to_add_point);
+			let to_add_assigner = PointAssigner::new(UnassignedEcPoint::from(to_add_point));
 			let to_add = to_add_assigner.synthesize(
 				common,
 				&(),
 				layouter.namespace(|| "to_add assigner"),
 			)?;
-			let to_sub_assigner = PointAssigner::new(to_sub_point);
+			let to_sub_assigner = PointAssigner::new(UnassignedEcPoint::from(to_sub_point));
 			let to_sub = to_sub_assigner.synthesize(
 				common,
 				&(),
@@ -1027,15 +1028,15 @@ mod test {
 
 	#[derive(Clone)]
 	struct EccAddTestCircuit {
-		p: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
-		q: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
+		p: UnassignedEcPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
+		q: UnassignedEcPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
 	}
 
 	impl EccAddTestCircuit {
 		fn new(
 			p: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>, q: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
 		) -> Self {
-			Self { p, q }
+			Self { p: UnassignedEcPoint::from(p), q: UnassignedEcPoint::from(q) }
 		}
 	}
 
@@ -1044,7 +1045,10 @@ mod test {
 		type FloorPlanner = SimpleFloorPlanner;
 
 		fn without_witnesses(&self) -> Self {
-			self.clone()
+			Self {
+				p: UnassignedEcPoint::without_witnesses(),
+				q: UnassignedEcPoint::without_witnesses(),
+			}
 		}
 
 		fn configure(meta: &mut ConstraintSystem<N>) -> TestConfig {
@@ -1105,12 +1109,12 @@ mod test {
 
 	#[derive(Clone)]
 	struct EccDoubleTestCircuit {
-		p: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
+		p: UnassignedEcPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
 	}
 
 	impl EccDoubleTestCircuit {
 		fn new(p: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>) -> Self {
-			Self { p }
+			Self { p: UnassignedEcPoint::from(p) }
 		}
 	}
 
@@ -1119,7 +1123,7 @@ mod test {
 		type FloorPlanner = SimpleFloorPlanner;
 
 		fn without_witnesses(&self) -> Self {
-			self.clone()
+			Self { p: UnassignedEcPoint::without_witnesses() }
 		}
 
 		fn configure(meta: &mut ConstraintSystem<N>) -> TestConfig {
@@ -1174,15 +1178,15 @@ mod test {
 
 	#[derive(Clone)]
 	struct EccLadderTestCircuit {
-		p: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
-		q: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
+		p: UnassignedEcPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
+		q: UnassignedEcPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
 	}
 
 	impl EccLadderTestCircuit {
 		fn new(
 			p: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>, q: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
 		) -> Self {
-			Self { p, q }
+			Self { p: UnassignedEcPoint::from(p), q: UnassignedEcPoint::from(q) }
 		}
 	}
 
@@ -1191,7 +1195,10 @@ mod test {
 		type FloorPlanner = SimpleFloorPlanner;
 
 		fn without_witnesses(&self) -> Self {
-			self.clone()
+			Self {
+				p: UnassignedEcPoint::without_witnesses(),
+				q: UnassignedEcPoint::without_witnesses(),
+			}
 		}
 
 		fn configure(meta: &mut ConstraintSystem<N>) -> TestConfig {
@@ -1253,13 +1260,13 @@ mod test {
 
 	#[derive(Clone)]
 	struct EccMulTestCircuit {
-		p: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
-		value: N,
+		p: UnassignedEcPoint<W, N, NUM_LIMBS, NUM_BITS, P>,
+		value: Value<N>,
 	}
 
 	impl EccMulTestCircuit {
 		fn new(p: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>, value: N) -> Self {
-			Self { p, value }
+			Self { p: UnassignedEcPoint::from(p), value: Value::known(value) }
 		}
 	}
 
@@ -1268,7 +1275,7 @@ mod test {
 		type FloorPlanner = SimpleFloorPlanner;
 
 		fn without_witnesses(&self) -> Self {
-			self.clone()
+			Self { p: UnassignedEcPoint::without_witnesses(), value: Value::unknown() }
 		}
 
 		fn configure(meta: &mut ConstraintSystem<N>) -> TestConfig {
@@ -1283,8 +1290,7 @@ mod test {
 				|region: Region<'_, N>| {
 					let mut ctx = RegionCtx::new(region, 0);
 
-					let value =
-						ctx.assign_advice(config.common.advice[0], Value::known(self.value))?;
+					let value = ctx.assign_advice(config.common.advice[0], self.value)?;
 					Ok(value)
 				},
 			)?;

@@ -1,3 +1,5 @@
+use halo2::circuit::Value;
+
 use crate::{utils::to_bits, FieldExt};
 
 use super::params::EdwardsParams;
@@ -55,6 +57,16 @@ pub struct Point<F: FieldExt, P: EdwardsParams<F>> {
 	/// Constructs a field element for the y.
 	pub y: F,
 	_p: PhantomData<P>,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+/// Configures unassigned Point objects.
+pub struct UnassignedPoint<F: FieldExt, P: EdwardsParams<F>> {
+	/// Constructs a field element wrapped in value for the x.
+	pub x: Value<F>,
+	/// Constructs a field element wrapped in value for the y.
+	pub y: Value<F>,
+	pub(crate) _p: PhantomData<P>,
 }
 
 impl<F: FieldExt, P: EdwardsParams<F>> Point<F, P> {

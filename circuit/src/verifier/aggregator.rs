@@ -121,7 +121,7 @@ impl From<Snark> for UnassignedSnark {
 }
 
 impl UnassignedSnark {
-	fn without_witnesses(&self) -> Self {
+	fn without_witness(&self) -> Self {
 		UnassignedSnark {
 			protocol: self.protocol.clone(),
 			instances: self
@@ -231,7 +231,7 @@ impl Circuit<Fr> for Aggregator {
 	fn without_witnesses(&self) -> Self {
 		Self {
 			svk: self.svk,
-			snarks: self.snarks.iter().map(UnassignedSnark::without_witnesses).collect(),
+			snarks: self.snarks.iter().map(UnassignedSnark::without_witness).collect(),
 			instances: Vec::new(),
 			as_proof: None,
 		}
