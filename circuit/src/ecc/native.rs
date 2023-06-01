@@ -13,14 +13,14 @@
 // r_x = m_1 * m_1 - p_x - f
 // r_y = m_1 * (r_x - p_x) - p_y
 
-use std::{ops::Add};
+use std::ops::Add;
 
 use num_bigint::BigUint;
 use num_traits::One;
 
 use crate::{
 	integer::native::Integer,
-	rns::{RnsParams},
+	rns::RnsParams,
 	utils::{be_bits_to_usize, big_to_fe, to_bits},
 	FieldExt,
 };
@@ -88,26 +88,20 @@ where
 	}
 
 	/// Make aux_fin when sliding window is > 1.
-	pub fn make_mul_aux_sliding_window<S: FieldExt> (
-		aux_to_add: Self, window_size: usize,
-	) -> Self
-	{
+	pub fn make_mul_aux_sliding_window<S: FieldExt>(aux_to_add: Self, window_size: usize) -> Self {
 		assert!(window_size > 0);
 
 		let n = S::NUM_BITS as usize;
-		let mut number_of_selectors = n / window_size;
-		if n % window_size != 0 {
-			number_of_selectors += 1;
-		}
+		let number_of_selectors = n / window_size;
+		let leftover = n % window_size;
 		let mut k0 = BigUint::one();
 		let one = BigUint::one();
 		for i in 0..number_of_selectors {
 			k0 |= &one << (i * window_size);
 		}
-		let leftover = n % window_size;
 
-		if (leftover > 0) {
-			k0 |= &one << ((number_of_selectors - 1) * window_size + leftover);
+		if (leftover != 0) {
+			k0 = k0 << leftover;
 			k0 = k0.add(&one);
 		}
 
@@ -267,10 +261,7 @@ where
 				);
 				accs.push(item);
 			} else {
-				let item = Self::select_vec(
-					be_bits_to_usize(&bits[i][0..]),
-					table[i].clone(),
-				);
+				let item = Self::select_vec(be_bits_to_usize(&bits[i][0..]), table[i].clone());
 				accs.push(item);
 			}
 		}
@@ -284,7 +275,10 @@ where
 							for _ in 0..leftover_bits.len() {
 								accs[i] = accs[i].double();
 							}
-							let item = Self::select_vec(be_bits_to_usize(&leftover_bits), table[i].clone());
+							let item = Self::select_vec(
+								be_bits_to_usize(&leftover_bits),
+								table[i].clone(),
+							);
 							accs[i] = accs[i].add(&item);
 						}
 					} else {
@@ -306,7 +300,8 @@ where
 
 		let mut aux_fins: Vec<EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>> = vec![];
 		let aux_init = Self::to_sub();
-		let mut aux_fin = Self::make_mul_aux_sliding_window::<S>(aux_init.clone(), sliding_window_usize);
+		let mut aux_fin =
+			Self::make_mul_aux_sliding_window::<S>(aux_init.clone(), sliding_window_usize);
 		for i in 0..points.len() {
 			aux_fins.push(aux_fin.clone());
 			aux_fin = aux_fin.double();
@@ -330,7 +325,7 @@ where
 mod test {
 	use core::num;
 
-use super::EcPoint;
+	use super::EcPoint;
 	use crate::{
 		integer::native::Integer,
 		rns::bn256::Bn256_4_68,
@@ -462,14 +457,16 @@ use super::EcPoint;
 			let a_w = EcPoint::new(a_x_w, a_y_w);
 			points_vec.push(a_w.clone());
 		}
-		let batch_mul_results_vec = EcPoint::multi_mul_scalar(
-			&points_vec,
-			&scalars_vec,
-			4,
-		);
+		let batch_mul_results_vec = EcPoint::multi_mul_scalar(&points_vec, &scalars_vec, 4);
 		for i in 0..num_of_points {
-			assert_eq!(results_vec[i].x, big_to_fe(batch_mul_results_vec[i].x.value()));
-			assert_eq!(results_vec[i].y, big_to_fe(batch_mul_results_vec[i].y.value()));
+			assert_eq!(
+				results_vec[i].x,
+				big_to_fe(batch_mul_results_vec[i].x.value())
+			);
+			assert_eq!(
+				results_vec[i].y,
+				big_to_fe(batch_mul_results_vec[i].y.value())
+			);
 		}
 	}
 }
