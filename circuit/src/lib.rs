@@ -110,6 +110,11 @@ pub trait SpongeHasherChipset<F: FieldExt>: Chipset<F> {
 	fn new() -> Self;
 	/// Update current sponge chipset state
 	fn update(&mut self, inputs: &[AssignedCell<F, F>]);
+
+/// UnassignedValue Trait
+pub trait UnassignedValue {
+	/// Returns unknown value type
+	fn without_witnesses() -> Self;
 }
 
 #[derive(Debug)]

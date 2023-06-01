@@ -4,9 +4,7 @@ use clap::Parser;
 use cli::*;
 use eigen_trust_circuit::utils::{read_bytes_data, read_json_data};
 use eigen_trust_client::{
-	eth::{
-		compile_sol_contract, compile_yul_contracts, deploy_as, deploy_et_wrapper, deploy_verifier,
-	},
+	eth::{compile_sol_contract, compile_yul_contracts, deploy_as, deploy_verifier},
 	Client, ClientConfig,
 };
 
@@ -43,40 +41,35 @@ async fn main() {
 			println!("Compiling contracts...");
 			compile_sol_contract();
 			compile_yul_contracts();
-			println!("Finished compiling!");
+			println!("Done!");
 		},
 		Mode::Deploy => {
 			println!("Deploying contracts...");
 
-			let address = match deploy_as(&config.mnemonic, &config.node_url).await {
+			let as_address = match deploy_as(&config.mnemonic, &config.node_url).await {
 				Ok(a) => a,
 				Err(e) => {
-					eprintln!("Failed to deploy the AttestationStation contract: {:?}", e);
+					eprintln!("Failed to deploy AttestationStation: {:?}", e);
 					return;
 				},
 			};
-			println!("AttestationStation contract deployed. Address: {}", address);
+			println!("AttestationStation deployed at {:?}", as_address);
 
-			let et_contract = read_bytes_data("et_verifier");
+			let verifier_contract = read_bytes_data("et_verifier");
 
-			let address =
-				match deploy_verifier(&config.mnemonic, &config.node_url, et_contract).await {
-					Ok(a) => a,
-					Err(e) => {
-						eprintln!("Failed to deploy the EigenTrustVerifier contract: {:?}", e);
-						return;
-					},
-				};
-
-			let w_addr = match deploy_et_wrapper(&config.mnemonic, &config.node_url, address).await
+			let verifier_address = match deploy_verifier(
+				&config.mnemonic, &config.node_url, verifier_contract,
+			)
+			.await
 			{
 				Ok(a) => a,
 				Err(e) => {
-					eprintln!("Failed to deploy the EtVerifierWrapper contract: {:?}", e);
+					eprintln!("Failed to deploy EigenTrustVerifier: {:?}", e);
 					return;
 				},
 			};
-			println!("EtVerifierWrapper contract deployed. Address: {}", w_addr);
+
+			println!("EigenTrustVerifier deployed at {:?}", verifier_address);
 		},
 		Mode::Proof => {
 			println!("Calculating Proof...\n");

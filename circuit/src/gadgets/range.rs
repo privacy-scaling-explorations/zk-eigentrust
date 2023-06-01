@@ -328,12 +328,12 @@ mod tests {
 
 	#[derive(Clone)]
 	struct SWTestCircuit {
-		x: Fr,
+		x: Value<Fr>,
 	}
 
 	impl SWTestCircuit {
 		fn new(x: Fr) -> Self {
-			Self { x }
+			Self { x: Value::known(x) }
 		}
 	}
 
@@ -342,7 +342,7 @@ mod tests {
 		type FloorPlanner = SimpleFloorPlanner;
 
 		fn without_witnesses(&self) -> Self {
-			self.clone()
+			Self { x: Value::unknown() }
 		}
 
 		fn configure(meta: &mut ConstraintSystem<Fr>) -> TestConfig {
@@ -363,8 +363,7 @@ mod tests {
 				|| "temp",
 				|region: Region<'_, Fr>| {
 					let mut ctx = RegionCtx::new(region, 0);
-					let x_val = Value::known(self.x);
-					let x = ctx.assign_advice(config.mock_common.common.advice[0], x_val)?;
+					let x = ctx.assign_advice(config.mock_common.common.advice[0], self.x)?;
 					Ok(x)
 				},
 			)?;
@@ -401,12 +400,12 @@ mod tests {
 
 	#[derive(Clone)]
 	struct LookupRangeTestCircuit {
-		x: Fr,
+		x: Value<Fr>,
 	}
 
 	impl LookupRangeTestCircuit {
 		fn new(x: Fr) -> Self {
-			Self { x }
+			Self { x: Value::known(x) }
 		}
 	}
 
@@ -415,7 +414,7 @@ mod tests {
 		type FloorPlanner = SimpleFloorPlanner;
 
 		fn without_witnesses(&self) -> Self {
-			self.clone()
+			Self { x: Value::unknown() }
 		}
 
 		fn configure(meta: &mut ConstraintSystem<Fr>) -> TestConfig {
@@ -436,8 +435,7 @@ mod tests {
 				|| "temp",
 				|region: Region<'_, Fr>| {
 					let mut ctx = RegionCtx::new(region, 0);
-					let x_val = Value::known(self.x);
-					let x = ctx.assign_advice(config.mock_common.common.advice[0], x_val)?;
+					let x = ctx.assign_advice(config.mock_common.common.advice[0], self.x)?;
 					Ok(x)
 				},
 			)?;
@@ -474,12 +472,12 @@ mod tests {
 
 	#[derive(Clone)]
 	struct RangeTestCircuit {
-		x: Fr,
+		x: Value<Fr>,
 	}
 
 	impl RangeTestCircuit {
 		fn new(x: Fr) -> Self {
-			Self { x }
+			Self { x: Value::known(x) }
 		}
 	}
 
@@ -488,7 +486,7 @@ mod tests {
 		type FloorPlanner = SimpleFloorPlanner;
 
 		fn without_witnesses(&self) -> Self {
-			self.clone()
+			Self { x: Value::unknown() }
 		}
 
 		fn configure(meta: &mut ConstraintSystem<Fr>) -> TestConfig {
@@ -509,8 +507,7 @@ mod tests {
 				|| "temp",
 				|region: Region<'_, Fr>| {
 					let mut ctx = RegionCtx::new(region, 0);
-					let x_val = Value::known(self.x);
-					let x = ctx.assign_advice(config.mock_common.common.advice[0], x_val)?;
+					let x = ctx.assign_advice(config.mock_common.common.advice[0], self.x)?;
 					Ok(x)
 				},
 			)?;
