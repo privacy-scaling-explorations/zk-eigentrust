@@ -13,23 +13,17 @@
 // r_x = m_1 * m_1 - p_x - f
 // r_y = m_1 * (r_x - p_x) - p_y
 
-use std::io::empty;
+use std::{ops::Add};
+
+use num_bigint::BigUint;
+use num_traits::One;
 
 use crate::{
 	integer::native::Integer,
-	rns::RnsParams,
+	rns::{RnsParams},
 	utils::{be_bits_to_usize, big_to_fe, to_bits},
 	FieldExt,
 };
-
-use halo2::{
-	arithmetic::Field,
-	halo2curves::{
-		bn256::{Fq, Fr, G1Affine},
-		group::Curve,
-	},
-};
-use num_bigint::BigUint;
 
 /// Structure for the EcPoint
 #[derive(Clone, Default, Debug, PartialEq)]
@@ -93,6 +87,35 @@ where
 		Self::new(Integer::from_limbs(x_limbs), Integer::from_limbs(y_limbs))
 	}
 
+	/// Make aux_fin when sliding window is > 1.
+	pub fn make_mul_aux_sliding_window<S: FieldExt> (
+		aux_to_add: Self, window_size: usize,
+	) -> Self
+	{
+		assert!(window_size > 0);
+
+		let n = S::NUM_BITS as usize;
+		let mut number_of_selectors = n / window_size;
+		if n % window_size != 0 {
+			number_of_selectors += 1;
+		}
+		let mut k0 = BigUint::one();
+		let one = BigUint::one();
+		for i in 0..number_of_selectors {
+			k0 |= &one << (i * window_size);
+		}
+		let leftover = n % window_size;
+
+		if (leftover > 0) {
+			k0 |= &one << ((number_of_selectors - 1) * window_size + leftover);
+			k0 = k0.add(&one);
+		}
+
+		let factor = S::ZERO.sub(big_to_fe::<S>(k0));
+		let to_sub = aux_to_add.mul_scalar(factor);
+		to_sub
+	}
+
 	/// Add one point to another
 	pub fn add(&self, other: &Self) -> Self {
 		// m = (q_y - p_y) / (q_x - p_x)
@@ -119,7 +142,6 @@ where
 		let p_x_square_times_two = p_x_square.result.add(&p_x_square.result);
 		let p_x_square_times_three = p_x_square.result.add(&p_x_square_times_two.result);
 		let m = p_x_square_times_three.result.div(&double_p_y.result);
-
 		// r_x = m * m - 2 * p_x
 		let double_p_x = self.x.add(&self.x);
 		let m_squared = m.result.mul(&m.result);
@@ -183,7 +205,6 @@ where
 		// To avoid P_0 == P_1
 		acc = acc.double();
 		acc = acc.add(&Self::select(bits[1], table.clone()));
-
 		// Double and Add operation with ladder
 		for bit in &bits[2..] {
 			let item = Self::select(*bit, table.clone());
@@ -202,7 +223,7 @@ where
 	) -> Vec<Self> {
 		// AuxGens from article.
 		let mut aux_inits: Vec<EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>> = vec![];
-		let mut aux_init = Self::to_add();
+		let mut aux_init = Self::to_sub();
 		for _ in 0..points.len() {
 			aux_inits.push(aux_init.clone());
 			aux_init = aux_init.double();
@@ -240,16 +261,17 @@ where
 		// Initialize accs
 		for i in 0..exps.len() {
 			if num_of_windows[i] > 0 {
-				accs.push(Self::select_vec(
+				let item = Self::select_vec(
 					be_bits_to_usize(&bits[i][0..sliding_window_usize]),
 					table[i].clone(),
-				));
+				);
+				accs.push(item);
 			} else {
-				println!("reached here 1 {}", i);
-				accs.push(Self::select_vec(
+				let item = Self::select_vec(
 					be_bits_to_usize(&bits[i][0..]),
 					table[i].clone(),
-				));
+				);
+				accs.push(item);
 			}
 		}
 
@@ -282,13 +304,15 @@ where
 			}
 		}
 
-		// Have to subtract off all the added aux_inits.
 		let mut aux_fins: Vec<EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>> = vec![];
-		let mut aux_fin = Self::to_sub();
+		let aux_init = Self::to_sub();
+		let mut aux_fin = Self::make_mul_aux_sliding_window::<S>(aux_init.clone(), sliding_window_usize);
 		for i in 0..points.len() {
 			aux_fins.push(aux_fin.clone());
 			aux_fin = aux_fin.double();
 		}
+
+		// Have to subtract off all the added aux_inits.
 		for i in 0..exps.len() {
 			accs[i] = accs[i].add(&aux_fins[i]);
 		}
@@ -444,7 +468,6 @@ use super::EcPoint;
 			4,
 		);
 		for i in 0..num_of_points {
-			println!("i is {}", i);
 			assert_eq!(results_vec[i].x, big_to_fe(batch_mul_results_vec[i].x.value()));
 			assert_eq!(results_vec[i].y, big_to_fe(batch_mul_results_vec[i].y.value()));
 		}
