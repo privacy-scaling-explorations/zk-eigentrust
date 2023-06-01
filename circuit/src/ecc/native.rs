@@ -300,8 +300,7 @@ where
 
 		let mut aux_fins: Vec<EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>> = vec![];
 		let aux_init = Self::to_sub();
-		let mut aux_fin =
-			Self::make_mul_aux_sliding_window::<S>(aux_init, sliding_window_usize);
+		let mut aux_fin = Self::make_mul_aux_sliding_window::<S>(aux_init, sliding_window_usize);
 		for i in 0..points.len() {
 			aux_fins.push(aux_fin.clone());
 			aux_fin = aux_fin.double();
