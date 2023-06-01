@@ -168,12 +168,13 @@ impl Aggregator {
 		for snark in &snarks {
 			let mut transcript_read: PoseidonRead<_, G1Affine, Bn256_4_68, Params> =
 				PoseidonRead::init(snark.proof.as_slice());
+
 			let proof = PSV::read_proof(
 				&svk, &snark.protocol, &snark.instances, &mut transcript_read,
 			)
 			.unwrap();
-
 			let res = PSV::verify(&svk, &snark.protocol, &snark.instances, &proof).unwrap();
+
 			plonk_proofs.extend(res);
 		}
 
@@ -337,15 +338,11 @@ impl Circuit<Fr> for Aggregator {
 					Params,
 				> = PoseidonReadChipset::new(snark.proof(), loader_config.clone());
 
-				let proof = PlonkSuccinctVerifier::<KzgAs<Bn256, Gwc19>>::read_proof(
+				let proof = PSV::read_proof(
 					&self.svk, &protocol, &loaded_instances, &mut transcript_read,
 				)
 				.unwrap();
-
-				let res = PlonkSuccinctVerifier::<KzgAs<Bn256, Gwc19>>::verify(
-					&self.svk, &protocol, &loaded_instances, &proof,
-				)
-				.unwrap();
+				let res = PSV::verify(&self.svk, &protocol, &loaded_instances, &proof).unwrap();
 
 				accumulators.extend(res);
 			}
