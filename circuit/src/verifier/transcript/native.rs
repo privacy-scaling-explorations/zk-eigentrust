@@ -4,7 +4,7 @@ use crate::{
 	poseidon::native::sponge::PoseidonSponge,
 	rns::RnsParams,
 	verifier::loader::native::{NUM_BITS, NUM_LIMBS},
-	FieldExt,
+	FieldExt, SpongeHasher,
 };
 use halo2::{
 	halo2curves::{Coordinates, CurveAffine},
@@ -26,44 +26,47 @@ use std::{
 	marker::PhantomData,
 };
 
-/// Width of the hasher state used in the transcript
+/// Width of the SpongeHasher state used in the transcript
 pub const WIDTH: usize = 5;
 
 /// PoseidonRead structure
-pub struct PoseidonRead<RD: Read, C: CurveAffine, P, R>
+pub struct PoseidonRead<RD: Read, C: CurveAffine, P, H>
 where
+	H: SpongeHasher<C::Scalar>,
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
-	R: RoundParams<C::Scalar, WIDTH>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
 {
 	// Reader
 	pub(crate) reader: RD,
 	// PoseidonSponge
-	pub(crate) state: PoseidonSponge<C::Scalar, WIDTH, R>,
+	pub(crate) state: H,
 	// Loader
 	pub(crate) loader: NativeSVLoader,
 	// PhantomData
 	_p: PhantomData<P>,
+
+	_c: PhantomData<C>,
 }
 
-impl<RD: Read, C: CurveAffine, P, R> PoseidonRead<RD, C, P, R>
+impl<RD: Read, C: CurveAffine, P, H> PoseidonRead<RD, C, P, H>
 where
+	H: SpongeHasher<C::Scalar>,
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
-	R: RoundParams<C::Scalar, WIDTH>,
+
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
 {
 	/// Create a new PoseidonRead transcript
 	pub fn new(reader: RD, loader: NativeSVLoader) -> Self {
-		Self { reader, state: PoseidonSponge::new(), loader, _p: PhantomData }
+		Self { reader, state: H::new(), loader, _p: PhantomData, _c: PhantomData }
 	}
 }
 
-impl<RD: Read, C: CurveAffine, P, R> Transcript<C, NativeSVLoader> for PoseidonRead<RD, C, P, R>
+impl<RD: Read, C: CurveAffine, P, H> Transcript<C, NativeSVLoader> for PoseidonRead<RD, C, P, H>
 where
+	H: SpongeHasher<C::Scalar>,
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
-	R: RoundParams<C::Scalar, WIDTH>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
 {
@@ -76,8 +79,8 @@ where
 	fn squeeze_challenge(&mut self) -> C::ScalarExt {
 		let default = C::Scalar::default();
 		self.state.update(&[default]);
-		let mut hasher = self.state.clone();
-		let val = hasher.squeeze();
+		let mut sponge_hasher = self.state.clone();
+		let val = sponge_hasher.finalize();
 		val
 	}
 
@@ -107,10 +110,10 @@ where
 	}
 }
 
-impl<RD: Read, C: CurveAffine, P, R> TranscriptRead<C, NativeSVLoader> for PoseidonRead<RD, C, P, R>
+impl<RD: Read, C: CurveAffine, P, H> TranscriptRead<C, NativeSVLoader> for PoseidonRead<RD, C, P, H>
 where
+	H: SpongeHasher<C::Scalar>,
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
-	R: RoundParams<C::Scalar, WIDTH>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
 {
@@ -159,40 +162,47 @@ where
 }
 
 /// PoseidonWrite structure
-pub struct PoseidonWrite<W: Write, C: CurveAffine, P, R>
+pub struct PoseidonWrite<W: Write, C: CurveAffine, P, H>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
-	R: RoundParams<C::Scalar, WIDTH>,
+	H: SpongeHasher<C::Scalar>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
 {
 	// Writer
 	writer: W,
 	// PoseidonSponge
-	state: PoseidonSponge<C::Scalar, WIDTH, R>,
+	state: H,
 	// Loader
 	loader: NativeSVLoader,
 	// PhantomData
 	_p: PhantomData<P>,
+	_c: PhantomData<C>,
 }
 
-impl<W: Write, C: CurveAffine, P, R> PoseidonWrite<W, C, P, R>
+impl<W: Write, C: CurveAffine, P, H> PoseidonWrite<W, C, P, H>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
-	R: RoundParams<C::Scalar, WIDTH>,
+	H: SpongeHasher<C::Scalar>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
 {
 	/// Create a new PoseidonWrite transcript.
 	pub fn new(writer: W) -> Self {
-		Self { writer, state: PoseidonSponge::new(), loader: NativeSVLoader, _p: PhantomData }
+		Self {
+			writer,
+			state: H::new(),
+			loader: NativeSVLoader,
+			_p: PhantomData,
+			_c: PhantomData,
+		}
 	}
 }
 
-impl<W: Write, C: CurveAffine, P, R> Transcript<C, NativeSVLoader> for PoseidonWrite<W, C, P, R>
+impl<W: Write, C: CurveAffine, P, H> Transcript<C, NativeSVLoader> for PoseidonWrite<W, C, P, H>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
-	R: RoundParams<C::Scalar, WIDTH>,
+	H: SpongeHasher<C::Scalar>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
 {
@@ -205,8 +215,8 @@ where
 	fn squeeze_challenge(&mut self) -> C::ScalarExt {
 		let default = C::Scalar::default();
 		self.state.update(&[default]);
-		let mut hasher = self.state.clone();
-		hasher.squeeze()
+		let mut sponge_hasher = self.state.clone();
+		sponge_hasher.finalize()
 	}
 
 	/// Update with an elliptic curve point.
@@ -238,10 +248,10 @@ where
 	}
 }
 
-impl<W: Write, C: CurveAffine, P, R> TranscriptWrite<C> for PoseidonWrite<W, C, P, R>
+impl<W: Write, C: CurveAffine, P, H> TranscriptWrite<C> for PoseidonWrite<W, C, P, H>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
-	R: RoundParams<C::Scalar, WIDTH>,
+	H: SpongeHasher<C::Scalar>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
 {
@@ -283,11 +293,11 @@ impl<C: CurveAffine> EncodedChallenge<C> for ChallengeScalar<C> {
 	}
 }
 
-impl<RD: Read, C: CurveAffine, P, R> Halo2Transcript<C, ChallengeScalar<C>>
-	for PoseidonRead<RD, C, P, R>
+impl<RD: Read, C: CurveAffine, P, H> Halo2Transcript<C, ChallengeScalar<C>>
+	for PoseidonRead<RD, C, P, H>
 where
+	H: SpongeHasher<C::Scalar>,
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
-	R: RoundParams<C::Scalar, WIDTH>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
 {
@@ -318,11 +328,11 @@ where
 	}
 }
 
-impl<RD: Read, C: CurveAffine, P, R> Halo2TranscriptRead<C, ChallengeScalar<C>>
-	for PoseidonRead<RD, C, P, R>
+impl<RD: Read, C: CurveAffine, P, H> Halo2TranscriptRead<C, ChallengeScalar<C>>
+	for PoseidonRead<RD, C, P, H>
 where
+	H: SpongeHasher<C::Scalar>,
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
-	R: RoundParams<C::Scalar, WIDTH>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
 {
@@ -345,11 +355,11 @@ where
 	}
 }
 
-impl<RD: Read, C: CurveAffine, P, R> TranscriptReadBuffer<RD, C, ChallengeScalar<C>>
-	for PoseidonRead<RD, C, P, R>
+impl<RD: Read, C: CurveAffine, P, H> TranscriptReadBuffer<RD, C, ChallengeScalar<C>>
+	for PoseidonRead<RD, C, P, H>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
-	R: RoundParams<C::Scalar, WIDTH>,
+	H: SpongeHasher<C::Scalar>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
 {
@@ -359,11 +369,11 @@ where
 	}
 }
 
-impl<W: Write, C: CurveAffine, P, R> Halo2Transcript<C, ChallengeScalar<C>>
-	for PoseidonWrite<W, C, P, R>
+impl<W: Write, C: CurveAffine, P, H> Halo2Transcript<C, ChallengeScalar<C>>
+	for PoseidonWrite<W, C, P, H>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
-	R: RoundParams<C::Scalar, WIDTH>,
+	H: SpongeHasher<C::Scalar>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
 {
@@ -393,11 +403,11 @@ where
 	}
 }
 
-impl<W: Write, C: CurveAffine, P, R> Halo2TranscriptWrite<C, ChallengeScalar<C>>
-	for PoseidonWrite<W, C, P, R>
+impl<W: Write, C: CurveAffine, P, H> Halo2TranscriptWrite<C, ChallengeScalar<C>>
+	for PoseidonWrite<W, C, P, H>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
-	R: RoundParams<C::Scalar, WIDTH>,
+	H: SpongeHasher<C::Scalar>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
 {
@@ -420,11 +430,11 @@ where
 	}
 }
 
-impl<W: Write, C: CurveAffine, P, R> TranscriptWriterBuffer<W, C, ChallengeScalar<C>>
-	for PoseidonWrite<W, C, P, R>
+impl<W: Write, C: CurveAffine, P, H> TranscriptWriterBuffer<W, C, ChallengeScalar<C>>
+	for PoseidonWrite<W, C, P, H>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
-	R: RoundParams<C::Scalar, WIDTH>,
+	H: SpongeHasher<C::Scalar>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
 {

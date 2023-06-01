@@ -1,6 +1,6 @@
 use crate::{
 	poseidon::{native::Poseidon, RoundParams},
-	FieldExt,
+	FieldExt, SpongeHasher,
 };
 use std::marker::PhantomData;
 
@@ -60,5 +60,22 @@ where
 		// Clear the inputs, and return the result
 		self.inputs.clear();
 		self.state[0]
+	}
+}
+
+impl<F: FieldExt, const WIDTH: usize, P> SpongeHasher<F> for PoseidonSponge<F, WIDTH, P>
+where
+	P: RoundParams<F, WIDTH>,
+{
+	fn new() -> Self {
+		Self::new()
+	}
+
+	fn update(&mut self, inputs: &[F]) {
+		Self::update(self, inputs)
+	}
+
+	fn finalize(&mut self) -> F {
+		Self::squeeze(self)
 	}
 }

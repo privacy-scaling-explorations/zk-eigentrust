@@ -300,7 +300,7 @@ mod test {
 			IntegerReduceChip, IntegerSubChip,
 		},
 		params::poseidon_bn254_5x5::Params,
-		poseidon::{sponge::PoseidonSpongeConfig, PoseidonConfig},
+		poseidon::{native::sponge::PoseidonSponge, sponge::PoseidonSpongeConfig, PoseidonConfig},
 		rns::bn256::Bn256_4_68,
 		verifier::{
 			loader::{
@@ -426,7 +426,10 @@ mod test {
 		// Test squeeze challenge
 		let reader = Vec::new();
 		let mut poseidon_read =
-			PoseidonRead::<_, G1Affine, Bn256_4_68, Params>::new(reader.as_slice(), NativeSVLoader);
+			PoseidonRead::<_, G1Affine, Bn256_4_68, PoseidonSponge<Fr, 5, Params>>::new(
+				reader.as_slice(),
+				NativeSVLoader,
+			);
 
 		let res = poseidon_read.squeeze_challenge();
 		let circuit = TestSqueezeCircuit::new();
@@ -537,7 +540,10 @@ mod test {
 		// Test common ec point
 		let reader = Vec::new();
 		let mut poseidon_read =
-			PoseidonRead::<_, G1Affine, Bn256_4_68, Params>::new(reader.as_slice(), NativeSVLoader);
+			PoseidonRead::<_, G1Affine, Bn256_4_68, PoseidonSponge<Fr, 5, Params>>::new(
+				reader.as_slice(),
+				NativeSVLoader,
+			);
 		let rng = &mut thread_rng();
 		let ec_point = C::random(rng);
 		poseidon_read.common_ec_point(&ec_point).unwrap();
@@ -619,7 +625,10 @@ mod test {
 		// Test common scalar
 		let reader = Vec::new();
 		let mut poseidon_read =
-			PoseidonRead::<_, G1Affine, Bn256_4_68, Params>::new(reader.as_slice(), NativeSVLoader);
+			PoseidonRead::<_, G1Affine, Bn256_4_68, PoseidonSponge<Fr, 5, Params>>::new(
+				reader.as_slice(),
+				NativeSVLoader,
+			);
 		let rng = &mut thread_rng();
 		let scalar = Scalar::random(rng);
 		poseidon_read.common_scalar(&scalar).unwrap();
@@ -685,7 +694,10 @@ mod test {
 		let mut reader = Vec::new();
 		reader.write_all(random.to_bytes().as_slice()).unwrap();
 		let mut poseidon_read =
-			PoseidonRead::<_, G1Affine, Bn256_4_68, Params>::new(reader.as_slice(), NativeSVLoader);
+			PoseidonRead::<_, G1Affine, Bn256_4_68, PoseidonSponge<Fr, 5, Params>>::new(
+				reader.as_slice(),
+				NativeSVLoader,
+			);
 
 		let res = poseidon_read.read_scalar().unwrap();
 		let circuit = TestReadScalarCircuit::new(reader);
@@ -761,7 +773,10 @@ mod test {
 		reader.write_all(random.as_ref()).unwrap();
 
 		let mut poseidon_read =
-			PoseidonRead::<_, G1Affine, Bn256_4_68, Params>::new(reader.as_slice(), NativeSVLoader);
+			PoseidonRead::<_, G1Affine, Bn256_4_68, PoseidonSponge<Fr, 5, Params>>::new(
+				reader.as_slice(),
+				NativeSVLoader,
+			);
 
 		let res = poseidon_read.read_ec_point().unwrap();
 		let x = Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_w(res.x);
@@ -870,7 +885,10 @@ mod test {
 			reader.write_all(scalar.to_bytes().as_slice()).unwrap();
 		}
 		let mut poseidon_read =
-			PoseidonRead::<_, G1Affine, Bn256_4_68, Params>::new(reader.as_slice(), NativeSVLoader);
+			PoseidonRead::<_, G1Affine, Bn256_4_68, PoseidonSponge<Fr, 5, Params>>::new(
+				reader.as_slice(),
+				NativeSVLoader,
+			);
 
 		let mut p_ins = Vec::new();
 		let res = poseidon_read.read_ec_point().unwrap();

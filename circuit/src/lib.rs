@@ -80,6 +80,38 @@ impl FieldExt for BnScalar {}
 impl FieldExt for SecpBase {}
 impl FieldExt for SecpScalar {}
 
+/// Hasher trait
+pub trait Hasher<F: FieldExt, const WIDTH: usize> {
+	/// Creates a new hasher
+	fn new(inputs: [F; WIDTH]) -> Self;
+	/// Finalize the hasher
+	fn finalize(&self) -> [F; WIDTH];
+}
+
+/// Sponge Hasher trait
+pub trait SpongeHasher<F: FieldExt>: Clone {
+	/// Creates a new sponge hasher
+	fn new() -> Self;
+	/// Update current sponge state
+	fn update(&mut self, inputs: &[F]);
+	/// Finalize the sponge hasher
+	fn finalize(&mut self) -> F;
+}
+
+/// Hasher chipset trait
+pub trait HasherChipset<F: FieldExt, const WIDTH: usize>: Chipset<F> {
+	/// Creates a new hasher chipset
+	fn new(inputs: [AssignedCell<F, F>; WIDTH]) -> Self;
+}
+
+/// Sponge Hasher chipset trait
+pub trait SpongeHasherChipset<F: FieldExt>: Chipset<F> {
+	/// Creates a new sponge hasher chipset
+	fn new() -> Self;
+	/// Update current sponge chipset state
+	fn update(&mut self, inputs: &[AssignedCell<F, F>]);
+}
+
 #[derive(Debug)]
 /// Region Context struct for managing region assignments
 pub struct RegionCtx<'a, F: FieldExt> {

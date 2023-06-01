@@ -24,7 +24,7 @@ use crate::{
 		IntegerSubChip,
 	},
 	params::poseidon_bn254_5x5::Params,
-	poseidon::{sponge::PoseidonSpongeConfig, PoseidonConfig},
+	poseidon::{native::sponge::PoseidonSponge, sponge::PoseidonSpongeConfig, PoseidonConfig},
 	rns::bn256::Bn256_4_68,
 	Chip, CommonConfig, RegionCtx, ADVICE,
 };
@@ -82,7 +82,10 @@ impl Snark {
 		let protocol = compile(params, pk.get_vk(), config);
 
 		let instances_slice: Vec<&[Fr]> = instances.iter().map(|x| x.as_slice()).collect();
-		let mut transcript = PoseidonWrite::<_, G1Affine, Bn256_4_68, Params>::new(Vec::new());
+		let mut transcript =
+			PoseidonWrite::<_, G1Affine, Bn256_4_68, PoseidonSponge<Fr, WIDTH, Params>>::new(
+				Vec::new(),
+			);
 		create_proof::<KZGCommitmentScheme<Bn256>, ProverGWC<_>, _, _, _, _>(
 			params,
 			&pk,
@@ -168,8 +171,12 @@ impl Aggregator {
 
 		let mut plonk_proofs = Vec::new();
 		for snark in &snarks {
-			let mut transcript_read: PoseidonRead<_, G1Affine, Bn256_4_68, Params> =
-				PoseidonRead::init(snark.proof.as_slice());
+			let mut transcript_read: PoseidonRead<
+				_,
+				G1Affine,
+				Bn256_4_68,
+				PoseidonSponge<Fr, WIDTH, Params>,
+			> = PoseidonRead::init(snark.proof.as_slice());
 			let proof = PSV::read_proof(
 				&svk, &snark.protocol, &snark.instances, &mut transcript_read,
 			)
@@ -179,7 +186,9 @@ impl Aggregator {
 		}
 
 		let mut transcript_write =
-			PoseidonWrite::<Vec<u8>, G1Affine, Bn256_4_68, Params>::new(Vec::new());
+			PoseidonWrite::<Vec<u8>, G1Affine, Bn256_4_68, PoseidonSponge<Fr, WIDTH, Params>>::new(
+				Vec::new(),
+			);
 		let rng = &mut thread_rng();
 		let accumulator = KzgAs::<Bn256, Gwc19>::create_proof(
 			&Default::default(),
