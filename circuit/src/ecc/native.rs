@@ -188,9 +188,9 @@ where
 		acc
 	}
 
-	/// Multi-multiplication for given points with using ladder
+	/// Multi-multiplication for given points using sliding window.
 	pub fn multi_mul_scalar<S: FieldExt>(
-		points: &[Self], scalars: &[S], sliding_window_size: usize,
+		points: &[Self], scalars: &[S], sliding_window_usize: usize,
 	) -> Vec<Self> {
 		// AuxGens from article.
 		let mut aux_inits: Vec<EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>> = vec![];
@@ -200,7 +200,7 @@ where
 			aux_init = aux_init.double();
 		}
 
-		// Tricky thing is to take care of case where size of bits does not evenly divide sliding_window_size
+		// Tricky thing is to take care of case where size of bits does not evenly divide sliding_window_usize
 		let mut num_of_windows: Vec<usize> = vec![];
 
 		let exps: Vec<EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>> = points.to_vec();
@@ -208,21 +208,21 @@ where
 			.iter()
 			.map(|scalar| {
 				let mut bits = to_bits(scalar.to_repr().as_ref());
-				bits = bits[..N::NUM_BITS as usize].to_vec();
-				num_of_windows.push(bits.len() / sliding_window_size);
+				bits = bits[..S::NUM_BITS as usize].to_vec();
+				num_of_windows.push(bits.len() / sliding_window_usize);
 				bits.reverse();
 				bits
 			})
 			.collect();
 
-		let sliding_window_integer = 2_u32.pow(sliding_window_size.try_into().unwrap());
+		let sliding_window_pow2 = 2_u32.pow(sliding_window_usize.try_into().unwrap()) as usize;
 
 		// Construct selector table for each mul
 		let mut table: Vec<Vec<EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>>> = vec![];
 		for i in 0..exps.len() {
 			table.push(vec![]);
 			let mut table_i = aux_inits[i].clone();
-			for _ in 0..(sliding_window_integer as usize) {
+			for _ in 0..sliding_window_pow2 {
 				table[i].push(table_i.clone());
 				table_i = table_i.add(&exps[i]);
 			}
@@ -234,7 +234,7 @@ where
 		for i in 0..exps.len() {
 			if num_of_windows[i] > 0 {
 				accs.push(Self::select_vec(
-					be_bits_to_usize(&bits[i][0..sliding_window_size]),
+					be_bits_to_usize(&bits[i][0..sliding_window_usize]),
 					table[i].clone(),
 				));
 			} else {
@@ -249,21 +249,23 @@ where
 			if num_of_windows[i] > 0 {
 				for j in 1..(num_of_windows[i] + 1) {
 					if j == num_of_windows[i] {
-						let leftover_bits = &bits[i][(j * sliding_window_size)..];
-						let leftover_bits_usize = be_bits_to_usize(&leftover_bits);
-						for _ in 0..leftover_bits_usize {
+						let leftover_bits = &bits[i][(j * sliding_window_usize)..];
+						if leftover_bits.len() == 0 {
+							continue;
+						}
+						for _ in 0..leftover_bits.len() {
 							accs[i] = accs[i].double();
 						}
-						let item = Self::select_vec(leftover_bits_usize, table[i].clone());
+						let item = Self::select_vec(be_bits_to_usize(&leftover_bits), table[i].clone());
 						accs[i] = accs[i].add(&item);
 					} else {
-						for _ in 0..sliding_window_size {
+						for _ in 0..sliding_window_usize {
 							accs[i] = accs[i].double();
 						}
 						let item = Self::select_vec(
 							be_bits_to_usize(
 								&bits[i]
-									[(j * sliding_window_size)..((j + 1) * sliding_window_size)],
+									[(j * sliding_window_usize)..((j + 1) * sliding_window_usize)],
 							),
 							table[i].clone(),
 						);
@@ -412,13 +414,13 @@ use super::EcPoint;
 	fn should_batch_mul_scalar() {
 		// ECC Mul Scalar with Ladder test
 		let num_of_points = 10;
+		let rng = &mut thread_rng();
 		let mut points_vec = vec![];
 		let mut scalars_vec = vec![];
 		let mut results_vec = vec![];
 		for _ in 0..num_of_points {
-			let rng = &mut thread_rng();
 			let a = G1Affine::random(rng.clone());
-			let scalar = Fr::random(rng);
+			let scalar = Fr::random(rng.clone());
 			scalars_vec.push(scalar);
 			let c = (a * scalar).to_affine();
 			results_vec.push(c);
@@ -427,7 +429,7 @@ use super::EcPoint;
 			let a_x_w = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_x_bn);
 			let a_y_w = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_y_bn);
 			let a_w = EcPoint::new(a_x_w, a_y_w);
-			points_vec.push(a_w);
+			points_vec.push(a_w.clone());
 		}
 		let batch_mul_results_vec = EcPoint::multi_mul_scalar(
 			&points_vec,
