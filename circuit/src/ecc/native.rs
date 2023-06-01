@@ -13,6 +13,8 @@
 // r_x = m_1 * m_1 - p_x - f
 // r_y = m_1 * (r_x - p_x) - p_y
 
+use std::io::empty;
+
 use crate::{
 	integer::native::Integer,
 	rns::RnsParams,
@@ -220,7 +222,7 @@ where
 		for i in 0..exps.len() {
 			table.push(vec![]);
 			let mut table_i = aux_inits[i].clone();
-			for i in 0..(sliding_window_integer as usize) {
+			for _ in 0..(sliding_window_integer as usize) {
 				table[i].push(table_i.clone());
 				table_i = table_i.add(&exps[i]);
 			}
@@ -246,7 +248,7 @@ where
 		for i in 0..exps.len() {
 			if num_of_windows[i] > 0 {
 				for j in 1..(num_of_windows[i] + 1) {
-					if j == num_of_windows[i] + 1 {
+					if j == num_of_windows[i] {
 						let leftover_bits = &bits[i][(j * sliding_window_size)..];
 						let leftover_bits_usize = be_bits_to_usize(&leftover_bits);
 						for _ in 0..leftover_bits_usize {
