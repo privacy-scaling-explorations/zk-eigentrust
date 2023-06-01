@@ -218,8 +218,9 @@ where
 		// Construct selector table for each mul
 		let mut table: Vec<Vec<EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>>> = vec![];
 		for i in 0..exps.len() {
+			table.push(vec![]);
 			let mut table_i = aux_inits[i].clone();
-			for i in 0..sliding_window_integer as usize {
+			for i in 0..(sliding_window_integer as usize) {
 				table[i].push(table_i.clone());
 				table_i = table_i.add(&exps[i]);
 			}
@@ -292,7 +293,9 @@ where
 
 #[cfg(test)]
 mod test {
-	use super::EcPoint;
+	use core::num;
+
+use super::EcPoint;
 	use crate::{
 		integer::native::Integer,
 		rns::bn256::Bn256_4_68,
@@ -401,5 +404,37 @@ mod test {
 
 		assert_eq!(c.x, big_to_fe(c_w.x.value()));
 		assert_eq!(c.y, big_to_fe(c_w.y.value()));
+	}
+
+	#[test]
+	fn should_batch_mul_scalar() {
+		// ECC Mul Scalar with Ladder test
+		let num_of_points = 10;
+		let mut points_vec = vec![];
+		let mut scalars_vec = vec![];
+		let mut results_vec = vec![];
+		for _ in 0..num_of_points {
+			let rng = &mut thread_rng();
+			let a = G1Affine::random(rng.clone());
+			let scalar = Fr::random(rng);
+			scalars_vec.push(scalar);
+			let c = (a * scalar).to_affine();
+			results_vec.push(c);
+			let a_x_bn = fe_to_big(a.x);
+			let a_y_bn = fe_to_big(a.y);
+			let a_x_w = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_x_bn);
+			let a_y_w = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::new(a_y_bn);
+			let a_w = EcPoint::new(a_x_w, a_y_w);
+			points_vec.push(a_w);
+		}
+		let batch_mul_results_vec = EcPoint::multi_mul_scalar(
+			&points_vec,
+			&scalars_vec,
+			4,
+		);
+		for i in 0..num_of_points {
+			assert_eq!(results_vec[i].x, big_to_fe(batch_mul_results_vec[i].x.value()));
+			assert_eq!(results_vec[i].y, big_to_fe(batch_mul_results_vec[i].y.value()));
+		}
 	}
 }
