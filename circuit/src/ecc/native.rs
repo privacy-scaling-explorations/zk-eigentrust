@@ -21,6 +21,14 @@ use crate::{
 	utils::{be_bits_to_usize, big_to_fe, to_bits},
 	FieldExt,
 };
+
+use halo2::{
+	arithmetic::Field,
+	halo2curves::{
+		bn256::{Fq, Fr, G1Affine},
+		group::Curve,
+	},
+};
 use num_bigint::BigUint;
 
 /// Structure for the EcPoint
@@ -166,7 +174,7 @@ where
 		let exp: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P> = self.clone();
 		// Converts given input to its bit by Scalar Field's bit size
 		let mut bits = to_bits(scalar.to_repr().as_ref());
-		bits = bits[..N::NUM_BITS as usize].to_vec();
+		bits = bits[..S::NUM_BITS as usize].to_vec();
 		bits.reverse();
 
 		let table = [aux_init.clone(), exp.add(&aux_init)];
@@ -200,18 +208,17 @@ where
 			aux_init = aux_init.double();
 		}
 
-		// Tricky thing is to take care of case where size of bits does not evenly divide sliding_window_usize
 		let mut num_of_windows: Vec<usize> = vec![];
 
 		let exps: Vec<EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>> = points.to_vec();
 		let bits: Vec<Vec<bool>> = scalars
 			.iter()
 			.map(|scalar| {
-				let mut bits = to_bits(scalar.to_repr().as_ref());
-				bits = bits[..S::NUM_BITS as usize].to_vec();
-				num_of_windows.push(bits.len() / sliding_window_usize);
-				bits.reverse();
-				bits
+				let mut scalar_as_bits = to_bits(scalar.to_repr().as_ref());
+				scalar_as_bits = scalar_as_bits[..S::NUM_BITS as usize].to_vec();
+				num_of_windows.push(scalar_as_bits.len() / sliding_window_usize);
+				scalar_as_bits.reverse();
+				scalar_as_bits
 			})
 			.collect();
 
@@ -238,6 +245,7 @@ where
 					table[i].clone(),
 				));
 			} else {
+				println!("reached here 1 {}", i);
 				accs.push(Self::select_vec(
 					be_bits_to_usize(&bits[i][0..]),
 					table[i].clone(),
@@ -250,14 +258,13 @@ where
 				for j in 1..(num_of_windows[i] + 1) {
 					if j == num_of_windows[i] {
 						let leftover_bits = &bits[i][(j * sliding_window_usize)..];
-						if leftover_bits.len() == 0 {
-							continue;
+						if leftover_bits.len() > 0 {
+							for _ in 0..leftover_bits.len() {
+								accs[i] = accs[i].double();
+							}
+							let item = Self::select_vec(be_bits_to_usize(&leftover_bits), table[i].clone());
+							accs[i] = accs[i].add(&item);
 						}
-						for _ in 0..leftover_bits.len() {
-							accs[i] = accs[i].double();
-						}
-						let item = Self::select_vec(be_bits_to_usize(&leftover_bits), table[i].clone());
-						accs[i] = accs[i].add(&item);
 					} else {
 						for _ in 0..sliding_window_usize {
 							accs[i] = accs[i].double();
@@ -278,7 +285,7 @@ where
 		// Have to subtract off all the added aux_inits.
 		let mut aux_fins: Vec<EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>> = vec![];
 		let mut aux_fin = Self::to_sub();
-		for _ in 0..points.len() {
+		for i in 0..points.len() {
 			aux_fins.push(aux_fin.clone());
 			aux_fin = aux_fin.double();
 		}
@@ -418,7 +425,7 @@ use super::EcPoint;
 		let mut points_vec = vec![];
 		let mut scalars_vec = vec![];
 		let mut results_vec = vec![];
-		for _ in 0..num_of_points {
+		for i in 0..num_of_points {
 			let a = G1Affine::random(rng.clone());
 			let scalar = Fr::random(rng.clone());
 			scalars_vec.push(scalar);
@@ -437,6 +444,7 @@ use super::EcPoint;
 			4,
 		);
 		for i in 0..num_of_points {
+			println!("i is {}", i);
 			assert_eq!(results_vec[i].x, big_to_fe(batch_mul_results_vec[i].x.value()));
 			assert_eq!(results_vec[i].y, big_to_fe(batch_mul_results_vec[i].y.value()));
 		}
