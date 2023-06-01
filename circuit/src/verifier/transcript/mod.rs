@@ -292,8 +292,8 @@ mod test {
 	use crate::{
 		circuit::{FullRoundHasher, PartialRoundHasher},
 		ecc::{
-			AssignedPoint, EccAddConfig, EccDoubleConfig, EccMulConfig, EccTableSelectConfig,
-			EccUnreducedLadderConfig,
+			native::UnassignedEcPoint, AssignedPoint, EccAddConfig, EccDoubleConfig, EccMulConfig,
+			EccTableSelectConfig, EccUnreducedLadderConfig,
 		},
 		gadgets::{
 			absorb::AbsorbChip,
@@ -301,8 +301,9 @@ mod test {
 			main::{MainChip, MainConfig},
 		},
 		integer::{
-			native::Integer, AssignedInteger, IntegerAddChip, IntegerDivChip, IntegerMulChip,
-			IntegerReduceChip, IntegerSubChip,
+			native::{Integer, UnassignedInteger},
+			AssignedInteger, IntegerAddChip, IntegerDivChip, IntegerMulChip, IntegerReduceChip,
+			IntegerSubChip,
 		},
 		params::poseidon_bn254_5x5::Params,
 		poseidon::{sponge::PoseidonSpongeConfig, PoseidonConfig},
@@ -314,7 +315,7 @@ mod test {
 			},
 			transcript::native::WIDTH,
 		},
-		Chip, Chipset, CommonConfig, RegionCtx,
+		Chip, Chipset, CommonConfig, RegionCtx, UnassignedValue,
 	};
 	use halo2::{
 		arithmetic::Field,
@@ -358,7 +359,7 @@ mod test {
 			let poseidon = PoseidonConfig::new(full_round_selector, partial_round_selector);
 
 			let absorb_selector = AbsorbChip::<Scalar, WIDTH>::configure(&common, meta);
-			let poseidon_sponge = PoseidonSpongeConfig::new(poseidon.clone(), absorb_selector);
+			let poseidon_sponge = PoseidonSpongeConfig::new(poseidon, absorb_selector);
 
 			let bits2num = Bits2NumChip::configure(&common, meta);
 
@@ -444,11 +445,11 @@ mod test {
 
 	#[derive(Clone)]
 	struct TestCommonEcPointCircuit {
-		ec_point: C,
+		ec_point: UnassignedEcPoint<Base, Scalar, NUM_LIMBS, NUM_BITS, P>,
 	}
 
 	impl TestCommonEcPointCircuit {
-		fn new(ec_point: C) -> Self {
+		fn new(ec_point: UnassignedEcPoint<Base, Scalar, NUM_LIMBS, NUM_BITS, P>) -> Self {
 			Self { ec_point }
 		}
 	}
@@ -458,7 +459,7 @@ mod test {
 		type FloorPlanner = SimpleFloorPlanner;
 
 		fn without_witnesses(&self) -> Self {
-			self.clone()
+			Self { ec_point: UnassignedEcPoint::without_witnesses() }
 		}
 
 		fn configure(meta: &mut ConstraintSystem<Scalar>) -> TestConfig {
@@ -477,10 +478,8 @@ mod test {
 				config.poseidon_sponge.clone(),
 			);
 
-			let coordinates = self.ec_point.coordinates().unwrap();
-
-			let x = Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_w(*coordinates.x());
-			let y = Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_w(*coordinates.y());
+			let x = &self.ec_point.x;
+			let y = &self.ec_point.y;
 
 			let assigned_coordinates = {
 				let mut lb = layouter_rc.lock().unwrap();
@@ -494,18 +493,11 @@ mod test {
 							[(); NUM_LIMBS].map(|_| None);
 						for i in 0..NUM_LIMBS {
 							x_limbs[i] = Some(
-								ctx.assign_advice(
-									config.common.advice[i],
-									Value::known(x.limbs[i]),
-								)
-								.unwrap(),
+								ctx.assign_advice(config.common.advice[i], x.limbs[i]).unwrap(),
 							);
 							y_limbs[i] = Some(
-								ctx.assign_advice(
-									config.common.advice[i + NUM_LIMBS],
-									Value::known(y.limbs[i]),
-								)
-								.unwrap(),
+								ctx.assign_advice(config.common.advice[i + NUM_LIMBS], y.limbs[i])
+									.unwrap(),
 							);
 						}
 						Ok((x_limbs.map(|x| x.unwrap()), y_limbs.map(|x| x.unwrap())))
@@ -515,11 +507,11 @@ mod test {
 			};
 
 			let assigned_integer_x = AssignedInteger::<_, _, NUM_LIMBS, NUM_BITS, P>::new(
-				x.clone(),
+				x.integer.clone(),
 				assigned_coordinates.0,
 			);
 			let assigned_integer_y = AssignedInteger::<_, _, NUM_LIMBS, NUM_BITS, P>::new(
-				y.clone(),
+				y.integer.clone(),
 				assigned_coordinates.1,
 			);
 
@@ -557,8 +549,18 @@ mod test {
 		let ec_point = C::random(rng);
 		poseidon_read.common_ec_point(&ec_point).unwrap();
 
+		let coordinates = ec_point.coordinates().unwrap();
+		let x_integer = Integer::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::from_w(*coordinates.x());
+		let y_integer = Integer::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::from_w(*coordinates.y());
+
+		let unassigned_x =
+			UnassignedInteger::new(x_integer.clone(), x_integer.limbs.map(|x| Value::known(x)));
+		let unassigned_y =
+			UnassignedInteger::new(y_integer.clone(), y_integer.limbs.map(|y| Value::known(y)));
+
+		let unassigned_ec_point = UnassignedEcPoint::new(unassigned_x, unassigned_y);
 		let res = poseidon_read.state.squeeze();
-		let circuit = TestCommonEcPointCircuit::new(ec_point);
+		let circuit = TestCommonEcPointCircuit::new(unassigned_ec_point);
 		let k = 8;
 		let prover = MockProver::run(k, &circuit, vec![vec![res]]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
@@ -566,12 +568,12 @@ mod test {
 
 	#[derive(Clone)]
 	struct TestCommonScalarCircuit {
-		scalar: Scalar,
+		scalar: Value<Scalar>,
 	}
 
 	impl TestCommonScalarCircuit {
 		fn new(scalar: Scalar) -> Self {
-			Self { scalar }
+			Self { scalar: Value::known(scalar) }
 		}
 	}
 
@@ -580,7 +582,7 @@ mod test {
 		type FloorPlanner = SimpleFloorPlanner;
 
 		fn without_witnesses(&self) -> Self {
-			self.clone()
+			Self { scalar: Value::unknown() }
 		}
 
 		fn configure(meta: &mut ConstraintSystem<Scalar>) -> TestConfig {
@@ -605,8 +607,7 @@ mod test {
 					|| "assign_scalar",
 					|region: Region<'_, Scalar>| {
 						let mut ctx = RegionCtx::new(region, 0);
-						let scalar =
-							ctx.assign_advice(config.common.advice[0], Value::known(self.scalar))?;
+						let scalar = ctx.assign_advice(config.common.advice[0], self.scalar)?;
 						Ok(scalar)
 					},
 				)
@@ -651,12 +652,12 @@ mod test {
 
 	#[derive(Clone)]
 	struct TestReadScalarCircuit {
-		reader: Vec<u8>,
+		reader: Option<Vec<u8>>,
 	}
 
 	impl TestReadScalarCircuit {
 		fn new(reader: Vec<u8>) -> Self {
-			Self { reader }
+			Self { reader: Some(reader) }
 		}
 	}
 
@@ -665,7 +666,7 @@ mod test {
 		type FloorPlanner = SimpleFloorPlanner;
 
 		fn without_witnesses(&self) -> Self {
-			self.clone()
+			Self { reader: None }
 		}
 
 		fn configure(meta: &mut ConstraintSystem<Scalar>) -> TestConfig {
@@ -684,8 +685,10 @@ mod test {
 				config.poseidon_sponge.clone(),
 			);
 
-			let mut poseidon_read =
-				PoseidonReadChipset::<_, C, _, P, R>::new(Some(self.reader.as_slice()), loader);
+			let mut poseidon_read = PoseidonReadChipset::<_, C, _, P, R>::new(
+				self.reader.as_ref().map(Vec::as_slice),
+				loader,
+			);
 			let res = poseidon_read.read_scalar().unwrap();
 			{
 				let mut lb = layouter_rc.lock().unwrap();
@@ -800,12 +803,12 @@ mod test {
 
 	#[derive(Clone)]
 	struct TestReadMultipleEcPointCircuit {
-		reader: Vec<u8>,
+		reader: Option<Vec<u8>>,
 	}
 
 	impl TestReadMultipleEcPointCircuit {
 		fn new(reader: Vec<u8>) -> Self {
-			Self { reader }
+			Self { reader: Some(reader) }
 		}
 	}
 
@@ -814,7 +817,7 @@ mod test {
 		type FloorPlanner = SimpleFloorPlanner;
 
 		fn without_witnesses(&self) -> Self {
-			self.clone()
+			Self { reader: None }
 		}
 
 		fn configure(meta: &mut ConstraintSystem<Scalar>) -> TestConfig {
@@ -833,8 +836,10 @@ mod test {
 				config.poseidon_sponge.clone(),
 			);
 
-			let mut poseidon_read =
-				PoseidonReadChipset::<_, C, _, P, R>::new(Some(self.reader.as_slice()), loader);
+			let mut poseidon_read = PoseidonReadChipset::<_, C, _, P, R>::new(
+				self.reader.as_ref().map(Vec::as_slice),
+				loader,
+			);
 			let res = poseidon_read.read_ec_point().unwrap();
 			{
 				let mut lb = layouter_rc.lock().unwrap();

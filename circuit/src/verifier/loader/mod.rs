@@ -733,40 +733,30 @@ where
 				let config = base.loader.clone();
 				let auxes = base.loader.auxes.clone();
 				let (aux_init, aux_fin) = auxes;
-				let mul = {
-					let mut layouter = base.loader.layouter.lock().unwrap();
-					let chip = EccMulChipset::new(
-						base.inner.clone(),
-						scalar.inner.clone(),
-						aux_init.clone(),
-						aux_fin.clone(),
-					);
-					let mul = chip
-						.synthesize(
-							&config.common,
-							&config.ecc_mul_scalar,
-							layouter.namespace(|| "ecc_mul"),
-						)
-						.unwrap();
-					mul
-				};
-				Halo2LEcPoint::new(mul, config.clone())
+				let mut layouter = base.loader.layouter.lock().unwrap();
+				let chip =
+					EccMulChipset::new(base.inner.clone(), scalar.inner.clone(), aux_init, aux_fin);
+				let mul = chip
+					.synthesize(
+						&config.common,
+						&config.ecc_mul_scalar,
+						layouter.namespace(|| "ecc_mul"),
+					)
+					.unwrap();
+				Halo2LEcPoint::new(mul, config)
 			})
 			.reduce(|acc, value| {
 				let config = value.loader.clone();
-				let add = {
-					let mut layouter = value.loader.layouter.lock().unwrap();
-					let chip = EccAddChipset::new(acc.inner.clone(), value.inner.clone());
-					let add = chip
-						.synthesize(
-							&config.common,
-							&config.ecc_mul_scalar.add,
-							layouter.namespace(|| "ecc_add"),
-						)
-						.unwrap();
-					add
-				};
-				Halo2LEcPoint::new(add, config.clone())
+				let mut layouter = value.loader.layouter.lock().unwrap();
+				let chip = EccAddChipset::new(acc.inner, value.inner.clone());
+				let add = chip
+					.synthesize(
+						&config.common,
+						&config.ecc_mul_scalar.add,
+						layouter.namespace(|| "ecc_add"),
+					)
+					.unwrap();
+				Halo2LEcPoint::new(add, config)
 			})
 			.unwrap();
 		point
@@ -859,7 +849,7 @@ mod test {
 			let poseidon = PoseidonConfig::new(full_round_selector, partial_round_selector);
 
 			let absorb_selector = AbsorbChip::<Scalar, WIDTH>::configure(&common, meta);
-			let poseidon_sponge = PoseidonSpongeConfig::new(poseidon.clone(), absorb_selector);
+			let poseidon_sponge = PoseidonSpongeConfig::new(poseidon, absorb_selector);
 
 			let bits2num = Bits2NumChip::configure(&common, meta);
 

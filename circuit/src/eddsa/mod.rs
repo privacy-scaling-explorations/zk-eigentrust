@@ -132,7 +132,7 @@ where
 		)?;
 
 		// Cr = R + H(R || PK || M) * PK
-		let big_r_point = AssignedPoint::new(self.big_r_x.clone(), self.big_r_y.clone(), one);
+		let big_r_point = AssignedPoint::new(self.big_r_x.clone(), self.big_r_y, one);
 		let cr_chip = PointAddChip::<F, P>::new(big_r_point, pk_h);
 		let cr = cr_chip.synthesize(
 			common,
@@ -221,17 +221,24 @@ mod test {
 
 	#[derive(Clone)]
 	struct TestCircuit {
-		big_r_x: Fr,
-		big_r_y: Fr,
-		s: Fr,
-		pk_x: Fr,
-		pk_y: Fr,
-		m: Fr,
+		big_r_x: Value<Fr>,
+		big_r_y: Value<Fr>,
+		s: Value<Fr>,
+		pk_x: Value<Fr>,
+		pk_y: Value<Fr>,
+		m: Value<Fr>,
 	}
 
 	impl TestCircuit {
 		fn new(big_r_x: Fr, big_r_y: Fr, s: Fr, pk_x: Fr, pk_y: Fr, m: Fr) -> Self {
-			Self { big_r_x, big_r_y, s, pk_x, pk_y, m }
+			Self {
+				big_r_x: Value::known(big_r_x),
+				big_r_y: Value::known(big_r_y),
+				s: Value::known(s),
+				pk_x: Value::known(pk_x),
+				pk_y: Value::known(pk_y),
+				m: Value::known(m),
+			}
 		}
 	}
 
@@ -240,7 +247,14 @@ mod test {
 		type FloorPlanner = SimpleFloorPlanner;
 
 		fn without_witnesses(&self) -> Self {
-			self.clone()
+			Self {
+				big_r_x: Value::unknown(),
+				big_r_y: Value::unknown(),
+				s: Value::unknown(),
+				pk_x: Value::unknown(),
+				pk_y: Value::unknown(),
+				m: Value::unknown(),
+			}
 		}
 
 		fn configure(meta: &mut ConstraintSystem<Fr>) -> TestConfig {
@@ -277,19 +291,12 @@ mod test {
 				|region: Region<'_, Fr>| {
 					let mut ctx = RegionCtx::new(region, 0);
 
-					let big_r_x_val = Value::known(self.big_r_x);
-					let big_r_y_val = Value::known(self.big_r_y);
-					let s_val = Value::known(self.s);
-					let pk_x_val = Value::known(self.pk_x);
-					let pk_y_val = Value::known(self.pk_y);
-					let m_val = Value::known(self.m);
-
-					let big_r_x = ctx.assign_advice(config.common.advice[0], big_r_x_val)?;
-					let big_r_y = ctx.assign_advice(config.common.advice[1], big_r_y_val)?;
-					let s = ctx.assign_advice(config.common.advice[2], s_val)?;
-					let pk_x = ctx.assign_advice(config.common.advice[3], pk_x_val)?;
-					let pk_y = ctx.assign_advice(config.common.advice[4], pk_y_val)?;
-					let m = ctx.assign_advice(config.common.advice[5], m_val)?;
+					let big_r_x = ctx.assign_advice(config.common.advice[0], self.big_r_x)?;
+					let big_r_y = ctx.assign_advice(config.common.advice[1], self.big_r_y)?;
+					let s = ctx.assign_advice(config.common.advice[2], self.s)?;
+					let pk_x = ctx.assign_advice(config.common.advice[3], self.pk_x)?;
+					let pk_y = ctx.assign_advice(config.common.advice[4], self.pk_y)?;
+					let m = ctx.assign_advice(config.common.advice[5], self.m)?;
 
 					Ok((big_r_x, big_r_y, s, pk_x, pk_y, m))
 				},

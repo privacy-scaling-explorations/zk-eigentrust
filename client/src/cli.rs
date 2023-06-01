@@ -40,7 +40,7 @@ pub enum Mode {
 #[derive(Args, Debug)]
 pub struct UpdateData {
 	/// Address of the AttestationStation contract (20-byte ethereum address)
-	#[clap(long = "att-address")]
+	#[clap(long = "as-address")]
 	as_address: Option<String>,
 	/// Ethereum wallet mnemonic phrase
 	#[clap(long = "mnemonic")]
@@ -71,7 +71,7 @@ pub fn handle_update(config: &mut ClientConfig, data: UpdateData) -> Result<(), 
 	}
 
 	if let Some(verifier_address) = data.verifier_address {
-		config.et_verifier_wrapper_address = Address::from_str(&verifier_address)
+		config.verifier_address = Address::from_str(&verifier_address)
 			.map_err(|_| "Failed to parse address.")?
 			.to_string();
 	}
@@ -127,7 +127,7 @@ impl AttestData {
 				message.to_string()
 			};
 
-			let message_bytes = hex::decode(&message).map_err(|_| "Failed to parse message.")?;
+			let message_bytes = hex::decode(message).map_err(|_| "Failed to parse message.")?;
 			if message_bytes.len() > 32 {
 				return Err("Message too long.");
 			}
@@ -139,9 +139,9 @@ impl AttestData {
 
 		Ok(Attestation::new(
 			parsed_address,
-			[0; 32],
+			[0; 32].into(),
 			parsed_score,
-			Some(message_array),
+			Some(message_array.into()),
 		))
 	}
 }

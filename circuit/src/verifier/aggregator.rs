@@ -120,7 +120,7 @@ impl From<Snark> for UnassignedSnark {
 }
 
 impl UnassignedSnark {
-	fn without_witnesses(&self) -> Self {
+	fn without_witness(&self) -> Self {
 		UnassignedSnark {
 			protocol: self.protocol.clone(),
 			instances: self
@@ -230,7 +230,7 @@ impl Circuit<Fr> for Aggregator {
 	fn without_witnesses(&self) -> Self {
 		Self {
 			svk: self.svk,
-			snarks: self.snarks.iter().map(UnassignedSnark::without_witnesses).collect(),
+			snarks: self.snarks.iter().map(UnassignedSnark::without_witness).collect(),
 			instances: Vec::new(),
 			as_proof: None,
 		}
@@ -247,7 +247,7 @@ impl Circuit<Fr> for Aggregator {
 		let poseidon = PoseidonConfig::new(full_round_selector, partial_round_selector);
 
 		let absorb_selector = AbsorbChip::<Fr, WIDTH>::configure(&common, meta);
-		let poseidon_sponge = PoseidonSpongeConfig::new(poseidon.clone(), absorb_selector);
+		let poseidon_sponge = PoseidonSpongeConfig::new(poseidon, absorb_selector);
 
 		let bits2num = Bits2NumChip::configure(&common, meta);
 
@@ -457,7 +457,7 @@ mod test {
 			let poseidon = PoseidonConfig::new(full_round_selector, partial_round_selector);
 
 			let absorb_selector = AbsorbChip::<Scalar, WIDTH>::configure(&common, meta);
-			let poseidon_sponge = PoseidonSpongeConfig::new(poseidon.clone(), absorb_selector);
+			let poseidon_sponge = PoseidonSpongeConfig::new(poseidon, absorb_selector);
 
 			let bits2num = Bits2NumChip::configure(&common, meta);
 
@@ -581,13 +581,11 @@ mod test {
 		let instances_1: Vec<Vec<Fr>> = vec![vec![Fr::one()]];
 		let instances_2: Vec<Vec<Fr>> = vec![vec![Fr::one()]];
 
-		let snark_1 = Snark::new(&params.clone(), random_circuit_1, instances_1, rng);
-		println!("snark_1: {:?}", start.elapsed());
-		let snark_2 = Snark::new(&params.clone(), random_circuit_2, instances_2, rng);
-		println!("snark_2: {:?}", start.elapsed());
+		let snark_1 = Snark::new(&params, random_circuit_1, instances_1, rng);
+		let snark_2 = Snark::new(&params, random_circuit_2, instances_2, rng);
 
 		let snarks = vec![snark_1, snark_2];
-		let aggregator = Aggregator::new(&params, snarks.clone());
+		let aggregator = Aggregator::new(&params, snarks);
 
 		let circuit = TestCircuit::new(aggregator.clone());
 		let prover = MockProver::run(k, &circuit, vec![aggregator.instances]).unwrap();

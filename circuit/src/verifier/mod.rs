@@ -319,7 +319,7 @@ mod test {
 		dbg!(deployment_code.len());
 
 		let pub_ins = vec![sum; VERTICAL_SIZE];
-		let proof = gen_proof(&params, &pk, circuit.clone(), vec![pub_ins.clone()]);
-		evm_verify(deployment_code, vec![pub_ins.clone()], proof.clone());
+		let proof = gen_proof(&params, &pk, circuit, vec![pub_ins.clone()]);
+		evm_verify(deployment_code, vec![pub_ins], proof);
 	}
 }

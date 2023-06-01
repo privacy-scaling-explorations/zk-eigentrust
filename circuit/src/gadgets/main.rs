@@ -311,7 +311,7 @@ impl<F: FieldExt> Chipset<F> for IsBoolChipset<F> {
 		)?;
 
 		// [a, b, c, d, e]
-		let advices = [self.x.clone(), zero.clone(), self.x.clone(), self.x.clone(), zero];
+		let advices = [self.x.clone(), zero.clone(), self.x.clone(), self.x, zero];
 		// [s_a, s_b, s_c, s_d, s_e, s_mul_ab, s_mul_cd, s_constant]
 		let fixed_add = [F::ONE, F::ZERO, F::ZERO, F::ZERO, F::ZERO];
 		let fixed_mul = [F::ZERO, -F::ONE, F::ZERO];
@@ -446,7 +446,7 @@ impl<F: FieldExt> Chipset<F> for InverseChipset<F> {
 		// | A | B     | C |
 		// | - | ----- | - |
 		// | r | x_inv | r |
-		let advices = [r.clone(), x_inv.clone(), r, zero.clone(), zero.clone()];
+		let advices = [r.clone(), x_inv.clone(), r, zero.clone(), zero];
 		let fixed_add = [F::ZERO, F::ZERO, -F::ONE, F::ZERO, F::ZERO];
 		let fixed_mul = [F::ONE, F::ZERO, F::ZERO];
 		let main_chip = MainChip::new(advices, fixed_add, fixed_mul);
@@ -561,15 +561,12 @@ impl<F: FieldExt> Chipset<F> for SelectChipset<F> {
 		let res = layouter.assign_region(
 			|| "assign values",
 			|region| {
-				let res = self.x.value().zip(self.y.value()).zip(self.bit.value()).map(
-					|((x, y), bit)| {
-						if *bit == F::ONE {
-							*x
-						} else {
-							*y
-						}
-					},
-				);
+				let res = self
+					.x
+					.value()
+					.zip(self.y.value())
+					.zip(self.bit.value())
+					.map(|((x, y), bit)| if *bit == F::ONE { *x } else { *y });
 				let mut ctx = RegionCtx::new(region, 0);
 				let res = ctx.assign_advice(common.advice[0], res)?;
 				Ok(res)
@@ -720,13 +717,13 @@ mod tests {
 
 	#[derive(Clone)]
 	struct AndTestCircuit {
-		x: Fr,
-		y: Fr,
+		x: Value<Fr>,
+		y: Value<Fr>,
 	}
 
 	impl AndTestCircuit {
 		fn new(x: Fr, y: Fr) -> Self {
-			Self { x, y }
+			Self { x: Value::known(x), y: Value::known(y) }
 		}
 	}
 
@@ -735,7 +732,7 @@ mod tests {
 		type FloorPlanner = SimpleFloorPlanner;
 
 		fn without_witnesses(&self) -> Self {
-			self.clone()
+			Self { x: Value::unknown(), y: Value::unknown() }
 		}
 
 		fn configure(meta: &mut ConstraintSystem<Fr>) -> TestConfig {
@@ -749,8 +746,8 @@ mod tests {
 				|| "temp",
 				|region| {
 					let mut ctx = RegionCtx::new(region, 0);
-					let x = ctx.assign_advice(config.common.advice[0], Value::known(self.x))?;
-					let y = ctx.assign_advice(config.common.advice[1], Value::known(self.y))?;
+					let x = ctx.assign_advice(config.common.advice[0], self.x)?;
+					let y = ctx.assign_advice(config.common.advice[1], self.y)?;
 
 					Ok((x, y))
 				},
@@ -828,13 +825,13 @@ mod tests {
 
 	#[derive(Clone)]
 	struct OrTestCircuit {
-		x: Fr,
-		y: Fr,
+		x: Value<Fr>,
+		y: Value<Fr>,
 	}
 
 	impl OrTestCircuit {
 		fn new(x: Fr, y: Fr) -> Self {
-			Self { x, y }
+			Self { x: Value::known(x), y: Value::known(y) }
 		}
 	}
 
@@ -843,7 +840,7 @@ mod tests {
 		type FloorPlanner = SimpleFloorPlanner;
 
 		fn without_witnesses(&self) -> Self {
-			self.clone()
+			Self { x: Value::unknown(), y: Value::unknown() }
 		}
 
 		fn configure(meta: &mut ConstraintSystem<Fr>) -> TestConfig {
@@ -857,8 +854,8 @@ mod tests {
 				|| "temp",
 				|region| {
 					let mut ctx = RegionCtx::new(region, 0);
-					let x = ctx.assign_advice(config.common.advice[0], Value::known(self.x))?;
-					let y = ctx.assign_advice(config.common.advice[1], Value::known(self.y))?;
+					let x = ctx.assign_advice(config.common.advice[0], self.x)?;
+					let y = ctx.assign_advice(config.common.advice[1], self.y)?;
 
 					Ok((x, y))
 				},
@@ -912,12 +909,12 @@ mod tests {
 
 	#[derive(Clone)]
 	struct IsBoolTestCircuit {
-		x: Fr,
+		x: Value<Fr>,
 	}
 
 	impl IsBoolTestCircuit {
 		fn new(x: Fr) -> Self {
-			Self { x }
+			Self { x: Value::known(x) }
 		}
 	}
 
@@ -926,7 +923,7 @@ mod tests {
 		type FloorPlanner = SimpleFloorPlanner;
 
 		fn without_witnesses(&self) -> Self {
-			self.clone()
+			Self { x: Value::unknown() }
 		}
 
 		fn configure(meta: &mut ConstraintSystem<Fr>) -> TestConfig {
@@ -940,7 +937,7 @@ mod tests {
 				|| "temp",
 				|region| {
 					let mut ctx = RegionCtx::new(region, 0);
-					let x = ctx.assign_advice(config.common.advice[0], Value::known(self.x))?;
+					let x = ctx.assign_advice(config.common.advice[0], self.x)?;
 
 					Ok(x)
 				},
@@ -1009,13 +1006,13 @@ mod tests {
 
 	#[derive(Clone)]
 	struct IsEqualTestCircuit {
-		x: Fr,
-		y: Fr,
+		x: Value<Fr>,
+		y: Value<Fr>,
 	}
 
 	impl IsEqualTestCircuit {
 		fn new(x: Fr, y: Fr) -> Self {
-			Self { x, y }
+			Self { x: Value::known(x), y: Value::known(y) }
 		}
 	}
 
@@ -1024,7 +1021,7 @@ mod tests {
 		type FloorPlanner = SimpleFloorPlanner;
 
 		fn without_witnesses(&self) -> Self {
-			self.clone()
+			Self { x: Value::unknown(), y: Value::unknown() }
 		}
 
 		fn configure(meta: &mut ConstraintSystem<Fr>) -> TestConfig {
@@ -1038,8 +1035,8 @@ mod tests {
 				|| "temp",
 				|region| {
 					let mut ctx = RegionCtx::new(region, 0);
-					let x = ctx.assign_advice(config.common.advice[0], Value::known(self.x))?;
-					let y = ctx.assign_advice(config.common.advice[1], Value::known(self.y))?;
+					let x = ctx.assign_advice(config.common.advice[0], self.x)?;
+					let y = ctx.assign_advice(config.common.advice[1], self.y)?;
 
 					Ok((x, y))
 				},
@@ -1094,12 +1091,12 @@ mod tests {
 
 	#[derive(Clone)]
 	struct IsZeroTestCircuit {
-		x: Fr,
+		x: Value<Fr>,
 	}
 
 	impl IsZeroTestCircuit {
 		fn new(x: Fr) -> Self {
-			Self { x }
+			Self { x: Value::known(x) }
 		}
 	}
 
@@ -1108,7 +1105,7 @@ mod tests {
 		type FloorPlanner = SimpleFloorPlanner;
 
 		fn without_witnesses(&self) -> Self {
-			self.clone()
+			Self { x: Value::unknown() }
 		}
 
 		fn configure(meta: &mut ConstraintSystem<Fr>) -> TestConfig {
@@ -1122,7 +1119,7 @@ mod tests {
 				|| "temp",
 				|region| {
 					let mut ctx = RegionCtx::new(region, 0);
-					let x = ctx.assign_advice(config.common.advice[0], Value::known(self.x))?;
+					let x = ctx.assign_advice(config.common.advice[0], self.x)?;
 
 					Ok(x)
 				},
@@ -1177,13 +1174,13 @@ mod tests {
 
 	#[derive(Clone)]
 	struct AddTestCircuit {
-		x: Fr,
-		y: Fr,
+		x: Value<Fr>,
+		y: Value<Fr>,
 	}
 
 	impl AddTestCircuit {
 		fn new(x: Fr, y: Fr) -> Self {
-			Self { x, y }
+			Self { x: Value::known(x), y: Value::known(y) }
 		}
 	}
 
@@ -1192,7 +1189,7 @@ mod tests {
 		type FloorPlanner = SimpleFloorPlanner;
 
 		fn without_witnesses(&self) -> Self {
-			self.clone()
+			Self { x: Value::unknown(), y: Value::unknown() }
 		}
 
 		fn configure(meta: &mut ConstraintSystem<Fr>) -> TestConfig {
@@ -1206,8 +1203,8 @@ mod tests {
 				|| "temp",
 				|region| {
 					let mut ctx = RegionCtx::new(region, 0);
-					let x = ctx.assign_advice(config.common.advice[0], Value::known(self.x))?;
-					let y = ctx.assign_advice(config.common.advice[1], Value::known(self.y))?;
+					let x = ctx.assign_advice(config.common.advice[0], self.x)?;
+					let y = ctx.assign_advice(config.common.advice[1], self.y)?;
 
 					Ok((x, y))
 				},
@@ -1274,13 +1271,13 @@ mod tests {
 
 	#[derive(Clone)]
 	struct MulTestCircuit {
-		x: Fr,
-		y: Fr,
+		x: Value<Fr>,
+		y: Value<Fr>,
 	}
 
 	impl MulTestCircuit {
 		fn new(x: Fr, y: Fr) -> Self {
-			Self { x, y }
+			Self { x: Value::known(x), y: Value::known(y) }
 		}
 	}
 
@@ -1289,7 +1286,7 @@ mod tests {
 		type FloorPlanner = SimpleFloorPlanner;
 
 		fn without_witnesses(&self) -> Self {
-			self.clone()
+			Self { x: Value::unknown(), y: Value::unknown() }
 		}
 
 		fn configure(meta: &mut ConstraintSystem<Fr>) -> TestConfig {
@@ -1303,8 +1300,8 @@ mod tests {
 				|| "temp",
 				|region| {
 					let mut ctx = RegionCtx::new(region, 0);
-					let x = ctx.assign_advice(config.common.advice[0], Value::known(self.x))?;
-					let y = ctx.assign_advice(config.common.advice[1], Value::known(self.y))?;
+					let x = ctx.assign_advice(config.common.advice[0], self.x)?;
+					let y = ctx.assign_advice(config.common.advice[1], self.y)?;
 
 					Ok((x, y))
 				},
@@ -1371,14 +1368,14 @@ mod tests {
 
 	#[derive(Clone)]
 	struct SelectTestCircuit {
-		bit: Fr,
-		x: Fr,
-		y: Fr,
+		bit: Value<Fr>,
+		x: Value<Fr>,
+		y: Value<Fr>,
 	}
 
 	impl SelectTestCircuit {
 		fn new(bit: Fr, x: Fr, y: Fr) -> Self {
-			Self { bit, x, y }
+			Self { bit: Value::known(bit), x: Value::known(x), y: Value::known(y) }
 		}
 	}
 
@@ -1387,7 +1384,7 @@ mod tests {
 		type FloorPlanner = SimpleFloorPlanner;
 
 		fn without_witnesses(&self) -> Self {
-			self.clone()
+			Self { bit: Value::unknown(), x: Value::unknown(), y: Value::unknown() }
 		}
 
 		fn configure(meta: &mut ConstraintSystem<Fr>) -> TestConfig {
@@ -1401,9 +1398,9 @@ mod tests {
 				|| "temp",
 				|region| {
 					let mut ctx = RegionCtx::new(region, 0);
-					let bit = ctx.assign_advice(config.common.advice[0], Value::known(self.bit))?;
-					let x = ctx.assign_advice(config.common.advice[1], Value::known(self.x))?;
-					let y = ctx.assign_advice(config.common.advice[2], Value::known(self.y))?;
+					let bit = ctx.assign_advice(config.common.advice[0], self.bit)?;
+					let x = ctx.assign_advice(config.common.advice[1], self.x)?;
+					let y = ctx.assign_advice(config.common.advice[2], self.y)?;
 
 					Ok((bit, x, y))
 				},
