@@ -74,9 +74,8 @@ where
 
 	/// Squeeze a challenge.
 	fn squeeze_challenge(&mut self) -> C::ScalarExt {
-		let mut hasher = self.state.clone();
-		let val = hasher.squeeze();
-		val
+		let res = self.state.squeeze();
+		res
 	}
 
 	/// Update with an elliptic curve point.

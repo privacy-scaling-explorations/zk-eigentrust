@@ -14,6 +14,7 @@ use halo2::{
 	circuit::{Layouter, Region, Value},
 	halo2curves::{Coordinates, CurveAffine},
 };
+use itertools::Itertools;
 use native::WIDTH;
 use snark_verifier::{
 	util::{

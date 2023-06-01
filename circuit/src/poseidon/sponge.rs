@@ -227,7 +227,8 @@ mod test {
 						}
 					}
 
-					let zero = ctx.assign_from_constant(config.common.advice[0], Fr::zero())?;
+					let zero =
+						ctx.assign_from_constant(config.common.advice[advice_i], Fr::zero())?;
 					Ok((assigned_inputs, zero))
 				},
 			)?;
