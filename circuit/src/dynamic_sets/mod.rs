@@ -1,5 +1,7 @@
 /// Native version of EigenTrustSet
 pub mod native;
+use crate::eddsa::native::Signature;
+use crate::UnassignedValue;
 
 /// Native version of EigenTrustSet(ECDSA)  
 ///
@@ -9,7 +11,7 @@ pub mod ecdsa_native;
 use crate::{
 	circuit::{Eddsa, FullRoundHasher, PartialRoundHasher, PoseidonHasher, SpongeHasher},
 	eddsa::{
-		native::{PublicKey, Signature},
+		native::{PublicKey, UnassignedPublicKey, UnassignedSignature},
 		EddsaConfig,
 	},
 	edwards::{
@@ -32,6 +34,7 @@ use halo2::{
 	halo2curves::{bn256::Fr as Scalar, ff::PrimeField},
 	plonk::{Circuit, ConstraintSystem, Error},
 };
+use itertools::Itertools;
 
 const HASHER_WIDTH: usize = 5;
 
@@ -74,23 +77,25 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u1
 		ops: Vec<Vec<Scalar>>,
 	) -> Self {
 		// Pubkey values
-		let pk_x = pks.iter().map(|pk| Value::known(pk.0.x.clone())).collect();
-		let pk_y = pks.iter().map(|pk| Value::known(pk.0.y.clone())).collect();
+		let pks = pks.into_iter().map(|x| UnassignedPublicKey::from(x)).collect_vec();
+		let pk_x = pks.iter().map(|pk| pk.0.x.clone()).collect();
+		let pk_y = pks.iter().map(|pk| pk.0.y.clone()).collect();
 
 		// Signature values
-		let big_r_x = signatures.iter().map(|sig| Value::known(sig.big_r.x.clone())).collect();
-		let big_r_y = signatures.iter().map(|sig| Value::known(sig.big_r.y.clone())).collect();
-		let s = signatures.iter().map(|sig| Value::known(sig.s.clone())).collect();
+		let signatures = signatures.into_iter().map(|x| UnassignedSignature::from(x)).collect_vec();
+		let big_r_x = signatures.iter().map(|sig| sig.big_r.x.clone()).collect();
+		let big_r_y = signatures.iter().map(|sig| sig.big_r.y.clone()).collect();
+		let s = signatures.iter().map(|sig| sig.s.clone()).collect();
 
 		// Opinions
-		let op_pk_x = op_pks
-			.iter()
-			.map(|pks| pks.iter().map(|pk| Value::known(pk.0.x.clone())).collect())
-			.collect();
-		let op_pk_y = op_pks
-			.iter()
-			.map(|pks| pks.iter().map(|pk| Value::known(pk.0.y.clone())).collect())
-			.collect();
+		let op_pks = op_pks
+			.into_iter()
+			.map(|pks| pks.into_iter().map(|pk| UnassignedPublicKey::from(pk)).collect_vec())
+			.collect_vec();
+		let op_pk_x =
+			op_pks.iter().map(|pks| pks.iter().map(|pk| pk.0.x.clone()).collect()).collect();
+		let op_pk_y =
+			op_pks.iter().map(|pks| pks.iter().map(|pk| pk.0.y.clone()).collect()).collect();
 		let ops =
 			ops.iter().map(|vals| vals.iter().map(|x| Value::known(x.clone())).collect()).collect();
 
@@ -105,14 +110,17 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u1
 	type FloorPlanner = SimpleFloorPlanner;
 
 	fn without_witnesses(&self) -> Self {
+		let pk = UnassignedPublicKey::without_witnesses();
+		let sig = UnassignedSignature::without_witnesses();
+		let op_pk = UnassignedPublicKey::without_witnesses();
 		Self {
-			pk_x: vec![Value::unknown(); NUM_NEIGHBOURS],
-			pk_y: vec![Value::unknown(); NUM_NEIGHBOURS],
-			big_r_x: vec![Value::unknown(); NUM_NEIGHBOURS],
-			big_r_y: vec![Value::unknown(); NUM_NEIGHBOURS],
-			s: vec![Value::unknown(); NUM_NEIGHBOURS],
-			op_pk_x: vec![vec![Value::unknown(); NUM_NEIGHBOURS]; NUM_NEIGHBOURS],
-			op_pk_y: vec![vec![Value::unknown(); NUM_NEIGHBOURS]; NUM_NEIGHBOURS],
+			pk_x: vec![pk.0.x; NUM_NEIGHBOURS],
+			pk_y: vec![pk.0.y; NUM_NEIGHBOURS],
+			big_r_x: vec![sig.big_r.x; NUM_NEIGHBOURS],
+			big_r_y: vec![sig.big_r.y; NUM_NEIGHBOURS],
+			s: vec![sig.s; NUM_NEIGHBOURS],
+			op_pk_x: vec![vec![op_pk.0.x; NUM_NEIGHBOURS]; NUM_NEIGHBOURS],
+			op_pk_y: vec![vec![op_pk.0.y; NUM_NEIGHBOURS]; NUM_NEIGHBOURS],
 			ops: vec![vec![Value::unknown(); NUM_NEIGHBOURS]; NUM_NEIGHBOURS],
 		}
 	}

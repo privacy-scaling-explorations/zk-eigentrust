@@ -1,6 +1,6 @@
 use crate::{
 	eddsa::{
-		native::{sign, PublicKey, SecretKey, Signature},
+		native::{sign, PublicKey, SecretKey, Signature, UnassignedPublicKey, UnassignedSignature},
 		EddsaChipset, EddsaConfig,
 	},
 	edwards::{
@@ -18,7 +18,7 @@ use crate::{
 		sponge::{PoseidonSpongeChipset, PoseidonSpongeConfig},
 		FullRoundChip, PartialRoundChip, PoseidonChipset, PoseidonConfig,
 	},
-	Chip, Chipset, CommonConfig, FieldExt, RegionCtx, ADVICE,
+	Chip, Chipset, CommonConfig, FieldExt, RegionCtx, UnassignedValue, ADVICE,
 };
 use halo2::{
 	arithmetic::Field,
@@ -138,12 +138,14 @@ impl<
 	type FloorPlanner = SimpleFloorPlanner;
 
 	fn without_witnesses(&self) -> Self {
+		let pk = UnassignedPublicKey::without_witnesses();
+		let sig = UnassignedSignature::without_witnesses();
 		Self {
-			pk_x: vec![Value::unknown(); NUM_NEIGHBOURS],
-			pk_y: vec![Value::unknown(); NUM_NEIGHBOURS],
-			big_r_x: vec![Value::unknown(); NUM_NEIGHBOURS],
-			big_r_y: vec![Value::unknown(); NUM_NEIGHBOURS],
-			s: vec![Value::unknown(); NUM_NEIGHBOURS],
+			pk_x: vec![pk.0.x; NUM_NEIGHBOURS],
+			pk_y: vec![pk.0.y; NUM_NEIGHBOURS],
+			big_r_x: vec![sig.big_r.x; NUM_NEIGHBOURS],
+			big_r_y: vec![sig.big_r.y; NUM_NEIGHBOURS],
+			s: vec![sig.s; NUM_NEIGHBOURS],
 			ops: vec![vec![Value::unknown(); NUM_NEIGHBOURS]; NUM_NEIGHBOURS],
 		}
 	}
