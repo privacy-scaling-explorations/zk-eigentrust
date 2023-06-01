@@ -22,7 +22,7 @@ use crate::{
 	integer::native::{Integer, UnassignedInteger},
 	rns::RnsParams,
 	utils::{be_bits_to_usize, big_to_fe, to_bits},
-	FieldExt, UnassignedValue
+	FieldExt, UnassignedValue,
 };
 
 /// Structure for the EcPoint
