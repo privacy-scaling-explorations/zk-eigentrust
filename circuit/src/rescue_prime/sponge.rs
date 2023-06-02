@@ -1,6 +1,6 @@
 use crate::{
 	gadgets::absorb::AbsorbChip, params::RoundParams, rescue_prime::RescuePrimeChip, Chip, Chipset,
-	CommonConfig, FieldExt, RegionCtx,
+	CommonConfig, FieldExt, RegionCtx, SpongeHasherChipset,
 };
 use halo2::{
 	circuit::{AssignedCell, Layouter, Region},
@@ -97,6 +97,20 @@ where
 		}
 
 		Ok(state[0].clone())
+	}
+}
+
+impl<F: FieldExt, const WIDTH: usize, P> SpongeHasherChipset<F>
+	for RescuePrimeSpongeChipset<F, WIDTH, P>
+where
+	P: RoundParams<F, WIDTH>,
+{
+	fn new() -> Self {
+		Self::new()
+	}
+
+	fn update(&mut self, inputs: &[AssignedCell<F, F>]) {
+		Self::update(self, inputs)
 	}
 }
 
