@@ -22,7 +22,7 @@ async fn main() {
 		Mode::Attest(attest_data) => {
 			println!("Creating attestation...\n{:#?}", attest_data);
 
-			let attestation = match attest_data.to_attestation() {
+			let attestation = match attest_data.to_attestation(&config) {
 				Ok(a) => a,
 				Err(e) => {
 					println!("Error while creating attestation: {:?}", e);
@@ -32,7 +32,7 @@ async fn main() {
 
 			println!("Attesting...\n{:?}", attestation);
 
-			let client = Client::new(config.clone());
+			let client = Client::new(config);
 			if let Err(e) = client.attest(attestation).await {
 				println!("Error while attesting: {:?}", e);
 			}
