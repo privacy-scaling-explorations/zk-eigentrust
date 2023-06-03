@@ -1,7 +1,5 @@
 use crate::{
 	integer::native::Integer,
-	params::RoundParams,
-	poseidon::native::sponge::PoseidonSponge,
 	rns::RnsParams,
 	verifier::loader::native::{NUM_BITS, NUM_LIMBS},
 	FieldExt, SpongeHasher,
@@ -80,7 +78,7 @@ where
 		let default = C::Scalar::default();
 		self.state.update(&[default]);
 		let mut sponge_hasher = self.state.clone();
-		let val = sponge_hasher.finalize();
+		let val = sponge_hasher.squeeze();
 		val
 	}
 
@@ -216,7 +214,7 @@ where
 		let default = C::Scalar::default();
 		self.state.update(&[default]);
 		let mut sponge_hasher = self.state.clone();
-		sponge_hasher.finalize()
+		sponge_hasher.squeeze()
 	}
 
 	/// Update with an elliptic curve point.

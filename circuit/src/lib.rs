@@ -95,13 +95,17 @@ pub trait SpongeHasher<F: FieldExt>: Clone {
 	/// Update current sponge state
 	fn update(&mut self, inputs: &[F]);
 	/// Finalize the sponge hasher
-	fn finalize(&mut self) -> F;
+	fn squeeze(&mut self) -> F;
 }
 
 /// Hasher chipset trait
 pub trait HasherChipset<F: FieldExt, const WIDTH: usize>: Chipset<F> {
 	/// Creates a new hasher chipset
 	fn new(inputs: [AssignedCell<F, F>; WIDTH]) -> Self;
+	/// Finalize the hasher
+	fn finalize(
+		self, common: &CommonConfig, config: &Self::Config, layouter: impl Layouter<F>,
+	) -> Result<[AssignedCell<F, F>; WIDTH], Error>;
 }
 
 /// Sponge Hasher chipset trait
@@ -110,6 +114,10 @@ pub trait SpongeHasherChipset<F: FieldExt>: Chipset<F> {
 	fn new() -> Self;
 	/// Update current sponge chipset state
 	fn update(&mut self, inputs: &[AssignedCell<F, F>]);
+	/// Finalize the sponge hasher
+	fn squeeze(
+		self, common: &CommonConfig, config: &Self::Config, layouter: impl Layouter<F>,
+	) -> Result<AssignedCell<F, F>, Error>;
 }
 
 /// UnassignedValue Trait

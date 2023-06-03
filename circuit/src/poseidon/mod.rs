@@ -333,6 +333,12 @@ where
 	fn new(inputs: [AssignedCell<F, F>; WIDTH]) -> Self {
 		Self::new(inputs)
 	}
+
+	fn finalize(
+		self, common: &CommonConfig, config: &Self::Config, layouter: impl Layouter<F>,
+	) -> Result<[AssignedCell<F, F>; WIDTH], Error> {
+		Self::synthesize(self, common, config, layouter)
+	}
 }
 
 #[cfg(test)]

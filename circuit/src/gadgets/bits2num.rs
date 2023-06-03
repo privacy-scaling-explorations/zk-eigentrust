@@ -117,7 +117,7 @@ mod test {
 	use super::*;
 	use crate::{
 		utils::{generate_params, prove_and_verify},
-		CommonConfig, UnassignedValue,
+		CommonConfig,
 	};
 	use halo2::{
 		circuit::SimpleFloorPlanner,

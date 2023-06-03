@@ -112,6 +112,12 @@ where
 	fn update(&mut self, inputs: &[AssignedCell<F, F>]) {
 		Self::update(self, inputs)
 	}
+
+	fn squeeze(
+		self, common: &CommonConfig, config: &Self::Config, layouter: impl Layouter<F>,
+	) -> Result<AssignedCell<F, F>, Error> {
+		Self::synthesize(self, common, config, layouter)
+	}
 }
 
 #[cfg(test)]

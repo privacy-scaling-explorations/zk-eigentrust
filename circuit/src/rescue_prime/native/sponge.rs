@@ -75,7 +75,7 @@ where
 		Self::update(self, inputs)
 	}
 
-	fn finalize(&mut self) -> F {
+	fn squeeze(&mut self) -> F {
 		Self::squeeze(self)
 	}
 }
