@@ -99,7 +99,7 @@ pub trait SpongeHasher<F: FieldExt>: Clone {
 }
 
 /// Hasher chipset trait
-pub trait HasherChipset<F: FieldExt, const WIDTH: usize>: Chipset<F> {
+pub trait HasherChipset<F: FieldExt, const WIDTH: usize>: Chipset<F> + Clone {
 	/// Creates a new hasher chipset
 	fn new(inputs: [AssignedCell<F, F>; WIDTH]) -> Self;
 	/// Finalize the hasher
@@ -109,7 +109,7 @@ pub trait HasherChipset<F: FieldExt, const WIDTH: usize>: Chipset<F> {
 }
 
 /// Sponge Hasher chipset trait
-pub trait SpongeHasherChipset<F: FieldExt>: Chipset<F> {
+pub trait SpongeHasherChipset<F: FieldExt>: Chipset<F> + Clone {
 	/// Creates a new sponge hasher chipset
 	fn new() -> Self;
 	/// Update current sponge chipset state

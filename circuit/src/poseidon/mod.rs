@@ -262,6 +262,7 @@ impl PoseidonConfig {
 	}
 }
 
+#[derive(Clone)]
 /// Constructs a chip structure for the circuit.
 pub struct PoseidonChipset<F: FieldExt, const WIDTH: usize, P>
 where

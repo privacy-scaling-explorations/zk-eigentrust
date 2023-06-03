@@ -22,6 +22,7 @@ impl RescuePrimeSpongeConfig {
 	}
 }
 
+#[derive(Clone)]
 /// Constructs a chip structure for the circuit.
 pub struct RescuePrimeSpongeChipset<F: FieldExt, const WIDTH: usize, P>
 where

@@ -27,8 +27,8 @@ use std::{
 /// Width of the SpongeHasher state used in the transcript
 pub const WIDTH: usize = 5;
 
-/// PoseidonRead structure
-pub struct PoseidonRead<RD: Read, C: CurveAffine, P, H>
+/// NativeTranscriptRead structure
+pub struct NativeTranscriptRead<RD: Read, C: CurveAffine, P, H>
 where
 	H: SpongeHasher<C::Scalar>,
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
@@ -37,7 +37,7 @@ where
 {
 	// Reader
 	pub(crate) reader: RD,
-	// PoseidonSponge
+	// Native Sponge
 	pub(crate) state: H,
 	// Loader
 	pub(crate) loader: NativeSVLoader,
@@ -47,7 +47,7 @@ where
 	_c: PhantomData<C>,
 }
 
-impl<RD: Read, C: CurveAffine, P, H> PoseidonRead<RD, C, P, H>
+impl<RD: Read, C: CurveAffine, P, H> NativeTranscriptRead<RD, C, P, H>
 where
 	H: SpongeHasher<C::Scalar>,
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
@@ -55,13 +55,14 @@ where
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
 {
-	/// Create a new PoseidonRead transcript
+	/// Create a new NativeTranscriptRead transcript
 	pub fn new(reader: RD, loader: NativeSVLoader) -> Self {
 		Self { reader, state: H::new(), loader, _p: PhantomData, _c: PhantomData }
 	}
 }
 
-impl<RD: Read, C: CurveAffine, P, H> Transcript<C, NativeSVLoader> for PoseidonRead<RD, C, P, H>
+impl<RD: Read, C: CurveAffine, P, H> Transcript<C, NativeSVLoader>
+	for NativeTranscriptRead<RD, C, P, H>
 where
 	H: SpongeHasher<C::Scalar>,
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
@@ -108,7 +109,8 @@ where
 	}
 }
 
-impl<RD: Read, C: CurveAffine, P, H> TranscriptRead<C, NativeSVLoader> for PoseidonRead<RD, C, P, H>
+impl<RD: Read, C: CurveAffine, P, H> TranscriptRead<C, NativeSVLoader>
+	for NativeTranscriptRead<RD, C, P, H>
 where
 	H: SpongeHasher<C::Scalar>,
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
@@ -159,8 +161,8 @@ where
 	}
 }
 
-/// PoseidonWrite structure
-pub struct PoseidonWrite<W: Write, C: CurveAffine, P, H>
+/// NativeTranscriptWrite structure
+pub struct NativeTranscriptWrite<W: Write, C: CurveAffine, P, H>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	H: SpongeHasher<C::Scalar>,
@@ -169,7 +171,7 @@ where
 {
 	// Writer
 	writer: W,
-	// PoseidonSponge
+	// Sponge state
 	state: H,
 	// Loader
 	loader: NativeSVLoader,
@@ -178,14 +180,14 @@ where
 	_c: PhantomData<C>,
 }
 
-impl<W: Write, C: CurveAffine, P, H> PoseidonWrite<W, C, P, H>
+impl<W: Write, C: CurveAffine, P, H> NativeTranscriptWrite<W, C, P, H>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	H: SpongeHasher<C::Scalar>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
 {
-	/// Create a new PoseidonWrite transcript.
+	/// Create a new NativeTranscriptWrite transcript.
 	pub fn new(writer: W) -> Self {
 		Self {
 			writer,
@@ -197,7 +199,8 @@ where
 	}
 }
 
-impl<W: Write, C: CurveAffine, P, H> Transcript<C, NativeSVLoader> for PoseidonWrite<W, C, P, H>
+impl<W: Write, C: CurveAffine, P, H> Transcript<C, NativeSVLoader>
+	for NativeTranscriptWrite<W, C, P, H>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	H: SpongeHasher<C::Scalar>,
@@ -246,7 +249,7 @@ where
 	}
 }
 
-impl<W: Write, C: CurveAffine, P, H> TranscriptWrite<C> for PoseidonWrite<W, C, P, H>
+impl<W: Write, C: CurveAffine, P, H> TranscriptWrite<C> for NativeTranscriptWrite<W, C, P, H>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	H: SpongeHasher<C::Scalar>,
@@ -292,7 +295,7 @@ impl<C: CurveAffine> EncodedChallenge<C> for ChallengeScalar<C> {
 }
 
 impl<RD: Read, C: CurveAffine, P, H> Halo2Transcript<C, ChallengeScalar<C>>
-	for PoseidonRead<RD, C, P, H>
+	for NativeTranscriptRead<RD, C, P, H>
 where
 	H: SpongeHasher<C::Scalar>,
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
@@ -327,7 +330,7 @@ where
 }
 
 impl<RD: Read, C: CurveAffine, P, H> Halo2TranscriptRead<C, ChallengeScalar<C>>
-	for PoseidonRead<RD, C, P, H>
+	for NativeTranscriptRead<RD, C, P, H>
 where
 	H: SpongeHasher<C::Scalar>,
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
@@ -354,7 +357,7 @@ where
 }
 
 impl<RD: Read, C: CurveAffine, P, H> TranscriptReadBuffer<RD, C, ChallengeScalar<C>>
-	for PoseidonRead<RD, C, P, H>
+	for NativeTranscriptRead<RD, C, P, H>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	H: SpongeHasher<C::Scalar>,
@@ -368,7 +371,7 @@ where
 }
 
 impl<W: Write, C: CurveAffine, P, H> Halo2Transcript<C, ChallengeScalar<C>>
-	for PoseidonWrite<W, C, P, H>
+	for NativeTranscriptWrite<W, C, P, H>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	H: SpongeHasher<C::Scalar>,
@@ -402,7 +405,7 @@ where
 }
 
 impl<W: Write, C: CurveAffine, P, H> Halo2TranscriptWrite<C, ChallengeScalar<C>>
-	for PoseidonWrite<W, C, P, H>
+	for NativeTranscriptWrite<W, C, P, H>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	H: SpongeHasher<C::Scalar>,
@@ -429,7 +432,7 @@ where
 }
 
 impl<W: Write, C: CurveAffine, P, H> TranscriptWriterBuffer<W, C, ChallengeScalar<C>>
-	for PoseidonWrite<W, C, P, H>
+	for NativeTranscriptWrite<W, C, P, H>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	H: SpongeHasher<C::Scalar>,
