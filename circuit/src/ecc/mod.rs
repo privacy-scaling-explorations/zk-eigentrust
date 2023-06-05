@@ -1,6 +1,9 @@
 /// Native version of the chip
 pub mod native;
 
+/// Native General ECC
+pub mod native_general_ecc;
+
 use crate::{
 	gadgets::{
 		bits2num::Bits2NumChip,
