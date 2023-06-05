@@ -80,6 +80,46 @@ impl FieldExt for BnScalar {}
 impl FieldExt for SecpBase {}
 impl FieldExt for SecpScalar {}
 
+/// Hasher trait
+pub trait Hasher<F: FieldExt, const WIDTH: usize> {
+	/// Creates a new hasher
+	fn new(inputs: [F; WIDTH]) -> Self;
+	/// Finalize the hasher
+	fn finalize(&self) -> [F; WIDTH];
+}
+
+/// Sponge Hasher trait
+pub trait SpongeHasher<F: FieldExt>: Clone {
+	/// Creates a new sponge hasher
+	fn new() -> Self;
+	/// Update current sponge state
+	fn update(&mut self, inputs: &[F]);
+	/// Finalize the sponge hasher
+	fn squeeze(&mut self) -> F;
+}
+
+/// Hasher chipset trait
+pub trait HasherChipset<F: FieldExt, const WIDTH: usize>: Chipset<F> + Clone {
+	/// Creates a new hasher chipset
+	fn new(inputs: [AssignedCell<F, F>; WIDTH]) -> Self;
+	/// Finalize the hasher
+	fn finalize(
+		self, common: &CommonConfig, config: &Self::Config, layouter: impl Layouter<F>,
+	) -> Result<[AssignedCell<F, F>; WIDTH], Error>;
+}
+
+/// Sponge Hasher chipset trait
+pub trait SpongeHasherChipset<F: FieldExt>: Chipset<F> + Clone {
+	/// Creates a new sponge hasher chipset
+	fn new() -> Self;
+	/// Update current sponge chipset state
+	fn update(&mut self, inputs: &[AssignedCell<F, F>]);
+	/// Finalize the sponge hasher
+	fn squeeze(
+		self, common: &CommonConfig, config: &Self::Config, layouter: impl Layouter<F>,
+	) -> Result<AssignedCell<F, F>, Error>;
+}
+
 /// UnassignedValue Trait
 pub trait UnassignedValue {
 	/// Returns unknown value type

@@ -5,7 +5,8 @@ pub mod native;
 pub mod sponge;
 
 use crate::{
-	gadgets::absorb::copy_state, params::RoundParams, Chip, CommonConfig, FieldExt, RegionCtx,
+	gadgets::absorb::copy_state, params::RoundParams, Chip, Chipset, CommonConfig, FieldExt,
+	HasherChipset, RegionCtx,
 };
 use halo2::{
 	circuit::{AssignedCell, Layouter, Value},
@@ -187,6 +188,70 @@ where
 		)?;
 
 		Ok(res)
+	}
+}
+
+#[derive(Clone)]
+/// Constructs a config structure for the circuit.
+pub struct RescuePrimeConfig<F: FieldExt, const WIDTH: usize, P>
+where
+	P: RoundParams<F, WIDTH>,
+{
+	selector: Selector,
+	_f: PhantomData<F>,
+	_p: PhantomData<P>,
+}
+
+#[derive(Clone)]
+/// Constructs a chipset structure for the circuit.
+pub struct RescuePrimeChipset<F: FieldExt, const WIDTH: usize, P>
+where
+	P: RoundParams<F, WIDTH>,
+{
+	/// Constructs a cell array for the inputs.
+	inputs: [AssignedCell<F, F>; WIDTH],
+	/// Constructs a phantom data for the parameters.
+	_params: PhantomData<P>,
+}
+
+impl<F: FieldExt, const WIDTH: usize, P> RescuePrimeChipset<F, WIDTH, P>
+where
+	P: RoundParams<F, WIDTH>,
+{
+	/// create a new chip.
+	pub fn new(inputs: [AssignedCell<F, F>; WIDTH]) -> Self {
+		Self { inputs, _params: PhantomData }
+	}
+}
+
+impl<F: FieldExt, const WIDTH: usize, P> Chipset<F> for RescuePrimeChipset<F, WIDTH, P>
+where
+	P: RoundParams<F, WIDTH>,
+{
+	type Config = RescuePrimeConfig<F, WIDTH, P>;
+	type Output = [AssignedCell<F, F>; WIDTH];
+
+	fn synthesize(
+		self, common: &CommonConfig, config: &Self::Config, layouter: impl Layouter<F>,
+	) -> Result<Self::Output, Error> {
+		let chip = RescuePrimeChip::<F, WIDTH, P>::new(self.inputs);
+		let res = chip.synthesize(common, &config.selector, layouter)?;
+		Ok(res)
+	}
+}
+
+impl<F: FieldExt, const WIDTH: usize, P> HasherChipset<F, WIDTH> for RescuePrimeChipset<F, WIDTH, P>
+where
+	P: RoundParams<F, WIDTH>,
+{
+	fn new(inputs: [AssignedCell<F, F>; WIDTH]) -> Self {
+		Self::new(inputs)
+	}
+
+	fn finalize(
+		self, common: &CommonConfig, config: &Self::Config, layouter: impl Layouter<F>,
+	) -> Result<[AssignedCell<F, F>; WIDTH], Error> {
+		Self::synthesize(self, common, config, layouter)
 	}
 }
 

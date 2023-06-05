@@ -1,7 +1,7 @@
 /// Native sponge implementation
 pub mod sponge;
 
-use crate::{params::RoundParams, FieldExt};
+use crate::{params::RoundParams, FieldExt, Hasher};
 use std::marker::PhantomData;
 
 /// Constructs objects.
@@ -93,6 +93,19 @@ where
 		}
 
 		state
+	}
+}
+
+impl<F: FieldExt, const WIDTH: usize, P> Hasher<F, WIDTH> for Poseidon<F, WIDTH, P>
+where
+	P: RoundParams<F, WIDTH>,
+{
+	fn new(inputs: [F; WIDTH]) -> Self {
+		Self::new(inputs)
+	}
+
+	fn finalize(&self) -> [F; WIDTH] {
+		Self::permute(&self)
 	}
 }
 

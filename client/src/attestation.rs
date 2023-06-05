@@ -3,10 +3,15 @@ use crate::{
 };
 use eigen_trust_circuit::{
 	dynamic_sets::native::{AttestationFr, SignedAttestation},
-	halo2::halo2curves::bn256::Fr as Scalar,
+	halo2::halo2curves::{bn256::Fr as Scalar, ff::FromUniformBytes},
 };
 use ethers::types::{Address, U256};
 use secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
+
+/// Domain prefix length
+pub const DOMAIN_PREFIX_LEN: usize = 12;
+/// Domain prefix
+pub const DOMAIN_PREFIX: [u8; DOMAIN_PREFIX_LEN] = *b"eigen_trust_";
 
 /// Attestation struct
 #[derive(Clone, Debug)]
@@ -27,17 +32,43 @@ impl Attestation {
 		Self { about, key, value, message: message.unwrap_or(U256::from(0)) }
 	}
 
-	pub fn to_attestation_fr(&self) -> AttestationFr {
-		let about_bytes = self.about.as_bytes();
-		let mut about_bytes_array = [0u8; 32];
-		about_bytes_array[..about_bytes.len()].copy_from_slice(about_bytes);
+	/// Convert to scalar representation
+	pub fn to_attestation_fr(&self) -> Result<AttestationFr, &'static str> {
+		// About
+		let mut about_le_bytes = self.about.to_fixed_bytes();
+		about_le_bytes.reverse();
 
-		AttestationFr {
-			about: Scalar::from_bytes(&about_bytes_array).unwrap(),
-			key: Scalar::from(self.key.0[0]),
-			value: Scalar::from(self.value as u64),
-			message: Scalar::from(self.message.0[0]),
-		}
+		let mut about_bytes = [0u8; 32];
+		about_bytes[..20].copy_from_slice(&about_le_bytes);
+
+		let about = match Scalar::from_bytes(&about_bytes).is_some().into() {
+			true => Scalar::from_bytes(&about_bytes).unwrap(),
+			false => return Err("Failed to convert about address to scalar"),
+		};
+
+		// Domain
+		let mut key_bytes = [0u8; 32];
+		self.key.to_little_endian(&mut key_bytes);
+		key_bytes[20..].copy_from_slice(&[0; DOMAIN_PREFIX_LEN]);
+
+		let domain = match Scalar::from_bytes(&key_bytes).is_some().into() {
+			true => Scalar::from_bytes(&key_bytes).unwrap(),
+			false => return Err("Failed to convert key to scalar"),
+		};
+
+		// Value
+		let value = Scalar::from(self.value as u64);
+
+		// Message
+		let mut message_le = [0u8; 32];
+		self.message.to_little_endian(&mut message_le);
+
+		let mut message_bytes = [0u8; 64];
+		message_bytes[32..].copy_from_slice(&message_le);
+
+		let message = Scalar::from_uniform_bytes(&message_bytes);
+
+		Ok(AttestationFr { about, domain, value, message })
 	}
 }
 
@@ -143,7 +174,7 @@ pub fn att_data_from_signed_att(
 	let address = address_from_signed_att(signed_attestation)?;
 
 	// Get the attestation key
-	let key = signed_attestation.attestation.key.to_bytes();
+	let key = signed_attestation.attestation.domain.to_bytes();
 
 	// Get the payload bytes
 	let payload = AttestationPayload::from_signed_attestation(signed_attestation)?;
@@ -167,22 +198,61 @@ mod tests {
 
 	#[test]
 	fn test_attestation_to_scalar_att() {
+		// Build key
+		let domain_input = [
+			0xff, 0x61, 0x4a, 0x6d, 0x59, 0x56, 0x2a, 0x42, 0x37, 0x72, 0x37, 0x76, 0x32, 0x4d,
+			0x36, 0x53, 0x62, 0x6d, 0x35, 0xff,
+		];
+
+		let mut key_bytes: [u8; 32] = [0; 32];
+		key_bytes[..DOMAIN_PREFIX_LEN].copy_from_slice(&DOMAIN_PREFIX);
+		key_bytes[DOMAIN_PREFIX_LEN..].copy_from_slice(&domain_input);
+
+		// Message input
+		let mut message = [
+			0xff, 0x75, 0x32, 0x45, 0x75, 0x79, 0x32, 0x77, 0x7a, 0x34, 0x58, 0x6c, 0x34, 0x34,
+			0x4a, 0x74, 0x6a, 0x78, 0x68, 0x4c, 0x4a, 0x52, 0x67, 0x48, 0x45, 0x6c, 0x4e, 0x73,
+			0x65, 0x6e, 0x79, 0xff,
+		];
+
+		// Address Input
+		let mut address = [
+			0xff, 0x47, 0x73, 0x4b, 0x6b, 0x42, 0x6e, 0x59, 0x61, 0x4c, 0x71, 0x4a, 0x45, 0x76,
+			0x79, 0x4c, 0x6a, 0x73, 0x46, 0xff,
+		];
+
 		let attestation = Attestation::new(
-			Address::zero(),
-			U256::from(140317563),
+			Address::from(address),
+			U256::from(key_bytes),
 			10,
-			Some(U256::from(140317564)),
+			Some(U256::from(message)),
 		);
 
-		let attestation_fr = attestation.to_attestation_fr();
+		let attestation_fr = attestation.to_attestation_fr().unwrap();
 
-		let expected_about = Scalar::from(0u64);
-		let expected_key = Scalar::from(140317563u64);
+		// Expected about
+		let mut expected_about_input = [0u8; 32];
+		address.reverse();
+		expected_about_input[..20].copy_from_slice(&address);
+		let expected_about = Scalar::from_bytes(&expected_about_input).unwrap();
+
+		// Expected domain
+		let mut expected_domain_input = [0u8; 32];
+		expected_domain_input[DOMAIN_PREFIX_LEN..].copy_from_slice(&domain_input);
+		expected_domain_input.reverse();
+		let expected_domain = Scalar::from_bytes(&expected_domain_input).unwrap();
+
+		// Expected value
 		let expected_value = Scalar::from(10u64);
-		let expected_message = Scalar::from(140317564u64);
+
+		// Expected message
+		let mut expected_message_input = [0u8; 64];
+		message.reverse();
+		expected_message_input[32..].copy_from_slice(&message);
+		let expected_message = Scalar::from_uniform_bytes(&expected_message_input);
 
 		assert_eq!(attestation_fr.about, expected_about);
-		assert_eq!(attestation_fr.key, expected_key);
+		assert_eq!(attestation_fr.domain, expected_domain);
 		assert_eq!(attestation_fr.value, expected_value);
 		assert_eq!(attestation_fr.message, expected_message);
 	}
@@ -195,7 +265,7 @@ mod tests {
 
 		let attestation = AttestationFr {
 			about: Scalar::zero(),
-			key: Scalar::zero(),
+			domain: Scalar::zero(),
 			value: Scalar::zero(),
 			message: Scalar::zero(),
 		};
@@ -298,7 +368,7 @@ mod tests {
 
 		let attestation = AttestationFr {
 			about: Scalar::zero(),
-			key: Scalar::zero(),
+			domain: Scalar::zero(),
 			value: Scalar::zero(),
 			message: Scalar::zero(),
 		};
@@ -330,13 +400,13 @@ mod tests {
 			SecretKey::from_slice(&secret_key_as_bytes).expect("32 bytes, within curve order");
 
 		let attestation = Attestation::new(
-			Address::zero(),
-			U256::from(140317563),
+			Address::default(),
+			U256::max_value(),
 			10,
-			Some(U256::from(140317564)),
+			Some(U256::max_value()),
 		);
 
-		let message = attestation.to_attestation_fr().hash().to_bytes();
+		let message = attestation.to_attestation_fr().unwrap().hash().to_bytes();
 
 		let signature = secp.sign_ecdsa_recoverable(
 			&Message::from_slice(message.as_slice()).unwrap(),
@@ -344,7 +414,7 @@ mod tests {
 		);
 
 		let signed_attestation =
-			SignedAttestation { attestation: attestation.to_attestation_fr(), signature };
+			SignedAttestation { attestation: attestation.to_attestation_fr().unwrap(), signature };
 
 		let contract_att_data = att_data_from_signed_att(&signed_attestation).unwrap();
 
@@ -352,7 +422,7 @@ mod tests {
 			Wallet::from(SigningKey::from_bytes(secret_key_as_bytes.as_ref()).unwrap()).address();
 		assert_eq!(contract_att_data.0, expected_address);
 
-		let expected_key = signed_attestation.attestation.key.to_bytes();
+		let expected_key = signed_attestation.attestation.domain.to_bytes();
 		assert_eq!(contract_att_data.1, expected_key);
 
 		let expected_payload: Bytes =
