@@ -5,7 +5,7 @@ pub mod sponge;
 
 use crate::{
 	gadgets::absorb::copy_state, params::RoundParams, Chip, Chipset, CommonConfig, FieldExt,
-	RegionCtx,
+	HasherChipset, RegionCtx,
 };
 use halo2::{
 	circuit::{AssignedCell, Layouter, Region, Value},
@@ -262,6 +262,7 @@ impl PoseidonConfig {
 	}
 }
 
+#[derive(Clone)]
 /// Constructs a chip structure for the circuit.
 pub struct PoseidonChipset<F: FieldExt, const WIDTH: usize, P>
 where
@@ -323,6 +324,21 @@ where
 		)?;
 
 		Ok(state3)
+	}
+}
+
+impl<F: FieldExt, const WIDTH: usize, P> HasherChipset<F, WIDTH> for PoseidonChipset<F, WIDTH, P>
+where
+	P: RoundParams<F, WIDTH>,
+{
+	fn new(inputs: [AssignedCell<F, F>; WIDTH]) -> Self {
+		Self::new(inputs)
+	}
+
+	fn finalize(
+		self, common: &CommonConfig, config: &Self::Config, layouter: impl Layouter<F>,
+	) -> Result<[AssignedCell<F, F>; WIDTH], Error> {
+		Self::synthesize(self, common, config, layouter)
 	}
 }
 
