@@ -68,6 +68,8 @@ pub mod poseidon;
 pub mod rescue_prime;
 /// Residue Number System
 pub mod rns;
+/// Utility for checking the score threshold
+pub mod threshold;
 /// Utilities for proving and verifying
 pub mod utils;
 /// PLONK verifier and aggregator
