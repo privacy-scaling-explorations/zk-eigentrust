@@ -184,7 +184,7 @@ where
 		let aux_init = Self::to_add();
 		let exp: EcPoint<C, N, NUM_LIMBS, NUM_BITS, P, Q> = self.clone();
 		// Converts given input to its bit by Scalar Field's bit size
-		let mut bits = to_bits(big_to_fe::<C::Scalar>(scalar.value()).to_repr().as_ref());
+		let mut bits = to_bits(big_to_fe::<C::ScalarExt>(scalar.value()).to_repr().as_ref());
 		bits = bits[..C::ScalarExt::NUM_BITS as usize].to_vec();
 		bits.reverse();
 
@@ -226,7 +226,7 @@ where
 			.iter()
 			.map(|scalar| {
 				let mut scalar_as_bits =
-					to_bits(big_to_fe::<C::Scalar>(scalar.value()).to_repr().as_ref());
+					to_bits(big_to_fe::<C::ScalarExt>(scalar.value()).to_repr().as_ref());
 				scalar_as_bits = scalar_as_bits[..C::ScalarExt::NUM_BITS as usize].to_vec();
 				num_of_windows.push(scalar_as_bits.len() / sliding_window_usize);
 				scalar_as_bits.reverse();
@@ -429,7 +429,6 @@ mod test {
 		let a_y_w = Integer::<Fp, Fr, 4, 68, Secp256k1_4_68>::new(a_y_bn);
 		let a_w: EcPoint<Secp256k1Affine, Fr, 4, 68, Secp256k1_4_68, Secp256k1_4_68> =
 			EcPoint::new(a_x_w, a_y_w);
-
 		let scalar_as_integer = Integer::from_w(scalar);
 		let c_w = a_w.mul_scalar(scalar_as_integer);
 

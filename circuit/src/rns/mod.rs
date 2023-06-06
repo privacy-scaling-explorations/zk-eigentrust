@@ -35,7 +35,7 @@ where
 	for i in 0..n {
 		k0 |= &one << i;
 	}
-	(-aux_to_add * big_to_fe::<C::Scalar>(k0.sub(BigUint::one()))).to_affine()
+	(-aux_to_add * big_to_fe::<C::Scalar>(k0)).to_affine()
 }
 
 /// This trait is for the dealing with RNS operations.
