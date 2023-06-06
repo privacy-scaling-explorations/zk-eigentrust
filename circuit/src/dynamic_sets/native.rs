@@ -911,7 +911,7 @@ mod test {
 		let mut tws = Vec::new();
 		let threshold = Fr::from_u128(435);
 		for (&score, ratio) in s.iter().zip(s_ratios.clone()) {
-			let t: Threshold<Fr, NUM_LIMBS, POWER_OF_TEN> = Threshold::new(score, ratio, threshold);
+			let t: Threshold<NUM_LIMBS, POWER_OF_TEN> = Threshold::new(score, ratio, threshold);
 			let tw = t.check_threshold();
 			tws.push(tw);
 		}
