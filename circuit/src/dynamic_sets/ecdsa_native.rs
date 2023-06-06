@@ -20,22 +20,30 @@ pub type ECDSAPublicKey = secp256k1::PublicKey;
 /// ECDSA signature
 pub type ECDSASignature = ecdsa::RecoverableSignature;
 
-fn keccak256(data: &[u8]) -> Vec<u8> {
+/// Construct an Ethereum address for the given ECDSA public key
+pub fn address_from_pub_key(pub_key: &ECDSAPublicKey) -> Result<[u8; 20], &'static str> {
+	let pub_key_bytes = pub_key.serialize_uncompressed();
+
+	// Hash with Keccak256
 	let mut hasher = Keccak256::new();
-	hasher.update(data);
-	hasher.finalize().to_vec()
+	hasher.update(pub_key_bytes);
+	let hashed_public_key = hasher.finalize().to_vec();
+
+	// Get the last 20 bytes of the hash
+	let mut address = [0u8; 20];
+	address.copy_from_slice(&hashed_public_key[hashed_public_key.len() - 20..]);
+
+	Ok(address)
 }
 
-/// Calculate the field value from public key
-pub fn recover_ethereum_address_from_pk(pk: ECDSAPublicKey) -> Fr {
-	let pk_bytes = pk.serialize_uncompressed();
-	let hashed_pk = keccak256(&pk_bytes[1..]);
-	let address_bytes = &hashed_pk[hashed_pk.len() - 20..];
+/// Calculate the address field value from a public key
+pub fn field_value_from_pub_key(&pub_key: &ECDSAPublicKey) -> Fr {
+	let address = address_from_pub_key(&pub_key).unwrap();
 
-	let mut address_bytes_array = [0u8; 32];
-	address_bytes_array[..address_bytes.len()].copy_from_slice(address_bytes);
+	let mut address_bytes = [0u8; 32];
+	address_bytes[..address.len()].copy_from_slice(&address);
 
-	Fr::from_bytes(&address_bytes_array).unwrap()
+	Fr::from_bytes(&address_bytes).unwrap()
 }
 
 /// Attestation submission struct
@@ -428,7 +436,7 @@ mod test {
 		let rng = &mut thread_rng();
 
 		let (_sk, pk) = generate_keypair(rng);
-		let pk = recover_ethereum_address_from_pk(pk);
+		let pk = field_value_from_pub_key(&pk);
 
 		set.add_member(pk);
 
@@ -444,7 +452,7 @@ mod test {
 		let rng = &mut thread_rng();
 
 		let (_sk, pk) = generate_keypair(rng);
-		let pk_fr = recover_ethereum_address_from_pk(pk);
+		let pk_fr = field_value_from_pub_key(&pk);
 
 		set.add_member(pk_fr);
 
@@ -460,8 +468,8 @@ mod test {
 		let (_sk1, pk1) = generate_keypair(rng);
 		let (_sk2, pk2) = generate_keypair(rng);
 
-		let pk1 = recover_ethereum_address_from_pk(pk1);
-		let pk2 = recover_ethereum_address_from_pk(pk2);
+		let pk1 = field_value_from_pub_key(&pk1);
+		let pk2 = field_value_from_pub_key(&pk2);
 
 		set.add_member(pk1);
 		set.add_member(pk2);
@@ -478,8 +486,8 @@ mod test {
 		let (sk1, pk1) = generate_keypair(rng);
 		let (_sk2, pk2) = generate_keypair(rng);
 
-		let pk1_fr = recover_ethereum_address_from_pk(pk1);
-		let pk2_fr = recover_ethereum_address_from_pk(pk2);
+		let pk1_fr = field_value_from_pub_key(&pk1);
+		let pk2_fr = field_value_from_pub_key(&pk2);
 
 		set.add_member(pk1_fr);
 		set.add_member(pk2_fr);
@@ -509,8 +517,8 @@ mod test {
 		let (sk1, pk1) = generate_keypair(rng);
 		let (sk2, pk2) = generate_keypair(rng);
 
-		let pk1_fr = recover_ethereum_address_from_pk(pk1);
-		let pk2_fr = recover_ethereum_address_from_pk(pk2);
+		let pk1_fr = field_value_from_pub_key(&pk1);
+		let pk2_fr = field_value_from_pub_key(&pk2);
 
 		set.add_member(pk1_fr);
 		set.add_member(pk2_fr);
@@ -553,9 +561,9 @@ mod test {
 		let (sk2, pk2) = generate_keypair(rng);
 		let (sk3, pk3) = generate_keypair(rng);
 
-		let pk1_fr = recover_ethereum_address_from_pk(pk1);
-		let pk2_fr = recover_ethereum_address_from_pk(pk2);
-		let pk3_fr = recover_ethereum_address_from_pk(pk3);
+		let pk1_fr = field_value_from_pub_key(&pk1);
+		let pk2_fr = field_value_from_pub_key(&pk2);
+		let pk3_fr = field_value_from_pub_key(&pk3);
 
 		set.add_member(pk1_fr);
 		set.add_member(pk2_fr);
@@ -619,9 +627,9 @@ mod test {
 		let (sk2, pk2) = generate_keypair(rng);
 		let (sk3, pk3) = generate_keypair(rng);
 
-		let pk1_fr = recover_ethereum_address_from_pk(pk1);
-		let pk2_fr = recover_ethereum_address_from_pk(pk2);
-		let pk3_fr = recover_ethereum_address_from_pk(pk3);
+		let pk1_fr = field_value_from_pub_key(&pk1);
+		let pk2_fr = field_value_from_pub_key(&pk2);
+		let pk3_fr = field_value_from_pub_key(&pk3);
 
 		set.add_member(pk1_fr);
 		set.add_member(pk2_fr);
@@ -670,9 +678,9 @@ mod test {
 		let (sk2, pk2) = generate_keypair(rng);
 		let (sk3, pk3) = generate_keypair(rng);
 
-		let pk1_fr = recover_ethereum_address_from_pk(pk1);
-		let pk2_fr = recover_ethereum_address_from_pk(pk2);
-		let pk3_fr = recover_ethereum_address_from_pk(pk3);
+		let pk1_fr = field_value_from_pub_key(&pk1);
+		let pk2_fr = field_value_from_pub_key(&pk2);
+		let pk3_fr = field_value_from_pub_key(&pk3);
 
 		set.add_member(pk1_fr);
 		set.add_member(pk2_fr);
@@ -741,9 +749,9 @@ mod test {
 		let (sk2, pk2) = generate_keypair(rng);
 		let (sk3, pk3) = generate_keypair(rng);
 
-		let pk1_fr = recover_ethereum_address_from_pk(pk1);
-		let pk2_fr = recover_ethereum_address_from_pk(pk2);
-		let pk3_fr = recover_ethereum_address_from_pk(pk3);
+		let pk1_fr = field_value_from_pub_key(&pk1);
+		let pk2_fr = field_value_from_pub_key(&pk2);
+		let pk3_fr = field_value_from_pub_key(&pk3);
 
 		set.add_member(pk1_fr);
 		set.add_member(pk2_fr);
@@ -804,9 +812,9 @@ mod test {
 		let (sk2, pk2) = generate_keypair(rng);
 		let (sk3, pk3) = generate_keypair(rng);
 
-		let pk1_fr = recover_ethereum_address_from_pk(pk1);
-		let pk2_fr = recover_ethereum_address_from_pk(pk2);
-		let pk3_fr = recover_ethereum_address_from_pk(pk3);
+		let pk1_fr = field_value_from_pub_key(&pk1);
+		let pk2_fr = field_value_from_pub_key(&pk2);
+		let pk3_fr = field_value_from_pub_key(&pk3);
 
 		// Peer1(pk1) signs the opinion
 		let mut pks = [Fr::zero(); NUM_NEIGHBOURS];
@@ -889,10 +897,9 @@ mod test {
 		let pks: Vec<PublicKey> = keys.iter().map(|(_, pk)| pk.clone()).collect();
 
 		// Add the publicKey to the set
-		pks.iter().for_each(|pk| set.add_member(recover_ethereum_address_from_pk(pk.clone())));
+		pks.iter().for_each(|pk| set.add_member(field_value_from_pub_key(&pk.clone())));
 
-		let pks_fr: Vec<Fr> =
-			pks.iter().map(|pk| recover_ethereum_address_from_pk(pk.clone())).collect();
+		let pks_fr: Vec<Fr> = pks.iter().map(|pk| field_value_from_pub_key(&pk.clone())).collect();
 
 		// Update the opinions
 		for i in 0..NUM_NEIGHBOURS {

@@ -3,9 +3,7 @@ use secp256k1::PublicKey;
 
 use crate::{
 	circuit::PoseidonNativeSponge,
-	dynamic_sets::ecdsa_native::{
-		recover_ethereum_address_from_pk, AttestationFr, SignedAttestation,
-	},
+	dynamic_sets::ecdsa_native::{field_value_from_pub_key, AttestationFr, SignedAttestation},
 };
 
 /// Opinion info of peer
@@ -22,7 +20,7 @@ impl Opinion {
 
 	/// Validate attestations & calculate the hash
 	pub fn validate(&self, set: Vec<Fr>) -> (Fr, Vec<Fr>, Fr) {
-		let from_pk = recover_ethereum_address_from_pk(self.from);
+		let from_pk = field_value_from_pub_key(&self.from);
 
 		let pos_from = set.iter().position(|&x| x == from_pk);
 		assert!(pos_from.is_some());
