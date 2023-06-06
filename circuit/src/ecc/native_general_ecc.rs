@@ -209,9 +209,9 @@ where
 	/// Multi-multiplication for given points using sliding window.
 	pub fn multi_mul_scalar(
 		points: &[Self], scalars: &[Integer<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, Q>],
-		sliding_window_usize: usize,
 	) -> Vec<Self> {
 		// AuxGens from article.
+		let sliding_window_usize = Q::sliding_window_size();
 		let mut aux_inits: Vec<EcPoint<C, N, NUM_LIMBS, NUM_BITS, P, Q>> = vec![];
 		let mut aux_init = Self::to_sub();
 		for _ in 0..points.len() {
@@ -219,7 +219,7 @@ where
 			aux_init = aux_init.double();
 		}
 
-		let mut num_of_windows: Vec<usize> = vec![];
+		let mut num_of_windows = C::ScalarExt::NUM_BITS as usize / sliding_window_usize;
 
 		let exps: Vec<EcPoint<C, N, NUM_LIMBS, NUM_BITS, P, Q>> = points.to_vec();
 		let bits: Vec<Vec<bool>> = scalars
@@ -228,7 +228,6 @@ where
 				let mut scalar_as_bits =
 					to_bits(big_to_fe::<C::ScalarExt>(scalar.value()).to_repr().as_ref());
 				scalar_as_bits = scalar_as_bits[..C::ScalarExt::NUM_BITS as usize].to_vec();
-				num_of_windows.push(scalar_as_bits.len() / sliding_window_usize);
 				scalar_as_bits.reverse();
 				scalar_as_bits
 			})
@@ -251,54 +250,34 @@ where
 
 		// Initialize accs
 		for i in 0..exps.len() {
-			if num_of_windows[i] > 0 {
-				let item = Self::select_vec(
-					be_bits_to_usize(&bits[i][0..sliding_window_usize]),
-					table[i].clone(),
-				);
-				accs.push(item);
-			} else {
-				let item = Self::select_vec(be_bits_to_usize(&bits[i][0..]), table[i].clone());
-				accs.push(item);
-			}
+			let item = Self::select_vec(
+				be_bits_to_usize(&bits[i][0..sliding_window_usize]),
+				table[i].clone(),
+			);
+			accs.push(item);
+			let item = Self::select_vec(be_bits_to_usize(&bits[i][0..]), table[i].clone());
+			accs.push(item);
 		}
 
 		for i in 0..exps.len() {
-			if num_of_windows[i] > 0 {
-				for j in 1..(num_of_windows[i] + 1) {
-					if j == num_of_windows[i] {
-						let leftover_bits = &bits[i][(j * sliding_window_usize)..];
-						if leftover_bits.len() > 0 {
-							for _ in 0..leftover_bits.len() {
-								accs[i] = accs[i].double();
-							}
-							let item = Self::select_vec(
-								be_bits_to_usize(&leftover_bits),
-								table[i].clone(),
-							);
-							accs[i] = accs[i].add(&item);
-						}
-					} else {
-						for _ in 0..sliding_window_usize {
-							accs[i] = accs[i].double();
-						}
-						let item = Self::select_vec(
-							be_bits_to_usize(
-								&bits[i]
-									[(j * sliding_window_usize)..((j + 1) * sliding_window_usize)],
-							),
-							table[i].clone(),
-						);
-						accs[i] = accs[i].add(&item);
-					}
+			for j in 1..num_of_windows {
+				for _ in 0..sliding_window_usize {
+					accs[i] = accs[i].double();
 				}
+				let item = Self::select_vec(
+					be_bits_to_usize(
+						&bits[i][(j * sliding_window_usize)..((j + 1) * sliding_window_usize)],
+					),
+					table[i].clone(),
+				);
+				accs[i] = accs[i].add(&item);
 			}
 		}
 
 		let mut aux_fins: Vec<EcPoint<C, N, NUM_LIMBS, NUM_BITS, P, Q>> = vec![];
 		let aux_init = Self::to_sub();
 		let mut aux_fin = Self::make_mul_aux_sliding_window(aux_init, sliding_window_usize);
-		for i in 0..points.len() {
+		for _ in 0..points.len() {
 			aux_fins.push(aux_fin.clone());
 			aux_fin = aux_fin.double();
 		}
@@ -458,7 +437,7 @@ mod test {
 				EcPoint::new(a_x_w, a_y_w);
 			points_vec.push(a_w.clone());
 		}
-		let batch_mul_results_vec = EcPoint::multi_mul_scalar(&points_vec, &scalars_vec, 4);
+		let batch_mul_results_vec = EcPoint::multi_mul_scalar(&points_vec, &scalars_vec);
 		for i in 0..num_of_points {
 			assert_eq!(
 				results_vec[i].x,

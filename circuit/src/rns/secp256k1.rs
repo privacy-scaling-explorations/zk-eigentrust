@@ -131,6 +131,10 @@ impl RnsParams<Fp, Fr, 4, 68> for Secp256k1_4_68 {
 			Fr::from_u128(0x000000000000000000000000000000000000000000000000000688f2e6be93f4);
 		[limb0, limb1, limb2, limb3]
 	}
+
+	fn sliding_window_size() -> usize {
+		4
+	}
 }
 
 impl RnsParams<Fq, Fr, 4, 68> for Secp256k1_4_68 {
@@ -230,6 +234,10 @@ impl RnsParams<Fq, Fr, 4, 68> for Secp256k1_4_68 {
 		let limb3 =
 			Fr::from_u128(0x000000000000000000000000000000000000000000000000000688f2e6be93f4);
 		[limb0, limb1, limb2, limb3]
+	}
+
+	fn sliding_window_size() -> usize {
+		4
 	}
 }
 
