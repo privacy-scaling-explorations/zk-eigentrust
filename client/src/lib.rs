@@ -148,7 +148,9 @@ impl Client {
 	}
 
 	/// Get the attestations from the contract
-	pub async fn get_attestations(&self) -> Result<Vec<Attestation>, EigenError> {
+	pub async fn get_attestations(
+		&self,
+	) -> Result<Vec<(SignedAttestation, Attestation)>, EigenError> {
 		let filter = Filter::new()
 			.address(self.config.as_address.parse::<Address>().unwrap())
 			.event("AttestationCreated(address,address,bytes32,bytes)")
@@ -156,7 +158,7 @@ impl Client {
 			.topic2(Vec::<H256>::new())
 			.from_block(0);
 		let logs = &self.client.get_logs(&filter).await.unwrap();
-		let mut attestations = Vec::new();
+		let mut att_tuple: Vec<(SignedAttestation, Attestation)> = Vec::new();
 
 		println!("Indexed attestations: {}", logs.iter().len());
 
@@ -173,10 +175,16 @@ impl Client {
 				Some(att_data.get_message().into()),
 			);
 
-			attestations.push(att);
+			let att_fr = att.to_attestation_fr().unwrap();
+
+			let signature = att_data.get_signature();
+
+			let signed_att = SignedAttestation::new(att_fr, signature);
+
+			att_tuple.push((signed_att, att));
 		}
 
-		Ok(attestations)
+		Ok(att_tuple)
 	}
 
 	/// Verifies last generated proof
