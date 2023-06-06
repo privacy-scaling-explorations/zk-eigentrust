@@ -44,8 +44,11 @@ impl<const NUM_LIMBS: usize, const POWER_OF_TEN: usize> Threshold<NUM_LIMBS, POW
 		// Take the highest POWER_OF_TEN digits for comparison
 		// This just means lower precision
 		let first_limb_num = *num_decomposed.last().unwrap();
+		println!("first_limb_num: {:?}", first_limb_num);
 		let first_limb_den = *den_decomposed.last().unwrap();
+		println!("first_limb_den: {:?}", first_limb_den);
 		let comp = first_limb_den * threshold;
+		println!("comp: {:?}", comp);
 		let is_bigger = first_limb_num >= comp;
 
 		ThresholdWitness { threshold: threshold.clone(), is_bigger, num_decomposed, den_decomposed }
@@ -223,6 +226,53 @@ mod tests {
 		let ops = ops_raw.map(|arr| arr.map(|x| Fr::from_u128(x)).to_vec()).to_vec();
 
 		let threshold = 435;
+		let (s, s_ratios, tws) = check_threshold_testing_helper::<
+			NUM_NEIGHBOURS,
+			NUM_ITERATIONS,
+			INITIAL_SCORE,
+			NUM_LIMBS,
+			POWER_OF_TEN,
+		>(ops, Fr::from_u128(threshold));
+
+		let s_int: String = s_ratios.iter().map(|v| v.to_integer().to_str_radix(10)).join(", ");
+		println!("NATIVE BIG_RATIONAL RESULT: [{}]", s_int);
+		let s_formatted: Vec<String> = s.iter().map(|&x| fe_to_big(x).to_str_radix(10)).collect();
+		println!("new s: {:#?}", s_formatted);
+		for tw in tws {
+			let num = compose_big_decimal::<Fr, NUM_LIMBS, POWER_OF_TEN>(tw.num_decomposed);
+			let den = compose_big_decimal::<Fr, NUM_LIMBS, POWER_OF_TEN>(tw.den_decomposed);
+			let ratio = BigRational::new(num.to_bigint().unwrap(), den.to_bigint().unwrap());
+			println!(
+				"real score: {:?}, is bigger than {}: {:?}",
+				ratio.to_integer().to_str_radix(10),
+				threshold,
+				tw.is_bigger,
+			);
+		}
+	}
+
+	// Needs more experiements.
+	// This threshold check result is WRONG!
+	#[test]
+	fn test_check_threshold_2() {
+		const NUM_NEIGHBOURS: usize = 5;
+		const NUM_ITERATIONS: usize = 10;
+		const INITIAL_SCORE: u128 = 1000;
+		// Constants related to threshold check
+		const NUM_LIMBS: usize = 2;
+		const POWER_OF_TEN: usize = 10;
+
+		let ops_raw = [
+			[0, 150, 750, 50, 50],   // - Peer 0 opinions
+			[500, 0, 100, 400, 0],   // - Peer 1 opinions
+			[100, 100, 0, 200, 600], // - Peer 2 opinions
+			[100, 680, 200, 0, 20],  // - Peer 3 opinions
+			[700, 100, 100, 100, 0], // - Peer 4 opinions
+		];
+
+		let ops = ops_raw.map(|arr| arr.map(|x| Fr::from_u128(x)).to_vec()).to_vec();
+
+		let threshold = 1100;
 		let (s, s_ratios, tws) = check_threshold_testing_helper::<
 			NUM_NEIGHBOURS,
 			NUM_ITERATIONS,
