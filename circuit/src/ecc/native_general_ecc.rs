@@ -316,3 +316,159 @@ where
 		self.x.is_eq(&other.x) && self.y.is_eq(&other.y)
 	}
 }
+
+#[cfg(test)]
+mod test {
+	use super::EcPoint;
+	use crate::{
+		integer::native::Integer,
+		rns::secp256k1::Secp256k1_4_68,
+		utils::{big_to_fe, fe_to_big},
+	};
+	use halo2::{
+		arithmetic::Field,
+		halo2curves::{
+			bn256::Fr,
+			group::Curve,
+			secp256k1::{Fp, Fq, Secp256k1Affine},
+		},
+	};
+	use rand::thread_rng;
+
+	#[test]
+	fn should_add_two_points() {
+		// ECC Add test
+		let rng = &mut thread_rng();
+
+		let a = Secp256k1Affine::random(rng.clone());
+		let b = Secp256k1Affine::random(rng.clone());
+		let c = (a + b).to_affine();
+
+		let a_x_bn = fe_to_big(a.x);
+		let a_y_bn = fe_to_big(a.y);
+		let b_x_bn = fe_to_big(b.x);
+		let b_y_bn = fe_to_big(b.y);
+
+		let a_x_w = Integer::<Fp, Fr, 4, 68, Secp256k1_4_68>::new(a_x_bn);
+		let a_y_w = Integer::<Fp, Fr, 4, 68, Secp256k1_4_68>::new(a_y_bn);
+		let b_x_w = Integer::<Fp, Fr, 4, 68, Secp256k1_4_68>::new(b_x_bn);
+		let b_y_w = Integer::<Fp, Fr, 4, 68, Secp256k1_4_68>::new(b_y_bn);
+
+		let a_w: EcPoint<Secp256k1Affine, Fr, 4, 68, Secp256k1_4_68, Secp256k1_4_68> =
+			EcPoint::new(a_x_w, a_y_w);
+		let b_w = EcPoint::new(b_x_w, b_y_w);
+		let c_w = a_w.add(&b_w);
+
+		assert_eq!(c.x, big_to_fe(c_w.x.value()));
+		assert_eq!(c.y, big_to_fe(c_w.y.value()));
+	}
+
+	#[test]
+	fn should_double_point() {
+		// ECC Double test
+		let rng = &mut thread_rng();
+
+		let a = Secp256k1Affine::random(rng.clone());
+		let c = (a + a).to_affine();
+
+		let a_x_bn = fe_to_big(a.x);
+		let a_y_bn = fe_to_big(a.y);
+
+		let a_x_w = Integer::<Fp, Fr, 4, 68, Secp256k1_4_68>::new(a_x_bn);
+		let a_y_w = Integer::<Fp, Fr, 4, 68, Secp256k1_4_68>::new(a_y_bn);
+
+		let a_w: EcPoint<Secp256k1Affine, Fr, 4, 68, Secp256k1_4_68, Secp256k1_4_68> =
+			EcPoint::new(a_x_w, a_y_w);
+		let c_w: EcPoint<Secp256k1Affine, Fr, 4, 68, Secp256k1_4_68, _> = a_w.double();
+
+		assert_eq!(c.x, big_to_fe(c_w.x.value()));
+		assert_eq!(c.y, big_to_fe(c_w.y.value()));
+	}
+
+	#[test]
+	fn should_ladder() {
+		// ECC Ladder test
+		let rng = &mut thread_rng();
+
+		let a = Secp256k1Affine::random(rng.clone());
+		let b = Secp256k1Affine::random(rng.clone());
+		let c = (a + a + b).to_affine();
+
+		let a_x_bn = fe_to_big(a.x);
+		let a_y_bn = fe_to_big(a.y);
+		let b_x_bn = fe_to_big(b.x);
+		let b_y_bn = fe_to_big(b.y);
+
+		let a_x_w = Integer::<Fp, Fr, 4, 68, Secp256k1_4_68>::new(a_x_bn);
+		let a_y_w = Integer::<Fp, Fr, 4, 68, Secp256k1_4_68>::new(a_y_bn);
+		let b_x_w = Integer::<Fp, Fr, 4, 68, Secp256k1_4_68>::new(b_x_bn);
+		let b_y_w = Integer::<Fp, Fr, 4, 68, Secp256k1_4_68>::new(b_y_bn);
+
+		let a_w: EcPoint<Secp256k1Affine, Fr, 4, 68, Secp256k1_4_68, Secp256k1_4_68> =
+			EcPoint::new(a_x_w, a_y_w);
+		let b_w: EcPoint<Secp256k1Affine, Fr, 4, 68, Secp256k1_4_68, Secp256k1_4_68> =
+			EcPoint::new(b_x_w, b_y_w);
+		let c_w = a_w.ladder(&b_w);
+
+		assert_eq!(c.x, big_to_fe(c_w.x.value()));
+		assert_eq!(c.y, big_to_fe(c_w.y.value()));
+	}
+
+	#[test]
+	fn should_mul_scalar() {
+		// ECC Mul Scalar with Ladder test
+		let rng = &mut thread_rng();
+		let a = Secp256k1Affine::random(rng.clone());
+		let scalar = Fq::random(rng);
+		let c = (a * scalar).to_affine();
+
+		let a_x_bn = fe_to_big(a.x);
+		let a_y_bn = fe_to_big(a.y);
+
+		let a_x_w = Integer::<Fp, Fr, 4, 68, Secp256k1_4_68>::new(a_x_bn);
+		let a_y_w = Integer::<Fp, Fr, 4, 68, Secp256k1_4_68>::new(a_y_bn);
+		let a_w: EcPoint<Secp256k1Affine, Fr, 4, 68, Secp256k1_4_68, Secp256k1_4_68> =
+			EcPoint::new(a_x_w, a_y_w);
+
+		let scalar_as_integer = Integer::from_w(scalar);
+		let c_w = a_w.mul_scalar(scalar_as_integer);
+
+		assert_eq!(c.x, big_to_fe(c_w.x.value()));
+		assert_eq!(c.y, big_to_fe(c_w.y.value()));
+	}
+
+	#[test]
+	fn should_batch_mul_scalar() {
+		// ECC Mul Scalar with Ladder test
+		let num_of_points = 10;
+		let rng = &mut thread_rng();
+		let mut points_vec = vec![];
+		let mut scalars_vec = vec![];
+		let mut results_vec = vec![];
+		for i in 0..num_of_points {
+			let a = Secp256k1Affine::random(rng.clone());
+			let scalar = Fq::random(rng.clone());
+			scalars_vec.push(Integer::from_w(scalar));
+			let c = (a * scalar).to_affine();
+			results_vec.push(c);
+			let a_x_bn = fe_to_big(a.x);
+			let a_y_bn = fe_to_big(a.y);
+			let a_x_w = Integer::<Fp, Fr, 4, 68, Secp256k1_4_68>::new(a_x_bn);
+			let a_y_w = Integer::<Fp, Fr, 4, 68, Secp256k1_4_68>::new(a_y_bn);
+			let a_w: EcPoint<Secp256k1Affine, Fr, 4, 68, Secp256k1_4_68, Secp256k1_4_68> =
+				EcPoint::new(a_x_w, a_y_w);
+			points_vec.push(a_w.clone());
+		}
+		let batch_mul_results_vec = EcPoint::multi_mul_scalar(&points_vec, &scalars_vec, 4);
+		for i in 0..num_of_points {
+			assert_eq!(
+				results_vec[i].x,
+				big_to_fe(batch_mul_results_vec[i].x.value())
+			);
+			assert_eq!(
+				results_vec[i].y,
+				big_to_fe(batch_mul_results_vec[i].y.value())
+			);
+		}
+	}
+}
