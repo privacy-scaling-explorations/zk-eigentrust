@@ -255,8 +255,6 @@ where
 				table[i].clone(),
 			);
 			accs.push(item);
-			let item = Self::select_vec(be_bits_to_usize(&bits[i][0..]), table[i].clone());
-			accs.push(item);
 		}
 
 		for i in 0..exps.len() {
