@@ -22,12 +22,10 @@ impl<const NUM_LIMBS: usize, const POWER_OF_TEN: usize> Threshold<NUM_LIMBS, POW
 	// TODO: Find `NUM_LIMBS` and `POWER_OF_TEN` for standardised decimal position
 	/// Method for checking the threshold for a given score
 	pub fn check_threshold(&self) -> ThresholdWitness<Fr, NUM_LIMBS> {
-		let Threshold { score, ratio, threshold } = self.clone();
+		let ratio = self.ratio.clone();
 
-		let x = ratio.clone();
-
-		let num = x.numer();
-		let den = x.denom();
+		let num = ratio.numer();
+		let den = ratio.denom();
 
 		let num_decomposed =
 			decompose_big_decimal::<Fr, NUM_LIMBS, POWER_OF_TEN>(num.to_biguint().unwrap());
@@ -39,16 +37,17 @@ impl<const NUM_LIMBS: usize, const POWER_OF_TEN: usize> Threshold<NUM_LIMBS, POW
 		let composed_den_f = compose_big_decimal_f::<Fr, NUM_LIMBS, POWER_OF_TEN>(den_decomposed);
 		let composed_den_f_inv = composed_den_f.invert().unwrap();
 		let res_f = composed_num_f * composed_den_f_inv;
-		assert!(res_f == *score);
+		assert!(res_f == self.score);
 
 		// Take the highest POWER_OF_TEN digits for comparison
 		// This just means lower precision
+		let threshold = self.threshold;
 		let first_limb_num = *num_decomposed.last().unwrap();
 		let first_limb_den = *den_decomposed.last().unwrap();
 		let comp = first_limb_den * threshold;
 		let is_bigger = first_limb_num >= comp;
 
-		ThresholdWitness { threshold: threshold.clone(), is_bigger, num_decomposed, den_decomposed }
+		ThresholdWitness { threshold, is_bigger, num_decomposed, den_decomposed }
 	}
 }
 
