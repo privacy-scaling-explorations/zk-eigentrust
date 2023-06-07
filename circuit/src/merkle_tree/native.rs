@@ -6,7 +6,7 @@ const WIDTH: usize = 5;
 
 #[derive(Clone, Debug)]
 /// MerkleTree structure
-pub struct MerkleTree<F: FieldExt, H>
+pub struct MerkleTree<F: FieldExt, const ARITY: usize, H>
 where
 	H: Hasher<F, WIDTH>,
 {
@@ -20,30 +20,35 @@ where
 	_h: PhantomData<H>,
 }
 
-impl<F: FieldExt, H> MerkleTree<F, H>
+impl<F: FieldExt, const ARITY: usize, H> MerkleTree<F, ARITY, H>
 where
 	H: Hasher<F, WIDTH>,
 {
 	/// Build a MerkleTree from given leaf nodes and height
 	pub fn build_tree(mut leaves: Vec<F>, height: usize) -> Self {
-		assert!(leaves.len() <= pow(2, height));
+		assert!(leaves.len() <= pow(ARITY, height));
+		assert!(ARITY <= WIDTH);
+		// Checks if ARITY is power of 2
+		assert!((ARITY > 0) && ((ARITY & (ARITY - 1)) == 0));
+
 		// 0th level is the leaf level and the max level is the root level
 		let mut nodes = HashMap::new();
 		// Assign zero to the leaf values if they are empty
-		for _i in leaves.len()..pow(2, height) {
+		for _i in leaves.len()..pow(ARITY, height) {
 			leaves.push(F::ZERO);
 		}
 		nodes.insert(0, leaves);
 
+		let mut hasher_inputs = [F::ZERO; WIDTH];
 		for level in 0..height {
 			let mut hashes = Vec::new();
 			for i in 0..nodes[&level].len() {
-				if i % 2 != 0 {
+				if i % ARITY != 0 {
 					continue;
 				}
-				let pos_inputs =
-					[nodes[&level][i], nodes[&level][i + 1], F::ZERO, F::ZERO, F::ZERO];
-				let hasher = H::new(pos_inputs);
+
+				hasher_inputs = [nodes[&level][i], nodes[&level][i + 1], F::ZERO, F::ZERO, F::ZERO];
+				let hasher = H::new(hasher_inputs);
 				hashes.push(hasher.finalize()[0]);
 			}
 			nodes.insert(level + 1, hashes);
@@ -55,29 +60,29 @@ where
 
 #[derive(Clone)]
 /// Path structure
-pub struct Path<F: FieldExt, const LENGTH: usize, H>
+pub struct Path<F: FieldExt, const ARITY: usize, const LENGTH: usize, H>
 where
 	H: Hasher<F, WIDTH>,
 {
 	/// Value that is based on for construction of the path
 	pub(crate) value: F,
 	/// Array that keeps the path
-	pub(crate) path_arr: [[F; 2]; LENGTH],
+	pub(crate) path_arr: [[F; ARITY]; LENGTH],
 	/// PhantomData for the hasher
 	_h: PhantomData<H>,
 }
 
-impl<F: FieldExt, const LENGTH: usize, H> Path<F, LENGTH, H>
+impl<F: FieldExt, const ARITY: usize, const LENGTH: usize, H> Path<F, ARITY, LENGTH, H>
 where
 	H: Hasher<F, WIDTH>,
 {
 	/// Find path for the given value to the root
-	pub fn find_path(merkle_tree: &MerkleTree<F, H>, value: F) -> Path<F, LENGTH, H> {
+	pub fn find_path(merkle_tree: &MerkleTree<F, ARITY, H>, value: F) -> Path<F, ARITY, LENGTH, H> {
 		//
 		// TODO: This way of finding index will fail if we have same inputs
 		//
 		let mut value_index = merkle_tree.nodes[&0].iter().position(|x| x == &value).unwrap();
-		let mut path_arr: [[F; 2]; LENGTH] = [[F::ZERO; 2]; LENGTH];
+		let mut path_arr: [[F; ARITY]; LENGTH] = [[F::ZERO; ARITY]; LENGTH];
 		// Childs for a parent node is 2n and 2n + 1.
 		// value_index keeps index of that nodes in reverse order to apply this
 		// algorithm.
@@ -132,8 +137,8 @@ mod test {
 			Fr::random(rng.clone()),
 			Fr::random(rng.clone()),
 		];
-		let merkle = MerkleTree::<Fr, Poseidon<Fr, 5, Params>>::build_tree(leaves, 4);
-		let path = Path::<Fr, 5, Poseidon<Fr, 5, Params>>::find_path(&merkle, value);
+		let merkle = MerkleTree::<Fr, 2, Poseidon<Fr, 5, Params>>::build_tree(leaves, 4);
+		let path = Path::<Fr, 2, 5, Poseidon<Fr, 5, Params>>::find_path(&merkle, value);
 		assert!(path.verify());
 		// Assert last element of the array and the root of the tree
 		assert_eq!(path.path_arr[merkle.height][0], merkle.root);
@@ -144,8 +149,8 @@ mod test {
 		// Testing build_tree and find_path functions with a small array
 		let rng = &mut thread_rng();
 		let value = Fr::random(rng.clone());
-		let merkle = MerkleTree::<Fr, Poseidon<Fr, 5, Params>>::build_tree(vec![value], 0);
-		let path = Path::<Fr, 1, Poseidon<Fr, 5, Params>>::find_path(&merkle, value);
+		let merkle = MerkleTree::<Fr, 2, Poseidon<Fr, 5, Params>>::build_tree(vec![value], 0);
+		let path = Path::<Fr, 2, 1, Poseidon<Fr, 5, Params>>::find_path(&merkle, value);
 		assert!(path.verify());
 		// Assert last element of the array and the root of the tree
 		assert_eq!(path.path_arr[merkle.height][0], merkle.root);

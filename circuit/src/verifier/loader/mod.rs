@@ -2,7 +2,6 @@ use crate::{
 	ecc::{AssignedPoint, EccAddChipset, EccMulChipset, EccMulConfig},
 	gadgets::main::{AddChipset, InverseChipset, MainConfig, MulChipset, SubChipset},
 	integer::{native::Integer, AssignedInteger},
-	poseidon::sponge::PoseidonSpongeConfig,
 	rns::RnsParams,
 	utils::assigned_to_field,
 	Chipset, CommonConfig, FieldExt, RegionCtx, SpongeHasherChipset,
