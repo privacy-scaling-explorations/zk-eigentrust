@@ -75,7 +75,7 @@ mod tests {
 
 	#[test]
 	fn test_check_threshold_1() {
-		const NUM_LIMBS: usize = 3;
+		const NUM_LIMBS: usize = 2;
 		const POWER_OF_TEN: usize = 2;
 
 		let score = Fr::from_u128(100_u128);
@@ -84,11 +84,12 @@ mod tests {
 			BigInt::from_u128(100).unwrap(),
 		);
 		let threshold = Fr::from_u128(1010_u128);
-
 		let t: Threshold<NUM_LIMBS, POWER_OF_TEN> = Threshold::new(score, ratio, threshold);
 		let tw = t.check_threshold();
 
-		assert!(!tw.is_bigger);
+		let expected_comp = score > threshold;
+
+		assert!(tw.is_bigger == expected_comp);
 	}
 
 	#[test]
@@ -102,10 +103,11 @@ mod tests {
 			BigInt::from_u128(100).unwrap(),
 		);
 		let threshold = Fr::from_u128(80_u128);
-
 		let t: Threshold<NUM_LIMBS, POWER_OF_TEN> = Threshold::new(score, ratio, threshold);
 		let tw = t.check_threshold();
 
-		assert!(tw.is_bigger);
+		let expected_comp = score > threshold;
+
+		assert!(tw.is_bigger == expected_comp);
 	}
 }
