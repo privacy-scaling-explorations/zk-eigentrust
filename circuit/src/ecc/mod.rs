@@ -2,7 +2,7 @@
 pub mod native;
 
 /// Native General ECC
-pub mod native_general_ecc;
+pub mod generic;
 
 use crate::{
 	gadgets::{

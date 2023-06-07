@@ -88,10 +88,10 @@ where
 	}
 
 	/// Make aux_fin when sliding window is > 1.
-	pub fn make_mul_aux_sliding_window<S: FieldExt>(aux_to_add: Self, window_size: usize) -> Self {
+	pub fn make_mul_aux_sliding_window(aux_to_add: Self, window_size: usize) -> Self {
 		assert!(window_size > 0);
 
-		let n = S::NUM_BITS as usize;
+		let n = N::NUM_BITS as usize;
 		let number_of_selectors = n / window_size;
 		let leftover = n % window_size;
 		let mut k0 = BigUint::one();
@@ -105,7 +105,7 @@ where
 			k0 = k0.add(&one);
 		}
 
-		let factor = S::ZERO.sub(big_to_fe::<S>(k0));
+		let factor = N::ZERO.sub(big_to_fe::<N>(k0));
 		let to_sub = aux_to_add.mul_scalar(factor);
 		to_sub
 	}
@@ -185,12 +185,12 @@ where
 	}
 
 	/// Scalar multiplication for given point with using ladder
-	pub fn mul_scalar<S: FieldExt>(&self, scalar: S) -> Self {
+	pub fn mul_scalar(&self, scalar: N) -> Self {
 		let aux_init = Self::to_add();
 		let exp: EcPoint<W, N, NUM_LIMBS, NUM_BITS, P> = self.clone();
 		// Converts given input to its bit by Scalar Field's bit size
 		let mut bits = to_bits(scalar.to_repr().as_ref());
-		bits = bits[..S::NUM_BITS as usize].to_vec();
+		bits = bits[..N::NUM_BITS as usize].to_vec();
 		bits.reverse();
 
 		let table = [aux_init.clone(), exp.add(&aux_init)];
@@ -212,8 +212,8 @@ where
 	}
 
 	/// Multi-multiplication for given points using sliding window.
-	pub fn multi_mul_scalar<S: FieldExt>(
-		points: &[Self], scalars: &[S], sliding_window_usize: usize,
+	pub fn multi_mul_scalar(
+		points: &[Self], scalars: &[N], sliding_window_usize: usize,
 	) -> Vec<Self> {
 		// AuxGens from article.
 		let mut aux_inits: Vec<EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>> = vec![];
@@ -230,7 +230,7 @@ where
 			.iter()
 			.map(|scalar| {
 				let mut scalar_as_bits = to_bits(scalar.to_repr().as_ref());
-				scalar_as_bits = scalar_as_bits[..S::NUM_BITS as usize].to_vec();
+				scalar_as_bits = scalar_as_bits[..N::NUM_BITS as usize].to_vec();
 				num_of_windows.push(scalar_as_bits.len() / sliding_window_usize);
 				scalar_as_bits.reverse();
 				scalar_as_bits
@@ -300,7 +300,7 @@ where
 
 		let mut aux_fins: Vec<EcPoint<W, N, NUM_LIMBS, NUM_BITS, P>> = vec![];
 		let aux_init = Self::to_sub();
-		let mut aux_fin = Self::make_mul_aux_sliding_window::<S>(aux_init, sliding_window_usize);
+		let mut aux_fin = Self::make_mul_aux_sliding_window(aux_init, sliding_window_usize);
 		for i in 0..points.len() {
 			aux_fins.push(aux_fin.clone());
 			aux_fin = aux_fin.double();
