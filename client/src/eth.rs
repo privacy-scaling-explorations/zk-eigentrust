@@ -160,11 +160,11 @@ pub fn address_from_public_key(pub_key: &ECDSAPublicKey) -> Result<Address, &'st
 
 /// Construct a Scalar from the given Ethereum address
 pub fn scalar_from_address(address: &Address) -> Result<Scalar, &'static str> {
-	let mut address_le_bytes = address.to_fixed_bytes();
-	address_le_bytes.reverse();
+	let mut address_fixed = address.to_fixed_bytes();
+	address_fixed.reverse();
 
 	let mut address_bytes = [0u8; 32];
-	address_bytes[..address_le_bytes.len()].copy_from_slice(&address_le_bytes);
+	address_bytes[..address_fixed.len()].copy_from_slice(&address_fixed);
 
 	let about = match Scalar::from_bytes(&address_bytes).is_some().into() {
 		true => Scalar::from_bytes(&address_bytes).unwrap(),

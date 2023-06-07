@@ -139,8 +139,10 @@ impl Client {
 		let recovered_address = address_from_public_key(&recovered_pubkey).unwrap();
 		assert!(recovered_address == self.client.address());
 
-		let tx_call =
-			as_contract.attest(vec![att_data_from_signed_att(&signed_attestation).unwrap()]);
+		// Stored contract data
+		let contract_data = att_data_from_signed_att(&signed_attestation).unwrap();
+
+		let tx_call = as_contract.attest(vec![contract_data]);
 		let tx_res = tx_call.send();
 		let tx = tx_res.await.map_err(|_| EigenError::TransactionError)?;
 		let res = tx.await.map_err(|_| EigenError::TransactionError)?;
@@ -276,13 +278,13 @@ fn setup_client(mnemonic_phrase: &str, node_url: &str) -> SignerMiddlewareArc {
 #[cfg(test)]
 mod lib_tests {
 	use crate::{
-		attestation::Attestation,
+		attestation::{Attestation, DOMAIN_PREFIX, DOMAIN_PREFIX_LEN},
 		eth::{deploy_as, deploy_verifier},
 		Client, ClientConfig,
 	};
 	use eigen_trust_circuit::utils::read_bytes_data;
-	use ethers::abi::Address;
-	use ethers::{types::U256, utils::Anvil};
+	use ethers::utils::Anvil;
+	use ethers::{abi::Address, types::H256};
 
 	#[tokio::test]
 	async fn test_attest() {
@@ -302,9 +304,68 @@ mod lib_tests {
 			verifier_address: format!("{:?}", verifier_address),
 		};
 
-		let attestation = Attestation::new(Address::default(), U256::default(), 1, None);
+		let attestation = Attestation::new(Address::default(), H256::default(), 1, None);
 
 		assert!(Client::new(config).attest(attestation).await.is_ok());
+
+		drop(anvil);
+	}
+
+	#[tokio::test]
+	async fn test_get_attestations() {
+		let anvil = Anvil::new().spawn();
+		let node_url = anvil.endpoint();
+		let mnemonic = "test test test test test test test test test test test junk".to_string();
+		let as_address = deploy_as(&mnemonic, &node_url).await.unwrap();
+		let verifier_address =
+			deploy_verifier(&mnemonic, &node_url, read_bytes_data("et_verifier")).await.unwrap();
+
+		let config = ClientConfig {
+			as_address: format!("{:?}", as_address),
+			domain: "0x0000000000000000000000000000000000000000".to_string(),
+			mnemonic: mnemonic.clone(),
+			node_url,
+			verifier_address: format!("{:?}", verifier_address),
+		};
+
+		// Build Attestation
+		let about_bytes = [
+			0xff, 0x61, 0x4a, 0x6d, 0x59, 0x56, 0x2a, 0x42, 0x37, 0x72, 0x37, 0x76, 0x32, 0x4d,
+			0x36, 0x53, 0x62, 0x6d, 0x35, 0xff,
+		];
+
+		// Build key
+		let mut key_bytes: [u8; 32] = [0; 32];
+		key_bytes[..DOMAIN_PREFIX_LEN].copy_from_slice(&DOMAIN_PREFIX);
+
+		let message = [
+			0x00, 0x75, 0x32, 0x45, 0x75, 0x79, 0x32, 0x77, 0x7a, 0x34, 0x58, 0x6c, 0x34, 0x34,
+			0x4a, 0x74, 0x6a, 0x78, 0x68, 0x4c, 0x4a, 0x52, 0x67, 0x48, 0x45, 0x6c, 0x4e, 0x73,
+			0x65, 0x6e, 0x79, 0x00,
+		];
+
+		let attestation = Attestation::new(
+			Address::from(about_bytes),
+			H256::from(key_bytes),
+			10,
+			Some(H256::from(message)),
+		);
+
+		let client = Client::new(config);
+
+		client.attest(attestation.clone()).await.unwrap();
+
+		let attestations = client.get_attestations().await.unwrap();
+
+		assert_eq!(attestations.len(), 1);
+
+		let (_, returned_att) = attestations[0].clone();
+
+		// Check that the attestations match
+		assert_eq!(returned_att.about, attestation.about);
+		assert_eq!(returned_att.key, attestation.key);
+		assert_eq!(returned_att.value, attestation.value);
+		assert_eq!(returned_att.message, attestation.message);
 
 		drop(anvil);
 	}

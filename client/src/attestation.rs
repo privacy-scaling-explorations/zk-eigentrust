@@ -6,7 +6,7 @@ use eigen_trust_circuit::{
 	dynamic_sets::ecdsa_native::{AttestationFr, SignedAttestation},
 	halo2::halo2curves::{bn256::Fr as Scalar, ff::FromUniformBytes},
 };
-use ethers::types::{Address, U256};
+use ethers::types::{Address, H256};
 use secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
 
 /// Domain prefix length
@@ -20,17 +20,17 @@ pub struct Attestation {
 	/// Ethereum address of peer being rated
 	pub about: Address,
 	/// Unique identifier for the action being rated
-	pub key: U256,
+	pub key: H256,
 	/// Given rating for the action
 	pub value: u8,
 	/// Optional field for attaching additional information to the attestation
-	pub message: U256,
+	pub message: H256,
 }
 
 impl Attestation {
 	/// Construct a new attestation struct
-	pub fn new(about: Address, key: U256, value: u8, message: Option<U256>) -> Self {
-		Self { about, key, value, message: message.unwrap_or(U256::from(0)) }
+	pub fn new(about: Address, key: H256, value: u8, message: Option<H256>) -> Self {
+		Self { about, key, value, message: message.unwrap_or(H256::from([0u8; 32])) }
 	}
 
 	/// Convert to scalar representation
@@ -39,9 +39,11 @@ impl Attestation {
 		let about = scalar_from_address(&self.about)?;
 
 		// Domain
+		let mut key_fixed: [u8; 32] = *self.key.as_fixed_bytes();
+		key_fixed.reverse();
+
 		let mut key_bytes = [0u8; 32];
-		self.key.to_little_endian(&mut key_bytes);
-		key_bytes[20..].copy_from_slice(&[0; DOMAIN_PREFIX_LEN]);
+		key_bytes[..20].copy_from_slice(&key_fixed[..20]);
 
 		let domain = match Scalar::from_bytes(&key_bytes).is_some().into() {
 			true => Scalar::from_bytes(&key_bytes).unwrap(),
@@ -52,11 +54,11 @@ impl Attestation {
 		let value = Scalar::from(self.value as u64);
 
 		// Message
-		let mut message_le = [0u8; 32];
-		self.message.to_little_endian(&mut message_le);
+		let mut message_fixed = *self.message.as_fixed_bytes();
+		message_fixed.reverse();
 
 		let mut message_bytes = [0u8; 64];
-		message_bytes[32..].copy_from_slice(&message_le);
+		message_bytes[..32].copy_from_slice(&message_fixed);
 
 		let message = Scalar::from_uniform_bytes(&message_bytes);
 
@@ -110,7 +112,8 @@ impl AttestationPayload {
 
 		let value = signed_attestation.attestation.value.to_bytes()[0];
 
-		let message = signed_attestation.attestation.message.to_bytes();
+		let mut message = signed_attestation.attestation.message.to_bytes();
+		message.reverse();
 
 		Ok(Self { sig_r, sig_s, rec_id, value, message })
 	}
@@ -159,14 +162,20 @@ pub fn address_from_signed_att(
 }
 
 /// Construct the contract attestation data from a signed attestation
+/// The return of this function is the actual data stored on the contract
 pub fn att_data_from_signed_att(
 	signed_attestation: &SignedAttestation,
 ) -> Result<ContractAttestationData, &'static str> {
-	// Recover the Ethereum address from the signed attestation
-	let address = address_from_signed_att(signed_attestation)?;
+	// Recover the about Ethereum address from the signed attestation
+	let mut about_bytes = signed_attestation.attestation.about.to_bytes();
+	about_bytes.reverse();
+
+	let address = Address::from_slice(&about_bytes[12..]);
 
 	// Get the attestation key
-	let key = signed_attestation.attestation.domain.to_bytes();
+	let mut key = signed_attestation.attestation.domain.to_bytes();
+	key.reverse();
+	key[..DOMAIN_PREFIX_LEN].copy_from_slice(&DOMAIN_PREFIX);
 
 	// Get the payload bytes
 	let payload = AttestationPayload::from_signed_attestation(signed_attestation)?;
@@ -215,9 +224,9 @@ mod tests {
 
 		let attestation = Attestation::new(
 			Address::from(address),
-			U256::from(key_bytes),
+			H256::from(key_bytes),
 			10,
-			Some(U256::from(message)),
+			Some(H256::from(message)),
 		);
 
 		let attestation_fr = attestation.to_attestation_fr().unwrap();
@@ -240,7 +249,8 @@ mod tests {
 		// Expected message
 		let mut expected_message_input = [0u8; 64];
 		message.reverse();
-		expected_message_input[32..].copy_from_slice(&message);
+
+		expected_message_input[..32].copy_from_slice(&message);
 		let expected_message = Scalar::from_uniform_bytes(&expected_message_input);
 
 		assert_eq!(attestation_fr.about, expected_about);
@@ -390,31 +400,56 @@ mod tests {
 		let secret_key_as_bytes = [0x40; 32];
 		let secret_key =
 			SecretKey::from_slice(&secret_key_as_bytes).expect("32 bytes, within curve order");
+		let about_bytes = [
+			0xff, 0x61, 0x4a, 0x6d, 0x59, 0x56, 0x2a, 0x42, 0x37, 0x72, 0x37, 0x76, 0x32, 0x4d,
+			0x36, 0x53, 0x62, 0x6d, 0x35, 0xff,
+		];
+		// Build key
+		let domain_input = [
+			0xff, 0x61, 0x4a, 0x6d, 0x59, 0x56, 0x2a, 0x42, 0x37, 0x72, 0x37, 0x76, 0x32, 0x4d,
+			0x36, 0x53, 0x62, 0x6d, 0x35, 0xff,
+		];
+
+		let mut key_bytes: [u8; 32] = [0; 32];
+		key_bytes[..DOMAIN_PREFIX_LEN].copy_from_slice(&DOMAIN_PREFIX);
+		key_bytes[DOMAIN_PREFIX_LEN..].copy_from_slice(&domain_input);
+
+		// Message input
+		let message = [
+			0xff, 0x75, 0x32, 0x45, 0x75, 0x79, 0x32, 0x77, 0x7a, 0x34, 0x58, 0x6c, 0x34, 0x34,
+			0x4a, 0x74, 0x6a, 0x78, 0x68, 0x4c, 0x4a, 0x52, 0x67, 0x48, 0x45, 0x6c, 0x4e, 0x73,
+			0x65, 0x6e, 0x79, 0xff,
+		];
 
 		let attestation = Attestation::new(
-			Address::default(),
-			U256::max_value(),
+			Address::from(about_bytes),
+			H256::from(key_bytes),
 			10,
-			Some(U256::max_value()),
+			Some(H256::from(message)),
 		);
 
-		let message = attestation.to_attestation_fr().unwrap().hash().to_bytes();
+		let attestation_fr = attestation.to_attestation_fr().unwrap();
+
+		let message = attestation_fr.hash().to_bytes();
 
 		let signature = secp.sign_ecdsa_recoverable(
 			&Message::from_slice(message.as_slice()).unwrap(),
 			&secret_key,
 		);
 
-		let signed_attestation =
-			SignedAttestation { attestation: attestation.to_attestation_fr().unwrap(), signature };
+		let signed_attestation = SignedAttestation { attestation: attestation_fr, signature };
 
 		let contract_att_data = att_data_from_signed_att(&signed_attestation).unwrap();
 
-		let expected_address =
-			Wallet::from(SigningKey::from_bytes(secret_key_as_bytes.as_ref()).unwrap()).address();
+		let expected_address = Address::from(about_bytes);
 		assert_eq!(contract_att_data.0, expected_address);
 
-		let expected_key = signed_attestation.attestation.domain.to_bytes();
+		let mut expected_key = signed_attestation.attestation.domain.to_bytes();
+
+		// Reverse and add domain
+		expected_key.reverse();
+		expected_key[..DOMAIN_PREFIX_LEN].copy_from_slice(&DOMAIN_PREFIX);
+
 		assert_eq!(contract_att_data.1, expected_key);
 
 		let expected_payload: Bytes =
