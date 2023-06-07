@@ -77,16 +77,20 @@ mod tests {
 		const NUM_LIMBS: usize = 2;
 		const POWER_OF_TEN: usize = 2;
 
-		let score = Fr::from_u128(100_u128);
+		let score_u128 = 356;
+		let score_sum_u128 = 1000;
+		let threshold_u128 = 500;
+
+		let score = Fr::from_u128(score_u128) * Fr::from_u128(score_sum_u128).invert().unwrap();
 		let ratio = BigRational::new(
-			BigInt::from_u128(10000).unwrap(),
-			BigInt::from_u128(100).unwrap(),
+			BigInt::from_u128(score_u128).unwrap(),
+			BigInt::from_u128(score_sum_u128).unwrap(),
 		);
-		let threshold = Fr::from_u128(1010_u128);
+		let threshold = Fr::from_u128(threshold_u128);
 		let t: Threshold<NUM_LIMBS, POWER_OF_TEN> = Threshold::new(score, ratio, threshold);
 		let tw = t.check_threshold();
 
-		let expected_comp = score > threshold;
+		let expected_comp = score_u128 > threshold_u128;
 
 		assert!(tw.is_bigger == expected_comp);
 	}
@@ -94,18 +98,22 @@ mod tests {
 	#[test]
 	fn test_check_threshold_2() {
 		const NUM_LIMBS: usize = 2;
-		const POWER_OF_TEN: usize = 2;
+		const POWER_OF_TEN: usize = 4;
 
-		let score = Fr::from_u128(100_u128);
+		let score_u128 = 56375;
+		let score_sum_u128 = 100000;
+		let threshold_u128: u128 = 50000;
+
+		let score = Fr::from_u128(score_u128) * Fr::from_u128(score_sum_u128).invert().unwrap();
 		let ratio = BigRational::new(
-			BigInt::from_u128(10000).unwrap(),
-			BigInt::from_u128(100).unwrap(),
+			BigInt::from_u128(score_u128).unwrap(),
+			BigInt::from_u128(score_sum_u128).unwrap(),
 		);
-		let threshold = Fr::from_u128(80_u128);
+		let threshold = Fr::from_u128(threshold_u128);
 		let t: Threshold<NUM_LIMBS, POWER_OF_TEN> = Threshold::new(score, ratio, threshold);
 		let tw = t.check_threshold();
 
-		let expected_comp = score > threshold;
+		let expected_comp = score_u128 > threshold_u128;
 
 		assert!(tw.is_bigger == expected_comp);
 	}
