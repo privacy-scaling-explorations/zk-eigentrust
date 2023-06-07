@@ -38,7 +38,8 @@ pub fn address_from_pub_key(pub_key: &ECDSAPublicKey) -> Result<[u8; 20], &'stat
 
 /// Calculate the address field value from a public key
 pub fn field_value_from_pub_key(&pub_key: &ECDSAPublicKey) -> Fr {
-	let address = address_from_pub_key(&pub_key).unwrap();
+	let mut address = address_from_pub_key(&pub_key).unwrap();
+	address.reverse();
 
 	let mut address_bytes = [0u8; 32];
 	address_bytes[..address.len()].copy_from_slice(&address);
@@ -94,7 +95,7 @@ pub struct AttestationFr {
 	/// Ethereum address of peer being rated
 	pub about: Fr,
 	/// Unique identifier for the action being rated
-	pub key: Fr,
+	pub domain: Fr,
 	/// Given rating for the action
 	pub value: Fr,
 	/// Optional field for attaching additional information to the attestation
@@ -103,13 +104,13 @@ pub struct AttestationFr {
 
 impl AttestationFr {
 	/// Construct a new attestation struct
-	pub fn new(about: Fr, key: Fr, value: Fr, message: Fr) -> Self {
-		Self { about, key, value, message }
+	pub fn new(about: Fr, domain: Fr, value: Fr, message: Fr) -> Self {
+		Self { about, domain, value, message }
 	}
 
 	/// Hash attestation
 	pub fn hash(&self) -> Fr {
-		PoseidonNativeHasher::new([self.about, self.key, self.value, self.message, Fr::zero()])
+		PoseidonNativeHasher::new([self.about, self.domain, self.value, self.message, Fr::zero()])
 			.permute()[0]
 	}
 }
@@ -118,7 +119,7 @@ impl Default for AttestationFr {
 	fn default() -> Self {
 		AttestationFr {
 			about: Fr::default(),
-			key: Fr::default(),
+			domain: Fr::default(),
 			value: Fr::default(),
 			message: Fr::default(),
 		}

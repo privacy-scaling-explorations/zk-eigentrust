@@ -1,8 +1,9 @@
 use crate::{
-	att_station::AttestationData as ContractAttestationData, eth::address_from_public_key,
+	att_station::AttestationData as ContractAttestationData,
+	eth::{address_from_public_key, scalar_from_address},
 };
 use eigen_trust_circuit::{
-	dynamic_sets::native::{AttestationFr, SignedAttestation},
+	dynamic_sets::ecdsa_native::{AttestationFr, SignedAttestation},
 	halo2::halo2curves::{bn256::Fr as Scalar, ff::FromUniformBytes},
 };
 use ethers::types::{Address, U256};
@@ -35,16 +36,7 @@ impl Attestation {
 	/// Convert to scalar representation
 	pub fn to_attestation_fr(&self) -> Result<AttestationFr, &'static str> {
 		// About
-		let mut about_le_bytes = self.about.to_fixed_bytes();
-		about_le_bytes.reverse();
-
-		let mut about_bytes = [0u8; 32];
-		about_bytes[..20].copy_from_slice(&about_le_bytes);
-
-		let about = match Scalar::from_bytes(&about_bytes).is_some().into() {
-			true => Scalar::from_bytes(&about_bytes).unwrap(),
-			false => return Err("Failed to convert about address to scalar"),
-		};
+		let about = scalar_from_address(&self.about)?;
 
 		// Domain
 		let mut key_bytes = [0u8; 32];

@@ -74,7 +74,7 @@ async fn main() {
 		Mode::Proof => {
 			println!("Calculating Proof...\n");
 			let mut client = Client::new(config);
-			if let Err(e) = client.calculate_proofs().await {
+			if let Err(e) = client.calculate_scores().await {
 				eprintln!("Error calculating proofs: {:?}", e);
 			}
 		},
