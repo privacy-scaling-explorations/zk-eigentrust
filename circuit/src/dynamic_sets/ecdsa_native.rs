@@ -22,11 +22,11 @@ pub type ECDSASignature = ecdsa::RecoverableSignature;
 
 /// Construct an Ethereum address for the given ECDSA public key
 pub fn address_from_pub_key(pub_key: &ECDSAPublicKey) -> Result<[u8; 20], &'static str> {
-	let pub_key_bytes = pub_key.serialize_uncompressed();
+	let pub_key_bytes: [u8; 65] = pub_key.serialize_uncompressed();
 
 	// Hash with Keccak256
 	let mut hasher = Keccak256::new();
-	hasher.update(pub_key_bytes);
+	hasher.update(&pub_key_bytes[1..]);
 	let hashed_public_key = hasher.finalize().to_vec();
 
 	// Get the last 20 bytes of the hash
