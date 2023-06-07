@@ -22,9 +22,6 @@ impl Opinion {
 	pub fn validate(&self, set: Vec<Fr>) -> (Fr, Vec<Fr>, Fr) {
 		let from_pk = field_value_from_pub_key(&self.from);
 
-		println!("from_pk: {:?}", from_pk);
-		println!("set: {:?}", set);
-
 		let pos_from = set.iter().position(|&x| x == from_pk);
 		assert!(pos_from.is_some());
 

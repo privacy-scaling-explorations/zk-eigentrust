@@ -137,8 +137,6 @@ impl Client {
 		// Verify signature is recoverable
 		let recovered_pubkey = signed_attestation.recover_public_key().unwrap();
 		let recovered_address = address_from_public_key(&recovered_pubkey).unwrap();
-		println!("Recovered address: {:?}", recovered_address);
-		println!("Client address: {:?}", self.client.address());
 		assert!(recovered_address == self.client.address());
 
 		let tx_call =
