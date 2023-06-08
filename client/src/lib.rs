@@ -50,6 +50,7 @@ pub mod error;
 pub mod eth;
 pub mod utils;
 
+use crate::utils::create_csv_file;
 use att_station::{AttestationCreatedFilter, AttestationStation};
 use attestation::{att_data_from_signed_att, Attestation, AttestationPayload};
 use eigen_trust_circuit::dynamic_sets::ecdsa_native::{EigenTrustSet, SignedAttestation};
@@ -228,7 +229,11 @@ impl Client {
 		// Calculate scores
 		let scores = eigen_trust_set.converge();
 
-		println!("Scores: {:?}", scores);
+		// Store scores
+		let formatted_scores: Vec<Vec<u8>> =
+			scores.iter().map(|&x| x.to_bytes().to_vec()).collect();
+
+		create_csv_file("scores", &formatted_scores).unwrap();
 
 		Ok(())
 	}
