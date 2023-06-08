@@ -48,7 +48,7 @@ pub fn field_value_from_pub_key(&pub_key: &ECDSAPublicKey) -> Fr {
 }
 
 /// Attestation submission struct
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct SignedAttestation {
 	/// Attestation
 	pub attestation: AttestationFr,
