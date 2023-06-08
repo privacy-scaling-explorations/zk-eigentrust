@@ -61,6 +61,7 @@ The command-line interface was built using [clap.rs](http://clap.rs/). There is 
 - `compile`: Compiles all the `.sol` and `.yul` contracts available in the `data` folder. For `.sol` contracts, it generates an ABI JSON file and a Rust binding file. For `.yul` smart contracts, it compiles Yul code into binary.
 - `deploy`: Deploys all the contracts.
 - `proof`: Calculates the global scores, generates the zk proof and stores it in `et-proof.json` at the `data` directory.
+- `scores`: Calculates the global scores and stores them in the `scores.csv` file within the data directory.
 - `show`: Displays the `client-config.json` file.
 - `update`: Updates the specified field in `client-config.json`. Takes the following options:
   - `--as-address`: Updates the address of the AttestationStation contract.

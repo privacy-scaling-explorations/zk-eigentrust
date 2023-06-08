@@ -28,6 +28,8 @@ pub enum Mode {
 	Deploy,
 	/// Generate the proofs
 	Proof,
+	/// Calculate the global scores
+	Scores,
 	/// Display the current client configuration
 	Show,
 	/// Update the client configuration. Requires 'UpdateData'
