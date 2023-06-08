@@ -85,35 +85,55 @@ impl RnsParams<Fp, Fr, 4, 68> for Secp256k1_4_68 {
 	}
 
 	fn to_add_x() -> [Fr; 4] {
-		let limb0 = Fr::from_u128(252992975607365614304);
-		let limb1 = Fr::from_u128(246373929609370463456);
-		let limb2 = Fr::from_u128(147045207087024714823);
-		let limb3 = Fr::from_u128(661255989794087);
+		let limb0 =
+			Fr::from_u128(0x00000000000000000000000000000000000000000000000a30efcc2747d66b3d);
+		let limb1 =
+			Fr::from_u128(0x00000000000000000000000000000000000000000000000871230a93e8f70fec);
+		let limb2 =
+			Fr::from_u128(0x0000000000000000000000000000000000000000000000032aa8e8ae3d48867b);
+		let limb3 =
+			Fr::from_u128(0x000000000000000000000000000000000000000000000000000651634b333363);
 		[limb0, limb1, limb2, limb3]
 	}
 
 	fn to_add_y() -> [Fr; 4] {
-		let limb0 = Fr::from_u128(100703685036303013336);
-		let limb1 = Fr::from_u128(142420853763560729700);
-		let limb2 = Fr::from_u128(70276077464837018148);
-		let limb3 = Fr::from_u128(3853257862753614);
+		let limb0 =
+			Fr::from_u128(0x0000000000000000000000000000000000000000000000081572b396b37895ae);
+		let limb1 =
+			Fr::from_u128(0x000000000000000000000000000000000000000000000009c76a9f8cd73e45e9);
+		let limb2 =
+			Fr::from_u128(0x000000000000000000000000000000000000000000000000a961227714c36843);
+		let limb3 =
+			Fr::from_u128(0x0000000000000000000000000000000000000000000000000003694b4beb8d22);
 		[limb0, limb1, limb2, limb3]
 	}
 
 	fn to_sub_x() -> [Fr; 4] {
-		let limb0 = Fr::from_u128(112383145895474475045);
-		let limb1 = Fr::from_u128(77353473636075571401);
-		let limb2 = Fr::from_u128(168420387443881604905);
-		let limb3 = Fr::from_u128(4333384540989656);
+		let limb0 =
+			Fr::from_u128(0x0000000000000000000000000000000000000000000000000755bbc5ebffeaae);
+		let limb1 =
+			Fr::from_u128(0x0000000000000000000000000000000000000000000000024f1782601a7c8fbc);
+		let limb2 =
+			Fr::from_u128(0x000000000000000000000000000000000000000000000004c4c611ef52bed05d);
+		let limb3 =
+			Fr::from_u128(0x00000000000000000000000000000000000000000000000000055937c691a1d5);
 		[limb0, limb1, limb2, limb3]
 	}
 
 	fn to_sub_y() -> [Fr; 4] {
-		let limb0 = Fr::from_u128(34847995348328062435);
-		let limb1 = Fr::from_u128(138213416034526311223);
-		let limb2 = Fr::from_u128(277306927096733657243);
-		let limb3 = Fr::from_u128(158537774519885);
+		let limb0 =
+			Fr::from_u128(0x00000000000000000000000000000000000000000000000a50ce3417d9214a76);
+		let limb1 =
+			Fr::from_u128(0x000000000000000000000000000000000000000000000007d3c5522e30a7c244);
+		let limb2 =
+			Fr::from_u128(0x00000000000000000000000000000000000000000000000e26a38d7bfaf7cbef);
+		let limb3 =
+			Fr::from_u128(0x000000000000000000000000000000000000000000000000000688f2e6be93f4);
 		[limb0, limb1, limb2, limb3]
+	}
+
+	fn sliding_window_size() -> usize {
+		4
 	}
 }
 
@@ -169,41 +189,65 @@ impl RnsParams<Fq, Fr, 4, 68> for Secp256k1_4_68 {
 	}
 
 	fn to_add_x() -> [Fr; 4] {
-		let limb0 = Fr::from_u128(252992975607365614304);
-		let limb1 = Fr::from_u128(246373929609370463456);
-		let limb2 = Fr::from_u128(147045207087024714823);
-		let limb3 = Fr::from_u128(661255989794087);
+		let limb0 =
+			Fr::from_u128(0x00000000000000000000000000000000000000000000000a30efcc2747d66b3d);
+		let limb1 =
+			Fr::from_u128(0x00000000000000000000000000000000000000000000000871230a93e8f70fec);
+		let limb2 =
+			Fr::from_u128(0x0000000000000000000000000000000000000000000000032aa8e8ae3d48867b);
+		let limb3 =
+			Fr::from_u128(0x000000000000000000000000000000000000000000000000000651634b333363);
 		[limb0, limb1, limb2, limb3]
 	}
 
 	fn to_add_y() -> [Fr; 4] {
-		let limb0 = Fr::from_u128(100703685036303013336);
-		let limb1 = Fr::from_u128(142420853763560729700);
-		let limb2 = Fr::from_u128(70276077464837018148);
-		let limb3 = Fr::from_u128(3853257862753614);
+		let limb0 =
+			Fr::from_u128(0x0000000000000000000000000000000000000000000000081572b396b37895ae);
+		let limb1 =
+			Fr::from_u128(0x000000000000000000000000000000000000000000000009c76a9f8cd73e45e9);
+		let limb2 =
+			Fr::from_u128(0x000000000000000000000000000000000000000000000000a961227714c36843);
+		let limb3 =
+			Fr::from_u128(0x0000000000000000000000000000000000000000000000000003694b4beb8d22);
 		[limb0, limb1, limb2, limb3]
 	}
 
 	fn to_sub_x() -> [Fr; 4] {
-		let limb0 = Fr::from_u128(112383145895474475045);
-		let limb1 = Fr::from_u128(77353473636075571401);
-		let limb2 = Fr::from_u128(168420387443881604905);
-		let limb3 = Fr::from_u128(4333384540989656);
+		let limb0 =
+			Fr::from_u128(0x0000000000000000000000000000000000000000000000000755bbc5ebffeaae);
+		let limb1 =
+			Fr::from_u128(0x0000000000000000000000000000000000000000000000024f1782601a7c8fbc);
+		let limb2 =
+			Fr::from_u128(0x000000000000000000000000000000000000000000000004c4c611ef52bed05d);
+		let limb3 =
+			Fr::from_u128(0x00000000000000000000000000000000000000000000000000055937c691a1d5);
 		[limb0, limb1, limb2, limb3]
 	}
 
 	fn to_sub_y() -> [Fr; 4] {
-		let limb0 = Fr::from_u128(34847995348328062435);
-		let limb1 = Fr::from_u128(138213416034526311223);
-		let limb2 = Fr::from_u128(277306927096733657243);
-		let limb3 = Fr::from_u128(158537774519885);
+		let limb0 =
+			Fr::from_u128(0x00000000000000000000000000000000000000000000000a50ce3417d9214a76);
+		let limb1 =
+			Fr::from_u128(0x000000000000000000000000000000000000000000000007d3c5522e30a7c244);
+		let limb2 =
+			Fr::from_u128(0x00000000000000000000000000000000000000000000000e26a38d7bfaf7cbef);
+		let limb3 =
+			Fr::from_u128(0x000000000000000000000000000000000000000000000000000688f2e6be93f4);
 		[limb0, limb1, limb2, limb3]
+	}
+
+	fn sliding_window_size() -> usize {
+		4
 	}
 }
 
 #[cfg(test)]
 mod test {
-	use crate::rns::make_mul_aux;
+	use crate::{
+		integer::native::Integer,
+		rns::{make_mul_aux, secp256k1::Secp256k1_4_68},
+	};
+	use halo2::halo2curves::bn256::Fr;
 	use halo2::{arithmetic::Field, halo2curves::group::Curve};
 
 	#[test]
@@ -215,12 +259,24 @@ mod test {
 		let to_add = (g * random_scalar).to_affine();
 		println!("random_scalar: {:?}", random_scalar);
 		println!("to_add: {:?}", to_add);
-		println!("to_add.x: {:?}", to_add.x);
-		println!("to_add.y: {:?}", to_add.y);
+		println!(
+			"to_add.x: {:?}",
+			Integer::<Fp, Fr, 4, 68, Secp256k1_4_68>::from_w(to_add.x)
+		);
+		println!(
+			"to_add.y: {:?}",
+			Integer::<Fp, Fr, 4, 68, Secp256k1_4_68>::from_w(to_add.y)
+		);
 
 		let to_sub = make_mul_aux(to_add);
 		println!("to_sub: {:?}", to_sub);
-		println!("to_sub.x: {:?}", to_sub.x);
-		println!("to_sub.y: {:?}", to_sub.y);
+		println!(
+			"to_sub.x: {:?}",
+			Integer::<Fp, Fr, 4, 68, Secp256k1_4_68>::from_w(to_sub.x)
+		);
+		println!(
+			"to_sub.y: {:?}",
+			Integer::<Fp, Fr, 4, 68, Secp256k1_4_68>::from_w(to_sub.y)
+		);
 	}
 }
