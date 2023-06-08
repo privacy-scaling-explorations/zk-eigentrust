@@ -50,7 +50,7 @@ pub mod error;
 pub mod eth;
 pub mod utils;
 
-use crate::utils::create_csv_file;
+use crate::{attestation::address_from_signed_att, utils::create_csv_file};
 use att_station::{AttestationCreatedFilter, AttestationStation};
 use attestation::{att_data_from_signed_att, Attestation, AttestationPayload};
 use eigen_trust_circuit::dynamic_sets::ecdsa_native::{EigenTrustSet, SignedAttestation};
@@ -154,82 +154,56 @@ impl Client {
 		// Get attestations
 		let attestations = self.get_attestations().await?;
 
-		// Get participants
+		// Construct a set to hold unique participant addresses
 		let mut participants_set = HashSet::<Address>::new();
 
-		// Add default participant
-		participants_set.insert(
-			address_from_public_key(&SignedAttestation::default().recover_public_key().unwrap())
-				.unwrap(),
-		);
+		// Add default SignedAttestation to the set
+		participants_set.insert(address_from_signed_att(&SignedAttestation::default()).unwrap());
 
-		for (signed_att, att) in attestations.iter() {
-			// Add attested
+		// Insert the attester and attested of each attestation into the set
+		for (signed_att, att) in &attestations {
 			participants_set.insert(att.about);
-
-			// Add signer
-			let signer_pub_key = signed_att.recover_public_key().unwrap();
-			let signer_address = address_from_public_key(&signer_pub_key).unwrap();
-			participants_set.insert(signer_address);
+			participants_set.insert(address_from_signed_att(signed_att).unwrap());
 		}
 
+		// Create a vector of participants from the set
 		let participants: Vec<Address> = participants_set.into_iter().collect();
 		let set_len: usize = participants.len();
 
-		// Create attestation matrix
+		// Initialize attestation matrix
 		let mut attestation_matrix: Vec<Vec<SignedAttestation>> =
 			vec![vec![SignedAttestation::default(); set_len]; set_len];
 
-		println!("Participants: {:#?}", participants);
-
-		// Update attestations matrix
-		for (signed_att, att) in attestations.iter() {
-			// Get attester address
-			let attester_ecdsa = signed_att.recover_public_key().unwrap();
-			let attester_address = address_from_public_key(&attester_ecdsa).unwrap();
-
-			// Get attester set position
+		// Populate the attestation matrix with the attestations data
+		for (signed_att, att) in &attestations {
+			let attester_address = address_from_signed_att(signed_att).unwrap();
 			let attester_pos = participants.iter().position(|&r| r == attester_address).unwrap();
-
-			// Get attested set position
 			let attested_pos = participants.iter().position(|&r| r == att.about).unwrap();
 
-			// Get attester vector
-			let mut att_vec = attestation_matrix[attester_pos].clone();
-
-			// Update attested opinion
-			att_vec[attested_pos] = signed_att.clone();
-			attestation_matrix[attester_pos] = att_vec;
+			attestation_matrix[attester_pos][attested_pos] = signed_att.clone();
 		}
 
-		println!("Attestation matrix: {:#?}", attestation_matrix);
-
-		// Create EigenTrustSet
+		// Initialize EigenTrustSet
 		let mut eigen_trust_set =
 			EigenTrustSet::<MAX_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
 
-		// Create set
-		for participant in participants.clone() {
+		// Add participants to set
+		for participant in &participants {
 			let participant_fr = scalar_from_address(&participant).unwrap();
-
 			eigen_trust_set.add_member(participant_fr);
 		}
 
-		// Update opinions
+		// Update the set with the opinions of each participant
 		for i in 0..participants.len() {
-			// Get attestation vector
-			let att_vec = attestation_matrix[i].clone();
+			let participant_pub_key = attestation_matrix[i][i].recover_public_key().unwrap();
 
-			// Get ECDSA public key
-			let participant_pub_key = att_vec[i].recover_public_key().unwrap();
-
-			eigen_trust_set.update_op(participant_pub_key, att_vec);
+			eigen_trust_set.update_op(participant_pub_key, attestation_matrix[i].clone());
 		}
 
-		// Calculate scores
+		// Calculate the trust scores for each participant
 		let scores = eigen_trust_set.converge();
 
-		// Store scores
+		// Write scores to a CSV file
 		let formatted_scores: Vec<Vec<u8>> =
 			scores.iter().map(|&x| x.to_bytes().to_vec()).collect();
 
