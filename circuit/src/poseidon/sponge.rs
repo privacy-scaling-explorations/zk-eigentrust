@@ -126,7 +126,7 @@ where
 		)?;
 		let zero_state = [(); WIDTH].map(|_| zero.clone());
 		let pos = PoseidonSpongeChipset::new(zero_state, zero.clone());
-		Ok(Self { chipset: pos, default: zero.clone() })
+		Ok(Self { chipset: pos, default: zero })
 	}
 
 	/// Clones and appends all elements from a slice to the vec.

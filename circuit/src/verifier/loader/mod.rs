@@ -756,12 +756,8 @@ where
 				let (aux_init, aux_fin) = auxes;
 
 				let mut layouter = base.loader.layouter.borrow_mut();
-				let chip = EccMulChipset::new(
-					base.inner.clone(),
-					scalar.inner.clone(),
-					aux_init.clone(),
-					aux_fin.clone(),
-				);
+				let chip =
+					EccMulChipset::new(base.inner.clone(), scalar.inner.clone(), aux_init, aux_fin);
 				let mul = chip
 					.synthesize(
 						&config.common,
@@ -774,7 +770,7 @@ where
 			.reduce(|acc, value| {
 				let config = value.loader.clone();
 				let mut layouter = value.loader.layouter.borrow_mut();
-				let chip = EccAddChipset::new(acc.inner.clone(), value.inner.clone());
+				let chip = EccAddChipset::new(acc.inner, value.inner.clone());
 				let add = chip
 					.synthesize(
 						&config.common,
