@@ -488,7 +488,7 @@ mod test {
 			let a_w = EcPoint::new(a_x_w, a_y_w);
 			points_vec.push(a_w.clone());
 		}
-		let batch_mul_results_vec = EcPoint::multi_mul_scalar(&points_vec, &scalars_vec, 4);
+		let batch_mul_results_vec = EcPoint::multi_mul_scalar(&points_vec, &scalars_vec, 2);
 		for i in 0..num_of_points {
 			assert_eq!(
 				results_vec[i].x,
