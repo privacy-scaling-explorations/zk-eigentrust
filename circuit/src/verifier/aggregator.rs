@@ -489,7 +489,7 @@ mod test {
 		}
 	}
 
-	// #[ignore = "Aggregator takes too long to run"]
+	#[ignore = "Aggregator takes too long to run"]
 	#[test]
 	fn test_aggregator() {
 		// Testing Aggregator
