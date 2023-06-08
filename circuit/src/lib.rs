@@ -1,13 +1,29 @@
 //! The module for the main EigenTrust circuit.
 
+// Rustc
+#![warn(trivial_casts)]
+#![deny(
+	absolute_paths_not_starting_with_crate, deprecated, future_incompatible, missing_docs,
+	nonstandard_style, unreachable_code, unreachable_patterns
+)]
+#![forbid(unsafe_code)]
+// Clippy
 #![allow(clippy::tabs_in_doc_comments)]
 #![deny(
-	future_incompatible, nonstandard_style, missing_docs, deprecated, unreachable_code,
-	unreachable_patterns, absolute_paths_not_starting_with_crate, unsafe_code, clippy::panic,
-	clippy::unnecessary_cast, clippy::cast_lossless, clippy::cast_possible_wrap
+	// Complexity
+	clippy::unnecessary_cast,
+	// clippy::needless_question_mark,
+	// Pedantic
+	clippy::cast_lossless,
+	clippy::cast_possible_wrap,
+	// Perf
+	clippy::redundant_clone,
+	// Restriction
+	clippy::panic,
+	// Style
+	// clippy::let_and_return,
+	// clippy::needless_borrow
 )]
-#![warn(trivial_casts)]
-#![forbid(unsafe_code)]
 
 use crate::circuit::{PoseidonNativeHasher, PoseidonNativeSponge};
 use eddsa::native::PublicKey;
@@ -41,6 +57,8 @@ pub mod gadgets;
 pub mod integer;
 /// MerkleTree
 pub mod merkle_tree;
+/// Opinion gadgets + native version
+pub mod opinion;
 /// A module for defining round parameters and MDS matrix for hash
 /// permutations
 pub mod params;
@@ -61,6 +79,54 @@ impl FieldExt for BnBase {}
 impl FieldExt for BnScalar {}
 impl FieldExt for SecpBase {}
 impl FieldExt for SecpScalar {}
+
+/// Hasher trait
+pub trait Hasher<F: FieldExt, const WIDTH: usize> {
+	/// Creates a new hasher
+	fn new(inputs: [F; WIDTH]) -> Self;
+	/// Finalize the hasher
+	fn finalize(&self) -> [F; WIDTH];
+}
+
+/// Sponge Hasher trait
+pub trait SpongeHasher<F: FieldExt>: Clone {
+	/// Creates a new sponge hasher
+	fn new() -> Self;
+	/// Update current sponge state
+	fn update(&mut self, inputs: &[F]);
+	/// Finalize the sponge hasher
+	fn squeeze(&mut self) -> F;
+}
+
+/// Hasher chipset trait
+pub trait HasherChipset<F: FieldExt, const WIDTH: usize>: Chipset<F> + Clone {
+	/// Creates a new hasher chipset
+	fn new(inputs: [AssignedCell<F, F>; WIDTH]) -> Self;
+	/// Finalize the hasher
+	fn finalize(
+		self, common: &CommonConfig, config: &Self::Config, layouter: impl Layouter<F>,
+	) -> Result<[AssignedCell<F, F>; WIDTH], Error>;
+}
+
+/// Sponge Hasher chipset trait
+pub trait SpongeHasherChipset<F: FieldExt>: Clone {
+	/// Config selectors for the sponge
+	type Config: Clone;
+	/// Creates a new sponge hasher chipset
+	fn init(common: &CommonConfig, layouter: impl Layouter<F>) -> Result<Self, Error>;
+	/// Update current sponge chipset state
+	fn update(&mut self, inputs: &[AssignedCell<F, F>]);
+	/// Finalize the sponge hasher
+	fn squeeze(
+		&mut self, common: &CommonConfig, config: &Self::Config, layouter: impl Layouter<F>,
+	) -> Result<AssignedCell<F, F>, Error>;
+}
+
+/// UnassignedValue Trait
+pub trait UnassignedValue {
+	/// Returns unknown value type
+	fn without_witnesses() -> Self;
+}
 
 #[derive(Debug)]
 /// Region Context struct for managing region assignments

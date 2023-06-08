@@ -115,7 +115,7 @@ impl<F: FieldExt> MockChipset<F> for LessEqualChipset<F> {
 			layouter.namespace(|| "x range check"),
 		)?;
 
-		let lookup_range_check_chipset = RangeChipset::<F, K, N, S>::new(self.y.clone());
+		let lookup_range_check_chipset = RangeChipset::<F, K, N, S>::new(self.y);
 		let y = lookup_range_check_chipset.synthesize(
 			mock_common,
 			&config.lookup_range_check,
@@ -183,13 +183,13 @@ mod test {
 
 	#[derive(Clone)]
 	struct TestCircuit {
-		x: Fr,
-		y: Fr,
+		x: Value<Fr>,
+		y: Value<Fr>,
 	}
 
 	impl TestCircuit {
 		fn new(x: Fr, y: Fr) -> Self {
-			Self { x, y }
+			Self { x: Value::known(x), y: Value::known(y) }
 		}
 	}
 
@@ -198,7 +198,7 @@ mod test {
 		type FloorPlanner = SimpleFloorPlanner;
 
 		fn without_witnesses(&self) -> Self {
-			self.clone()
+			Self { x: Value::unknown(), y: Value::unknown() }
 		}
 
 		fn configure(meta: &mut ConstraintSystem<Fr>) -> TestConfig {
@@ -244,10 +244,8 @@ mod test {
 				|| "temp",
 				|region: Region<'_, Fr>| {
 					let mut ctx = RegionCtx::new(region, 0);
-					let x_val = Value::known(self.x);
-					let y_val = Value::known(self.y);
-					let x = ctx.assign_advice(config.mock_common.common.advice[0], x_val)?;
-					let y = ctx.assign_advice(config.mock_common.common.advice[1], y_val)?;
+					let x = ctx.assign_advice(config.mock_common.common.advice[0], self.x)?;
+					let y = ctx.assign_advice(config.mock_common.common.advice[1], self.y)?;
 					Ok((x, y))
 				},
 			)?;

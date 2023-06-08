@@ -18,8 +18,11 @@ num-traits = "0.2.11"
 num-rational = "0.4.1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+secp256k1 = { version = "0.27.0", features = ["global-context", "recovery", "bitcoin-hashes-std", "rand-std"] }
+sha3 = "0.10.8"
 
 [dependencies.snark-verifier]
-path = "../../snark-verifier/snark-verifier/"
+git = "https://github.com/privacy-scaling-explorations/snark-verifier"
+rev = "e5d5e4a"
 default-features = false
 features = ["loader_evm", "system_halo2"]

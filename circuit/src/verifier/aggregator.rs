@@ -5,8 +5,8 @@ use super::{
 		Halo2LScalar, LoaderConfig,
 	},
 	transcript::{
-		native::{PoseidonRead, PoseidonWrite, WIDTH},
-		PoseidonReadChipset,
+		native::{NativeTranscriptRead, NativeTranscriptWrite, WIDTH},
+		TranscriptReadChipset,
 	},
 };
 use crate::{
@@ -24,7 +24,11 @@ use crate::{
 		IntegerSubChip,
 	},
 	params::poseidon_bn254_5x5::Params,
-	poseidon::{sponge::PoseidonSpongeConfig, PoseidonConfig},
+	poseidon::{
+		native::sponge::PoseidonSponge,
+		sponge::{PoseidonSpongeConfig, StatefulSpongeChipset},
+		PoseidonConfig,
+	},
 	rns::bn256::Bn256_4_68,
 	Chip, CommonConfig, RegionCtx, ADVICE,
 };
@@ -80,7 +84,12 @@ impl Snark {
 		let protocol = compile(params, pk.get_vk(), config);
 
 		let instances_slice: Vec<&[Fr]> = instances.iter().map(|x| x.as_slice()).collect();
-		let mut transcript = PoseidonWrite::<_, G1Affine, Bn256_4_68, Params>::new(Vec::new());
+		let mut transcript = NativeTranscriptWrite::<
+			_,
+			G1Affine,
+			Bn256_4_68,
+			PoseidonSponge<Fr, WIDTH, Params>,
+		>::new(Vec::new());
 		create_proof::<KZGCommitmentScheme<Bn256>, ProverGWC<_>, _, _, _, _>(
 			params,
 			&pk,
@@ -119,7 +128,7 @@ impl From<Snark> for UnassignedSnark {
 }
 
 impl UnassignedSnark {
-	fn without_witnesses(&self) -> Self {
+	fn without_witness(&self) -> Self {
 		UnassignedSnark {
 			protocol: self.protocol.clone(),
 			instances: self
@@ -166,8 +175,12 @@ impl Aggregator {
 
 		let mut plonk_proofs = Vec::new();
 		for snark in &snarks {
-			let mut transcript_read: PoseidonRead<_, G1Affine, Bn256_4_68, Params> =
-				PoseidonRead::init(snark.proof.as_slice());
+			let mut transcript_read: NativeTranscriptRead<
+				_,
+				G1Affine,
+				Bn256_4_68,
+				PoseidonSponge<Fr, WIDTH, Params>,
+			> = NativeTranscriptRead::init(snark.proof.as_slice());
 
 			let proof = PSV::read_proof(
 				&svk, &snark.protocol, &snark.instances, &mut transcript_read,
@@ -178,8 +191,12 @@ impl Aggregator {
 			plonk_proofs.extend(res);
 		}
 
-		let mut transcript_write =
-			PoseidonWrite::<Vec<u8>, G1Affine, Bn256_4_68, Params>::new(Vec::new());
+		let mut transcript_write = NativeTranscriptWrite::<
+			Vec<u8>,
+			G1Affine,
+			Bn256_4_68,
+			PoseidonSponge<Fr, WIDTH, Params>,
+		>::new(Vec::new());
 		let rng = &mut thread_rng();
 		let accumulator = KzgAs::<Bn256, Gwc19>::create_proof(
 			&Default::default(),
@@ -231,7 +248,7 @@ impl Circuit<Fr> for Aggregator {
 	fn without_witnesses(&self) -> Self {
 		Self {
 			svk: self.svk,
-			snarks: self.snarks.iter().map(UnassignedSnark::without_witnesses).collect(),
+			snarks: self.snarks.iter().map(UnassignedSnark::without_witness).collect(),
 			instances: self.instances.clone(),
 			as_proof: None,
 		}
@@ -248,7 +265,7 @@ impl Circuit<Fr> for Aggregator {
 		let poseidon = PoseidonConfig::new(full_round_selector, partial_round_selector);
 
 		let absorb_selector = AbsorbChip::<Fr, WIDTH>::configure(&common, meta);
-		let poseidon_sponge = PoseidonSpongeConfig::new(poseidon.clone(), absorb_selector);
+		let poseidon_sponge = PoseidonSpongeConfig::new(poseidon, absorb_selector);
 
 		let bits2num = Bits2NumChip::configure(&common, meta);
 
@@ -306,8 +323,14 @@ impl Circuit<Fr> for Aggregator {
 			},
 		)?;
 
-		let accumulator_limbs = {
-			let loader_config = LoaderConfig::<'_, G1Affine, _, Bn256_4_68>::new(
+		let _accumulator_limbs = {
+			let loader_config = LoaderConfig::<
+				'_,
+				G1Affine,
+				_,
+				Bn256_4_68,
+				StatefulSpongeChipset<Fr, WIDTH, Params>,
+			>::new(
 				layouter.namespace(|| "loader"),
 				config.common.clone(),
 				config.ecc_mul_scalar,
@@ -330,13 +353,13 @@ impl Circuit<Fr> for Aggregator {
 
 				let protocol = snark.protocol.loaded(&loader_config);
 
-				let mut transcript_read: PoseidonReadChipset<
+				let mut transcript_read: TranscriptReadChipset<
 					&[u8],
 					G1Affine,
 					_,
 					Bn256_4_68,
-					Params,
-				> = PoseidonReadChipset::new(snark.proof(), loader_config.clone());
+					StatefulSpongeChipset<Fr, WIDTH, Params>,
+				> = TranscriptReadChipset::new(snark.proof(), loader_config.clone());
 
 				let proof = PSV::read_proof(
 					&self.svk, &protocol, &loaded_instances, &mut transcript_read,
@@ -348,8 +371,13 @@ impl Circuit<Fr> for Aggregator {
 			}
 
 			let as_proof = self.as_proof.as_ref().map(Vec::as_slice);
-			let mut transcript: PoseidonReadChipset<&[u8], G1Affine, _, Bn256_4_68, Params> =
-				PoseidonReadChipset::new(as_proof, loader_config);
+			let mut transcript: TranscriptReadChipset<
+				&[u8],
+				G1Affine,
+				_,
+				Bn256_4_68,
+				StatefulSpongeChipset<Fr, WIDTH, Params>,
+			> = TranscriptReadChipset::new(as_proof, loader_config);
 			let proof = KzgAs::<Bn256, Gwc19>::read_proof(
 				&Default::default(),
 				&accumulators,
@@ -381,6 +409,7 @@ impl Circuit<Fr> for Aggregator {
 #[cfg(test)]
 mod test {
 
+	use super::{Aggregator, Snark};
 	use crate::{utils::generate_params, CommonConfig, RegionCtx};
 	use halo2::{
 		circuit::{Layouter, Region, SimpleFloorPlanner, Value},
@@ -390,8 +419,6 @@ mod test {
 		poly::Rotation,
 	};
 	use rand::thread_rng;
-
-	use super::{Aggregator, Snark};
 
 	type Scalar = Fr;
 
@@ -462,7 +489,7 @@ mod test {
 		}
 	}
 
-	// #[ignore = "Aggregator fails"]
+	// #[ignore = "Aggregator takes too long to run"]
 	#[test]
 	fn test_aggregator() {
 		// Testing Aggregator

@@ -3,9 +3,7 @@ pub mod native;
 
 use crate::{
 	gadgets::set::{SetChipset, SetConfig},
-	params::RoundParams,
-	poseidon::{PoseidonChipset, PoseidonConfig},
-	Chipset, CommonConfig, FieldExt, RegionCtx,
+	Chipset, CommonConfig, FieldExt, HasherChipset, RegionCtx,
 };
 use halo2::{
 	circuit::{AssignedCell, Layouter, Region},
@@ -17,45 +15,51 @@ const WIDTH: usize = 5;
 
 /// Configuration elements for the circuit are defined here.
 #[derive(Debug, Clone)]
-pub struct MerklePathConfig {
-	poseidon: PoseidonConfig,
+pub struct MerklePathConfig<F: FieldExt, H>
+where
+	H: HasherChipset<F, WIDTH>,
+{
+	hasher: H::Config,
 	set: SetConfig,
 }
 
-impl MerklePathConfig {
+impl<F: FieldExt, H> MerklePathConfig<F, H>
+where
+	H: HasherChipset<F, WIDTH>,
+{
 	/// Construct a new config given the selector of child chips
-	pub fn new(poseidon: PoseidonConfig, set: SetConfig) -> Self {
-		Self { poseidon, set }
+	pub fn new(hasher: H::Config, set: SetConfig) -> Self {
+		Self { hasher, set }
 	}
 }
 
 /// Constructs a chip for the circuit.
 #[derive(Clone)]
-pub struct MerklePathChip<F: FieldExt, const LENGTH: usize, P>
+pub struct MerklePathChip<F: FieldExt, const LENGTH: usize, H>
 where
-	P: RoundParams<F, WIDTH>,
+	H: HasherChipset<F, WIDTH>,
 {
 	/// Constructs cell arrays for the nodes.
 	nodes: [[AssignedCell<F, F>; 2]; LENGTH],
-	/// Constructs a phantom data for the parameters.
-	_params: PhantomData<P>,
+	/// Constructs a phantom data for the hasher.
+	_hasher: PhantomData<H>,
 }
 
-impl<F: FieldExt, const LENGTH: usize, P> MerklePathChip<F, LENGTH, P>
+impl<F: FieldExt, const LENGTH: usize, H> MerklePathChip<F, LENGTH, H>
 where
-	P: RoundParams<F, WIDTH>,
+	H: HasherChipset<F, WIDTH>,
 {
 	/// Create a new chip.
 	pub fn new(nodes: [[AssignedCell<F, F>; 2]; LENGTH]) -> Self {
-		MerklePathChip { nodes, _params: PhantomData }
+		MerklePathChip { nodes, _hasher: PhantomData }
 	}
 }
 
-impl<F: FieldExt, const LENGTH: usize, P> Chipset<F> for MerklePathChip<F, LENGTH, P>
+impl<F: FieldExt, const LENGTH: usize, H> Chipset<F> for MerklePathChip<F, LENGTH, H>
 where
-	P: RoundParams<F, WIDTH>,
+	H: HasherChipset<F, WIDTH>,
 {
-	type Config = MerklePathConfig;
+	type Config = MerklePathConfig<F, H>;
 	type Output = AssignedCell<F, F>;
 
 	/// Synthesize the circuit.
@@ -71,18 +75,15 @@ where
 		)?;
 
 		for i in 0..self.nodes.len() - 1 {
-			let pos = PoseidonChipset::<F, WIDTH, P>::new([
+			let hasher = H::new([
 				self.nodes[i][0].clone(),
 				self.nodes[i][1].clone(),
 				zero.clone(),
 				zero.clone(),
 				zero.clone(),
 			]);
-			let hashes = pos.synthesize(
-				&common,
-				&config.poseidon,
-				layouter.namespace(|| "poseidon_level_hash"),
-			)?;
+			let hashes =
+				hasher.finalize(&common, &config.hasher, layouter.namespace(|| "level_hash"))?;
 
 			let set = SetChipset::<F>::new(self.nodes[i + 1].to_vec(), hashes[0].clone());
 			let is_inside = set.synthesize(
@@ -122,7 +123,9 @@ mod test {
 		},
 		merkle_tree::native::{MerkleTree, Path},
 		params::poseidon_bn254_5x5::Params,
-		poseidon::{FullRoundChip, PartialRoundChip},
+		poseidon::{
+			native::Poseidon, FullRoundChip, PartialRoundChip, PoseidonChipset, PoseidonConfig,
+		},
 		utils::{generate_params, prove_and_verify},
 		Chip, CommonConfig,
 	};
@@ -135,79 +138,73 @@ mod test {
 	};
 	use rand::thread_rng;
 
-	#[derive(Clone, Debug)]
+	type NativeH = Poseidon<Fr, 5, Params>;
+	type H = PoseidonChipset<Fr, 5, Params>;
+
+	#[derive(Clone)]
 	struct TestConfig {
 		common: CommonConfig,
-		path: MerklePathConfig,
+		path: MerklePathConfig<Fr, H>,
 	}
 
 	#[derive(Clone)]
-	struct TestCircuit<F: FieldExt, const LENGTH: usize, P>
-	where
-		P: RoundParams<F, WIDTH>,
-	{
-		path_arr: [[F; 2]; LENGTH],
-		_params: PhantomData<P>,
+	struct TestCircuit<const LENGTH: usize> {
+		path_arr: [[Value<Fr>; 2]; LENGTH],
+		_h: PhantomData<H>,
 	}
 
-	impl<F: FieldExt, const LENGTH: usize, P> TestCircuit<F, LENGTH, P>
-	where
-		P: RoundParams<F, WIDTH>,
-	{
-		fn new(path_arr: [[F; 2]; LENGTH]) -> Self {
-			Self { path_arr, _params: PhantomData }
+	impl<const LENGTH: usize> TestCircuit<LENGTH> {
+		fn new(path_arr: [[Fr; 2]; LENGTH]) -> Self {
+			Self { path_arr: path_arr.map(|l| l.map(|x| Value::known(x))), _h: PhantomData }
 		}
 	}
 
-	impl<F: FieldExt, const LENGTH: usize, P> Circuit<F> for TestCircuit<F, LENGTH, P>
-	where
-		P: RoundParams<F, WIDTH>,
-	{
+	impl<const LENGTH: usize> Circuit<Fr> for TestCircuit<LENGTH> {
 		type Config = TestConfig;
 		type FloorPlanner = SimpleFloorPlanner;
 
 		fn without_witnesses(&self) -> Self {
-			Self { path_arr: [[F::ZERO; 2]; LENGTH], _params: PhantomData }
+			Self { path_arr: [[Value::unknown(); 2]; LENGTH], _h: PhantomData }
 		}
 
-		fn configure(meta: &mut ConstraintSystem<F>) -> TestConfig {
+		fn configure(meta: &mut ConstraintSystem<Fr>) -> TestConfig {
 			let common = CommonConfig::new(meta);
 			let main = MainConfig::new(MainChip::configure(&common, meta));
-			let fr_selector = FullRoundChip::<_, WIDTH, P>::configure(&common, meta);
-			let pr_selector = PartialRoundChip::<_, WIDTH, P>::configure(&common, meta);
+			let fr_selector = FullRoundChip::<_, WIDTH, Params>::configure(&common, meta);
+			let pr_selector = PartialRoundChip::<_, WIDTH, Params>::configure(&common, meta);
 			let poseidon = PoseidonConfig::new(fr_selector, pr_selector);
 			let set_selector = SetChip::configure(&common, meta);
 			let set = SetConfig::new(main, set_selector);
-			let path = MerklePathConfig::new(poseidon, set);
+			let path = MerklePathConfig::<Fr, H>::new(poseidon, set);
 
 			TestConfig { common, path }
 		}
 
 		fn synthesize(
-			&self, config: TestConfig, mut layouter: impl Layouter<F>,
+			&self, config: TestConfig, mut layouter: impl Layouter<Fr>,
 		) -> Result<(), Error> {
 			let path_arr = layouter.assign_region(
 				|| "temp",
-				|region: Region<'_, F>| {
+				|region: Region<'_, Fr>| {
 					let mut ctx = RegionCtx::new(region, 0);
 
-					let mut path_arr: [[Option<AssignedCell<F, F>>; 2]; LENGTH] =
+					let mut path_arr: [[Option<AssignedCell<Fr, Fr>>; 2]; LENGTH] =
 						[[(); 2]; LENGTH].map(|_| [(); 2].map(|_| None));
 
 					for i in 0..LENGTH {
-						let l_val = Value::known(self.path_arr[i][0]);
-						let r_val = Value::known(self.path_arr[i][1]);
-						let l_assigned = ctx.assign_advice(config.common.advice[0], l_val)?;
-						let r_assigned = ctx.assign_advice(config.common.advice[1], r_val)?;
-						path_arr[i][0] = Some(l_assigned);
-						path_arr[i][1] = Some(r_assigned);
+						let left_assigned =
+							ctx.assign_advice(config.common.advice[0], self.path_arr[i][0])?;
+						let right_assigned =
+							ctx.assign_advice(config.common.advice[1], self.path_arr[i][1])?;
+						path_arr[i][0] = Some(left_assigned);
+						path_arr[i][1] = Some(right_assigned);
 
 						ctx.next();
 					}
 					Ok(path_arr.map(|a| a.map(|a| a.unwrap())))
 				},
 			)?;
-			let merkle_path = MerklePathChip::<F, LENGTH, P>::new(path_arr);
+			let merkle_path = MerklePathChip::<Fr, LENGTH, H>::new(path_arr);
 			let root = merkle_path.synthesize(
 				&config.common,
 				&config.path,
@@ -234,9 +231,9 @@ mod test {
 			Fr::random(rng.clone()),
 			Fr::random(rng.clone()),
 		];
-		let merkle = MerkleTree::<Fr, Params>::build_tree(leaves, 3);
-		let path = Path::<Fr, 4, Params>::find_path(&merkle, value);
-		let test_chip = TestCircuit::<Fr, 4, Params>::new(path.path_arr);
+		let merkle = MerkleTree::<Fr, NativeH>::build_tree(leaves, 3);
+		let path = Path::<Fr, 4, NativeH>::find_path(&merkle, value);
+		let test_chip = TestCircuit::<4>::new(path.path_arr);
 		let k = 9;
 		let pub_ins = vec![merkle.root];
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
@@ -257,9 +254,9 @@ mod test {
 			Fr::random(rng.clone()),
 			Fr::random(rng.clone()),
 		];
-		let merkle = MerkleTree::<Fr, Params>::build_tree(leaves, 8);
-		let path = Path::<Fr, 9, Params>::find_path(&merkle, value);
-		let test_chip = TestCircuit::<Fr, 9, Params>::new(path.path_arr);
+		let merkle = MerkleTree::<Fr, NativeH>::build_tree(leaves, 8);
+		let path = Path::<Fr, 9, NativeH>::find_path(&merkle, value);
+		let test_chip = TestCircuit::<9>::new(path.path_arr);
 		let k = 10;
 		let pub_ins = vec![merkle.root];
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
@@ -272,9 +269,9 @@ mod test {
 		let rng = &mut thread_rng();
 		let value = Fr::random(rng.clone());
 		let leaves = vec![Fr::random(rng.clone()), value];
-		let merkle = MerkleTree::<Fr, Params>::build_tree(leaves, 1);
-		let path = Path::<Fr, 2, Params>::find_path(&merkle, value);
-		let test_chip = TestCircuit::<Fr, 2, Params>::new(path.path_arr);
+		let merkle = MerkleTree::<Fr, NativeH>::build_tree(leaves, 1);
+		let path = Path::<Fr, 2, NativeH>::find_path(&merkle, value);
+		let test_chip = TestCircuit::<2>::new(path.path_arr);
 		let k = 9;
 		let pub_ins = vec![merkle.root];
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
@@ -297,9 +294,9 @@ mod test {
 			Fr::random(rng.clone()),
 			Fr::random(rng.clone()),
 		];
-		let merkle = MerkleTree::<Fr, Params>::build_tree(leaves, 4);
-		let path = Path::<Fr, 5, Params>::find_path(&merkle, value);
-		let test_chip = TestCircuit::<Fr, 5, Params>::new(path.path_arr);
+		let merkle = MerkleTree::<Fr, NativeH>::build_tree(leaves, 4);
+		let path = Path::<Fr, 5, NativeH>::find_path(&merkle, value);
+		let test_chip = TestCircuit::<5>::new(path.path_arr);
 		let k = 9;
 		let pub_ins = vec![merkle.root];
 		let rng = &mut rand::thread_rng();

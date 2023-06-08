@@ -1,12 +1,12 @@
 use crate::ClientConfig;
 use clap::{Args, Parser, Subcommand};
 use eigen_trust_circuit::utils::write_json_data;
-use eigen_trust_client::attestation::Attestation;
+use eigen_trust_client::attestation::{Attestation, DOMAIN_PREFIX, DOMAIN_PREFIX_LEN};
 use ethers::{
 	abi::Address,
 	providers::Http,
 	signers::coins_bip39::{English, Mnemonic},
-	utils::hex,
+	types::{H160, U256},
 };
 use std::str::FromStr;
 
@@ -40,8 +40,11 @@ pub enum Mode {
 #[derive(Args, Debug)]
 pub struct UpdateData {
 	/// Address of the AttestationStation contract (20-byte ethereum address)
-	#[clap(long = "att-address")]
+	#[clap(long = "as-address")]
 	as_address: Option<String>,
+	/// Domain id (20-byte hex string)
+	#[clap(long = "domain")]
+	domain: Option<String>,
 	/// Ethereum wallet mnemonic phrase
 	#[clap(long = "mnemonic")]
 	mnemonic: Option<String>,
@@ -60,6 +63,11 @@ pub fn handle_update(config: &mut ClientConfig, data: UpdateData) -> Result<(), 
 			Address::from_str(&as_address).map_err(|_| "Failed to parse address.")?.to_string();
 	}
 
+	if let Some(domain) = data.domain {
+		config.as_address =
+			H160::from_str(&domain).map_err(|_| "Failed to parse domain")?.to_string();
+	}
+
 	if let Some(mnemonic) = data.mnemonic {
 		Mnemonic::<English>::new_from_phrase(&mnemonic).map_err(|_| "Failed to parse mnemonic.")?;
 		config.mnemonic = mnemonic;
@@ -71,7 +79,7 @@ pub fn handle_update(config: &mut ClientConfig, data: UpdateData) -> Result<(), 
 	}
 
 	if let Some(verifier_address) = data.verifier_address {
-		config.et_verifier_wrapper_address = Address::from_str(&verifier_address)
+		config.verifier_address = Address::from_str(&verifier_address)
 			.map_err(|_| "Failed to parse address.")?
 			.to_string();
 	}
@@ -91,14 +99,11 @@ pub struct AttestData {
 	/// Attestation message (hex-encoded)
 	#[clap(long = "message")]
 	message: Option<String>,
-	/// Attestation key
-	#[clap(long = "key")]
-	key: Option<String>,
 }
 
 impl AttestData {
 	/// Converts `AttestData` to `Attestation`
-	pub fn to_attestation(&self) -> Result<Attestation, &'static str> {
+	pub fn to_attestation(&self, config: &ClientConfig) -> Result<Attestation, &'static str> {
 		// Parse Address
 		let parsed_address: Address = self
 			.address
@@ -116,43 +121,70 @@ impl AttestData {
 			.map_err(|_| "Failed to parse score. It must be a number between 0 and 255.")?;
 
 		// Parse message
-		let mut message_array = [0u8; 32];
-		if let Some(message) = &self.message {
-			let message = message.trim_start_matches("0x");
+		let message = match &self.message {
+			Some(message_str) => {
+				let message = U256::from_str(message_str).map_err(|_| "Failed to parse message")?;
+				Some(message)
+			},
+			None => None,
+		};
 
-			// If the message has an odd number of characters, prepend a '0'
-			let message = if message.len() % 2 == 1 {
-				format!("0{}", message)
-			} else {
-				message.to_string()
-			};
+		// Key
+		let domain = H160::from_str(&config.domain).map_err(|_| "Failed to parse domain")?;
+		let mut key_bytes: [u8; 32] = [0; 32];
+		key_bytes[..DOMAIN_PREFIX_LEN].copy_from_slice(&DOMAIN_PREFIX);
+		key_bytes[DOMAIN_PREFIX_LEN..].copy_from_slice(domain.as_bytes());
+		let key = U256::from(key_bytes);
 
-			let message_bytes = hex::decode(&message).map_err(|_| "Failed to parse message.")?;
-			if message_bytes.len() > 32 {
-				return Err("Message too long.");
-			}
-
-			// Calculate the starting index for the copy operation
-			let start_index = 32 - message_bytes.len();
-			message_array[start_index..].copy_from_slice(&message_bytes);
-		}
-
-		Ok(Attestation::new(
-			parsed_address,
-			[0; 32],
-			parsed_score,
-			Some(message_array),
-		))
+		Ok(Attestation::new(parsed_address, key, parsed_score, message))
 	}
 }
 
 #[cfg(test)]
 mod tests {
-	use crate::cli::Cli;
+	use crate::cli::{AttestData, Cli};
 	use clap::CommandFactory;
+	use eigen_trust_client::{attestation::DOMAIN_PREFIX, ClientConfig};
+	use ethers::types::U256;
+	use std::str::FromStr;
 
 	#[test]
 	fn test_cli() {
 		Cli::command().debug_assert()
+	}
+
+	#[test]
+	fn test_attest_data_to_attestation() {
+		let config = ClientConfig {
+			as_address: "test".to_string(),
+			domain: "0x0000000000000000000000000000000000000000".to_string(),
+			mnemonic: "test".to_string(),
+			node_url: "http://localhost:8545".to_string(),
+			verifier_address: "test".to_string(),
+		};
+
+		let data = AttestData {
+			address: Some("0x5fbdb2315678afecb367f032d93f642f64180aa3".to_string()),
+			score: Some("5".to_string()),
+			message: Some("0x1234512345".to_string()),
+		};
+
+		let attestation = data.to_attestation(&config).unwrap();
+
+		assert_eq!(
+			attestation.about,
+			"0x5fbdb2315678afecb367f032d93f642f64180aa3".parse().unwrap()
+		);
+		assert_eq!(attestation.value, 5);
+
+		let mut expected_key_bytes: [u8; 32] = [0; 32];
+		expected_key_bytes[..DOMAIN_PREFIX.len()].copy_from_slice(&DOMAIN_PREFIX);
+		let expected_key = U256::from(expected_key_bytes);
+
+		assert_eq!(attestation.key, expected_key);
+
+		let expected_message = U256::from_str(&"0x1234512345".to_string()).unwrap();
+
+		assert_eq!(attestation.message, expected_message);
 	}
 }

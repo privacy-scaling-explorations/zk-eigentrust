@@ -1,14 +1,18 @@
+use std::marker::PhantomData;
+
 use crate::{
 	edwards::{
-		native::Point,
+		native::{Point, UnassignedPoint},
 		params::{BabyJubJub, EdwardsParams},
 	},
 	params::poseidon_bn254_5x5::Params,
 	poseidon::native::Poseidon,
 	utils::to_wide,
+	UnassignedValue,
 };
 use halo2::{
 	arithmetic::Field,
+	circuit::Value,
 	halo2curves::{bn256::Fr, ff::FromUniformBytes, group::ff::PrimeField},
 };
 use num_bigint::BigUint;
@@ -91,6 +95,22 @@ impl PublicKey {
 	}
 }
 
+/// Configures a structure for the unassigned public key.
+#[derive(Clone, Copy, Default, Debug)]
+pub struct UnassignedPublicKey(pub UnassignedPoint<Fr, BabyJubJub>);
+
+impl From<PublicKey> for UnassignedPublicKey {
+	fn from(pk: PublicKey) -> Self {
+		Self(UnassignedPoint { x: Value::known(pk.0.x), y: Value::known(pk.0.y), _p: PhantomData })
+	}
+}
+
+impl UnassignedValue for UnassignedPublicKey {
+	fn without_witnesses() -> Self {
+		Self(UnassignedPoint { x: Value::unknown(), y: Value::unknown(), _p: PhantomData })
+	}
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 /// Configures signature objects.
 pub struct Signature {
@@ -116,6 +136,37 @@ impl Default for Signature {
 
 		let point = Point::new(r_x, r_y);
 		Self { big_r: point, s }
+	}
+}
+
+#[derive(Clone, Debug)]
+/// Configures unassigned signature objects.
+pub struct UnassignedSignature {
+	/// Constructs a unassigned point for the R.
+	pub big_r: UnassignedPoint<Fr, BabyJubJub>,
+	/// Constructs a unassigned field element for the s.
+	pub s: Value<Fr>,
+}
+
+impl From<Signature> for UnassignedSignature {
+	fn from(sig: Signature) -> Self {
+		Self {
+			big_r: UnassignedPoint {
+				x: Value::known(sig.big_r.x),
+				y: Value::known(sig.big_r.y),
+				_p: PhantomData,
+			},
+			s: Value::known(sig.s),
+		}
+	}
+}
+
+impl UnassignedValue for UnassignedSignature {
+	fn without_witnesses() -> Self {
+		Self {
+			big_r: UnassignedPoint { x: Value::unknown(), y: Value::unknown(), _p: PhantomData },
+			s: Value::unknown(),
+		}
 	}
 }
 

@@ -2,7 +2,7 @@ use crate::{
 	gadgets::absorb::AbsorbChip,
 	params::RoundParams,
 	poseidon::{PoseidonChipset, PoseidonConfig},
-	Chip, Chipset, CommonConfig, FieldExt, RegionCtx,
+	Chip, Chipset, CommonConfig, FieldExt, RegionCtx, SpongeHasherChipset,
 };
 use halo2::{
 	circuit::{AssignedCell, Layouter, Region},
@@ -108,12 +108,14 @@ where
 	default: AssignedCell<F, F>,
 }
 
-impl<F: FieldExt, const WIDTH: usize, P> StatefulSpongeChipset<F, WIDTH, P>
+impl<F: FieldExt, const WIDTH: usize, P> SpongeHasherChipset<F>
+	for StatefulSpongeChipset<F, WIDTH, P>
 where
 	P: RoundParams<F, WIDTH>,
 {
+	type Config = PoseidonSpongeConfig;
 	/// Initialise the sponge
-	pub fn init(common: &CommonConfig, mut layouter: impl Layouter<F>) -> Result<Self, Error> {
+	fn init(common: &CommonConfig, mut layouter: impl Layouter<F>) -> Result<Self, Error> {
 		let zero = layouter.assign_region(
 			|| "load_initial_state",
 			|region: Region<'_, F>| {
@@ -128,14 +130,14 @@ where
 	}
 
 	/// Clones and appends all elements from a slice to the vec.
-	pub fn update(&mut self, inputs: &[AssignedCell<F, F>]) {
+	fn update(&mut self, inputs: &[AssignedCell<F, F>]) {
 		self.chipset.update(inputs);
 	}
 
 	/// Squeeze the data out by
 	/// permuting until no more chunks are left.
-	pub fn squeeze(
-		&mut self, common: &CommonConfig, config: &PoseidonSpongeConfig, layouter: impl Layouter<F>,
+	fn squeeze(
+		&mut self, common: &CommonConfig, config: &Self::Config, layouter: impl Layouter<F>,
 	) -> Result<AssignedCell<F, F>, Error> {
 		let res = self.chipset.clone().synthesize(common, config, layouter)?;
 		let ret_value = res[0].clone();
@@ -151,7 +153,7 @@ mod test {
 		poseidon::{
 			native::sponge::PoseidonSponge, FullRoundChip, PartialRoundChip, PoseidonConfig,
 		},
-		Chip, Chipset, CommonConfig, RegionCtx, ADVICE,
+		Chip, Chipset, CommonConfig, RegionCtx, SpongeHasherChipset, ADVICE,
 	};
 
 	use crate::params::{hex_to_field, poseidon_bn254_5x5::Params};
