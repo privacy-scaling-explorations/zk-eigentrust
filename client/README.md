@@ -57,7 +57,7 @@ The command-line interface was built using [clap.rs](http://clap.rs/). There is 
 - `attest`: Submits an attestation. Takes the following options:
   - `--to`: Specify the attested address.
   - `--score`: Specify the given score (between 0 and 255).
-  - `--message`: Specify an optional message in hexadecimal format.
+  - `--message`: Specify an optional 32-byte message in hexadecimal format.
 - `compile`: Compiles all the `.sol` and `.yul` contracts available in the `data` folder. For `.sol` contracts, it generates an ABI JSON file and a Rust binding file. For `.yul` smart contracts, it compiles Yul code into binary.
 - `deploy`: Deploys all the contracts.
 - `proof`: Calculates the global scores, generates the zk proof and stores it in `et-proof.json` at the `data` directory.
@@ -79,7 +79,7 @@ cargo run --release -- update --node http://localhost:8545
 ### Example of `attest` command
 
 ```bash
-cargo run --release -- attest --to 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 --score 5 --message 0x68656c6c6f
+cargo run --release -- attest --to 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 --score 5 --message 0x473fe1d0de78c8f334d059013d902c13c8b53eb0f669caa9cad677ce1a601167
 ```
 
 ## Configuration
