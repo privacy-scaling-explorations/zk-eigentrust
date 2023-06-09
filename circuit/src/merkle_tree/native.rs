@@ -29,8 +29,6 @@ where
 	pub fn build_tree(mut leaves: Vec<F>) -> Self {
 		assert!(leaves.len() <= pow(ARITY, HEIGHT));
 		assert!(ARITY <= WIDTH);
-		// Checks if ARITY is power of 2
-		assert!((ARITY > 0) && ((ARITY & (ARITY - 1)) == 0));
 
 		// 0th level is the leaf level and the max level is the root level
 		let mut nodes = HashMap::new();

@@ -298,14 +298,14 @@ mod test {
 	}
 
 	#[test]
-	fn test_verify_path_small_arity_4() {
-		// Testing membership of the given path with arity 4 and a small tree.
+	fn test_verify_path_small_arity_5() {
+		// Testing membership of the given path with arity 5 and a small tree.
 		let rng = &mut thread_rng();
 		let value = Fr::random(rng.clone());
 		let leaves = vec![Fr::random(rng.clone()), value];
-		let merkle = MerkleTree::<Fr, 4, 1, NativeH>::build_tree(leaves);
-		let path = Path::<Fr, 4, 1, 2, NativeH>::find_path(&merkle, value);
-		let test_chip = TestCircuit::<4, 2>::new(path.path_arr);
+		let merkle = MerkleTree::<Fr, 5, 1, NativeH>::build_tree(leaves);
+		let path = Path::<Fr, 5, 1, 2, NativeH>::find_path(&merkle, value);
+		let test_chip = TestCircuit::<5, 2>::new(path.path_arr);
 		let k = 9;
 		let pub_ins = vec![merkle.root];
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
