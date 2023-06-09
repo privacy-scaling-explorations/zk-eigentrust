@@ -8,6 +8,7 @@ use halo2::{
 	arithmetic::Field,
 	halo2curves::{bn256::Fr, ff::PrimeField},
 };
+use itertools::Itertools;
 use num_bigint::{BigInt, ToBigInt};
 use num_rational::BigRational;
 use num_traits::{FromPrimitive, Zero};
@@ -90,7 +91,7 @@ impl Default for SignedAttestation {
 }
 
 /// Attestation struct
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, PartialOrd)]
 pub struct AttestationFr {
 	/// Ethereum address of peer being rated
 	pub about: Fr,
@@ -179,8 +180,11 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITERATIONS: usize, const INITIAL_SCO
 	}
 
 	/// Update the opinion of the member
-	pub fn update_op(&mut self, from: ECDSAPublicKey, op: Vec<SignedAttestation>) -> Fr {
-		let op = Opinion::new(from, op);
+	pub fn update_op(&mut self, from: ECDSAPublicKey, op: Vec<Option<SignedAttestation>>) -> Fr {
+		let default_att = SignedAttestation::default();
+		let op_unwrapped =
+			op.iter().map(|x| x.clone().unwrap_or(default_att.clone())).collect_vec();
+		let op = Opinion::<NUM_NEIGHBOURS>::new(from, op_unwrapped);
 		let set = self.set.iter().map(|&(pk, _)| pk.clone()).collect();
 		let (from_pk, scores, op_hash) = op.validate(set);
 
@@ -405,7 +409,7 @@ mod test {
 		const INITIAL_SCORE: u128,
 	>(
 		sk: &SecretKey, pks: &[Fr], scores: &[Fr],
-	) -> Vec<SignedAttestation> {
+	) -> Vec<Option<SignedAttestation>> {
 		assert!(pks.len() == NUM_NEIGHBOURS);
 		assert!(scores.len() == NUM_NEIGHBOURS);
 
@@ -414,7 +418,7 @@ mod test {
 		let mut res = Vec::new();
 		for i in 0..NUM_NEIGHBOURS {
 			if pks[i] == Fr::zero() {
-				res.push(SignedAttestation::default())
+				res.push(None)
 			} else {
 				let (about, key, value, message) = (pks[i], Fr::zero(), scores[i], Fr::zero());
 				let attestation = AttestationFr::new(about, key, value, message);
@@ -423,7 +427,7 @@ mod test {
 					sign.sign_ecdsa_recoverable(&Message::from_slice(msg.as_slice()).unwrap(), sk);
 				let signed_attestation = SignedAttestation::new(attestation, signature);
 
-				res.push(signed_attestation);
+				res.push(Some(signed_attestation));
 			}
 		}
 		res
