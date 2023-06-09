@@ -9,8 +9,7 @@ use crate::{
 	FieldExt, RegionCtx, SpongeHasherChipset,
 };
 use halo2::{
-	arithmetic::Field,
-	circuit::{AssignedCell, Layouter, Region, Value},
+	circuit::{Layouter, Region, Value},
 	halo2curves::{Coordinates, CurveAffine},
 };
 use snark_verifier::{
@@ -29,7 +28,7 @@ use std::{
 pub mod native;
 
 /// TranscriptReadChipset structure
-pub struct TranscriptReadChipset<RD: Read, C: CurveAffine, L: Layouter<C::Scalar>, P, H>
+pub struct TranscriptReadChipset<'a, RD: Read, C: CurveAffine, L: Layouter<C::Scalar>, P, H>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	H: SpongeHasherChipset<C::Scalar>,
@@ -41,40 +40,32 @@ where
 	// PoseidonSponge
 	state: H,
 	// Loader
-	loader: LoaderConfig<C, L, P, H>,
+	loader: LoaderConfig<'a, C, L, P, H>,
 	// PhantomData
 	_p: PhantomData<P>,
 }
 
-impl<RD: Read, C: CurveAffine, L: Layouter<C::Scalar>, P, H> TranscriptReadChipset<RD, C, L, P, H>
+impl<'a, RD: Read, C: CurveAffine, L: Layouter<C::Scalar>, P, H>
+	TranscriptReadChipset<'a, RD, C, L, P, H>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	H: SpongeHasherChipset<C::Scalar>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
 {
-	/// Construct a new TranscriptReadChipset
-	pub fn new(reader: Option<RD>, loader: LoaderConfig<C, L, P, H>) -> Self {
-		Self { reader, state: H::new(), loader, _p: PhantomData }
-	}
+	/// Construct a new PoseidonReadChipset
+	pub fn new(reader: Option<RD>, loader: LoaderConfig<'a, C, L, P, H>) -> Self {
+		let sponge = {
+			let mut layouter_mut = loader.layouter.borrow_mut();
+			H::init(&loader.common, layouter_mut.namespace(|| "stateful_sponge")).unwrap()
+		};
 
-	/// Construct a new `assigned zero` value
-	pub fn assigned_zero(loader: LoaderConfig<C, L, P, H>) -> AssignedCell<C::Scalar, C::Scalar> {
-		let mut layouter = loader.layouter.lock().unwrap();
-		layouter
-			.assign_region(
-				|| "assigned_zero",
-				|region: Region<'_, C::Scalar>| {
-					let mut ctx = RegionCtx::new(region, 0);
-					Ok(ctx.assign_fixed(loader.common.fixed[0], <C::Scalar as Field>::ZERO)?)
-				},
-			)
-			.unwrap()
+		Self { reader, state: sponge, loader, _p: PhantomData }
 	}
 }
 
-impl<RD: Read, C: CurveAffine, L: Layouter<C::Scalar>, P, H> Transcript<C, LoaderConfig<C, L, P, H>>
-	for TranscriptReadChipset<RD, C, L, P, H>
+impl<'a, RD: Read, C: CurveAffine, L: Layouter<C::Scalar>, P, H>
+	Transcript<C, LoaderConfig<'a, C, L, P, H>> for TranscriptReadChipset<'a, RD, C, L, P, H>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	H: SpongeHasherChipset<C::Scalar>,
@@ -82,32 +73,32 @@ where
 	C::Scalar: FieldExt,
 {
 	/// Returns [`LoaderConfig`].
-	fn loader(&self) -> &LoaderConfig<C, L, P, H> {
+	fn loader(&self) -> &LoaderConfig<'a, C, L, P, H> {
 		&self.loader
 	}
 
 	/// Squeeze a challenge.
-	fn squeeze_challenge(&mut self) -> Halo2LScalar<C, L, P, H> {
-		let default = Self::assigned_zero(self.loader.clone());
-		self.state.update(&[default]);
-		let hasher = self.state.clone();
-		let mut loader_ref = self.loader.layouter.lock().unwrap();
-		let value = hasher
-			.squeeze(
-				&self.loader.common,
-				&self.loader.sponge,
-				loader_ref.namespace(|| "squeeze_challenge"),
-			)
-			.unwrap();
-		Halo2LScalar::new(value, self.loader.clone())
+	fn squeeze_challenge(&mut self) -> Halo2LScalar<'a, C, L, P, H> {
+		let result = {
+			let mut loader_ref = self.loader.layouter.borrow_mut();
+			let res = self
+				.state
+				.squeeze(
+					&self.loader.common,
+					&self.loader.sponge,
+					loader_ref.namespace(|| "squeeze_challenge"),
+				)
+				.unwrap();
+			res
+		};
+
+		Halo2LScalar::new(result, self.loader.clone())
 	}
 
 	/// Update with an elliptic curve point.
 	fn common_ec_point(
 		&mut self, ec_point: &Halo2LEcPoint<C, L, P, H>,
 	) -> Result<(), snark_verifier::Error> {
-		let default = Self::assigned_zero(self.loader.clone());
-		self.state.update(&[default]);
 		self.state.update(&ec_point.inner.x.limbs);
 		self.state.update(&ec_point.inner.y.limbs);
 
@@ -118,15 +109,14 @@ where
 	fn common_scalar(
 		&mut self, scalar: &Halo2LScalar<C, L, P, H>,
 	) -> Result<(), snark_verifier::Error> {
-		let default = Self::assigned_zero(self.loader.clone());
-		self.state.update(&[default, scalar.inner.clone()]);
+		self.state.update(&[scalar.inner.clone()]);
 
 		Ok(())
 	}
 }
 
-impl<RD: Read, C: CurveAffine, L: Layouter<C::Scalar>, P, H>
-	TranscriptRead<C, LoaderConfig<C, L, P, H>> for TranscriptReadChipset<RD, C, L, P, H>
+impl<'a, RD: Read, C: CurveAffine, L: Layouter<C::Scalar>, P, H>
+	TranscriptRead<C, LoaderConfig<'a, C, L, P, H>> for TranscriptReadChipset<'a, RD, C, L, P, H>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	H: SpongeHasherChipset<C::Scalar>,
@@ -134,7 +124,7 @@ where
 	C::Scalar: FieldExt,
 {
 	/// Read a scalar.
-	fn read_scalar(&mut self) -> Result<Halo2LScalar<C, L, P, H>, VerifierError> {
+	fn read_scalar(&mut self) -> Result<Halo2LScalar<'a, C, L, P, H>, VerifierError> {
 		// Taking out reader from Value for a proper error handling
 		let scalar = self.reader.as_mut().map_or_else(
 			|| Ok(Value::unknown()),
@@ -145,7 +135,7 @@ where
 				if let Err(e) = res {
 					return Err(VerifierError::Transcript(
 						e.kind(),
-						"invalid field element encoding in proof".to_string(),
+						"invalid field element encoding in proof - halo2".to_string(),
 					));
 				}
 
@@ -153,7 +143,7 @@ where
 				if let None = scalar_opt {
 					return Err(VerifierError::Transcript(
 						ErrorKind::Other,
-						"invalid field element encoding in proof".to_string(),
+						"invalid field element encoding in proof - halo2".to_string(),
 					));
 				}
 
@@ -162,27 +152,27 @@ where
 			},
 		)?;
 
-		let loader = self.loader.clone();
-		let mut layouter = loader.layouter.lock().unwrap();
-		let assigned_scalar = layouter
-			.assign_region(
-				|| "assign_scalar",
-				|region: Region<'_, C::Scalar>| {
-					let mut ctx = RegionCtx::new(region, 0);
-					let scalar = ctx.assign_advice(self.loader.common.advice[0], scalar)?;
-					Ok(scalar)
-				},
-			)
-			.unwrap();
-		drop(layouter);
+		let assigned_scalar = {
+			let mut layouter = self.loader.layouter.borrow_mut();
+			layouter
+				.assign_region(
+					|| "assign_scalar",
+					|region: Region<'_, C::Scalar>| {
+						let mut ctx = RegionCtx::new(region, 0);
+						let scalar = ctx.assign_advice(self.loader.common.advice[0], scalar)?;
+						Ok(scalar)
+					},
+				)
+				.unwrap()
+		};
 		let assigned_lscalar = Halo2LScalar::new(assigned_scalar, self.loader.clone());
-		Self::common_scalar(self, &assigned_lscalar)?;
+		self.common_scalar(&assigned_lscalar)?;
 
 		Ok(assigned_lscalar)
 	}
 
 	/// Read an elliptic curve point.
-	fn read_ec_point(&mut self) -> Result<Halo2LEcPoint<C, L, P, H>, VerifierError> {
+	fn read_ec_point(&mut self) -> Result<Halo2LEcPoint<'a, C, L, P, H>, VerifierError> {
 		// Taking out reader from Value for a proper error handling
 		let (x, y, x_limbs, y_limbs) = self.reader.as_mut().map_or_else(
 			|| {
@@ -199,7 +189,7 @@ where
 				if let Err(e) = res {
 					return Err(VerifierError::Transcript(
 						e.kind(),
-						"invalid field element encoding in proof".to_string(),
+						"invalid field element encoding in proof - halo2".to_string(),
 					));
 				}
 
@@ -207,7 +197,7 @@ where
 				if let None = point_opt {
 					return Err(VerifierError::Transcript(
 						ErrorKind::Other,
-						"invalid point encoding in proof".to_string(),
+						"invalid point encoding in proof - halo2".to_string(),
 					));
 				}
 
@@ -215,7 +205,7 @@ where
 				if let None = coordinates_opt {
 					return Err(VerifierError::Transcript(
 						ErrorKind::Other,
-						"invalid point coordinates in proof".to_string(),
+						"invalid point coordinates in proof - halo2".to_string(),
 					));
 				}
 				let coordinates: Coordinates<C> = coordinates_opt.unwrap();
@@ -236,32 +226,35 @@ where
 		)?;
 
 		let loader = self.loader.clone();
-		let mut layouter = loader.layouter.lock().unwrap();
-		let (assigned_x, assigned_y) = layouter
-			.assign_region(
-				|| "assign_coordinates",
-				|region: Region<'_, C::Scalar>| {
-					let mut ctx = RegionCtx::new(region, 0);
-					let mut assigned_x_limbs = Vec::new();
-					let mut assigned_y_limbs = Vec::new();
-					for i in 0..NUM_LIMBS {
-						let assigned_x_limb =
-							ctx.assign_advice(self.loader.common.advice[i], x_limbs[i]).unwrap();
-						assigned_x_limbs.push(assigned_x_limb);
-					}
+		let (assigned_x, assigned_y) = {
+			let mut layouter = loader.layouter.borrow_mut();
+			layouter
+				.assign_region(
+					|| "assign_coordinates",
+					|region: Region<'_, C::Scalar>| {
+						let mut ctx = RegionCtx::new(region, 0);
+						let mut assigned_x_limbs = Vec::new();
+						let mut assigned_y_limbs = Vec::new();
+						for i in 0..NUM_LIMBS {
+							let assigned_x_limb = ctx
+								.assign_advice(self.loader.common.advice[i], x_limbs[i])
+								.unwrap();
+							assigned_x_limbs.push(assigned_x_limb);
+						}
 
-					ctx.next();
+						ctx.next();
 
-					for i in 0..NUM_LIMBS {
-						let assigned_y_limb =
-							ctx.assign_advice(self.loader.common.advice[i], y_limbs[i]).unwrap();
-						assigned_y_limbs.push(assigned_y_limb);
-					}
-					Ok((assigned_x_limbs, assigned_y_limbs))
-				},
-			)
-			.unwrap();
-		drop(layouter);
+						for i in 0..NUM_LIMBS {
+							let assigned_y_limb = ctx
+								.assign_advice(self.loader.common.advice[i], y_limbs[i])
+								.unwrap();
+							assigned_y_limbs.push(assigned_y_limb);
+						}
+						Ok((assigned_x_limbs, assigned_y_limbs))
+					},
+				)
+				.unwrap()
+		};
 
 		let assigned_integer_x =
 			AssignedInteger::<_, _, NUM_LIMBS, NUM_BITS, P>::new(x, assigned_x.try_into().unwrap());
@@ -284,14 +277,16 @@ mod test {
 	use crate::{
 		circuit::{FullRoundHasher, PartialRoundHasher},
 		ecc::{
-			native::UnassignedEcPoint, AssignedPoint, EccAddConfig, EccDoubleConfig, EccMulConfig,
-			EccTableSelectConfig, EccUnreducedLadderConfig,
+			native::{EcPoint, UnassignedEcPoint},
+			AssignedPoint, EccAddConfig, EccDoubleConfig, EccMulConfig, EccTableSelectConfig,
+			EccUnreducedLadderConfig,
 		},
 		gadgets::{
 			absorb::AbsorbChip,
 			bits2num::Bits2NumChip,
 			main::{MainChip, MainConfig},
 		},
+		halo2::transcript::TranscriptWriterBuffer,
 		integer::{
 			native::{Integer, UnassignedInteger},
 			AssignedInteger, IntegerAddChip, IntegerDivChip, IntegerMulChip, IntegerReduceChip,
@@ -300,7 +295,7 @@ mod test {
 		params::poseidon_bn254_5x5::Params,
 		poseidon::{
 			native::sponge::PoseidonSponge,
-			sponge::{PoseidonSpongeChipset, PoseidonSpongeConfig},
+			sponge::{PoseidonSpongeConfig, StatefulSpongeChipset},
 			PoseidonConfig,
 		},
 		rns::bn256::Bn256_4_68,
@@ -309,9 +304,9 @@ mod test {
 				native::{NUM_BITS, NUM_LIMBS},
 				Halo2LEcPoint, Halo2LScalar,
 			},
-			transcript::native::WIDTH,
+			transcript::native::{NativeTranscriptWrite, WIDTH},
 		},
-		Chip, Chipset, CommonConfig, RegionCtx, UnassignedValue,
+		Chip, CommonConfig, RegionCtx, UnassignedValue,
 	};
 	use halo2::{
 		arithmetic::Field,
@@ -327,15 +322,17 @@ mod test {
 	use rand::thread_rng;
 	use snark_verifier::{
 		loader::native::NativeLoader as NativeSVLoader,
-		util::transcript::{Transcript, TranscriptRead},
+		util::transcript::{Transcript, TranscriptRead, TranscriptWrite},
 	};
-	use std::{io::Write, rc::Rc, sync::Mutex};
+	use std::io::Write;
 
 	type C = G1Affine;
 	type P = Bn256_4_68;
-	type H = PoseidonSpongeChipset<Scalar, WIDTH, Params>;
+	type H = StatefulSpongeChipset<Scalar, WIDTH, Params>;
+	type NativeH = PoseidonSponge<Scalar, WIDTH, Params>;
 	type Scalar = Fr;
 	type Base = Fq;
+
 	#[derive(Clone)]
 	struct TestConfig {
 		common: CommonConfig,
@@ -382,18 +379,12 @@ mod test {
 	#[derive(Clone)]
 	struct TestSqueezeCircuit;
 
-	impl TestSqueezeCircuit {
-		fn new() -> Self {
-			Self
-		}
-	}
-
 	impl Circuit<Scalar> for TestSqueezeCircuit {
 		type Config = TestConfig;
 		type FloorPlanner = SimpleFloorPlanner;
 
 		fn without_witnesses(&self) -> Self {
-			self.clone()
+			TestSqueezeCircuit
 		}
 
 		fn configure(meta: &mut ConstraintSystem<Scalar>) -> TestConfig {
@@ -403,21 +394,22 @@ mod test {
 		fn synthesize(
 			&self, config: TestConfig, mut layouter: impl Layouter<Scalar>,
 		) -> Result<(), Error> {
-			let layouter_rc = Rc::new(Mutex::new(layouter.namespace(|| "loader")));
-			let loader = LoaderConfig::<C, _, P, H>::new(
-				layouter_rc.clone(),
-				config.common.clone(),
-				config.ecc_mul_scalar,
-				config.main,
-				config.poseidon_sponge,
-			);
-			let reader = Vec::new();
-			let mut poseidon_read =
-				TranscriptReadChipset::<_, C, _, P, H>::new(Some(reader.as_slice()), loader);
-			let res = poseidon_read.squeeze_challenge();
+			let res = {
+				let loader = LoaderConfig::<C, _, P, H>::new(
+					layouter.namespace(|| "loader"),
+					config.common.clone(),
+					config.ecc_mul_scalar,
+					config.main,
+					config.poseidon_sponge,
+				);
+				let reader = Vec::new();
+				let mut poseidon_read =
+					TranscriptReadChipset::<_, C, _, P, H>::new(Some(reader.as_slice()), loader);
+				let res = poseidon_read.squeeze_challenge();
+				res.inner
+			};
 
-			let mut lb = layouter_rc.lock().unwrap();
-			lb.constrain_instance(res.inner.cell(), config.common.instance, 0)?;
+			layouter.constrain_instance(res.cell(), config.common.instance, 0)?;
 
 			Ok(())
 		}
@@ -434,9 +426,8 @@ mod test {
 			);
 
 		let res = poseidon_read.squeeze_challenge();
-		let circuit = TestSqueezeCircuit::new();
 		let k = 9;
-		let prover = MockProver::run(k, &circuit, vec![vec![res]]).unwrap();
+		let prover = MockProver::run(k, &TestSqueezeCircuit, vec![vec![res]]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
 	}
 
@@ -446,8 +437,18 @@ mod test {
 	}
 
 	impl TestCommonEcPointCircuit {
-		fn new(ec_point: UnassignedEcPoint<Base, Scalar, NUM_LIMBS, NUM_BITS, P>) -> Self {
-			Self { ec_point }
+		fn new(ec_point: EcPoint<Base, Scalar, NUM_LIMBS, NUM_BITS, P>) -> Self {
+			let unassigned_x = UnassignedInteger::new(
+				ec_point.x.clone(),
+				ec_point.x.limbs.map(|x| Value::known(x)),
+			);
+			let unassigned_y = UnassignedInteger::new(
+				ec_point.y.clone(),
+				ec_point.y.limbs.map(|y| Value::known(y)),
+			);
+
+			let unassigned_ec_point = UnassignedEcPoint::new(unassigned_x, unassigned_y);
+			Self { ec_point: unassigned_ec_point }
 		}
 	}
 
@@ -466,68 +467,63 @@ mod test {
 		fn synthesize(
 			&self, config: TestConfig, mut layouter: impl Layouter<Scalar>,
 		) -> Result<(), Error> {
-			let layouter_rc = Rc::new(Mutex::new(layouter.namespace(|| "loader")));
-			let loader = LoaderConfig::<C, _, P, H>::new(
-				layouter_rc.clone(),
-				config.common.clone(),
-				config.ecc_mul_scalar,
-				config.main,
-				config.poseidon_sponge.clone(),
-			);
-
 			let x = &self.ec_point.x;
 			let y = &self.ec_point.y;
 
-			let mut lb = layouter_rc.lock().unwrap();
-			let assigned_coordinates = lb
-				.assign_region(
-					|| "assign",
-					|region: Region<'_, Scalar>| {
-						let mut ctx = RegionCtx::new(region, 0);
-						let mut x_limbs: [Option<AssignedCell<Scalar, Scalar>>; NUM_LIMBS] =
-							[(); NUM_LIMBS].map(|_| None);
-						let mut y_limbs: [Option<AssignedCell<Scalar, Scalar>>; NUM_LIMBS] =
-							[(); NUM_LIMBS].map(|_| None);
-						for i in 0..NUM_LIMBS {
-							x_limbs[i] = Some(
-								ctx.assign_advice(config.common.advice[i], x.limbs[i]).unwrap(),
-							);
-							y_limbs[i] = Some(
-								ctx.assign_advice(config.common.advice[i + NUM_LIMBS], y.limbs[i])
-									.unwrap(),
-							);
-						}
-						Ok((x_limbs.map(|x| x.unwrap()), y_limbs.map(|x| x.unwrap())))
-					},
-				)
-				.unwrap();
-
-			let assigned_integer_x = AssignedInteger::<_, _, NUM_LIMBS, NUM_BITS, P>::new(
-				x.integer.clone(),
-				assigned_coordinates.0,
-			);
-			let assigned_integer_y = AssignedInteger::<_, _, NUM_LIMBS, NUM_BITS, P>::new(
-				y.integer.clone(),
-				assigned_coordinates.1,
-			);
-
-			let assigned_point = AssignedPoint::<_, _, NUM_LIMBS, NUM_BITS, P>::new(
-				assigned_integer_x, assigned_integer_y,
-			);
-			let ec_point = Halo2LEcPoint::new(assigned_point, loader.clone());
-
-			drop(lb);
-			let reader = Vec::new();
-			let mut poseidon_read =
-				TranscriptReadChipset::<_, C, _, P, H>::new(Some(reader.as_slice()), loader);
-			poseidon_read.common_ec_point(&ec_point).unwrap();
-			let mut lb = layouter_rc.lock().unwrap();
-			let res = poseidon_read.state.synthesize(
-				&config.common,
-				&config.poseidon_sponge,
-				lb.namespace(|| "squeeze"),
+			let assigned_coordinates = layouter.assign_region(
+				|| "assign",
+				|region: Region<'_, Scalar>| {
+					let mut ctx = RegionCtx::new(region, 0);
+					let mut x_limbs: [Option<AssignedCell<Scalar, Scalar>>; NUM_LIMBS] =
+						[(); NUM_LIMBS].map(|_| None);
+					let mut y_limbs: [Option<AssignedCell<Scalar, Scalar>>; NUM_LIMBS] =
+						[(); NUM_LIMBS].map(|_| None);
+					for i in 0..NUM_LIMBS {
+						x_limbs[i] = Some(ctx.assign_advice(config.common.advice[i], x.limbs[i])?);
+						y_limbs[i] = Some(
+							ctx.assign_advice(config.common.advice[i + NUM_LIMBS], y.limbs[i])?,
+						);
+					}
+					Ok((x_limbs.map(|x| x.unwrap()), y_limbs.map(|x| x.unwrap())))
+				},
 			)?;
-			lb.constrain_instance(res.cell(), config.common.instance, 0)?;
+
+			let res = {
+				let loader_layouter = layouter.namespace(|| "loader");
+				let loader = LoaderConfig::<C, _, P, H>::new(
+					loader_layouter,
+					config.common.clone(),
+					config.ecc_mul_scalar,
+					config.main,
+					config.poseidon_sponge.clone(),
+				);
+
+				let assigned_integer_x = AssignedInteger::<_, _, NUM_LIMBS, NUM_BITS, P>::new(
+					x.integer.clone(),
+					assigned_coordinates.0,
+				);
+				let assigned_integer_y = AssignedInteger::<_, _, NUM_LIMBS, NUM_BITS, P>::new(
+					y.integer.clone(),
+					assigned_coordinates.1,
+				);
+
+				let assigned_point = AssignedPoint::<_, _, NUM_LIMBS, NUM_BITS, P>::new(
+					assigned_integer_x, assigned_integer_y,
+				);
+				let ec_point = Halo2LEcPoint::new(assigned_point, loader.clone());
+
+				let reader = Vec::new();
+				let mut poseidon_read =
+					TranscriptReadChipset::<_, C, _, P, H>::new(Some(reader.as_slice()), loader);
+				poseidon_read.common_ec_point(&ec_point).unwrap();
+
+				let res = poseidon_read.squeeze_challenge();
+
+				res.inner
+			};
+
+			layouter.constrain_instance(res.clone().cell(), config.common.instance, 0)?;
+
 			Ok(())
 		}
 	}
@@ -548,15 +544,11 @@ mod test {
 		let coordinates = ec_point.coordinates().unwrap();
 		let x_integer = Integer::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::from_w(*coordinates.x());
 		let y_integer = Integer::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::from_w(*coordinates.y());
+		let ec_point = EcPoint::new(x_integer, y_integer);
 
-		let unassigned_x =
-			UnassignedInteger::new(x_integer.clone(), x_integer.limbs.map(|x| Value::known(x)));
-		let unassigned_y =
-			UnassignedInteger::new(y_integer.clone(), y_integer.limbs.map(|y| Value::known(y)));
+		let res = poseidon_read.squeeze_challenge();
+		let circuit = TestCommonEcPointCircuit::new(ec_point);
 
-		let unassigned_ec_point = UnassignedEcPoint::new(unassigned_x, unassigned_y);
-		let res = poseidon_read.state.squeeze();
-		let circuit = TestCommonEcPointCircuit::new(unassigned_ec_point);
 		let k = 8;
 		let prover = MockProver::run(k, &circuit, vec![vec![res]]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
@@ -588,39 +580,36 @@ mod test {
 		fn synthesize(
 			&self, config: TestConfig, mut layouter: impl Layouter<Scalar>,
 		) -> Result<(), Error> {
-			let layouter_rc = Rc::new(Mutex::new(layouter.namespace(|| "loader")));
-			let loader = LoaderConfig::<C, _, P, H>::new(
-				layouter_rc.clone(),
-				config.common.clone(),
-				config.ecc_mul_scalar,
-				config.main,
-				config.poseidon_sponge.clone(),
-			);
+			let res = {
+				let assigned_scalar = layouter
+					.assign_region(
+						|| "assign_scalar",
+						|region: Region<'_, Scalar>| {
+							let mut ctx = RegionCtx::new(region, 0);
+							let scalar = ctx.assign_advice(config.common.advice[0], self.scalar)?;
+							Ok(scalar)
+						},
+					)
+					.unwrap();
 
-			let mut lb = layouter_rc.lock().unwrap();
-			let assigned_scalar = lb
-				.assign_region(
-					|| "assign_scalar",
-					|region: Region<'_, Scalar>| {
-						let mut ctx = RegionCtx::new(region, 0);
-						let scalar = ctx.assign_advice(config.common.advice[0], self.scalar)?;
-						Ok(scalar)
-					},
-				)
-				.unwrap();
-			let scalar = Halo2LScalar::new(assigned_scalar, loader.clone());
-			drop(lb);
-			let reader = Vec::new();
-			let mut poseidon_read =
-				TranscriptReadChipset::<_, C, _, P, H>::new(Some(reader.as_slice()), loader);
-			poseidon_read.common_scalar(&scalar).unwrap();
-			let mut lb = layouter_rc.lock().unwrap();
-			let res = poseidon_read.state.synthesize(
-				&config.common,
-				&config.poseidon_sponge,
-				lb.namespace(|| "squeeze"),
-			)?;
-			lb.constrain_instance(res.cell(), config.common.instance, 0)?;
+				let loader = LoaderConfig::<C, _, P, H>::new(
+					layouter.namespace(|| "loader"),
+					config.common.clone(),
+					config.ecc_mul_scalar,
+					config.main,
+					config.poseidon_sponge.clone(),
+				);
+				let scalar = Halo2LScalar::new(assigned_scalar, loader.clone());
+				let reader = Vec::new();
+				let mut poseidon_read =
+					TranscriptReadChipset::<_, C, _, P, H>::new(Some(reader.as_slice()), loader);
+				poseidon_read.common_scalar(&scalar).unwrap();
+
+				let res = poseidon_read.squeeze_challenge();
+				res.inner
+			};
+
+			layouter.constrain_instance(res.clone().cell(), config.common.instance, 0)?;
 
 			Ok(())
 		}
@@ -672,23 +661,24 @@ mod test {
 		fn synthesize(
 			&self, config: TestConfig, mut layouter: impl Layouter<Scalar>,
 		) -> Result<(), Error> {
-			let layouter_rc = Rc::new(Mutex::new(layouter.namespace(|| "loader")));
-			let loader = LoaderConfig::<C, _, P, H>::new(
-				layouter_rc.clone(),
-				config.common.clone(),
-				config.ecc_mul_scalar,
-				config.main,
-				config.poseidon_sponge.clone(),
-			);
+			let scalar = {
+				let loader = LoaderConfig::<C, _, P, H>::new(
+					layouter.namespace(|| "loader"),
+					config.common.clone(),
+					config.ecc_mul_scalar,
+					config.main,
+					config.poseidon_sponge.clone(),
+				);
 
-			let mut poseidon_read = TranscriptReadChipset::<_, C, _, P, H>::new(
-				self.reader.as_ref().map(Vec::as_slice),
-				loader,
-			);
-			let res = poseidon_read.read_scalar().unwrap();
+				let mut poseidon_read = TranscriptReadChipset::<_, C, _, P, H>::new(
+					self.reader.as_ref().map(|x| x.as_slice()),
+					loader,
+				);
+				let res = poseidon_read.read_scalar().unwrap();
+				res.inner
+			};
 
-			let mut lb = layouter_rc.lock().unwrap();
-			lb.constrain_instance(res.inner.cell(), config.common.instance, 0)?;
+			layouter.constrain_instance(scalar.cell(), config.common.instance, 0)?;
 
 			Ok(())
 		}
@@ -740,30 +730,30 @@ mod test {
 		fn synthesize(
 			&self, config: TestConfig, mut layouter: impl Layouter<Scalar>,
 		) -> Result<(), Error> {
-			let layouter_rc = Rc::new(Mutex::new(layouter.namespace(|| "loader")));
-			let loader = LoaderConfig::<C, _, P, H>::new(
-				layouter_rc.clone(),
-				config.common.clone(),
-				config.ecc_mul_scalar,
-				config.main,
-				config.poseidon_sponge.clone(),
-			);
+			let (x_limbs, y_limbs) = {
+				let loader = LoaderConfig::<C, _, P, H>::new(
+					layouter.namespace(|| "loader"),
+					config.common.clone(),
+					config.ecc_mul_scalar,
+					config.main,
+					config.poseidon_sponge.clone(),
+				);
 
-			let mut poseidon_read = TranscriptReadChipset::<_, C, _, P, H>::new(
-				self.reader.as_ref().map(Vec::as_slice),
-				loader,
-			);
-			let res = poseidon_read.read_ec_point().unwrap();
+				let mut poseidon_read = TranscriptReadChipset::<_, C, _, P, H>::new(
+					self.reader.as_ref().map(Vec::as_slice),
+					loader,
+				);
+				let res = poseidon_read.read_ec_point().unwrap();
+				let x_limbs = res.inner.clone().x.limbs;
+				let y_limbs = res.inner.clone().y.limbs;
 
-			let mut lb = layouter_rc.lock().unwrap();
+				(x_limbs, y_limbs)
+			};
+
 			for i in 0..NUM_LIMBS {
-				lb.constrain_instance(
-					res.inner.clone().x.limbs[i].cell(),
-					config.common.instance,
-					i,
-				)?;
-				lb.constrain_instance(
-					res.inner.clone().y.limbs[i].cell(),
+				layouter.constrain_instance(x_limbs[i].cell(), config.common.instance, i)?;
+				layouter.constrain_instance(
+					y_limbs[i].cell(),
 					config.common.instance,
 					i + NUM_LIMBS,
 				)?;
@@ -825,60 +815,61 @@ mod test {
 		fn synthesize(
 			&self, config: TestConfig, mut layouter: impl Layouter<Scalar>,
 		) -> Result<(), Error> {
-			let layouter_rc = Rc::new(Mutex::new(layouter.namespace(|| "loader")));
-			let loader = LoaderConfig::<C, _, P, H>::new(
-				layouter_rc.clone(),
-				config.common.clone(),
-				config.ecc_mul_scalar,
-				config.main,
-				config.poseidon_sponge.clone(),
-			);
+			let (x1_limbs, y1_limbs, scalar1, x2_limbs, y2_limbs, scalar2) = {
+				let loader = LoaderConfig::<C, _, P, H>::new(
+					layouter.namespace(|| "loader"),
+					config.common.clone(),
+					config.ecc_mul_scalar,
+					config.main,
+					config.poseidon_sponge.clone(),
+				);
 
-			let mut poseidon_read = TranscriptReadChipset::<_, C, _, P, H>::new(
-				self.reader.as_ref().map(Vec::as_slice),
-				loader,
-			);
-			let res = poseidon_read.read_ec_point().unwrap();
-			let mut lb = layouter_rc.lock().unwrap();
-			for i in 0..NUM_LIMBS {
-				lb.constrain_instance(
-					res.inner.clone().x.limbs[i].cell(),
-					config.common.instance,
-					i,
-				)?;
-				lb.constrain_instance(
-					res.inner.clone().y.limbs[i].cell(),
-					config.common.instance,
-					i + NUM_LIMBS,
-				)?;
+				let mut poseidon_read = TranscriptReadChipset::<_, C, _, P, H>::new(
+					self.reader.as_ref().map(|x| x.as_slice()),
+					loader,
+				);
+
+				let res = poseidon_read.read_ec_point().unwrap();
+				let x1_limbs = res.inner.clone().x.limbs;
+				let y1_limbs = res.inner.clone().y.limbs;
+
+				let res = poseidon_read.read_scalar().unwrap();
+				let scalar1 = res.inner;
+
+				let res = poseidon_read.read_ec_point().unwrap();
+				let x2_limbs = res.inner.clone().x.limbs;
+				let y2_limbs = res.inner.clone().y.limbs;
+
+				let res = poseidon_read.read_scalar().unwrap();
+				let scalar2 = res.inner;
+
+				(x1_limbs, y1_limbs, scalar1, x2_limbs, y2_limbs, scalar2)
+			};
+
+			let mut i = 0;
+			for j in 0..NUM_LIMBS {
+				layouter.constrain_instance(x1_limbs[j].cell(), config.common.instance, i)?;
+				i += 1;
 			}
-			drop(lb);
-
-			let res = poseidon_read.read_scalar().unwrap();
-			let mut lb = layouter_rc.lock().unwrap();
-			lb.constrain_instance(res.inner.cell(), config.common.instance, 8)?;
-			drop(lb);
-
-			let res = poseidon_read.read_ec_point().unwrap();
-
-			let mut lb = layouter_rc.lock().unwrap();
-			for i in 0..NUM_LIMBS {
-				lb.constrain_instance(
-					res.inner.clone().x.limbs[i].cell(),
-					config.common.instance,
-					i + (2 * NUM_LIMBS) + 1,
-				)?;
-				lb.constrain_instance(
-					res.inner.clone().y.limbs[i].cell(),
-					config.common.instance,
-					i + (3 * NUM_LIMBS) + 1,
-				)?;
+			for j in 0..NUM_LIMBS {
+				layouter.constrain_instance(y1_limbs[j].cell(), config.common.instance, i)?;
+				i += 1;
 			}
-			drop(lb);
 
-			let res = poseidon_read.read_scalar().unwrap();
-			let mut lb = layouter_rc.lock().unwrap();
-			lb.constrain_instance(res.inner.cell(), config.common.instance, 17)?;
+			layouter.constrain_instance(scalar1.cell(), config.common.instance, i)?;
+			i += 1;
+
+			for j in 0..NUM_LIMBS {
+				layouter.constrain_instance(x2_limbs[j].cell(), config.common.instance, i)?;
+				i += 1;
+			}
+			for j in 0..NUM_LIMBS {
+				layouter.constrain_instance(y2_limbs[j].cell(), config.common.instance, i)?;
+				i += 1;
+			}
+
+			layouter.constrain_instance(scalar2.cell(), config.common.instance, i)?;
+
 			Ok(())
 		}
 	}
@@ -922,6 +913,172 @@ mod test {
 		let circuit = TestReadMultipleEcPointCircuit::new(reader);
 		let k = 7;
 		let prover = MockProver::run(k, &circuit, vec![p_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[derive(Clone)]
+	struct TestSqueezeChallengeCircuit {
+		reader: Option<Vec<u8>>,
+	}
+
+	impl TestSqueezeChallengeCircuit {
+		fn new(reader: Vec<u8>) -> Self {
+			Self { reader: Some(reader) }
+		}
+	}
+
+	impl Circuit<Scalar> for TestSqueezeChallengeCircuit {
+		type Config = TestConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			Self { reader: None }
+		}
+
+		fn configure(meta: &mut ConstraintSystem<Scalar>) -> TestConfig {
+			TestConfig::new(meta)
+		}
+
+		fn synthesize(
+			&self, config: TestConfig, mut layouter: impl Layouter<Scalar>,
+		) -> Result<(), Error> {
+			let res = {
+				let loader = LoaderConfig::<C, _, P, H>::new(
+					layouter.namespace(|| "loader"),
+					config.common.clone(),
+					config.ecc_mul_scalar,
+					config.main,
+					config.poseidon_sponge.clone(),
+				);
+
+				let mut poseidon_read = TranscriptReadChipset::<_, C, _, P, H>::new(
+					self.reader.as_ref().map(|x| x.as_slice()),
+					loader,
+				);
+
+				poseidon_read.read_ec_point().unwrap();
+				poseidon_read.read_scalar().unwrap();
+				poseidon_read.read_ec_point().unwrap();
+				poseidon_read.read_scalar().unwrap();
+
+				let res = poseidon_read.squeeze_challenge();
+				res.inner
+			};
+
+			layouter.constrain_instance(res.cell(), config.common.instance, 0)?;
+
+			Ok(())
+		}
+	}
+
+	#[test]
+	fn test_squeeze_challange() {
+		// Test read ec point
+		let rng = &mut thread_rng();
+		let mut reader = Vec::new();
+		for _ in 0..2 {
+			let random = C::random(rng.clone()).to_bytes();
+			let scalar = Scalar::random(rng.clone());
+			reader.write_all(random.as_ref()).unwrap();
+			reader.write_all(scalar.to_bytes().as_slice()).unwrap();
+		}
+		let mut poseidon_read = NativeTranscriptRead::<_, G1Affine, Bn256_4_68, NativeH>::new(
+			reader.as_slice(),
+			NativeSVLoader,
+		);
+
+		poseidon_read.read_ec_point().unwrap();
+		poseidon_read.read_scalar().unwrap();
+		poseidon_read.read_ec_point().unwrap();
+		poseidon_read.read_scalar().unwrap();
+
+		let res = poseidon_read.squeeze_challenge();
+
+		let circuit = TestSqueezeChallengeCircuit::new(reader);
+		let k = 9;
+		let prover = MockProver::run(k, &circuit, vec![vec![res]]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[derive(Clone)]
+	struct TestWriteReadCircuit {
+		reader: Option<Vec<u8>>,
+	}
+
+	impl TestWriteReadCircuit {
+		fn new(reader: Vec<u8>) -> Self {
+			Self { reader: Some(reader) }
+		}
+	}
+
+	impl Circuit<Scalar> for TestWriteReadCircuit {
+		type Config = TestConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			Self { reader: None }
+		}
+
+		fn configure(meta: &mut ConstraintSystem<Scalar>) -> TestConfig {
+			TestConfig::new(meta)
+		}
+
+		fn synthesize(
+			&self, config: TestConfig, mut layouter: impl Layouter<Scalar>,
+		) -> Result<(), Error> {
+			let res = {
+				let loader = LoaderConfig::<C, _, P, H>::new(
+					layouter.namespace(|| "loader"),
+					config.common.clone(),
+					config.ecc_mul_scalar,
+					config.main,
+					config.poseidon_sponge.clone(),
+				);
+
+				let mut poseidon_read = TranscriptReadChipset::<_, C, _, P, H>::new(
+					self.reader.as_ref().map(|x| x.as_slice()),
+					loader,
+				);
+
+				poseidon_read.read_scalar().unwrap();
+				poseidon_read.read_ec_point().unwrap();
+				poseidon_read.read_scalar().unwrap();
+				poseidon_read.read_ec_point().unwrap();
+
+				let res = poseidon_read.squeeze_challenge();
+				res.inner
+			};
+
+			layouter.constrain_instance(res.cell(), config.common.instance, 0)?;
+
+			Ok(())
+		}
+	}
+
+	#[test]
+	fn test_write_read() {
+		// Test read scalar
+		let rng = &mut thread_rng();
+
+		let random_scalar1 = Scalar::random(rng.clone());
+		let random_ec1 = C::random(rng.clone());
+		let random_scalar2 = Scalar::random(rng.clone());
+		let random_ec2 = C::random(rng.clone());
+
+		let mut poseidon_write =
+			NativeTranscriptWrite::<_, G1Affine, Bn256_4_68, NativeH>::init(Vec::new());
+
+		poseidon_write.write_scalar(random_scalar1).unwrap();
+		poseidon_write.write_ec_point(random_ec1).unwrap();
+		poseidon_write.write_scalar(random_scalar2).unwrap();
+		poseidon_write.write_ec_point(random_ec2).unwrap();
+
+		let res = poseidon_write.squeeze_challenge();
+		let proof = poseidon_write.finalize();
+
+		let circuit = TestWriteReadCircuit::new(proof);
+		let k = 9;
+		let prover = MockProver::run(k, &circuit, vec![vec![res]]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
 	}
 }

@@ -111,14 +111,16 @@ pub trait HasherChipset<F: FieldExt, const WIDTH: usize>: Chipset<F> + Clone {
 }
 
 /// Sponge Hasher chipset trait
-pub trait SpongeHasherChipset<F: FieldExt>: Chipset<F> + Clone {
+pub trait SpongeHasherChipset<F: FieldExt>: Clone {
+	/// Config selectors for the sponge
+	type Config: Clone;
 	/// Creates a new sponge hasher chipset
-	fn new() -> Self;
+	fn init(common: &CommonConfig, layouter: impl Layouter<F>) -> Result<Self, Error>;
 	/// Update current sponge chipset state
 	fn update(&mut self, inputs: &[AssignedCell<F, F>]);
 	/// Finalize the sponge hasher
 	fn squeeze(
-		self, common: &CommonConfig, config: &Self::Config, layouter: impl Layouter<F>,
+		&mut self, common: &CommonConfig, config: &Self::Config, layouter: impl Layouter<F>,
 	) -> Result<AssignedCell<F, F>, Error>;
 }
 
