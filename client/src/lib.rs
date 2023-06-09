@@ -74,7 +74,7 @@ use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, sync::Arc};
 
 /// Max amount of participants
-const MAX_NEIGHBOURS: usize = 3;
+const MAX_NEIGHBOURS: usize = 4;
 /// Number of iterations to run the eigen trust algorithm
 const NUM_ITERATIONS: usize = 10;
 /// Initial score for each participant before the algorithms is run
@@ -157,9 +157,6 @@ impl Client {
 		// Construct a set to hold unique participant addresses
 		let mut participants_set = HashSet::<Address>::new();
 
-		// Add default SignedAttestation to the set
-		participants_set.insert(address_from_signed_att(&SignedAttestation::default()).unwrap());
-
 		// Insert the attester and attested of each attestation into the set
 		for (signed_att, att) in &attestations {
 			participants_set.insert(att.about);
@@ -168,11 +165,10 @@ impl Client {
 
 		// Create a vector of participants from the set
 		let participants: Vec<Address> = participants_set.into_iter().collect();
-		let set_len: usize = participants.len();
 
 		// Initialize attestation matrix
-		let mut attestation_matrix: Vec<Vec<SignedAttestation>> =
-			vec![vec![SignedAttestation::default(); set_len]; set_len];
+		let mut attestation_matrix: Vec<Vec<Option<SignedAttestation>>> =
+			vec![vec![None; MAX_NEIGHBOURS]; MAX_NEIGHBOURS];
 
 		// Populate the attestation matrix with the attestations data
 		for (signed_att, att) in &attestations {
@@ -180,7 +176,7 @@ impl Client {
 			let attester_pos = participants.iter().position(|&r| r == attester_address).unwrap();
 			let attested_pos = participants.iter().position(|&r| r == att.about).unwrap();
 
-			attestation_matrix[attester_pos][attested_pos] = signed_att.clone();
+			attestation_matrix[attester_pos][attested_pos] = Some(signed_att.clone());
 		}
 
 		// Initialize EigenTrustSet
@@ -195,9 +191,15 @@ impl Client {
 
 		// Update the set with the opinions of each participant
 		for i in 0..participants.len() {
-			let participant_pub_key = attestation_matrix[i][i].recover_public_key().unwrap();
+			for j in 0..attestation_matrix[i].len() {
+				if let Some(att) = attestation_matrix[i][j].clone() {
+					let participant_pub_key = att.recover_public_key().unwrap();
 
-			eigen_trust_set.update_op(participant_pub_key, attestation_matrix[i].clone());
+					eigen_trust_set.update_op(participant_pub_key, attestation_matrix[i].clone());
+
+					break;
+				}
+			}
 		}
 
 		// Calculate the trust scores for each participant
