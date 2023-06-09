@@ -147,14 +147,11 @@ mod test {
 	}
 
 	#[test]
-	fn should_build_tree_and_find_path_arity_4() {
-		// Testing build_tree and find_path functions with arity 4
+	fn should_build_tree_and_find_path_arity_3() {
+		// Testing build_tree and find_path functions with arity 3
 		let rng = &mut thread_rng();
 		let value = Fr::random(rng.clone());
 		let leaves = vec![
-			Fr::random(rng.clone()),
-			Fr::random(rng.clone()),
-			Fr::random(rng.clone()),
 			Fr::random(rng.clone()),
 			Fr::random(rng.clone()),
 			Fr::random(rng.clone()),
@@ -168,9 +165,12 @@ mod test {
 			Fr::random(rng.clone()),
 			Fr::random(rng.clone()),
 			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
 		];
-		let merkle = MerkleTree::<Fr, 4, 2, Poseidon<Fr, 5, Params>>::build_tree(leaves);
-		let path = Path::<Fr, 4, 2, 3, Poseidon<Fr, 5, Params>>::find_path(&merkle, value);
+		let merkle = MerkleTree::<Fr, 3, 3, Poseidon<Fr, 5, Params>>::build_tree(leaves);
+		let path = Path::<Fr, 3, 3, 4, Poseidon<Fr, 5, Params>>::find_path(&merkle, value);
 
 		assert!(path.verify());
 		// Assert last element of the array and the root of the tree
