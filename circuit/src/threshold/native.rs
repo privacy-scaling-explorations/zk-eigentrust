@@ -106,12 +106,12 @@ mod tests {
 	}
 
 	#[test]
-	fn test_check_threshold_1_failing() {
+	fn test_check_threshold_2() {
 		const NUM_LIMBS: usize = 2;
 		const POWER_OF_TEN: usize = 3;
 
-		let threshold = 346;
-		let num = 345000;
+		let threshold = 344;
+		let num = 345111;
 		let den = 1000;
 
 		let comp_u128 = num >= den * threshold;
@@ -130,17 +130,17 @@ mod tests {
 		let t: Threshold<NUM_LIMBS, POWER_OF_TEN> = Threshold::new(score, ratio, threshold_fr);
 		let tw = t.check_threshold();
 
-		assert!(!tw.is_bigger);
+		assert!(tw.is_bigger);
 	}
 
 	#[test]
-	fn test_check_threshold_2() {
-		const NUM_LIMBS: usize = 2;
+	fn test_check_threshold_3() {
+		const NUM_LIMBS: usize = 5;
 		const POWER_OF_TEN: usize = 3;
 
-		let threshold = 344;
-		let num = 345111;
-		let den = 1000;
+		let threshold = 346;
+		let num = 347123456789123;
+		let den = 1984263563965;
 
 		let comp_u128 = num >= den * threshold;
 		println!("comp_u128: {:?}", comp_u128);
