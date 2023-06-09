@@ -34,7 +34,7 @@ where
 
 	/// Absorb the data in and split it into
 	/// chunks of size WIDTH.
-	pub fn load_state(chunk: &[F]) -> [F; WIDTH] {
+	fn load_state(chunk: &[F]) -> [F; WIDTH] {
 		assert!(chunk.len() <= WIDTH);
 		let mut fixed_chunk = [F::ZERO; WIDTH];
 		fixed_chunk[..chunk.len()].copy_from_slice(chunk);
@@ -44,15 +44,20 @@ where
 	/// Squeeze the data out by
 	/// permuting until no more chunks are left.
 	pub fn squeeze(&mut self) -> F {
-		assert!(!self.inputs.is_empty());
+		if self.inputs.is_empty() {
+			self.inputs.push(F::ZERO);
+		}
 
 		for chunk in self.inputs.chunks(WIDTH) {
-			let loaded_state = Self::load_state(chunk);
 			let mut input = [F::ZERO; WIDTH];
+
+			// Absorb
+			let loaded_state = Self::load_state(chunk);
 			for i in 0..WIDTH {
 				input[i] = loaded_state[i] + self.state[i];
 			}
 
+			// Permute
 			let pos = Poseidon::<_, WIDTH, P>::new(input);
 			self.state = pos.permute();
 		}
