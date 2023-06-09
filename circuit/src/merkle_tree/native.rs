@@ -1,4 +1,5 @@
 use crate::{FieldExt, Hasher};
+use num_integer::Integer;
 use num_traits::pow;
 use std::{collections::HashMap, marker::PhantomData};
 
@@ -46,8 +47,9 @@ where
 				if i % ARITY != 0 {
 					continue;
 				}
-
-				hasher_inputs = [nodes[&level][i], nodes[&level][i + 1], F::ZERO, F::ZERO, F::ZERO];
+				for j in 0..ARITY {
+					hasher_inputs[j] = nodes[&level][i + j];
+				}
 				let hasher = H::new(hasher_inputs);
 				hashes.push(hasher.finalize()[0]);
 			}
@@ -83,18 +85,13 @@ where
 		//
 		let mut value_index = merkle_tree.nodes[&0].iter().position(|x| x == &value).unwrap();
 		let mut path_arr: [[F; ARITY]; LENGTH] = [[F::ZERO; ARITY]; LENGTH];
-		// Childs for a parent node is 2n and 2n + 1.
-		// value_index keeps index of that nodes in reverse order to apply this
-		// algorithm.
+
 		for level in 0..merkle_tree.height {
-			if value_index % 2 == 1 {
-				path_arr[level][0] = merkle_tree.nodes[&level][value_index - 1];
-				path_arr[level][1] = merkle_tree.nodes[&level][value_index];
-			} else {
-				path_arr[level][0] = merkle_tree.nodes[&level][value_index];
-				path_arr[level][1] = merkle_tree.nodes[&level][value_index + 1]
+			let wrap = value_index.div_rem(&ARITY);
+			for i in 0..ARITY {
+				path_arr[level][i] = merkle_tree.nodes[&level][wrap.0 * ARITY + i];
 			}
-			value_index = value_index / 2;
+			value_index = value_index / ARITY;
 		}
 		path_arr[merkle_tree.height][0] = merkle_tree.root;
 		Self { value, path_arr, _h: PhantomData }
@@ -103,9 +100,12 @@ where
 	/// Sanity check for the path array
 	pub fn verify(&self) -> bool {
 		let mut is_satisfied = true;
+		let mut hasher_inputs = [F::ZERO; WIDTH];
 		for i in 0..self.path_arr.len() - 1 {
-			let pos_inputs = [self.path_arr[i][0], self.path_arr[i][1], F::ZERO, F::ZERO, F::ZERO];
-			let hasher = H::new(pos_inputs);
+			for j in 0..ARITY {
+				hasher_inputs[j] = self.path_arr[i][j];
+			}
+			let hasher = H::new(hasher_inputs);
 			is_satisfied = is_satisfied | self.path_arr[i + 1].contains(&(hasher.finalize()[0]));
 		}
 		is_satisfied
@@ -122,8 +122,8 @@ mod test {
 	use rand::thread_rng;
 
 	#[test]
-	fn should_build_tree_and_find_path() {
-		// Testing build_tree and find_path functions
+	fn should_build_tree_and_find_path_arity_2() {
+		// Testing build_tree and find_path functions with arity 2
 		let rng = &mut thread_rng();
 		let value = Fr::random(rng.clone());
 		let leaves = vec![
@@ -137,8 +137,40 @@ mod test {
 			Fr::random(rng.clone()),
 			Fr::random(rng.clone()),
 		];
-		let merkle = MerkleTree::<Fr, 2, Poseidon<Fr, 5, Params>>::build_tree(leaves, 4);
-		let path = Path::<Fr, 2, 5, Poseidon<Fr, 5, Params>>::find_path(&merkle, value);
+		let merkle = MerkleTree::<Fr, 2, Poseidon<Fr, 5, Params>>::build_tree(leaves, 2);
+		let path = Path::<Fr, 2, 3, Poseidon<Fr, 5, Params>>::find_path(&merkle, value);
+
+		assert!(path.verify());
+		// Assert last element of the array and the root of the tree
+		assert_eq!(path.path_arr[merkle.height][0], merkle.root);
+	}
+
+	#[test]
+	fn should_build_tree_and_find_path_arity_4() {
+		// Testing build_tree and find_path functions with arity 4
+		let rng = &mut thread_rng();
+		let value = Fr::random(rng.clone());
+		let leaves = vec![
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
+			value,
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
+		];
+		let merkle = MerkleTree::<Fr, 4, Poseidon<Fr, 5, Params>>::build_tree(leaves, 2);
+		let path = Path::<Fr, 4, 3, Poseidon<Fr, 5, Params>>::find_path(&merkle, value);
+
 		assert!(path.verify());
 		// Assert last element of the array and the root of the tree
 		assert_eq!(path.path_arr[merkle.height][0], merkle.root);
