@@ -227,8 +227,8 @@ mod test {
 			Fr::random(rng.clone()),
 			Fr::random(rng.clone()),
 		];
-		let merkle = MerkleTree::<Fr, 2, NativeH>::build_tree(leaves, 3);
-		let path = Path::<Fr, 2, 4, NativeH>::find_path(&merkle, value);
+		let merkle = MerkleTree::<Fr, 2, 3, NativeH>::build_tree(leaves);
+		let path = Path::<Fr, 2, 3, 4, NativeH>::find_path(&merkle, value);
 		let test_chip = TestCircuit::<2, 4>::new(path.path_arr);
 		let k = 9;
 		let pub_ins = vec![merkle.root];
@@ -250,8 +250,8 @@ mod test {
 			Fr::random(rng.clone()),
 			Fr::random(rng.clone()),
 		];
-		let merkle = MerkleTree::<Fr, 2, NativeH>::build_tree(leaves, 8);
-		let path = Path::<Fr, 2, 9, NativeH>::find_path(&merkle, value);
+		let merkle = MerkleTree::<Fr, 2, 8, NativeH>::build_tree(leaves);
+		let path = Path::<Fr, 2, 8, 9, NativeH>::find_path(&merkle, value);
 		let test_chip = TestCircuit::<2, 9>::new(path.path_arr);
 		let k = 10;
 		let pub_ins = vec![merkle.root];
@@ -265,8 +265,8 @@ mod test {
 		let rng = &mut thread_rng();
 		let value = Fr::random(rng.clone());
 		let leaves = vec![Fr::random(rng.clone()), value];
-		let merkle = MerkleTree::<Fr, 2, NativeH>::build_tree(leaves, 1);
-		let path = Path::<Fr, 2, 2, NativeH>::find_path(&merkle, value);
+		let merkle = MerkleTree::<Fr, 2, 1, NativeH>::build_tree(leaves);
+		let path = Path::<Fr, 2, 1, 2, NativeH>::find_path(&merkle, value);
 		let test_chip = TestCircuit::<2, 2>::new(path.path_arr);
 		let k = 9;
 		let pub_ins = vec![merkle.root];
@@ -288,8 +288,8 @@ mod test {
 			Fr::random(rng.clone()),
 			Fr::random(rng.clone()),
 		];
-		let merkle = MerkleTree::<Fr, 4, NativeH>::build_tree(leaves, 4);
-		let path = Path::<Fr, 4, 5, NativeH>::find_path(&merkle, value);
+		let merkle = MerkleTree::<Fr, 4, 4, NativeH>::build_tree(leaves);
+		let path = Path::<Fr, 4, 4, 5, NativeH>::find_path(&merkle, value);
 		let test_chip = TestCircuit::<4, 5>::new(path.path_arr);
 		let k = 10;
 		let pub_ins = vec![merkle.root];
@@ -303,8 +303,8 @@ mod test {
 		let rng = &mut thread_rng();
 		let value = Fr::random(rng.clone());
 		let leaves = vec![Fr::random(rng.clone()), value];
-		let merkle = MerkleTree::<Fr, 4, NativeH>::build_tree(leaves, 1);
-		let path = Path::<Fr, 4, 2, NativeH>::find_path(&merkle, value);
+		let merkle = MerkleTree::<Fr, 4, 1, NativeH>::build_tree(leaves);
+		let path = Path::<Fr, 4, 1, 2, NativeH>::find_path(&merkle, value);
 		let test_chip = TestCircuit::<4, 2>::new(path.path_arr);
 		let k = 9;
 		let pub_ins = vec![merkle.root];
@@ -328,8 +328,8 @@ mod test {
 			Fr::random(rng.clone()),
 			Fr::random(rng.clone()),
 		];
-		let merkle = MerkleTree::<Fr, 2, NativeH>::build_tree(leaves, 4);
-		let path = Path::<Fr, 2, 5, NativeH>::find_path(&merkle, value);
+		let merkle = MerkleTree::<Fr, 2, 4, NativeH>::build_tree(leaves);
+		let path = Path::<Fr, 2, 4, 5, NativeH>::find_path(&merkle, value);
 		let test_chip = TestCircuit::<2, 5>::new(path.path_arr);
 		let k = 9;
 		let pub_ins = vec![merkle.root];
