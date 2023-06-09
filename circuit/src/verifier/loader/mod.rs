@@ -2,13 +2,12 @@ use crate::{
 	ecc::{AssignedPoint, EccAddChipset, EccMulChipset, EccMulConfig},
 	gadgets::main::{AddChipset, InverseChipset, MainConfig, MulChipset, SubChipset},
 	integer::{native::Integer, AssignedInteger},
-	poseidon::sponge::PoseidonSpongeConfig,
 	rns::RnsParams,
 	utils::assigned_to_field,
 	Chipset, CommonConfig, FieldExt, RegionCtx, SpongeHasherChipset,
 };
 use halo2::{
-	circuit::{AssignedCell, Layouter, Region},
+	circuit::{AssignedCell, Layouter, NamespacedLayouter, Region},
 	halo2curves::{Coordinates, CurveAffine},
 };
 use native::{NUM_BITS, NUM_LIMBS};
@@ -18,28 +17,18 @@ use snark_verifier::{
 	Error::AssertionFailure,
 };
 use std::{
+	cell::RefCell,
 	fmt::Debug,
 	marker::PhantomData,
 	ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 	rc::Rc,
-	sync::Mutex,
 };
 
 /// Native version of the loader
 pub mod native;
 
-/// TODO: Mutex Layouter optimizer
-/*
-fn layouter<T>(func: FnOnce(layouter) -> T) -> T {
-	let layouter = self.layouter.lock();
-	let res = func(layouter);
-	drop(layouter);
-	res
-}
-*/
-
 /// LoaderConfig structure
-pub struct LoaderConfig<C: CurveAffine, L: Layouter<C::Scalar>, P, H>
+pub struct LoaderConfig<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, H>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	H: SpongeHasherChipset<C::Scalar>,
@@ -47,7 +36,7 @@ where
 	C::Scalar: FieldExt,
 {
 	// Layouter
-	pub(crate) layouter: Rc<Mutex<L>>,
+	pub(crate) layouter: Rc<RefCell<NamespacedLayouter<'a, C::Scalar, L>>>,
 	// Configurations for the needed circuit configs.
 	pub(crate) common: CommonConfig,
 	pub(crate) ecc_mul_scalar: EccMulConfig,
@@ -63,7 +52,7 @@ where
 	_p: PhantomData<P>,
 }
 
-impl<C: CurveAffine, L: Layouter<C::Scalar>, P, H> LoaderConfig<C, L, P, H>
+impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, H> LoaderConfig<'a, C, L, P, H>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	H: SpongeHasherChipset<C::Scalar>,
@@ -72,43 +61,49 @@ where
 {
 	/// Construct a new LoaderConfig
 	pub fn new(
-		layouter: Rc<Mutex<L>>, common: CommonConfig, ecc_mul_scalar: EccMulConfig,
-		main: MainConfig, sponge: H::Config,
+		mut layouter: NamespacedLayouter<'a, C::Scalar, L>, common: CommonConfig,
+		ecc_mul_scalar: EccMulConfig, main: MainConfig, sponge: H::Config,
 	) -> Self {
-		let binding = layouter.clone();
-		let mut layouter_reg = binding.lock().unwrap();
-		let (aux_init_x_limbs, aux_init_y_limbs, aux_fin_x_limbs, aux_fin_y_limbs) = layouter_reg
+		let (aux_init_x_limbs, aux_init_y_limbs, aux_fin_x_limbs, aux_fin_y_limbs) = layouter
 			.assign_region(
 				|| "aux",
 				|region: Region<'_, C::Scalar>| {
 					let mut ctx = RegionCtx::new(region, 0);
+
+					let to_add_x = P::to_add_x();
+					let to_add_y = P::to_add_y();
+					let to_sub_x = P::to_sub_x();
+					let to_sub_y = P::to_sub_y();
+
 					let mut init_x_limbs: [Option<AssignedCell<C::Scalar, C::Scalar>>; NUM_LIMBS] =
 						[(); NUM_LIMBS].map(|_| None);
 					let mut init_y_limbs: [Option<AssignedCell<C::Scalar, C::Scalar>>; NUM_LIMBS] =
 						[(); NUM_LIMBS].map(|_| None);
+
 					for i in 0..NUM_LIMBS {
-						let x = ctx.assign_fixed(common.fixed[i], P::to_add_x()[i])?;
+						let x = ctx.assign_fixed(common.fixed[i], to_add_x[i])?;
 						init_x_limbs[i] = Some(x);
 					}
 					ctx.next();
 					for i in 0..NUM_LIMBS {
-						let y = ctx.assign_fixed(common.fixed[i], P::to_add_y()[i])?;
+						let y = ctx.assign_fixed(common.fixed[i], to_add_y[i])?;
 						init_y_limbs[i] = Some(y);
 					}
 
 					ctx.next();
+
 					let mut fin_x_limbs: [Option<AssignedCell<C::Scalar, C::Scalar>>; NUM_LIMBS] =
 						[(); NUM_LIMBS].map(|_| None);
 					let mut fin_y_limbs: [Option<AssignedCell<C::Scalar, C::Scalar>>; NUM_LIMBS] =
 						[(); NUM_LIMBS].map(|_| None);
-					for i in 0..NUM_LIMBS {
-						let x = ctx.assign_fixed(common.fixed[i], P::to_sub_x()[i])?;
 
+					for i in 0..NUM_LIMBS {
+						let x = ctx.assign_fixed(common.fixed[i], to_sub_x[i])?;
 						fin_x_limbs[i] = Some(x);
 					}
 					ctx.next();
 					for i in 0..NUM_LIMBS {
-						let y = ctx.assign_fixed(common.fixed[i], P::to_sub_y()[i])?;
+						let y = ctx.assign_fixed(common.fixed[i], to_sub_y[i])?;
 						fin_y_limbs[i] = Some(y);
 					}
 
@@ -138,8 +133,10 @@ where
 		let aux_fin_y = AssignedInteger::new(aux_fin_y_int, aux_fin_y_limbs);
 		let aux_fin = AssignedPoint::new(aux_fin_x, aux_fin_y);
 		let auxes = (aux_init, aux_fin);
+
+		let layouter_rc = Rc::new(RefCell::new(layouter));
 		Self {
-			layouter,
+			layouter: layouter_rc,
 			common,
 			ecc_mul_scalar,
 			main,
@@ -151,7 +148,7 @@ where
 	}
 }
 
-impl<C: CurveAffine, L: Layouter<C::Scalar>, P, H> Clone for LoaderConfig<C, L, P, H>
+impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, H> Clone for LoaderConfig<'a, C, L, P, H>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	H: SpongeHasherChipset<C::Scalar>,
@@ -173,7 +170,7 @@ where
 	}
 }
 
-impl<C: CurveAffine, L: Layouter<C::Scalar>, P, H> Debug for LoaderConfig<C, L, P, H>
+impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, H> Debug for LoaderConfig<'a, C, L, P, H>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	H: SpongeHasherChipset<C::Scalar>,
@@ -187,7 +184,7 @@ where
 }
 
 /// Halo2LScalar structure
-pub struct Halo2LScalar<C: CurveAffine, L: Layouter<C::Scalar>, P, H>
+pub struct Halo2LScalar<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, H>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	H: SpongeHasherChipset<C::Scalar>,
@@ -197,11 +194,11 @@ where
 	// Inner value for the halo2 loaded scalar
 	pub(crate) inner: AssignedCell<C::Scalar, C::Scalar>,
 	// Loader
-	pub(crate) loader: LoaderConfig<C, L, P, H>,
+	pub(crate) loader: LoaderConfig<'a, C, L, P, H>,
 	_h: PhantomData<H>,
 }
 
-impl<C: CurveAffine, L: Layouter<C::Scalar>, P, H> Halo2LScalar<C, L, P, H>
+impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, H> Halo2LScalar<'a, C, L, P, H>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	H: SpongeHasherChipset<C::Scalar>,
@@ -210,13 +207,13 @@ where
 {
 	/// Creates a new Halo2LScalar
 	pub fn new(
-		value: AssignedCell<C::Scalar, C::Scalar>, loader: LoaderConfig<C, L, P, H>,
+		value: AssignedCell<C::Scalar, C::Scalar>, loader: LoaderConfig<'a, C, L, P, H>,
 	) -> Self {
 		return Self { inner: value, loader, _h: PhantomData };
 	}
 }
 
-impl<C: CurveAffine, L: Layouter<C::Scalar>, P, H> Clone for Halo2LScalar<C, L, P, H>
+impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, H> Clone for Halo2LScalar<'a, C, L, P, H>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	H: SpongeHasherChipset<C::Scalar>,
@@ -229,7 +226,7 @@ where
 	}
 }
 
-impl<C: CurveAffine, L: Layouter<C::Scalar>, P, H> Debug for Halo2LScalar<C, L, P, H>
+impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, H> Debug for Halo2LScalar<'a, C, L, P, H>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	H: SpongeHasherChipset<C::Scalar>,
@@ -242,7 +239,7 @@ where
 	}
 }
 
-impl<C: CurveAffine, L: Layouter<C::Scalar>, P, H> PartialEq for Halo2LScalar<C, L, P, H>
+impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, H> PartialEq for Halo2LScalar<'a, C, L, P, H>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	H: SpongeHasherChipset<C::Scalar>,
@@ -259,7 +256,7 @@ where
 	}
 }
 
-impl<C: CurveAffine, L: Layouter<C::Scalar>, P, H> FieldOps for Halo2LScalar<C, L, P, H>
+impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, H> FieldOps for Halo2LScalar<'a, C, L, P, H>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	H: SpongeHasherChipset<C::Scalar>,
@@ -268,12 +265,12 @@ where
 {
 	/// Returns multiplicative inversion if any.
 	fn invert(&self) -> Option<Self> {
-		let mut loader_ref = self.loader.layouter.lock().unwrap();
+		let mut layouter_mut = self.loader.layouter.borrow_mut();
 		let inv_chipset = InverseChipset::new(self.inner.clone());
 		let inv_op = inv_chipset.synthesize(
 			&self.loader.common,
 			&self.loader.main,
-			loader_ref.namespace(|| "loader_inverse"),
+			layouter_mut.namespace(|| "loader_inverse"),
 		);
 		inv_op.ok().map(|x| Self { inner: x, loader: self.loader.clone(), _h: PhantomData })
 	}
@@ -281,7 +278,8 @@ where
 
 // ---- ADD ----
 
-impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, H> Add<&'a Self> for Halo2LScalar<C, L, P, H>
+impl<'a, 'b, C: CurveAffine, L: Layouter<C::Scalar>, P, H> Add<&'a Self>
+	for Halo2LScalar<'b, C, L, P, H>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	H: SpongeHasherChipset<C::Scalar>,
@@ -292,20 +290,20 @@ where
 
 	/// Performs the `+` operation.
 	fn add(self, rhs: &'a Self) -> Self {
-		let mut loader_ref = self.loader.layouter.lock().unwrap();
+		let mut layouter_mut = self.loader.layouter.borrow_mut();
 		let add_chipset = AddChipset::new(self.inner, rhs.inner.clone());
 		let add = add_chipset
 			.synthesize(
 				&self.loader.common,
 				&self.loader.main,
-				loader_ref.namespace(|| "loader_add"),
+				layouter_mut.namespace(|| "loader_add"),
 			)
 			.unwrap();
 		Self { inner: add, loader: self.loader.clone(), _h: PhantomData }
 	}
 }
 
-impl<C: CurveAffine, L: Layouter<C::Scalar>, P, H> Add<Self> for Halo2LScalar<C, L, P, H>
+impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, H> Add<Self> for Halo2LScalar<'a, C, L, P, H>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	H: SpongeHasherChipset<C::Scalar>,
@@ -320,8 +318,8 @@ where
 	}
 }
 
-impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, H> AddAssign<&'a Self>
-	for Halo2LScalar<C, L, P, H>
+impl<'a, 'b, C: CurveAffine, L: Layouter<C::Scalar>, P, H> AddAssign<&'a Self>
+	for Halo2LScalar<'b, C, L, P, H>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	H: SpongeHasherChipset<C::Scalar>,
@@ -334,7 +332,8 @@ where
 	}
 }
 
-impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, H> AddAssign<Self> for Halo2LScalar<C, L, P, H>
+impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, H> AddAssign<Self>
+	for Halo2LScalar<'a, C, L, P, H>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	H: SpongeHasherChipset<C::Scalar>,
@@ -349,7 +348,8 @@ where
 
 // ---- MUL ----
 
-impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, H> Mul<&'a Self> for Halo2LScalar<C, L, P, H>
+impl<'a, 'b, C: CurveAffine, L: Layouter<C::Scalar>, P, H> Mul<&'a Self>
+	for Halo2LScalar<'b, C, L, P, H>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	H: SpongeHasherChipset<C::Scalar>,
@@ -360,20 +360,20 @@ where
 
 	/// Performs the `*` operation.
 	fn mul(self, rhs: &'a Self) -> Self {
-		let mut loader_ref = self.loader.layouter.lock().unwrap();
+		let mut layouter_mut = self.loader.layouter.borrow_mut();
 		let mul_chipset = MulChipset::new(self.inner, rhs.inner.clone());
 		let mul = mul_chipset
 			.synthesize(
 				&self.loader.common,
 				&self.loader.main,
-				loader_ref.namespace(|| "loader_mul"),
+				layouter_mut.namespace(|| "loader_mul"),
 			)
 			.unwrap();
 		Self { inner: mul, loader: self.loader.clone(), _h: PhantomData }
 	}
 }
 
-impl<C: CurveAffine, L: Layouter<C::Scalar>, P, H> Mul<Self> for Halo2LScalar<C, L, P, H>
+impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, H> Mul<Self> for Halo2LScalar<'a, C, L, P, H>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	H: SpongeHasherChipset<C::Scalar>,
@@ -388,8 +388,8 @@ where
 	}
 }
 
-impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, H> MulAssign<&'a Self>
-	for Halo2LScalar<C, L, P, H>
+impl<'a, 'b, C: CurveAffine, L: Layouter<C::Scalar>, P, H> MulAssign<&'a Self>
+	for Halo2LScalar<'b, C, L, P, H>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	H: SpongeHasherChipset<C::Scalar>,
@@ -402,7 +402,8 @@ where
 	}
 }
 
-impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, H> MulAssign<Self> for Halo2LScalar<C, L, P, H>
+impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, H> MulAssign<Self>
+	for Halo2LScalar<'a, C, L, P, H>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	H: SpongeHasherChipset<C::Scalar>,
@@ -417,7 +418,8 @@ where
 
 // ---- SUB ----
 
-impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, H> Sub<&'a Self> for Halo2LScalar<C, L, P, H>
+impl<'a, 'b, C: CurveAffine, L: Layouter<C::Scalar>, P, H> Sub<&'a Self>
+	for Halo2LScalar<'b, C, L, P, H>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	H: SpongeHasherChipset<C::Scalar>,
@@ -428,20 +430,20 @@ where
 
 	/// Performs the `-` operation.
 	fn sub(self, rhs: &'a Self) -> Self {
-		let mut loader_ref = self.loader.layouter.lock().unwrap();
+		let mut layouter_mut = self.loader.layouter.borrow_mut();
 		let sub_chipset = SubChipset::new(self.inner, rhs.inner.clone());
 		let sub = sub_chipset
 			.synthesize(
 				&self.loader.common,
 				&self.loader.main,
-				loader_ref.namespace(|| "loader_sub"),
+				layouter_mut.namespace(|| "loader_sub"),
 			)
 			.unwrap();
 		Self { inner: sub, loader: self.loader.clone(), _h: PhantomData }
 	}
 }
 
-impl<C: CurveAffine, L: Layouter<C::Scalar>, P, H> Sub<Self> for Halo2LScalar<C, L, P, H>
+impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, H> Sub<Self> for Halo2LScalar<'a, C, L, P, H>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	H: SpongeHasherChipset<C::Scalar>,
@@ -456,8 +458,8 @@ where
 	}
 }
 
-impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, H> SubAssign<&'a Self>
-	for Halo2LScalar<C, L, P, H>
+impl<'a, 'b, C: CurveAffine, L: Layouter<C::Scalar>, P, H> SubAssign<&'a Self>
+	for Halo2LScalar<'b, C, L, P, H>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	H: SpongeHasherChipset<C::Scalar>,
@@ -470,7 +472,8 @@ where
 	}
 }
 
-impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, H> SubAssign<Self> for Halo2LScalar<C, L, P, H>
+impl<'a, 'b, C: CurveAffine, L: Layouter<C::Scalar>, P, H> SubAssign<Self>
+	for Halo2LScalar<'b, C, L, P, H>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	H: SpongeHasherChipset<C::Scalar>,
@@ -485,7 +488,7 @@ where
 
 // ---- NEG ----
 
-impl<C: CurveAffine, L: Layouter<C::Scalar>, P, H> Neg for Halo2LScalar<C, L, P, H>
+impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, H> Neg for Halo2LScalar<'a, C, L, P, H>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	H: SpongeHasherChipset<C::Scalar>,
@@ -496,13 +499,13 @@ where
 
 	/// Performs the unary `-` operation.
 	fn neg(self) -> Self {
-		let mut loader_ref = self.loader.layouter.lock().unwrap();
+		let mut layouter_mut = self.loader.layouter.borrow_mut();
 		let sub_chipset = SubChipset::new(self.inner.clone(), self.inner.clone());
 		let zero = sub_chipset
 			.synthesize(
 				&self.loader.common,
 				&self.loader.main,
-				loader_ref.namespace(|| "loader_zero"),
+				layouter_mut.namespace(|| "loader_zero"),
 			)
 			.unwrap();
 		let sub_chipset = SubChipset::new(zero, self.inner);
@@ -510,22 +513,22 @@ where
 			.synthesize(
 				&self.loader.common,
 				&self.loader.main,
-				loader_ref.namespace(|| "loader_neg"),
+				layouter_mut.namespace(|| "loader_neg"),
 			)
 			.unwrap();
 		Self { inner: neg, loader: self.loader.clone(), _h: PhantomData }
 	}
 }
 
-impl<C: CurveAffine, L: Layouter<C::Scalar>, P, H> LoadedScalar<C::Scalar>
-	for Halo2LScalar<C, L, P, H>
+impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, H> LoadedScalar<C::Scalar>
+	for Halo2LScalar<'a, C, L, P, H>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	H: SpongeHasherChipset<C::Scalar>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
 {
-	type Loader = LoaderConfig<C, L, P, H>;
+	type Loader = LoaderConfig<'a, C, L, P, H>;
 
 	/// Returns [`Loader`].
 	fn loader(&self) -> &Self::Loader {
@@ -533,20 +536,20 @@ where
 	}
 }
 
-impl<C: CurveAffine, L: Layouter<C::Scalar>, P, H> ScalarLoader<C::Scalar>
-	for LoaderConfig<C, L, P, H>
+impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, H> ScalarLoader<C::Scalar>
+	for LoaderConfig<'a, C, L, P, H>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	H: SpongeHasherChipset<C::Scalar>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
 {
-	type LoadedScalar = Halo2LScalar<C, L, P, H>;
+	type LoadedScalar = Halo2LScalar<'a, C, L, P, H>;
 
 	/// Load a constant field element.
 	fn load_const(&self, value: &C::Scalar) -> Self::LoadedScalar {
-		let mut layouter = self.layouter.lock().unwrap();
-		let assigned_value = layouter
+		let mut loader_mut = self.layouter.borrow_mut();
+		let assigned_value = loader_mut
 			.assign_region(
 				|| "load_const",
 				|region: Region<'_, C::Scalar>| {
@@ -555,6 +558,7 @@ where
 				},
 			)
 			.unwrap();
+
 		Halo2LScalar::new(assigned_value, self.clone())
 	}
 
@@ -562,8 +566,8 @@ where
 	fn assert_eq(
 		&self, annotation: &str, lhs: &Self::LoadedScalar, rhs: &Self::LoadedScalar,
 	) -> Result<(), snark_verifier::Error> {
-		let mut layouter = self.layouter.lock().unwrap();
-		layouter
+		let mut loader_mut = self.layouter.borrow_mut();
+		loader_mut
 			.assign_region(
 				|| "assert_eq",
 				|region: Region<'_, C::Scalar>| {
@@ -578,7 +582,7 @@ where
 }
 
 /// Halo2LEcPoint structure
-pub struct Halo2LEcPoint<C: CurveAffine, L: Layouter<C::Scalar>, P, H>
+pub struct Halo2LEcPoint<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, H>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	H: SpongeHasherChipset<C::Scalar>,
@@ -588,11 +592,11 @@ where
 	// Inner value for the halo2 loaded point
 	pub(crate) inner: AssignedPoint<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS, P>,
 	// Loader
-	pub(crate) loader: LoaderConfig<C, L, P, H>,
+	pub(crate) loader: LoaderConfig<'a, C, L, P, H>,
 	_h: PhantomData<H>,
 }
 
-impl<C: CurveAffine, L: Layouter<C::Scalar>, P, H> Halo2LEcPoint<C, L, P, H>
+impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, H> Halo2LEcPoint<'a, C, L, P, H>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	H: SpongeHasherChipset<C::Scalar>,
@@ -602,13 +606,13 @@ where
 	/// Creates a new Halo2LScalar
 	pub fn new(
 		value: AssignedPoint<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS, P>,
-		loader: LoaderConfig<C, L, P, H>,
+		loader: LoaderConfig<'a, C, L, P, H>,
 	) -> Self {
 		return Self { inner: value, loader, _h: PhantomData };
 	}
 }
 
-impl<C: CurveAffine, L: Layouter<C::Scalar>, P, H> Clone for Halo2LEcPoint<C, L, P, H>
+impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, H> Clone for Halo2LEcPoint<'a, C, L, P, H>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	H: SpongeHasherChipset<C::Scalar>,
@@ -621,7 +625,7 @@ where
 	}
 }
 
-impl<C: CurveAffine, L: Layouter<C::Scalar>, P, H> Debug for Halo2LEcPoint<C, L, P, H>
+impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, H> Debug for Halo2LEcPoint<'a, C, L, P, H>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	H: SpongeHasherChipset<C::Scalar>,
@@ -634,7 +638,7 @@ where
 	}
 }
 
-impl<C: CurveAffine, L: Layouter<C::Scalar>, P, H> PartialEq for Halo2LEcPoint<C, L, P, H>
+impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, H> PartialEq for Halo2LEcPoint<'a, C, L, P, H>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	H: SpongeHasherChipset<C::Scalar>,
@@ -649,14 +653,15 @@ where
 	}
 }
 
-impl<C: CurveAffine, L: Layouter<C::Scalar>, P, H> LoadedEcPoint<C> for Halo2LEcPoint<C, L, P, H>
+impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, H> LoadedEcPoint<C>
+	for Halo2LEcPoint<'a, C, L, P, H>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	H: SpongeHasherChipset<C::Scalar>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
 {
-	type Loader = LoaderConfig<C, L, P, H>;
+	type Loader = LoaderConfig<'a, C, L, P, H>;
 
 	/// Returns [`Loader`].
 	fn loader(&self) -> &Self::Loader {
@@ -664,21 +669,22 @@ where
 	}
 }
 
-impl<C: CurveAffine, L: Layouter<C::Scalar>, P, H> EcPointLoader<C> for LoaderConfig<C, L, P, H>
+impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, H> EcPointLoader<C>
+	for LoaderConfig<'a, C, L, P, H>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	H: SpongeHasherChipset<C::Scalar>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
 {
-	type LoadedEcPoint = Halo2LEcPoint<C, L, P, H>;
+	type LoadedEcPoint = Halo2LEcPoint<'a, C, L, P, H>;
 
 	/// Load a constant elliptic curve point.
 	fn ec_point_load_const(&self, value: &C) -> Self::LoadedEcPoint {
 		let coords: Coordinates<C> = Option::from(value.coordinates()).unwrap();
 		let x = Integer::from_w(coords.x().clone());
 		let y = Integer::from_w(coords.y().clone());
-		let mut layouter = self.layouter.lock().unwrap();
+		let mut layouter = self.layouter.borrow_mut();
 		let (x_limbs, y_limbs) = layouter
 			.assign_region(
 				|| "assign_limbs",
@@ -712,7 +718,7 @@ where
 	fn ec_point_assert_eq(
 		&self, annotation: &str, lhs: &Self::LoadedEcPoint, rhs: &Self::LoadedEcPoint,
 	) -> Result<(), snark_verifier::Error> {
-		let mut layouter = self.layouter.lock().unwrap();
+		let mut layouter = self.layouter.borrow_mut();
 		layouter
 			.assign_region(
 				|| "assert_eq",
@@ -748,7 +754,8 @@ where
 				let config = base.loader.clone();
 				let auxes = base.loader.auxes.clone();
 				let (aux_init, aux_fin) = auxes;
-				let mut layouter = base.loader.layouter.lock().unwrap();
+
+				let mut layouter = base.loader.layouter.borrow_mut();
 				let chip =
 					EccMulChipset::new(base.inner.clone(), scalar.inner.clone(), aux_init, aux_fin);
 				let mul = chip
@@ -762,7 +769,7 @@ where
 			})
 			.reduce(|acc, value| {
 				let config = value.loader.clone();
-				let mut layouter = value.loader.layouter.lock().unwrap();
+				let mut layouter = value.loader.layouter.borrow_mut();
 				let chip = EccAddChipset::new(acc.inner, value.inner.clone());
 				let add = chip
 					.synthesize(
@@ -778,7 +785,7 @@ where
 	}
 }
 
-impl<C: CurveAffine, L: Layouter<C::Scalar>, P, H> Loader<C> for LoaderConfig<C, L, P, H>
+impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, H> Loader<C> for LoaderConfig<'a, C, L, P, H>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	H: SpongeHasherChipset<C::Scalar>,
@@ -810,7 +817,7 @@ mod test {
 		},
 		params::poseidon_bn254_5x5::Params,
 		poseidon::{
-			sponge::{PoseidonSpongeChipset, PoseidonSpongeConfig},
+			sponge::{PoseidonSpongeConfig, StatefulSpongeChipset},
 			PoseidonConfig,
 		},
 		rns::bn256::Bn256_4_68,
@@ -826,13 +833,13 @@ mod test {
 	};
 	use rand::thread_rng;
 	use snark_verifier::loader::EcPointLoader;
-	use std::{rc::Rc, sync::Mutex};
 
 	type C = G1Affine;
 	type P = Bn256_4_68;
-	type H = PoseidonSpongeChipset<Fr, 5, Params>;
+	type H = StatefulSpongeChipset<Fr, 5, Params>;
 	type Scalar = Fr;
 	type Base = Fq;
+
 	#[derive(Clone)]
 	struct TestConfig {
 		common: CommonConfig,
@@ -896,30 +903,17 @@ mod test {
 		fn synthesize(
 			&self, config: TestConfig, mut layouter: impl Layouter<Scalar>,
 		) -> Result<(), Error> {
-			let layouter_rc = Rc::new(Mutex::new(layouter.namespace(|| "loader")));
-			let loader_config = LoaderConfig::<C, _, P, H>::new(
-				layouter_rc.clone(),
-				config.common.clone(),
-				config.ecc_mul_scalar,
-				config.main,
-				config.poseidon_sponge,
-			);
-
-			let mut assigned_pairs: Vec<(Halo2LScalar<C, _, P, H>, Halo2LEcPoint<C, _, P, H>)> =
-				Vec::new();
-			let mut lb = layouter_rc.lock().unwrap();
-			lb.assign_region(
+			let pairs = layouter.assign_region(
 				|| "assign_pairs",
 				|region: Region<'_, Scalar>| {
 					let mut ctx = RegionCtx::new(region, 0);
+
+					let mut pairs = Vec::new();
 					for i in 0..self.pairs.len() {
 						let assigned_scalar = ctx.assign_advice(
 							config.common.advice[0],
 							Value::known(self.pairs[i].0.inner),
 						)?;
-
-						let halo2_scalar =
-							Halo2LScalar::new(assigned_scalar, loader_config.clone());
 						ctx.next();
 
 						let mut x_limbs: [Option<AssignedCell<Scalar, Scalar>>; NUM_LIMBS] =
@@ -940,36 +934,51 @@ mod test {
 						let x_limbs = x_limbs.map(|x| x.unwrap());
 						let y_limbs = y_limbs.map(|x| x.unwrap());
 
-						let x = AssignedInteger::new(self.pairs[i].1.inner.x.clone(), x_limbs);
-						let y = AssignedInteger::new(self.pairs[i].1.inner.y.clone(), y_limbs);
-
-						let assigned_point = AssignedPoint::new(x, y);
-						let halo2_point = Halo2LEcPoint::new(assigned_point, loader_config.clone());
-						assigned_pairs.push((halo2_scalar, halo2_point));
+						pairs.push((assigned_scalar, x_limbs, y_limbs));
 					}
-					Ok(())
+					Ok(pairs)
 				},
 			)?;
-			drop(lb);
 
-			// TODO: Assigned_pairs returns double. Can be because of the multithread.
-			// research and fix it
-			let borrowed_pairs_2x: Vec<(&Halo2LScalar<C, _, P, H>, &Halo2LEcPoint<C, _, P, H>)> =
-				assigned_pairs.iter().map(|x| (&x.0, &x.1)).collect();
-			let borrowed_pairs: Vec<(&Halo2LScalar<C, _, P, H>, &Halo2LEcPoint<C, _, P, H>)> =
-				borrowed_pairs_2x[3..6].to_vec();
+			let (x_limbs, y_limbs) = {
+				let loader_config = LoaderConfig::<C, _, P, H>::new(
+					layouter.namespace(|| "loader"),
+					config.common.clone(),
+					config.ecc_mul_scalar,
+					config.main,
+					config.poseidon_sponge,
+				);
 
-			let res = LoaderConfig::multi_scalar_multiplication(borrowed_pairs.as_slice());
+				let mut halo2_pairs = Vec::new();
+				for (assigned_pair, nloaded_pair) in pairs.iter().zip(self.pairs.clone()) {
+					let (scalar, x_limbs, y_limbs) = assigned_pair;
+					let (_, lpoint) = nloaded_pair;
+					let halo2_scalar = Halo2LScalar::new(scalar.clone(), loader_config.clone());
 
-			let mut lb = layouter_rc.lock().unwrap();
+					let x = AssignedInteger::new(lpoint.inner.x.clone(), x_limbs.clone());
+					let y = AssignedInteger::new(lpoint.inner.y.clone(), y_limbs.clone());
+
+					let assigned_point = AssignedPoint::new(x, y);
+					let halo2_point = Halo2LEcPoint::new(assigned_point, loader_config.clone());
+
+					halo2_pairs.push((halo2_scalar, halo2_point));
+				}
+
+				let borrowed_pairs: Vec<(&Halo2LScalar<C, _, P, H>, &Halo2LEcPoint<C, _, P, H>)> =
+					halo2_pairs.iter().map(|x| (&x.0, &x.1)).collect();
+
+				let res = LoaderConfig::multi_scalar_multiplication(borrowed_pairs.as_slice());
+
+				let x_limbs = res.inner.x.limbs;
+				let y_limbs = res.inner.y.limbs;
+
+				(x_limbs, y_limbs)
+			};
+
 			for i in 0..NUM_LIMBS {
-				lb.constrain_instance(
-					res.inner.clone().x.limbs[i].cell(),
-					config.common.instance,
-					i,
-				)?;
-				lb.constrain_instance(
-					res.inner.clone().y.limbs[i].cell(),
+				layouter.constrain_instance(x_limbs[i].cell(), config.common.instance, i)?;
+				layouter.constrain_instance(
+					y_limbs[i].cell(),
 					config.common.instance,
 					i + NUM_LIMBS,
 				)?;

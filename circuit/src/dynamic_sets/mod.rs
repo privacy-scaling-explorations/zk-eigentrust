@@ -331,25 +331,31 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u1
 		)?;
 
 		// signature verification
-		for i in 0..NUM_NEIGHBOURS {
-			let mut pk_sponge = SpongeHasher::new();
-			pk_sponge.update(&op_pk_x[i]);
-			pk_sponge.update(&op_pk_y[i]);
-			let pks_hash = pk_sponge.synthesize(
-				&config.common,
-				&config.sponge,
-				layouter.namespace(|| "pks_sponge"),
-			)?;
+		let zero_state = [zero.clone(), zero.clone(), zero.clone(), zero.clone(), zero.clone()];
+		let mut pk_sponge = SpongeHasher::new(zero_state.clone(), zero.clone());
+		pk_sponge.update(&pk_x);
+		pk_sponge.update(&pk_y);
+		let pks_hash = pk_sponge.synthesize(
+			&config.common,
+			&config.sponge,
+			layouter.namespace(|| "pks_sponge"),
+		)?;
 
-			let mut scores_sponge = SpongeHasher::new();
+		for i in 0..NUM_NEIGHBOURS {
+			let mut scores_sponge = SpongeHasher::new(zero_state.clone(), zero.clone());
 			scores_sponge.update(&ops[i]);
 			let scores_message_hash = scores_sponge.synthesize(
 				&config.common,
 				&config.sponge,
 				layouter.namespace(|| "scores_sponge"),
 			)?;
-			let message_hash_input =
-				[pks_hash, scores_message_hash, zero.clone(), zero.clone(), zero.clone()];
+			let message_hash_input = [
+				pks_hash[0].clone(),
+				scores_message_hash[0].clone(),
+				zero.clone(),
+				zero.clone(),
+				zero.clone(),
+			];
 			let poseidon = PoseidonHasher::new(message_hash_input);
 			let res = poseidon.synthesize(
 				&config.common,
