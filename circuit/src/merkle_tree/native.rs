@@ -93,6 +93,7 @@ where
 			}
 			value_index = value_index / ARITY;
 		}
+
 		path_arr[merkle_tree.height][0] = merkle_tree.root;
 		Self { value, path_arr, _h: PhantomData }
 	}
@@ -135,10 +136,9 @@ mod test {
 			Fr::random(rng.clone()),
 			Fr::random(rng.clone()),
 			Fr::random(rng.clone()),
-			Fr::random(rng.clone()),
 		];
-		let merkle = MerkleTree::<Fr, 2, Poseidon<Fr, 5, Params>>::build_tree(leaves, 2);
-		let path = Path::<Fr, 2, 3, Poseidon<Fr, 5, Params>>::find_path(&merkle, value);
+		let merkle = MerkleTree::<Fr, 2, Poseidon<Fr, 5, Params>>::build_tree(leaves, 3);
+		let path = Path::<Fr, 2, 4, Poseidon<Fr, 5, Params>>::find_path(&merkle, value);
 
 		assert!(path.verify());
 		// Assert last element of the array and the root of the tree
