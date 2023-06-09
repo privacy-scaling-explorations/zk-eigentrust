@@ -338,6 +338,14 @@ pub fn le_bits_to_u64<const L: usize>(bits: &[bool; L]) -> u64 {
 	bits.iter().enumerate().fold(0u64, |acc, (i, b)| acc + if *b { 1 << i } else { 0 })
 }
 
+/// Convert big endian bits to usize
+pub fn be_bits_to_usize(bits: &[bool]) -> usize {
+	bits.iter()
+		.rev()
+		.enumerate()
+		.fold(0usize, |acc, (i, b)| acc + if *b { 1 << i } else { 0 })
+}
+
 /// Get the field element of `2 ^ n`
 pub fn power_of_two<F: FieldExt>(n: usize) -> F {
 	big_to_fe(BigUint::one() << n)
