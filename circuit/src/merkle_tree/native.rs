@@ -108,7 +108,7 @@ where
 				hasher_inputs[j] = self.path_arr[i][j];
 			}
 			let hasher = H::new(hasher_inputs);
-			is_satisfied = is_satisfied | self.path_arr[i + 1].contains(&(hasher.finalize()[0]));
+			is_satisfied = is_satisfied & self.path_arr[i + 1].contains(&(hasher.finalize()[0]));
 		}
 		is_satisfied
 	}
