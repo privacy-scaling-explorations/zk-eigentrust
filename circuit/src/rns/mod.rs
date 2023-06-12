@@ -62,8 +62,6 @@ pub trait RnsParams<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_
 	fn to_sub_x() -> [N; NUM_LIMBS];
 	/// Returns EcPoint AuxFin's y coordinate
 	fn to_sub_y() -> [N; NUM_LIMBS];
-	/// Sliding window size for the scalar multiplication.
-	fn sliding_window_size() -> usize;
 	/// Inverts given Integer.
 	fn invert(input: BigUint) -> Option<Integer<W, N, NUM_LIMBS, NUM_BITS, Self>> {
 		let a_w = big_to_fe::<W>(input);

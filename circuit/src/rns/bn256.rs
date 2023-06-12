@@ -147,8 +147,4 @@ impl RnsParams<Fq, Fr, 4, 68> for Bn256_4_68 {
 		let limb3 = Fr::from_u128(761069265693657);
 		[limb0, limb1, limb2, limb3]
 	}
-
-	fn sliding_window_size() -> usize {
-		2
-	}
 }
