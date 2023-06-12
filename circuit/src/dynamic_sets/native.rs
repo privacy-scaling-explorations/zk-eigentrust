@@ -1,7 +1,6 @@
 use crate::{
 	circuit::PoseidonNativeHasher,
 	eddsa::native::{PublicKey, Signature},
-	rns::{compose_big_decimal_f, decompose_big_decimal},
 	utils::fe_to_big,
 };
 use halo2::{
@@ -99,14 +98,6 @@ impl<const NUM_NEIGHBOURS: usize> Default for Opinion<NUM_NEIGHBOURS> {
 		let scores = vec![(PublicKey::default(), Fr::zero()); NUM_NEIGHBOURS];
 		Self { sig, message_hash, scores }
 	}
-}
-
-/// Witness structure for proving threshold checks
-pub struct ThresholdWitness<const NUM_LIMBS: usize> {
-	threshold: Fr,
-	is_bigger: bool,
-	num_decomposed: [Fr; NUM_LIMBS],
-	den_decomposed: [Fr; NUM_LIMBS],
 }
 
 /// Dynamic set for EigenTrust
@@ -363,50 +354,18 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITERATIONS: usize, const INITIAL_SCO
 		}
 		s
 	}
-
-	// TODO: Scale the ratio to the standardised decimal position
-	// TODO: Find `NUM_LIMBS` and `POWER_OF_TEN` for standardised decimal position
-	/// Method for checking the threshold for a given score
-	pub fn check_threshold<const NUM_LIMBS: usize, const POWER_OF_TEN: usize>(
-		&self, score: Fr, ratio: BigRational, threshold: Fr,
-	) -> ThresholdWitness<NUM_LIMBS> {
-		let x = ratio;
-
-		let num = x.numer();
-		let den = x.denom();
-
-		let num_decomposed =
-			decompose_big_decimal::<Fr, NUM_LIMBS, POWER_OF_TEN>(num.to_biguint().unwrap());
-		let den_decomposed =
-			decompose_big_decimal::<Fr, NUM_LIMBS, POWER_OF_TEN>(den.to_biguint().unwrap());
-
-		// Constraint checks - circuits should implement from this point
-		let composed_num_f = compose_big_decimal_f::<Fr, NUM_LIMBS, POWER_OF_TEN>(num_decomposed);
-		let composed_den_f = compose_big_decimal_f::<Fr, NUM_LIMBS, POWER_OF_TEN>(den_decomposed);
-		let composed_den_f_inv = composed_den_f.invert().unwrap();
-		let res_f = composed_num_f * composed_den_f_inv;
-		assert!(res_f == score);
-
-		// Take the highest POWER_OF_TEN digits for comparison
-		// This just means lower precision
-		let first_limb_num = *num_decomposed.last().unwrap();
-		let first_limb_den = *den_decomposed.last().unwrap();
-		let comp = first_limb_den * threshold;
-		let is_bigger = first_limb_num >= comp;
-
-		ThresholdWitness { threshold, is_bigger, num_decomposed, den_decomposed }
-	}
 }
 
 #[cfg(test)]
 mod test {
 	use std::time::Instant;
 
-	use super::{EigenTrustSet, Opinion, ThresholdWitness};
+	use super::{EigenTrustSet, Opinion};
 	use crate::{
 		calculate_message_hash,
 		eddsa::native::{sign, PublicKey, SecretKey},
 		rns::compose_big_decimal,
+		threshold::native::{Threshold, ThresholdWitness},
 		utils::fe_to_big,
 	};
 
@@ -914,7 +873,11 @@ mod test {
 		const POWER_OF_TEN: usize,
 	>(
 		ops: Vec<Vec<Fr>>,
-	) -> (Vec<Fr>, Vec<BigRational>, Vec<ThresholdWitness<NUM_LIMBS>>) {
+	) -> (
+		Vec<Fr>,
+		Vec<BigRational>,
+		Vec<ThresholdWitness<Fr, NUM_LIMBS>>,
+	) {
 		assert!(ops.len() == NUM_NEIGHBOURS);
 		for op in &ops {
 			assert!(op.len() == NUM_NEIGHBOURS);
@@ -948,7 +911,8 @@ mod test {
 		let mut tws = Vec::new();
 		let threshold = Fr::from_u128(435);
 		for (&score, ratio) in s.iter().zip(s_ratios.clone()) {
-			let tw = set.check_threshold::<NUM_LIMBS, POWER_OF_TEN>(score, ratio, threshold);
+			let t: Threshold<NUM_LIMBS, POWER_OF_TEN> = Threshold::new(score, ratio, threshold);
+			let tw = t.check_threshold();
 			tws.push(tw);
 		}
 
