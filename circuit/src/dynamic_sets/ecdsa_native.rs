@@ -8,6 +8,7 @@ use halo2::{
 	arithmetic::Field,
 	halo2curves::{bn256::Fr, ff::PrimeField},
 };
+use itertools::Itertools;
 use num_bigint::{BigInt, ToBigInt};
 use num_rational::BigRational;
 use num_traits::{FromPrimitive, Zero};
@@ -20,26 +21,35 @@ pub type ECDSAPublicKey = secp256k1::PublicKey;
 /// ECDSA signature
 pub type ECDSASignature = ecdsa::RecoverableSignature;
 
-fn keccak256(data: &[u8]) -> Vec<u8> {
+/// Construct an Ethereum address for the given ECDSA public key
+pub fn address_from_pub_key(pub_key: &ECDSAPublicKey) -> Result<[u8; 20], &'static str> {
+	let pub_key_bytes: [u8; 65] = pub_key.serialize_uncompressed();
+
+	// Hash with Keccak256
 	let mut hasher = Keccak256::new();
-	hasher.update(data);
-	hasher.finalize().to_vec()
+	hasher.update(&pub_key_bytes[1..]);
+	let hashed_public_key = hasher.finalize().to_vec();
+
+	// Get the last 20 bytes of the hash
+	let mut address = [0u8; 20];
+	address.copy_from_slice(&hashed_public_key[hashed_public_key.len() - 20..]);
+
+	Ok(address)
 }
 
-/// Calculate the field value from public key
-pub fn recover_ethereum_address_from_pk(pk: ECDSAPublicKey) -> Fr {
-	let pk_bytes = pk.serialize_uncompressed();
-	let hashed_pk = keccak256(&pk_bytes[1..]);
-	let address_bytes = &hashed_pk[hashed_pk.len() - 20..];
+/// Calculate the address field value from a public key
+pub fn field_value_from_pub_key(&pub_key: &ECDSAPublicKey) -> Fr {
+	let mut address = address_from_pub_key(&pub_key).unwrap();
+	address.reverse();
 
-	let mut address_bytes_array = [0u8; 32];
-	address_bytes_array[..address_bytes.len()].copy_from_slice(address_bytes);
+	let mut address_bytes = [0u8; 32];
+	address_bytes[..address.len()].copy_from_slice(&address);
 
-	Fr::from_bytes(&address_bytes_array).unwrap()
+	Fr::from_bytes(&address_bytes).unwrap()
 }
 
 /// Attestation submission struct
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct SignedAttestation {
 	/// Attestation
 	pub attestation: AttestationFr,
@@ -81,12 +91,12 @@ impl Default for SignedAttestation {
 }
 
 /// Attestation struct
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, PartialOrd)]
 pub struct AttestationFr {
 	/// Ethereum address of peer being rated
 	pub about: Fr,
 	/// Unique identifier for the action being rated
-	pub key: Fr,
+	pub domain: Fr,
 	/// Given rating for the action
 	pub value: Fr,
 	/// Optional field for attaching additional information to the attestation
@@ -95,13 +105,13 @@ pub struct AttestationFr {
 
 impl AttestationFr {
 	/// Construct a new attestation struct
-	pub fn new(about: Fr, key: Fr, value: Fr, message: Fr) -> Self {
-		Self { about, key, value, message }
+	pub fn new(about: Fr, domain: Fr, value: Fr, message: Fr) -> Self {
+		Self { about, domain, value, message }
 	}
 
 	/// Hash attestation
 	pub fn hash(&self) -> Fr {
-		PoseidonNativeHasher::new([self.about, self.key, self.value, self.message, Fr::zero()])
+		PoseidonNativeHasher::new([self.about, self.domain, self.value, self.message, Fr::zero()])
 			.permute()[0]
 	}
 }
@@ -110,7 +120,7 @@ impl Default for AttestationFr {
 	fn default() -> Self {
 		AttestationFr {
 			about: Fr::default(),
-			key: Fr::default(),
+			domain: Fr::default(),
 			value: Fr::default(),
 			message: Fr::default(),
 		}
@@ -170,8 +180,11 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITERATIONS: usize, const INITIAL_SCO
 	}
 
 	/// Update the opinion of the member
-	pub fn update_op(&mut self, from: ECDSAPublicKey, op: Vec<SignedAttestation>) -> Fr {
-		let op = Opinion::new(from, op);
+	pub fn update_op(&mut self, from: ECDSAPublicKey, op: Vec<Option<SignedAttestation>>) -> Fr {
+		let default_att = SignedAttestation::default();
+		let op_unwrapped =
+			op.iter().map(|x| x.clone().unwrap_or(default_att.clone())).collect_vec();
+		let op = Opinion::<NUM_NEIGHBOURS>::new(from, op_unwrapped);
 		let set = self.set.iter().map(|&(pk, _)| pk.clone()).collect();
 		let (from_pk, scores, op_hash) = op.validate(set);
 
@@ -396,7 +409,7 @@ mod test {
 		const INITIAL_SCORE: u128,
 	>(
 		sk: &SecretKey, pks: &[Fr], scores: &[Fr],
-	) -> Vec<SignedAttestation> {
+	) -> Vec<Option<SignedAttestation>> {
 		assert!(pks.len() == NUM_NEIGHBOURS);
 		assert!(scores.len() == NUM_NEIGHBOURS);
 
@@ -405,7 +418,7 @@ mod test {
 		let mut res = Vec::new();
 		for i in 0..NUM_NEIGHBOURS {
 			if pks[i] == Fr::zero() {
-				res.push(SignedAttestation::default())
+				res.push(None)
 			} else {
 				let (about, key, value, message) = (pks[i], Fr::zero(), scores[i], Fr::zero());
 				let attestation = AttestationFr::new(about, key, value, message);
@@ -414,7 +427,7 @@ mod test {
 					sign.sign_ecdsa_recoverable(&Message::from_slice(msg.as_slice()).unwrap(), sk);
 				let signed_attestation = SignedAttestation::new(attestation, signature);
 
-				res.push(signed_attestation);
+				res.push(Some(signed_attestation));
 			}
 		}
 		res
@@ -428,7 +441,7 @@ mod test {
 		let rng = &mut thread_rng();
 
 		let (_sk, pk) = generate_keypair(rng);
-		let pk = recover_ethereum_address_from_pk(pk);
+		let pk = field_value_from_pub_key(&pk);
 
 		set.add_member(pk);
 
@@ -444,7 +457,7 @@ mod test {
 		let rng = &mut thread_rng();
 
 		let (_sk, pk) = generate_keypair(rng);
-		let pk_fr = recover_ethereum_address_from_pk(pk);
+		let pk_fr = field_value_from_pub_key(&pk);
 
 		set.add_member(pk_fr);
 
@@ -460,8 +473,8 @@ mod test {
 		let (_sk1, pk1) = generate_keypair(rng);
 		let (_sk2, pk2) = generate_keypair(rng);
 
-		let pk1 = recover_ethereum_address_from_pk(pk1);
-		let pk2 = recover_ethereum_address_from_pk(pk2);
+		let pk1 = field_value_from_pub_key(&pk1);
+		let pk2 = field_value_from_pub_key(&pk2);
 
 		set.add_member(pk1);
 		set.add_member(pk2);
@@ -478,8 +491,8 @@ mod test {
 		let (sk1, pk1) = generate_keypair(rng);
 		let (_sk2, pk2) = generate_keypair(rng);
 
-		let pk1_fr = recover_ethereum_address_from_pk(pk1);
-		let pk2_fr = recover_ethereum_address_from_pk(pk2);
+		let pk1_fr = field_value_from_pub_key(&pk1);
+		let pk2_fr = field_value_from_pub_key(&pk2);
 
 		set.add_member(pk1_fr);
 		set.add_member(pk2_fr);
@@ -509,8 +522,8 @@ mod test {
 		let (sk1, pk1) = generate_keypair(rng);
 		let (sk2, pk2) = generate_keypair(rng);
 
-		let pk1_fr = recover_ethereum_address_from_pk(pk1);
-		let pk2_fr = recover_ethereum_address_from_pk(pk2);
+		let pk1_fr = field_value_from_pub_key(&pk1);
+		let pk2_fr = field_value_from_pub_key(&pk2);
 
 		set.add_member(pk1_fr);
 		set.add_member(pk2_fr);
@@ -553,9 +566,9 @@ mod test {
 		let (sk2, pk2) = generate_keypair(rng);
 		let (sk3, pk3) = generate_keypair(rng);
 
-		let pk1_fr = recover_ethereum_address_from_pk(pk1);
-		let pk2_fr = recover_ethereum_address_from_pk(pk2);
-		let pk3_fr = recover_ethereum_address_from_pk(pk3);
+		let pk1_fr = field_value_from_pub_key(&pk1);
+		let pk2_fr = field_value_from_pub_key(&pk2);
+		let pk3_fr = field_value_from_pub_key(&pk3);
 
 		set.add_member(pk1_fr);
 		set.add_member(pk2_fr);
@@ -619,9 +632,9 @@ mod test {
 		let (sk2, pk2) = generate_keypair(rng);
 		let (sk3, pk3) = generate_keypair(rng);
 
-		let pk1_fr = recover_ethereum_address_from_pk(pk1);
-		let pk2_fr = recover_ethereum_address_from_pk(pk2);
-		let pk3_fr = recover_ethereum_address_from_pk(pk3);
+		let pk1_fr = field_value_from_pub_key(&pk1);
+		let pk2_fr = field_value_from_pub_key(&pk2);
+		let pk3_fr = field_value_from_pub_key(&pk3);
 
 		set.add_member(pk1_fr);
 		set.add_member(pk2_fr);
@@ -670,9 +683,9 @@ mod test {
 		let (sk2, pk2) = generate_keypair(rng);
 		let (sk3, pk3) = generate_keypair(rng);
 
-		let pk1_fr = recover_ethereum_address_from_pk(pk1);
-		let pk2_fr = recover_ethereum_address_from_pk(pk2);
-		let pk3_fr = recover_ethereum_address_from_pk(pk3);
+		let pk1_fr = field_value_from_pub_key(&pk1);
+		let pk2_fr = field_value_from_pub_key(&pk2);
+		let pk3_fr = field_value_from_pub_key(&pk3);
 
 		set.add_member(pk1_fr);
 		set.add_member(pk2_fr);
@@ -741,9 +754,9 @@ mod test {
 		let (sk2, pk2) = generate_keypair(rng);
 		let (sk3, pk3) = generate_keypair(rng);
 
-		let pk1_fr = recover_ethereum_address_from_pk(pk1);
-		let pk2_fr = recover_ethereum_address_from_pk(pk2);
-		let pk3_fr = recover_ethereum_address_from_pk(pk3);
+		let pk1_fr = field_value_from_pub_key(&pk1);
+		let pk2_fr = field_value_from_pub_key(&pk2);
+		let pk3_fr = field_value_from_pub_key(&pk3);
 
 		set.add_member(pk1_fr);
 		set.add_member(pk2_fr);
@@ -804,9 +817,9 @@ mod test {
 		let (sk2, pk2) = generate_keypair(rng);
 		let (sk3, pk3) = generate_keypair(rng);
 
-		let pk1_fr = recover_ethereum_address_from_pk(pk1);
-		let pk2_fr = recover_ethereum_address_from_pk(pk2);
-		let pk3_fr = recover_ethereum_address_from_pk(pk3);
+		let pk1_fr = field_value_from_pub_key(&pk1);
+		let pk2_fr = field_value_from_pub_key(&pk2);
+		let pk3_fr = field_value_from_pub_key(&pk3);
 
 		// Peer1(pk1) signs the opinion
 		let mut pks = [Fr::zero(); NUM_NEIGHBOURS];
@@ -889,10 +902,9 @@ mod test {
 		let pks: Vec<PublicKey> = keys.iter().map(|(_, pk)| pk.clone()).collect();
 
 		// Add the publicKey to the set
-		pks.iter().for_each(|pk| set.add_member(recover_ethereum_address_from_pk(pk.clone())));
+		pks.iter().for_each(|pk| set.add_member(field_value_from_pub_key(&pk.clone())));
 
-		let pks_fr: Vec<Fr> =
-			pks.iter().map(|pk| recover_ethereum_address_from_pk(pk.clone())).collect();
+		let pks_fr: Vec<Fr> = pks.iter().map(|pk| field_value_from_pub_key(&pk.clone())).collect();
 
 		// Update the opinions
 		for i in 0..NUM_NEIGHBOURS {

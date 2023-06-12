@@ -147,7 +147,7 @@ pub fn ecdsa_secret_from_mnemonic(
 
 /// Construct an Ethereum address for the given ECDSA public key
 pub fn address_from_public_key(pub_key: &ECDSAPublicKey) -> Result<Address, &'static str> {
-	let pub_key_bytes = pub_key.serialize_uncompressed();
+	let pub_key_bytes: [u8; 65] = pub_key.serialize_uncompressed();
 
 	// Hash with Keccak256
 	let hashed_public_key = keccak256(&pub_key_bytes[1..]);
@@ -156,6 +156,22 @@ pub fn address_from_public_key(pub_key: &ECDSAPublicKey) -> Result<Address, &'st
 	let address_bytes = &hashed_public_key[hashed_public_key.len() - 20..];
 
 	Ok(Address::from_slice(address_bytes))
+}
+
+/// Construct a Scalar from the given Ethereum address
+pub fn scalar_from_address(address: &Address) -> Result<Scalar, &'static str> {
+	let mut address_fixed = address.to_fixed_bytes();
+	address_fixed.reverse();
+
+	let mut address_bytes = [0u8; 32];
+	address_bytes[..address_fixed.len()].copy_from_slice(&address_fixed);
+
+	let about = match Scalar::from_bytes(&address_bytes).is_some().into() {
+		true => Scalar::from_bytes(&address_bytes).unwrap(),
+		false => return Err("Failed to convert about address to scalar"),
+	};
+
+	Ok(about)
 }
 
 #[cfg(test)]

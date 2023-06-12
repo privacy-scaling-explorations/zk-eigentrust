@@ -3,18 +3,16 @@ use secp256k1::PublicKey;
 
 use crate::{
 	circuit::PoseidonNativeSponge,
-	dynamic_sets::ecdsa_native::{
-		recover_ethereum_address_from_pk, AttestationFr, SignedAttestation,
-	},
+	dynamic_sets::ecdsa_native::{field_value_from_pub_key, AttestationFr, SignedAttestation},
 };
 
 /// Opinion info of peer
-pub struct Opinion {
+pub struct Opinion<const NUM_NEIGHBOURS: usize> {
 	from: PublicKey,
 	attestations: Vec<SignedAttestation>,
 }
 
-impl Opinion {
+impl<const NUM_NEIGHBOURS: usize> Opinion<NUM_NEIGHBOURS> {
 	/// Construct new instance
 	pub fn new(from: PublicKey, attestations: Vec<SignedAttestation>) -> Self {
 		Self { from, attestations }
@@ -22,18 +20,23 @@ impl Opinion {
 
 	/// Validate attestations & calculate the hash
 	pub fn validate(&self, set: Vec<Fr>) -> (Fr, Vec<Fr>, Fr) {
-		let from_pk = recover_ethereum_address_from_pk(self.from);
+		let from_pk = field_value_from_pub_key(&self.from);
 
 		let pos_from = set.iter().position(|&x| x == from_pk);
 		assert!(pos_from.is_some());
 
 		let mut scores = vec![Fr::zero(); set.len()];
 		let mut hashes = Vec::new();
-		let default_hash = AttestationFr::default().hash();
-		for (i, att) in self.attestations.iter().enumerate() {
+
+		let default_att = SignedAttestation::default();
+		let default_hash = default_att.attestation.hash();
+		for i in 0..NUM_NEIGHBOURS {
 			let is_default_pubkey = set[i] == Fr::zero();
 
-			if is_default_pubkey {
+			let att = self.attestations[i].clone();
+			let is_default_sig = att.attestation == AttestationFr::default();
+
+			if is_default_pubkey || is_default_sig {
 				scores[i] = Fr::default();
 				hashes.push(default_hash);
 			} else {

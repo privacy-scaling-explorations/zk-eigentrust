@@ -6,7 +6,7 @@ use ethers::{
 	abi::Address,
 	providers::Http,
 	signers::coins_bip39::{English, Mnemonic},
-	types::{H160, U256},
+	types::{H160, H256},
 };
 use std::str::FromStr;
 
@@ -28,6 +28,8 @@ pub enum Mode {
 	Deploy,
 	/// Generate the proofs
 	Proof,
+	/// Calculate the global scores
+	Scores,
 	/// Display the current client configuration
 	Show,
 	/// Update the client configuration. Requires 'UpdateData'
@@ -123,7 +125,7 @@ impl AttestData {
 		// Parse message
 		let message = match &self.message {
 			Some(message_str) => {
-				let message = U256::from_str(message_str).map_err(|_| "Failed to parse message")?;
+				let message = H256::from_str(message_str).map_err(|_| "Failed to parse message")?;
 				Some(message)
 			},
 			None => None,
@@ -134,7 +136,7 @@ impl AttestData {
 		let mut key_bytes: [u8; 32] = [0; 32];
 		key_bytes[..DOMAIN_PREFIX_LEN].copy_from_slice(&DOMAIN_PREFIX);
 		key_bytes[DOMAIN_PREFIX_LEN..].copy_from_slice(domain.as_bytes());
-		let key = U256::from(key_bytes);
+		let key = H256::from(key_bytes);
 
 		Ok(Attestation::new(parsed_address, key, parsed_score, message))
 	}
@@ -145,7 +147,7 @@ mod tests {
 	use crate::cli::{AttestData, Cli};
 	use clap::CommandFactory;
 	use eigen_trust_client::{attestation::DOMAIN_PREFIX, ClientConfig};
-	use ethers::types::U256;
+	use ethers::types::H256;
 	use std::str::FromStr;
 
 	#[test]
@@ -166,7 +168,9 @@ mod tests {
 		let data = AttestData {
 			address: Some("0x5fbdb2315678afecb367f032d93f642f64180aa3".to_string()),
 			score: Some("5".to_string()),
-			message: Some("0x1234512345".to_string()),
+			message: Some(
+				"473fe1d0de78c8f334d059013d902c13c8b53eb0f669caa9cad677ce1a601167".to_string(),
+			),
 		};
 
 		let attestation = data.to_attestation(&config).unwrap();
@@ -179,11 +183,14 @@ mod tests {
 
 		let mut expected_key_bytes: [u8; 32] = [0; 32];
 		expected_key_bytes[..DOMAIN_PREFIX.len()].copy_from_slice(&DOMAIN_PREFIX);
-		let expected_key = U256::from(expected_key_bytes);
+		let expected_key = H256::from(expected_key_bytes);
 
 		assert_eq!(attestation.key, expected_key);
 
-		let expected_message = U256::from_str(&"0x1234512345".to_string()).unwrap();
+		let expected_message = H256::from_str(
+			&"473fe1d0de78c8f334d059013d902c13c8b53eb0f669caa9cad677ce1a601167".to_string(),
+		)
+		.unwrap();
 
 		assert_eq!(attestation.message, expected_message);
 	}

@@ -72,10 +72,13 @@ async fn main() {
 			println!("EigenTrustVerifier deployed at {:?}", verifier_address);
 		},
 		Mode::Proof => {
-			println!("Calculating Proof...\n");
+			println!("Not implemented yet.");
+		},
+		Mode::Scores => {
+			println!("Calculating scores...\n");
 			let mut client = Client::new(config);
-			if let Err(e) = client.calculate_proofs().await {
-				eprintln!("Error calculating proofs: {:?}", e);
+			if let Err(e) = client.calculate_scores().await {
+				eprintln!("Error calculating scores: {:?}", e);
 			}
 		},
 		Mode::Show => println!("Client config:\n{:#?}", config),

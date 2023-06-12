@@ -1,4 +1,4 @@
-use csv::Reader as CsvReader;
+use csv::{Reader as CsvReader, Writer as CsvWriter};
 use serde::de::DeserializeOwned;
 use std::{
 	env,
@@ -34,4 +34,23 @@ pub fn read_csv_data<T: DeserializeOwned>(file_name: &str) -> Result<Vec<T>, Err
 		records.push(record);
 	}
 	Ok(records)
+}
+
+/// Creates new CSV file in the given path and stores the provided data
+pub fn create_csv_file<T, U>(filename: &str, content: T) -> Result<(), &'static str>
+where
+	T: IntoIterator<Item = U>,
+	U: AsRef<[u8]>,
+{
+	let path = format!("../data/{}.csv", filename);
+
+	let mut writer = CsvWriter::from_path(&path).map_err(|_| "Failed to open file")?;
+
+	// Write content
+	writer.write_record(content).map_err(|_| "Failed to write record")?;
+
+	// Flush buffer
+	writer.flush().map_err(|_| "Failed to flush buffer")?;
+
+	Ok(())
 }
