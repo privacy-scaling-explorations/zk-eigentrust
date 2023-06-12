@@ -92,3 +92,25 @@ The configuration file is stored in `data/client-config.json`. You may need to u
 - `verifier_address`: Verifier smart contract for the EigenTrust global scores zk proof.
 
 These parameters can also be modified using the `update` CLI command.
+
+## Environment Configuration
+
+You can customize some settings through environment variables:
+
+- `MNEMONIC`: Your Ethereum wallet's mnemonic phrase.
+- `BANDADA_API_KEY`: The Bandada API key.
+
+We've provided a template for these variables in a file named `.env.origin`. You can create a copy of this file and rename it to `.env`:
+
+```bash
+cp .env.origin .env
+```
+
+Next, edit the `.env` file and replace the placeholder values with your actual ones:
+
+```bash
+MNEMONIC="your mnemonic phrase"
+BANDADA_API_KEY="your bandada api key"
+```
+
+It's also possible to include _only_ the ones you want to override.
