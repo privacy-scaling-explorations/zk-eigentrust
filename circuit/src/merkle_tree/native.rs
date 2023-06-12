@@ -79,14 +79,9 @@ where
 {
 	/// Find path for the given value to the root
 	pub fn find_path(
-		merkle_tree: &MerkleTree<F, ARITY, HEIGHT, H>, value: F,
+		merkle_tree: &MerkleTree<F, ARITY, HEIGHT, H>, value: F, mut value_index: usize,
 	) -> Path<F, ARITY, HEIGHT, LENGTH, H> {
-		//
-		// TODO: This way of finding index will fail if we have same inputs
-		//
-		let mut value_index = merkle_tree.nodes[&0].iter().position(|x| x == &value).unwrap();
 		let mut path_arr: [[F; ARITY]; LENGTH] = [[F::ZERO; ARITY]; LENGTH];
-
 		for level in 0..merkle_tree.height {
 			let wrap = value_index.div_rem(&ARITY);
 			for i in 0..ARITY {
@@ -139,7 +134,7 @@ mod test {
 			Fr::random(rng.clone()),
 		];
 		let merkle = MerkleTree::<Fr, 2, 3, Poseidon<Fr, 5, Params>>::build_tree(leaves);
-		let path = Path::<Fr, 2, 3, 4, Poseidon<Fr, 5, Params>>::find_path(&merkle, value);
+		let path = Path::<Fr, 2, 3, 4, Poseidon<Fr, 5, Params>>::find_path(&merkle, value, 4);
 
 		assert!(path.verify());
 		// Assert last element of the array and the root of the tree
@@ -170,7 +165,7 @@ mod test {
 			Fr::random(rng.clone()),
 		];
 		let merkle = MerkleTree::<Fr, 3, 3, Poseidon<Fr, 5, Params>>::build_tree(leaves);
-		let path = Path::<Fr, 3, 3, 4, Poseidon<Fr, 5, Params>>::find_path(&merkle, value);
+		let path = Path::<Fr, 3, 3, 4, Poseidon<Fr, 5, Params>>::find_path(&merkle, value, 7);
 
 		assert!(path.verify());
 		// Assert last element of the array and the root of the tree
@@ -183,7 +178,7 @@ mod test {
 		let rng = &mut thread_rng();
 		let value = Fr::random(rng.clone());
 		let merkle = MerkleTree::<Fr, 2, 0, Poseidon<Fr, 5, Params>>::build_tree(vec![value]);
-		let path = Path::<Fr, 2, 0, 1, Poseidon<Fr, 5, Params>>::find_path(&merkle, value);
+		let path = Path::<Fr, 2, 0, 1, Poseidon<Fr, 5, Params>>::find_path(&merkle, value, 0);
 		assert!(path.verify());
 		// Assert last element of the array and the root of the tree
 		assert_eq!(path.path_arr[merkle.height][0], merkle.root);
