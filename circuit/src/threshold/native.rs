@@ -31,8 +31,6 @@ impl<const NUM_LIMBS: usize, const POWER_OF_TEN: usize> Threshold<NUM_LIMBS, POW
 			decompose_big_decimal::<Fr, NUM_LIMBS, POWER_OF_TEN>(num.to_biguint().unwrap());
 		let den_decomposed =
 			decompose_big_decimal::<Fr, NUM_LIMBS, POWER_OF_TEN>(den.to_biguint().unwrap());
-		println!("{:?}", num_decomposed);
-		println!("{:?}", den_decomposed);
 
 		// Constraint checks - circuits should implement from this point
 		let composed_num_f = compose_big_decimal_f::<Fr, NUM_LIMBS, POWER_OF_TEN>(num_decomposed);
@@ -47,9 +45,6 @@ impl<const NUM_LIMBS: usize, const POWER_OF_TEN: usize> Threshold<NUM_LIMBS, POW
 		let first_limb_num = *num_decomposed.last().unwrap();
 		let first_limb_den = *den_decomposed.last().unwrap();
 		let comp = first_limb_den * threshold;
-		println!("comp: {:?}", comp);
-		println!("first_limb_num: {:?}", first_limb_num);
-		println!("threshold: {:?}", threshold);
 		let is_bigger = first_limb_num >= comp;
 
 		ThresholdWitness { threshold, is_bigger, num_decomposed, den_decomposed }
