@@ -79,9 +79,11 @@ where
 {
 	/// Find path for the given value to the root
 	pub fn find_path(
-		merkle_tree: &MerkleTree<F, ARITY, HEIGHT, H>, value: F, mut value_index: usize,
+		merkle_tree: &MerkleTree<F, ARITY, HEIGHT, H>, mut value_index: usize,
 	) -> Path<F, ARITY, HEIGHT, LENGTH, H> {
+		let value = merkle_tree.nodes[&0][value_index];
 		let mut path_arr: [[F; ARITY]; LENGTH] = [[F::ZERO; ARITY]; LENGTH];
+
 		for level in 0..merkle_tree.height {
 			let wrap = value_index.div_rem(&ARITY);
 			for i in 0..ARITY {
@@ -103,7 +105,7 @@ where
 				hasher_inputs[j] = self.path_arr[i][j];
 			}
 			let hasher = H::new(hasher_inputs);
-			is_satisfied = is_satisfied | self.path_arr[i + 1].contains(&(hasher.finalize()[0]));
+			is_satisfied = is_satisfied & self.path_arr[i + 1].contains(&(hasher.finalize()[0]));
 		}
 		is_satisfied
 	}
@@ -124,6 +126,32 @@ mod test {
 		let rng = &mut thread_rng();
 		let value = Fr::random(rng.clone());
 		let leaves = vec![
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
+			value,
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
+		];
+		let merkle = MerkleTree::<Fr, 2, 3, Poseidon<Fr, 5, Params>>::build_tree(leaves);
+		let path = Path::<Fr, 2, 3, 4, Poseidon<Fr, 5, Params>>::find_path(&merkle, 4);
+
+		assert!(path.verify());
+		// Assert last element of the array and the root of the tree
+		assert_eq!(path.path_arr[merkle.height][0], merkle.root);
+	}
+
+	#[test]
+	fn should_build_tree_and_find_path_arity_3() {
+		// Testing build_tree and find_path functions with arity 3
+		let rng = &mut thread_rng();
+		let value = Fr::random(rng.clone());
+		let leaves = vec![
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
 			Fr::random(rng.clone()),
 			Fr::random(rng.clone()),
 			Fr::random(rng.clone()),
@@ -163,9 +191,13 @@ mod test {
 			Fr::random(rng.clone()),
 			Fr::random(rng.clone()),
 			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
 		];
 		let merkle = MerkleTree::<Fr, 3, 3, Poseidon<Fr, 5, Params>>::build_tree(leaves);
-		let path = Path::<Fr, 3, 3, 4, Poseidon<Fr, 5, Params>>::find_path(&merkle, value, 7);
+		let path = Path::<Fr, 3, 3, 4, Poseidon<Fr, 5, Params>>::find_path(&merkle, 7);
 
 		assert!(path.verify());
 		// Assert last element of the array and the root of the tree
@@ -178,7 +210,7 @@ mod test {
 		let rng = &mut thread_rng();
 		let value = Fr::random(rng.clone());
 		let merkle = MerkleTree::<Fr, 2, 0, Poseidon<Fr, 5, Params>>::build_tree(vec![value]);
-		let path = Path::<Fr, 2, 0, 1, Poseidon<Fr, 5, Params>>::find_path(&merkle, value, 0);
+		let path = Path::<Fr, 2, 0, 1, Poseidon<Fr, 5, Params>>::find_path(&merkle, 0);
 		assert!(path.verify());
 		// Assert last element of the array and the root of the tree
 		assert_eq!(path.path_arr[merkle.height][0], merkle.root);
