@@ -2,9 +2,15 @@ use super::EccParams;
 use halo2::halo2curves::secp256k1::{Fp, Secp256k1Affine};
 use halo2::halo2curves::CurveAffine;
 
-struct Bn254Params;
+#[derive(Clone, Debug, PartialEq)]
+/// Params for Secp256k1 curve
+pub struct Secp256k1Params;
 
-impl EccParams<Secp256k1Affine> for Bn254Params {
+impl EccParams<Secp256k1Affine> for Secp256k1Params {
+	fn window_size() -> u32 {
+		4
+	}
+
 	fn aux_init() -> Secp256k1Affine {
 		let to_add_x = Fp::from_raw([
 			0xad467b63916e17d3, 0x12498a1eac60a622, 0x9b68199adf3ffe7b, 0xdd882e3e36427390,

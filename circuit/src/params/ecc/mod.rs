@@ -10,17 +10,22 @@ use halo2::halo2curves::group::Curve;
 use halo2::halo2curves::CurveAffine;
 use num_bigint::BigUint;
 use num_traits::One;
+use std::fmt::Debug;
 
 /// Params for Ecc operations
-pub trait EccParams<C: CurveAffine> {
+pub trait EccParams<C: CurveAffine>: Clone + Debug + PartialEq {
+	/// Sliding window size
+	fn window_size() -> u32;
+
 	/// Aux init point
 	fn aux_init() -> C;
 
 	/// Make aux_fin when sliding window is > 1.
-	fn make_mul_aux(aux_to_add: C, window_size: u32) -> C
+	fn make_mul_aux(aux_to_add: C) -> C
 	where
 		C::Scalar: FieldExt,
 	{
+		let window_size = Self::window_size();
 		assert!(window_size > 0);
 
 		let n = C::Scalar::NUM_BITS;

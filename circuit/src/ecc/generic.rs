@@ -1,46 +1,44 @@
 // Ecc implementation over wrong field (using Integer) where both the base field and the scalar field are from the wrong Ecc.
 
-use std::{
-	marker::PhantomData,
-	ops::{Add, Sub},
-};
-
-use halo2::halo2curves::CurveAffine;
-use num_bigint::BigUint;
-use num_traits::One;
-
 use crate::{
 	integer::native::Integer,
-	params::rns::RnsParams,
-	utils::{be_bits_to_usize, big_to_fe, fe_to_big, to_bits},
+	params::{ecc::EccParams, rns::RnsParams},
+	utils::{be_bits_to_usize, big_to_fe, to_bits},
 	FieldExt,
 };
-
-use halo2::arithmetic::Field;
 use halo2::halo2curves::ff::PrimeField;
+use halo2::halo2curves::CurveAffine;
+use std::marker::PhantomData;
 
 /// Structure for the EcPoint
 #[derive(Clone, Default, Debug, PartialEq)]
-pub struct EcPoint<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P, Q>
-where
-	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS>,
+pub struct EcPoint<
+	C: CurveAffine,
+	N: FieldExt,
+	const NUM_LIMBS: usize,
+	const NUM_BITS: usize,
+	P,
+	EC,
+> where
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
 	<C as CurveAffine>::Base: FieldExt,
-	Q: RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
 	<C as CurveAffine>::ScalarExt: FieldExt,
 {
 	/// X coordinate of the EcPoint
 	pub x: Integer<C::Base, N, NUM_LIMBS, NUM_BITS, P>,
 	/// Y coordinate of the EcPoint
 	pub y: Integer<C::Base, N, NUM_LIMBS, NUM_BITS, P>,
-	phantom: PhantomData<Q>,
+
+	_ec: PhantomData<EC>,
 }
 
-impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P, Q>
-	EcPoint<C, N, NUM_LIMBS, NUM_BITS, P, Q>
+impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P, EC>
+	EcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>
 where
-	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS>,
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
 	<C as CurveAffine>::Base: FieldExt,
-	Q: RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
 	<C as CurveAffine>::ScalarExt: FieldExt,
 {
 	/// Create a new object
@@ -48,7 +46,7 @@ where
 		x: Integer<C::Base, N, NUM_LIMBS, NUM_BITS, P>,
 		y: Integer<C::Base, N, NUM_LIMBS, NUM_BITS, P>,
 	) -> Self {
-		Self { x, y, phantom: PhantomData }
+		Self { x, y, _ec: PhantomData }
 	}
 
 	/// Selection function for the table
@@ -65,44 +63,28 @@ where
 		return table[index].clone();
 	}
 
-	/// AuxInit
-	pub fn to_add() -> Self {
-		let x_limbs = P::to_add_x();
-		let y_limbs = P::to_add_y();
-		Self::new(Integer::from_limbs(x_limbs), Integer::from_limbs(y_limbs))
-	}
+	/// Aux points
+	pub fn aux() -> (Self, Self) {
+		let to_add = EC::aux_init();
+		let to_sub = EC::make_mul_aux(to_add);
 
-	/// AuxFin
-	pub fn to_sub() -> Self {
-		let x_limbs = P::to_sub_x();
-		let y_limbs = P::to_sub_y();
-		Self::new(Integer::from_limbs(x_limbs), Integer::from_limbs(y_limbs))
-	}
+		let to_add_x_coord = to_add.coordinates().unwrap();
+		let to_sub_x_coord = to_sub.coordinates().unwrap();
 
-	/// Make aux_fin when sliding window is > 1.
-	pub fn make_mul_aux_sliding_window(aux_to_add: Self, window_size: u32) -> Self {
-		assert!(window_size > 0);
+		let to_add_x = to_add_x_coord.x();
+		let to_add_y = to_add_x_coord.y();
+		let to_sub_x = to_sub_x_coord.x();
+		let to_sub_y = to_sub_x_coord.y();
 
-		let n = C::ScalarExt::NUM_BITS;
-		let number_of_selectors = n / window_size;
-		let leftover = n % window_size;
-		let mut k0 = BigUint::one();
-		let one = BigUint::one();
-		for i in 0..number_of_selectors {
-			k0 |= &one << (i * window_size);
-		}
+		let to_add_x_int = Integer::from_w(to_add_x.clone());
+		let to_add_y_int = Integer::from_w(to_add_y.clone());
 
-		if leftover != 0 {
-			k0 = k0 << leftover;
-			k0 = k0.add(&one);
-		}
+		let to_sub_x_int = Integer::from_w(to_sub_x.clone());
+		let to_sub_y_int = Integer::from_w(to_sub_y.clone());
 
-		let factor = Integer::new(fe_to_big(
-			C::ScalarExt::ZERO.sub(big_to_fe::<C::ScalarExt>(k0)),
-		));
-
-		let to_sub = aux_to_add.mul_scalar(factor);
-		to_sub
+		let to_add = Self::new(to_add_x_int, to_add_y_int);
+		let to_sub = Self::new(to_sub_x_int, to_sub_y_int);
+		(to_add, to_sub)
 	}
 
 	/// Add one point to another
@@ -120,7 +102,7 @@ where
 		let m_times_r_x_minus_p_x = m.result.mul(&r_x_minus_p_x.result);
 		let r_y = m_times_r_x_minus_p_x.result.sub(&self.y);
 
-		Self { x: r_x.result, y: r_y.result, phantom: PhantomData }
+		Self { x: r_x.result, y: r_y.result, _ec: PhantomData }
 	}
 
 	/// Double the given point
@@ -141,7 +123,7 @@ where
 		let m_times_p_x_minus_r_x = m.result.mul(&p_x_minus_r_x.result);
 		let r_y = m_times_p_x_minus_r_x.result.sub(&self.y);
 
-		Self { x: r_x.result, y: r_y.result, phantom: PhantomData }
+		Self { x: r_x.result, y: r_y.result, _ec: PhantomData }
 	}
 
 	/// Given 2 `AssignedPoint` `P` and `Q` efficiently computes `2*P + Q`
@@ -176,13 +158,14 @@ where
 		let m_one_times_r_x_minus_p_x = m_one.result.mul(&r_x_minus_p_x.result);
 		let r_y = m_one_times_r_x_minus_p_x.result.sub(&self.y);
 
-		Self { x: r_x.result, y: r_y.result, phantom: PhantomData }
+		Self { x: r_x.result, y: r_y.result, _ec: PhantomData }
 	}
 
 	/// Scalar multiplication for given point with using ladder
-	pub fn mul_scalar(&self, scalar: Integer<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, Q>) -> Self {
-		let aux_init = Self::to_add();
-		let exp: EcPoint<C, N, NUM_LIMBS, NUM_BITS, P, Q> = self.clone();
+	pub fn mul_scalar(&self, scalar: Integer<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>) -> Self {
+		let (aux_init, aux_fin) = Self::aux();
+
+		let exp = self.clone();
 		// Converts given input to its bit by Scalar Field's bit size
 		let mut bits = to_bits(big_to_fe::<C::ScalarExt>(scalar.value()).to_repr().as_ref());
 		bits = bits[..C::ScalarExt::NUM_BITS as usize].to_vec();
@@ -200,29 +183,26 @@ where
 			acc = acc.ladder(&item);
 		}
 
-		let aux_fin = Self::to_sub();
 		acc = acc.add(&aux_fin);
-
 		acc
 	}
 
 	/// Multi-multiplication for given points using sliding window.
 	pub fn multi_mul_scalar(
-		points: &[Self], scalars: &[Integer<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, Q>],
-		sliding_window_size: u32,
+		points: &[Self], scalars: &[Integer<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>],
 	) -> Vec<Self> {
+		let sliding_window_size = EC::window_size();
 		assert!(C::ScalarExt::NUM_BITS % sliding_window_size == 0);
 		// AuxGens from article.
-		let mut aux_inits: Vec<EcPoint<C, N, NUM_LIMBS, NUM_BITS, P, Q>> = Vec::new();
-		let mut aux_init = Self::to_sub();
+		let (mut aux_init, mut aux_fin) = Self::aux();
+
+		let mut aux_inits: Vec<EcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>> = Vec::new();
 		for _ in 0..points.len() {
 			aux_inits.push(aux_init.clone());
 			aux_init = aux_init.double();
 		}
 
-		let mut aux_fins: Vec<EcPoint<C, N, NUM_LIMBS, NUM_BITS, P, Q>> = Vec::new();
-		let aux_init = Self::to_sub();
-		let mut aux_fin = Self::make_mul_aux_sliding_window(aux_init, sliding_window_size);
+		let mut aux_fins: Vec<EcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>> = Vec::new();
 		for _ in 0..points.len() {
 			aux_fins.push(aux_fin.clone());
 			aux_fin = aux_fin.double();
@@ -230,7 +210,7 @@ where
 
 		let num_of_windows = C::ScalarExt::NUM_BITS / sliding_window_size;
 
-		let exps: Vec<EcPoint<C, N, NUM_LIMBS, NUM_BITS, P, Q>> = points.to_vec();
+		let exps: Vec<EcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>> = points.to_vec();
 		let bits: Vec<Vec<bool>> = scalars
 			.iter()
 			.map(|scalar| {
@@ -245,7 +225,7 @@ where
 		let sliding_window_pow2 = 2_u32.pow(sliding_window_size) as usize;
 
 		// Construct selector table for each mul
-		let mut table: Vec<Vec<EcPoint<C, N, NUM_LIMBS, NUM_BITS, P, Q>>> =
+		let mut table: Vec<Vec<EcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>>> =
 			vec![Vec::new(); exps.len()];
 		for i in 0..exps.len() {
 			let mut table_i = aux_inits[i].clone();
@@ -255,7 +235,7 @@ where
 			}
 		}
 
-		let mut accs: Vec<EcPoint<C, N, NUM_LIMBS, NUM_BITS, P, Q>> = Vec::new();
+		let mut accs: Vec<EcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>> = Vec::new();
 
 		// Initialize accs
 		for i in 0..exps.len() {
@@ -300,7 +280,7 @@ mod test {
 	use super::EcPoint;
 	use crate::{
 		integer::native::Integer,
-		params::rns::secp256k1::Secp256k1_4_68,
+		params::{ecc::secp256k1::Secp256k1Params, rns::secp256k1::Secp256k1_4_68},
 		utils::{big_to_fe, fe_to_big},
 	};
 	use halo2::{
@@ -332,7 +312,7 @@ mod test {
 		let b_x_w = Integer::<Fp, Fr, 4, 68, Secp256k1_4_68>::new(b_x_bn);
 		let b_y_w = Integer::<Fp, Fr, 4, 68, Secp256k1_4_68>::new(b_y_bn);
 
-		let a_w: EcPoint<Secp256k1Affine, Fr, 4, 68, Secp256k1_4_68, Secp256k1_4_68> =
+		let a_w: EcPoint<Secp256k1Affine, Fr, 4, 68, Secp256k1_4_68, Secp256k1Params> =
 			EcPoint::new(a_x_w, a_y_w);
 		let b_w = EcPoint::new(b_x_w, b_y_w);
 		let c_w = a_w.add(&b_w);
@@ -355,7 +335,7 @@ mod test {
 		let a_x_w = Integer::<Fp, Fr, 4, 68, Secp256k1_4_68>::new(a_x_bn);
 		let a_y_w = Integer::<Fp, Fr, 4, 68, Secp256k1_4_68>::new(a_y_bn);
 
-		let a_w: EcPoint<Secp256k1Affine, Fr, 4, 68, Secp256k1_4_68, Secp256k1_4_68> =
+		let a_w: EcPoint<Secp256k1Affine, Fr, 4, 68, Secp256k1_4_68, Secp256k1Params> =
 			EcPoint::new(a_x_w, a_y_w);
 		let c_w: EcPoint<Secp256k1Affine, Fr, 4, 68, Secp256k1_4_68, _> = a_w.double();
 
@@ -382,9 +362,9 @@ mod test {
 		let b_x_w = Integer::<Fp, Fr, 4, 68, Secp256k1_4_68>::new(b_x_bn);
 		let b_y_w = Integer::<Fp, Fr, 4, 68, Secp256k1_4_68>::new(b_y_bn);
 
-		let a_w: EcPoint<Secp256k1Affine, Fr, 4, 68, Secp256k1_4_68, Secp256k1_4_68> =
+		let a_w: EcPoint<Secp256k1Affine, Fr, 4, 68, Secp256k1_4_68, Secp256k1Params> =
 			EcPoint::new(a_x_w, a_y_w);
-		let b_w: EcPoint<Secp256k1Affine, Fr, 4, 68, Secp256k1_4_68, Secp256k1_4_68> =
+		let b_w: EcPoint<Secp256k1Affine, Fr, 4, 68, Secp256k1_4_68, Secp256k1Params> =
 			EcPoint::new(b_x_w, b_y_w);
 		let c_w = a_w.ladder(&b_w);
 
@@ -405,7 +385,7 @@ mod test {
 
 		let a_x_w = Integer::<Fp, Fr, 4, 68, Secp256k1_4_68>::new(a_x_bn);
 		let a_y_w = Integer::<Fp, Fr, 4, 68, Secp256k1_4_68>::new(a_y_bn);
-		let a_w: EcPoint<Secp256k1Affine, Fr, 4, 68, Secp256k1_4_68, Secp256k1_4_68> =
+		let a_w: EcPoint<Secp256k1Affine, Fr, 4, 68, Secp256k1_4_68, Secp256k1Params> =
 			EcPoint::new(a_x_w, a_y_w);
 		let scalar_as_integer = Integer::from_w(scalar);
 		let c_w = a_w.mul_scalar(scalar_as_integer);
@@ -436,12 +416,12 @@ mod test {
 
 			let a_x_w = Integer::<Fp, Fr, 4, 68, Secp256k1_4_68>::new(a_x_bn);
 			let a_y_w = Integer::<Fp, Fr, 4, 68, Secp256k1_4_68>::new(a_y_bn);
-			let a_w: EcPoint<Secp256k1Affine, Fr, 4, 68, Secp256k1_4_68, Secp256k1_4_68> =
+			let a_w: EcPoint<Secp256k1Affine, Fr, 4, 68, Secp256k1_4_68, Secp256k1Params> =
 				EcPoint::new(a_x_w, a_y_w);
 			points_vec.push(a_w.clone());
 		}
 
-		let batch_mul_results_vec = EcPoint::multi_mul_scalar(&points_vec, &scalars_vec, 4);
+		let batch_mul_results_vec = EcPoint::multi_mul_scalar(&points_vec, &scalars_vec);
 		for i in 0..num_of_points {
 			assert_eq!(
 				results_vec[i].x,

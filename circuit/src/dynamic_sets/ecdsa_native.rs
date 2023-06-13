@@ -630,7 +630,7 @@ mod test {
 
 		let (sk1, pk1) = generate_keypair(rng);
 		let (sk2, pk2) = generate_keypair(rng);
-		let (sk3, pk3) = generate_keypair(rng);
+		let (_, pk3) = generate_keypair(rng);
 
 		let pk1_fr = field_value_from_pub_key(&pk1);
 		let pk2_fr = field_value_from_pub_key(&pk2);
@@ -752,7 +752,7 @@ mod test {
 
 		let (sk1, pk1) = generate_keypair(rng);
 		let (sk2, pk2) = generate_keypair(rng);
-		let (sk3, pk3) = generate_keypair(rng);
+		let (_, pk3) = generate_keypair(rng);
 
 		let pk1_fr = field_value_from_pub_key(&pk1);
 		let pk2_fr = field_value_from_pub_key(&pk2);

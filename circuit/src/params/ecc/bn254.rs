@@ -5,9 +5,15 @@ use halo2::halo2curves::{
 
 use super::EccParams;
 
-struct Bn254Params;
+#[derive(Clone, Debug, PartialEq)]
+/// Params for Bn254 curve
+pub struct Bn254Params;
 
 impl EccParams<G1Affine> for Bn254Params {
+	fn window_size() -> u32 {
+		2
+	}
+
 	fn aux_init() -> G1Affine {
 		let to_add_x = Fq::from_raw([
 			0xc31ec539373ca785, 0x9da68395fc2377e1, 0x125da415992c10c3, 0x95a8a5d788e033e,

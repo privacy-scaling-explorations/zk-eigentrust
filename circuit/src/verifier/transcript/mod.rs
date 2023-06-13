@@ -293,7 +293,7 @@ mod test {
 			IntegerSubChip,
 		},
 		params::hasher::poseidon_bn254_5x5::Params,
-		params::rns::bn256::Bn256_4_68,
+		params::{ecc::bn254::Bn254Params, rns::bn256::Bn256_4_68},
 		poseidon::{
 			native::sponge::PoseidonSponge,
 			sponge::{PoseidonSpongeConfig, StatefulSpongeChipset},
@@ -332,6 +332,7 @@ mod test {
 	type NativeH = PoseidonSponge<Scalar, WIDTH, Params>;
 	type Scalar = Fr;
 	type Base = Fq;
+	type EC = Bn254Params;
 
 	#[derive(Clone)]
 	struct TestConfig {
@@ -433,11 +434,11 @@ mod test {
 
 	#[derive(Clone)]
 	struct TestCommonEcPointCircuit {
-		ec_point: UnassignedEcPoint<G1Affine, NUM_LIMBS, NUM_BITS, P>,
+		ec_point: UnassignedEcPoint<G1Affine, NUM_LIMBS, NUM_BITS, P, EC>,
 	}
 
 	impl TestCommonEcPointCircuit {
-		fn new(ec_point: EcPoint<G1Affine, NUM_LIMBS, NUM_BITS, P>) -> Self {
+		fn new(ec_point: EcPoint<G1Affine, NUM_LIMBS, NUM_BITS, P, EC>) -> Self {
 			let unassigned_x = UnassignedInteger::new(
 				ec_point.x.clone(),
 				ec_point.x.limbs.map(|x| Value::known(x)),

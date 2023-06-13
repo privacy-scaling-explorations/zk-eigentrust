@@ -816,7 +816,7 @@ mod test {
 			IntegerReduceChip, IntegerSubChip,
 		},
 		params::hasher::poseidon_bn254_5x5::Params,
-		params::rns::bn256::Bn256_4_68,
+		params::{ecc::bn254::Bn254Params, rns::bn256::Bn256_4_68},
 		poseidon::{
 			sponge::{PoseidonSpongeConfig, StatefulSpongeChipset},
 			PoseidonConfig,
@@ -836,6 +836,7 @@ mod test {
 
 	type C = G1Affine;
 	type P = Bn256_4_68;
+	type EC = Bn254Params;
 	type H = StatefulSpongeChipset<Fr, 5, Params>;
 	type Scalar = Fr;
 	type Base = Fq;
@@ -850,11 +851,11 @@ mod test {
 
 	#[derive(Clone)]
 	struct TestCircuit {
-		pairs: Vec<(LScalar<C, P>, LEcPoint<C, P>)>,
+		pairs: Vec<(LScalar<C, P, EC>, LEcPoint<C, P, EC>)>,
 	}
 
 	impl TestCircuit {
-		fn new(pairs: Vec<(LScalar<C, P>, LEcPoint<C, P>)>) -> Self {
+		fn new(pairs: Vec<(LScalar<C, P, EC>, LEcPoint<C, P, EC>)>) -> Self {
 			Self { pairs }
 		}
 	}
@@ -992,8 +993,8 @@ mod test {
 	fn test_multi_scalar_multiplication() {
 		// Testing MSM
 		let rng = &mut thread_rng();
-		let loader = NativeLoader::<C, P>::new();
-		let mut pairs: Vec<(LScalar<C, P>, LEcPoint<C, P>)> = Vec::new();
+		let loader = NativeLoader::<C, P, EC>::new();
+		let mut pairs: Vec<(LScalar<C, P, EC>, LEcPoint<C, P, EC>)> = Vec::new();
 		for _ in 0..3 {
 			let x = Integer::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::from_n(Scalar::random(
 				rng.clone(),
@@ -1007,7 +1008,7 @@ mod test {
 
 			pairs.push((scalar, ec_point));
 		}
-		let borrowed_pairs: Vec<(&LScalar<C, P>, &LEcPoint<C, P>)> =
+		let borrowed_pairs: Vec<(&LScalar<C, P, EC>, &LEcPoint<C, P, EC>)> =
 			pairs.iter().map(|x| (&x.0, &x.1)).collect();
 		let res = NativeLoader::multi_scalar_multiplication(borrowed_pairs.as_slice());
 

@@ -4,11 +4,7 @@ use crate::{
 	FieldExt,
 };
 use halo2::{
-	halo2curves::{
-		bn256::Fr,
-		group::{ff::PrimeField, Curve},
-		CurveAffine,
-	},
+	halo2curves::{bn256::Fr, group::ff::PrimeField},
 	plonk::Expression,
 };
 use num_bigint::BigUint;
@@ -20,19 +16,6 @@ use std::{fmt::Debug, ops::Shl, str::FromStr};
 pub mod bn256;
 /// Secp256K1 curve RNS params
 pub mod secp256k1;
-
-pub(crate) fn make_mul_aux<C: CurveAffine>(aux_to_add: C) -> C
-where
-	C::Scalar: FieldExt,
-{
-	let n = <C::Scalar>::NUM_BITS as usize;
-	let mut k0 = BigUint::one();
-	let one = BigUint::one();
-	for i in 0..n {
-		k0 |= &one << i;
-	}
-	(-aux_to_add * big_to_fe::<C::Scalar>(k0)).to_affine()
-}
 
 /// This trait is for the dealing with RNS operations.
 pub trait RnsParams<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize>:

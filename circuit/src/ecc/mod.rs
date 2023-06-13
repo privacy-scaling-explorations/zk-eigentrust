@@ -846,6 +846,7 @@ mod test {
 			AssignedInteger, IntegerAddChip, IntegerDivChip, IntegerMulChip, IntegerReduceChip,
 			IntegerSubChip,
 		},
+		params::ecc::bn254::Bn254Params,
 		params::rns::{bn256::Bn256_4_68, RnsParams},
 		Chip, Chipset, CommonConfig, RegionCtx, UnassignedValue,
 	};
@@ -865,6 +866,7 @@ mod test {
 	const NUM_LIMBS: usize = 4;
 	const NUM_BITS: usize = 68;
 	type P = Bn256_4_68;
+	type EC = Bn254Params;
 
 	#[derive(Clone, Debug)]
 	struct TestConfig {
@@ -959,11 +961,11 @@ mod test {
 	}
 
 	struct PointAssigner {
-		point: UnassignedEcPoint<G1Affine, NUM_LIMBS, NUM_BITS, P>,
+		point: UnassignedEcPoint<G1Affine, NUM_LIMBS, NUM_BITS, P, EC>,
 	}
 
 	impl PointAssigner {
-		fn new(point: UnassignedEcPoint<G1Affine, NUM_LIMBS, NUM_BITS, P>) -> Self {
+		fn new(point: UnassignedEcPoint<G1Affine, NUM_LIMBS, NUM_BITS, P, EC>) -> Self {
 			Self { point }
 		}
 	}
@@ -1031,14 +1033,14 @@ mod test {
 
 	#[derive(Clone)]
 	struct EccAddTestCircuit {
-		p: UnassignedEcPoint<G1Affine, NUM_LIMBS, NUM_BITS, P>,
-		q: UnassignedEcPoint<G1Affine, NUM_LIMBS, NUM_BITS, P>,
+		p: UnassignedEcPoint<G1Affine, NUM_LIMBS, NUM_BITS, P, EC>,
+		q: UnassignedEcPoint<G1Affine, NUM_LIMBS, NUM_BITS, P, EC>,
 	}
 
 	impl EccAddTestCircuit {
 		fn new(
-			p: EcPoint<G1Affine, NUM_LIMBS, NUM_BITS, P>,
-			q: EcPoint<G1Affine, NUM_LIMBS, NUM_BITS, P>,
+			p: EcPoint<G1Affine, NUM_LIMBS, NUM_BITS, P, EC>,
+			q: EcPoint<G1Affine, NUM_LIMBS, NUM_BITS, P, EC>,
 		) -> Self {
 			Self { p: UnassignedEcPoint::from(p), q: UnassignedEcPoint::from(q) }
 		}
@@ -1097,8 +1099,8 @@ mod test {
 		let a = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(a_big);
 		let b = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(b_big);
 		let c = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(c_big);
-		let p_point = EcPoint::<G1Affine, NUM_LIMBS, NUM_BITS, P>::new(a, b.clone());
-		let q_point = EcPoint::<G1Affine, NUM_LIMBS, NUM_BITS, P>::new(b, c);
+		let p_point = EcPoint::<G1Affine, NUM_LIMBS, NUM_BITS, P, EC>::new(a, b.clone());
+		let q_point = EcPoint::<G1Affine, NUM_LIMBS, NUM_BITS, P, EC>::new(b, c);
 
 		let res = p_point.add(&q_point);
 		let test_chip = EccAddTestCircuit::new(p_point, q_point);
@@ -1113,11 +1115,11 @@ mod test {
 
 	#[derive(Clone)]
 	struct EccDoubleTestCircuit {
-		p: UnassignedEcPoint<G1Affine, NUM_LIMBS, NUM_BITS, P>,
+		p: UnassignedEcPoint<G1Affine, NUM_LIMBS, NUM_BITS, P, EC>,
 	}
 
 	impl EccDoubleTestCircuit {
-		fn new(p: EcPoint<G1Affine, NUM_LIMBS, NUM_BITS, P>) -> Self {
+		fn new(p: EcPoint<G1Affine, NUM_LIMBS, NUM_BITS, P, EC>) -> Self {
 			Self { p: UnassignedEcPoint::from(p) }
 		}
 	}
@@ -1167,7 +1169,7 @@ mod test {
 		let b_big = BigUint::from_str("65464575675").unwrap();
 		let a = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(a_big);
 		let b = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(b_big);
-		let p_point = EcPoint::<G1Affine, NUM_LIMBS, NUM_BITS, P>::new(a, b);
+		let p_point = EcPoint::<G1Affine, NUM_LIMBS, NUM_BITS, P, EC>::new(a, b);
 
 		let res = p_point.double();
 		let test_chip = EccDoubleTestCircuit::new(p_point);
@@ -1182,14 +1184,14 @@ mod test {
 
 	#[derive(Clone)]
 	struct EccLadderTestCircuit {
-		p: UnassignedEcPoint<G1Affine, NUM_LIMBS, NUM_BITS, P>,
-		q: UnassignedEcPoint<G1Affine, NUM_LIMBS, NUM_BITS, P>,
+		p: UnassignedEcPoint<G1Affine, NUM_LIMBS, NUM_BITS, P, EC>,
+		q: UnassignedEcPoint<G1Affine, NUM_LIMBS, NUM_BITS, P, EC>,
 	}
 
 	impl EccLadderTestCircuit {
 		fn new(
-			p: EcPoint<G1Affine, NUM_LIMBS, NUM_BITS, P>,
-			q: EcPoint<G1Affine, NUM_LIMBS, NUM_BITS, P>,
+			p: EcPoint<G1Affine, NUM_LIMBS, NUM_BITS, P, EC>,
+			q: EcPoint<G1Affine, NUM_LIMBS, NUM_BITS, P, EC>,
 		) -> Self {
 			Self { p: UnassignedEcPoint::from(p), q: UnassignedEcPoint::from(q) }
 		}
@@ -1249,8 +1251,8 @@ mod test {
 		let a = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(a_big);
 		let b = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(b_big);
 		let c = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(c_big);
-		let p_point = EcPoint::<G1Affine, NUM_LIMBS, NUM_BITS, P>::new(a, c.clone());
-		let q_point = EcPoint::<G1Affine, NUM_LIMBS, NUM_BITS, P>::new(b, c);
+		let p_point = EcPoint::<G1Affine, NUM_LIMBS, NUM_BITS, P, EC>::new(a, c.clone());
+		let q_point = EcPoint::<G1Affine, NUM_LIMBS, NUM_BITS, P, EC>::new(b, c);
 
 		let res = p_point.ladder(&q_point);
 		let test_chip = EccLadderTestCircuit::new(p_point, q_point);
@@ -1265,12 +1267,12 @@ mod test {
 
 	#[derive(Clone)]
 	struct EccMulTestCircuit {
-		p: UnassignedEcPoint<G1Affine, NUM_LIMBS, NUM_BITS, P>,
+		p: UnassignedEcPoint<G1Affine, NUM_LIMBS, NUM_BITS, P, EC>,
 		value: Value<N>,
 	}
 
 	impl EccMulTestCircuit {
-		fn new(p: EcPoint<G1Affine, NUM_LIMBS, NUM_BITS, P>, value: N) -> Self {
+		fn new(p: EcPoint<G1Affine, NUM_LIMBS, NUM_BITS, P, EC>, value: N) -> Self {
 			Self { p: UnassignedEcPoint::from(p), value: Value::known(value) }
 		}
 	}
@@ -1341,7 +1343,7 @@ mod test {
 		let b_big = BigUint::from_str("6546457298123794342352534089237495253453455675").unwrap();
 		let a = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(a_big);
 		let b = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(b_big);
-		let p_point = EcPoint::<G1Affine, NUM_LIMBS, NUM_BITS, P>::new(a, b);
+		let p_point = EcPoint::<G1Affine, NUM_LIMBS, NUM_BITS, P, EC>::new(a, b);
 
 		let res = p_point.mul_scalar(scalar);
 		let test_chip = EccMulTestCircuit::new(p_point, scalar);
