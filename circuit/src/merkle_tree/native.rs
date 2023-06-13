@@ -165,6 +165,10 @@ mod test {
 			Fr::random(rng.clone()),
 			Fr::random(rng.clone()),
 			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
 		];
 		let merkle = MerkleTree::<Fr, 3, 3, Poseidon<Fr, 5, Params>>::build_tree(leaves);
 		let path = Path::<Fr, 3, 3, 4, Poseidon<Fr, 5, Params>>::find_path(&merkle, 7);
