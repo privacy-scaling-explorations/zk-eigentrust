@@ -80,7 +80,7 @@ where
 
 		// 0th level is the leaf level and the max level is the root level
 		let mut nodes = HashMap::new();
-		let mut leaves = self.leaves.clone();
+		let mut leaves = self.leaves;
 		// Assign zero to the leaf values if they are empty
 		for _i in leaves.len()..pow(ARITY, HEIGHT) {
 			leaves.push(zero.clone());
