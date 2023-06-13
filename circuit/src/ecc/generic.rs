@@ -419,23 +419,28 @@ mod test {
 		// ECC Mul Scalar with Ladder test
 		let num_of_points = 10;
 		let rng = &mut thread_rng();
-		let mut points_vec = vec![];
-		let mut scalars_vec = vec![];
-		let mut results_vec = vec![];
+
+		let mut points_vec = Vec::new();
+		let mut scalars_vec = Vec::new();
+		let mut results_vec = Vec::new();
 		for _ in 0..num_of_points {
 			let a = Secp256k1Affine::random(rng.clone());
 			let scalar = Fq::random(rng.clone());
 			scalars_vec.push(Integer::from_w(scalar));
+
 			let c = (a * scalar).to_affine();
 			results_vec.push(c);
+
 			let a_x_bn = fe_to_big(a.x);
 			let a_y_bn = fe_to_big(a.y);
+
 			let a_x_w = Integer::<Fp, Fr, 4, 68, Secp256k1_4_68>::new(a_x_bn);
 			let a_y_w = Integer::<Fp, Fr, 4, 68, Secp256k1_4_68>::new(a_y_bn);
 			let a_w: EcPoint<Secp256k1Affine, Fr, 4, 68, Secp256k1_4_68, Secp256k1_4_68> =
 				EcPoint::new(a_x_w, a_y_w);
 			points_vec.push(a_w.clone());
 		}
+
 		let batch_mul_results_vec = EcPoint::multi_mul_scalar(&points_vec, &scalars_vec, 4);
 		for i in 0..num_of_points {
 			assert_eq!(
