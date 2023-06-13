@@ -433,11 +433,11 @@ mod test {
 
 	#[derive(Clone)]
 	struct TestCommonEcPointCircuit {
-		ec_point: UnassignedEcPoint<Base, Scalar, NUM_LIMBS, NUM_BITS, P>,
+		ec_point: UnassignedEcPoint<G1Affine, NUM_LIMBS, NUM_BITS, P>,
 	}
 
 	impl TestCommonEcPointCircuit {
-		fn new(ec_point: EcPoint<Base, Scalar, NUM_LIMBS, NUM_BITS, P>) -> Self {
+		fn new(ec_point: EcPoint<G1Affine, NUM_LIMBS, NUM_BITS, P>) -> Self {
 			let unassigned_x = UnassignedInteger::new(
 				ec_point.x.clone(),
 				ec_point.x.limbs.map(|x| Value::known(x)),

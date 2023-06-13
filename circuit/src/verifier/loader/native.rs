@@ -314,7 +314,7 @@ where
 	C::Scalar: FieldExt,
 {
 	// Inner value for the loaded point
-	pub(crate) inner: EcPoint<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS, P>,
+	pub(crate) inner: EcPoint<C, NUM_LIMBS, NUM_BITS, P>,
 	// Loader
 	pub(crate) loader: NativeLoader<C, P>,
 }
@@ -326,9 +326,7 @@ where
 	C::Scalar: FieldExt,
 {
 	/// Construct a new LEcPoint
-	pub fn new(
-		value: EcPoint<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS, P>, loader: NativeLoader<C, P>,
-	) -> Self {
+	pub fn new(value: EcPoint<C, NUM_LIMBS, NUM_BITS, P>, loader: NativeLoader<C, P>) -> Self {
 		Self { inner: value, loader }
 	}
 }
