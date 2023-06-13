@@ -14,11 +14,7 @@ use halo2::{
 use num_bigint::BigUint;
 use num_integer::Integer as BigInteger;
 use num_traits::{FromPrimitive, One, Pow, Zero};
-use std::{
-	fmt::Debug,
-	ops::{Shl, Sub},
-	str::FromStr,
-};
+use std::{fmt::Debug, ops::Shl, str::FromStr};
 
 /// BN256 curve RNS params
 pub mod bn256;
@@ -42,9 +38,7 @@ where
 pub trait RnsParams<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize>:
 	Clone + Debug + PartialEq + Default
 {
-	/// Returns Scalar (Native) Field modulus [`Fr`] from Bn256.
-	fn native_modulus() -> BigUint;
-	/// Returns Base (Wrong) Field modulus [`Fq`] from Bn256.
+	/// Returns Base (Wrong) Field modulus [`Fq`] from W.
 	fn wrong_modulus() -> BigUint;
 	/// Returns wrong modulus in native modulus.
 	fn wrong_modulus_in_native_modulus() -> N;

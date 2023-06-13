@@ -34,13 +34,6 @@ use halo2::halo2curves::secp256k1::{Fp, Fq};
 pub struct Secp256k1_4_68;
 
 impl RnsParams<Fp, Fr, 4, 68> for Secp256k1_4_68 {
-	fn native_modulus() -> BigUint {
-		BigUint::from_str(
-			"21888242871839275222246405745257275088548364400416034343698204186575808495617",
-		)
-		.unwrap()
-	}
-
 	fn wrong_modulus() -> BigUint {
 		BigUint::from_str(
 			"115792089237316195423570985008687907853269984665640564039457584007908834671663",
@@ -134,13 +127,6 @@ impl RnsParams<Fp, Fr, 4, 68> for Secp256k1_4_68 {
 }
 
 impl RnsParams<Fq, Fr, 4, 68> for Secp256k1_4_68 {
-	fn native_modulus() -> BigUint {
-		BigUint::from_str(
-			"21888242871839275222246405745257275088548364400416034343698204186575808495617",
-		)
-		.unwrap()
-	}
-
 	fn wrong_modulus() -> BigUint {
 		BigUint::from_str(
 			"115792089237316195423570985008687907852837564279074904382605163141518161494337",

@@ -68,13 +68,6 @@ use halo2::halo2curves::bn256::{Fq, Fr};
 pub struct Bn256_4_68;
 
 impl RnsParams<Fq, Fr, 4, 68> for Bn256_4_68 {
-	fn native_modulus() -> BigUint {
-		BigUint::from_str(
-			"21888242871839275222246405745257275088548364400416034343698204186575808495617",
-		)
-		.unwrap()
-	}
-
 	fn wrong_modulus() -> BigUint {
 		BigUint::from_str(
 			"21888242871839275222246405745257275088696311157297823662689037894645226208583",
