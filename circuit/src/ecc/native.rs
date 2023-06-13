@@ -20,7 +20,7 @@ use num_traits::One;
 
 use crate::{
 	integer::native::{Integer, UnassignedInteger},
-	rns::RnsParams,
+	params::rns::RnsParams,
 	utils::{be_bits_to_usize, big_to_fe, to_bits},
 	FieldExt, UnassignedValue,
 };
@@ -356,7 +356,7 @@ mod test {
 	use super::EcPoint;
 	use crate::{
 		integer::native::Integer,
-		rns::bn256::Bn256_4_68,
+		params::rns::bn256::Bn256_4_68,
 		utils::{big_to_fe, fe_to_big},
 	};
 	use halo2::{

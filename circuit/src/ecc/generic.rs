@@ -11,7 +11,7 @@ use num_traits::One;
 
 use crate::{
 	integer::native::Integer,
-	rns::RnsParams,
+	params::rns::RnsParams,
 	utils::{be_bits_to_usize, big_to_fe, fe_to_big, to_bits},
 	FieldExt,
 };
@@ -300,7 +300,7 @@ mod test {
 	use super::EcPoint;
 	use crate::{
 		integer::native::Integer,
-		rns::secp256k1::Secp256k1_4_68,
+		params::rns::secp256k1::Secp256k1_4_68,
 		utils::{big_to_fe, fe_to_big},
 	};
 	use halo2::{

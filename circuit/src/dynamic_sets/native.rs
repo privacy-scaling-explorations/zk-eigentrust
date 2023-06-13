@@ -364,7 +364,7 @@ mod test {
 	use crate::{
 		calculate_message_hash,
 		eddsa::native::{sign, PublicKey, SecretKey},
-		rns::compose_big_decimal,
+		params::rns::compose_big_decimal,
 		threshold::native::{Threshold, ThresholdWitness},
 		utils::fe_to_big,
 	};

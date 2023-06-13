@@ -13,7 +13,7 @@ use crate::{
 		AssignedInteger, IntegerAddChip, IntegerDivChip, IntegerMulChip, IntegerReduceChip,
 		IntegerSubChip,
 	},
-	rns::RnsParams,
+	params::rns::RnsParams,
 	utils::assigned_as_bool,
 	Chip, Chipset, CommonConfig, FieldExt,
 };
@@ -846,7 +846,7 @@ mod test {
 			AssignedInteger, IntegerAddChip, IntegerDivChip, IntegerMulChip, IntegerReduceChip,
 			IntegerSubChip,
 		},
-		rns::{bn256::Bn256_4_68, RnsParams},
+		params::rns::{bn256::Bn256_4_68, RnsParams},
 		Chip, Chipset, CommonConfig, RegionCtx, UnassignedValue,
 	};
 	use halo2::{

@@ -115,7 +115,8 @@ where
 mod test {
 	use super::MerkleTree;
 	use crate::{
-		merkle_tree::native::Path, params::poseidon_bn254_5x5::Params, poseidon::native::Poseidon,
+		merkle_tree::native::Path, params::hasher::poseidon_bn254_5x5::Params,
+		poseidon::native::Poseidon,
 	};
 	use halo2::{arithmetic::Field, halo2curves::bn256::Fr};
 	use rand::thread_rng;

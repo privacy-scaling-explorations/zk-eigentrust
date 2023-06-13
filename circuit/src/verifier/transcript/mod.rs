@@ -5,7 +5,7 @@ use super::loader::{
 use crate::{
 	ecc::AssignedPoint,
 	integer::{native::Integer, AssignedInteger},
-	rns::RnsParams,
+	params::rns::RnsParams,
 	FieldExt, RegionCtx, SpongeHasherChipset,
 };
 use halo2::{
@@ -292,13 +292,13 @@ mod test {
 			AssignedInteger, IntegerAddChip, IntegerDivChip, IntegerMulChip, IntegerReduceChip,
 			IntegerSubChip,
 		},
-		params::poseidon_bn254_5x5::Params,
+		params::hasher::poseidon_bn254_5x5::Params,
+		params::rns::bn256::Bn256_4_68,
 		poseidon::{
 			native::sponge::PoseidonSponge,
 			sponge::{PoseidonSpongeConfig, StatefulSpongeChipset},
 			PoseidonConfig,
 		},
-		rns::bn256::Bn256_4_68,
 		verifier::{
 			loader::{
 				native::{NUM_BITS, NUM_LIMBS},

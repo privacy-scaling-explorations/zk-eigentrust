@@ -23,13 +23,13 @@ use crate::{
 		native::Integer, IntegerAddChip, IntegerDivChip, IntegerMulChip, IntegerReduceChip,
 		IntegerSubChip,
 	},
-	params::poseidon_bn254_5x5::Params,
+	params::hasher::poseidon_bn254_5x5::Params,
+	params::rns::bn256::Bn256_4_68,
 	poseidon::{
 		native::sponge::PoseidonSponge,
 		sponge::{PoseidonSpongeConfig, StatefulSpongeChipset},
 		PoseidonConfig,
 	},
-	rns::bn256::Bn256_4_68,
 	Chip, CommonConfig, RegionCtx, ADVICE,
 };
 use halo2::{

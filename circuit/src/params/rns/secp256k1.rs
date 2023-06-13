@@ -223,7 +223,7 @@ impl RnsParams<Fq, Fr, 4, 68> for Secp256k1_4_68 {
 mod test {
 	use crate::{
 		integer::native::Integer,
-		rns::{make_mul_aux, secp256k1::Secp256k1_4_68},
+		params::rns::{make_mul_aux, secp256k1::Secp256k1_4_68},
 	};
 	use halo2::halo2curves::bn256::Fr;
 	use halo2::{arithmetic::Field, halo2curves::group::Curve};
