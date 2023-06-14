@@ -10,7 +10,7 @@ use halo2::{
 use itertools::Itertools;
 use num_bigint::{BigInt, ToBigInt};
 use num_rational::BigRational;
-use num_traits::{FromPrimitive, Zero};
+use num_traits::{FromPrimitive, One, Zero};
 use secp256k1::{ecdsa, Message};
 use std::collections::HashMap;
 
@@ -332,7 +332,10 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITERATIONS: usize, const INITIAL_SCO
 
 		let mut ops_norm = vec![vec![BigRational::zero(); NUM_NEIGHBOURS]; NUM_NEIGHBOURS];
 		for i in 0..NUM_NEIGHBOURS {
-			let op_score_sum = ops[i].iter().fold(BigInt::zero(), |acc, score| acc + score);
+			let mut op_score_sum = ops[i].iter().fold(BigInt::zero(), |acc, score| acc + score);
+			if op_score_sum.is_zero() {
+				op_score_sum = BigInt::one();
+			}
 
 			for j in 0..NUM_NEIGHBOURS {
 				let score = ops[i][j].clone();
