@@ -1,7 +1,7 @@
 /// Ethereum Utility Module
 ///
 /// This module provides types and functionalities for Ethereum blockchain interactions.
-use crate::setup_client;
+use crate::ClientSigner;
 use eigen_trust_circuit::{
 	dynamic_sets::native::ECDSAPublicKey,
 	halo2::halo2curves::bn256::Fr as Scalar,
@@ -11,13 +11,9 @@ use eigen_trust_circuit::{
 };
 use ethers::{
 	abi::Address,
-	middleware::SignerMiddleware,
 	prelude::{abigen, k256::ecdsa::SigningKey, Abigen, ContractError},
-	providers::{Http, Middleware, Provider},
-	signers::{
-		coins_bip39::{English, Mnemonic},
-		LocalWallet,
-	},
+	providers::Middleware,
+	signers::coins_bip39::{English, Mnemonic},
 	solc::{artifacts::ContractBytecode, Solc},
 	types::TransactionRequest,
 	utils::keccak256,
@@ -26,50 +22,38 @@ use secp256k1::SecretKey;
 use std::{
 	env,
 	fs::{self, write},
+	sync::Arc,
 };
 
 // Generate contract bindings
 abigen!(AttestationStation, "../data/AttestationStation.json");
 
-/// ContractError type alias
-pub type CntrError = ContractError<SignerMiddleware<Provider<Http>, LocalWallet>>;
-
-/// Deploy AttestationStation contract
-pub async fn deploy_as(mnemonic_phrase: &str, node_url: &str) -> Result<Address, CntrError> {
-	let client = setup_client(mnemonic_phrase, node_url);
-	let contract = AttestationStation::deploy(client, ())?.send().await?;
-	let addr = contract.address();
-
-	Ok(addr)
+/// Deploys the AttestationStation contract
+pub async fn deploy_as(signer: Arc<ClientSigner>) -> Result<Address, ContractError<ClientSigner>> {
+	let contract = AttestationStation::deploy(signer, ())?.send().await?;
+	Ok(contract.address())
 }
 
-/// Deploy EtVerifier contract
+/// Deploys the EtVerifier contract
 pub async fn deploy_verifier(
-	mnemonic_phrase: &str, node_url: &str, contract_bytes: Vec<u8>,
-) -> Result<Address, CntrError> {
-	let client = setup_client(mnemonic_phrase, node_url);
+	signer: Arc<ClientSigner>, contract_bytes: Vec<u8>,
+) -> Result<Address, ContractError<ClientSigner>> {
 	let tx = TransactionRequest::default().data(contract_bytes);
-	let pen_tx = client.send_transaction(tx, None).await.unwrap();
+	let pen_tx = signer.send_transaction(tx, None).await.unwrap();
 	let tx = pen_tx.await;
 
-	let res = tx.unwrap();
-	let rec = res.unwrap();
-	let addr = rec.contract_address.unwrap();
-
-	Ok(addr)
+	let rec = tx.unwrap().unwrap();
+	Ok(rec.contract_address.unwrap())
 }
 
-/// Call the EtVerifier contract
+/// Calls the EtVerifier contract
 pub async fn call_verifier(
-	mnemonic_phrase: &str, node_url: &str, verifier_address: Address, proof: NativeProof,
+	signer: Arc<ClientSigner>, verifier_address: Address, proof: NativeProof,
 ) {
 	let calldata = encode_calldata::<Scalar>(&[proof.pub_ins], &proof.proof);
-	let client = setup_client(mnemonic_phrase, node_url);
 
 	let tx = TransactionRequest::default().data(calldata).to(verifier_address);
-	let pen_tx = client.send_transaction(tx, None).await.unwrap();
-
-	let res = pen_tx.await.unwrap();
+	let res = signer.send_transaction(tx, None).await.unwrap().await.unwrap();
 	println!("{:#?}", res);
 }
 
@@ -176,7 +160,10 @@ pub fn scalar_from_address(address: &Address) -> Result<Scalar, &'static str> {
 
 #[cfg(test)]
 mod tests {
-	use crate::eth::{address_from_public_key, call_verifier, deploy_as, deploy_verifier};
+	use crate::{
+		eth::{address_from_public_key, call_verifier, deploy_as, deploy_verifier},
+		Client, ClientConfig,
+	};
 	use eigen_trust_circuit::{
 		utils::{read_bytes_data, read_json_data},
 		Proof, ProofRaw,
@@ -191,9 +178,16 @@ mod tests {
 	#[tokio::test]
 	async fn test_deploy_as() {
 		let anvil = Anvil::new().spawn();
-		let mnemonic = "test test test test test test test test test test test junk";
-		let node_endpoint = anvil.endpoint();
-		let res = deploy_as(mnemonic, &node_endpoint).await;
+		let config = ClientConfig {
+			as_address: "0x5fbdb2315678afecb367f032d93f642f64180aa3".to_string(),
+			domain: "0x0000000000000000000000000000000000000000".to_string(),
+			node_url: anvil.endpoint().to_string(),
+			verifier_address: "0xe7f1725e7734ce288f8367e1bb143e90bb3f0512".to_string(),
+		};
+		let client = Client::new(config);
+
+		// Deploy
+		let res = deploy_as(client.signer).await;
 		assert!(res.is_ok());
 
 		drop(anvil);
@@ -202,10 +196,17 @@ mod tests {
 	#[tokio::test]
 	async fn test_deploy_verifier() {
 		let anvil = Anvil::new().spawn();
-		let mnemonic = "test test test test test test test test test test test junk";
-		let node_endpoint = anvil.endpoint();
 		let et_contract = read_bytes_data("et_verifier");
-		let res = deploy_verifier(mnemonic, &node_endpoint, et_contract).await;
+		let config = ClientConfig {
+			as_address: "0x5fbdb2315678afecb367f032d93f642f64180aa3".to_string(),
+			domain: "0x0000000000000000000000000000000000000000".to_string(),
+			node_url: anvil.endpoint().to_string(),
+			verifier_address: "0xe7f1725e7734ce288f8367e1bb143e90bb3f0512".to_string(),
+		};
+		let client = Client::new(config);
+
+		// Deploy
+		let res = deploy_verifier(client.get_signer(), et_contract).await;
 		assert!(res.is_ok());
 
 		drop(anvil);
@@ -214,15 +215,22 @@ mod tests {
 	#[tokio::test]
 	async fn test_call_verifier() {
 		let anvil = Anvil::new().spawn();
-		let mnemonic = "test test test test test test test test test test test junk";
-		let node_endpoint = anvil.endpoint();
+		let config = ClientConfig {
+			as_address: "0x5fbdb2315678afecb367f032d93f642f64180aa3".to_string(),
+			domain: "0x0000000000000000000000000000000000000000".to_string(),
+			node_url: anvil.endpoint().to_string(),
+			verifier_address: "0xe7f1725e7734ce288f8367e1bb143e90bb3f0512".to_string(),
+		};
+		let client = Client::new(config);
 
+		// Read contract data and deploy verifier
 		let bytecode = read_bytes_data("et_verifier");
-		let addr = deploy_verifier(mnemonic, &node_endpoint, bytecode).await.unwrap();
+		let addr = deploy_verifier(client.get_signer(), bytecode).await.unwrap();
 
+		// Read proof data and call verifier
 		let proof_raw: ProofRaw = read_json_data("et_proof").unwrap();
 		let proof = Proof::from(proof_raw);
-		call_verifier(mnemonic, &node_endpoint, addr, proof).await;
+		call_verifier(client.get_signer(), addr, proof).await;
 
 		drop(anvil);
 	}
