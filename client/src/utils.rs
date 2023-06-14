@@ -37,17 +37,20 @@ pub fn read_csv_data<T: DeserializeOwned>(file_name: &str) -> Result<Vec<T>, Err
 }
 
 /// Creates new CSV file in the given path and stores the provided data
-pub fn create_csv_file<T, U>(filename: &str, content: T) -> Result<(), &'static str>
+pub fn create_csv_file<T, U, V>(filename: &str, content: T) -> Result<(), &'static str>
 where
 	T: IntoIterator<Item = U>,
-	U: AsRef<[u8]>,
+	U: IntoIterator<Item = V>,
+	V: AsRef<[u8]>,
 {
 	let path = format!("../data/{}.csv", filename);
 
 	let mut writer = CsvWriter::from_path(&path).map_err(|_| "Failed to open file")?;
 
-	// Write content
-	writer.write_record(content).map_err(|_| "Failed to write record")?;
+	// Loop over content and write each item
+	for record in content {
+		writer.write_record(record).map_err(|_| "Failed to write record")?;
+	}
 
 	// Flush buffer
 	writer.flush().map_err(|_| "Failed to flush buffer")?;

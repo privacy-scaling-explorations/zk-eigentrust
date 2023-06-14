@@ -229,12 +229,24 @@ impl Client {
 		}
 
 		// Calculate the trust scores for each participant
-		let scores = eigen_trust_set.converge();
+		let scores = eigen_trust_set.converge_rational();
+
+		// Format scores to write to CSV file
+		let formatted_scores: Vec<Vec<String>> = participants
+			.iter()
+			.zip(scores.iter())
+			.map(|(participant, score)| {
+				vec![
+					format!("{:?}", participant),
+					format!("0x{:x}", score.to_integer()),
+					format!("{}", score.numer()),
+					format!("{}", score.denom()),
+					format!("{}", score.numer() / score.denom()),
+				]
+			})
+			.collect();
 
 		// Write scores to a CSV file
-		let formatted_scores: Vec<Vec<u8>> =
-			scores.iter().map(|&x| x.to_bytes().to_vec()).collect();
-
 		create_csv_file("scores", &formatted_scores).unwrap();
 
 		Ok(())
