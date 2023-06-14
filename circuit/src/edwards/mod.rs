@@ -112,7 +112,7 @@ impl<F: FieldExt, P: EdwardsParams<F>> Chip<F> for PointAddChip<F, P> {
 			|| "add",
 			|region: Region<'_, F>| {
 				let mut ctx = RegionCtx::new(region, 0);
-				ctx.enable(selector.clone())?;
+				ctx.enable(*selector)?;
 
 				let r_x = ctx.copy_assign(common.advice[0], self.r.x.clone())?;
 				let r_y = ctx.copy_assign(common.advice[1], self.r.y.clone())?;
@@ -195,7 +195,7 @@ impl<F: FieldExt> Chip<F> for IntoAffineChip<F> {
 			|| "into_affine",
 			|region: Region<'_, F>| {
 				let mut ctx = RegionCtx::new(region, 0);
-				ctx.enable(selector.clone())?;
+				ctx.enable(*selector)?;
 
 				ctx.copy_assign(common.advice[0], self.r.x.clone())?;
 				ctx.copy_assign(common.advice[1], self.r.y.clone())?;
@@ -310,7 +310,7 @@ impl<F: FieldExt, P: EdwardsParams<F>> Chip<F> for ScalarMulChip<F, P> {
 
 				// Double and add operation.
 				for i in 0..self.value_bits.len() {
-					ctx.enable(selector.clone())?;
+					ctx.enable(*selector)?;
 					ctx.copy_assign(common.advice[0], self.value_bits[i].clone())?;
 
 					// Add `r` and `e`.

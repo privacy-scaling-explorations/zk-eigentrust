@@ -312,7 +312,7 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u1
 					let mut assigned_neighbour_pk_y = Vec::new();
 					for chunk in neighbour_pk_y.chunks(ADVICE) {
 						for i in 0..chunk.len() {
-							let val = chunk[i].clone();
+							let val = chunk[i];
 							let y = ctx.assign_advice(config.common.advice[i], val)?;
 							assigned_neighbour_pk_y.push(y);
 						}
@@ -511,8 +511,8 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u1
 
 				// Distribute the scores
 				let mut op_score_sum = zero.clone();
-				for j in 0..NUM_NEIGHBOURS {
-					let add_chip = AddChipset::new(op_score_sum.clone(), ops_i[j].clone());
+				for ops_ij in ops_i.iter().take(NUM_NEIGHBOURS) {
+					let add_chip = AddChipset::new(op_score_sum.clone(), ops_ij.clone());
 					op_score_sum = add_chip.synthesize(
 						&config.common,
 						&config.main,
@@ -619,13 +619,13 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u1
 		// "Normalization"
 		let ops = {
 			let mut normalized_ops = Vec::new();
-			for i in 0..NUM_NEIGHBOURS {
+			for ops in ops.iter().take(NUM_NEIGHBOURS) {
 				let mut ops_i = Vec::new();
 
 				// Compute the sum of scores
 				let mut op_score_sum = zero.clone();
-				for j in 0..NUM_NEIGHBOURS {
-					let add_chip = AddChipset::new(op_score_sum.clone(), ops[i][j].clone());
+				for op in ops.iter().take(NUM_NEIGHBOURS) {
+					let add_chip = AddChipset::new(op_score_sum.clone(), op.clone());
 					op_score_sum = add_chip.synthesize(
 						&config.common,
 						&config.main,
@@ -645,8 +645,8 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u1
 					layouter.namespace(|| "invert_sum"),
 				)?;
 
-				for j in 0..NUM_NEIGHBOURS {
-					let mul_chip = MulChipset::new(ops[i][j].clone(), inverted_sum.clone());
+				for op in ops.iter().take(NUM_NEIGHBOURS) {
+					let mul_chip = MulChipset::new(op.clone(), inverted_sum.clone());
 					let normalized_op = mul_chip.synthesize(
 						&config.common,
 						&config.main,
@@ -669,8 +669,8 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u1
 			for i in 0..NUM_NEIGHBOURS {
 				let op_i = ops[i].clone();
 				let mut sop_i = Vec::new();
-				for j in 0..NUM_NEIGHBOURS {
-					let mul_chip = MulChipset::new(op_i[j].clone(), s[i].clone());
+				for op in op_i.iter().take(NUM_NEIGHBOURS) {
+					let mul_chip = MulChipset::new(op.clone(), s[i].clone());
 					let res = mul_chip.synthesize(
 						&config.common,
 						&config.main,
@@ -683,8 +683,8 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u1
 
 			let mut new_s = vec![zero.clone(); NUM_NEIGHBOURS];
 			for i in 0..NUM_NEIGHBOURS {
-				for j in 0..NUM_NEIGHBOURS {
-					let add_chip = AddChipset::new(new_s[i].clone(), sop[j][i].clone());
+				for sop in sop.iter().take(NUM_NEIGHBOURS) {
+					let add_chip = AddChipset::new(new_s[i].clone(), sop[i].clone());
 					new_s[i] = add_chip.synthesize(
 						&config.common,
 						&config.main,
@@ -713,8 +713,8 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u1
 
 		// Constrain the total reputation in the set
 		let mut sum = zero;
-		for i in 0..NUM_NEIGHBOURS {
-			let add_chipset = AddChipset::new(sum.clone(), passed_s[i].clone());
+		for passed_s in passed_s.iter().take(NUM_NEIGHBOURS) {
+			let add_chipset = AddChipset::new(sum.clone(), passed_s.clone());
 			sum = add_chipset.synthesize(
 				&config.common,
 				&config.main,

@@ -32,8 +32,8 @@ where
 		let mut state = self.inputs;
 		for i in 0..full_rounds - 1 {
 			// Apply Sbox
-			for i in 0..WIDTH {
-				state[i] = P::sbox_f(state[i]);
+			for state in state.iter_mut().take(WIDTH) {
+				*state = P::sbox_f(*state);
 			}
 			// Apply MDS
 			state = P::apply_mds(&state);
@@ -41,8 +41,8 @@ where
 			let consts = P::load_round_constants(i, &round_constants);
 			state = P::apply_round_constants(&state, &consts);
 			// Apply Sbox inverse
-			for i in 0..WIDTH {
-				state[i] = P::sbox_inv_f(state[i]);
+			for state in state.iter_mut().take(WIDTH) {
+				*state = P::sbox_inv_f(*state);
 			}
 			// Apply MDS for the second time
 			state = P::apply_mds(&state);

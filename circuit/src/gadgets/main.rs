@@ -497,7 +497,7 @@ impl<F: FieldExt> Chipset<F> for IsZeroChipset<F> {
 			|| "assign_values",
 			|region| {
 				let x_inv = self.x.clone().value().map(|v| v.invert().unwrap_or(F::ZERO));
-				let res = Value::known(F::ONE) - self.x.clone().value().cloned() * x_inv.clone();
+				let res = Value::known(F::ONE) - self.x.clone().value().cloned() * x_inv;
 
 				let mut ctx = RegionCtx::new(region, 0);
 				let zero = ctx.assign_advice(common.advice[0], Value::known(F::ZERO))?;

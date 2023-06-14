@@ -69,10 +69,10 @@ where
 			// AddRoundConstants step.
 			let mut exprs = P::apply_round_constants_expr(&state, &round_constants);
 			// Applying S-boxes for the full round.
-			for i in 0..WIDTH {
+			for expr in exprs.iter_mut().take(WIDTH) {
 				// 2. step for the TRF.
 				// SubWords step, denoted by S-box.
-				exprs[i] = P::sbox_expr(exprs[i].clone());
+				*expr = P::sbox_expr(expr.clone());
 			}
 			// 3. step for the TRF.
 			// MixLayer step.
@@ -106,7 +106,7 @@ where
 				// Assign initial state
 				let mut state_cells = copy_state(&mut ctx, common, &self.inputs)?;
 				for _ in 0..half_full_rounds {
-					ctx.enable(selector.clone())?;
+					ctx.enable(*selector)?;
 
 					// Assign round constants
 					let rc_values = load_round_constants(&mut ctx, common, round_constants)?;
@@ -115,10 +115,10 @@ where
 					// AddRoundConstants step.
 					let state_vals = state_cells.clone().map(|v| v.value().cloned());
 					let mut next_state = P::apply_round_constants_val(&state_vals, &rc_values);
-					for i in 0..WIDTH {
+					for nstate in next_state.iter_mut().take(WIDTH) {
 						// 2. step for the TRF.
 						// SubWords step, denoted by S-box.
-						next_state[i] = next_state[i].map(|s| P::sbox_f(s));
+						*nstate = nstate.map(|s| P::sbox_f(s));
 					}
 
 					// 3. step for the TRF.
@@ -216,7 +216,7 @@ where
 				let mut ctx = RegionCtx::new(region, 0);
 				let mut state_cells = copy_state(&mut ctx, common, &self.inputs)?;
 				for _ in 0..partial_rounds {
-					ctx.enable(selector.clone())?;
+					ctx.enable(*selector)?;
 
 					// Assign round constants
 					let rc_values = load_round_constants(&mut ctx, common, round_constants)?;
@@ -236,7 +236,7 @@ where
 					// Assign next state
 					ctx.next();
 					for i in 0..WIDTH {
-						let new_state = next_state[i].clone();
+						let new_state = next_state[i];
 						state_cells[i] = ctx.assign_advice(common.advice[i], new_state)?;
 					}
 				}

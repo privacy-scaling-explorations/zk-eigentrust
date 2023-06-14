@@ -798,9 +798,9 @@ where
 		acc_point =
 			acc_add_chip.synthesize(common, &config.add, layouter.namespace(|| "acc_add"))?;
 
-		for i in 2..bits.len() {
+		for bit in bits.iter().skip(2) {
 			let carry_point_chip = EccTableSelectChipset::new(
-				bits[i].clone(),
+				bit.clone(),
 				aux_init_plus_scalar.clone(),
 				self.aux_init.clone(),
 			);

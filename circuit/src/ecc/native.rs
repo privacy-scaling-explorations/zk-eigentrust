@@ -70,7 +70,7 @@ where
 
 	/// Selection function for the table
 	fn select_vec(index: usize, table: Vec<Self>) -> Self {
-		return table[index].clone();
+		table[index].clone()
 	}
 
 	/// AuxInit
@@ -101,7 +101,7 @@ where
 		}
 
 		if (leftover != 0) {
-			k0 = k0 << leftover;
+			k0 <<= leftover;
 			k0 = k0.add(&one);
 		}
 
