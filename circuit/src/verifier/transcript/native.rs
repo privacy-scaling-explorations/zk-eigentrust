@@ -1,6 +1,6 @@
 use crate::{
 	integer::native::Integer,
-	rns::RnsParams,
+	params::rns::RnsParams,
 	verifier::loader::native::{NUM_BITS, NUM_LIMBS},
 	FieldExt, SpongeHasher,
 };

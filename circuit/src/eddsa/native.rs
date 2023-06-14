@@ -5,7 +5,7 @@ use crate::{
 		native::{Point, UnassignedPoint},
 		params::{BabyJubJub, EdwardsParams},
 	},
-	params::poseidon_bn254_5x5::Params,
+	params::hasher::poseidon_bn254_5x5::Params,
 	poseidon::native::Poseidon,
 	utils::to_wide,
 	UnassignedValue,

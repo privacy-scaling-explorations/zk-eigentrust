@@ -1,4 +1,4 @@
-use crate::{rns::decompose_big, utils::fe_to_big, FieldExt, RegionCtx};
+use crate::{params::rns::decompose_big, utils::fe_to_big, FieldExt, RegionCtx};
 use halo2::{
 	circuit::{AssignedCell, Layouter, Region, Value},
 	plonk::{ConstraintSystem, Constraints, Error, Selector},

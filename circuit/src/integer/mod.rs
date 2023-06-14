@@ -2,7 +2,7 @@
 pub mod native;
 /// RNS operations for the non-native field arithmetic
 use self::native::Integer;
-use crate::{rns::RnsParams, Chip, CommonConfig, FieldExt, RegionCtx};
+use crate::{params::rns::RnsParams, Chip, CommonConfig, FieldExt, RegionCtx};
 use halo2::{
 	circuit::{AssignedCell, Layouter, Region, Value},
 	plonk::{ConstraintSystem, Error, Expression, Selector},
@@ -677,7 +677,7 @@ mod test {
 		native::{Integer, UnassignedInteger},
 		*,
 	};
-	use crate::{rns::bn256::Bn256_4_68, Chipset, CommonConfig, UnassignedValue};
+	use crate::{params::rns::bn256::Bn256_4_68, Chipset, CommonConfig, UnassignedValue};
 	use halo2::{
 		circuit::SimpleFloorPlanner,
 		dev::MockProver,

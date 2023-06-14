@@ -1,5 +1,5 @@
 use crate::{
-	rns::{compose_big_decimal_f, decompose_big_decimal},
+	params::rns::{compose_big_decimal_f, decompose_big_decimal},
 	FieldExt,
 };
 use halo2::{arithmetic::Field, halo2curves::bn256::Fr};

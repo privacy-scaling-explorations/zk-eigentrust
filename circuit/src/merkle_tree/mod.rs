@@ -222,7 +222,7 @@ mod test {
 			set::SetChip,
 		},
 		merkle_tree::native::{MerkleTree, Path},
-		params::poseidon_bn254_5x5::Params,
+		params::hasher::poseidon_bn254_5x5::Params,
 		poseidon::{
 			native::Poseidon, FullRoundChip, PartialRoundChip, PoseidonChipset, PoseidonConfig,
 		},

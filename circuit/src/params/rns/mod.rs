@@ -4,47 +4,24 @@ use crate::{
 	FieldExt,
 };
 use halo2::{
-	halo2curves::{
-		bn256::Fr,
-		group::{ff::PrimeField, Curve},
-		CurveAffine,
-	},
+	halo2curves::{bn256::Fr, group::ff::PrimeField},
 	plonk::Expression,
 };
 use num_bigint::BigUint;
 use num_integer::Integer as BigInteger;
 use num_traits::{FromPrimitive, One, Pow, Zero};
-use std::{
-	fmt::Debug,
-	ops::{Shl, Sub},
-	str::FromStr,
-};
+use std::{fmt::Debug, ops::Shl, str::FromStr};
 
 /// BN256 curve RNS params
 pub mod bn256;
 /// Secp256K1 curve RNS params
 pub mod secp256k1;
 
-pub(crate) fn make_mul_aux<C: CurveAffine>(aux_to_add: C) -> C
-where
-	C::Scalar: FieldExt,
-{
-	let n = <C::Scalar>::NUM_BITS as usize;
-	let mut k0 = BigUint::one();
-	let one = BigUint::one();
-	for i in 0..n {
-		k0 |= &one << i;
-	}
-	(-aux_to_add * big_to_fe::<C::Scalar>(k0)).to_affine()
-}
-
 /// This trait is for the dealing with RNS operations.
 pub trait RnsParams<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize>:
 	Clone + Debug + PartialEq + Default
 {
-	/// Returns Scalar (Native) Field modulus [`Fr`] from Bn256.
-	fn native_modulus() -> BigUint;
-	/// Returns Base (Wrong) Field modulus [`Fq`] from Bn256.
+	/// Returns Base (Wrong) Field modulus [`Fq`] from W.
 	fn wrong_modulus() -> BigUint;
 	/// Returns wrong modulus in native modulus.
 	fn wrong_modulus_in_native_modulus() -> N;
@@ -54,16 +31,6 @@ pub trait RnsParams<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_
 	fn right_shifters() -> [N; NUM_LIMBS];
 	/// Returns left shifters.
 	fn left_shifters() -> [N; NUM_LIMBS];
-	/// Returns EcPoint AuxInit's x coordinate
-	fn to_add_x() -> [N; NUM_LIMBS];
-	/// Returns EcPoint AuxInit's y coordinate
-	fn to_add_y() -> [N; NUM_LIMBS];
-	/// Returns EcPoint AuxFin's x coordinate
-	fn to_sub_x() -> [N; NUM_LIMBS];
-	/// Returns EcPoint AuxFin's y coordinate
-	fn to_sub_y() -> [N; NUM_LIMBS];
-	/// Sliding window size for the scalar multiplication.
-	fn sliding_window_size() -> usize;
 	/// Inverts given Integer.
 	fn invert(input: BigUint) -> Option<Integer<W, N, NUM_LIMBS, NUM_BITS, Self>> {
 		let a_w = big_to_fe::<W>(input);

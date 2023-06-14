@@ -1,6 +1,6 @@
 use crate::{
 	gadgets::absorb::AbsorbChip,
-	params::RoundParams,
+	params::hasher::RoundParams,
 	poseidon::{PoseidonChipset, PoseidonConfig},
 	Chip, Chipset, CommonConfig, FieldExt, RegionCtx, SpongeHasherChipset,
 };
@@ -156,7 +156,7 @@ mod test {
 		Chip, Chipset, CommonConfig, RegionCtx, SpongeHasherChipset, ADVICE,
 	};
 
-	use crate::params::{hex_to_field, poseidon_bn254_5x5::Params};
+	use crate::params::hasher::{hex_to_field, poseidon_bn254_5x5::Params};
 
 	use halo2::{
 		circuit::{Layouter, Region, SimpleFloorPlanner, Value},
