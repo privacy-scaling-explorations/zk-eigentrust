@@ -1,6 +1,6 @@
 use crate::{
-	gadgets::absorb::AbsorbChip, params::RoundParams, rescue_prime::RescuePrimeChip, Chip, Chipset,
-	CommonConfig, FieldExt, RegionCtx,
+	gadgets::absorb::AbsorbChip, params::hasher::RoundParams, rescue_prime::RescuePrimeChip, Chip,
+	Chipset, CommonConfig, FieldExt, RegionCtx,
 };
 use halo2::{
 	circuit::{AssignedCell, Layouter, Region},
@@ -116,7 +116,7 @@ mod test {
 		Chip, Chipset, CommonConfig, RegionCtx,
 	};
 
-	use crate::params::{hex_to_field, rescue_prime_bn254_5x5::Params};
+	use crate::params::hasher::{hex_to_field, rescue_prime_bn254_5x5::Params};
 
 	use halo2::{
 		circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner, Value},

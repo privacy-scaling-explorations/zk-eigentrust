@@ -11,7 +11,7 @@ use super::{
 };
 use crate::{
 	circuit::{FullRoundHasher, PartialRoundHasher},
-	ecc::{
+	ecc::same_curve::{
 		EccAddConfig, EccDoubleConfig, EccMulConfig, EccTableSelectConfig, EccUnreducedLadderConfig,
 	},
 	gadgets::{
@@ -23,13 +23,13 @@ use crate::{
 		native::Integer, IntegerAddChip, IntegerDivChip, IntegerMulChip, IntegerReduceChip,
 		IntegerSubChip,
 	},
-	params::poseidon_bn254_5x5::Params,
+	params::rns::bn256::Bn256_4_68,
+	params::{ecc::bn254::Bn254Params, hasher::poseidon_bn254_5x5::Params},
 	poseidon::{
 		native::sponge::PoseidonSponge,
 		sponge::{PoseidonSpongeConfig, StatefulSpongeChipset},
 		PoseidonConfig,
 	},
-	rns::bn256::Bn256_4_68,
 	Chip, CommonConfig, RegionCtx, ADVICE,
 };
 use halo2::{
@@ -329,6 +329,7 @@ impl Circuit<Fr> for Aggregator {
 				_,
 				Bn256_4_68,
 				StatefulSpongeChipset<Fr, WIDTH, Params>,
+				Bn254Params,
 			>::new(
 				layouter.namespace(|| "loader"),
 				config.common.clone(),
@@ -358,6 +359,7 @@ impl Circuit<Fr> for Aggregator {
 					_,
 					Bn256_4_68,
 					StatefulSpongeChipset<Fr, WIDTH, Params>,
+					Bn254Params,
 				> = TranscriptReadChipset::new(snark.proof(), loader_config.clone());
 
 				let proof = Psv::read_proof(
@@ -376,6 +378,7 @@ impl Circuit<Fr> for Aggregator {
 				_,
 				Bn256_4_68,
 				StatefulSpongeChipset<Fr, WIDTH, Params>,
+				Bn254Params,
 			> = TranscriptReadChipset::new(as_proof, loader_config);
 			let proof = KzgAs::<Bn256, Gwc19>::read_proof(
 				&Default::default(),

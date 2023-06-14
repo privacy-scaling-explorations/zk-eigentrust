@@ -1,4 +1,9 @@
-use crate::{ecc::native::EcPoint, integer::native::Integer, rns::RnsParams, FieldExt};
+use crate::{
+	ecc::same_curve::native::EcPoint,
+	integer::native::Integer,
+	params::{ecc::EccParams, rns::RnsParams},
+	FieldExt,
+};
 use halo2::{
 	arithmetic::Field,
 	halo2curves::{Coordinates, CurveAffine},
@@ -21,58 +26,66 @@ pub const NUM_BITS: usize = 68;
 
 #[derive(Debug, Default, Clone, PartialEq)]
 /// NativeLoader structure
-pub struct NativeLoader<C: CurveAffine, P>
+pub struct NativeLoader<C: CurveAffine, P, EC>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
 {
 	// PhantomData
 	pub(crate) _c: PhantomData<C>,
 	pub(crate) _p: PhantomData<P>,
+	_ec: PhantomData<EC>,
 }
 
-impl<C: CurveAffine, P> NativeLoader<C, P>
+impl<C: CurveAffine, P, EC> NativeLoader<C, P, EC>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
 {
 	/// Construct a new NativeLoader
 	pub fn new() -> Self {
-		Self { _c: PhantomData, _p: PhantomData }
+		Self { _c: PhantomData, _p: PhantomData, _ec: PhantomData }
 	}
 }
 
 #[derive(Debug, Default, Clone, PartialEq)]
 /// LScalar structure
-pub struct LScalar<C: CurveAffine, P>
+pub struct LScalar<C: CurveAffine, P, EC>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
 {
 	// Inner value for the loaded scalar
 	pub(crate) inner: C::Scalar,
 	// Loader
-	pub(crate) loader: NativeLoader<C, P>,
+	pub(crate) loader: NativeLoader<C, P, EC>,
+
+	_ec: PhantomData<EC>,
 }
 
-impl<C: CurveAffine, P> LScalar<C, P>
+impl<C: CurveAffine, P, EC> LScalar<C, P, EC>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
 {
 	/// Construct a new LScalar
-	pub fn new(value: C::Scalar, loader: NativeLoader<C, P>) -> Self {
-		Self { inner: value, loader }
+	pub fn new(value: C::Scalar, loader: NativeLoader<C, P, EC>) -> Self {
+		Self { inner: value, loader, _ec: PhantomData }
 	}
 }
 
-impl<C: CurveAffine, P> FieldOps for LScalar<C, P>
+impl<C: CurveAffine, P, EC> FieldOps for LScalar<C, P, EC>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
 {
@@ -80,180 +93,193 @@ where
 	fn invert(&self) -> Option<Self> {
 		let inv = Field::invert(&self.inner.clone());
 		let inv_op: Option<C::Scalar> = inv.into();
-		inv_op.map(|x| Self { inner: x, loader: self.loader.clone() })
+		inv_op.map(|x| Self::new(x, self.loader.clone()))
 	}
 }
 
 // ---- ADD ----
 
-impl<'a, C: CurveAffine, P> Add<&'a LScalar<C, P>> for LScalar<C, P>
+impl<'a, C: CurveAffine, P, EC> Add<&'a LScalar<C, P, EC>> for LScalar<C, P, EC>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
 {
-	type Output = LScalar<C, P>;
+	type Output = LScalar<C, P, EC>;
 
 	/// Performs the `+` operation.
-	fn add(self, rhs: &'a LScalar<C, P>) -> Self::Output {
+	fn add(self, rhs: &'a LScalar<C, P, EC>) -> Self::Output {
 		let res = self.inner + rhs.inner;
-		Self { inner: res, loader: self.loader }
+		Self::new(res, self.loader)
 	}
 }
 
-impl<C: CurveAffine, P> Add<LScalar<C, P>> for LScalar<C, P>
+impl<C: CurveAffine, P, EC> Add<LScalar<C, P, EC>> for LScalar<C, P, EC>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
 {
-	type Output = LScalar<C, P>;
+	type Output = LScalar<C, P, EC>;
 
 	/// Performs the `+` operation.
-	fn add(self, rhs: LScalar<C, P>) -> Self::Output {
+	fn add(self, rhs: LScalar<C, P, EC>) -> Self::Output {
 		self.add(&rhs)
 	}
 }
 
-impl<'a, C: CurveAffine, P> AddAssign<&'a LScalar<C, P>> for LScalar<C, P>
+impl<'a, C: CurveAffine, P, EC> AddAssign<&'a LScalar<C, P, EC>> for LScalar<C, P, EC>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
 {
 	/// Performs the `+=` operation.
-	fn add_assign(&mut self, rhs: &'a LScalar<C, P>) {
+	fn add_assign(&mut self, rhs: &'a LScalar<C, P, EC>) {
 		*self = self.clone().add(rhs);
 	}
 }
 
-impl<C: CurveAffine, P> AddAssign<LScalar<C, P>> for LScalar<C, P>
+impl<C: CurveAffine, P, EC> AddAssign<LScalar<C, P, EC>> for LScalar<C, P, EC>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
 {
 	/// Performs the `+=` operation.
-	fn add_assign(&mut self, rhs: LScalar<C, P>) {
+	fn add_assign(&mut self, rhs: LScalar<C, P, EC>) {
 		self.add_assign(&rhs)
 	}
 }
 
 // ---- MUL ----
 
-impl<'a, C: CurveAffine, P> Mul<&'a LScalar<C, P>> for LScalar<C, P>
+impl<'a, C: CurveAffine, P, EC> Mul<&'a LScalar<C, P, EC>> for LScalar<C, P, EC>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
 {
-	type Output = LScalar<C, P>;
+	type Output = LScalar<C, P, EC>;
 
 	/// Performs the `*` operation.
-	fn mul(self, rhs: &'a LScalar<C, P>) -> Self::Output {
+	fn mul(self, rhs: &'a LScalar<C, P, EC>) -> Self::Output {
 		let res = self.inner * rhs.inner;
-		Self { inner: res, loader: self.loader }
+		Self::new(res, self.loader)
 	}
 }
 
-impl<C: CurveAffine, P> Mul<LScalar<C, P>> for LScalar<C, P>
+impl<C: CurveAffine, P, EC> Mul<LScalar<C, P, EC>> for LScalar<C, P, EC>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
 {
-	type Output = LScalar<C, P>;
+	type Output = LScalar<C, P, EC>;
 
 	/// Performs the `*` operation.
-	fn mul(self, rhs: LScalar<C, P>) -> Self::Output {
+	fn mul(self, rhs: LScalar<C, P, EC>) -> Self::Output {
 		self.mul(&rhs)
 	}
 }
 
-impl<'a, C: CurveAffine, P> MulAssign<&'a LScalar<C, P>> for LScalar<C, P>
+impl<'a, C: CurveAffine, P, EC> MulAssign<&'a LScalar<C, P, EC>> for LScalar<C, P, EC>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
 {
 	/// Performs the `*=` operation.
-	fn mul_assign(&mut self, rhs: &'a LScalar<C, P>) {
+	fn mul_assign(&mut self, rhs: &'a LScalar<C, P, EC>) {
 		*self = self.clone().mul(rhs);
 	}
 }
 
-impl<C: CurveAffine, P> MulAssign<LScalar<C, P>> for LScalar<C, P>
+impl<C: CurveAffine, P, EC> MulAssign<LScalar<C, P, EC>> for LScalar<C, P, EC>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
 {
 	/// Performs the `*=` operation.
-	fn mul_assign(&mut self, rhs: LScalar<C, P>) {
+	fn mul_assign(&mut self, rhs: LScalar<C, P, EC>) {
 		self.mul_assign(&rhs)
 	}
 }
 
 // ---- SUB ----
 
-impl<'a, C: CurveAffine, P> Sub<&'a LScalar<C, P>> for LScalar<C, P>
+impl<'a, C: CurveAffine, P, EC> Sub<&'a LScalar<C, P, EC>> for LScalar<C, P, EC>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
 {
-	type Output = LScalar<C, P>;
+	type Output = LScalar<C, P, EC>;
 
 	/// Performs the `-` operation.
-	fn sub(self, rhs: &'a LScalar<C, P>) -> Self::Output {
+	fn sub(self, rhs: &'a LScalar<C, P, EC>) -> Self::Output {
 		let res = self.inner - rhs.inner;
-		Self { inner: res, loader: self.loader }
+		Self::new(res, self.loader)
 	}
 }
 
-impl<C: CurveAffine, P> Sub<LScalar<C, P>> for LScalar<C, P>
+impl<C: CurveAffine, P, EC> Sub<LScalar<C, P, EC>> for LScalar<C, P, EC>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
 {
-	type Output = LScalar<C, P>;
+	type Output = LScalar<C, P, EC>;
 
 	/// Performs the `-` operation.
-	fn sub(self, rhs: LScalar<C, P>) -> Self::Output {
+	fn sub(self, rhs: LScalar<C, P, EC>) -> Self::Output {
 		self.sub(&rhs)
 	}
 }
 
-impl<'a, C: CurveAffine, P> SubAssign<&'a LScalar<C, P>> for LScalar<C, P>
+impl<'a, C: CurveAffine, P, EC> SubAssign<&'a LScalar<C, P, EC>> for LScalar<C, P, EC>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
 {
 	/// Performs the `-=` operation.
-	fn sub_assign(&mut self, rhs: &'a LScalar<C, P>) {
+	fn sub_assign(&mut self, rhs: &'a LScalar<C, P, EC>) {
 		*self = self.clone().sub(rhs);
 	}
 }
 
-impl<C: CurveAffine, P> SubAssign<LScalar<C, P>> for LScalar<C, P>
+impl<C: CurveAffine, P, EC> SubAssign<LScalar<C, P, EC>> for LScalar<C, P, EC>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
 {
 	/// Performs the `-=` operation.
-	fn sub_assign(&mut self, rhs: LScalar<C, P>) {
+	fn sub_assign(&mut self, rhs: LScalar<C, P, EC>) {
 		self.sub_assign(&rhs)
 	}
 }
 
 // ---- NEG ----
 
-impl<C: CurveAffine, P> Neg for LScalar<C, P>
+impl<C: CurveAffine, P, EC> Neg for LScalar<C, P, EC>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
 {
@@ -261,19 +287,20 @@ where
 
 	/// Performs the unary `-` operation.
 	fn neg(self) -> Self::Output {
-		let res = C::Scalar::neg(self.inner);
-		Self { inner: res, loader: self.loader }
+		let res = C::Scalar::neg(self.inner.clone());
+		Self::new(res, self.loader)
 	}
 }
 
-impl<C: CurveAffine, P> LoadedScalar<C::Scalar> for LScalar<C, P>
+impl<C: CurveAffine, P, EC> LoadedScalar<C::Scalar> for LScalar<C, P, EC>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
 {
 	/// [`Loader`].
-	type Loader = NativeLoader<C, P>;
+	type Loader = NativeLoader<C, P, EC>;
 
 	/// Returns [`Loader`].
 	fn loader(&self) -> &Self::Loader {
@@ -281,14 +308,15 @@ where
 	}
 }
 
-impl<C: CurveAffine, P> ScalarLoader<C::Scalar> for NativeLoader<C, P>
+impl<C: CurveAffine, P, EC> ScalarLoader<C::Scalar> for NativeLoader<C, P, EC>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
 {
 	/// [`LoadedScalar`].
-	type LoadedScalar = LScalar<C, P>;
+	type LoadedScalar = LScalar<C, P, EC>;
 
 	/// Load a constant field element.
 	fn load_const(&self, value: &C::Scalar) -> Self::LoadedScalar {
@@ -307,39 +335,42 @@ where
 
 #[derive(Debug, Default, Clone, PartialEq)]
 /// LEcPoint structure
-pub struct LEcPoint<C: CurveAffine, P>
+pub struct LEcPoint<C: CurveAffine, P, EC>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
 {
 	// Inner value for the loaded point
-	pub(crate) inner: EcPoint<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS, P>,
+	pub(crate) inner: EcPoint<C, NUM_LIMBS, NUM_BITS, P, EC>,
 	// Loader
-	pub(crate) loader: NativeLoader<C, P>,
+	pub(crate) loader: NativeLoader<C, P, EC>,
 }
 
-impl<C: CurveAffine, P> LEcPoint<C, P>
+impl<C: CurveAffine, P, EC> LEcPoint<C, P, EC>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
 {
 	/// Construct a new LEcPoint
 	pub fn new(
-		value: EcPoint<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS, P>, loader: NativeLoader<C, P>,
+		value: EcPoint<C, NUM_LIMBS, NUM_BITS, P, EC>, loader: NativeLoader<C, P, EC>,
 	) -> Self {
 		Self { inner: value, loader }
 	}
 }
 
-impl<C: CurveAffine, P> LoadedEcPoint<C> for LEcPoint<C, P>
+impl<C: CurveAffine, P, EC> LoadedEcPoint<C> for LEcPoint<C, P, EC>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
 {
-	type Loader = NativeLoader<C, P>;
+	type Loader = NativeLoader<C, P, EC>;
 
 	/// Returns [`Loader`].
 	fn loader(&self) -> &Self::Loader {
@@ -347,13 +378,14 @@ where
 	}
 }
 
-impl<C: CurveAffine, P> EcPointLoader<C> for NativeLoader<C, P>
+impl<C: CurveAffine, P, EC> EcPointLoader<C> for NativeLoader<C, P, EC>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
 {
-	type LoadedEcPoint = LEcPoint<C, P>;
+	type LoadedEcPoint = LEcPoint<C, P, EC>;
 
 	/// Load a constant elliptic curve point.
 	fn ec_point_load_const(&self, value: &C) -> Self::LoadedEcPoint {
@@ -394,9 +426,10 @@ where
 	}
 }
 
-impl<C: CurveAffine, P> Loader<C> for NativeLoader<C, P>
+impl<C: CurveAffine, P, EC> Loader<C> for NativeLoader<C, P, EC>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
 {

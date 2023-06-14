@@ -1,7 +1,7 @@
 /// Native sponge implementation
 pub mod sponge;
 
-use crate::{params::RoundParams, FieldExt, Hasher};
+use crate::{params::hasher::RoundParams, FieldExt, Hasher};
 use std::marker::PhantomData;
 
 /// Constructs objects.
@@ -112,7 +112,7 @@ where
 #[cfg(test)]
 mod test {
 	use super::*;
-	use crate::params::{hex_to_field, poseidon_bn254_5x5::Params};
+	use crate::params::hasher::{hex_to_field, poseidon_bn254_5x5::Params};
 	use halo2::halo2curves::bn256::Fr;
 
 	type TestPoseidon = Poseidon<Fr, 5, Params>;

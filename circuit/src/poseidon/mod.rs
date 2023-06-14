@@ -4,8 +4,8 @@ pub mod native;
 pub mod sponge;
 
 use crate::{
-	gadgets::absorb::copy_state, params::RoundParams, Chip, Chipset, CommonConfig, FieldExt,
-	HasherChipset, RegionCtx,
+	gadgets::absorb::copy_state, params::hasher::RoundParams, Chip, Chipset, CommonConfig,
+	FieldExt, HasherChipset, RegionCtx,
 };
 use halo2::{
 	circuit::{AssignedCell, Layouter, Region, Value},
@@ -346,7 +346,7 @@ where
 mod test {
 	use super::*;
 	use crate::{
-		params::{hex_to_field, poseidon_bn254_5x5::Params},
+		params::hasher::{hex_to_field, poseidon_bn254_5x5::Params},
 		utils::{generate_params, prove_and_verify},
 		CommonConfig,
 	};

@@ -68,13 +68,6 @@ use halo2::halo2curves::bn256::{Fq, Fr};
 pub struct Bn256_4_68;
 
 impl RnsParams<Fq, Fr, 4, 68> for Bn256_4_68 {
-	fn native_modulus() -> BigUint {
-		BigUint::from_str(
-			"21888242871839275222246405745257275088548364400416034343698204186575808495617",
-		)
-		.unwrap()
-	}
-
 	fn wrong_modulus() -> BigUint {
 		BigUint::from_str(
 			"21888242871839275222246405745257275088696311157297823662689037894645226208583",
@@ -114,41 +107,5 @@ impl RnsParams<Fq, Fr, 4, 68> for Bn256_4_68 {
 		let limb2 = Fr::from_raw([0x0, 0x0, 0x100, 0x0]);
 		let limb3 = Fr::from_raw([0x0, 0x0, 0x0, 0x1000]);
 		[limb0, limb1, limb2, limb3]
-	}
-
-	fn to_add_x() -> [Fr; 4] {
-		let limb0 = Fr::from_u128(39166801021317585802);
-		let limb1 = Fr::from_u128(280722752500048210634);
-		let limb2 = Fr::from_u128(246774286082614522626);
-		let limb3 = Fr::from_u128(648543811392721);
-		[limb0, limb1, limb2, limb3]
-	}
-
-	fn to_add_y() -> [Fr; 4] {
-		let limb0 = Fr::from_u128(260479261066082801011);
-		let limb1 = Fr::from_u128(36674947070525072812);
-		let limb2 = Fr::from_u128(146132927816985441332);
-		let limb3 = Fr::from_u128(251381276165850);
-		[limb0, limb1, limb2, limb3]
-	}
-
-	fn to_sub_x() -> [Fr; 4] {
-		let limb0 = Fr::from_u128(39683184256656720731);
-		let limb1 = Fr::from_u128(65039279958035916755);
-		let limb2 = Fr::from_u128(55471468959241741054);
-		let limb3 = Fr::from_u128(517651676279778);
-		[limb0, limb1, limb2, limb3]
-	}
-
-	fn to_sub_y() -> [Fr; 4] {
-		let limb0 = Fr::from_u128(82480000500960897165);
-		let limb1 = Fr::from_u128(24667200311316519684);
-		let limb2 = Fr::from_u128(293910609844452716081);
-		let limb3 = Fr::from_u128(761069265693657);
-		[limb0, limb1, limb2, limb3]
-	}
-
-	fn sliding_window_size() -> usize {
-		2
 	}
 }

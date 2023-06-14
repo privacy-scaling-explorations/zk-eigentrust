@@ -7,7 +7,7 @@ use crate::{
 		StrictScalarMulConfig,
 	},
 	gadgets::lt_eq::{LessEqualChipset, LessEqualConfig},
-	params::RoundParams,
+	params::hasher::RoundParams,
 	poseidon::{PoseidonChipset, PoseidonConfig},
 	Chip, Chipset, CommonConfig, FieldExt, RegionCtx,
 };
@@ -193,7 +193,7 @@ mod test {
 			lt_eq::{LessEqualConfig, NShiftedChip},
 			main::{MainChip, MainConfig},
 		},
-		params::poseidon_bn254_5x5::Params,
+		params::hasher::poseidon_bn254_5x5::Params,
 		poseidon::{native::Poseidon, FullRoundChip, PartialRoundChip, PoseidonConfig},
 		utils::{generate_params, prove_and_verify},
 		Chip, Chipset, CommonConfig, RegionCtx,

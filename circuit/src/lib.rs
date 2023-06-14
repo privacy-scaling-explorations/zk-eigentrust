@@ -66,8 +66,6 @@ pub mod params;
 pub mod poseidon;
 /// Rescue Prime hash function gadgets + native version
 pub mod rescue_prime;
-/// Residue Number System
-pub mod rns;
 /// Utility for checking the score threshold
 pub mod threshold;
 /// Utilities for proving and verifying

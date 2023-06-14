@@ -12,7 +12,7 @@ use crate::{
 		lt_eq::{LessEqualConfig, NShiftedChip},
 		main::{AddChipset, MainChip, MainConfig, MulChipset},
 	},
-	params::poseidon_bn254_5x5::Params,
+	params::hasher::poseidon_bn254_5x5::Params,
 	poseidon::{
 		native::{sponge::PoseidonSponge, Poseidon},
 		sponge::{PoseidonSpongeChipset, PoseidonSpongeConfig},

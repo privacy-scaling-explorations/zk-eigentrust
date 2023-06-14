@@ -1,7 +1,7 @@
 use crate::{
 	circuit::PoseidonNativeHasher,
 	opinion::native::Opinion,
-	rns::{compose_big_decimal_f, decompose_big_decimal},
+	params::rns::{compose_big_decimal_f, decompose_big_decimal},
 	utils::fe_to_big,
 };
 use halo2::{
@@ -390,7 +390,7 @@ mod test {
 	use std::time::Instant;
 
 	use super::*;
-	use crate::{rns::compose_big_decimal, utils::fe_to_big};
+	use crate::{params::rns::compose_big_decimal, utils::fe_to_big};
 
 	use halo2::halo2curves::{bn256::Fr, ff::PrimeField};
 	use itertools::Itertools;
@@ -630,7 +630,7 @@ mod test {
 
 		let (sk1, pk1) = generate_keypair(rng);
 		let (sk2, pk2) = generate_keypair(rng);
-		let (sk3, pk3) = generate_keypair(rng);
+		let (_, pk3) = generate_keypair(rng);
 
 		let pk1_fr = field_value_from_pub_key(&pk1);
 		let pk2_fr = field_value_from_pub_key(&pk2);
@@ -752,7 +752,7 @@ mod test {
 
 		let (sk1, pk1) = generate_keypair(rng);
 		let (sk2, pk2) = generate_keypair(rng);
-		let (sk3, pk3) = generate_keypair(rng);
+		let (_, pk3) = generate_keypair(rng);
 
 		let pk1_fr = field_value_from_pub_key(&pk1);
 		let pk2_fr = field_value_from_pub_key(&pk2);
