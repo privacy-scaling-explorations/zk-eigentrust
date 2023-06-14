@@ -45,8 +45,9 @@ async fn main() {
 		},
 		Mode::Deploy => {
 			println!("Deploying contracts...");
+			let client = Client::new(config);
 
-			let as_address = match deploy_as(&config.mnemonic, &config.node_url).await {
+			let as_address = match deploy_as(client.get_signer()).await {
 				Ok(a) => a,
 				Err(e) => {
 					eprintln!("Failed to deploy AttestationStation: {:?}", e);
@@ -57,17 +58,14 @@ async fn main() {
 
 			let verifier_contract = read_bytes_data("et_verifier");
 
-			let verifier_address = match deploy_verifier(
-				&config.mnemonic, &config.node_url, verifier_contract,
-			)
-			.await
-			{
-				Ok(a) => a,
-				Err(e) => {
-					eprintln!("Failed to deploy EigenTrustVerifier: {:?}", e);
-					return;
-				},
-			};
+			let verifier_address =
+				match deploy_verifier(client.get_signer(), verifier_contract).await {
+					Ok(a) => a,
+					Err(e) => {
+						eprintln!("Failed to deploy EigenTrustVerifier: {:?}", e);
+						return;
+					},
+				};
 
 			println!("EigenTrustVerifier deployed at {:?}", verifier_address);
 		},

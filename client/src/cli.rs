@@ -5,7 +5,6 @@ use eigen_trust_client::attestation::{Attestation, DOMAIN_PREFIX, DOMAIN_PREFIX_
 use ethers::{
 	abi::Address,
 	providers::Http,
-	signers::coins_bip39::{English, Mnemonic},
 	types::{H160, H256},
 };
 use std::str::FromStr;
@@ -47,9 +46,6 @@ pub struct UpdateData {
 	/// Domain id (20-byte hex string)
 	#[clap(long = "domain")]
 	domain: Option<String>,
-	/// Ethereum wallet mnemonic phrase
-	#[clap(long = "mnemonic")]
-	mnemonic: Option<String>,
 	/// URL of the Ethereum node to connect to
 	#[clap(long = "node")]
 	node_url: Option<String>,
@@ -68,11 +64,6 @@ pub fn handle_update(config: &mut ClientConfig, data: UpdateData) -> Result<(), 
 	if let Some(domain) = data.domain {
 		config.as_address =
 			H160::from_str(&domain).map_err(|_| "Failed to parse domain")?.to_string();
-	}
-
-	if let Some(mnemonic) = data.mnemonic {
-		Mnemonic::<English>::new_from_phrase(&mnemonic).map_err(|_| "Failed to parse mnemonic.")?;
-		config.mnemonic = mnemonic;
 	}
 
 	if let Some(node_url) = data.node_url {
@@ -160,7 +151,6 @@ mod tests {
 		let config = ClientConfig {
 			as_address: "test".to_string(),
 			domain: "0x0000000000000000000000000000000000000000".to_string(),
-			mnemonic: "test".to_string(),
 			node_url: "http://localhost:8545".to_string(),
 			verifier_address: "test".to_string(),
 		};
