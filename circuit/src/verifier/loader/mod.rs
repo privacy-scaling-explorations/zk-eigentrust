@@ -45,8 +45,8 @@ where
 	pub(crate) sponge: H::Config,
 	// Aux_init and Aux_fin for the ecc_mul operation
 	pub(crate) auxes: (
-		AssignedPoint<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS, P>,
-		AssignedPoint<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS, P>,
+		AssignedPoint<C, NUM_LIMBS, NUM_BITS, P>,
+		AssignedPoint<C, NUM_LIMBS, NUM_BITS, P>,
 	),
 	// PhantomData
 	_curve: PhantomData<C>,
@@ -631,7 +631,7 @@ where
 	C::Scalar: FieldExt,
 {
 	// Inner value for the halo2 loaded point
-	pub(crate) inner: AssignedPoint<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS, P>,
+	pub(crate) inner: AssignedPoint<C, NUM_LIMBS, NUM_BITS, P>,
 	// Loader
 	pub(crate) loader: LoaderConfig<'a, C, L, P, H, EC>,
 	_h: PhantomData<H>,
@@ -647,8 +647,7 @@ where
 {
 	/// Creates a new Halo2LScalar
 	pub fn new(
-		value: AssignedPoint<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS, P>,
-		loader: LoaderConfig<'a, C, L, P, H, EC>,
+		value: AssignedPoint<C, NUM_LIMBS, NUM_BITS, P>, loader: LoaderConfig<'a, C, L, P, H, EC>,
 	) -> Self {
 		return Self { inner: value, loader, _h: PhantomData };
 	}

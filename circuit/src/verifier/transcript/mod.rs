@@ -266,9 +266,8 @@ where
 		let assigned_integer_y =
 			AssignedInteger::<_, _, NUM_LIMBS, NUM_BITS, P>::new(y, assigned_y.try_into().unwrap());
 
-		let assigned_point = AssignedPoint::<_, _, NUM_LIMBS, NUM_BITS, P>::new(
-			assigned_integer_x, assigned_integer_y,
-		);
+		let assigned_point =
+			AssignedPoint::<_, NUM_LIMBS, NUM_BITS, P>::new(assigned_integer_x, assigned_integer_y);
 		let loaded_point = Halo2LEcPoint::new(assigned_point, loader.clone());
 		self.common_ec_point(&loaded_point)?;
 
@@ -515,7 +514,7 @@ mod test {
 					assigned_coordinates.1,
 				);
 
-				let assigned_point = AssignedPoint::<_, _, NUM_LIMBS, NUM_BITS, P>::new(
+				let assigned_point = AssignedPoint::<_, NUM_LIMBS, NUM_BITS, P>::new(
 					assigned_integer_x, assigned_integer_y,
 				);
 				let ec_point = Halo2LEcPoint::new(assigned_point, loader.clone());
