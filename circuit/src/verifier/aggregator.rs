@@ -160,7 +160,7 @@ impl Clone for Aggregator {
 	/// Returns a copy of the value.
 	fn clone(&self) -> Self {
 		Self {
-			svk: self.svk.clone(),
+			svk: self.svk,
 			snarks: self.snarks.clone(),
 			instances: self.instances.clone(),
 			as_proof: self.as_proof.clone(),
@@ -305,8 +305,7 @@ impl Circuit<Fr> for Aggregator {
 					for inst_vec in &snark.instances {
 						let mut inst_vec_collector = Vec::new();
 						for inst in inst_vec {
-							let value =
-								ctx.assign_advice(config.common.advice[advice_i], inst.clone())?;
+							let value = ctx.assign_advice(config.common.advice[advice_i], *inst)?;
 							inst_vec_collector.push(value);
 
 							advice_i += 1;

@@ -304,21 +304,21 @@ where
 
 		let fr1 = FullRoundChip::<F, WIDTH, P>::new(self.inputs, 0);
 		let (state1, round_end) = fr1.synthesize(
-			&common,
+			common,
 			&config.fr_selector,
 			layouter.namespace(|| "full_round_1"),
 		)?;
 
 		let pr = PartialRoundChip::<F, WIDTH, P>::new(state1, round_end);
 		let (state2, round_end) = pr.synthesize(
-			&common,
+			common,
 			&config.pr_selector,
 			layouter.namespace(|| "partial_round_1"),
 		)?;
 
 		let fr2 = FullRoundChip::<F, WIDTH, P>::new(state2, round_end);
 		let (state3, _) = fr2.synthesize(
-			&common,
+			common,
 			&config.fr_selector,
 			layouter.namespace(|| "full_round_2"),
 		)?;

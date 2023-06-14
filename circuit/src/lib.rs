@@ -12,7 +12,7 @@
 #![deny(
 	// Complexity
 	clippy::unnecessary_cast,
-	// clippy::needless_question_mark,
+	clippy::needless_question_mark,
 	// Pedantic
 	clippy::cast_lossless,
 	clippy::cast_possible_wrap,
@@ -21,7 +21,7 @@
 	// Restriction
 	clippy::panic,
 	// Style
-	// clippy::let_and_return,
+	clippy::let_and_return,
 	// clippy::needless_borrow
 )]
 
@@ -310,8 +310,8 @@ pub fn calculate_message_hash<const N: usize, const S: usize>(
 		assert!(score.len() == N);
 	}
 
-	let pks_x: Vec<Scalar> = pks.iter().map(|pk| pk.0.x.clone()).collect();
-	let pks_y: Vec<Scalar> = pks.iter().map(|pk| pk.0.y.clone()).collect();
+	let pks_x: Vec<Scalar> = pks.iter().map(|pk| pk.0.x).collect();
+	let pks_y: Vec<Scalar> = pks.iter().map(|pk| pk.0.y).collect();
 	let mut pk_sponge = PoseidonNativeSponge::new();
 	pk_sponge.update(&pks_x);
 	pk_sponge.update(&pks_y);
@@ -326,8 +326,7 @@ pub fn calculate_message_hash<const N: usize, const S: usize>(
 
 			let final_hash_input =
 				[pks_hash, scores_hash, Scalar::zero(), Scalar::zero(), Scalar::zero()];
-			let final_hash = PoseidonNativeHasher::new(final_hash_input).permute()[0];
-			final_hash
+			PoseidonNativeHasher::new(final_hash_input).permute()[0]
 		})
 		.collect();
 

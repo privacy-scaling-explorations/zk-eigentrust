@@ -92,7 +92,7 @@ where
 			k0 |= &one << (i * window_size);
 		}
 
-		if (leftover != 0) {
+		if leftover != 0 {
 			k0 = k0 << leftover;
 			k0 = k0.add(&one);
 		}
@@ -101,8 +101,7 @@ where
 			C::ScalarExt::ZERO.sub(big_to_fe::<C::ScalarExt>(k0)),
 		));
 
-		let to_sub = aux_to_add.mul_scalar(factor);
-		to_sub
+		aux_to_add.mul_scalar(factor)
 	}
 
 	/// Add one point to another

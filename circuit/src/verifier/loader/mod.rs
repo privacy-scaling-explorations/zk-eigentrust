@@ -209,7 +209,7 @@ where
 	pub fn new(
 		value: AssignedCell<C::Scalar, C::Scalar>, loader: LoaderConfig<'a, C, L, P, H>,
 	) -> Self {
-		return Self { inner: value, loader, _h: PhantomData };
+		Self { inner: value, loader, _h: PhantomData }
 	}
 }
 
@@ -554,7 +554,7 @@ where
 				|| "load_const",
 				|region: Region<'_, C::Scalar>| {
 					let mut ctx = RegionCtx::new(region, 0);
-					ctx.assign_fixed(self.common.fixed[0], value.clone())
+					ctx.assign_fixed(self.common.fixed[0], *value)
 				},
 			)
 			.unwrap();
@@ -608,7 +608,7 @@ where
 		value: AssignedPoint<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS, P>,
 		loader: LoaderConfig<'a, C, L, P, H>,
 	) -> Self {
-		return Self { inner: value, loader, _h: PhantomData };
+		Self { inner: value, loader, _h: PhantomData }
 	}
 }
 
@@ -682,8 +682,8 @@ where
 	/// Load a constant elliptic curve point.
 	fn ec_point_load_const(&self, value: &C) -> Self::LoadedEcPoint {
 		let coords: Coordinates<C> = Option::from(value.coordinates()).unwrap();
-		let x = Integer::from_w(coords.x().clone());
-		let y = Integer::from_w(coords.y().clone());
+		let x = Integer::from_w(*coords.x());
+		let y = Integer::from_w(*coords.y());
 		let mut layouter = self.layouter.borrow_mut();
 		let (x_limbs, y_limbs) = layouter
 			.assign_region(

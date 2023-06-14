@@ -106,8 +106,7 @@ where
 		}
 
 		let factor = N::ZERO.sub(big_to_fe::<N>(k0));
-		let to_sub = aux_to_add.mul_scalar(factor);
-		to_sub
+		aux_to_add.mul_scalar(factor)
 	}
 
 	/// Add one point to another

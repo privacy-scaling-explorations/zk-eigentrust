@@ -76,8 +76,7 @@ where
 
 	/// Squeeze a challenge.
 	fn squeeze_challenge(&mut self) -> C::ScalarExt {
-		let res = self.state.squeeze();
-		res
+		self.state.squeeze()
 	}
 
 	/// Update with an elliptic curve point.
@@ -85,8 +84,8 @@ where
 		let coordinates = ec_point.coordinates().unwrap();
 		let x_coordinate = coordinates.x();
 		let y_coordinate = coordinates.y();
-		let x = Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_w(x_coordinate.clone());
-		let y = Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_w(y_coordinate.clone());
+		let x = Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_w(*x_coordinate);
+		let y = Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_w(*y_coordinate);
 
 		self.state.update(&x.limbs);
 		self.state.update(&y.limbs);
@@ -207,8 +206,7 @@ where
 
 	/// Squeeze a challenge.
 	fn squeeze_challenge(&mut self) -> C::ScalarExt {
-		let res = self.state.squeeze();
-		res
+		self.state.squeeze()
 	}
 
 	/// Update with an elliptic curve point.
@@ -220,8 +218,8 @@ where
 			)
 		})?;
 
-		let x: Integer<_, _, NUM_LIMBS, NUM_BITS, P> = Integer::from_w(coords.x().clone());
-		let y: Integer<_, _, NUM_LIMBS, NUM_BITS, P> = Integer::from_w(coords.y().clone());
+		let x: Integer<_, _, NUM_LIMBS, NUM_BITS, P> = Integer::from_w(*coords.x());
+		let y: Integer<_, _, NUM_LIMBS, NUM_BITS, P> = Integer::from_w(*coords.y());
 
 		self.state.update(&x.limbs);
 		self.state.update(&y.limbs);
@@ -231,7 +229,7 @@ where
 
 	/// Update with a scalar.
 	fn common_scalar(&mut self, scalar: &C::ScalarExt) -> Result<(), VerifierError> {
-		self.state.update(&[scalar.clone()]);
+		self.state.update(&[*scalar]);
 
 		Ok(())
 	}

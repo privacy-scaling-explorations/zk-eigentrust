@@ -140,7 +140,7 @@ where
 				}
 
 				let scalar_opt = Option::<C::Scalar>::from(C::Scalar::from_repr(data));
-				if let None = scalar_opt {
+				if scalar_opt.is_none() {
 					return Err(VerifierError::Transcript(
 						ErrorKind::Other,
 						"invalid field element encoding in proof - halo2".to_string(),
@@ -194,7 +194,7 @@ where
 				}
 
 				let point_opt: Option<C> = Option::from(C::from_bytes(&compressed));
-				if let None = point_opt {
+				if point_opt.is_none() {
 					return Err(VerifierError::Transcript(
 						ErrorKind::Other,
 						"invalid point encoding in proof - halo2".to_string(),
@@ -202,7 +202,7 @@ where
 				}
 
 				let coordinates_opt = Option::from(point_opt.unwrap().coordinates());
-				if let None = coordinates_opt {
+				if coordinates_opt.is_none() {
 					return Err(VerifierError::Transcript(
 						ErrorKind::Other,
 						"invalid point coordinates in proof - halo2".to_string(),

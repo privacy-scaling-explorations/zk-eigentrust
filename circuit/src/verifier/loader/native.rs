@@ -261,7 +261,7 @@ where
 
 	/// Performs the unary `-` operation.
 	fn neg(self) -> Self::Output {
-		let res = C::Scalar::neg(self.inner.clone());
+		let res = C::Scalar::neg(self.inner);
 		Self { inner: res, loader: self.loader }
 	}
 }
@@ -292,7 +292,7 @@ where
 
 	/// Load a constant field element.
 	fn load_const(&self, value: &C::Scalar) -> Self::LoadedScalar {
-		LScalar::new(value.clone(), self.clone())
+		LScalar::new(*value, self.clone())
 	}
 
 	/// Assert lhs and rhs field elements are equal.
@@ -358,8 +358,8 @@ where
 	/// Load a constant elliptic curve point.
 	fn ec_point_load_const(&self, value: &C) -> Self::LoadedEcPoint {
 		let coords: Coordinates<C> = Option::from(value.coordinates()).unwrap();
-		let x = Integer::from_w(coords.x().clone());
-		let y = Integer::from_w(coords.y().clone());
+		let x = Integer::from_w(*coords.x());
+		let y = Integer::from_w(*coords.y());
 		let point = EcPoint::new(x, y);
 
 		LEcPoint::new(point, self.clone())
