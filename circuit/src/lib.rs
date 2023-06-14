@@ -22,7 +22,7 @@
 	clippy::panic,
 	// Style
 	clippy::let_and_return,
-	// clippy::needless_borrow
+	clippy::needless_borrow
 )]
 
 use crate::circuit::{PoseidonNativeHasher, PoseidonNativeSponge};

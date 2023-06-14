@@ -99,11 +99,8 @@ where
 				}
 
 				let hasher = H::new(hasher_inputs.clone());
-				let hash = hasher.finalize(
-					&common,
-					&config.hasher,
-					layouter.namespace(|| "level_hash"),
-				)?;
+				let hash =
+					hasher.finalize(common, &config.hasher, layouter.namespace(|| "level_hash"))?;
 				hashes.push(hash[0].clone());
 			}
 			nodes.insert(level + 1, hashes);
@@ -183,11 +180,11 @@ where
 			}
 			let hasher = H::new(hasher_inputs);
 			let hashes =
-				hasher.finalize(&common, &config.hasher, layouter.namespace(|| "level_hash"))?;
+				hasher.finalize(common, &config.hasher, layouter.namespace(|| "level_hash"))?;
 
 			let set = SetChipset::<F>::new(self.nodes[i + 1].to_vec(), hashes[0].clone());
 			let is_inside = set.synthesize(
-				&common,
+				common,
 				&config.set,
 				layouter.namespace(|| "level_membership"),
 			)?;

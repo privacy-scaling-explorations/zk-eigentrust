@@ -658,7 +658,7 @@ where
 				self.q.x.limbs[i].clone(),
 			);
 			selected_x[i] =
-				Some(select.synthesize(&common, &config.main, layouter.namespace(|| "acc_x"))?);
+				Some(select.synthesize(common, &config.main, layouter.namespace(|| "acc_x"))?);
 
 			// Select y coordinate limbs
 			let select = SelectChipset::new(
@@ -667,7 +667,7 @@ where
 				self.q.y.limbs[i].clone(),
 			);
 			selected_y[i] =
-				Some(select.synthesize(&common, &config.main, layouter.namespace(|| "acc_y"))?);
+				Some(select.synthesize(common, &config.main, layouter.namespace(|| "acc_y"))?);
 		}
 
 		let selected_point = if assigned_as_bool::<N>(self.bit) {

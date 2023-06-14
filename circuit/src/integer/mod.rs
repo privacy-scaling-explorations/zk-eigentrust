@@ -171,7 +171,7 @@ where
 				let mut ctx = RegionCtx::new(region, 0);
 				ctx.enable(selector.clone())?;
 				assign(
-					&self.assigned_integer.limbs, None, &reduction_witness, &common, &mut ctx,
+					&self.assigned_integer.limbs, None, &reduction_witness, common, &mut ctx,
 				)
 			},
 		)
@@ -285,7 +285,7 @@ where
 					&self.x.limbs,
 					Some(&self.y.limbs),
 					&reduction_witness,
-					&common,
+					common,
 					&mut ctx,
 				)
 			},
@@ -399,7 +399,7 @@ where
 					&self.x.limbs,
 					Some(&self.y.limbs),
 					&reduction_witness,
-					&common,
+					common,
 					&mut ctx,
 				)
 			},
@@ -516,7 +516,7 @@ where
 					&self.x.limbs,
 					Some(&self.y.limbs),
 					&reduction_witness,
-					&common,
+					common,
 					&mut ctx,
 				)
 			},
@@ -633,7 +633,7 @@ where
 					&self.x.limbs,
 					Some(&self.y.limbs),
 					&reduction_witness,
-					&common,
+					common,
 					&mut ctx,
 				)
 			},

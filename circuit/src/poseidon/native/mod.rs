@@ -105,7 +105,7 @@ where
 	}
 
 	fn finalize(&self) -> [F; WIDTH] {
-		Self::permute(&self)
+		Self::permute(self)
 	}
 }
 

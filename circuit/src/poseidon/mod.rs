@@ -20,7 +20,7 @@ fn load_round_constants<F: FieldExt, const WIDTH: usize>(
 ) -> Result<[Value<F>; WIDTH], Error> {
 	let mut rc_values: [Value<F>; WIDTH] = [(); WIDTH].map(|_| Value::unknown());
 	for i in 0..WIDTH {
-		let rc = round_constants[ctx.offset() * WIDTH + i].clone();
+		let rc = round_constants[ctx.offset() * WIDTH + i];
 		ctx.assign_fixed(config.fixed[i], rc)?;
 		rc_values[i] = Value::known(rc);
 	}
@@ -104,12 +104,12 @@ where
 			|region: Region<'_, F>| {
 				let mut ctx = RegionCtx::new(region, 0);
 				// Assign initial state
-				let mut state_cells = copy_state(&mut ctx, &common, &self.inputs)?;
+				let mut state_cells = copy_state(&mut ctx, common, &self.inputs)?;
 				for _ in 0..half_full_rounds {
 					ctx.enable(selector.clone())?;
 
 					// Assign round constants
-					let rc_values = load_round_constants(&mut ctx, &common, round_constants)?;
+					let rc_values = load_round_constants(&mut ctx, common, round_constants)?;
 
 					// 1. step for the TRF.
 					// AddRoundConstants step.
@@ -219,7 +219,7 @@ where
 					ctx.enable(selector.clone())?;
 
 					// Assign round constants
-					let rc_values = load_round_constants(&mut ctx, &common, round_constants)?;
+					let rc_values = load_round_constants(&mut ctx, common, round_constants)?;
 
 					// 1. step for the TRF.
 					// AddRoundConstants step.

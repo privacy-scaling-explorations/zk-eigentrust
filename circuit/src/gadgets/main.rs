@@ -614,10 +614,10 @@ impl<F: FieldExt> Chipset<F> for AndChipset<F> {
 		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
 		let bool_chip = IsBoolChipset::new(self.x.clone());
-		bool_chip.synthesize(common, &config, layouter.namespace(|| "constraint bit"))?;
+		bool_chip.synthesize(common, config, layouter.namespace(|| "constraint bit"))?;
 
 		let bool_chip = IsBoolChipset::new(self.y.clone());
-		bool_chip.synthesize(common, &config, layouter.namespace(|| "constraint bit"))?;
+		bool_chip.synthesize(common, config, layouter.namespace(|| "constraint bit"))?;
 
 		let mul_chip = MulChipset::new(self.x, self.y);
 		let product = mul_chip.synthesize(common, config, layouter.namespace(|| "mul"))?;

@@ -218,7 +218,7 @@ where
 			aux_init = aux_init.double();
 		}
 
-		let mut num_of_windows = C::ScalarExt::NUM_BITS as usize / sliding_window_usize;
+		let num_of_windows = C::ScalarExt::NUM_BITS as usize / sliding_window_usize;
 
 		let exps: Vec<EcPoint<C, N, NUM_LIMBS, NUM_BITS, P, Q>> = points.to_vec();
 		let bits: Vec<Vec<bool>> = scalars
@@ -420,7 +420,7 @@ mod test {
 		let mut points_vec = vec![];
 		let mut scalars_vec = vec![];
 		let mut results_vec = vec![];
-		for i in 0..num_of_points {
+		for _ in 0..num_of_points {
 			let a = Secp256k1Affine::random(rng.clone());
 			let scalar = Fq::random(rng.clone());
 			scalars_vec.push(Integer::from_w(scalar));
