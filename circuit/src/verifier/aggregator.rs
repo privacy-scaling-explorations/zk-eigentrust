@@ -11,7 +11,7 @@ use super::{
 };
 use crate::{
 	circuit::{FullRoundHasher, PartialRoundHasher},
-	ecc::{
+	ecc::same_curve::{
 		EccAddConfig, EccDoubleConfig, EccMulConfig, EccTableSelectConfig, EccUnreducedLadderConfig,
 	},
 	gadgets::{

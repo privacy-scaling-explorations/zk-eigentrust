@@ -3,7 +3,7 @@ use super::loader::{
 	Halo2LEcPoint, Halo2LScalar, LoaderConfig,
 };
 use crate::{
-	ecc::AssignedPoint,
+	ecc::same_curve::AssignedPoint,
 	integer::{native::Integer, AssignedInteger},
 	params::{ecc::EccParams, rns::RnsParams},
 	FieldExt, RegionCtx, SpongeHasherChipset,
@@ -280,7 +280,7 @@ mod test {
 	use super::{native::NativeTranscriptRead, LoaderConfig, TranscriptReadChipset};
 	use crate::{
 		circuit::{FullRoundHasher, PartialRoundHasher},
-		ecc::{
+		ecc::same_curve::{
 			native::{EcPoint, UnassignedEcPoint},
 			AssignedPoint, EccAddConfig, EccDoubleConfig, EccMulConfig, EccTableSelectConfig,
 			EccUnreducedLadderConfig,

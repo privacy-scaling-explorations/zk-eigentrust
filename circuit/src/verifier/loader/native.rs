@@ -1,5 +1,5 @@
 use crate::{
-	ecc::native::EcPoint,
+	ecc::same_curve::native::EcPoint,
 	integer::native::Integer,
 	params::{ecc::EccParams, rns::RnsParams},
 	FieldExt,
