@@ -228,23 +228,53 @@ impl Client {
 			}
 		}
 
-		// Calculate the trust scores for each participant
-		let scores = eigen_trust_set.converge_rational();
+		// Calculate scores
+		let scores_fr = eigen_trust_set.converge();
+		let scores_rat = eigen_trust_set.converge_rational();
 
-		// Format scores to write to CSV file
-		let formatted_scores: Vec<Vec<String>> = participants
-			.iter()
-			.zip(scores.iter())
-			.map(|(participant, score)| {
-				vec![
-					format!("{:?}", participant),
-					format!("0x{:x}", score.to_integer()),
-					format!("{}", score.numer()),
-					format!("{}", score.denom()),
-					format!("{}", score.numer() / score.denom()),
-				]
-			})
-			.collect();
+		// Check that the scores vectors are of equal length
+		assert_eq!(
+			scores_fr.len(),
+			scores_rat.len(),
+			"Scores vectors are not of equal length"
+		);
+
+		// Check that the scores vector is at least as long as the participants vector
+		assert!(
+			scores_fr.len() >= participants.len(),
+			"There are more participants than scores"
+		);
+
+		// Initialized formatted scores vec
+		let mut formatted_scores: Vec<Vec<String>> = Vec::new();
+
+		// Add headers
+		formatted_scores.push(vec![
+			"peer_address".to_string(),
+			"score_fr".to_string(),
+			"numerator".to_string(),
+			"denominator".to_string(),
+			"score".to_string(),
+		]);
+
+		// Format fields and push to vec
+		for ((&participant, &score_fr), score_rat) in
+			participants.iter().zip(scores_fr.iter()).zip(scores_rat.iter())
+		{
+			let peer_address = format!("{:?}", participant);
+
+			let score_fr_hex =
+				score_fr.to_bytes().iter().map(|byte| format!("{:02x}", byte)).collect::<String>();
+			let score_fr_hex = format!("0x{}", score_fr_hex);
+
+			let numerator = score_rat.numer().to_string();
+			let denominator = score_rat.denom().to_string();
+			let score = score_rat.to_integer().to_string();
+
+			formatted_scores.push(vec![
+				peer_address, score_fr_hex, numerator, denominator, score,
+			]);
+		}
 
 		// Write scores to a CSV file
 		create_csv_file("scores", &formatted_scores).unwrap();
