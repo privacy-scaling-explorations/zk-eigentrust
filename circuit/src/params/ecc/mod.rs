@@ -21,11 +21,10 @@ pub trait EccParams<C: CurveAffine>: Clone + Debug + PartialEq {
 	fn aux_init() -> C;
 
 	/// Make aux_fin when sliding window is > 1.
-	fn make_mul_aux(aux_to_add: C) -> C
+	fn make_mul_aux(aux_to_add: C, window_size: u32) -> C
 	where
 		C::Scalar: FieldExt,
 	{
-		let window_size = Self::window_size();
 		assert!(window_size > 0);
 
 		let n = C::Scalar::NUM_BITS;

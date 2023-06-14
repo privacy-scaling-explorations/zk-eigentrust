@@ -846,15 +846,18 @@ mod test {
 			AssignedInteger, IntegerAddChip, IntegerDivChip, IntegerMulChip, IntegerReduceChip,
 			IntegerSubChip,
 		},
-		params::ecc::bn254::Bn254Params,
-		params::rns::{bn256::Bn256_4_68, RnsParams},
+		params::ecc::{bn254::Bn254Params, EccParams},
+		params::rns::bn256::Bn256_4_68,
 		Chip, Chipset, CommonConfig, RegionCtx, UnassignedValue,
 	};
 	use halo2::{
 		arithmetic::Field,
 		circuit::{Layouter, Region, SimpleFloorPlanner, Value},
 		dev::MockProver,
-		halo2curves::bn256::{Fq, Fr, G1Affine},
+		halo2curves::{
+			bn256::{Fq, Fr, G1Affine},
+			CurveAffine,
+		},
 		plonk::{Circuit, ConstraintSystem, Error},
 	};
 	use num_bigint::BigUint;
@@ -1001,15 +1004,22 @@ mod test {
 		fn synthesize(
 			self, common: &CommonConfig, _: &Self::Config, mut layouter: impl Layouter<N>,
 		) -> Result<Self::Output, Error> {
-			let to_add_x = P::to_add_x();
-			let to_add_y = P::to_add_y();
-			let to_sub_x = P::to_sub_x();
-			let to_sub_y = P::to_sub_y();
+			let to_add = Bn254Params::aux_init();
+			let to_sub = Bn254Params::make_mul_aux(to_add, 1);
 
-			let to_add_x_int = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::from_limbs(to_add_x);
-			let to_add_y_int = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::from_limbs(to_add_y);
-			let to_sub_x_int = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::from_limbs(to_sub_x);
-			let to_sub_y_int = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::from_limbs(to_sub_y);
+			let to_add_x_coord = to_add.coordinates().unwrap();
+			let to_sub_x_coord = to_sub.coordinates().unwrap();
+
+			let to_add_x = to_add_x_coord.x();
+			let to_add_y = to_add_x_coord.y();
+			let to_sub_x = to_sub_x_coord.x();
+			let to_sub_y = to_sub_x_coord.y();
+
+			let to_add_x_int = Integer::from_w(to_add_x.clone());
+			let to_add_y_int = Integer::from_w(to_add_y.clone());
+
+			let to_sub_x_int = Integer::from_w(to_sub_x.clone());
+			let to_sub_y_int = Integer::from_w(to_sub_y.clone());
 
 			let to_add_point = EcPoint::new(to_add_x_int, to_add_y_int);
 			let to_sub_point = EcPoint::new(to_sub_x_int, to_sub_y_int);

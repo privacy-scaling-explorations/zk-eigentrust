@@ -64,9 +64,9 @@ where
 	}
 
 	/// Aux points
-	pub fn aux() -> (Self, Self) {
+	pub fn aux(window_size: u32) -> (Self, Self) {
 		let to_add = EC::aux_init();
-		let to_sub = EC::make_mul_aux(to_add);
+		let to_sub = EC::make_mul_aux(to_add, window_size);
 
 		let to_add_x_coord = to_add.coordinates().unwrap();
 		let to_sub_x_coord = to_sub.coordinates().unwrap();
@@ -163,7 +163,7 @@ where
 
 	/// Scalar multiplication for given point with using ladder
 	pub fn mul_scalar(&self, scalar: Integer<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>) -> Self {
-		let (aux_init, aux_fin) = Self::aux();
+		let (aux_init, aux_fin) = Self::aux(1);
 
 		let exp = self.clone();
 		// Converts given input to its bit by Scalar Field's bit size
@@ -194,7 +194,7 @@ where
 		let sliding_window_size = EC::window_size();
 		assert!(C::ScalarExt::NUM_BITS % sliding_window_size == 0);
 		// AuxGens from article.
-		let (mut aux_init, mut aux_fin) = Self::aux();
+		let (mut aux_init, mut aux_fin) = Self::aux(EC::window_size());
 
 		let mut aux_inits: Vec<EcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>> = Vec::new();
 		for _ in 0..points.len() {

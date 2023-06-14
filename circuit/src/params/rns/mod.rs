@@ -31,14 +31,6 @@ pub trait RnsParams<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_
 	fn right_shifters() -> [N; NUM_LIMBS];
 	/// Returns left shifters.
 	fn left_shifters() -> [N; NUM_LIMBS];
-	/// Returns EcPoint AuxInit's x coordinate
-	fn to_add_x() -> [N; NUM_LIMBS];
-	/// Returns EcPoint AuxInit's y coordinate
-	fn to_add_y() -> [N; NUM_LIMBS];
-	/// Returns EcPoint AuxFin's x coordinate
-	fn to_sub_x() -> [N; NUM_LIMBS];
-	/// Returns EcPoint AuxFin's y coordinate
-	fn to_sub_y() -> [N; NUM_LIMBS];
 	/// Inverts given Integer.
 	fn invert(input: BigUint) -> Option<Integer<W, N, NUM_LIMBS, NUM_BITS, Self>> {
 		let a_w = big_to_fe::<W>(input);
