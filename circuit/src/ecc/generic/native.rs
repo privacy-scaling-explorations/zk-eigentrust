@@ -192,7 +192,6 @@ where
 		points: &[Self], scalars: &[Integer<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>],
 	) -> Vec<Self> {
 		let sliding_window_size = EC::window_size();
-		assert!(C::ScalarExt::NUM_BITS % sliding_window_size == 0);
 		// AuxGens from article.
 		let (mut aux_init, mut aux_fin) = Self::aux(EC::window_size());
 

@@ -25,6 +25,7 @@ pub trait EccParams<C: CurveAffine>: Clone + Debug + PartialEq {
 	where
 		C::Scalar: FieldExt,
 	{
+		assert!(C::Scalar::NUM_BITS % window_size == 0);
 		assert!(window_size > 0);
 
 		let n = C::Scalar::NUM_BITS;

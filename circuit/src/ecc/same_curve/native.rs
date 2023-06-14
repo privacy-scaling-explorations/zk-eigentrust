@@ -206,7 +206,6 @@ where
 	/// Multi-multiplication for given points using sliding window.
 	pub fn multi_mul_scalar(points: &[Self], scalars: &[C::Scalar]) -> Vec<Self> {
 		let sliding_window_size = EC::window_size();
-		assert!(C::Scalar::NUM_BITS % sliding_window_size == 0);
 		// AuxGens from article.
 		let (mut aux_init, mut aux_fin) = Self::aux(EC::window_size());
 
