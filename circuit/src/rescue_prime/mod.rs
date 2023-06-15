@@ -147,8 +147,8 @@ where
 					let mut next_state = state_cells.clone().map(|v| v.value().cloned());
 					// 1. step for the TRF.
 					// S-box.
-					for next_state in next_state.iter_mut().take(WIDTH) {
-						*next_state = next_state.map(|s| P::sbox_f(s));
+					for next_state_i in next_state.iter_mut().take(WIDTH) {
+						*next_state_i = next_state_i.map(|s| P::sbox_f(s));
 					}
 
 					// 2. step for the TRF
@@ -162,9 +162,9 @@ where
 					// 4. step for the TRF
 					// Apply S-box inverse
 					ctx.next();
-					for (i, next_state) in next_state.iter_mut().enumerate().take(WIDTH) {
-						*next_state = next_state.map(|s| P::sbox_inv_f(s));
-						ctx.assign_advice(common.advice[i], *next_state)?;
+					for (i, next_state_i) in next_state.iter_mut().enumerate().take(WIDTH) {
+						*next_state_i = next_state_i.map(|s| P::sbox_inv_f(s));
+						ctx.assign_advice(common.advice[i], *next_state_i)?;
 					}
 
 					// 5. step for the TRF

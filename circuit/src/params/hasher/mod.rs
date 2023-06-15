@@ -94,9 +94,9 @@ pub trait RoundParams<F: FieldExt, const WIDTH: usize>: Sbox + Clone {
 		let mut new_state = [Value::known(F::ZERO); WIDTH];
 		let mds = Self::mds();
 		for i in 0..WIDTH {
-			for (j, next_state) in next_state.iter().enumerate().take(WIDTH) {
+			for (j, next_state_j) in next_state.iter().enumerate().take(WIDTH) {
 				let mds_ij = &Value::known(mds[i][j]);
-				let m_product = *next_state * mds_ij;
+				let m_product = *next_state_j * mds_ij;
 				new_state[i] = new_state[i] + m_product;
 			}
 		}

@@ -115,10 +115,10 @@ where
 					// AddRoundConstants step.
 					let state_vals = state_cells.clone().map(|v| v.value().cloned());
 					let mut next_state = P::apply_round_constants_val(&state_vals, &rc_values);
-					for nstate in next_state.iter_mut().take(WIDTH) {
+					for next_state_i in next_state.iter_mut().take(WIDTH) {
 						// 2. step for the TRF.
 						// SubWords step, denoted by S-box.
-						*nstate = nstate.map(|s| P::sbox_f(s));
+						*next_state_i = next_state_i.map(|s| P::sbox_f(s));
 					}
 
 					// 3. step for the TRF.
