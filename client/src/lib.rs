@@ -263,8 +263,11 @@ impl Client {
 		{
 			let peer_address = format!("{:?}", participant);
 
-			let score_fr_hex =
-				score_fr.to_bytes().iter().map(|byte| format!("{:02x}", byte)).collect::<String>();
+			let score_fr_hex = {
+				let mut score_fr_bytes = score_fr.to_bytes();
+				score_fr_bytes.reverse(); // Reverse bytes for big endian format
+				score_fr_bytes.iter().map(|byte| format!("{:02x}", byte)).collect::<String>()
+			};
 			let score_fr_hex = format!("0x{}", score_fr_hex);
 
 			let numerator = score_rat.numer().to_string();
