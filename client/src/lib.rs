@@ -21,27 +21,27 @@
 
 // Rustc
 #![warn(trivial_casts)]
-// #![deny(
-// 	absolute_paths_not_starting_with_crate, deprecated, future_incompatible, missing_docs,
-// 	nonstandard_style, unreachable_code, unreachable_patterns
-// )]
+#![deny(
+	absolute_paths_not_starting_with_crate, deprecated, future_incompatible, nonstandard_style,
+	unreachable_code, unreachable_patterns
+)]
 #![forbid(unsafe_code)]
 // Clippy
 // #![allow(clippy::tabs_in_doc_comments)]
 #![deny(
 // 	// Complexity
-// 	clippy::unnecessary_cast,
-// 	// clippy::needless_question_mark,
+ 	clippy::unnecessary_cast,
+	clippy::needless_question_mark,
 // 	// Pedantic
-// 	clippy::cast_lossless,
-// 	clippy::cast_possible_wrap,
+ 	clippy::cast_lossless,
+ 	clippy::cast_possible_wrap,
 // 	// Perf
 	clippy::redundant_clone,
 // 	// Restriction
-// 	clippy::panic,
+ 	clippy::panic,
 // 	// Style
-// 	// clippy::let_and_return,
-// 	// clippy::needless_borrow
+ 	clippy::let_and_return,
+ 	clippy::needless_borrow
 )]
 
 pub mod att_station;
@@ -211,17 +211,17 @@ impl Client {
 
 		// Add participants to set
 		for participant in &participants {
-			let participant_fr = scalar_from_address(&participant).unwrap();
+			let participant_fr = scalar_from_address(participant).unwrap();
 			eigen_trust_set.add_member(participant_fr);
 		}
 
 		// Update the set with the opinions of each participant
-		for i in 0..participants.len() {
-			for j in 0..attestation_matrix[i].len() {
-				if let Some(att) = attestation_matrix[i][j].clone() {
+		for attestation_matrix_i in attestation_matrix.iter().take(participants.len()) {
+			for j in 0..attestation_matrix_i.len() {
+				if let Some(att) = attestation_matrix_i[j].clone() {
 					let participant_pub_key = att.recover_public_key().unwrap();
 
-					eigen_trust_set.update_op(participant_pub_key, attestation_matrix[i].clone());
+					eigen_trust_set.update_op(participant_pub_key, attestation_matrix_i.clone());
 
 					break;
 				}

@@ -51,7 +51,7 @@ impl Attestation {
 		};
 
 		// Value
-		let value = Scalar::from(self.value as u64);
+		let value = Scalar::from(u64::from(self.value));
 
 		// Message
 		let mut message_fixed = *self.message.as_fixed_bytes();
@@ -134,7 +134,7 @@ impl AttestationPayload {
 	/// Get the ECDSA recoverable signature
 	pub fn get_signature(&self) -> RecoverableSignature {
 		let concat_sig = [self.sig_r, self.sig_s].concat();
-		let recovery_id = RecoveryId::from_i32(self.rec_id as i32).unwrap();
+		let recovery_id = RecoveryId::from_i32(i32::from(self.rec_id)).unwrap();
 
 		RecoverableSignature::from_compact(concat_sig.as_slice(), recovery_id).unwrap()
 	}
