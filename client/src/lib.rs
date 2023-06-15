@@ -72,7 +72,7 @@ use ethers::{
 };
 use secp256k1::{ecdsa::RecoverableSignature, Message, SecretKey, SECP256K1};
 use serde::{Deserialize, Serialize};
-use std::{collections::HashSet, sync::Arc};
+use std::{collections::BTreeSet, sync::Arc};
 
 /// Max amount of participants
 const MAX_NEIGHBOURS: usize = 4;
@@ -181,7 +181,7 @@ impl Client {
 		let attestations = self.get_attestations().await?;
 
 		// Construct a set to hold unique participant addresses
-		let mut participants_set = HashSet::<Address>::new();
+		let mut participants_set = BTreeSet::<Address>::new();
 
 		// Insert the attester and attested of each attestation into the set
 		for (signed_att, att) in &attestations {
