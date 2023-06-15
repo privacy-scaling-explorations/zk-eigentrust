@@ -84,25 +84,25 @@ where
 					let to_sub_x = to_sub_x_coord.x();
 					let to_sub_y = to_sub_x_coord.y();
 
-					let to_add_x_int = Integer::from_w(to_add_x.clone());
-					let to_add_y_int = Integer::from_w(to_add_y.clone());
+					let to_add_x_int = Integer::from_w(*to_add_x);
+					let to_add_y_int = Integer::from_w(*to_add_y);
 
-					let to_sub_x_int = Integer::from_w(to_sub_x.clone());
-					let to_sub_y_int = Integer::from_w(to_sub_y.clone());
+					let to_sub_x_int = Integer::from_w(*to_sub_x);
+					let to_sub_y_int = Integer::from_w(*to_sub_y);
 
 					let mut init_x_limbs: [Option<AssignedCell<C::Scalar, C::Scalar>>; NUM_LIMBS] =
 						[(); NUM_LIMBS].map(|_| None);
 					let mut init_y_limbs: [Option<AssignedCell<C::Scalar, C::Scalar>>; NUM_LIMBS] =
 						[(); NUM_LIMBS].map(|_| None);
 
-					for i in 0..NUM_LIMBS {
+					for (i, limb) in init_x_limbs.iter_mut().enumerate().take(NUM_LIMBS) {
 						let x = ctx.assign_fixed(common.fixed[i], to_add_x_int.limbs[i])?;
-						init_x_limbs[i] = Some(x);
+						*limb = Some(x);
 					}
 					ctx.next();
-					for i in 0..NUM_LIMBS {
+					for (i, limb) in init_y_limbs.iter_mut().enumerate().take(NUM_LIMBS) {
 						let y = ctx.assign_fixed(common.fixed[i], to_add_y_int.limbs[i])?;
-						init_y_limbs[i] = Some(y);
+						*limb = Some(y);
 					}
 
 					ctx.next();
@@ -112,14 +112,14 @@ where
 					let mut fin_y_limbs: [Option<AssignedCell<C::Scalar, C::Scalar>>; NUM_LIMBS] =
 						[(); NUM_LIMBS].map(|_| None);
 
-					for i in 0..NUM_LIMBS {
+					for (i, limb) in fin_x_limbs.iter_mut().enumerate().take(NUM_LIMBS) {
 						let x = ctx.assign_fixed(common.fixed[i], to_sub_x_int.limbs[i])?;
-						fin_x_limbs[i] = Some(x);
+						*limb = Some(x);
 					}
 					ctx.next();
-					for i in 0..NUM_LIMBS {
+					for (i, limb) in fin_y_limbs.iter_mut().enumerate().take(NUM_LIMBS) {
 						let y = ctx.assign_fixed(common.fixed[i], to_sub_y_int.limbs[i])?;
-						fin_y_limbs[i] = Some(y);
+						*limb = Some(y);
 					}
 
 					let init_x_limbs = init_x_limbs.map(|x| x.unwrap());
@@ -508,8 +508,8 @@ where
 	}
 }
 
-impl<'a, 'b, C: CurveAffine, L: Layouter<C::Scalar>, P, H, EC> SubAssign<Self>
-	for Halo2LScalar<'b, C, L, P, H, EC>
+impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, H, EC> SubAssign<Self>
+	for Halo2LScalar<'a, C, L, P, H, EC>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	H: SpongeHasherChipset<C::Scalar>,

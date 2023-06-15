@@ -76,11 +76,11 @@ where
 		let to_sub_x = to_sub_x_coord.x();
 		let to_sub_y = to_sub_x_coord.y();
 
-		let to_add_x_int = Integer::from_w(to_add_x.clone());
-		let to_add_y_int = Integer::from_w(to_add_y.clone());
+		let to_add_x_int = Integer::from_w(*to_add_x);
+		let to_add_y_int = Integer::from_w(*to_add_y);
 
-		let to_sub_x_int = Integer::from_w(to_sub_x.clone());
-		let to_sub_y_int = Integer::from_w(to_sub_y.clone());
+		let to_sub_x_int = Integer::from_w(*to_sub_x);
+		let to_sub_y_int = Integer::from_w(*to_sub_y);
 
 		let to_add = Self::new(to_add_x_int, to_add_y_int);
 		let to_sub = Self::new(to_sub_x_int, to_sub_y_int);

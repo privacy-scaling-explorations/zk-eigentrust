@@ -287,7 +287,7 @@ where
 
 	/// Performs the unary `-` operation.
 	fn neg(self) -> Self::Output {
-		let res = C::Scalar::neg(self.inner.clone());
+		let res = C::Scalar::neg(self.inner);
 		Self::new(res, self.loader)
 	}
 }
