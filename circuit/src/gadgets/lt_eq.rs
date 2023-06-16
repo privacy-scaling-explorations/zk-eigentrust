@@ -72,7 +72,7 @@ impl<F: FieldExt> Chip<F> for NShiftedChip<F> {
 			|| "less_than_equal",
 			|region: Region<'_, F>| {
 				let mut ctx = RegionCtx::new(region, 0);
-				ctx.enable(selector.clone())?;
+				ctx.enable(*selector)?;
 
 				let assigned_x = ctx.copy_assign(common.advice[0], self.x.clone())?;
 				let assigned_y = ctx.copy_assign(common.advice[1], self.y.clone())?;

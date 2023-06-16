@@ -20,7 +20,7 @@ fn load_round_constants<F: FieldExt, const WIDTH: usize>(
 ) -> Result<[Value<F>; WIDTH], Error> {
 	let mut rc_values: [Value<F>; WIDTH] = [(); WIDTH].map(|_| Value::unknown());
 	for i in 0..WIDTH {
-		let rc = round_constants[ctx.offset() * WIDTH + i].clone();
+		let rc = round_constants[ctx.offset() * WIDTH + i];
 		ctx.assign_fixed(config.fixed[i], rc)?;
 		rc_values[i] = Value::known(rc);
 	}
@@ -69,10 +69,10 @@ where
 			// AddRoundConstants step.
 			let mut exprs = P::apply_round_constants_expr(&state, &round_constants);
 			// Applying S-boxes for the full round.
-			for i in 0..WIDTH {
+			for expr in exprs.iter_mut().take(WIDTH) {
 				// 2. step for the TRF.
 				// SubWords step, denoted by S-box.
-				exprs[i] = P::sbox_expr(exprs[i].clone());
+				*expr = P::sbox_expr(expr.clone());
 			}
 			// 3. step for the TRF.
 			// MixLayer step.
@@ -104,21 +104,21 @@ where
 			|region: Region<'_, F>| {
 				let mut ctx = RegionCtx::new(region, 0);
 				// Assign initial state
-				let mut state_cells = copy_state(&mut ctx, &common, &self.inputs)?;
+				let mut state_cells = copy_state(&mut ctx, common, &self.inputs)?;
 				for _ in 0..half_full_rounds {
-					ctx.enable(selector.clone())?;
+					ctx.enable(*selector)?;
 
 					// Assign round constants
-					let rc_values = load_round_constants(&mut ctx, &common, round_constants)?;
+					let rc_values = load_round_constants(&mut ctx, common, round_constants)?;
 
 					// 1. step for the TRF.
 					// AddRoundConstants step.
 					let state_vals = state_cells.clone().map(|v| v.value().cloned());
 					let mut next_state = P::apply_round_constants_val(&state_vals, &rc_values);
-					for i in 0..WIDTH {
+					for next_state_i in next_state.iter_mut().take(WIDTH) {
 						// 2. step for the TRF.
 						// SubWords step, denoted by S-box.
-						next_state[i] = next_state[i].map(|s| P::sbox_f(s));
+						*next_state_i = next_state_i.map(|s| P::sbox_f(s));
 					}
 
 					// 3. step for the TRF.
@@ -216,10 +216,10 @@ where
 				let mut ctx = RegionCtx::new(region, 0);
 				let mut state_cells = copy_state(&mut ctx, common, &self.inputs)?;
 				for _ in 0..partial_rounds {
-					ctx.enable(selector.clone())?;
+					ctx.enable(*selector)?;
 
 					// Assign round constants
-					let rc_values = load_round_constants(&mut ctx, &common, round_constants)?;
+					let rc_values = load_round_constants(&mut ctx, common, round_constants)?;
 
 					// 1. step for the TRF.
 					// AddRoundConstants step.
@@ -236,7 +236,7 @@ where
 					// Assign next state
 					ctx.next();
 					for i in 0..WIDTH {
-						let new_state = next_state[i].clone();
+						let new_state = next_state[i];
 						state_cells[i] = ctx.assign_advice(common.advice[i], new_state)?;
 					}
 				}
@@ -304,21 +304,21 @@ where
 
 		let fr1 = FullRoundChip::<F, WIDTH, P>::new(self.inputs, 0);
 		let (state1, round_end) = fr1.synthesize(
-			&common,
+			common,
 			&config.fr_selector,
 			layouter.namespace(|| "full_round_1"),
 		)?;
 
 		let pr = PartialRoundChip::<F, WIDTH, P>::new(state1, round_end);
 		let (state2, round_end) = pr.synthesize(
-			&common,
+			common,
 			&config.pr_selector,
 			layouter.namespace(|| "partial_round_1"),
 		)?;
 
 		let fr2 = FullRoundChip::<F, WIDTH, P>::new(state2, round_end);
 		let (state3, _) = fr2.synthesize(
-			&common,
+			common,
 			&config.fr_selector,
 			layouter.namespace(|| "full_round_2"),
 		)?;

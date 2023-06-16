@@ -91,8 +91,7 @@ pub fn write_yul_data(code: String, file_name: &str) -> Result<(), IoError> {
 pub fn read_yul_data(file_name: &str) -> String {
 	let current_dir = current_dir().unwrap();
 	let str_path = current_dir.join(format!("../data/{}.yul", file_name));
-	let code = read_string(str_path);
-	code
+	read_string(str_path)
 }
 
 /// Writes json to fule
@@ -354,8 +353,7 @@ pub fn power_of_two<F: FieldExt>(n: usize) -> F {
 /// Get the little-endian bits array of [`Field`] element
 pub fn fe_to_le_bits<F: FieldExt>(e: F) -> Vec<bool> {
 	let le_bytes = fe_to_big(e).to_bytes_le();
-	let le_bits = to_bits(&le_bytes);
-	le_bits
+	to_bits(&le_bytes)
 }
 
 /// Returns modulus of the [`FieldExt`] as [`BigUint`].

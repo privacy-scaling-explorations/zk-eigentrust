@@ -45,15 +45,13 @@ where
 				if i % ARITY != 0 {
 					continue;
 				}
-				for j in 0..ARITY {
-					hasher_inputs[j] = nodes[&level][i + j];
-				}
+				hasher_inputs[..ARITY].copy_from_slice(&nodes[&level][i..(ARITY + i)]);
 				let hasher = H::new(hasher_inputs);
 				hashes.push(hasher.finalize()[0]);
 			}
 			nodes.insert(level + 1, hashes);
 		}
-		let root = nodes[&HEIGHT][0].clone();
+		let root = nodes[&HEIGHT][0];
 		MerkleTree { nodes, height: HEIGHT, root, _h: PhantomData }
 	}
 }
@@ -84,12 +82,12 @@ where
 		let value = merkle_tree.nodes[&0][value_index];
 		let mut path_arr: [[F; ARITY]; LENGTH] = [[F::ZERO; ARITY]; LENGTH];
 
-		for level in 0..merkle_tree.height {
+		for (level, nodes) in path_arr.iter_mut().enumerate().take(merkle_tree.height) {
 			let wrap = value_index.div_rem(&ARITY);
-			for i in 0..ARITY {
-				path_arr[level][i] = merkle_tree.nodes[&level][wrap.0 * ARITY + i];
+			for (i, node) in nodes.iter_mut().enumerate().take(ARITY) {
+				*node = merkle_tree.nodes[&level][wrap.0 * ARITY + i];
 			}
-			value_index = value_index / ARITY;
+			value_index /= ARITY;
 		}
 
 		path_arr[merkle_tree.height][0] = merkle_tree.root;
@@ -101,11 +99,9 @@ where
 		let mut is_satisfied = true;
 		let mut hasher_inputs = [F::ZERO; WIDTH];
 		for i in 0..self.path_arr.len() - 1 {
-			for j in 0..ARITY {
-				hasher_inputs[j] = self.path_arr[i][j];
-			}
+			hasher_inputs[..ARITY].copy_from_slice(&self.path_arr[i][..ARITY]);
 			let hasher = H::new(hasher_inputs);
-			is_satisfied = is_satisfied & self.path_arr[i + 1].contains(&(hasher.finalize()[0]));
+			is_satisfied &= self.path_arr[i + 1].contains(&(hasher.finalize()[0]))
 		}
 		is_satisfied
 	}

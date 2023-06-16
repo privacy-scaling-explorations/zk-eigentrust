@@ -77,27 +77,24 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u1
 		ops: Vec<Vec<Scalar>>,
 	) -> Self {
 		// Pubkey values
-		let pks = pks.into_iter().map(|x| UnassignedPublicKey::from(x)).collect_vec();
-		let pk_x = pks.iter().map(|pk| pk.0.x.clone()).collect();
-		let pk_y = pks.iter().map(|pk| pk.0.y.clone()).collect();
+		let pks = pks.into_iter().map(UnassignedPublicKey::from).collect_vec();
+		let pk_x = pks.iter().map(|pk| pk.0.x).collect();
+		let pk_y = pks.iter().map(|pk| pk.0.y).collect();
 
 		// Signature values
-		let signatures = signatures.into_iter().map(|x| UnassignedSignature::from(x)).collect_vec();
-		let big_r_x = signatures.iter().map(|sig| sig.big_r.x.clone()).collect();
-		let big_r_y = signatures.iter().map(|sig| sig.big_r.y.clone()).collect();
-		let s = signatures.iter().map(|sig| sig.s.clone()).collect();
+		let signatures = signatures.into_iter().map(UnassignedSignature::from).collect_vec();
+		let big_r_x = signatures.iter().map(|sig| sig.big_r.x).collect();
+		let big_r_y = signatures.iter().map(|sig| sig.big_r.y).collect();
+		let s = signatures.iter().map(|sig| sig.s).collect();
 
 		// Opinions
 		let op_pks = op_pks
 			.into_iter()
-			.map(|pks| pks.into_iter().map(|pk| UnassignedPublicKey::from(pk)).collect_vec())
+			.map(|pks| pks.into_iter().map(UnassignedPublicKey::from).collect_vec())
 			.collect_vec();
-		let op_pk_x =
-			op_pks.iter().map(|pks| pks.iter().map(|pk| pk.0.x.clone()).collect()).collect();
-		let op_pk_y =
-			op_pks.iter().map(|pks| pks.iter().map(|pk| pk.0.y.clone()).collect()).collect();
-		let ops =
-			ops.iter().map(|vals| vals.iter().map(|x| Value::known(x.clone())).collect()).collect();
+		let op_pk_x = op_pks.iter().map(|pks| pks.iter().map(|pk| pk.0.x).collect()).collect();
+		let op_pk_y = op_pks.iter().map(|pks| pks.iter().map(|pk| pk.0.y).collect()).collect();
+		let ops = ops.iter().map(|vals| vals.iter().map(|x| Value::known(*x)).collect()).collect();
 
 		Self { pk_x, pk_y, big_r_x, big_r_y, s, op_pk_x, op_pk_y, ops }
 	}
@@ -198,9 +195,8 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u1
 
 				let mut assigned_pk_x = Vec::new();
 				for chunk in self.pk_x.chunks(ADVICE) {
-					for i in 0..chunk.len() {
-						let val = chunk[i].clone();
-						let pk_x = ctx.assign_advice(config.common.advice[i], val)?;
+					for (i, chunk_i) in chunk.iter().enumerate() {
+						let pk_x = ctx.assign_advice(config.common.advice[i], *chunk_i)?;
 						assigned_pk_x.push(pk_x)
 					}
 					// Move to the next row
@@ -209,9 +205,8 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u1
 
 				let mut assigned_pk_y = Vec::new();
 				for chunk in self.pk_y.chunks(ADVICE) {
-					for i in 0..chunk.len() {
-						let val = chunk[i].clone();
-						let pk_y = ctx.assign_advice(config.common.advice[i], val)?;
+					for (i, chunk_i) in chunk.iter().enumerate() {
+						let pk_y = ctx.assign_advice(config.common.advice[i], *chunk_i)?;
 						assigned_pk_y.push(pk_y)
 					}
 					// Move to the next row
@@ -220,9 +215,8 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u1
 
 				let mut assigned_big_r_x = Vec::new();
 				for chunk in self.big_r_x.chunks(ADVICE) {
-					for i in 0..chunk.len() {
-						let val = chunk[i].clone();
-						let big_r_x = ctx.assign_advice(config.common.advice[i], val)?;
+					for (i, chunk_i) in chunk.iter().enumerate() {
+						let big_r_x = ctx.assign_advice(config.common.advice[i], *chunk_i)?;
 						assigned_big_r_x.push(big_r_x)
 					}
 					// Move to the next row
@@ -231,9 +225,8 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u1
 
 				let mut assigned_big_r_y = Vec::new();
 				for chunk in self.big_r_y.chunks(ADVICE) {
-					for i in 0..chunk.len() {
-						let val = chunk[i].clone();
-						let big_r_y = ctx.assign_advice(config.common.advice[i], val)?;
+					for (i, chunk_i) in chunk.iter().enumerate() {
+						let big_r_y = ctx.assign_advice(config.common.advice[i], *chunk_i)?;
 						assigned_big_r_y.push(big_r_y)
 					}
 					// Move to the next row
@@ -242,9 +235,8 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u1
 
 				let mut assigned_s = Vec::new();
 				for chunk in self.s.chunks(ADVICE) {
-					for i in 0..chunk.len() {
-						let val = chunk[i].clone();
-						let s = ctx.assign_advice(config.common.advice[i], val)?;
+					for (i, chunk_i) in chunk.iter().enumerate() {
+						let s = ctx.assign_advice(config.common.advice[i], *chunk_i)?;
 						assigned_s.push(s)
 					}
 					// Move to the next row
@@ -255,9 +247,8 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u1
 				for neighbour_ops in &self.ops {
 					let mut assigned_neighbour_op = Vec::new();
 					for chunk in neighbour_ops.chunks(ADVICE) {
-						for i in 0..chunk.len() {
-							let val = chunk[i].clone();
-							let s = ctx.assign_advice(config.common.advice[i], val)?;
+						for (i, chunk_i) in chunk.iter().enumerate() {
+							let s = ctx.assign_advice(config.common.advice[i], *chunk_i)?;
 							assigned_neighbour_op.push(s)
 						}
 						// Move to the next row
@@ -296,9 +287,8 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u1
 				for neighbour_pk_x in &self.op_pk_x {
 					let mut assigned_neighbour_pk_x = Vec::new();
 					for chunk in neighbour_pk_x.chunks(ADVICE) {
-						for i in 0..chunk.len() {
-							let val = chunk[i].clone();
-							let x = ctx.assign_advice(config.common.advice[i], val)?;
+						for (i, chunk_i) in chunk.iter().enumerate() {
+							let x = ctx.assign_advice(config.common.advice[i], *chunk_i)?;
 							assigned_neighbour_pk_x.push(x);
 						}
 						// Move to the next row
@@ -311,9 +301,8 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u1
 				for neighbour_pk_y in &self.op_pk_y {
 					let mut assigned_neighbour_pk_y = Vec::new();
 					for chunk in neighbour_pk_y.chunks(ADVICE) {
-						for i in 0..chunk.len() {
-							let val = chunk[i].clone();
-							let y = ctx.assign_advice(config.common.advice[i], val)?;
+						for (i, chunk_i) in chunk.iter().enumerate() {
+							let y = ctx.assign_advice(config.common.advice[i], *chunk_i)?;
 							assigned_neighbour_pk_y.push(y);
 						}
 						// Move to the next row
@@ -511,8 +500,8 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u1
 
 				// Distribute the scores
 				let mut op_score_sum = zero.clone();
-				for j in 0..NUM_NEIGHBOURS {
-					let add_chip = AddChipset::new(op_score_sum.clone(), ops_i[j].clone());
+				for ops_ij in ops_i.iter().take(NUM_NEIGHBOURS) {
+					let add_chip = AddChipset::new(op_score_sum.clone(), ops_ij.clone());
 					op_score_sum = add_chip.synthesize(
 						&config.common,
 						&config.main,
@@ -619,13 +608,13 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u1
 		// "Normalization"
 		let ops = {
 			let mut normalized_ops = Vec::new();
-			for i in 0..NUM_NEIGHBOURS {
+			for ops in ops.iter().take(NUM_NEIGHBOURS) {
 				let mut ops_i = Vec::new();
 
 				// Compute the sum of scores
 				let mut op_score_sum = zero.clone();
-				for j in 0..NUM_NEIGHBOURS {
-					let add_chip = AddChipset::new(op_score_sum.clone(), ops[i][j].clone());
+				for op in ops.iter().take(NUM_NEIGHBOURS) {
+					let add_chip = AddChipset::new(op_score_sum.clone(), op.clone());
 					op_score_sum = add_chip.synthesize(
 						&config.common,
 						&config.main,
@@ -645,8 +634,8 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u1
 					layouter.namespace(|| "invert_sum"),
 				)?;
 
-				for j in 0..NUM_NEIGHBOURS {
-					let mul_chip = MulChipset::new(ops[i][j].clone(), inverted_sum.clone());
+				for op in ops.iter().take(NUM_NEIGHBOURS) {
+					let mul_chip = MulChipset::new(op.clone(), inverted_sum.clone());
 					let normalized_op = mul_chip.synthesize(
 						&config.common,
 						&config.main,
@@ -669,8 +658,8 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u1
 			for i in 0..NUM_NEIGHBOURS {
 				let op_i = ops[i].clone();
 				let mut sop_i = Vec::new();
-				for j in 0..NUM_NEIGHBOURS {
-					let mul_chip = MulChipset::new(op_i[j].clone(), s[i].clone());
+				for op in op_i.iter().take(NUM_NEIGHBOURS) {
+					let mul_chip = MulChipset::new(op.clone(), s[i].clone());
 					let res = mul_chip.synthesize(
 						&config.common,
 						&config.main,
@@ -683,8 +672,8 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u1
 
 			let mut new_s = vec![zero.clone(); NUM_NEIGHBOURS];
 			for i in 0..NUM_NEIGHBOURS {
-				for j in 0..NUM_NEIGHBOURS {
-					let add_chip = AddChipset::new(new_s[i].clone(), sop[j][i].clone());
+				for sop in sop.iter().take(NUM_NEIGHBOURS) {
+					let add_chip = AddChipset::new(new_s[i].clone(), sop[i].clone());
 					new_s[i] = add_chip.synthesize(
 						&config.common,
 						&config.main,
@@ -713,8 +702,8 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u1
 
 		// Constrain the total reputation in the set
 		let mut sum = zero;
-		for i in 0..NUM_NEIGHBOURS {
-			let add_chipset = AddChipset::new(sum.clone(), passed_s[i].clone());
+		for passed_s in passed_s.iter().take(NUM_NEIGHBOURS) {
+			let add_chipset = AddChipset::new(sum.clone(), passed_s.clone());
 			sum = add_chipset.synthesize(
 				&config.common,
 				&config.main,

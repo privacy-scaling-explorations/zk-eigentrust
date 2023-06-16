@@ -83,17 +83,16 @@ impl<
 	/// Constructs a new EigenTrust circuit
 	pub fn new(pks: Vec<PublicKey>, signatures: Vec<Signature>, ops: Vec<Vec<Scalar>>) -> Self {
 		// Pubkey values
-		let pk_x = pks.iter().map(|pk| Value::known(pk.0.x.clone())).collect();
-		let pk_y = pks.iter().map(|pk| Value::known(pk.0.y.clone())).collect();
+		let pk_x = pks.iter().map(|pk| Value::known(pk.0.x)).collect();
+		let pk_y = pks.iter().map(|pk| Value::known(pk.0.y)).collect();
 
 		// Signature values
-		let big_r_x = signatures.iter().map(|sig| Value::known(sig.big_r.x.clone())).collect();
-		let big_r_y = signatures.iter().map(|sig| Value::known(sig.big_r.y.clone())).collect();
-		let s = signatures.iter().map(|sig| Value::known(sig.s.clone())).collect();
+		let big_r_x = signatures.iter().map(|sig| Value::known(sig.big_r.x)).collect();
+		let big_r_y = signatures.iter().map(|sig| Value::known(sig.big_r.y)).collect();
+		let s = signatures.iter().map(|sig| Value::known(sig.s)).collect();
 
 		// Opinions
-		let ops =
-			ops.iter().map(|vals| vals.iter().map(|x| Value::known(x.clone())).collect()).collect();
+		let ops = ops.iter().map(|vals| vals.iter().map(|x| Value::known(*x)).collect()).collect();
 
 		Self { pk_x, pk_y, big_r_x, big_r_y, s, ops }
 	}
@@ -115,7 +114,7 @@ impl<
 			}
 
 			let msg = Scalar::random(rng.clone());
-			let sig = sign(&sk, &pk, msg.clone());
+			let sig = sign(&sk, &pk, msg);
 
 			pks.push(pk);
 			messages.push(msg);
@@ -213,9 +212,8 @@ impl<
 
 					let mut assigned_pk_x = Vec::new();
 					for chunk in self.pk_x.chunks(ADVICE) {
-						for i in 0..chunk.len() {
-							let val = chunk[i].clone();
-							let pk_x = ctx.assign_advice(config.common.advice[i], val)?;
+						for (i, chunk_i) in chunk.iter().enumerate() {
+							let pk_x = ctx.assign_advice(config.common.advice[i], *chunk_i)?;
 							assigned_pk_x.push(pk_x)
 						}
 						// Move to the next row
@@ -224,9 +222,8 @@ impl<
 
 					let mut assigned_pk_y = Vec::new();
 					for chunk in self.pk_y.chunks(ADVICE) {
-						for i in 0..chunk.len() {
-							let val = chunk[i].clone();
-							let pk_y = ctx.assign_advice(config.common.advice[i], val)?;
+						for (i, chunk_i) in chunk.iter().enumerate() {
+							let pk_y = ctx.assign_advice(config.common.advice[i], *chunk_i)?;
 							assigned_pk_y.push(pk_y)
 						}
 						// Move to the next row
@@ -235,9 +232,8 @@ impl<
 
 					let mut assigned_big_r_x = Vec::new();
 					for chunk in self.big_r_x.chunks(ADVICE) {
-						for i in 0..chunk.len() {
-							let val = chunk[i].clone();
-							let big_r_x = ctx.assign_advice(config.common.advice[i], val)?;
+						for (i, chunk_i) in chunk.iter().enumerate() {
+							let big_r_x = ctx.assign_advice(config.common.advice[i], *chunk_i)?;
 							assigned_big_r_x.push(big_r_x)
 						}
 						// Move to the next row
@@ -246,9 +242,8 @@ impl<
 
 					let mut assigned_big_r_y = Vec::new();
 					for chunk in self.big_r_y.chunks(ADVICE) {
-						for i in 0..chunk.len() {
-							let val = chunk[i].clone();
-							let big_r_y = ctx.assign_advice(config.common.advice[i], val)?;
+						for (i, chunk_i) in chunk.iter().enumerate() {
+							let big_r_y = ctx.assign_advice(config.common.advice[i], *chunk_i)?;
 							assigned_big_r_y.push(big_r_y)
 						}
 						// Move to the next row
@@ -257,9 +252,8 @@ impl<
 
 					let mut assigned_s = Vec::new();
 					for chunk in self.s.chunks(ADVICE) {
-						for i in 0..chunk.len() {
-							let val = chunk[i].clone();
-							let s = ctx.assign_advice(config.common.advice[i], val)?;
+						for (i, chunk_i) in chunk.iter().enumerate() {
+							let s = ctx.assign_advice(config.common.advice[i], *chunk_i)?;
 							assigned_s.push(s)
 						}
 						// Move to the next row
@@ -270,9 +264,8 @@ impl<
 					for neighbour_ops in &self.ops {
 						let mut assigned_neighbour_op = Vec::new();
 						for chunk in neighbour_ops.chunks(ADVICE) {
-							for i in 0..chunk.len() {
-								let val = chunk[i].clone();
-								let s = ctx.assign_advice(config.common.advice[i], val)?;
+							for (i, chunk_i) in chunk.iter().enumerate() {
+								let s = ctx.assign_advice(config.common.advice[i], *chunk_i)?;
 								assigned_neighbour_op.push(s)
 							}
 							// Move to the next row
@@ -354,8 +347,8 @@ impl<
 			for i in 0..NUM_NEIGHBOURS {
 				let op_i = ops[i].clone();
 				let mut local_distr = Vec::new();
-				for j in 0..NUM_NEIGHBOURS {
-					let mul_chip = MulChipset::new(op_i[j].clone(), s[i].clone());
+				for op_ij in op_i.iter().take(NUM_NEIGHBOURS) {
+					let mul_chip = MulChipset::new(op_ij.clone(), s[i].clone());
 					let res = mul_chip.synthesize(
 						&config.common,
 						&config.main,
@@ -368,8 +361,8 @@ impl<
 
 			let mut new_s = vec![zero.clone(); NUM_NEIGHBOURS];
 			for i in 0..NUM_NEIGHBOURS {
-				for j in 0..NUM_NEIGHBOURS {
-					let add_chip = AddChipset::new(new_s[i].clone(), distributions[j][i].clone());
+				for distributions_j in distributions.iter().take(NUM_NEIGHBOURS) {
+					let add_chip = AddChipset::new(new_s[i].clone(), distributions_j[i].clone());
 					new_s[i] = add_chip.synthesize(
 						&config.common,
 						&config.main,
@@ -382,8 +375,8 @@ impl<
 		}
 
 		let mut passed_scaled = Vec::new();
-		for i in 0..NUM_NEIGHBOURS {
-			let mul_chip = MulChipset::new(passed_s[i].clone(), scale.clone());
+		for passed_s_i in passed_s.iter().take(NUM_NEIGHBOURS) {
+			let mul_chip = MulChipset::new(passed_s_i.clone(), scale.clone());
 			let res = mul_chip.synthesize(
 				&config.common,
 				&config.main,
@@ -393,8 +386,8 @@ impl<
 		}
 
 		let mut sum = zero;
-		for i in 0..NUM_NEIGHBOURS {
-			let add_chipset = AddChipset::new(sum.clone(), passed_s[i].clone());
+		for passed_s_i in passed_s.iter().take(NUM_NEIGHBOURS) {
+			let add_chipset = AddChipset::new(sum.clone(), passed_s_i.clone());
 			sum = add_chipset.synthesize(
 				&config.common,
 				&config.main,
@@ -431,8 +424,8 @@ pub fn native<F: FieldExt, const N: usize, const I: usize, const S: u128>(
 ) -> Vec<F> {
 	assert!(s.len() == N);
 	assert!(ops.len() == N);
-	for i in 0..N {
-		assert!(ops[i].len() == N);
+	for ops_i in ops.iter().take(N) {
+		assert!(ops_i.len() == N);
 	}
 
 	for _ in 0..I {
@@ -440,8 +433,8 @@ pub fn native<F: FieldExt, const N: usize, const I: usize, const S: u128>(
 		for i in 0..N {
 			let ops_i = &ops[i];
 			let mut local_distr = Vec::new();
-			for j in 0..N {
-				let op = ops_i[j] * s[i];
+			for ops_ij in ops_i.iter().take(N) {
+				let op = *ops_ij * s[i];
 				local_distr.push(op);
 			}
 			distributions.push(local_distr);
@@ -449,19 +442,19 @@ pub fn native<F: FieldExt, const N: usize, const I: usize, const S: u128>(
 
 		let mut new_s = vec![F::ZERO; N];
 		for i in 0..N {
-			for j in 0..N {
-				new_s[i] += distributions[j][i];
+			for distributions_j in distributions.iter().take(N) {
+				new_s[i] += distributions_j[i];
 			}
 		}
 
 		s = new_s;
 	}
 
-	for i in 0..N {
+	for s_i in s.iter_mut().take(N) {
 		let big_scale = F::from_u128(S.pow(I as u32));
 		let big_scale_inv = big_scale.invert().unwrap();
-		s[i] = s[i] * big_scale_inv;
-		println!("unscaled: {:?}", s[i]);
+		*s_i *= big_scale_inv;
+		println!("unscaled: {:?}", s_i);
 	}
 
 	let mut sum = F::ZERO;

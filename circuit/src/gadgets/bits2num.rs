@@ -91,9 +91,9 @@ impl<F: FieldExt> Chip<F> for Bits2NumChip<F> {
 
 				let mut bits = Vec::new();
 				for i in 0..self.bits.len() {
-					ctx.enable(selector.clone())?;
+					ctx.enable(*selector)?;
 
-					let bit = ctx.assign_advice(common.advice[0], self.bits[i].clone())?;
+					let bit = ctx.assign_advice(common.advice[0], self.bits[i])?;
 					bits.push(bit.clone());
 
 					let cond_e2 = bit.value().cloned() * e2.value().cloned();

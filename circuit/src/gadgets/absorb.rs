@@ -43,12 +43,12 @@ impl<F: FieldExt, const WIDTH: usize> Chip<F> for AbsorbChip<F, WIDTH> {
 			let mut exprs = [(); WIDTH].map(|_| Expression::Constant(F::ZERO));
 
 			let s = v_cells.query_selector(absorb_selector);
-			for i in 0..WIDTH {
+			for (i, expr) in exprs.iter_mut().enumerate().take(WIDTH) {
 				let hasher_exp = v_cells.query_advice(common.advice[i], Rotation::cur());
 				let sponge_exp = v_cells.query_advice(common.advice[i], Rotation::next());
 				let next_sponge_exp = v_cells.query_advice(common.advice[i], Rotation(2));
 				let diff = next_sponge_exp - (sponge_exp + hasher_exp);
-				exprs[i] = s.clone() * diff;
+				*expr = s.clone() * diff;
 			}
 
 			exprs
@@ -64,7 +64,7 @@ impl<F: FieldExt, const WIDTH: usize> Chip<F> for AbsorbChip<F, WIDTH> {
 			|| "absorb",
 			|region: Region<'_, F>| {
 				let mut ctx = RegionCtx::new(region, 0);
-				ctx.enable(selector.clone())?;
+				ctx.enable(*selector)?;
 
 				// Load previous RescuePrime state
 				let loaded_state = copy_state(&mut ctx, common, &self.prev_state)?;
