@@ -1,3 +1,6 @@
+/// Ethereum Utility Module
+///
+/// This module provides types and functionalities for Ethereum blockchain interactions.
 use crate::ClientSigner;
 use eigen_trust_circuit::{
 	dynamic_sets::native::ECDSAPublicKey,

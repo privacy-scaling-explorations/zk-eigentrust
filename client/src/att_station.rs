@@ -13,15 +13,14 @@ use ethers::{
 	},
 	providers::Middleware,
 };
-/// AttestationStation was auto-generated with ethers-rs Abigen. More information at: https://github.com/gakonst/ethers-rs
+#[doc = "AttestationStation was auto-generated with ethers-rs Abigen. More information at: https://github.com/gakonst/ethers-rs"]
 use std::sync::Arc;
 # [rustfmt :: skip] const __ABI : & str = "[{\"type\":\"function\",\"name\":\"attest\",\"inputs\":[{\"internalType\":\"struct AttestationStation.AttestationData[]\",\"name\":\"_attestations\",\"type\":\"tuple[]\",\"components\":[{\"type\":\"address\"},{\"type\":\"bytes32\"},{\"type\":\"bytes\"}]}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"attestations\",\"inputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"},{\"internalType\":\"bytes32\",\"name\":\"\",\"type\":\"bytes32\"}],\"outputs\":[{\"internalType\":\"bytes\",\"name\":\"\",\"type\":\"bytes\"}],\"stateMutability\":\"view\"},{\"type\":\"event\",\"name\":\"AttestationCreated\",\"inputs\":[{\"name\":\"creator\",\"type\":\"address\",\"indexed\":true},{\"name\":\"about\",\"type\":\"address\",\"indexed\":true},{\"name\":\"key\",\"type\":\"bytes32\",\"indexed\":true},{\"name\":\"val\",\"type\":\"bytes\",\"indexed\":false}],\"anonymous\":false}]" ;
-/// The parsed JSON-ABI of the contract.
+#[doc = r" The parsed JSON-ABI of the contract."]
 pub static ATTESTATIONSTATION_ABI: ethers::contract::Lazy<ethers::core::abi::Abi> =
 	ethers::contract::Lazy::new(|| {
 		ethers::core::utils::__serde_json::from_str(__ABI).expect("invalid abi")
 	});
-/// Attestation Station structure
 pub struct AttestationStation<M>(ethers::contract::Contract<M>);
 impl<M> Clone for AttestationStation<M> {
 	fn clone(&self) -> Self {
@@ -41,9 +40,9 @@ impl<M> std::fmt::Debug for AttestationStation<M> {
 	}
 }
 impl<M: ethers::providers::Middleware> AttestationStation<M> {
-	/// Creates a new contract instance with the specified `ethers`
-	/// client at the given `Address`. The contract derefs to a `ethers::Contract`
-	/// object
+	#[doc = r" Creates a new contract instance with the specified `ethers`"]
+	#[doc = r" client at the given `Address`. The contract derefs to a `ethers::Contract`"]
+	#[doc = r" object"]
 	pub fn new<T: Into<ethers::core::types::Address>>(
 		address: T, client: ::std::sync::Arc<M>,
 	) -> Self {
@@ -51,7 +50,7 @@ impl<M: ethers::providers::Middleware> AttestationStation<M> {
 			.into()
 	}
 
-	/// Calls the contract's `attest` (0x5eb5ea10) function
+	#[doc = "Calls the contract's `attest` (0x5eb5ea10) function"]
 	pub fn attest(
 		&self, attestations: ::std::vec::Vec<AttestationData>,
 	) -> ethers::contract::builders::ContractCall<M, ()> {
@@ -60,7 +59,7 @@ impl<M: ethers::providers::Middleware> AttestationStation<M> {
 			.expect("method not found (this should never happen)")
 	}
 
-	/// Calls the contract's `attestations` (0x29b42cb5) function
+	#[doc = "Calls the contract's `attestations` (0x29b42cb5) function"]
 	pub fn attestations(
 		&self, p0: ethers::core::types::Address, p1: ethers::core::types::Address, p2: [u8; 32],
 	) -> ethers::contract::builders::ContractCall<M, ethers::core::types::Bytes> {
@@ -69,14 +68,14 @@ impl<M: ethers::providers::Middleware> AttestationStation<M> {
 			.expect("method not found (this should never happen)")
 	}
 
-	/// Gets the contract's `AttestationCreated` event
+	#[doc = "Gets the contract's `AttestationCreated` event"]
 	pub fn attestation_created_filter(
 		&self,
 	) -> ethers::contract::builders::Event<M, AttestationCreatedFilter> {
 		self.0.event()
 	}
 
-	/// Returns an [`Event`](#ethers_contract::builders::Event) builder for all events of this contract
+	#[doc = r" Returns an [`Event`](#ethers_contract::builders::Event) builder for all events of this contract"]
 	pub fn events(&self) -> ethers::contract::builders::Event<M, AttestationCreatedFilter> {
 		self.0.event_with_filter(Default::default())
 	}
@@ -88,8 +87,6 @@ impl<M: ethers::providers::Middleware> From<ethers::contract::Contract<M>>
 		Self(contract)
 	}
 }
-
-/// Attestation Created Filter structure
 #[derive(
 	Clone,
 	Debug,
@@ -101,20 +98,16 @@ impl<M: ethers::providers::Middleware> From<ethers::contract::Contract<M>>
 )]
 #[ethevent(name = "AttestationCreated", abi = "AttestationCreated(address,address,bytes32,bytes)")]
 pub struct AttestationCreatedFilter {
-	/// Creator
 	#[ethevent(indexed)]
 	pub creator: ethers::core::types::Address,
-	/// About
 	#[ethevent(indexed)]
 	pub about: ethers::core::types::Address,
-	/// Key
 	#[ethevent(indexed)]
 	pub key: [u8; 32],
-	/// Value
 	pub val: ethers::core::types::Bytes,
 }
-/// Container type for all input parameters for the `attest` function with signature \
-/// `attest((address,bytes32,bytes)[])` and selector `[94, 181, 234, 16]`
+#[doc = "Container type for all input parameters for the `attest` function with signature \
+         `attest((address,bytes32,bytes)[])` and selector `[94, 181, 234, 16]`"]
 #[derive(
 	Clone,
 	Debug,
@@ -126,11 +119,10 @@ pub struct AttestationCreatedFilter {
 )]
 #[ethcall(name = "attest", abi = "attest((address,bytes32,bytes)[])")]
 pub struct AttestCall {
-	/// Attestations
 	pub attestations: ::std::vec::Vec<AttestationData>,
 }
-/// Container type for all input parameters for the `attestations` function with signature \
-/// `attestations(address,address,bytes32)` and selector `[41, 180, 44, 181]`
+#[doc = "Container type for all input parameters for the `attestations` function with signature \
+         `attestations(address,address,bytes32)` and selector `[41, 180, 44, 181]`"]
 #[derive(
 	Clone,
 	Debug,
@@ -146,13 +138,9 @@ pub struct AttestationsCall(
 	pub ethers::core::types::Address,
 	pub [u8; 32],
 );
-
-/// Attestation Station Calls structure
 #[derive(Debug, Clone, PartialEq, Eq, ethers :: contract :: EthAbiType)]
 pub enum AttestationStationCalls {
-	/// Attest
 	Attest(AttestCall),
-	/// Attestations
 	Attestations(AttestationsCall),
 }
 impl ethers::core::abi::AbiDecode for AttestationStationCalls {
@@ -194,8 +182,8 @@ impl ::std::convert::From<AttestationsCall> for AttestationStationCalls {
 		AttestationStationCalls::Attestations(var)
 	}
 }
-/// Container type for all return fields from the `attestations` function with signature \
-/// `attestations(address,address,bytes32)` and selector `[41, 180, 44, 181]`
+#[doc = "Container type for all return fields from the `attestations` function with signature \
+         `attestations(address,address,bytes32)` and selector `[41, 180, 44, 181]`"]
 #[derive(
 	Clone,
 	Debug,
@@ -206,7 +194,7 @@ impl ::std::convert::From<AttestationsCall> for AttestationStationCalls {
 	Default,
 )]
 pub struct AttestationsReturn(pub ethers::core::types::Bytes);
-/// `AttestationData(address,bytes32,bytes)`
+#[doc = "`AttestationData(address,bytes32,bytes)`"]
 #[derive(
 	Clone,
 	Debug,

@@ -22,8 +22,8 @@
 // Rustc
 #![warn(trivial_casts)]
 #![deny(
-	absolute_paths_not_starting_with_crate, deprecated, future_incompatible, missing_docs,
-	unreachable_code, unreachable_patterns
+	absolute_paths_not_starting_with_crate, deprecated, future_incompatible, unreachable_code,
+	unreachable_patterns
 )]
 #![forbid(unsafe_code)]
 // Clippy
@@ -44,17 +44,10 @@
  	clippy::needless_borrow
 )]
 
-/// Attestation Station module
 pub mod att_station;
-/// Attestation module
 pub mod attestation;
-/// Error module
 pub mod error;
-/// Ethereum Utility Module.
-///
-/// This module provides types and functionalities for Ethereum blockchain interactions.
 pub mod eth;
-/// Utilities module
 pub mod utils;
 
 use crate::{attestation::address_from_signed_att, utils::create_csv_file};
@@ -91,13 +84,9 @@ const INITIAL_SCORE: u128 = 1000;
 /// Client configuration
 #[derive(Serialize, Deserialize, Debug, EthDisplay, Clone)]
 pub struct ClientConfig {
-	/// As address
 	pub as_address: String,
-	/// Domain
 	pub domain: String,
-	/// Node url
 	pub node_url: String,
-	/// Verifier Address
 	pub verifier_address: String,
 }
 
