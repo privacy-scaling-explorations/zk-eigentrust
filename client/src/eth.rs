@@ -23,7 +23,6 @@ use std::{
 };
 
 // Generate contract bindings
-#[doc = "Calls the contract's `attestations` (0x29b42cb5) function"]
 abigen!(AttestationStation, "../data/AttestationStation.json");
 
 /// Deploys the AttestationStation contract
