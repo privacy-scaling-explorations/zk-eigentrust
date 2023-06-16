@@ -25,6 +25,7 @@
 	absolute_paths_not_starting_with_crate, deprecated, future_incompatible, unreachable_code,
 	unreachable_patterns
 )]
+#![forbid(unsafe_code)]
 #![deny(
 // 	// Complexity
  	clippy::unnecessary_cast,
