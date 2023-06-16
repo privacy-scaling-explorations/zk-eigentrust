@@ -1,6 +1,3 @@
-/// Ethereum Utility Module
-///
-/// This module provides types and functionalities for Ethereum blockchain interactions.
 use crate::ClientSigner;
 use eigen_trust_circuit::{
 	dynamic_sets::native::ECDSAPublicKey,
@@ -26,6 +23,7 @@ use std::{
 };
 
 // Generate contract bindings
+#[doc = "Calls the contract's `attestations` (0x29b42cb5) function"]
 abigen!(AttestationStation, "../data/AttestationStation.json");
 
 /// Deploys the AttestationStation contract
