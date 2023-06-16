@@ -25,9 +25,6 @@
 	absolute_paths_not_starting_with_crate, deprecated, future_incompatible, unreachable_code,
 	unreachable_patterns
 )]
-#![forbid(unsafe_code)]
-// Clippy
-// #![allow(clippy::tabs_in_doc_comments)]
 #![deny(
 // 	// Complexity
  	clippy::unnecessary_cast,
