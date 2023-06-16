@@ -68,7 +68,7 @@ impl<F: FieldExt, const K: usize, const S: usize> MockChip<F>
 			|| "short word check chip",
 			|region| {
 				let mut ctx = RegionCtx::new(region, 0);
-				ctx.enable(selector.clone())?;
+				ctx.enable(*selector)?;
 
 				// Assign original value
 				let assigned_x = ctx.copy_assign(mock_common.common.advice[0], self.x.clone())?;
@@ -181,7 +181,7 @@ impl<F: FieldExt, const K: usize, const N: usize> MockChip<F> for LookupRangeChe
 				let inv_two_pow_k = F::from(1u64 << K).invert().unwrap();
 				for (id, word) in words.into_iter().enumerate() {
 					// Enable q_lookup on this row
-					ctx.enable(selector.clone())?;
+					ctx.enable(*selector)?;
 
 					if id == words_len - 1 {
 						last_word_cell = z.clone();

@@ -497,7 +497,7 @@ impl<F: FieldExt> Chipset<F> for IsZeroChipset<F> {
 			|| "assign_values",
 			|region| {
 				let x_inv = self.x.clone().value().map(|v| v.invert().unwrap_or(F::ZERO));
-				let res = Value::known(F::ONE) - self.x.clone().value().cloned() * x_inv.clone();
+				let res = Value::known(F::ONE) - self.x.clone().value().cloned() * x_inv;
 
 				let mut ctx = RegionCtx::new(region, 0);
 				let zero = ctx.assign_advice(common.advice[0], Value::known(F::ZERO))?;
@@ -614,13 +614,13 @@ impl<F: FieldExt> Chipset<F> for AndChipset<F> {
 		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
 		let bool_chip = IsBoolChipset::new(self.x.clone());
-		bool_chip.synthesize(common, &config, layouter.namespace(|| "constraint bit"))?;
+		bool_chip.synthesize(common, config, layouter.namespace(|| "constraint bit"))?;
 
 		let bool_chip = IsBoolChipset::new(self.y.clone());
-		bool_chip.synthesize(common, &config, layouter.namespace(|| "constraint bit"))?;
+		bool_chip.synthesize(common, config, layouter.namespace(|| "constraint bit"))?;
 
 		let mul_chip = MulChipset::new(self.x, self.y);
-		let product = mul_chip.synthesize(common, &config, layouter.namespace(|| "mul"))?;
+		let product = mul_chip.synthesize(common, config, layouter.namespace(|| "mul"))?;
 
 		Ok(product)
 	}
@@ -668,10 +668,10 @@ impl<F: FieldExt> Chipset<F> for OrChipset<F> {
 		)?;
 
 		let bool_chip = IsBoolChipset::new(self.x.clone());
-		bool_chip.synthesize(common, &config, layouter.namespace(|| "constraint bit"))?;
+		bool_chip.synthesize(common, config, layouter.namespace(|| "constraint bit"))?;
 
 		let bool_chip = IsBoolChipset::new(self.y.clone());
-		bool_chip.synthesize(common, &config, layouter.namespace(|| "constraint bit"))?;
+		bool_chip.synthesize(common, config, layouter.namespace(|| "constraint bit"))?;
 
 		// [a, b, c, d, e]
 		let advices = [self.x, self.y, res.clone(), zero.clone(), zero];

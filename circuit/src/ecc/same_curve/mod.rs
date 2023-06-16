@@ -120,7 +120,7 @@ where
 		// Reduce p_x
 		let p_x = IntegerReduceChip::new(self.p.x);
 		let p_x_reduced = p_x.synthesize(
-			&common,
+			common,
 			&config.integer_reduce_selector,
 			layouter.namespace(|| "reduce_p_x"),
 		)?;
@@ -128,7 +128,7 @@ where
 		// Reduce p_y
 		let p_y = IntegerReduceChip::new(self.p.y);
 		let p_y_reduced = p_y.synthesize(
-			&common,
+			common,
 			&config.integer_reduce_selector,
 			layouter.namespace(|| "reduce_p_y"),
 		)?;
@@ -136,7 +136,7 @@ where
 		// Reduce q_x
 		let q_x = IntegerReduceChip::new(self.q.x);
 		let q_x_reduced = q_x.synthesize(
-			&common,
+			common,
 			&config.integer_reduce_selector,
 			layouter.namespace(|| "reduce_q_x"),
 		)?;
@@ -144,7 +144,7 @@ where
 		// Reduce q_y
 		let q_y = IntegerReduceChip::new(self.q.y);
 		let q_y_reduced = q_y.synthesize(
-			&common,
+			common,
 			&config.integer_reduce_selector,
 			layouter.namespace(|| "reduce_q_y"),
 		)?;
@@ -152,7 +152,7 @@ where
 		// numerator = q.y.sub(&p.y);
 		let numerator_chip = IntegerSubChip::new(q_y_reduced, p_y_reduced.clone());
 		let numerator = numerator_chip.synthesize(
-			&common,
+			common,
 			&config.integer_sub_selector,
 			layouter.namespace(|| "numerator"),
 		)?;
@@ -160,7 +160,7 @@ where
 		// denominator = q.x.sub(&p.x);
 		let denominator_chip = IntegerSubChip::new(q_x_reduced.clone(), p_x_reduced.clone());
 		let denominator = denominator_chip.synthesize(
-			&common,
+			common,
 			&config.integer_sub_selector,
 			layouter.namespace(|| "denominator"),
 		)?;
@@ -168,7 +168,7 @@ where
 		// m = numerator.result.div(&denominator.result)
 		let m_chip = IntegerDivChip::new(numerator, denominator);
 		let m = m_chip.synthesize(
-			&common,
+			common,
 			&config.integer_div_selector,
 			layouter.namespace(|| "m"),
 		)?;
@@ -176,7 +176,7 @@ where
 		// m_squared = m.result.mul(&m.result)
 		let m_squared_chip = IntegerMulChip::new(m.clone(), m.clone());
 		let m_squared = m_squared_chip.synthesize(
-			&common,
+			common,
 			&config.integer_mul_selector,
 			layouter.namespace(|| "m_squared"),
 		)?;
@@ -184,7 +184,7 @@ where
 		// m_squared_minus_p_x = m_squared.result.sub(&p.x)
 		let m_squared_minus_p_x_chip = IntegerSubChip::new(m_squared, p_x_reduced.clone());
 		let m_squared_minus_p_x = m_squared_minus_p_x_chip.synthesize(
-			&common,
+			common,
 			&config.integer_sub_selector,
 			layouter.namespace(|| "m_squared_minus_p_x"),
 		)?;
@@ -192,7 +192,7 @@ where
 		// r_x = m_squared_minus_p_x.result.sub(&q.x)
 		let r_x_chip = IntegerSubChip::new(m_squared_minus_p_x, q_x_reduced);
 		let r_x = r_x_chip.synthesize(
-			&common,
+			common,
 			&config.integer_sub_selector,
 			layouter.namespace(|| "r_x"),
 		)?;
@@ -200,7 +200,7 @@ where
 		// r_x_minus_p_x = p.x.sub(&r_x.result);
 		let r_x_minus_p_x_chip = IntegerSubChip::new(p_x_reduced, r_x.clone());
 		let r_x_minus_p_x = r_x_minus_p_x_chip.synthesize(
-			&common,
+			common,
 			&config.integer_sub_selector,
 			layouter.namespace(|| "r_x_minus_p_x"),
 		)?;
@@ -208,7 +208,7 @@ where
 		// m_times_r_x_minus_p_x = m.result.mul(&r_x_minus_p_x.result);
 		let m_times_r_x_minus_p_x_chip = IntegerMulChip::new(m, r_x_minus_p_x);
 		let m_times_r_x_minus_p_x = m_times_r_x_minus_p_x_chip.synthesize(
-			&common,
+			common,
 			&config.integer_mul_selector,
 			layouter.namespace(|| "m_times_r_x_minus_p_x"),
 		)?;
@@ -216,7 +216,7 @@ where
 		// r_y = m_times_r_x_minus_p_x.result.sub(&p.y)
 		let r_y_chip = IntegerSubChip::new(m_times_r_x_minus_p_x, p_y_reduced);
 		let r_y = r_y_chip.synthesize(
-			&common,
+			common,
 			&config.integer_sub_selector,
 			layouter.namespace(|| "r_y"),
 		)?;
@@ -295,7 +295,7 @@ where
 		// Reduce p_x
 		let p_x = IntegerReduceChip::new(self.p.x.clone());
 		let p_x_reduced = p_x.synthesize(
-			&common,
+			common,
 			&config.integer_reduce_selector,
 			layouter.namespace(|| "reduce_p_x"),
 		)?;
@@ -303,7 +303,7 @@ where
 		// Reduce p_y
 		let p_y = IntegerReduceChip::new(self.p.y);
 		let p_y_reduced = p_y.synthesize(
-			&common,
+			common,
 			&config.integer_reduce_selector,
 			layouter.namespace(|| "reduce_p_y"),
 		)?;
@@ -311,7 +311,7 @@ where
 		// double_p_y = p.y.add(&p.y)
 		let double_p_y_chip = IntegerAddChip::new(p_y_reduced.clone(), p_y_reduced.clone());
 		let double_p_y = double_p_y_chip.synthesize(
-			&common,
+			common,
 			&config.integer_add_selector,
 			layouter.namespace(|| "double_p_y"),
 		)?;
@@ -319,7 +319,7 @@ where
 		// p_x_square = p.x.mul(&p.x)
 		let p_x_square_chip = IntegerMulChip::new(p_x_reduced.clone(), p_x_reduced.clone());
 		let p_x_square = p_x_square_chip.synthesize(
-			&common,
+			common,
 			&config.integer_mul_selector,
 			layouter.namespace(|| "p_x_square"),
 		)?;
@@ -327,7 +327,7 @@ where
 		// p_x_square_times_two = p_x_square.result.add(&p_x_square.result);
 		let p_x_square_times_two_chip = IntegerAddChip::new(p_x_square.clone(), p_x_square.clone());
 		let p_x_square_times_two = p_x_square_times_two_chip.synthesize(
-			&common,
+			common,
 			&config.integer_add_selector,
 			layouter.namespace(|| "p_x_square_times_two"),
 		)?;
@@ -335,7 +335,7 @@ where
 		// p_x_square_times_three = p_x_square.result.add(&p_x_square_times_two.result);
 		let p_x_square_times_three_chip = IntegerAddChip::new(p_x_square_times_two, p_x_square);
 		let p_x_square_times_three = p_x_square_times_three_chip.synthesize(
-			&common,
+			common,
 			&config.integer_add_selector,
 			layouter.namespace(|| "p_x_square_times_three"),
 		)?;
@@ -343,7 +343,7 @@ where
 		// m = p_x_square_times_three.result.div(&double_p_y.result)
 		let m_chip = IntegerDivChip::new(p_x_square_times_three, double_p_y);
 		let m = m_chip.synthesize(
-			&common,
+			common,
 			&config.integer_div_selector,
 			layouter.namespace(|| "m"),
 		)?;
@@ -351,7 +351,7 @@ where
 		// double_p_x = p.x.add(&p.x)
 		let double_p_x_chip = IntegerAddChip::new(p_x_reduced.clone(), p_x_reduced.clone());
 		let double_p_x = double_p_x_chip.synthesize(
-			&common,
+			common,
 			&config.integer_add_selector,
 			layouter.namespace(|| "double_p_x"),
 		)?;
@@ -359,7 +359,7 @@ where
 		// m_squared = m.result.mul(&m.result)
 		let m_squared_chip = IntegerMulChip::new(m.clone(), m.clone());
 		let m_squared = m_squared_chip.synthesize(
-			&common,
+			common,
 			&config.integer_mul_selector,
 			layouter.namespace(|| "m_squared"),
 		)?;
@@ -367,7 +367,7 @@ where
 		// r_x = m_squared.result.sub(&double_p_x.result)
 		let r_x_chip = IntegerSubChip::new(m_squared, double_p_x);
 		let r_x = r_x_chip.synthesize(
-			&common,
+			common,
 			&config.integer_sub_selector,
 			layouter.namespace(|| "r_x"),
 		)?;
@@ -375,7 +375,7 @@ where
 		// p_x_minus_r_x = self.x.sub(&r_x.result)
 		let p_x_minus_r_x_chip = IntegerSubChip::new(p_x_reduced, r_x.clone());
 		let p_x_minus_r_x = p_x_minus_r_x_chip.synthesize(
-			&common,
+			common,
 			&config.integer_sub_selector,
 			layouter.namespace(|| "p_x_minus_r_x"),
 		)?;
@@ -383,7 +383,7 @@ where
 		// m_times_p_x_minus_r_x = m.result.mul(&p_x_minus_r_x.result)
 		let m_times_p_x_minus_r_x_chip = IntegerMulChip::new(m, p_x_minus_r_x);
 		let m_times_p_x_minus_r_x = m_times_p_x_minus_r_x_chip.synthesize(
-			&common,
+			common,
 			&config.integer_mul_selector,
 			layouter.namespace(|| "m_times_p_x_minus_r_x"),
 		)?;
@@ -391,7 +391,7 @@ where
 		// r_y = m_times_p_x_minus_r_x.result.sub(&p.y)
 		let r_y_chip = IntegerSubChip::new(m_times_p_x_minus_r_x, p_y_reduced);
 		let r_y = r_y_chip.synthesize(
-			&common,
+			common,
 			&config.integer_sub_selector,
 			layouter.namespace(|| "r_y"),
 		)?;
@@ -471,7 +471,7 @@ where
 		// numerator = q.y.sub(&p.y)
 		let numerator_chip = IntegerSubChip::new(self.q.y, self.p.y.clone());
 		let numerator = numerator_chip.synthesize(
-			&common,
+			common,
 			&config.integer_sub_selector,
 			layouter.namespace(|| "numerator"),
 		)?;
@@ -479,7 +479,7 @@ where
 		// denominator = q.x.sub(&p.x)
 		let denominator_chip = IntegerSubChip::new(self.q.x.clone(), self.p.x.clone());
 		let denominator = denominator_chip.synthesize(
-			&common,
+			common,
 			&config.integer_sub_selector,
 			layouter.namespace(|| "denominator"),
 		)?;
@@ -487,7 +487,7 @@ where
 		// m_zero = numerator.result.div(&denominator.result)
 		let m_zero_chip = IntegerDivChip::new(numerator, denominator);
 		let m_zero = m_zero_chip.synthesize(
-			&common,
+			common,
 			&config.integer_div_selector,
 			layouter.namespace(|| "m_zero"),
 		)?;
@@ -495,7 +495,7 @@ where
 		// m_zero_squared = m_zero.result.mul(&m_zero.result)
 		let m_zero_squared_chip = IntegerMulChip::new(m_zero.clone(), m_zero.clone());
 		let m_zero_squared = m_zero_squared_chip.synthesize(
-			&common,
+			common,
 			&config.integer_mul_selector,
 			layouter.namespace(|| "m_zero_squared"),
 		)?;
@@ -503,7 +503,7 @@ where
 		// m_zero_squared_minus_p_x = m_zero_squared.result.sub(&p.x)
 		let m_zero_squared_minus_p_x_chip = IntegerSubChip::new(m_zero_squared, self.p.x.clone());
 		let m_zero_squared_minus_p_x = m_zero_squared_minus_p_x_chip.synthesize(
-			&common,
+			common,
 			&config.integer_sub_selector,
 			layouter.namespace(|| "m_zero_squared_minus_p_x"),
 		)?;
@@ -511,7 +511,7 @@ where
 		// x_three = m_zero_squared_minus_p_x.result.sub(&q.x)
 		let x_three_chip = IntegerSubChip::new(m_zero_squared_minus_p_x, self.q.x.clone());
 		let x_three = x_three_chip.synthesize(
-			&common,
+			common,
 			&config.integer_sub_selector,
 			layouter.namespace(|| "x_three"),
 		)?;
@@ -519,7 +519,7 @@ where
 		// double_p_y = p.y.add(&p.y);
 		let double_p_y_chip = IntegerAddChip::new(self.p.y.clone(), self.p.y.clone());
 		let double_p_y = double_p_y_chip.synthesize(
-			&common,
+			common,
 			&config.integer_add_selector,
 			layouter.namespace(|| "double_p_y"),
 		)?;
@@ -527,7 +527,7 @@ where
 		// denom_m_one = x_three.result.sub(&double_p_y.result);
 		let denom_m_one_chip = IntegerSubChip::new(x_three.clone(), self.p.x.clone());
 		let denom_m_one = denom_m_one_chip.synthesize(
-			&common,
+			common,
 			&config.integer_sub_selector,
 			layouter.namespace(|| "denom_m_one"),
 		)?;
@@ -535,7 +535,7 @@ where
 		// div_res = double_p_y.result.div(&denom_m_one)
 		let div_res_chip = IntegerDivChip::new(double_p_y, denom_m_one);
 		let div_res = div_res_chip.synthesize(
-			&common,
+			common,
 			&config.integer_div_selector,
 			layouter.namespace(|| "div_res"),
 		)?;
@@ -543,7 +543,7 @@ where
 		// m_one = m_zero.result.add(&div_res.result);
 		let m_one_chip = IntegerAddChip::new(m_zero, div_res);
 		let m_one = m_one_chip.synthesize(
-			&common,
+			common,
 			&config.integer_add_selector,
 			layouter.namespace(|| "m_one"),
 		)?;
@@ -551,7 +551,7 @@ where
 		// m_one_squared = m_one.result.mul(&m_one.result);
 		let m_one_squared_chip = IntegerMulChip::new(m_one.clone(), m_one.clone());
 		let m_one_squared = m_one_squared_chip.synthesize(
-			&common,
+			common,
 			&config.integer_mul_selector,
 			layouter.namespace(|| "m_one_squared"),
 		)?;
@@ -560,7 +560,7 @@ where
 		// m_one_squared.result.sub(&x_three.result);
 		let m_one_squared_minus_r_x_chip = IntegerSubChip::new(m_one_squared, x_three);
 		let m_one_squared_minus_r_x = m_one_squared_minus_r_x_chip.synthesize(
-			&common,
+			common,
 			&config.integer_sub_selector,
 			layouter.namespace(|| "m_one_squared_minus_r_x"),
 		)?;
@@ -568,7 +568,7 @@ where
 		// r_x = m_one_squared_minus_r_x.result.sub(&p.x);
 		let r_x_chip = IntegerSubChip::new(m_one_squared_minus_r_x, self.p.x.clone());
 		let r_x = r_x_chip.synthesize(
-			&common,
+			common,
 			&config.integer_sub_selector,
 			layouter.namespace(|| "r_x"),
 		)?;
@@ -576,7 +576,7 @@ where
 		// r_x_minus_p_x = r_x.result.sub(&p.x);
 		let r_x_minus_p_x_chip = IntegerSubChip::new(r_x.clone(), self.p.x);
 		let r_x_minus_p_x = r_x_minus_p_x_chip.synthesize(
-			&common,
+			common,
 			&config.integer_sub_selector,
 			layouter.namespace(|| "r_x_minus_p_x"),
 		)?;
@@ -585,7 +585,7 @@ where
 		// m_one.result.mul(&r_x_minus_p_x.result);
 		let m_one_times_r_x_minus_p_x_chip = IntegerMulChip::new(m_one, r_x_minus_p_x);
 		let m_one_times_r_x_minus_p_x = m_one_times_r_x_minus_p_x_chip.synthesize(
-			&common,
+			common,
 			&config.integer_mul_selector,
 			layouter.namespace(|| "m_one_times_r_x_minus_p_x"),
 		)?;
@@ -593,7 +593,7 @@ where
 		// r_y = m_one_times_r_x_minus_p_x.result.sub(&p.y);
 		let r_y_chip = IntegerSubChip::new(m_one_times_r_x_minus_p_x, self.p.y);
 		let r_y = r_y_chip.synthesize(
-			&common,
+			common,
 			&config.integer_sub_selector,
 			layouter.namespace(|| "r_y"),
 		)?;
@@ -674,7 +674,7 @@ where
 				self.q.x.limbs[i].clone(),
 			);
 			selected_x[i] =
-				Some(select.synthesize(&common, &config.main, layouter.namespace(|| "acc_x"))?);
+				Some(select.synthesize(common, &config.main, layouter.namespace(|| "acc_x"))?);
 
 			// Select y coordinate limbs
 			let select = SelectChipset::new(
@@ -683,7 +683,7 @@ where
 				self.q.y.limbs[i].clone(),
 			);
 			selected_y[i] =
-				Some(select.synthesize(&common, &config.main, layouter.namespace(|| "acc_y"))?);
+				Some(select.synthesize(common, &config.main, layouter.namespace(|| "acc_y"))?);
 		}
 
 		let selected_point = if assigned_as_bool::<C::Scalar>(self.bit) {
@@ -818,9 +818,9 @@ where
 		acc_point =
 			acc_add_chip.synthesize(common, &config.add, layouter.namespace(|| "acc_add"))?;
 
-		for i in 2..bits.len() {
+		for bit in bits.iter().skip(2) {
 			let carry_point_chip = EccTableSelectChipset::new(
-				bits[i].clone(),
+				bit.clone(),
 				aux_init_plus_scalar.clone(),
 				self.aux_init.clone(),
 			);

@@ -59,8 +59,8 @@ use snark_verifier::{
 	},
 };
 
-type PSV = PlonkSuccinctVerifier<KzgAs<Bn256, Gwc19>>;
-type SVK = KzgSuccinctVerifyingKey<G1Affine>;
+type Psv = PlonkSuccinctVerifier<KzgAs<Bn256, Gwc19>>;
+type Svk = KzgSuccinctVerifyingKey<G1Affine>;
 
 #[derive(Clone)]
 /// Snark structure
@@ -141,13 +141,13 @@ impl UnassignedSnark {
 	}
 
 	fn proof(&self) -> Option<&[u8]> {
-		self.proof.as_ref().map(Vec::as_slice)
+		self.proof.as_deref()
 	}
 }
 
 struct Aggregator {
 	// Succinct Verifying Key
-	svk: SVK,
+	svk: Svk,
 	// Snarks for the aggregation
 	snarks: Vec<UnassignedSnark>,
 	// Instances
@@ -160,7 +160,7 @@ impl Clone for Aggregator {
 	/// Returns a copy of the value.
 	fn clone(&self) -> Self {
 		Self {
-			svk: self.svk.clone(),
+			svk: self.svk,
 			snarks: self.snarks.clone(),
 			instances: self.instances.clone(),
 			as_proof: self.as_proof.clone(),
@@ -182,11 +182,11 @@ impl Aggregator {
 				PoseidonSponge<Fr, WIDTH, Params>,
 			> = NativeTranscriptRead::init(snark.proof.as_slice());
 
-			let proof = PSV::read_proof(
+			let proof = Psv::read_proof(
 				&svk, &snark.protocol, &snark.instances, &mut transcript_read,
 			)
 			.unwrap();
-			let res = PSV::verify(&svk, &snark.protocol, &snark.instances, &proof).unwrap();
+			let res = Psv::verify(&svk, &snark.protocol, &snark.instances, &proof).unwrap();
 
 			plonk_proofs.extend(res);
 		}
@@ -305,8 +305,7 @@ impl Circuit<Fr> for Aggregator {
 					for inst_vec in &snark.instances {
 						let mut inst_vec_collector = Vec::new();
 						for inst in inst_vec {
-							let value =
-								ctx.assign_advice(config.common.advice[advice_i], inst.clone())?;
+							let value = ctx.assign_advice(config.common.advice[advice_i], *inst)?;
 							inst_vec_collector.push(value);
 
 							advice_i += 1;
@@ -363,16 +362,16 @@ impl Circuit<Fr> for Aggregator {
 					Bn254Params,
 				> = TranscriptReadChipset::new(snark.proof(), loader_config.clone());
 
-				let proof = PSV::read_proof(
+				let proof = Psv::read_proof(
 					&self.svk, &protocol, &loaded_instances, &mut transcript_read,
 				)
 				.unwrap();
-				let res = PSV::verify(&self.svk, &protocol, &loaded_instances, &proof).unwrap();
+				let res = Psv::verify(&self.svk, &protocol, &loaded_instances, &proof).unwrap();
 
 				accumulators.extend(res);
 			}
 
-			let as_proof = self.as_proof.as_ref().map(Vec::as_slice);
+			let as_proof = self.as_proof.as_deref();
 			let mut transcript: TranscriptReadChipset<
 				&[u8],
 				G1Affine,

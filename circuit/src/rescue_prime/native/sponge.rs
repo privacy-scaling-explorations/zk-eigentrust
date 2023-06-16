@@ -63,6 +63,15 @@ where
 	}
 }
 
+impl<F: FieldExt, const WIDTH: usize, P> Default for RescuePrimeSponge<F, WIDTH, P>
+where
+	P: RoundParams<F, WIDTH>,
+{
+	fn default() -> Self {
+		Self::new()
+	}
+}
+
 impl<F: FieldExt, const WIDTH: usize, P> SpongeHasher<F> for RescuePrimeSponge<F, WIDTH, P>
 where
 	P: RoundParams<F, WIDTH>,

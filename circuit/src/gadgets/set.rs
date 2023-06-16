@@ -68,7 +68,7 @@ impl<F: FieldExt> Chip<F> for SetChip<F> {
 				let mut assigned_product = ctx.assign_from_constant(common.advice[3], F::ONE)?;
 				let mut assigned_target = ctx.copy_assign(common.advice[0], self.target.clone())?;
 				for i in 0..self.items.len() {
-					ctx.enable(selector.clone())?;
+					ctx.enable(*selector)?;
 
 					let item_value = ctx.copy_assign(common.advice[1], self.items[i].clone())?;
 

@@ -45,7 +45,7 @@ where
 {
 	let path = format!("../data/{}.csv", filename);
 
-	let mut writer = CsvWriter::from_path(&path).map_err(|_| "Failed to open file")?;
+	let mut writer = CsvWriter::from_path(path).map_err(|_| "Failed to open file")?;
 
 	// Loop over content and write each item
 	for record in content {

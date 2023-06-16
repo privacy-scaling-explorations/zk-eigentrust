@@ -23,7 +23,7 @@ where
 	// Assign limbs
 	for i in 0..NUM_LIMBS {
 		ctx.copy_assign(common.advice[i], x[i].clone())?;
-		if y_opt.is_some() {
+		if let Some(..) = y_opt {
 			let y = y_opt.unwrap();
 			ctx.copy_assign(common.advice[i + NUM_LIMBS], y[i].clone())?;
 		}
@@ -55,8 +55,8 @@ where
 	// Assign result
 	let mut assigned_result: [Option<AssignedCell<N, N>>; NUM_LIMBS] =
 		[(); NUM_LIMBS].map(|_| None);
-	for i in 0..NUM_LIMBS {
-		assigned_result[i] = Some(ctx.assign_advice(
+	for (i, limb) in assigned_result.iter_mut().enumerate().take(NUM_LIMBS) {
+		*limb = Some(ctx.assign_advice(
 			common.advice[i],
 			Value::known(reduction_witness.result.limbs[i]),
 		)?);
@@ -169,9 +169,9 @@ where
 			|| "reduce_operation",
 			|region: Region<'_, N>| {
 				let mut ctx = RegionCtx::new(region, 0);
-				ctx.enable(selector.clone())?;
+				ctx.enable(*selector)?;
 				assign(
-					&self.assigned_integer.limbs, None, &reduction_witness, &common, &mut ctx,
+					&self.assigned_integer.limbs, None, &reduction_witness, common, &mut ctx,
 				)
 			},
 		)
@@ -280,12 +280,12 @@ where
 			|| "add_operation",
 			|region: Region<'_, N>| {
 				let mut ctx = RegionCtx::new(region, 0);
-				ctx.enable(selector.clone())?;
+				ctx.enable(*selector)?;
 				assign(
 					&self.x.limbs,
 					Some(&self.y.limbs),
 					&reduction_witness,
-					&common,
+					common,
 					&mut ctx,
 				)
 			},
@@ -394,12 +394,12 @@ where
 			|| "sub_operation",
 			|region: Region<'_, N>| {
 				let mut ctx = RegionCtx::new(region, 0);
-				ctx.enable(selector.clone())?;
+				ctx.enable(*selector)?;
 				assign(
 					&self.x.limbs,
 					Some(&self.y.limbs),
 					&reduction_witness,
-					&common,
+					common,
 					&mut ctx,
 				)
 			},
@@ -511,12 +511,12 @@ where
 			|| "mul_operation",
 			|region: Region<'_, N>| {
 				let mut ctx = RegionCtx::new(region, 0);
-				ctx.enable(selector.clone())?;
+				ctx.enable(*selector)?;
 				assign(
 					&self.x.limbs,
 					Some(&self.y.limbs),
 					&reduction_witness,
-					&common,
+					common,
 					&mut ctx,
 				)
 			},
@@ -628,12 +628,12 @@ where
 			|| "div_operation",
 			|region: Region<'_, N>| {
 				let mut ctx = RegionCtx::new(region, 0);
-				ctx.enable(selector.clone())?;
+				ctx.enable(*selector)?;
 				assign(
 					&self.x.limbs,
 					Some(&self.y.limbs),
 					&reduction_witness,
-					&common,
+					common,
 					&mut ctx,
 				)
 			},

@@ -49,6 +49,15 @@ where
 	}
 }
 
+impl<F: FieldExt, const WIDTH: usize, P> Default for RescuePrimeSpongeChipset<F, WIDTH, P>
+where
+	P: RoundParams<F, WIDTH>,
+{
+	fn default() -> Self {
+		Self::new()
+	}
+}
+
 impl<F: FieldExt, const WIDTH: usize, P> Chipset<F> for RescuePrimeSpongeChipset<F, WIDTH, P>
 where
 	P: RoundParams<F, WIDTH>,
@@ -67,9 +76,9 @@ where
 				let mut ctx = RegionCtx::new(region, 0);
 
 				let mut state: [Option<AssignedCell<F, F>>; WIDTH] = [(); WIDTH].map(|_| None);
-				for i in 0..WIDTH {
+				for (i, state) in state.iter_mut().enumerate().take(WIDTH) {
 					let zero_asgn = ctx.assign_from_constant(common.advice[i], F::ZERO)?;
-					state[i] = Some(zero_asgn);
+					*state = Some(zero_asgn);
 				}
 				Ok(state.map(|item| item.unwrap()))
 			},
@@ -78,9 +87,7 @@ where
 		let mut state = zero_state.clone();
 		for (i, chunk) in self.inputs.chunks(WIDTH).enumerate() {
 			let mut curr_chunk = zero_state.clone();
-			for j in 0..chunk.len() {
-				curr_chunk[j] = chunk[j].clone();
-			}
+			curr_chunk[..chunk.len()].clone_from_slice(chunk);
 
 			let absorb = AbsorbChip::new(state, curr_chunk);
 			let inputs = absorb.synthesize(

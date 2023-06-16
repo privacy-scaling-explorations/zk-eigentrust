@@ -20,7 +20,7 @@ impl Sbox for Params {
 
 	fn sbox_inv_f<F: FieldExt>(f: F) -> F {
 		// Pow by inverse of 5
-		f.pow(&[
+		f.pow([
 			14981214993055009997, 6006880321387387405, 10624953561019755799, 2789598613442376532,
 		])
 	}

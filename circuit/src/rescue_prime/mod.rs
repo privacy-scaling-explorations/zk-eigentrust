@@ -21,7 +21,7 @@ fn load_round_constants<F: FieldExt, const WIDTH: usize>(
 ) -> Result<[Value<F>; WIDTH], Error> {
 	let mut rc_values: [Value<F>; WIDTH] = [(); WIDTH].map(|_| Value::unknown());
 	for i in 0..WIDTH {
-		let rc = round_constants[(ctx.offset() / 2) * WIDTH + i].clone();
+		let rc = round_constants[(ctx.offset() / 2) * WIDTH + i];
 		ctx.assign_fixed(config.fixed[i], rc)?;
 		rc_values[i] = Value::known(rc);
 	}
@@ -82,8 +82,8 @@ where
 
 			// 1. step for the TRF
 			// Applying S-boxes for the full round.
-			for i in 0..WIDTH {
-				state[i] = P::sbox_expr(state[i].clone());
+			for state in state.iter_mut().take(WIDTH) {
+				*state = P::sbox_expr(state.clone());
 			}
 
 			// 2. step for the TRF
@@ -136,19 +136,19 @@ where
 			|region| {
 				let mut ctx = RegionCtx::new(region, 0);
 				// Assign initial state
-				let mut state_cells = copy_state(&mut ctx, &common, &self.inputs)?;
+				let mut state_cells = copy_state(&mut ctx, common, &self.inputs)?;
 
 				// Assign initial round constants
-				let mut rc_values = load_round_constants(&mut ctx, &common, &round_constants)?;
+				let mut rc_values = load_round_constants(&mut ctx, common, &round_constants)?;
 
 				for _ in 0..full_rounds - 1 {
-					ctx.enable(selector.clone())?;
+					ctx.enable(*selector)?;
 
 					let mut next_state = state_cells.clone().map(|v| v.value().cloned());
 					// 1. step for the TRF.
 					// S-box.
-					for i in 0..WIDTH {
-						next_state[i] = next_state[i].map(|s| P::sbox_f(s));
+					for next_state_i in next_state.iter_mut().take(WIDTH) {
+						*next_state_i = next_state_i.map(|s| P::sbox_f(s));
 					}
 
 					// 2. step for the TRF
@@ -162,9 +162,9 @@ where
 					// 4. step for the TRF
 					// Apply S-box inverse
 					ctx.next();
-					for i in 0..WIDTH {
-						next_state[i] = next_state[i].map(|s| P::sbox_inv_f(s));
-						ctx.assign_advice(common.advice[i], next_state[i])?;
+					for (i, next_state_i) in next_state.iter_mut().enumerate().take(WIDTH) {
+						*next_state_i = next_state_i.map(|s| P::sbox_inv_f(s));
+						ctx.assign_advice(common.advice[i], *next_state_i)?;
 					}
 
 					// 5. step for the TRF
@@ -175,7 +175,7 @@ where
 
 					// 6. step for the TRF
 					// Apply next RoundConstants
-					rc_values = load_round_constants(&mut ctx, &common, &round_constants)?;
+					rc_values = load_round_constants(&mut ctx, common, &round_constants)?;
 					next_state = P::apply_round_constants_val(&next_state, &rc_values);
 
 					// Assign next state

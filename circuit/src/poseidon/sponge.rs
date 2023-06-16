@@ -74,9 +74,7 @@ where
 		let mut state = self.state.clone();
 		for (i, chunk) in inputs.chunks(WIDTH).enumerate() {
 			let mut curr_chunk = [(); WIDTH].map(|_| self.default.clone());
-			for j in 0..chunk.len() {
-				curr_chunk[j] = chunk[j].clone();
-			}
+			curr_chunk[..chunk.len()].clone_from_slice(chunk);
 
 			let absorb = AbsorbChip::new(state.clone(), curr_chunk.clone());
 			let inputs = absorb.synthesize(

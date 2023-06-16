@@ -88,8 +88,8 @@ impl<F: FieldExt, P: EdwardsParams<F>> Point<F, P> {
 		let mut exp: PointProjective<F, P> = self.projective();
 		let scalar_bits = to_bits(scalar.to_repr().as_ref());
 		// Double and add operation.
-		for i in 0..scalar_bits.len() {
-			if scalar_bits[i] {
+		for bits in &scalar_bits {
+			if *bits {
 				r = r.add(&exp);
 			}
 			exp = exp.double();

@@ -101,6 +101,7 @@ impl<const NUM_NEIGHBOURS: usize> Default for Opinion<NUM_NEIGHBOURS> {
 }
 
 /// Dynamic set for EigenTrust
+#[derive(Default)]
 pub struct EigenTrustSet<
 	const NUM_NEIGHBOURS: usize,
 	const NUM_ITERATIONS: usize,
@@ -166,7 +167,7 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITERATIONS: usize, const INITIAL_SCO
 
 		// Distribute the scores to valid peers
 		for i in 0..NUM_NEIGHBOURS {
-			let (pk_i, _) = self.set[i].clone();
+			let (pk_i, _) = self.set[i];
 			if pk_i == PublicKey::default() {
 				continue;
 			}
@@ -188,7 +189,7 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITERATIONS: usize, const INITIAL_SCO
 			//   => [(p1, 0), (p2, 0),  (p3, 0)]
 			for j in 0..NUM_NEIGHBOURS {
 				let (set_pk_j, _) = self.set[j];
-				let (op_pk_j, _) = ops_i.scores[j].clone();
+				let (op_pk_j, _) = ops_i.scores[j];
 
 				let is_diff_pk_j = set_pk_j != op_pk_j;
 				let is_pk_j_null = set_pk_j == PublicKey::default();
@@ -225,7 +226,7 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITERATIONS: usize, const INITIAL_SCO
 			let op_score_sum = ops_i.scores.iter().fold(Fr::zero(), |acc, &(_, score)| acc + score);
 			if op_score_sum == Fr::zero() {
 				for j in 0..NUM_NEIGHBOURS {
-					let (pk_j, _) = ops_i.scores[j].clone();
+					let (pk_j, _) = ops_i.scores[j];
 
 					let is_diff_pk = pk_j != pk_i;
 					let is_not_null = pk_j != PublicKey::default();
@@ -278,16 +279,16 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITERATIONS: usize, const INITIAL_SCO
 		}
 
 		// By this point we should use filtered_opinions
-		let mut s: Vec<Fr> = self.set.iter().map(|(_, score)| score.clone()).collect();
-		let mut new_s: Vec<Fr> = self.set.iter().map(|(_, score)| score.clone()).collect();
+		let mut s: Vec<Fr> = self.set.iter().map(|(_, score)| *score).collect();
+		let mut new_s: Vec<Fr> = self.set.iter().map(|(_, score)| *score).collect();
 		for _ in 0..NUM_ITERATIONS {
-			for i in 0..NUM_NEIGHBOURS {
+			for (i, new_s_i) in new_s.iter_mut().enumerate().take(NUM_NEIGHBOURS) {
 				let mut score_i_sum = Fr::zero();
 				for j in 0..NUM_NEIGHBOURS {
-					let score = ops_norm[j][i].clone() * s[j].clone();
+					let score = ops_norm[j][i] * s[j];
 					score_i_sum = score + score_i_sum;
 				}
-				new_s[i] = score_i_sum;
+				*new_s_i = score_i_sum;
 			}
 			s = new_s.clone();
 		}
@@ -345,13 +346,13 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITERATIONS: usize, const INITIAL_SCO
 
 		let mut new_s = s.clone();
 		for _ in 0..NUM_ITERATIONS {
-			for i in 0..NUM_NEIGHBOURS {
+			for (i, new_s_i) in new_s.iter_mut().enumerate().take(NUM_NEIGHBOURS) {
 				let mut score_i_sum = BigRational::zero();
 				for j in 0..NUM_NEIGHBOURS {
 					let score = ops_norm[j][i].clone() * s[j].clone();
 					score_i_sum = score + score_i_sum;
 				}
-				new_s[i] = score_i_sum;
+				*new_s_i = score_i_sum;
 			}
 			s = new_s.clone();
 		}

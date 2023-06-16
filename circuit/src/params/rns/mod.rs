@@ -134,7 +134,7 @@ pub trait RnsParams<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_
 			let res = t_lo + t_hi * lsh_one - r_lo - r_hi * lsh_one - residues[i / 2] * lsh_two + v;
 			v = residues[i / 2];
 			let res_is_zero: bool = res.is_zero().into();
-			is_satisfied = is_satisfied & res_is_zero;
+			is_satisfied &= res_is_zero
 		}
 		is_satisfied
 	}
@@ -190,10 +190,10 @@ pub fn decompose_big<F: FieldExt, const NUM_LIMBS: usize, const BIT_LEN: usize>(
 ) -> [F; NUM_LIMBS] {
 	let mask = BigUint::from(1usize).shl(BIT_LEN) - 1usize;
 	let mut limbs = [F::ZERO; NUM_LIMBS];
-	for i in 0..NUM_LIMBS {
-		let limb = mask.clone() & e.clone();
+	for limb in limbs.iter_mut().take(NUM_LIMBS) {
+		let big = mask.clone() & e.clone();
 		e = e.clone() >> BIT_LEN;
-		limbs[i] = big_to_fe(limb);
+		*limb = big_to_fe(big);
 	}
 	limbs
 }
@@ -204,10 +204,10 @@ pub fn decompose_big_decimal<F: FieldExt, const NUM_LIMBS: usize, const POWER_OF
 ) -> [F; NUM_LIMBS] {
 	let scale = BigUint::from(10usize).pow(POWER_OF_TEN);
 	let mut limbs = [F::ZERO; NUM_LIMBS];
-	for i in 0..NUM_LIMBS {
+	for limb in limbs.iter_mut().take(NUM_LIMBS) {
 		let (new_e, rem) = e.div_mod_floor(&scale);
 		e = new_e;
-		limbs[i] = big_to_fe(rem);
+		*limb = big_to_fe(rem);
 	}
 	limbs
 }
@@ -219,9 +219,9 @@ pub fn compose_big_decimal<F: FieldExt, const NUM_LIMBS: usize, const POWER_OF_T
 	let scale = BigUint::from(10usize).pow(POWER_OF_TEN);
 	limbs.reverse();
 	let mut val = fe_to_big(limbs[0]);
-	for i in 1..NUM_LIMBS {
+	for limb in limbs.iter().take(NUM_LIMBS).skip(1) {
 		val *= scale.clone();
-		val += fe_to_big(limbs[i]);
+		val += fe_to_big(*limb);
 	}
 	val
 }
@@ -230,12 +230,12 @@ pub fn compose_big_decimal<F: FieldExt, const NUM_LIMBS: usize, const POWER_OF_T
 pub fn compose_big_decimal_f<F: FieldExt, const NUM_LIMBS: usize, const POWER_OF_TEN: usize>(
 	mut limbs: [F; NUM_LIMBS],
 ) -> F {
-	let scale = F::from_u128(10).pow(&[POWER_OF_TEN as u64]);
+	let scale = F::from_u128(10).pow([POWER_OF_TEN as u64]);
 	limbs.reverse();
 	let mut val = limbs[0];
-	for i in 1..NUM_LIMBS {
+	for limb in limbs.iter().take(NUM_LIMBS).skip(1) {
 		val *= scale;
-		val += limbs[i];
+		val += *limb;
 	}
 	val
 }

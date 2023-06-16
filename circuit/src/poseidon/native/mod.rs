@@ -52,10 +52,10 @@ where
 			// AddRoundConstants step.
 			state = P::apply_round_constants(&state, &round_consts);
 			// Applying S-boxes for the full round.
-			for i in 0..WIDTH {
+			for state in state.iter_mut().take(WIDTH) {
 				// 2. step for the TRF.
 				// SubWords step.
-				state[i] = P::sbox_f(state[i]);
+				*state = P::sbox_f(*state);
 			}
 			// 3. step for the TRF.
 			// MixLayer step.
@@ -82,10 +82,10 @@ where
 			// AddRoundConstants step.
 			state = P::apply_round_constants(&state, &round_consts);
 			// Applying S-boxes for the full round.
-			for i in 0..WIDTH {
+			for state in state.iter_mut().take(WIDTH) {
 				// 2. step for the TRF.
 				// SubWords step, denoted by S-box.
-				state[i] = P::sbox_f(state[i]);
+				*state = P::sbox_f(*state);
 			}
 			// 3. step for the TRF.
 			// MixLayer step.
@@ -105,7 +105,7 @@ where
 	}
 
 	fn finalize(&self) -> [F; WIDTH] {
-		Self::permute(&self)
+		Self::permute(self)
 	}
 }
 
