@@ -1,3 +1,7 @@
+//! # Utils Module.
+//!
+//! This module contains generic utility functions.
+
 use csv::{Reader as CsvReader, Writer as CsvWriter};
 use serde::de::DeserializeOwned;
 use std::{
@@ -7,7 +11,7 @@ use std::{
 	path::Path,
 };
 
-/// Reads the json file and deserialize it into the provided type
+/// Reads the json file and deserialize it into the provided type.
 pub fn read_csv_file<T: DeserializeOwned>(path: impl AsRef<Path>) -> Result<Vec<T>, Error> {
 	let path = path.as_ref();
 	let file = File::open(path)?;
@@ -21,7 +25,7 @@ pub fn read_csv_file<T: DeserializeOwned>(path: impl AsRef<Path>) -> Result<Vec<
 	Ok(records)
 }
 
-/// Reads the json file and deserialize it into the provided type
+/// Reads the json file and deserialize it into the provided type.
 pub fn read_csv_data<T: DeserializeOwned>(file_name: &str) -> Result<Vec<T>, Error> {
 	let current_dir = env::current_dir().unwrap();
 	let path = current_dir.join(format!("../data/{}.csv", file_name));
@@ -36,7 +40,7 @@ pub fn read_csv_data<T: DeserializeOwned>(file_name: &str) -> Result<Vec<T>, Err
 	Ok(records)
 }
 
-/// Creates new CSV file in the given path and stores the provided data
+/// Creates new CSV file in the given path and stores the provided data.
 pub fn create_csv_file<T, U, V>(filename: &str, content: T) -> Result<(), &'static str>
 where
 	T: IntoIterator<Item = U>,
