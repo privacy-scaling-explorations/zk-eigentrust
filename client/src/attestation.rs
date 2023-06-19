@@ -1,3 +1,8 @@
+//! # Attestation Module.
+//!
+//! This module deals with all attestations and AttestationStation related
+//! data types and functionalities.
+
 use crate::{
 	att_station::AttestationData as ContractAttestationData,
 	eth::{address_from_public_key, scalar_from_address},
@@ -9,12 +14,12 @@ use eigen_trust_circuit::{
 use ethers::types::{Address, H256};
 use secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
 
-/// Domain prefix length
-pub const DOMAIN_PREFIX_LEN: usize = 12;
-/// Domain prefix
+/// Domain prefix.
 pub const DOMAIN_PREFIX: [u8; DOMAIN_PREFIX_LEN] = *b"eigen_trust_";
+/// Domain prefix length.
+pub const DOMAIN_PREFIX_LEN: usize = 12;
 
-/// Attestation struct
+/// Attestation struct.
 #[derive(Clone, Debug)]
 pub struct Attestation {
 	/// Ethereum address of peer being rated
@@ -28,12 +33,12 @@ pub struct Attestation {
 }
 
 impl Attestation {
-	/// Construct a new attestation struct
+	/// Constructs a new attestation struct.
 	pub fn new(about: Address, key: H256, value: u8, message: Option<H256>) -> Self {
 		Self { about, key, value, message: message.unwrap_or(H256::from([0u8; 32])) }
 	}
 
-	/// Convert to scalar representation
+	/// Converts the attestation to the scalar representation.
 	pub fn to_attestation_fr(&self) -> Result<AttestationFr, &'static str> {
 		// About
 		let about = scalar_from_address(&self.about)?;
@@ -66,7 +71,7 @@ impl Attestation {
 	}
 }
 
-/// Attestation raw data payload
+/// Attestation raw data payload.
 #[derive(Clone, Debug, PartialEq)]
 pub struct AttestationPayload {
 	sig_r: [u8; 32],
@@ -77,7 +82,7 @@ pub struct AttestationPayload {
 }
 
 impl AttestationPayload {
-	/// Convert a vector of bytes into the struct
+	/// Converts a vector of bytes into the struct.
 	pub fn from_bytes(bytes: Vec<u8>) -> Result<Self, &'static str> {
 		if bytes.len() != 98 {
 			return Err("Input bytes vector should be of length 98");
@@ -96,7 +101,7 @@ impl AttestationPayload {
 		Ok(Self { sig_r, sig_s, rec_id, value, message })
 	}
 
-	/// Create AttestationPayload from SignedAttestation
+	/// Creates an AttestationPayload from a SignedAttestation.
 	pub fn from_signed_attestation(
 		signed_attestation: &SignedAttestation,
 	) -> Result<Self, &'static str> {
@@ -118,7 +123,7 @@ impl AttestationPayload {
 		Ok(Self { sig_r, sig_s, rec_id, value, message })
 	}
 
-	/// Convert the struct into a vector of bytes
+	/// Converts the struct into a vector of bytes.
 	pub fn to_bytes(&self) -> Vec<u8> {
 		let mut bytes = Vec::with_capacity(98);
 
@@ -131,7 +136,7 @@ impl AttestationPayload {
 		bytes
 	}
 
-	/// Get the ECDSA recoverable signature
+	/// Gets the ECDSA recoverable signature.
 	pub fn get_signature(&self) -> RecoverableSignature {
 		let concat_sig = [self.sig_r, self.sig_s].concat();
 		let recovery_id = RecoveryId::from_i32(i32::from(self.rec_id)).unwrap();
@@ -139,18 +144,18 @@ impl AttestationPayload {
 		RecoverableSignature::from_compact(concat_sig.as_slice(), recovery_id).unwrap()
 	}
 
-	/// Get the value
+	/// Gets the attestation value.
 	pub fn get_value(&self) -> u8 {
 		self.value
 	}
 
-	/// Get the message
+	/// Gets the attestation message.
 	pub fn get_message(&self) -> [u8; 32] {
 		self.message
 	}
 }
 
-/// Recover the signing Ethereum address from a signed attestation
+/// Recovers the signing Ethereum address from a signed attestation.
 pub fn address_from_signed_att(
 	signed_attestation: &SignedAttestation,
 ) -> Result<Address, &'static str> {
@@ -161,8 +166,8 @@ pub fn address_from_signed_att(
 	address_from_public_key(&public_key)
 }
 
-/// Construct the contract attestation data from a signed attestation
-/// The return of this function is the actual data stored on the contract
+/// Constructs the contract attestation data from a signed attestation.
+/// The return of this function is the actual data stored on the contract.
 pub fn att_data_from_signed_att(
 	signed_attestation: &SignedAttestation,
 ) -> Result<ContractAttestationData, &'static str> {

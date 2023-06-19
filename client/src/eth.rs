@@ -1,7 +1,8 @@
-/// Ethereum Utility Module
-///
-/// This module provides types and functionalities for Ethereum blockchain interactions.
-use crate::ClientSigner;
+//! # Ethereum Module.
+//!
+//! This module provides types and functionalities for general ethereum interactions.
+
+use crate::{eth::bindings::AttestationStation, ClientSigner};
 use eigen_trust_circuit::{
 	dynamic_sets::native::ECDSAPublicKey,
 	halo2::halo2curves::bn256::Fr as Scalar,
@@ -11,7 +12,7 @@ use eigen_trust_circuit::{
 };
 use ethers::{
 	abi::Address,
-	prelude::{abigen, k256::ecdsa::SigningKey, Abigen, ContractError},
+	prelude::{k256::ecdsa::SigningKey, Abigen, ContractError},
 	providers::Middleware,
 	signers::coins_bip39::{English, Mnemonic},
 	solc::{artifacts::ContractBytecode, Solc},
@@ -25,16 +26,20 @@ use std::{
 	sync::Arc,
 };
 
-// Generate contract bindings
-abigen!(AttestationStation, "../data/AttestationStation.json");
+/// The contract bindings module.
+/// This is a workaround for the `abigen` macro not supporting doc comments as attributes.
+pub mod bindings {
+	#![allow(missing_docs)]
+	ethers::prelude::abigen!(AttestationStation, "../data/AttestationStation.json");
+}
 
-/// Deploys the AttestationStation contract
+/// Deploys the AttestationStation contract.
 pub async fn deploy_as(signer: Arc<ClientSigner>) -> Result<Address, ContractError<ClientSigner>> {
 	let contract = AttestationStation::deploy(signer, ())?.send().await?;
 	Ok(contract.address())
 }
 
-/// Deploys the EtVerifier contract
+/// Deploys the EtVerifier contract.
 pub async fn deploy_verifier(
 	signer: Arc<ClientSigner>, contract_bytes: Vec<u8>,
 ) -> Result<Address, ContractError<ClientSigner>> {
@@ -46,7 +51,7 @@ pub async fn deploy_verifier(
 	Ok(rec.contract_address.unwrap())
 }
 
-/// Calls the EtVerifier contract
+/// Calls the EtVerifier contract.
 pub async fn call_verifier(
 	signer: Arc<ClientSigner>, verifier_address: Address, proof: NativeProof,
 ) {
@@ -57,7 +62,7 @@ pub async fn call_verifier(
 	println!("{:#?}", res);
 }
 
-/// Compile the solidity contracts
+/// Compiles the solidity contracts.
 pub fn compile_sol_contract() {
 	let curr_dir = env::current_dir().unwrap();
 	let contracts_dir = curr_dir.join("../data/");
@@ -80,7 +85,7 @@ pub fn compile_sol_contract() {
 	}
 }
 
-/// Compile the yul contracts
+/// Compiles the yul contracts.
 pub fn compile_yul_contracts() {
 	let curr_dir = env::current_dir().unwrap();
 	let contracts_dir = curr_dir.join("../data/");
@@ -100,7 +105,7 @@ pub fn compile_yul_contracts() {
 	}
 }
 
-/// Returns a vector of ECDSA private keys derived from the given mnemonic phrase
+/// Returns a vector of ECDSA private keys derived from the given mnemonic phrase.
 pub fn ecdsa_secret_from_mnemonic(
 	mnemonic: &str, count: u32,
 ) -> Result<Vec<SecretKey>, &'static str> {
@@ -129,7 +134,7 @@ pub fn ecdsa_secret_from_mnemonic(
 	Ok(keys)
 }
 
-/// Construct an Ethereum address for the given ECDSA public key
+/// Constructs an Ethereum address for the given ECDSA public key.
 pub fn address_from_public_key(pub_key: &ECDSAPublicKey) -> Result<Address, &'static str> {
 	let pub_key_bytes: [u8; 65] = pub_key.serialize_uncompressed();
 
@@ -142,7 +147,7 @@ pub fn address_from_public_key(pub_key: &ECDSAPublicKey) -> Result<Address, &'st
 	Ok(Address::from_slice(address_bytes))
 }
 
-/// Construct a Scalar from the given Ethereum address
+/// Constructs a Scalar from the given Ethereum address.
 pub fn scalar_from_address(address: &Address) -> Result<Scalar, &'static str> {
 	let mut address_fixed = address.to_fixed_bytes();
 	address_fixed.reverse();

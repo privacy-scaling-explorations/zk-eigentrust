@@ -4,6 +4,7 @@
 //! features.
 //!
 //! ## Main characteristics:
+//!
 //! **Self-policing** - the shared ethics of the user population is defined and
 //! enforced by the peers themselves and not by some central authority.
 //!
@@ -16,28 +17,29 @@
 //! resistant to malicious collectives.
 //!
 //! ## Implementation
+//!
 //! The library is implemented according to the original [Eigen Trust paper](http://ilpubs.stanford.edu:8090/562/1/2002-56.pdf).
-//! It is developed under the Ethereum Foundation grant.
+//! It is developed under an Ethereum Foundation grant.
 
 // Rustc
 #![warn(trivial_casts)]
 #![deny(
-	absolute_paths_not_starting_with_crate, deprecated, future_incompatible, unreachable_code,
-	unreachable_patterns
+	absolute_paths_not_starting_with_crate, deprecated, future_incompatible, missing_docs,
+	nonstandard_style, unreachable_code, unreachable_patterns
 )]
 #![forbid(unsafe_code)]
 #![deny(
-// 	// Complexity
+	// Complexity
  	clippy::unnecessary_cast,
 	clippy::needless_question_mark,
-// 	// Pedantic
+	// Pedantic
  	clippy::cast_lossless,
  	clippy::cast_possible_wrap,
-// 	// Perf
+	// Perf
 	clippy::redundant_clone,
-// 	// Restriction
+	// Restriction
  	clippy::panic,
-// 	// Style
+	// Style
  	clippy::let_and_return,
  	clippy::needless_borrow
 )]
@@ -72,32 +74,36 @@ use secp256k1::{ecdsa::RecoverableSignature, Message, SecretKey, SECP256K1};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, sync::Arc};
 
-/// Max amount of participants
+/// Max amount of participants.
 const MAX_NEIGHBOURS: usize = 4;
-/// Number of iterations to run the eigen trust algorithm
+/// Number of iterations to run the eigen trust algorithm.
 const NUM_ITERATIONS: usize = 10;
-/// Initial score for each participant before the algorithms is run
+/// Initial score for each participant before the algorithms is run.
 const INITIAL_SCORE: u128 = 1000;
 
-/// Client configuration
+/// Client configuration settings.
 #[derive(Serialize, Deserialize, Debug, EthDisplay, Clone)]
 pub struct ClientConfig {
+	/// AttestationStation contract address.
 	pub as_address: String,
+	/// Attestation domain identifier.
 	pub domain: String,
+	/// Ethereum node URL.
 	pub node_url: String,
+	/// EigenTrustVerifier contract address.
 	pub verifier_address: String,
 }
 
-/// Local environment configuration
+/// Local environment configuration.
 struct LocalEnv {
 	mnemonic: String,
 	_bandada_api_key: String,
 }
 
-/// Signer type alias
+/// Signer type alias.
 pub type ClientSigner = SignerMiddleware<Provider<Http>, LocalWallet>;
 
-/// Client
+/// Client struct.
 pub struct Client {
 	signer: Arc<ClientSigner>,
 	config: ClientConfig,
@@ -105,7 +111,7 @@ pub struct Client {
 }
 
 impl Client {
-	/// Creates new client
+	/// Creates a new Client instance.
 	pub fn new(config: ClientConfig) -> Self {
 		// Load environment config
 		let env = Self::get_env();
@@ -129,7 +135,7 @@ impl Client {
 		Self { signer: shared_signer, config, env }
 	}
 
-	/// Submit an attestation to the attestation station
+	/// Submits an attestation to the attestation station.
 	pub async fn attest(&self, attestation: Attestation) -> Result<(), EigenError> {
 		let ctx = SECP256K1;
 		let secret_keys: Vec<SecretKey> =
@@ -173,7 +179,7 @@ impl Client {
 		Ok(())
 	}
 
-	/// Calculate scores
+	/// Calculates the EigenTrust global scores.
 	pub async fn calculate_scores(&mut self) -> Result<(), EigenError> {
 		// Get attestations
 		let attestations = self.get_attestations().await?;
@@ -283,7 +289,7 @@ impl Client {
 		Ok(())
 	}
 
-	/// Get the attestations from the contract
+	/// Gets the attestations from the contract.
 	pub async fn get_attestations(
 		&self,
 	) -> Result<Vec<(SignedAttestation, Attestation)>, EigenError> {
@@ -321,18 +327,18 @@ impl Client {
 		Ok(att_tuple)
 	}
 
-	/// Verifies last generated proof
+	/// Verifies last generated proof.
 	pub async fn verify(&self) -> Result<(), EigenError> {
 		// TODO: Verify proof
 		Ok(())
 	}
 
-	/// Gets signer
+	/// Gets signer.
 	pub fn get_signer(&self) -> Arc<ClientSigner> {
 		self.signer.clone()
 	}
 
-	/// Gets local environment variables
+	/// Gets local environment variables.
 	fn get_env() -> LocalEnv {
 		// Load local .env file
 		dotenv().ok();

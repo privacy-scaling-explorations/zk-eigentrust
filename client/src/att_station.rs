@@ -1,3 +1,4 @@
+#![allow(missing_docs)]
 #![allow(clippy::enum_variant_names)]
 #![allow(dead_code)]
 #![allow(clippy::type_complexity)]

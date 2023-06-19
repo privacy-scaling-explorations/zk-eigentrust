@@ -1,3 +1,7 @@
+//! # Error Module.
+//!
+//! This module features the `EigenError` enum for error handling throughout the project.
+
 use serde::ser::StdError;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 

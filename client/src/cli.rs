@@ -1,3 +1,7 @@
+//! # CLI Module.
+//!
+//! This module contains all CLI related data handling and conversions.
+
 use crate::ClientConfig;
 use clap::{Args, Parser, Subcommand};
 use eigen_trust_circuit::utils::write_json_data;
@@ -16,45 +20,45 @@ pub struct Cli {
 	pub mode: Mode,
 }
 
-/// Commands
+/// CLI commands.
 #[derive(Subcommand)]
 pub enum Mode {
-	/// Submit an attestation. Requires 'AttestData'
+	/// Submit an attestation. Requires 'AttestData'.
 	Attest(AttestData),
-	/// Compile the contracts
+	/// Compile the contracts.
 	Compile,
-	/// Deploy the contracts
+	/// Deploy the contracts.
 	Deploy,
-	/// Generate the proofs
+	/// Generate the proofs.
 	Proof,
-	/// Calculate the global scores
+	/// Calculate the global scores.
 	Scores,
-	/// Display the current client configuration
+	/// Display the current client configuration.
 	Show,
-	/// Update the client configuration. Requires 'UpdateData'
+	/// Update the client configuration. Requires 'UpdateData'.
 	Update(UpdateData),
-	/// Verify the proofs
+	/// Verify the proofs.
 	Verify,
 }
 
-/// Configuration update subcommand input
+/// Configuration update subcommand input.
 #[derive(Args, Debug)]
 pub struct UpdateData {
-	/// Address of the AttestationStation contract (20-byte ethereum address)
+	/// AttestationStation contract address (20-byte ethereum address).
 	#[clap(long = "as-address")]
 	as_address: Option<String>,
-	/// Domain id (20-byte hex string)
+	/// Attestation domain identifier (20-byte hex string).
 	#[clap(long = "domain")]
 	domain: Option<String>,
-	/// URL of the Ethereum node to connect to
+	/// Ethereum node URL.
 	#[clap(long = "node")]
 	node_url: Option<String>,
-	/// Address of the Verifier contract (20-byte ethereum address)
+	/// EigenTrustVerifier contract address (20-byte ethereum address).
 	#[clap(long = "verifier")]
 	verifier_address: Option<String>,
 }
 
-/// Handle the CLI project configuration update
+/// Handles the CLI project configuration update.
 pub fn handle_update(config: &mut ClientConfig, data: UpdateData) -> Result<(), &'static str> {
 	if let Some(as_address) = data.as_address {
 		config.as_address =
@@ -80,22 +84,22 @@ pub fn handle_update(config: &mut ClientConfig, data: UpdateData) -> Result<(), 
 	write_json_data(config, "client-config").map_err(|_| "Failed to write config data.")
 }
 
-/// Attestation subcommand input
+/// Attestation subcommand input.
 #[derive(Args, Debug)]
 pub struct AttestData {
-	/// Attested address (20-byte ethereum address)
+	/// Attested address (20-byte ethereum address).
 	#[clap(long = "to")]
 	address: Option<String>,
-	/// Given score (0-255)
+	/// Given score (0-255).
 	#[clap(long = "score")]
 	score: Option<String>,
-	/// Attestation message (hex-encoded)
+	/// Attestation message (32-byte hex string).
 	#[clap(long = "message")]
 	message: Option<String>,
 }
 
 impl AttestData {
-	/// Converts `AttestData` to `Attestation`
+	/// Converts `AttestData` to `Attestation`.
 	pub fn to_attestation(&self, config: &ClientConfig) -> Result<Attestation, &'static str> {
 		// Parse Address
 		let parsed_address: Address = self
