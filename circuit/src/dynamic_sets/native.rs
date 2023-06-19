@@ -377,7 +377,7 @@ mod test {
 	use itertools::Itertools;
 	use num_bigint::ToBigInt;
 	use num_rational::BigRational;
-	use rand::thread_rng;
+	use rand::{thread_rng, Rng};
 
 	const NUM_NEIGHBOURS: usize = 12;
 	const NUM_ITERATIONS: usize = 10;
@@ -876,7 +876,7 @@ mod test {
 		const NUM_LIMBS: usize,
 		const POWER_OF_TEN: usize,
 	>(
-		ops: Vec<Vec<Fr>>,
+		ops: Vec<Vec<Fr>>, threshold: Fr,
 	) -> (
 		Vec<Fr>,
 		Vec<BigRational>,
@@ -913,7 +913,6 @@ mod test {
 		let s_ratios = set.converge_rational();
 
 		let mut tws = Vec::new();
-		let threshold = Fr::from_u128(435);
 		for (&score, ratio) in s.iter().zip(s_ratios.clone()) {
 			let t: Threshold<NUM_LIMBS, POWER_OF_TEN> = Threshold::new(score, ratio, threshold);
 			let tw = t.check_threshold();
@@ -925,42 +924,39 @@ mod test {
 
 	#[test]
 	fn test_scaling_1() {
-		const NUM_NEIGHBOURS: usize = 10;
-		const NUM_ITERATIONS: usize = 30;
-		const INITIAL_SCORE: u128 = 1000;
-		// Constants related to threshold check
-		const NUM_LIMBS: usize = 2;
-		const POWER_OF_TEN: usize = 50;
+		const NUM_NEIGHBOURS: usize = 4;
+		const NUM_ITERATIONS: usize = 20;
+		const INITIAL_SCORE: u128 = 10_u128.pow(3);
 
-		let ops_raw = [
-			// 0 + 15 + 154 + 165 + 0 + 123 + 56 + 222 + 253 + 12 = 1000
-			[0, 15, 154, 165, 0, 123, 56, 222, 253, 12], // - Peer 0 opinions
-			// 210 + 0 + 10 + 210 + 20 + 10 + 20 + 30 + 440 + 50 = 1000
-			[210, 0, 10, 210, 20, 10, 20, 30, 440, 50], // - Peer 1 opinions
-			// 40 + 10 + 0 + 20 + 30 + 410 + 20 + 445 + 23 + 2 = 1000
-			[40, 10, 0, 20, 30, 410, 20, 445, 23, 2], // - Peer 2 opinions
-			// 10 + 18 + 20 + 0 + 310 + 134 + 45 + 12 + 439 + 12 = 1000
-			[10, 18, 20, 0, 310, 134, 45, 12, 439, 12], // - Peer 3 opinions
-			// 30 + 130 + 44 + 210 + 0 + 12 + 445 + 62 + 12 + 55 = 1000
-			[30, 130, 44, 210, 0, 12, 445, 62, 12, 55], // = Peer 4 opinions
-			[0, 15, 154, 165, 123, 0, 56, 222, 253, 12], // - Peer 5 opinions
-			[210, 20, 10, 210, 20, 10, 0, 30, 440, 50], // - Peer 6 opinions
-			[40, 10, 445, 20, 30, 410, 20, 0, 23, 2],   // - Peer 7 opinions
-			[10, 18, 20, 439, 310, 134, 45, 12, 0, 12], // - Peer 8 opinions
-			[30, 130, 44, 210, 55, 12, 445, 62, 12, 0], // = Peer 9 opinions
-		];
+		// Constants related to threshold check
+		const NUM_LIMBS: usize = 100;
+		const POWER_OF_TEN: usize = 50;
+		const THRESHOLD: u128 = 10_u128.pow(3);
+
+		let rng = &mut thread_rng();
+		let mut ops_raw = [(); NUM_NEIGHBOURS].map(|_| [(); NUM_NEIGHBOURS].map(|_| 0_u128));
+		for i in 0..NUM_NEIGHBOURS {
+			for j in 2..NUM_NEIGHBOURS {
+				ops_raw[i][j] = rng.gen::<u8>() as u128;
+			}
+			// let idx = rng.gen::<usize>() % NUM_NEIGHBOURS;
+			// ops_raw[i][idx] = 1;
+			// ops_raw[idx][i] = 1;
+			ops_raw[i][i] = 0;
+		}
 
 		let ops = ops_raw.map(|arr| arr.map(|x| Fr::from_u128(x)).to_vec()).to_vec();
 
 		let start = Instant::now();
 
+		let threshold = Fr::from_u128(THRESHOLD);
 		let (s, s_ratios, tws) = eigen_trust_set_testing_helper::<
 			NUM_NEIGHBOURS,
 			NUM_ITERATIONS,
 			INITIAL_SCORE,
 			NUM_LIMBS,
 			POWER_OF_TEN,
-		>(ops);
+		>(ops, threshold);
 
 		let end = start.elapsed();
 		println!("Convergence time: {:?}", end);
@@ -974,8 +970,9 @@ mod test {
 			let den = compose_big_decimal::<Fr, NUM_LIMBS, POWER_OF_TEN>(tw.den_decomposed);
 			let ratio = BigRational::new(num.to_bigint().unwrap(), den.to_bigint().unwrap());
 			println!(
-				"real score: {:?}, is bigger than 435: {:?}",
+				"real score: {:?}, is bigger than {}: {:?}",
 				ratio.to_integer().to_str_radix(10),
+				THRESHOLD,
 				tw.is_bigger,
 			);
 		}
