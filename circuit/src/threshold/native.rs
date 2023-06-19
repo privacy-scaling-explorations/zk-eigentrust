@@ -1,5 +1,6 @@
 use crate::{
 	params::rns::{compose_big_decimal_f, decompose_big_decimal},
+	utils::big_to_fe,
 	FieldExt,
 };
 use halo2::{arithmetic::Field, halo2curves::bn256::Fr};
@@ -42,8 +43,18 @@ impl<const NUM_LIMBS: usize, const POWER_OF_TEN: usize> Threshold<NUM_LIMBS, POW
 		// Take the highest POWER_OF_TEN digits for comparison
 		// This just means lower precision
 		let threshold = self.threshold;
-		let first_limb_num = *num_decomposed.last().unwrap();
-		let first_limb_den = *den_decomposed.last().unwrap();
+		// let first_limb_num = *num_decomposed.last().unwrap();
+		// let first_limb_den = *den_decomposed.last().unwrap();
+
+		let num_last_non_zero_idx = find_last_non_zero_index(&num_decomposed);
+		let den_last_non_zero_idx = find_last_non_zero_index(&den_decomposed);
+		let limb_idx = num_last_non_zero_idx
+			.unwrap_or_default()
+			.max(den_last_non_zero_idx.unwrap_or_default());
+		println!("limb_idx: {}", limb_idx);
+		let first_limb_num = num_decomposed[limb_idx].clone();
+		let first_limb_den = den_decomposed[limb_idx].clone();
+
 		let comp = first_limb_den * threshold;
 		let is_bigger = first_limb_num >= comp;
 
@@ -61,6 +72,15 @@ pub struct ThresholdWitness<F: FieldExt, const NUM_LIMBS: usize> {
 	pub num_decomposed: [F; NUM_LIMBS],
 	/// Target value denominator decomposition
 	pub den_decomposed: [F; NUM_LIMBS],
+}
+
+fn find_last_non_zero_index(list: &[Fr]) -> Option<usize> {
+	for (index, &element) in list.iter().enumerate().rev() {
+		if element != Fr::zero() {
+			return Some(index);
+		}
+	}
+	None
 }
 
 #[cfg(test)]
