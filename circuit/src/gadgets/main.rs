@@ -1579,7 +1579,7 @@ mod tests {
 	#[test]
 	fn test_matrix() {
 		// Testing x = 5, y = 2 and z = 3.
-		let test_chip = MatrixTestCircuit::new(Fr::from(5123), Fr::from(22441), Fr::from(55621323));
+		let test_chip = MatrixTestCircuit::new(Fr::from(5), Fr::from(2), Fr::from(3));
 
 		let k = 4;
 		let pub_ins = vec![Fr::from(5 * 2 + 3)];
