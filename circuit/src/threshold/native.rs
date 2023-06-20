@@ -1,9 +1,12 @@
+use std::str::FromStr;
+
 use crate::{
 	params::rns::{compose_big_decimal_f, decompose_big_decimal},
 	utils::big_to_fe,
 	FieldExt,
 };
 use halo2::{arithmetic::Field, halo2curves::bn256::Fr};
+use num_bigint::BigUint;
 use num_rational::BigRational;
 
 /// Structure for threshold checks
@@ -28,10 +31,20 @@ impl<const NUM_LIMBS: usize, const POWER_OF_TEN: usize> Threshold<NUM_LIMBS, POW
 		let num = ratio.numer();
 		let den = ratio.denom();
 
-		let num_decomposed =
+		let mut num_decomposed =
 			decompose_big_decimal::<Fr, NUM_LIMBS, POWER_OF_TEN>(num.to_biguint().unwrap());
-		let den_decomposed =
+		let mut den_decomposed =
 			decompose_big_decimal::<Fr, NUM_LIMBS, POWER_OF_TEN>(den.to_biguint().unwrap());
+
+		// Apply the scaling to `num` and `den`
+		let num_last_non_zero_idx = find_last_non_zero_index(&num_decomposed);
+		let den_last_non_zero_idx = find_last_non_zero_index(&den_decomposed);
+		let limb_idx = num_last_non_zero_idx
+			.unwrap_or_default()
+			.max(den_last_non_zero_idx.unwrap_or_default());
+		println!("limb_idx: {}", limb_idx);
+		num_decomposed.rotate_right(NUM_LIMBS - limb_idx - 1);
+		den_decomposed.rotate_right(NUM_LIMBS - limb_idx - 1);
 
 		// Constraint checks - circuits should implement from this point
 		let composed_num_f = compose_big_decimal_f::<Fr, NUM_LIMBS, POWER_OF_TEN>(num_decomposed);
@@ -43,17 +56,8 @@ impl<const NUM_LIMBS: usize, const POWER_OF_TEN: usize> Threshold<NUM_LIMBS, POW
 		// Take the highest POWER_OF_TEN digits for comparison
 		// This just means lower precision
 		let threshold = self.threshold;
-		// let first_limb_num = *num_decomposed.last().unwrap();
-		// let first_limb_den = *den_decomposed.last().unwrap();
-
-		let num_last_non_zero_idx = find_last_non_zero_index(&num_decomposed);
-		let den_last_non_zero_idx = find_last_non_zero_index(&den_decomposed);
-		let limb_idx = num_last_non_zero_idx
-			.unwrap_or_default()
-			.max(den_last_non_zero_idx.unwrap_or_default());
-		println!("limb_idx: {}", limb_idx);
-		let first_limb_num = num_decomposed[limb_idx].clone();
-		let first_limb_den = den_decomposed[limb_idx].clone();
+		let first_limb_num = *num_decomposed.last().unwrap();
+		let first_limb_den = *den_decomposed.last().unwrap();
 
 		let comp = first_limb_den * threshold;
 		let is_bigger = first_limb_num >= comp;
