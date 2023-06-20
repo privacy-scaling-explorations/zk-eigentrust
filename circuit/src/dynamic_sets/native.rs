@@ -369,7 +369,7 @@ mod test {
 		calculate_message_hash,
 		eddsa::native::{sign, PublicKey, SecretKey},
 		params::rns::compose_big_decimal,
-		threshold::native::{Threshold, ThresholdWitness},
+		threshold::native::{Threshold, ThresholdWitness, NUM_LIMBS, POWER_OF_TEN},
 		utils::fe_to_big,
 	};
 
@@ -929,19 +929,17 @@ mod test {
 		const INITIAL_SCORE: u128 = 10_u128.pow(3);
 
 		// Constants related to threshold check
-		const NUM_LIMBS: usize = 100;
-		const POWER_OF_TEN: usize = 50;
 		const THRESHOLD: u128 = 10_u128.pow(3);
 
 		let rng = &mut thread_rng();
 		let mut ops_raw = [(); NUM_NEIGHBOURS].map(|_| [(); NUM_NEIGHBOURS].map(|_| 0_u128));
 		for i in 0..NUM_NEIGHBOURS {
-			for j in 2..NUM_NEIGHBOURS {
+			for j in 0..NUM_NEIGHBOURS {
 				ops_raw[i][j] = rng.gen::<u8>() as u128;
 			}
-			// let idx = rng.gen::<usize>() % NUM_NEIGHBOURS;
-			// ops_raw[i][idx] = 1;
-			// ops_raw[idx][i] = 1;
+			let idx = rng.gen::<usize>() % NUM_NEIGHBOURS;
+			ops_raw[i][idx] = 1;
+			ops_raw[idx][i] = 1;
 			ops_raw[i][i] = 0;
 		}
 
@@ -976,5 +974,115 @@ mod test {
 				tw.is_bigger,
 			);
 		}
+	}
+
+	fn test_scaling_multi_peers<
+		const NUM_NEIGHBOURS: usize,
+		const NUM_ITERATIONS: usize,
+		const INITIAL_SCORE: u128,
+		const NUM_LIMBS: usize,
+		const POWER_OF_TEN: usize,
+		const THRESHOLD: u128,
+	>() -> bool {
+		let rng = &mut thread_rng();
+		let mut ops_raw = [(); NUM_NEIGHBOURS].map(|_| [(); NUM_NEIGHBOURS].map(|_| 0_u128));
+		for i in 0..NUM_NEIGHBOURS {
+			for j in 0..NUM_NEIGHBOURS {
+				ops_raw[i][j] = rng.gen::<u8>() as u128;
+			}
+			let idx = rng.gen::<usize>() % NUM_NEIGHBOURS;
+			ops_raw[i][idx] = 1;
+			ops_raw[idx][i] = 1;
+			ops_raw[i][i] = 0;
+		}
+
+		let ops = ops_raw.map(|arr| arr.map(|x| Fr::from_u128(x)).to_vec()).to_vec();
+
+		let threshold = Fr::from_u128(THRESHOLD);
+		let (s, s_ratios, tws) = eigen_trust_set_testing_helper::<
+			NUM_NEIGHBOURS,
+			NUM_ITERATIONS,
+			INITIAL_SCORE,
+			NUM_LIMBS,
+			POWER_OF_TEN,
+		>(ops, threshold);
+
+		let s_int: String = s_ratios.iter().map(|v| v.to_integer().to_str_radix(10)).join(", ");
+		println!("NATIVE BIG_RATIONAL RESULT: [{}]", s_int);
+		for tw in tws {
+			let num = compose_big_decimal::<Fr, NUM_LIMBS, POWER_OF_TEN>(tw.num_decomposed);
+			let den = compose_big_decimal::<Fr, NUM_LIMBS, POWER_OF_TEN>(tw.den_decomposed);
+			let ratio = BigRational::new(num.to_bigint().unwrap(), den.to_bigint().unwrap());
+			let ratio_prime = ratio.to_integer().to_str_radix(10).parse::<u128>().unwrap();
+			let is_bigger = ratio_prime >= THRESHOLD;
+			if is_bigger != tw.is_bigger {
+				println!(
+					"real score: {:?}, is bigger than {}: {:?}",
+					ratio.to_integer().to_str_radix(10),
+					THRESHOLD,
+					tw.is_bigger,
+				);
+				return false;
+			}
+		}
+		true
+	}
+
+	#[ignore = "Scaling test takes too long to run"]
+	#[test]
+	fn test_scaling_4_peers() {
+		const NUM_NEIGHBOURS: usize = 4;
+		const NUM_ITERATIONS: usize = 20;
+		const INITIAL_SCORE: u128 = 10_u128.pow(3);
+
+		// Constants related to threshold check
+		const THRESHOLD: u128 = 10_u128.pow(3);
+
+		let n = 10000;
+		let mut f = 0;
+		for i in 0..n {
+			let is_success = test_scaling_multi_peers::<
+				NUM_NEIGHBOURS,
+				NUM_ITERATIONS,
+				INITIAL_SCORE,
+				NUM_LIMBS,
+				POWER_OF_TEN,
+				THRESHOLD,
+			>();
+			if !is_success {
+				println!("{i}th test failed");
+				f += 1;
+			}
+		}
+		println!("Failed {f} times out of {n}");
+	}
+
+	#[ignore = "Scaling test takes too long to run"]
+	#[test]
+	fn test_scaling_128_peers() {
+		const NUM_NEIGHBOURS: usize = 128;
+		const NUM_ITERATIONS: usize = 20;
+		const INITIAL_SCORE: u128 = 10_u128.pow(3);
+
+		// Constants related to threshold check
+		const THRESHOLD: u128 = 10_u128.pow(3);
+
+		let n = 5;
+		let mut f = 0;
+		for i in 0..n {
+			let is_success = test_scaling_multi_peers::<
+				NUM_NEIGHBOURS,
+				NUM_ITERATIONS,
+				INITIAL_SCORE,
+				NUM_LIMBS,
+				POWER_OF_TEN,
+				THRESHOLD,
+			>();
+			if !is_success {
+				println!("{i}th test failed");
+				f += 1;
+			}
+		}
+		println!("Failed {f} times out of {n}");
 	}
 }
