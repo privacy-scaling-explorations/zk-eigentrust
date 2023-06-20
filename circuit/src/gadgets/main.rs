@@ -707,29 +707,28 @@ impl<F: FieldExt> Chipset<F> for MatrixChipset<F> {
 		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
 		// We should satisfy the equation below
-		// x * y - 2 * mul - z + sum = 0
+		// x * y + z - sum = 0
 
 		// Witness layout:
 		// |  A  |  B  |  C  |  D  |  E  |
 		// | --- | --- | --- | --- | --- |
-		// |  x  |  y  | mul |  z  | sum |
+		// |  x  |  y  |  z  | sum |     |
 
-		let (double_mul, sum) = layouter.assign_region(
+		let (zero, sum) = layouter.assign_region(
 			|| "assign_values",
 			|region| {
 				let mut ctx = RegionCtx::new(region, 0);
-				let mul =
-					ctx.assign_advice(common.advice[0], self.x.value().cloned() * self.y.value())?;
-				let sum =
-					ctx.assign_advice(common.advice[1], mul.value().cloned() + self.z.value())?;
-				let double_mul =
-					ctx.assign_advice(common.advice[2], mul.value().cloned() + mul.value())?;
-				Ok((double_mul, sum))
+				let zero = ctx.assign_advice(common.advice[0], Value::known(F::ZERO))?;
+				let sum = ctx.assign_advice(
+					common.advice[1],
+					self.x.value().cloned() * self.y.value() + self.z.value(),
+				)?;
+				Ok((zero, sum))
 			},
 		)?;
 
-		let advices = [self.x, self.y, double_mul, self.z, sum.clone()];
-		let fixed_add = [F::ZERO, F::ZERO, -F::ONE, -F::ONE, F::ONE];
+		let advices = [self.x, self.y, self.z, sum.clone(), zero];
+		let fixed_add = [F::ZERO, F::ZERO, F::ONE, -F::ONE, F::ZERO];
 		let fixed_mul = [F::ONE, F::ZERO, F::ZERO];
 		let main_chip = MainChip::new(advices, fixed_add, fixed_mul);
 		main_chip.synthesize(
