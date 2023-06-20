@@ -685,21 +685,21 @@ impl<F: FieldExt> Chipset<F> for OrChipset<F> {
 	}
 }
 
-/// Chip for matrix operation
-pub struct MatrixChipset<F: FieldExt> {
+/// Chip for mul add operation
+pub struct MulAddChipset<F: FieldExt> {
 	x: AssignedCell<F, F>,
 	y: AssignedCell<F, F>,
 	z: AssignedCell<F, F>,
 }
 
-impl<F: FieldExt> MatrixChipset<F> {
-	/// Create new MatrixChipset
+impl<F: FieldExt> MulAddChipset<F> {
+	/// Create new MulAddChipset
 	pub fn new(x: AssignedCell<F, F>, y: AssignedCell<F, F>, z: AssignedCell<F, F>) -> Self {
 		Self { x, y, z }
 	}
 }
 
-impl<F: FieldExt> Chipset<F> for MatrixChipset<F> {
+impl<F: FieldExt> Chipset<F> for MulAddChipset<F> {
 	type Config = MainConfig;
 	type Output = AssignedCell<F, F>;
 
@@ -734,7 +734,7 @@ impl<F: FieldExt> Chipset<F> for MatrixChipset<F> {
 		main_chip.synthesize(
 			common,
 			&config.selector,
-			layouter.namespace(|| "main_matrix"),
+			layouter.namespace(|| "main_mul_add"),
 		)?;
 
 		Ok(sum)
@@ -1523,19 +1523,19 @@ mod tests {
 	}
 
 	#[derive(Clone)]
-	struct MatrixTestCircuit {
+	struct MulAddTestCircuit {
 		x: Value<Fr>,
 		y: Value<Fr>,
 		z: Value<Fr>,
 	}
 
-	impl MatrixTestCircuit {
+	impl MulAddTestCircuit {
 		fn new(x: Fr, y: Fr, z: Fr) -> Self {
 			Self { x: Value::known(x), y: Value::known(y), z: Value::known(z) }
 		}
 	}
 
-	impl Circuit<Fr> for MatrixTestCircuit {
+	impl Circuit<Fr> for MulAddTestCircuit {
 		type Config = TestConfig;
 		type FloorPlanner = SimpleFloorPlanner;
 
@@ -1562,23 +1562,23 @@ mod tests {
 				},
 			)?;
 
-			let matrix_chip = MatrixChipset::new(x, y, z);
-			let matrix = matrix_chip.synthesize(
+			let mul_add_chip = MulAddChipset::new(x, y, z);
+			let mul_add = mul_add_chip.synthesize(
 				&config.common,
 				&config.main,
-				layouter.namespace(|| "matrix chipset"),
+				layouter.namespace(|| "mul add chipset"),
 			)?;
-			layouter.constrain_instance(matrix.cell(), config.common.instance, 0)?;
+			layouter.constrain_instance(mul_add.cell(), config.common.instance, 0)?;
 
 			Ok(())
 		}
 	}
 
-	// TEST CASES FOR THE MATRIX CIRCUIT
+	// TEST CASES FOR THE MUL ADD CIRCUIT
 	#[test]
-	fn test_matrix() {
+	fn test_mul_add() {
 		// Testing x = 5, y = 2 and z = 3.
-		let test_chip = MatrixTestCircuit::new(Fr::from(5), Fr::from(2), Fr::from(3));
+		let test_chip = MulAddTestCircuit::new(Fr::from(5), Fr::from(2), Fr::from(3));
 
 		let k = 4;
 		let pub_ins = vec![Fr::from(5 * 2 + 3)];
@@ -1587,9 +1587,9 @@ mod tests {
 	}
 
 	#[test]
-	fn test_matrix_big() {
+	fn test_mul_add_big() {
 		// Testing x = 5123, y = 22441 and z = 55621323.
-		let test_chip = MatrixTestCircuit::new(Fr::from(5123), Fr::from(22441), Fr::from(55621323));
+		let test_chip = MulAddTestCircuit::new(Fr::from(5123), Fr::from(22441), Fr::from(55621323));
 
 		let k = 4;
 		let pub_ins = vec![Fr::from(5123 * 22441 + 55621323)];
