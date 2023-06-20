@@ -9,6 +9,11 @@ use halo2::{arithmetic::Field, halo2curves::bn256::Fr};
 use num_bigint::BigUint;
 use num_rational::BigRational;
 
+/// Number of limbs for threshold check
+pub const NUM_LIMBS: usize = 55;
+/// Power of 10 for threshold check
+pub const POWER_OF_TEN: usize = 76;
+
 /// Structure for threshold checks
 pub struct Threshold<const NUM_LIMBS: usize, const POWER_OF_TEN: usize> {
 	score: Fr,
@@ -42,7 +47,6 @@ impl<const NUM_LIMBS: usize, const POWER_OF_TEN: usize> Threshold<NUM_LIMBS, POW
 		let limb_idx = num_last_non_zero_idx
 			.unwrap_or_default()
 			.max(den_last_non_zero_idx.unwrap_or_default());
-		println!("limb_idx: {}", limb_idx);
 		num_decomposed.rotate_right(NUM_LIMBS - limb_idx - 1);
 		den_decomposed.rotate_right(NUM_LIMBS - limb_idx - 1);
 
