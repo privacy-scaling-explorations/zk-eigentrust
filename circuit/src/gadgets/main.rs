@@ -685,6 +685,62 @@ impl<F: FieldExt> Chipset<F> for OrChipset<F> {
 	}
 }
 
+/// Chip for mul add operation
+pub struct MulAddChipset<F: FieldExt> {
+	x: AssignedCell<F, F>,
+	y: AssignedCell<F, F>,
+	z: AssignedCell<F, F>,
+}
+
+impl<F: FieldExt> MulAddChipset<F> {
+	/// Create new MulAddChipset
+	pub fn new(x: AssignedCell<F, F>, y: AssignedCell<F, F>, z: AssignedCell<F, F>) -> Self {
+		Self { x, y, z }
+	}
+}
+
+impl<F: FieldExt> Chipset<F> for MulAddChipset<F> {
+	type Config = MainConfig;
+	type Output = AssignedCell<F, F>;
+
+	fn synthesize(
+		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<F>,
+	) -> Result<Self::Output, Error> {
+		// We should satisfy the equation below
+		// x * y + z - sum = 0
+
+		// Witness layout:
+		// |  A  |  B  |  C  |  D  |  E  |
+		// | --- | --- | --- | --- | --- |
+		// |  x  |  y  |  z  | sum |     |
+
+		let (zero, sum) = layouter.assign_region(
+			|| "assign_values",
+			|region| {
+				let mut ctx = RegionCtx::new(region, 0);
+				let zero = ctx.assign_advice(common.advice[0], Value::known(F::ZERO))?;
+				let sum = ctx.assign_advice(
+					common.advice[1],
+					self.x.value().cloned() * self.y.value() + self.z.value(),
+				)?;
+				Ok((zero, sum))
+			},
+		)?;
+
+		let advices = [self.x, self.y, self.z, sum.clone(), zero];
+		let fixed_add = [F::ZERO, F::ZERO, F::ONE, -F::ONE, F::ZERO];
+		let fixed_mul = [F::ONE, F::ZERO, F::ZERO];
+		let main_chip = MainChip::new(advices, fixed_add, fixed_mul);
+		main_chip.synthesize(
+			common,
+			&config.selector,
+			layouter.namespace(|| "main_mul_add"),
+		)?;
+
+		Ok(sum)
+	}
+}
+
 #[cfg(test)]
 mod tests {
 	use super::*;
@@ -1464,5 +1520,80 @@ mod tests {
 			prove_and_verify::<Bn256, _, _>(params, test_chip, &[&[Fr::from(3)]], rng).unwrap();
 
 		assert!(res);
+	}
+
+	#[derive(Clone)]
+	struct MulAddTestCircuit {
+		x: Value<Fr>,
+		y: Value<Fr>,
+		z: Value<Fr>,
+	}
+
+	impl MulAddTestCircuit {
+		fn new(x: Fr, y: Fr, z: Fr) -> Self {
+			Self { x: Value::known(x), y: Value::known(y), z: Value::known(z) }
+		}
+	}
+
+	impl Circuit<Fr> for MulAddTestCircuit {
+		type Config = TestConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			Self { x: Value::unknown(), y: Value::unknown(), z: Value::unknown() }
+		}
+
+		fn configure(meta: &mut ConstraintSystem<Fr>) -> TestConfig {
+			TestConfig::new(meta)
+		}
+
+		fn synthesize(
+			&self, config: TestConfig, mut layouter: impl Layouter<Fr>,
+		) -> Result<(), Error> {
+			let (x, y, z) = layouter.assign_region(
+				|| "temp",
+				|region| {
+					let mut ctx = RegionCtx::new(region, 0);
+					let x = ctx.assign_advice(config.common.advice[0], self.x)?;
+					let y = ctx.assign_advice(config.common.advice[1], self.y)?;
+					let z = ctx.assign_advice(config.common.advice[2], self.z)?;
+
+					Ok((x, y, z))
+				},
+			)?;
+
+			let mul_add_chip = MulAddChipset::new(x, y, z);
+			let mul_add = mul_add_chip.synthesize(
+				&config.common,
+				&config.main,
+				layouter.namespace(|| "mul add chipset"),
+			)?;
+			layouter.constrain_instance(mul_add.cell(), config.common.instance, 0)?;
+
+			Ok(())
+		}
+	}
+
+	// TEST CASES FOR THE MUL ADD CIRCUIT
+	#[test]
+	fn test_mul_add() {
+		// Testing x = 5, y = 2 and z = 3.
+		let test_chip = MulAddTestCircuit::new(Fr::from(5), Fr::from(2), Fr::from(3));
+
+		let k = 4;
+		let pub_ins = vec![Fr::from(5 * 2 + 3)];
+		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[test]
+	fn test_mul_add_big() {
+		// Testing x = 5123, y = 22441 and z = 55621323.
+		let test_chip = MulAddTestCircuit::new(Fr::from(5123), Fr::from(22441), Fr::from(55621323));
+
+		let k = 4;
+		let pub_ins = vec![Fr::from(5123 * 22441 + 55621323)];
+		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
 	}
 }
