@@ -2,15 +2,19 @@
 //!
 //! This module contains all CLI related data handling and conversions.
 
-use crate::ClientConfig;
+use crate::{bandada::BandadaApi, ClientConfig};
 use clap::{Args, Parser, Subcommand};
 use eigen_trust_circuit::utils::write_json_data;
-use eigen_trust_client::attestation::{Attestation, DOMAIN_PREFIX, DOMAIN_PREFIX_LEN};
+use eigen_trust_client::{
+	attestation::{Attestation, DOMAIN_PREFIX, DOMAIN_PREFIX_LEN},
+	utils::read_csv_file,
+};
 use ethers::{
 	abi::Address,
 	providers::Http,
 	types::{H160, H256},
 };
+use serde::Deserialize;
 use std::str::FromStr;
 
 #[derive(Parser)]
@@ -25,6 +29,8 @@ pub struct Cli {
 pub enum Mode {
 	/// Submit an attestation. Requires 'AttestData'.
 	Attest(AttestData),
+	/// Create Bandada group.
+	Bandada(BandadaData),
 	/// Compile the contracts.
 	Compile,
 	/// Deploy the contracts.
@@ -135,6 +141,74 @@ impl AttestData {
 
 		Ok(Attestation::new(parsed_address, key, parsed_score, message))
 	}
+}
+
+/// Attestation subcommand input.
+#[derive(Args, Debug)]
+pub struct BandadaData {
+	/// Desired action (add, remove).
+	#[clap(long = "action")]
+	action: Option<String>,
+	/// Group id.
+	#[clap(long = "id")]
+	group_id: Option<String>,
+}
+
+#[allow(dead_code)]
+/// Score record.
+#[derive(Debug, Deserialize)]
+pub struct ScoreRecord {
+	/// The peer's address.
+	peer_address: String,
+	/// The peer's score.
+	score_fr: String,
+	/// Score numerator.
+	numerator: String,
+	/// Score denominator.
+	denominator: String,
+	/// Score.
+	score: String,
+}
+
+/// Handles the bandada subcommand.
+pub async fn handle_bandada(data: BandadaData) -> Result<(), &'static str> {
+	// Ensure both action and id are provided
+	let (action, group_id) = match (&data.action, &data.group_id) {
+		(Some(action), Some(group_id)) => (action, group_id),
+		_ => return Err("Missing action or id."),
+	};
+
+	// Initialize Bandada API client.
+	let bandada_api = BandadaApi::new()?;
+
+	// Load scores from file.
+	let scores: Vec<ScoreRecord> = match read_csv_file("scores") {
+		Ok(scores) => scores,
+		Err(_) => return Err("Failed to read scores from file."),
+	};
+
+	// Handle action
+	match action.as_str() {
+		"add" => {
+			// Iterate through scores and add each member
+			for score in &scores {
+				if bandada_api.add_member(group_id, &score.peer_address[0..11]).await.is_err() {
+					return Err("Failed to add member.");
+				}
+			}
+		},
+		"remove" => {
+			// Iterate through scores and remove each member
+			for score in &scores {
+				if bandada_api.remove_member(group_id, &score.peer_address[0..11]).await.is_err() {
+					return Err("Failed to remove member.");
+				}
+			}
+		},
+		_ => return Err("Invalid action."),
+	}
+
+	Ok(())
 }
 
 #[cfg(test)]

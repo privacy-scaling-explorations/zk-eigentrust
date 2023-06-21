@@ -98,12 +98,6 @@ pub struct ClientConfig {
 	pub verifier_address: String,
 }
 
-/// Local environment configuration.
-struct LocalEnv {
-	mnemonic: String,
-	_bandada_api_key: String,
-}
-
 /// Signer type alias.
 pub type ClientSigner = SignerMiddleware<Provider<Http>, LocalWallet>;
 
@@ -111,14 +105,14 @@ pub type ClientSigner = SignerMiddleware<Provider<Http>, LocalWallet>;
 pub struct Client {
 	signer: Arc<ClientSigner>,
 	config: ClientConfig,
-	env: LocalEnv,
+	mnemonic: String,
 }
 
 impl Client {
 	/// Creates a new Client instance.
 	pub fn new(config: ClientConfig) -> Self {
 		// Load environment config
-		let env = Self::get_env();
+		let mnemonic = Self::get_mnemonic();
 
 		// Setup provider
 		let provider = Provider::<Http>::try_from(&config.node_url)
@@ -126,7 +120,7 @@ impl Client {
 
 		// Setup wallet
 		let wallet = MnemonicBuilder::<English>::default()
-			.phrase(env.mnemonic.as_str())
+			.phrase(mnemonic.as_str())
 			.build()
 			.expect("Failed to build wallet with provided mnemonic");
 
@@ -136,14 +130,13 @@ impl Client {
 		// Arc for thread-safe sharing of signer
 		let shared_signer = Arc::new(signer);
 
-		Self { signer: shared_signer, config, env }
+		Self { signer: shared_signer, config, mnemonic }
 	}
 
 	/// Submits an attestation to the attestation station.
 	pub async fn attest(&self, attestation: Attestation) -> Result<(), EigenError> {
 		let ctx = SECP256K1;
-		let secret_keys: Vec<SecretKey> =
-			ecdsa_secret_from_mnemonic(&self.env.mnemonic, 1).unwrap();
+		let secret_keys: Vec<SecretKey> = ecdsa_secret_from_mnemonic(&self.mnemonic, 1).unwrap();
 
 		// Get AttestationFr
 		let attestation_fr = attestation.to_attestation_fr().unwrap();
@@ -343,23 +336,12 @@ impl Client {
 	}
 
 	/// Gets local environment variables.
-	fn get_env() -> LocalEnv {
-		// Load local .env file
+	pub fn get_mnemonic() -> String {
 		dotenv().ok();
-
-		// Get mnemonic or use a default one
-		let mnemonic = var("MNEMONIC").unwrap_or_else(|_| {
+		var("MNEMONIC").unwrap_or_else(|_| {
 			println!("MNEMONIC environment variable is not set. Using default.");
 			"test test test test test test test test test test test junk".to_string()
-		});
-
-		// Get bandada api key or use an empty one
-		let _bandada_api_key = var("BANDADA_API_KEY").unwrap_or_else(|_| {
-			println!("BANDADA_API_KEY environment variable is not set.");
-			String::new()
-		});
-
-		LocalEnv { mnemonic, _bandada_api_key }
+		})
 	}
 }
 
