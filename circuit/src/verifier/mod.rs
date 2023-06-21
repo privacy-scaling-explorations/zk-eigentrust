@@ -25,8 +25,6 @@ use snark_verifier::{
 };
 use std::rc::Rc;
 
-/// Proof aggregator
-pub mod aggregator;
 /// Halo2 loader
 pub mod loader;
 /// Poseidon transcript

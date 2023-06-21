@@ -70,8 +70,11 @@ pub mod rescue_prime;
 pub mod threshold;
 /// Utilities for proving and verifying
 pub mod utils;
-/// PLONK verifier and aggregator
+/// PLONK verifier
 pub mod verifier;
+
+/// PLONK proof aggregator
+pub mod aggregator;
 
 /// Extention to the traits provided by halo2
 pub trait FieldExt: PrimeField + FromUniformBytes<64> {}
