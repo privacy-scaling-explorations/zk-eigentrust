@@ -71,3 +71,141 @@ where
 		Ok(bits.map(|x| x.unwrap()))
 	}
 }
+
+#[cfg(test)]
+mod test {
+	use std::str::FromStr;
+
+	use super::*;
+	use crate::params::rns::bn256::Bn256_4_68;
+	use crate::RegionCtx;
+	use crate::{
+		integer::native::{Integer, UnassignedInteger},
+		utils::{generate_params, prove_and_verify},
+		CommonConfig, UnassignedValue,
+	};
+	use halo2::circuit::Region;
+	use halo2::{
+		circuit::SimpleFloorPlanner,
+		dev::MockProver,
+		halo2curves::bn256::{Bn256, Fq, Fr},
+		plonk::{Circuit, ConstraintSystem},
+	};
+	use num_bigint::BigUint;
+
+	type W = Fq;
+	type N = Fr;
+	const NUM_LIMBS: usize = 4;
+	const NUM_BITS: usize = 68;
+	type P = Bn256_4_68;
+
+	#[derive(Clone)]
+	struct TestConfig {
+		common: CommonConfig,
+		bits2integer: Bits2IntegerChipsetConfig,
+	}
+
+	#[derive(Clone)]
+	struct TestCircuit {
+		unassigned_integer: UnassignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
+	}
+
+	impl TestCircuit {
+		fn new(integer: Integer<W, N, NUM_LIMBS, NUM_BITS, P>) -> Self {
+			Self { unassigned_integer: UnassignedInteger::from(integer) }
+		}
+	}
+
+	impl Circuit<N> for TestCircuit {
+		type Config = TestConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			Self { unassigned_integer: UnassignedInteger::without_witnesses() }
+		}
+
+		fn configure(meta: &mut ConstraintSystem<N>) -> TestConfig {
+			let common = CommonConfig::new(meta);
+			let bits2integer_selector = Bits2NumChip::configure(&common, meta);
+			let bits2integer = Bits2IntegerChipsetConfig::new(bits2integer_selector);
+
+			TestConfig { common, bits2integer }
+		}
+
+		fn synthesize(
+			&self, config: TestConfig, mut layouter: impl Layouter<N>,
+		) -> Result<(), Error> {
+			let assigned_limbs = layouter.assign_region(
+				|| "temp",
+				|region: Region<'_, N>| {
+					let mut ctx = RegionCtx::new(region, 0);
+					let mut assigned_limbs: [Option<AssignedCell<N, N>>; NUM_LIMBS] =
+						[(); NUM_LIMBS].map(|_| None);
+					for i in 0..NUM_LIMBS {
+						let x = ctx.assign_advice(
+							config.common.advice[i], self.unassigned_integer.limbs[i],
+						)?;
+						assigned_limbs[i] = Some(x);
+					}
+					Ok(assigned_limbs)
+				},
+			)?;
+
+			let assigned_integer = AssignedInteger::new(
+				self.unassigned_integer.integer.clone(),
+				assigned_limbs.map(|x| x.unwrap()),
+			);
+
+			let bits2integer = Bits2IntegerChipset::new(assigned_integer);
+			let _ = bits2integer.synthesize(
+				&config.common,
+				&config.bits2integer,
+				layouter.namespace(|| "bits2integer"),
+			)?;
+
+			Ok(())
+		}
+	}
+
+	#[test]
+	fn test_bits_to_integer() {
+		// Testing field element 0x1.
+		let numba_big = BigUint::from_str("1").unwrap();
+		let numba = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(numba_big);
+
+		let circuit = TestCircuit::new(numba);
+		let k = 11;
+		let prover = MockProver::run(k, &circuit, vec![vec![]]).unwrap();
+
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[test]
+	fn test_bits_to_integer_big() {
+		// Testing biggest value in the field.
+		let numba_big = BigUint::from_str(
+			"2188824287183927522224640574525727508869631115729782366268903789426208582",
+		)
+		.unwrap();
+		let numba = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(numba_big);
+
+		let circuit = TestCircuit::new(numba);
+		let k = 11;
+		let prover = MockProver::run(k, &circuit, vec![vec![]]).unwrap();
+
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[test]
+	fn test_bits_to_integer_production() {
+		let numba_big = BigUint::from_str("3823613239503432837285398709123").unwrap();
+		let numba = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(numba_big);
+		let circuit = TestCircuit::new(numba);
+		let k = 11;
+		let rng = &mut rand::thread_rng();
+		let params = generate_params(k);
+		let res = prove_and_verify::<Bn256, _, _>(params, circuit, &[&[]], rng).unwrap();
+
+		assert!(res);
+	}
+}
