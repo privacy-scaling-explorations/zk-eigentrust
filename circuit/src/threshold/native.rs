@@ -13,7 +13,7 @@ pub struct Threshold<
 	const NUM_LIMBS: usize,
 	const POWER_OF_TEN: usize,
 	const NUM_NEIGHBOURS: usize,
-	const INITIAL_SCORE: usize,
+	const INITIAL_SCORE: u128,
 > {
 	score: F,
 	num_decomposed: [F; NUM_LIMBS],
@@ -26,14 +26,14 @@ impl<
 		const NUM_LIMBS: usize,
 		const POWER_OF_TEN: usize,
 		const NUM_NEIGHBOURS: usize,
-		const INITIAL_SCORE: usize,
+		const INITIAL_SCORE: u128,
 	> Threshold<F, NUM_LIMBS, POWER_OF_TEN, NUM_NEIGHBOURS, INITIAL_SCORE>
 {
 	/// Create new instance
 	pub fn new(score: F, ratio: BigRational, threshold: F) -> Self {
-		let max_score_bn = BigUint::from(NUM_NEIGHBOURS * INITIAL_SCORE);
-		let max_limb_value_bn =
-			BigUint::from(10u32).pow((POWER_OF_TEN + 1) as u32) - BigUint::one();
+		let max_score = NUM_NEIGHBOURS * INITIAL_SCORE as usize;
+		let max_score_bn = BigUint::from(max_score);
+		let max_limb_value_bn = BigUint::from(10u32).pow(POWER_OF_TEN as u32) - BigUint::one();
 		let max_f_bn = fe_to_big(F::ZERO - F::ONE);
 		assert!(max_score_bn * max_limb_value_bn < max_f_bn);
 
@@ -43,7 +43,6 @@ impl<
 		let bigger = num.max(den);
 		let dig_len = bigger.to_string().len();
 		let diff = max_len - dig_len;
-		assert!(diff < POWER_OF_TEN);
 
 		let scale = BigInt::from(10_u32).pow(diff as u32);
 		let num_scaled = num * scale.clone();
@@ -60,21 +59,18 @@ impl<
 	/// Method for checking the threshold for a given score
 	// Constraint checks - circuits should implement from this point
 	pub fn check_threshold(&self) -> bool {
-		let max_score_bn = BigUint::from(NUM_NEIGHBOURS * INITIAL_SCORE);
+		let max_score_bn = BigUint::from(NUM_NEIGHBOURS as u128 * INITIAL_SCORE);
 		let threshold_bn = fe_to_big(self.threshold);
 		assert!(threshold_bn < max_score_bn);
 
+		let max_limb_value_bn = BigUint::from(10u32).pow(POWER_OF_TEN as u32);
 		for limb in self.num_decomposed {
 			let limb_bn = fe_to_big(limb);
-			let max_limb_value_bn = BigUint::from(10u32).pow(POWER_OF_TEN as u32);
-			let max_limb_value_adjusted_bn = max_limb_value_bn / max_score_bn.clone();
-			assert!(limb_bn < max_limb_value_adjusted_bn);
+			assert!(limb_bn < max_limb_value_bn);
 		}
 		for limb in self.den_decomposed {
 			let limb_bn = fe_to_big(limb);
-			let max_limb_value_bn = BigUint::from(10u32).pow(POWER_OF_TEN as u32);
-			let max_limb_value_adjusted_bn = max_limb_value_bn / max_score_bn.clone();
-			assert!(limb_bn < max_limb_value_adjusted_bn);
+			assert!(limb_bn < max_limb_value_bn);
 		}
 
 		let composed_num_f =
@@ -109,7 +105,7 @@ mod tests {
 		arithmetic::Field,
 		halo2curves::{bn256::Fr, ff::PrimeField},
 	};
-	use num_bigint::BigInt;
+	use num_bigint::{BigInt, ToBigInt};
 	use num_rational::BigRational;
 	use num_traits::FromPrimitive;
 	use rand::{thread_rng, Rng};
@@ -118,6 +114,7 @@ mod tests {
 		calculate_message_hash,
 		dynamic_sets::native::{EigenTrustSet, Opinion},
 		eddsa::native::{sign, PublicKey, SecretKey},
+		params::rns::compose_big_decimal,
 	};
 
 	use super::*;
@@ -127,7 +124,7 @@ mod tests {
 		const NUM_LIMBS: usize = 2;
 		const POWER_OF_TEN: usize = 3;
 		const NUM_NEIGHBOURS: usize = 4;
-		const INITIAL_SCORE: usize = 1000;
+		const INITIAL_SCORE: u128 = 1000;
 
 		let threshold = 346;
 		let num = 345111;
@@ -158,7 +155,7 @@ mod tests {
 		const NUM_LIMBS: usize = 2;
 		const POWER_OF_TEN: usize = 3;
 		const NUM_NEIGHBOURS: usize = 4;
-		const INITIAL_SCORE: usize = 1000;
+		const INITIAL_SCORE: u128 = 1000;
 
 		let threshold = 344;
 		let num = 345111;
@@ -189,7 +186,7 @@ mod tests {
 		const NUM_LIMBS: usize = 5;
 		const POWER_OF_TEN: usize = 3;
 		const NUM_NEIGHBOURS: usize = 4;
-		const INITIAL_SCORE: usize = 1000;
+		const INITIAL_SCORE: u128 = 1000;
 
 		let threshold = 346;
 		let num = 347123456789123;
@@ -316,35 +313,55 @@ mod tests {
 
 	#[test]
 	fn test_4_peer_consts() {
-		// const THRESHOLD: u128 = 1000;
-		// const NUM_LIMBS: usize = 3;
-		// const POWER_OF_TEN: usize = 40;
+		const NUM_NEIGHBOURS: usize = 4;
+		const NUM_ITERATIONS: usize = 20;
+		const INITIAL_SCORE: u128 = 1000;
 
-		// let threshold = Fr::from_u128(THRESHOLD);
-		// let mut tws = Vec::new();
-		// for (&score, ratio) in s.iter().zip(s_ratios.clone()) {
-		// 	let t: Threshold<NUM_LIMBS, POWER_OF_TEN> = Threshold::new(score, ratio, threshold);
-		// 	let tw = t.check_threshold();
-		// 	tws.push(tw);
-		// }
+		// Printing out the optimal value for POWER_OF_TEN
+		let max_score_bn = BigUint::from(NUM_NEIGHBOURS * INITIAL_SCORE as usize);
+		let max_f_bn = fe_to_big(Fr::zero() - Fr::one());
+		let optimal_power_of_10 = max_f_bn.to_string().len() - max_score_bn.to_string().len() - 1;
+		println!("{:?}", optimal_power_of_10);
 
-		// let s_int: String = s_ratios.iter().map(|v| v.to_integer().to_str_radix(10)).join(", ");
-		// println!("NATIVE BIG_RATIONAL RESULT: [{}]", s_int);
-		// for tw in tws {
-		// 	let num = compose_big_decimal::<Fr, NUM_LIMBS, POWER_OF_TEN>(tw.num_decomposed);
-		// 	let den = compose_big_decimal::<Fr, NUM_LIMBS, POWER_OF_TEN>(tw.den_decomposed);
-		// 	let ratio = BigRational::new(num.to_bigint().unwrap(), den.to_bigint().unwrap());
-		// 	let ratio_prime = ratio.to_integer().to_str_radix(10).parse::<u128>().unwrap();
-		// 	let is_bigger = ratio_prime >= THRESHOLD;
-		// 	if is_bigger != tw.is_bigger {
-		// 		println!(
-		// 			"real score: {:?}, is bigger than {}: {:?}",
-		// 			ratio.to_integer().to_str_radix(10),
-		// 			THRESHOLD,
-		// 			tw.is_bigger,
-		// 		);
-		// 		return false;
-		// 	}
-		// }
+		const THRESHOLD: u128 = 1000;
+		// Since the biggest value from test_scaling_4_peers was 110 we need 2 limbs to cover all of them
+		const NUM_LIMBS: usize = 2;
+		const POWER_OF_TEN: usize = 72;
+
+		let rng = &mut thread_rng();
+		for _ in 0..1000 {
+			let mut ops = Vec::new();
+			for _ in 0..NUM_NEIGHBOURS {
+				let ops_i = rng.gen::<[u8; NUM_NEIGHBOURS]>();
+				let ops_i_fr = ops_i.map(|x| Fr::from_u128(x as u128));
+				ops.push(ops_i_fr.to_vec());
+			}
+
+			let (s, s_ratios) =
+				eigen_trust_set_testing_helper::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
+					ops,
+				);
+
+			let threshold = Fr::from_u128(THRESHOLD);
+			for (&score, ratio) in s.iter().zip(s_ratios.clone()) {
+				let t: Threshold<Fr, NUM_LIMBS, POWER_OF_TEN, NUM_NEIGHBOURS, INITIAL_SCORE> =
+					Threshold::new(score, ratio, threshold);
+				let is_bigger_org = t.check_threshold();
+
+				let num = compose_big_decimal::<Fr, NUM_LIMBS, POWER_OF_TEN>(t.num_decomposed);
+				let den = compose_big_decimal::<Fr, NUM_LIMBS, POWER_OF_TEN>(t.den_decomposed);
+				let ratio = BigRational::new(num.to_bigint().unwrap(), den.to_bigint().unwrap());
+				let ratio_prime = ratio.to_integer().to_str_radix(10).parse::<u128>().unwrap();
+				let is_bigger = ratio_prime >= THRESHOLD;
+
+				println!(
+					"real score: {:?}, is bigger than {}: {:?} {:?}",
+					ratio.to_integer().to_str_radix(10),
+					THRESHOLD,
+					is_bigger_org,
+					is_bigger
+				);
+			}
+		}
 	}
 }
