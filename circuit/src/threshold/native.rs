@@ -264,11 +264,11 @@ mod tests {
 
 			for ratio in s_ratios {
 				let num_len = ratio.numer().to_string().len();
-				let den_len = ratio.numer().to_string().len();
+				let den_len = ratio.denom().to_string().len();
 				println!("num_len: {:?}, den_len: {:?}", num_len, den_len);
-				assert!(num_len == den_len);
-				if num_len > biggest {
-					biggest = num_len;
+				let curr = num_len.max(den_len);
+				if curr > biggest {
+					biggest = curr;
 				}
 			}
 		}
