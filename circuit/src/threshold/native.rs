@@ -5,7 +5,7 @@ use crate::{
 };
 use num_bigint::{BigInt, BigUint};
 use num_rational::BigRational;
-use num_traits::One;
+use num_traits::{One, Zero};
 
 /// Structure for threshold checks
 pub struct Threshold<F: FieldExt, const NUM_LIMBS: usize, const POWER_OF_TEN: usize> {
@@ -56,19 +56,21 @@ impl<F: FieldExt, const NUM_LIMBS: usize, const POWER_OF_TEN: usize>
 
 		// Take the highest POWER_OF_TEN digits for comparison
 		// This just means lower precision
-		let first_limb_num = *self.num_decomposed.last().unwrap();
-		let first_limb_den = *self.den_decomposed.last().unwrap();
+		let last_limb_num = *self.num_decomposed.last().unwrap();
+		let last_limb_den = *self.den_decomposed.last().unwrap();
+		let last_limb_num_bn = fe_to_big(last_limb_num);
+		let last_limb_den_bn = fe_to_big(last_limb_den);
 
 		let max_limb_value_bn =
 			BigUint::from(10u32).pow((POWER_OF_TEN + 1) as u32) - BigUint::one();
 		let max_f_bn = fe_to_big(F::ZERO - F::ONE);
 		assert!(max_score_bn * max_limb_value_bn < max_f_bn);
+		assert!(!last_limb_den_bn.is_zero());
 
-		let comp = first_limb_den * self.threshold;
-
-		let first_limb_num_bn = fe_to_big(first_limb_num);
+		let comp = last_limb_den * self.threshold;
 		let comp_bn = fe_to_big(comp);
-		let is_bigger = first_limb_num_bn >= comp_bn;
+
+		let is_bigger = last_limb_num_bn >= comp_bn;
 
 		is_bigger
 	}
