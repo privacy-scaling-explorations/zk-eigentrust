@@ -62,12 +62,12 @@ where
 		for i in 0..NUM_LIMBS {
 			let limb_bits_chip =
 				Bits2NumChip::new_exact::<NUM_BITS>(self.assigned_integer.limbs[i].clone());
-			let mut limb_bits = limb_bits_chip.synthesize(
+			let limb_bits = limb_bits_chip.synthesize(
 				common,
 				&config.bits2num,
 				layouter.namespace(|| "limb bits"),
 			)?;
-			bits.append(&mut limb_bits);
+			bits.extend(limb_bits);
 		}
 
 		Ok(bits)
