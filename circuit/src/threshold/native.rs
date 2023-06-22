@@ -31,8 +31,7 @@ impl<
 {
 	/// Create new instance
 	pub fn new(score: F, ratio: BigRational, threshold: F) -> Self {
-		let max_score = NUM_NEIGHBOURS * INITIAL_SCORE as usize;
-		let max_score_bn = BigUint::from(max_score);
+		let max_score_bn = BigUint::from(NUM_NEIGHBOURS * INITIAL_SCORE as usize);
 		let max_limb_value_bn = BigUint::from(10u32).pow(POWER_OF_TEN as u32) - BigUint::one();
 		let max_f_bn = fe_to_big(F::ZERO - F::ONE);
 		assert!(max_score_bn * max_limb_value_bn < max_f_bn);
@@ -275,7 +274,7 @@ mod tests {
 		(s, s_ratios)
 	}
 
-	// #[ignore = "Scaling test takes too long to run"]
+	#[ignore = "Scaling test takes too long to run"]
 	#[test]
 	fn test_scaling_4_peers() {
 		const NUM_NEIGHBOURS: usize = 4;
@@ -311,6 +310,7 @@ mod tests {
 		println!("{:?}", biggest);
 	}
 
+	#[ignore = "Scaling test takes too long to run"]
 	#[test]
 	fn test_4_peer_consts() {
 		const NUM_NEIGHBOURS: usize = 4;
