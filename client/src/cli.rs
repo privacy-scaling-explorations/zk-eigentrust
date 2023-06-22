@@ -143,17 +143,6 @@ impl AttestData {
 	}
 }
 
-/// Attestation subcommand input.
-#[derive(Args, Debug)]
-pub struct BandadaData {
-	/// Desired action (add, remove).
-	#[clap(long = "action")]
-	action: Option<String>,
-	/// Group id.
-	#[clap(long = "id")]
-	group_id: Option<String>,
-}
-
 #[allow(dead_code)]
 /// Score record.
 #[derive(Debug, Deserialize)]
@@ -170,6 +159,17 @@ pub struct ScoreRecord {
 	score: String,
 }
 
+/// Attestation subcommand input.
+#[derive(Args, Debug)]
+pub struct BandadaData {
+	/// Desired action (add, remove).
+	#[clap(long = "action")]
+	action: Option<String>,
+	/// Group id.
+	#[clap(long = "id")]
+	group_id: Option<String>,
+}
+
 /// Handles the bandada subcommand.
 pub async fn handle_bandada(data: BandadaData) -> Result<(), &'static str> {
 	// Ensure both action and id are provided
@@ -178,31 +178,29 @@ pub async fn handle_bandada(data: BandadaData) -> Result<(), &'static str> {
 		_ => return Err("Missing action or id."),
 	};
 
-	// Initialize Bandada API client.
+	// Initialize Bandada API client
 	let bandada_api = BandadaApi::new()?;
 
-	// Load scores from file.
-	let scores: Vec<ScoreRecord> = match read_csv_file("scores") {
-		Ok(scores) => scores,
-		Err(_) => return Err("Failed to read scores from file."),
-	};
+	// Load scores from file
+	let scores: Vec<ScoreRecord> =
+		read_csv_file("scores").map_err(|_| "Failed to read scores from file.")?;
 
 	// Handle action
 	match action.as_str() {
 		"add" => {
-			// Iterate through scores and add each member
 			for score in &scores {
-				if bandada_api.add_member(group_id, &score.peer_address[0..11]).await.is_err() {
-					return Err("Failed to add member.");
-				}
+				bandada_api
+					.add_member(group_id, &score.peer_address[0..11])
+					.await
+					.map_err(|_| "Failed to add member.")?;
 			}
 		},
 		"remove" => {
-			// Iterate through scores and remove each member
 			for score in &scores {
-				if bandada_api.remove_member(group_id, &score.peer_address[0..11]).await.is_err() {
-					return Err("Failed to remove member.");
-				}
+				bandada_api
+					.remove_member(group_id, &score.peer_address[0..11])
+					.await
+					.map_err(|_| "Failed to remove member.")?;
 			}
 		},
 		_ => return Err("Invalid action."),

@@ -40,9 +40,7 @@ async fn main() {
 		},
 		Mode::Bandada(bandada_data) => match handle_bandada(bandada_data).await {
 			Ok(_) => (),
-			Err(e) => {
-				eprintln!("Error while creating Bandada API: {:?}", e);
-			},
+			Err(e) => eprintln!("Failed to execute command: {:?}", e),
 		},
 		Mode::Compile => {
 			println!("Compiling contracts...");

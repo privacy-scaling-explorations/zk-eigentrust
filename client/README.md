@@ -58,7 +58,7 @@ The command-line interface was built using [clap.rs](http://clap.rs/). There is 
   - `--to`: Specify the attested address.
   - `--score`: Specify the given score (between 0 and 255).
   - `--message`: Specify an optional 32-byte message in hexadecimal format.
-- `bandada`: The `bandada` command is used to manage groups using the Bandada API. This command is typically run after the `scores` command. Requires the following options:
+- `bandada`: The `bandada` command is used to manage groups using the Bandada API. It would either add or remove existing participants in the set, so the `scores` command has to be run before. Requires the following options:
   - `--action (add | remove)`: Defines the action to perform. You can either `add` or `remove` existing set members from the group.
   - `--id`: This option specifies the Bandada group ID. It should be created beforehand through the Bandada dashboard.
 - `compile`: Compiles all the `.sol` and `.yul` contracts available in the `data` folder. For `.sol` contracts, it generates an ABI JSON file and a Rust binding file. For `.yul` smart contracts, it compiles Yul code into binary.
