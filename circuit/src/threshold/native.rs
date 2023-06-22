@@ -92,9 +92,7 @@ impl<
 		let comp = last_limb_den * self.threshold;
 		let comp_bn = fe_to_big(comp);
 
-		let is_bigger = last_limb_num_bn >= comp_bn;
-
-		is_bigger
+		last_limb_num_bn >= comp_bn
 	}
 }
 
