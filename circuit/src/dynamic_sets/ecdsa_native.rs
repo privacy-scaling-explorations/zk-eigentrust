@@ -1,9 +1,4 @@
-use crate::{
-	circuit::PoseidonNativeHasher,
-	opinion::native::Opinion,
-	params::rns::{compose_big_decimal_f, decompose_big_decimal},
-	utils::fe_to_big,
-};
+use crate::{circuit::PoseidonNativeHasher, opinion::native::Opinion, utils::fe_to_big};
 use halo2::{
 	arithmetic::Field,
 	halo2curves::{bn256::Fr, ff::PrimeField},
@@ -114,14 +109,6 @@ impl AttestationFr {
 		PoseidonNativeHasher::new([self.about, self.domain, self.value, self.message, Fr::zero()])
 			.permute()[0]
 	}
-}
-
-/// Witness structure for proving threshold checks
-pub struct ThresholdWitness<const NUM_LIMBS: usize> {
-	threshold: Fr,
-	is_bigger: bool,
-	num_decomposed: [Fr; NUM_LIMBS],
-	den_decomposed: [Fr; NUM_LIMBS],
 }
 
 /// Dynamic set for EigenTrust
@@ -343,39 +330,6 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITERATIONS: usize, const INITIAL_SCO
 		}
 		s
 	}
-
-	// TODO: Scale the ratio to the standardised decimal position
-	// TODO: Find `NUM_LIMBS` and `POWER_OF_TEN` for standardised decimal position
-	/// Method for checking the threshold for a given score
-	pub fn check_threshold<const NUM_LIMBS: usize, const POWER_OF_TEN: usize>(
-		&self, score: Fr, ratio: BigRational, threshold: Fr,
-	) -> ThresholdWitness<NUM_LIMBS> {
-		let x = ratio;
-
-		let num = x.numer();
-		let den = x.denom();
-
-		let num_decomposed =
-			decompose_big_decimal::<Fr, NUM_LIMBS, POWER_OF_TEN>(num.to_biguint().unwrap());
-		let den_decomposed =
-			decompose_big_decimal::<Fr, NUM_LIMBS, POWER_OF_TEN>(den.to_biguint().unwrap());
-
-		// Constraint checks - circuits should implement from this point
-		let composed_num_f = compose_big_decimal_f::<Fr, NUM_LIMBS, POWER_OF_TEN>(num_decomposed);
-		let composed_den_f = compose_big_decimal_f::<Fr, NUM_LIMBS, POWER_OF_TEN>(den_decomposed);
-		let composed_den_f_inv = composed_den_f.invert().unwrap();
-		let res_f = composed_num_f * composed_den_f_inv;
-		assert!(res_f == score);
-
-		// Take the highest POWER_OF_TEN digits for comparison
-		// This just means lower precision
-		let first_limb_num = *num_decomposed.last().unwrap();
-		let first_limb_den = *den_decomposed.last().unwrap();
-		let comp = first_limb_den * threshold;
-		let is_bigger = first_limb_num >= comp;
-
-		ThresholdWitness { threshold, is_bigger, num_decomposed, den_decomposed }
-	}
 }
 
 #[cfg(test)]
@@ -383,11 +337,8 @@ mod test {
 	use std::time::Instant;
 
 	use super::*;
-	use crate::{params::rns::compose_big_decimal, utils::fe_to_big};
 
 	use halo2::halo2curves::{bn256::Fr, ff::PrimeField};
-	use itertools::Itertools;
-	use num_bigint::ToBigInt;
 	use num_rational::BigRational;
 	use rand::thread_rng;
 	use secp256k1::{generate_keypair, PublicKey};
@@ -875,11 +826,9 @@ mod test {
 		const NUM_NEIGHBOURS: usize,
 		const NUM_ITERATIONS: usize,
 		const INITIAL_SCORE: u128,
-		const NUM_LIMBS: usize,
-		const POWER_OF_TEN: usize,
 	>(
 		ops: Vec<Vec<Fr>>,
-	) -> (Vec<Fr>, Vec<BigRational>, Vec<ThresholdWitness<NUM_LIMBS>>) {
+	) -> (Vec<Fr>, Vec<BigRational>) {
 		assert!(ops.len() == NUM_NEIGHBOURS);
 		for op in &ops {
 			assert!(op.len() == NUM_NEIGHBOURS);
@@ -914,14 +863,7 @@ mod test {
 		let s = set.converge();
 		let s_ratios = set.converge_rational();
 
-		let mut tws = Vec::new();
-		let threshold = Fr::from_u128(435);
-		for (&score, ratio) in s.iter().zip(s_ratios.clone()) {
-			let tw = set.check_threshold::<NUM_LIMBS, POWER_OF_TEN>(score, ratio, threshold);
-			tws.push(tw);
-		}
-
-		(s, s_ratios, tws)
+		(s, s_ratios)
 	}
 
 	#[test]
@@ -929,9 +871,6 @@ mod test {
 		const NUM_NEIGHBOURS: usize = 10;
 		const NUM_ITERATIONS: usize = 30;
 		const INITIAL_SCORE: u128 = 1000;
-		// Constants related to threshold check
-		const NUM_LIMBS: usize = 2;
-		const POWER_OF_TEN: usize = 50;
 
 		let ops_raw = [
 			// 0 + 15 + 154 + 165 + 0 + 123 + 56 + 222 + 253 + 12 = 1000
@@ -955,30 +894,10 @@ mod test {
 
 		let start = Instant::now();
 
-		let (s, s_ratios, tws) = eigen_trust_set_testing_helper::<
-			NUM_NEIGHBOURS,
-			NUM_ITERATIONS,
-			INITIAL_SCORE,
-			NUM_LIMBS,
-			POWER_OF_TEN,
-		>(ops);
+		let _ =
+			eigen_trust_set_testing_helper::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(ops);
 
 		let end = start.elapsed();
 		println!("Convergence time: {:?}", end);
-
-		let s_int: String = s_ratios.iter().map(|v| v.to_integer().to_str_radix(10)).join(", ");
-		println!("NATIVE BIG_RATIONAL RESULT: [{}]", s_int);
-		let s_formatted: Vec<String> = s.iter().map(|&x| fe_to_big(x).to_str_radix(10)).collect();
-		println!("new s: {:#?}", s_formatted);
-		for tw in tws {
-			let num = compose_big_decimal::<Fr, NUM_LIMBS, POWER_OF_TEN>(tw.num_decomposed);
-			let den = compose_big_decimal::<Fr, NUM_LIMBS, POWER_OF_TEN>(tw.den_decomposed);
-			let ratio = BigRational::new(num.to_bigint().unwrap(), den.to_bigint().unwrap());
-			println!(
-				"real score: {:?}, is bigger than 435: {:?}",
-				ratio.to_integer().to_str_radix(10),
-				tw.is_bigger,
-			);
-		}
 	}
 }
