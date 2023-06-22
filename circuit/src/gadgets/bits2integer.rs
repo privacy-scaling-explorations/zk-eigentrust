@@ -1,3 +1,4 @@
+use super::bits2num::Bits2NumChip;
 use crate::{
 	integer::AssignedInteger, params::rns::RnsParams, Chip, Chipset, CommonConfig, FieldExt,
 };
@@ -6,9 +7,7 @@ use halo2::{
 	plonk::{Error, Selector},
 };
 
-use super::bits2num::Bits2NumChip;
-
-/// Bits2IntegerChipsetConfig
+/// Bits2IntegerChipsetConfig structure.
 #[derive(Debug, Clone)]
 pub struct Bits2IntegerChipsetConfig {
 	bits2num: Selector,
@@ -21,7 +20,7 @@ impl Bits2IntegerChipsetConfig {
 	}
 }
 
-/// Constructs a cell and a variable for the circuit.
+/// Bits2IntegerChipset structure.
 #[derive(Clone)]
 pub struct Bits2IntegerChipset<
 	W: FieldExt,
@@ -41,7 +40,7 @@ impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
 where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 {
-	/// Create a new chip.
+	/// Creates a new chipset.
 	pub fn new(assigned_integer: AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>) -> Self {
 		Self { assigned_integer }
 	}
@@ -187,7 +186,7 @@ mod test {
 	fn test_bits_to_integer_big() {
 		// Testing biggest value in the field.
 		let numba_big = BigUint::from_str(
-			"2188824287183927522224640574525727508869631115729782366268903789426208582",
+			"21888242871839275222246405745257275088548364400416034343698204186575808495616",
 		)
 		.unwrap();
 		let numba = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(numba_big);
