@@ -53,22 +53,25 @@ where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 {
 	type Config = Bits2IntegerChipsetConfig;
-	type Output = [Vec<AssignedCell<N, N>>; NUM_LIMBS];
+	type Output = Vec<AssignedCell<N, N>>;
 
 	/// Synthesize the circuit.
 	fn synthesize(
 		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<N>,
 	) -> Result<Self::Output, Error> {
-		let mut bits = [(); NUM_LIMBS].map(|_| None);
+		let mut bits = Vec::new();
 		for i in 0..NUM_LIMBS {
-			let limb_bits = Bits2NumChip::new(self.assigned_integer.limbs[i].clone());
-			bits[i] = Some(limb_bits.synthesize(
+			let limb_bits_chip =
+				Bits2NumChip::new_exact::<NUM_BITS>(self.assigned_integer.limbs[i].clone());
+			let mut limb_bits = limb_bits_chip.synthesize(
 				common,
 				&config.bits2num,
 				layouter.namespace(|| "limb bits"),
-			)?);
+			)?;
+			bits.append(&mut limb_bits);
 		}
-		Ok(bits.map(|x| x.unwrap()))
+
+		Ok(bits)
 	}
 }
 
