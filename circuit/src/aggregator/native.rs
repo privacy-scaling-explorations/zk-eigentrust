@@ -10,6 +10,7 @@ use crate::{
 	},
 };
 use halo2::{
+	circuit::Value,
 	halo2curves::bn256::{Bn256, Fr, G1Affine},
 	plonk::{create_proof, Circuit},
 	poly::{
@@ -26,7 +27,7 @@ use rand::{thread_rng, RngCore};
 use snark_verifier::{
 	pcs::{
 		kzg::{Gwc19, KzgAccumulator, KzgAs},
-		AccumulationSchemeProver,
+		AccumulationScheme, AccumulationSchemeProver,
 	},
 	system::halo2::{compile, Config},
 	verifier::{plonk::PlonkProtocol, SnarkVerifier},
@@ -127,5 +128,61 @@ impl Aggregator {
 			instances: accumulator_limbs,
 			as_proof: Some(as_proof),
 		}
+	}
+
+	/// Verify accumulators
+	pub fn verify(&self, snark_instances: Vec<Vec<Vec<Fr>>>) {
+		assert!(self.snarks.len() == snark_instances.len());
+		for i in 0..self.snarks.len() {
+			// Extra check with instances
+			let _: Vec<Vec<()>> = self.snarks[i]
+				.instances
+				.iter()
+				.zip(snark_instances[i].iter())
+				.map(|(x, y)| {
+					x.iter().zip(y.iter()).map(|(a, b)| a.assert_if_known(|a| a == b)).collect()
+				})
+				.collect();
+		}
+
+		let mut accumulators = Vec::new();
+		for (i, snark) in self.snarks.iter().enumerate() {
+			let snark_proof = snark.proof.clone().unwrap();
+			let snark_proof = snark_proof.as_slice();
+			let mut transcript_read: NativeTranscriptRead<
+				_,
+				G1Affine,
+				Bn256_4_68,
+				PoseidonSponge<Fr, WIDTH, Params>,
+			> = NativeTranscriptRead::init(snark_proof.clone());
+			let proof = Psv::read_proof(
+				&self.svk, &snark.protocol, &snark_instances[i], &mut transcript_read,
+			)
+			.unwrap();
+			let res = Psv::verify(&self.svk, &snark.protocol, &snark_instances[i], &proof).unwrap();
+			accumulators.extend(res);
+		}
+
+		let as_proof = self.as_proof.clone().unwrap();
+		let as_proof = as_proof.as_slice();
+		let mut transcript: NativeTranscriptRead<
+			_,
+			G1Affine,
+			Bn256_4_68,
+			PoseidonSponge<Fr, WIDTH, Params>,
+		> = NativeTranscriptRead::init(as_proof);
+		let proof =
+			KzgAs::<Bn256, Gwc19>::read_proof(&Default::default(), &accumulators, &mut transcript)
+				.unwrap();
+
+		let accumulator =
+			KzgAs::<Bn256, Gwc19>::verify(&Default::default(), &accumulators, &proof).unwrap();
+
+		let KzgAccumulator { lhs, rhs } = accumulator;
+		let accumulator_limbs = [lhs.x, lhs.y, rhs.x, rhs.y]
+			.map(|v| Integer::<_, _, NUM_LIMBS, NUM_BITS, Bn256_4_68>::from_w(v).limbs)
+			.concat();
+
+		assert!(self.instances == accumulator_limbs);
 	}
 }
