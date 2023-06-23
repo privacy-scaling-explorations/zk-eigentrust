@@ -362,4 +362,99 @@ mod tests {
 			}
 		}
 	}
+
+	#[ignore = "Scaling test takes too long to run"]
+	#[test]
+	fn test_scaling_128_peers() {
+		const NUM_NEIGHBOURS: usize = 128;
+		const NUM_ITERATIONS: usize = 20;
+		const INITIAL_SCORE: u128 = 1000;
+
+		let rng = &mut thread_rng();
+		let mut biggest = 0;
+		for _ in 0..1000 {
+			let mut ops_raw = [(); NUM_NEIGHBOURS].map(|_| [(); NUM_NEIGHBOURS].map(|_| 0));
+			for i in 0..NUM_NEIGHBOURS {
+				for j in 0..NUM_NEIGHBOURS {
+					ops_raw[i][j] = rng.gen::<u8>();
+				}
+			}
+
+			let ops = ops_raw.map(|arr| arr.map(|x| Fr::from_u128(x as u128)).to_vec()).to_vec();
+
+			let (_, s_ratios) =
+				eigen_trust_set_testing_helper::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
+					ops,
+				);
+
+			for ratio in s_ratios {
+				let num_len = ratio.numer().to_string().len();
+				let den_len = ratio.denom().to_string().len();
+				println!("num_len: {:?}, den_len: {:?}", num_len, den_len);
+				let curr = num_len.max(den_len);
+				if curr > biggest {
+					biggest = curr;
+				}
+			}
+		}
+
+		println!("{:?}", biggest);
+	}
+
+	#[ignore = "Scaling test takes too long to run"]
+	#[test]
+	fn test_128_peer_consts() {
+		const NUM_NEIGHBOURS: usize = 128;
+		const NUM_ITERATIONS: usize = 20;
+		const INITIAL_SCORE: u128 = 1000;
+
+		// Printing out the optimal value for POWER_OF_TEN
+		let max_score_bn = BigUint::from(NUM_NEIGHBOURS * INITIAL_SCORE as usize);
+		let max_f_bn = fe_to_big(Fr::zero() - Fr::one());
+		let optimal_power_of_10 = max_f_bn.to_string().len() - max_score_bn.to_string().len() - 1;
+		println!("{:?}", optimal_power_of_10);
+
+		const THRESHOLD: u128 = 1000;
+		// Since the biggest value from test_scaling_128_peers was 4222 we need 61 limbs to cover all of them
+		const NUM_LIMBS: usize = 61;
+		const POWER_OF_TEN: usize = 70;
+
+		let rng = &mut thread_rng();
+		for _ in 0..1000 {
+			let mut ops_raw = [(); NUM_NEIGHBOURS].map(|_| [(); NUM_NEIGHBOURS].map(|_| 0));
+			for i in 0..NUM_NEIGHBOURS {
+				for j in 0..NUM_NEIGHBOURS {
+					ops_raw[i][j] = rng.gen::<u8>();
+				}
+			}
+
+			let ops = ops_raw.map(|arr| arr.map(|x| Fr::from_u128(x as u128)).to_vec()).to_vec();
+
+			let (s, s_ratios) =
+				eigen_trust_set_testing_helper::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
+					ops,
+				);
+
+			let threshold = Fr::from_u128(THRESHOLD);
+			for (&score, ratio) in s.iter().zip(s_ratios.clone()) {
+				let t: Threshold<Fr, NUM_LIMBS, POWER_OF_TEN, NUM_NEIGHBOURS, INITIAL_SCORE> =
+					Threshold::new(score, ratio, threshold);
+				let is_bigger_org = t.check_threshold();
+
+				let num = compose_big_decimal::<Fr, NUM_LIMBS, POWER_OF_TEN>(t.num_decomposed);
+				let den = compose_big_decimal::<Fr, NUM_LIMBS, POWER_OF_TEN>(t.den_decomposed);
+				let ratio = BigRational::new(num.to_bigint().unwrap(), den.to_bigint().unwrap());
+				let ratio_prime = ratio.to_integer().to_str_radix(10).parse::<u128>().unwrap();
+				let is_bigger = ratio_prime >= THRESHOLD;
+
+				println!(
+					"real score: {:?}, is bigger than {}: {:?} {:?}",
+					ratio.to_integer().to_str_radix(10),
+					THRESHOLD,
+					is_bigger_org,
+					is_bigger
+				);
+			}
+		}
+	}
 }
