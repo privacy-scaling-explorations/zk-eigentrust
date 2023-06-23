@@ -10,7 +10,6 @@ use crate::{
 	},
 };
 use halo2::{
-	circuit::Value,
 	halo2curves::bn256::{Bn256, Fr, G1Affine},
 	plonk::{create_proof, Circuit},
 	poly::{
@@ -132,29 +131,29 @@ impl Aggregator {
 
 	/// Verify accumulators
 	pub fn verify(&self, snark_instances: Vec<Vec<Vec<Fr>>>) {
+		// Extra check with provided snark instances
 		assert!(self.snarks.len() == snark_instances.len());
-		for i in 0..self.snarks.len() {
-			// Extra check with instances
+		for (i, instances) in snark_instances.iter().enumerate().take(self.snarks.len()) {
 			let _: Vec<Vec<()>> = self.snarks[i]
 				.instances
 				.iter()
-				.zip(snark_instances[i].iter())
+				.zip(instances.iter())
 				.map(|(x, y)| {
 					x.iter().zip(y.iter()).map(|(a, b)| a.assert_if_known(|a| a == b)).collect()
 				})
 				.collect();
 		}
 
+		// Verify the accumulator of snarks
 		let mut accumulators = Vec::new();
 		for (i, snark) in self.snarks.iter().enumerate() {
 			let snark_proof = snark.proof.clone().unwrap();
-			let snark_proof = snark_proof.as_slice();
 			let mut transcript_read: NativeTranscriptRead<
 				_,
 				G1Affine,
 				Bn256_4_68,
 				PoseidonSponge<Fr, WIDTH, Params>,
-			> = NativeTranscriptRead::init(snark_proof.clone());
+			> = NativeTranscriptRead::init(snark_proof.as_slice());
 			let proof = Psv::read_proof(
 				&self.svk, &snark.protocol, &snark_instances[i], &mut transcript_read,
 			)
@@ -164,13 +163,12 @@ impl Aggregator {
 		}
 
 		let as_proof = self.as_proof.clone().unwrap();
-		let as_proof = as_proof.as_slice();
 		let mut transcript: NativeTranscriptRead<
 			_,
 			G1Affine,
 			Bn256_4_68,
 			PoseidonSponge<Fr, WIDTH, Params>,
-		> = NativeTranscriptRead::init(as_proof);
+		> = NativeTranscriptRead::init(as_proof.as_slice());
 		let proof =
 			KzgAs::<Bn256, Gwc19>::read_proof(&Default::default(), &accumulators, &mut transcript)
 				.unwrap();
