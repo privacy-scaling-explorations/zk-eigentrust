@@ -284,7 +284,9 @@ mod tests {
 		for _ in 0..1000 {
 			let mut ops_raw = [(); NUM_NEIGHBOURS].map(|_| [(); NUM_NEIGHBOURS].map(|_| 0));
 			for i in 0..NUM_NEIGHBOURS {
-				ops_raw[i] = rng.gen::<[u8; NUM_NEIGHBOURS]>();
+				for j in 0..NUM_NEIGHBOURS {
+					ops_raw[i][j] = rng.gen::<u8>();
+				}
 			}
 
 			let ops = ops_raw.map(|arr| arr.map(|x| Fr::from_u128(x as u128)).to_vec()).to_vec();
@@ -328,12 +330,14 @@ mod tests {
 
 		let rng = &mut thread_rng();
 		for _ in 0..1000 {
-			let mut ops = Vec::new();
-			for _ in 0..NUM_NEIGHBOURS {
-				let ops_i = rng.gen::<[u8; NUM_NEIGHBOURS]>();
-				let ops_i_fr = ops_i.map(|x| Fr::from_u128(x as u128));
-				ops.push(ops_i_fr.to_vec());
+			let mut ops_raw = [(); NUM_NEIGHBOURS].map(|_| [(); NUM_NEIGHBOURS].map(|_| 0));
+			for i in 0..NUM_NEIGHBOURS {
+				for j in 0..NUM_NEIGHBOURS {
+					ops_raw[i][j] = rng.gen::<u8>();
+				}
 			}
+
+			let ops = ops_raw.map(|arr| arr.map(|x| Fr::from_u128(x as u128)).to_vec()).to_vec();
 
 			let (s, s_ratios) =
 				eigen_trust_set_testing_helper::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
@@ -352,6 +356,7 @@ mod tests {
 				let ratio_prime = ratio.to_integer().to_str_radix(10).parse::<u128>().unwrap();
 				let is_bigger = ratio_prime >= THRESHOLD;
 
+				assert!(is_bigger == is_bigger_org);
 				println!(
 					"real score: {:?}, is bigger than {}: {:?} {:?}",
 					ratio.to_integer().to_str_radix(10),
@@ -447,6 +452,7 @@ mod tests {
 				let ratio_prime = ratio.to_integer().to_str_radix(10).parse::<u128>().unwrap();
 				let is_bigger = ratio_prime >= THRESHOLD;
 
+				assert!(is_bigger == is_bigger_org);
 				println!(
 					"real score: {:?}, is bigger than {}: {:?} {:?}",
 					ratio.to_integer().to_str_radix(10),
