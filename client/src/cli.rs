@@ -183,54 +183,30 @@ pub struct BandadaData {
 	address: Option<String>,
 }
 
-/// Bandada API action.
-pub enum Action {
-	Add,
-	Remove,
-}
-
-impl FromStr for Action {
-	type Err = &'static str;
-
-	fn from_str(s: &str) -> Result<Self, Self::Err> {
-		match s {
-			"add" => Ok(Action::Add),
-			"remove" => Ok(Action::Remove),
-			_ => Err("Invalid action."),
-		}
-	}
-}
-
 /// Handles the bandada subcommand.
 pub async fn handle_bandada(data: BandadaData, group_th: u32) -> Result<(), &'static str> {
-	// Ensure all data parameters are provided
-	let action = data.action.as_deref().ok_or("Missing action.").and_then(Action::from_str)?;
+	let action = data.action.as_deref().ok_or("Missing action.")?;
 	let group_id = data.group_id.as_deref().ok_or("Missing group id.")?;
 	let identity_commitment =
 		data.identity_commitment.as_deref().ok_or("Missing identity commitment.")?;
 	let address = data.address.as_deref().ok_or("Missing address.")?;
 
-	// Initialize Bandada API client
 	let bandada_api = BandadaApi::new()?;
 
-	// Load scores from file
-	let scores: Vec<ScoreRecord> =
-		read_csv_file("scores").map_err(|_| "Failed to read scores from file.")?;
-
-	// Search for the participant in scores list
-	let participant_record = scores
-		.iter()
-		.find(|record| record.peer_address == *address)
-		.ok_or("Participant not found in score records.")?;
-
-	// Handle action
 	match action {
-		Action::Add => {
-			// Verify the participant's score is above the group threshold
+		"add" => {
+			let scores: Vec<ScoreRecord> =
+				read_csv_file("scores").map_err(|_| "Failed to read scores from file.")?;
+			let participant_record = scores
+				.iter()
+				.find(|record| record.peer_address == *address)
+				.ok_or("Participant not found in score records.")?;
+
 			let participant_score: u32 = participant_record
 				.score
 				.parse()
 				.map_err(|_| "Failed to parse participant score.")?;
+
 			if participant_score < group_th {
 				return Err("Participant score is below the group threshold.");
 			}
@@ -240,12 +216,13 @@ pub async fn handle_bandada(data: BandadaData, group_th: u32) -> Result<(), &'st
 				.await
 				.map_err(|_| "Failed to add member.")?;
 		},
-		Action::Remove => {
+		"remove" => {
 			bandada_api
 				.remove_member(group_id, identity_commitment)
 				.await
 				.map_err(|_| "Failed to remove member.")?;
 		},
+		_ => return Err("Invalid action."),
 	}
 
 	Ok(())

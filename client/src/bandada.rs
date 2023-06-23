@@ -7,8 +7,7 @@ use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
 use reqwest::{Client, Error, Response};
 
 /// Base URL for the Bandada API.
-// pub const BASE_URL: &str = "https://bandada.appliedzkp.org/api";
-pub const BASE_URL: &str = "http://localhost:3000";
+pub const BASE_URL: &str = "http://localhost:3000"; // "https://bandada.appliedzkp.org/api"
 
 /// Bandada API client.
 pub struct BandadaApi {
@@ -19,7 +18,9 @@ pub struct BandadaApi {
 impl BandadaApi {
 	/// Creates a new `BandadaApi`.
 	pub fn new() -> Result<Self, &'static str> {
-		let key = BandadaApi::get_key()?;
+		dotenv().ok();
+		let key = var("BANDADA_API_KEY")
+			.map_err(|_| "BANDADA_API_KEY environment variable is not set.")?;
 
 		Ok(Self { client: Client::new(), key })
 	}
@@ -29,10 +30,7 @@ impl BandadaApi {
 		&self, group_id: &str, identity_commitment: &str,
 	) -> Result<Response, Error> {
 		let mut headers = HeaderMap::new();
-		headers.insert(
-			"X-API-KEY",
-			HeaderValue::from_str(self.key.as_str()).unwrap(),
-		);
+		headers.insert("X-API-KEY", HeaderValue::from_str(&self.key).unwrap());
 		headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
 
 		self.client
@@ -48,10 +46,7 @@ impl BandadaApi {
 	/// Removes Member.
 	pub async fn remove_member(&self, group_id: &str, member_id: &str) -> Result<Response, Error> {
 		let mut headers = HeaderMap::new();
-		headers.insert(
-			"X-API-KEY",
-			HeaderValue::from_str(self.key.as_str()).unwrap(),
-		);
+		headers.insert("X-API-KEY", HeaderValue::from_str(&self.key).unwrap());
 
 		self.client
 			.delete(&format!(
@@ -61,11 +56,5 @@ impl BandadaApi {
 			.headers(headers)
 			.send()
 			.await
-	}
-
-	/// Gets the local bandada API key.
-	fn get_key() -> Result<String, &'static str> {
-		dotenv().ok();
-		var("BANDADA_API_KEY").map_err(|_| "BANDADA_API_KEY environment variable is not set.")
 	}
 }

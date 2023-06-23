@@ -114,7 +114,11 @@ impl Client {
 	/// Creates a new Client instance.
 	pub fn new(config: ClientConfig) -> Self {
 		// Load environment config
-		let mnemonic = Self::get_mnemonic();
+		dotenv().ok();
+		let mnemonic = var("MNEMONIC").unwrap_or_else(|_| {
+			println!("MNEMONIC environment variable is not set. Using default.");
+			"test test test test test test test test test test test junk".to_string()
+		});
 
 		// Setup provider
 		let provider = Provider::<Http>::try_from(&config.node_url)
@@ -335,15 +339,6 @@ impl Client {
 	/// Gets signer.
 	pub fn get_signer(&self) -> Arc<ClientSigner> {
 		self.signer.clone()
-	}
-
-	/// Gets local environment variables.
-	pub fn get_mnemonic() -> String {
-		dotenv().ok();
-		var("MNEMONIC").unwrap_or_else(|_| {
-			println!("MNEMONIC environment variable is not set. Using default.");
-			"test test test test test test test test test test test junk".to_string()
-		})
 	}
 }
 
