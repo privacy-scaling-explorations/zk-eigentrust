@@ -362,21 +362,14 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITERATIONS: usize, const INITIAL_SCO
 
 #[cfg(test)]
 mod test {
-	use std::time::Instant;
 
 	use super::{EigenTrustSet, Opinion};
 	use crate::{
 		calculate_message_hash,
 		eddsa::native::{sign, PublicKey, SecretKey},
-		params::rns::compose_big_decimal,
-		threshold::native::{Threshold, ThresholdWitness},
-		utils::fe_to_big,
 	};
 
 	use halo2::halo2curves::{bn256::Fr, ff::PrimeField};
-	use itertools::Itertools;
-	use num_bigint::ToBigInt;
-	use num_rational::BigRational;
 	use rand::thread_rng;
 
 	const NUM_NEIGHBOURS: usize = 12;
@@ -867,117 +860,5 @@ mod test {
 			eigen_trust_set.set.iter().filter(|&&(pk, _)| pk != PublicKey::default()).count();
 		let final_ops_cnt = filtered_ops.keys().count();
 		assert!(final_peers_cnt == final_ops_cnt);
-	}
-
-	fn eigen_trust_set_testing_helper<
-		const NUM_NEIGHBOURS: usize,
-		const NUM_ITERATIONS: usize,
-		const INITIAL_SCORE: u128,
-		const NUM_LIMBS: usize,
-		const POWER_OF_TEN: usize,
-	>(
-		ops: Vec<Vec<Fr>>,
-	) -> (
-		Vec<Fr>,
-		Vec<BigRational>,
-		Vec<ThresholdWitness<Fr, NUM_LIMBS>>,
-	) {
-		assert!(ops.len() == NUM_NEIGHBOURS);
-		for op in &ops {
-			assert!(op.len() == NUM_NEIGHBOURS);
-		}
-
-		let mut set = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
-
-		let rng = &mut thread_rng();
-
-		let sks: Vec<SecretKey> =
-			(0..NUM_NEIGHBOURS).into_iter().map(|__| SecretKey::random(rng)).collect();
-		let pks: Vec<PublicKey> = sks.iter().map(|s| s.public()).collect();
-
-		// Add the publicKey to the set
-		pks.iter().for_each(|pk| set.add_member(*pk));
-
-		// Update the opinions
-		for i in 0..NUM_NEIGHBOURS {
-			let scores = ops[i].to_vec();
-
-			let op_i = sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
-				&sks[i], &pks[i], &pks, &scores,
-			);
-
-			set.update_op(pks[i], op_i);
-		}
-
-		let s = set.converge();
-		let s_ratios = set.converge_rational();
-
-		let mut tws = Vec::new();
-		let threshold = Fr::from_u128(435);
-		for (&score, ratio) in s.iter().zip(s_ratios.clone()) {
-			let t: Threshold<NUM_LIMBS, POWER_OF_TEN> = Threshold::new(score, ratio, threshold);
-			let tw = t.check_threshold();
-			tws.push(tw);
-		}
-
-		(s, s_ratios, tws)
-	}
-
-	#[test]
-	fn test_scaling_1() {
-		const NUM_NEIGHBOURS: usize = 10;
-		const NUM_ITERATIONS: usize = 30;
-		const INITIAL_SCORE: u128 = 1000;
-		// Constants related to threshold check
-		const NUM_LIMBS: usize = 2;
-		const POWER_OF_TEN: usize = 50;
-
-		let ops_raw = [
-			// 0 + 15 + 154 + 165 + 0 + 123 + 56 + 222 + 253 + 12 = 1000
-			[0, 15, 154, 165, 0, 123, 56, 222, 253, 12], // - Peer 0 opinions
-			// 210 + 0 + 10 + 210 + 20 + 10 + 20 + 30 + 440 + 50 = 1000
-			[210, 0, 10, 210, 20, 10, 20, 30, 440, 50], // - Peer 1 opinions
-			// 40 + 10 + 0 + 20 + 30 + 410 + 20 + 445 + 23 + 2 = 1000
-			[40, 10, 0, 20, 30, 410, 20, 445, 23, 2], // - Peer 2 opinions
-			// 10 + 18 + 20 + 0 + 310 + 134 + 45 + 12 + 439 + 12 = 1000
-			[10, 18, 20, 0, 310, 134, 45, 12, 439, 12], // - Peer 3 opinions
-			// 30 + 130 + 44 + 210 + 0 + 12 + 445 + 62 + 12 + 55 = 1000
-			[30, 130, 44, 210, 0, 12, 445, 62, 12, 55], // = Peer 4 opinions
-			[0, 15, 154, 165, 123, 0, 56, 222, 253, 12], // - Peer 5 opinions
-			[210, 20, 10, 210, 20, 10, 0, 30, 440, 50], // - Peer 6 opinions
-			[40, 10, 445, 20, 30, 410, 20, 0, 23, 2],   // - Peer 7 opinions
-			[10, 18, 20, 439, 310, 134, 45, 12, 0, 12], // - Peer 8 opinions
-			[30, 130, 44, 210, 55, 12, 445, 62, 12, 0], // = Peer 9 opinions
-		];
-
-		let ops = ops_raw.map(|arr| arr.map(|x| Fr::from_u128(x)).to_vec()).to_vec();
-
-		let start = Instant::now();
-
-		let (s, s_ratios, tws) = eigen_trust_set_testing_helper::<
-			NUM_NEIGHBOURS,
-			NUM_ITERATIONS,
-			INITIAL_SCORE,
-			NUM_LIMBS,
-			POWER_OF_TEN,
-		>(ops);
-
-		let end = start.elapsed();
-		println!("Convergence time: {:?}", end);
-
-		let s_int: String = s_ratios.iter().map(|v| v.to_integer().to_str_radix(10)).join(", ");
-		println!("NATIVE BIG_RATIONAL RESULT: [{}]", s_int);
-		let s_formatted: Vec<String> = s.iter().map(|&x| fe_to_big(x).to_str_radix(10)).collect();
-		println!("new s: {:#?}", s_formatted);
-		for tw in tws {
-			let num = compose_big_decimal::<Fr, NUM_LIMBS, POWER_OF_TEN>(tw.num_decomposed);
-			let den = compose_big_decimal::<Fr, NUM_LIMBS, POWER_OF_TEN>(tw.den_decomposed);
-			let ratio = BigRational::new(num.to_bigint().unwrap(), den.to_bigint().unwrap());
-			println!(
-				"real score: {:?}, is bigger than 435: {:?}",
-				ratio.to_integer().to_str_radix(10),
-				tw.is_bigger,
-			);
-		}
 	}
 }
