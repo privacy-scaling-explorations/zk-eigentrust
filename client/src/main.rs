@@ -38,9 +38,11 @@ async fn main() {
 				eprintln!("Error while attesting: {:?}", e);
 			}
 		},
-		Mode::Bandada(bandada_data) => match handle_bandada(bandada_data).await {
-			Ok(_) => (),
-			Err(e) => eprintln!("Failed to execute command: {:?}", e),
+		Mode::Bandada(bandada_data) => {
+			match handle_bandada(bandada_data, config.bandada_th).await {
+				Ok(_) => (),
+				Err(e) => eprintln!("Failed to execute bandada command: {:?}", e),
+			}
 		},
 		Mode::Compile => {
 			println!("Compiling contracts...");

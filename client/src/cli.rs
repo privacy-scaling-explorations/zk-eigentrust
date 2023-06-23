@@ -53,6 +53,9 @@ pub struct UpdateData {
 	/// AttestationStation contract address (20-byte ethereum address).
 	#[clap(long = "as-address")]
 	as_address: Option<String>,
+	/// Bandada group threshold.
+	#[clap(long = "bandada")]
+	bandada_th: Option<String>,
 	/// Attestation domain identifier (20-byte hex string).
 	#[clap(long = "domain")]
 	domain: Option<String>,
@@ -69,6 +72,10 @@ pub fn handle_update(config: &mut ClientConfig, data: UpdateData) -> Result<(), 
 	if let Some(as_address) = data.as_address {
 		config.as_address =
 			Address::from_str(&as_address).map_err(|_| "Failed to parse address.")?.to_string();
+	}
+
+	if let Some(bandada_th) = data.bandada_th {
+		config.bandada_th = bandada_th.parse().map_err(|_| "Failed to parse group threshold.")?;
 	}
 
 	if let Some(domain) = data.domain {
@@ -166,17 +173,42 @@ pub struct BandadaData {
 	#[clap(long = "action")]
 	action: Option<String>,
 	/// Group id.
-	#[clap(long = "id")]
+	#[clap(long = "group")]
 	group_id: Option<String>,
+	/// Identity commitment.
+	#[clap(long = "ic")]
+	identity_commitment: Option<String>,
+	/// Participant address.
+	#[clap(long = "addr")]
+	address: Option<String>,
+}
+
+/// Bandada API action.
+pub enum Action {
+	Add,
+	Remove,
+}
+
+impl FromStr for Action {
+	type Err = &'static str;
+
+	fn from_str(s: &str) -> Result<Self, Self::Err> {
+		match s {
+			"add" => Ok(Action::Add),
+			"remove" => Ok(Action::Remove),
+			_ => Err("Invalid action."),
+		}
+	}
 }
 
 /// Handles the bandada subcommand.
-pub async fn handle_bandada(data: BandadaData) -> Result<(), &'static str> {
-	// Ensure both action and id are provided
-	let (action, group_id) = match (&data.action, &data.group_id) {
-		(Some(action), Some(group_id)) => (action, group_id),
-		_ => return Err("Missing action or id."),
-	};
+pub async fn handle_bandada(data: BandadaData, group_th: u32) -> Result<(), &'static str> {
+	// Ensure all data parameters are provided
+	let action = data.action.as_deref().ok_or("Missing action.").and_then(Action::from_str)?;
+	let group_id = data.group_id.as_deref().ok_or("Missing group id.")?;
+	let identity_commitment =
+		data.identity_commitment.as_deref().ok_or("Missing identity commitment.")?;
+	let address = data.address.as_deref().ok_or("Missing address.")?;
 
 	// Initialize Bandada API client
 	let bandada_api = BandadaApi::new()?;
@@ -185,25 +217,35 @@ pub async fn handle_bandada(data: BandadaData) -> Result<(), &'static str> {
 	let scores: Vec<ScoreRecord> =
 		read_csv_file("scores").map_err(|_| "Failed to read scores from file.")?;
 
+	// Search for the participant in scores list
+	let participant_record = scores
+		.iter()
+		.find(|record| record.peer_address == *address)
+		.ok_or("Participant not found in score records.")?;
+
 	// Handle action
-	match action.as_str() {
-		"add" => {
-			for score in &scores {
-				bandada_api
-					.add_member(group_id, &score.peer_address[0..11])
-					.await
-					.map_err(|_| "Failed to add member.")?;
+	match action {
+		Action::Add => {
+			// Verify the participant's score is above the group threshold
+			let participant_score: u32 = participant_record
+				.score
+				.parse()
+				.map_err(|_| "Failed to parse participant score.")?;
+			if participant_score < group_th {
+				return Err("Participant score is below the group threshold.");
 			}
+
+			bandada_api
+				.add_member(group_id, identity_commitment)
+				.await
+				.map_err(|_| "Failed to add member.")?;
 		},
-		"remove" => {
-			for score in &scores {
-				bandada_api
-					.remove_member(group_id, &score.peer_address[0..11])
-					.await
-					.map_err(|_| "Failed to remove member.")?;
-			}
+		Action::Remove => {
+			bandada_api
+				.remove_member(group_id, identity_commitment)
+				.await
+				.map_err(|_| "Failed to remove member.")?;
 		},
-		_ => return Err("Invalid action."),
 	}
 
 	Ok(())
@@ -226,6 +268,7 @@ mod tests {
 	fn test_attest_data_to_attestation() {
 		let config = ClientConfig {
 			as_address: "test".to_string(),
+			bandada_th: 500,
 			domain: "0x0000000000000000000000000000000000000000".to_string(),
 			node_url: "http://localhost:8545".to_string(),
 			verifier_address: "test".to_string(),
