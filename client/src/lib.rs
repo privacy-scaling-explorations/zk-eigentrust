@@ -77,7 +77,7 @@ use std::{collections::BTreeSet, sync::Arc};
 /// Max amount of participants.
 const MAX_NEIGHBOURS: usize = 4;
 /// Number of iterations to run the eigen trust algorithm.
-const NUM_ITERATIONS: usize = 10;
+const NUM_ITERATIONS: usize = 20;
 /// Initial score for each participant before the algorithms is run.
 const INITIAL_SCORE: u128 = 1000;
 /// Number of limbs for representing big numbers in threshold checking.
