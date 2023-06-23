@@ -186,3 +186,108 @@ impl Aggregator {
 		assert!(self.instances == accumulator_limbs);
 	}
 }
+
+#[cfg(test)]
+mod test {
+
+	use super::{Aggregator, Snark};
+	use crate::{utils::generate_params, CommonConfig, RegionCtx};
+	use halo2::{
+		circuit::{Layouter, Region, SimpleFloorPlanner, Value},
+		halo2curves::bn256::{Bn256, Fr},
+		plonk::{Circuit, ConstraintSystem, Error},
+		poly::Rotation,
+	};
+	use rand::thread_rng;
+
+	type Scalar = Fr;
+
+	#[derive(Clone)]
+	pub struct MulConfig {
+		common: CommonConfig,
+	}
+
+	/// Constructs individual cells for the configuration elements.
+	#[derive(Debug, Clone)]
+	pub struct MulChip<Scalar> {
+		x: Value<Scalar>,
+		y: Value<Scalar>,
+	}
+
+	impl MulChip<Scalar> {
+		/// Create a new chip.
+		pub fn new(x: Scalar, y: Scalar) -> Self {
+			MulChip { x: Value::known(x), y: Value::known(y) }
+		}
+	}
+
+	impl Circuit<Scalar> for MulChip<Scalar> {
+		type Config = MulConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			Self { x: Value::unknown(), y: Value::unknown() }
+		}
+
+		/// Make the circuit config.
+		fn configure(meta: &mut ConstraintSystem<Scalar>) -> MulConfig {
+			let common = CommonConfig::new(meta);
+			let s = meta.selector();
+
+			meta.create_gate("mul", |v_cells| {
+				let x_exp = v_cells.query_advice(common.advice[0], Rotation::cur());
+				let y_exp = v_cells.query_advice(common.advice[1], Rotation::cur());
+				let x_next_exp = v_cells.query_advice(common.advice[0], Rotation::next());
+				let s_exp = v_cells.query_selector(s);
+
+				vec![s_exp * ((x_exp * y_exp) - x_next_exp)]
+			});
+
+			MulConfig { common }
+		}
+
+		/// Synthesize the circuit.
+		fn synthesize(
+			&self, config: MulConfig, mut layouter: impl Layouter<Scalar>,
+		) -> Result<(), Error> {
+			let result = layouter.assign_region(
+				|| "assign",
+				|region: Region<'_, Scalar>| {
+					let mut ctx = RegionCtx::new(region, 0);
+					let assigned_x = ctx.assign_advice(config.common.advice[0], self.x)?;
+					let assigned_y = ctx.assign_advice(config.common.advice[1], self.y)?;
+					let out = assigned_x.value().cloned() * assigned_y.value();
+					ctx.next();
+					let res = ctx.assign_advice(config.common.advice[0], out)?;
+
+					Ok(res)
+				},
+			)?;
+			layouter.constrain_instance(result.cell(), config.common.instance, 0)?;
+
+			Ok(())
+		}
+	}
+
+	#[test]
+	fn test_aggregator_native() {
+		// Testing Aggregator
+		let rng = &mut thread_rng();
+		let k = 21;
+		let params = generate_params::<Bn256>(k);
+
+		let random_circuit_1 = MulChip::new(Fr::one(), Fr::one());
+		let random_circuit_2 = MulChip::new(Fr::one(), Fr::one());
+
+		let instances_1: Vec<Vec<Fr>> = vec![vec![Fr::one()]];
+		let instances_2: Vec<Vec<Fr>> = vec![vec![Fr::one()]];
+
+		let snark_1 = Snark::new(&params, random_circuit_1, instances_1.clone(), rng);
+		let snark_2 = Snark::new(&params, random_circuit_2, instances_2.clone(), rng);
+
+		let snarks = vec![snark_1, snark_2];
+		let aggregator = Aggregator::new(&params, snarks);
+
+		aggregator.verify(vec![instances_1, instances_2]);
+	}
+}
