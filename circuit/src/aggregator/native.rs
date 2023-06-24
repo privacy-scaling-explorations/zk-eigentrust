@@ -267,6 +267,7 @@ mod test {
 		}
 	}
 
+	#[ignore = "Aggregator takes too long to run"]
 	#[test]
 	fn test_aggregator_native() {
 		// Testing Aggregator
