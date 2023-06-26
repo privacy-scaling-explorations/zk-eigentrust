@@ -21,7 +21,6 @@ use halo2::{
 	},
 	transcript::{TranscriptReadBuffer, TranscriptWriterBuffer},
 };
-use itertools::Itertools;
 use rand::{thread_rng, RngCore};
 use snark_verifier::{
 	pcs::{
@@ -32,7 +31,7 @@ use snark_verifier::{
 	verifier::{plonk::PlonkProtocol, SnarkVerifier},
 };
 
-use super::{Aggregator, Psv};
+use super::{Psv, Svk};
 
 #[derive(Clone)]
 /// Snark structure
@@ -77,7 +76,20 @@ impl Snark {
 	}
 }
 
-impl Aggregator {
+/// Native Aggregator
+#[derive(Clone)]
+pub struct NativeAggregator {
+	/// Succinct Verifying Key
+	pub svk: Svk,
+	/// Snarks for the aggregation
+	pub snarks: Vec<Snark>,
+	/// Instances
+	pub instances: Vec<Fr>,
+	/// Accumulation Scheme Proof
+	pub as_proof: Vec<u8>,
+}
+
+impl NativeAggregator {
 	/// Create a new aggregator.
 	pub fn new(params: &ParamsKZG<Bn256>, snarks: Vec<Snark>) -> Self {
 		let svk = params.get_g()[0].into();
@@ -121,33 +133,14 @@ impl Aggregator {
 			.map(|v| Integer::<_, _, NUM_LIMBS, NUM_BITS, Bn256_4_68>::from_w(v).limbs)
 			.concat();
 
-		Self {
-			svk,
-			snarks: snarks.into_iter().map_into().collect(),
-			instances: accumulator_limbs,
-			as_proof: Some(as_proof),
-		}
+		Self { svk, snarks, instances: accumulator_limbs, as_proof }
 	}
 
 	/// Verify accumulators
-	pub fn verify(&self, snark_instances: Vec<Vec<Vec<Fr>>>) {
-		// Extra check with provided snark instances
-		assert!(self.snarks.len() == snark_instances.len());
-		for (i, instances) in snark_instances.iter().enumerate().take(self.snarks.len()) {
-			let _: Vec<Vec<()>> = self.snarks[i]
-				.instances
-				.iter()
-				.zip(instances.iter())
-				.map(|(x, y)| {
-					x.iter().zip(y.iter()).map(|(a, b)| a.assert_if_known(|a| a == b)).collect()
-				})
-				.collect();
-		}
-
-		// Verify the accumulator of snarks
+	pub fn verify(&self) {
 		let mut accumulators = Vec::new();
-		for (i, snark) in self.snarks.iter().enumerate() {
-			let snark_proof = snark.proof.clone().unwrap();
+		for snark in self.snarks.iter() {
+			let snark_proof = snark.proof.clone();
 			let mut transcript_read: NativeTranscriptRead<
 				_,
 				G1Affine,
@@ -155,14 +148,14 @@ impl Aggregator {
 				PoseidonSponge<Fr, WIDTH, Params>,
 			> = NativeTranscriptRead::init(snark_proof.as_slice());
 			let proof = Psv::read_proof(
-				&self.svk, &snark.protocol, &snark_instances[i], &mut transcript_read,
+				&self.svk, &snark.protocol, &snark.instances, &mut transcript_read,
 			)
 			.unwrap();
-			let res = Psv::verify(&self.svk, &snark.protocol, &snark_instances[i], &proof).unwrap();
+			let res = Psv::verify(&self.svk, &snark.protocol, &snark.instances, &proof).unwrap();
 			accumulators.extend(res);
 		}
 
-		let as_proof = self.as_proof.clone().unwrap();
+		let as_proof = self.as_proof.clone();
 		let mut transcript: NativeTranscriptRead<
 			_,
 			G1Affine,
@@ -188,7 +181,7 @@ impl Aggregator {
 #[cfg(test)]
 mod test {
 
-	use super::{Aggregator, Snark};
+	use super::{NativeAggregator, Snark};
 	use crate::{utils::generate_params, CommonConfig, RegionCtx};
 	use halo2::{
 		circuit::{Layouter, Region, SimpleFloorPlanner, Value},
@@ -285,8 +278,9 @@ mod test {
 		let snark_2 = Snark::new(&params, random_circuit_2, instances_2.clone(), rng);
 
 		let snarks = vec![snark_1, snark_2];
-		let aggregator = Aggregator::new(&params, snarks);
+		let native_aggregator = NativeAggregator::new(&params, snarks);
 
-		aggregator.verify(vec![instances_1, instances_2]);
+		// Should pass the assertion
+		native_aggregator.verify();
 	}
 }

@@ -101,6 +101,18 @@ struct Aggregator {
 	as_proof: Option<Vec<u8>>,
 }
 
+impl Aggregator {
+	/// Create a new aggregator.
+	pub fn new(svk: Svk, snarks: Vec<Snark>, instances: Vec<Fr>, as_proof: Vec<u8>) -> Self {
+		Self {
+			svk,
+			snarks: snarks.into_iter().map_into().collect(),
+			instances,
+			as_proof: Some(as_proof),
+		}
+	}
+}
+
 impl Clone for Aggregator {
 	/// Returns a copy of the value.
 	fn clone(&self) -> Self {
@@ -304,7 +316,9 @@ impl Circuit<Fr> for Aggregator {
 mod test {
 
 	use super::{Aggregator, Snark};
-	use crate::{utils::generate_params, CommonConfig, RegionCtx};
+	use crate::{
+		aggregator::native::NativeAggregator, utils::generate_params, CommonConfig, RegionCtx,
+	};
 	use halo2::{
 		circuit::{Layouter, Region, SimpleFloorPlanner, Value},
 		dev::MockProver,
@@ -401,7 +415,9 @@ mod test {
 		let snark_2 = Snark::new(&params, random_circuit_2, instances_2, rng);
 
 		let snarks = vec![snark_1, snark_2];
-		let aggregator = Aggregator::new(&params, snarks);
+		let NativeAggregator { svk, snarks, instances, as_proof } =
+			NativeAggregator::new(&params, snarks);
+		let aggregator = Aggregator::new(svk, snarks, instances, as_proof);
 
 		let prover = MockProver::run(k, &aggregator, vec![aggregator.instances.clone()]).unwrap();
 
