@@ -70,7 +70,7 @@ pub mod rescue_prime;
 pub mod threshold;
 /// Utilities for proving and verifying
 pub mod utils;
-/// PLONK verifier and aggregator
+/// PLONK verifier
 pub mod verifier;
 
 /// Extention to the traits provided by halo2

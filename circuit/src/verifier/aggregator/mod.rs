@@ -1,14 +1,7 @@
-use super::{
-	gen_pk,
-	loader::{
-		native::{NUM_BITS, NUM_LIMBS},
-		Halo2LScalar, LoaderConfig,
-	},
-	transcript::{
-		native::{NativeTranscriptRead, NativeTranscriptWrite, WIDTH},
-		TranscriptReadChipset,
-	},
-};
+use self::native::Snark;
+
+/// Native version of Aggregator
+pub mod native;
 use crate::{
 	circuit::{FullRoundHasher, PartialRoundHasher},
 	ecc::same_curve::{
@@ -19,91 +12,43 @@ use crate::{
 		bits2num::Bits2NumChip,
 		main::{MainChip, MainConfig},
 	},
-	integer::{
-		native::Integer, IntegerAddChip, IntegerDivChip, IntegerMulChip, IntegerReduceChip,
-		IntegerSubChip,
-	},
+	integer::{IntegerAddChip, IntegerDivChip, IntegerMulChip, IntegerReduceChip, IntegerSubChip},
 	params::rns::bn256::Bn256_4_68,
 	params::{ecc::bn254::Bn254Params, hasher::poseidon_bn254_5x5::Params},
 	poseidon::{
-		native::sponge::PoseidonSponge,
 		sponge::{PoseidonSpongeConfig, StatefulSpongeChipset},
 		PoseidonConfig,
+	},
+	verifier::{
+		loader::{
+			native::{NUM_BITS, NUM_LIMBS},
+			Halo2LScalar, LoaderConfig,
+		},
+		transcript::{native::WIDTH, TranscriptReadChipset},
 	},
 	Chip, CommonConfig, RegionCtx, ADVICE,
 };
 use halo2::{
 	circuit::{Layouter, Region, SimpleFloorPlanner, Value},
 	halo2curves::bn256::{Bn256, Fq, Fr, G1Affine},
-	plonk::{create_proof, Circuit, ConstraintSystem, Error},
-	poly::{
-		commitment::ParamsProver,
-		kzg::{
-			commitment::{KZGCommitmentScheme, ParamsKZG},
-			multiopen::ProverGWC,
-		},
-	},
-	transcript::{TranscriptReadBuffer, TranscriptWriterBuffer},
+	plonk::{Circuit, ConstraintSystem, Error},
 };
 use itertools::Itertools;
-use rand::{thread_rng, RngCore};
 use snark_verifier::{
 	pcs::{
-		kzg::{Gwc19, KzgAccumulator, KzgAs, KzgSuccinctVerifyingKey},
-		AccumulationScheme, AccumulationSchemeProver,
+		kzg::{Gwc19, KzgAs, KzgSuccinctVerifyingKey},
+		AccumulationScheme,
 	},
-	system::halo2::{compile, Config},
 	verifier::{
 		plonk::{PlonkProtocol, PlonkSuccinctVerifier},
 		SnarkVerifier,
 	},
 };
 
-type Psv = PlonkSuccinctVerifier<KzgAs<Bn256, Gwc19>>;
-type Svk = KzgSuccinctVerifyingKey<G1Affine>;
-
-#[derive(Clone)]
-/// Snark structure
-pub struct Snark {
-	// Protocol
-	protocol: PlonkProtocol<G1Affine>,
-	// Instances
-	instances: Vec<Vec<Fr>>,
-	// Proof
-	proof: Vec<u8>,
-}
-
-impl Snark {
-	/// Create a new Snark
-	fn new<C: Circuit<Fr>, R: RngCore>(
-		params: &ParamsKZG<Bn256>, circuit: C, instances: Vec<Vec<Fr>>, rng: &mut R,
-	) -> Self {
-		let pk = gen_pk(params, &circuit);
-		let config = Config::kzg().with_num_instance(vec![instances.len()]);
-
-		let protocol = compile(params, pk.get_vk(), config);
-
-		let instances_slice: Vec<&[Fr]> = instances.iter().map(|x| x.as_slice()).collect();
-		let mut transcript = NativeTranscriptWrite::<
-			_,
-			G1Affine,
-			Bn256_4_68,
-			PoseidonSponge<Fr, WIDTH, Params>,
-		>::new(Vec::new());
-		create_proof::<KZGCommitmentScheme<Bn256>, ProverGWC<_>, _, _, _, _>(
-			params,
-			&pk,
-			&[circuit],
-			&[instances_slice.as_slice()],
-			rng,
-			&mut transcript,
-		)
-		.unwrap();
-		let proof = transcript.finalize();
-
-		Self { protocol, instances, proof }
-	}
-}
+/// Plonk verifier
+pub type Psv = PlonkSuccinctVerifier<KzgAs<Bn256, Gwc19>>;
+/// KZG succinct verifying key
+pub type Svk = KzgSuccinctVerifyingKey<G1Affine>;
 
 #[derive(Debug, Clone)]
 /// UnassignedSnark structure
@@ -150,74 +95,21 @@ struct Aggregator {
 	svk: Svk,
 	// Snarks for the aggregation
 	snarks: Vec<UnassignedSnark>,
-	// Instances
-	instances: Vec<Fr>,
 	// Accumulation Scheme Proof
 	as_proof: Option<Vec<u8>>,
+}
+
+impl Aggregator {
+	/// Create a new aggregator.
+	pub fn new(svk: Svk, snarks: Vec<Snark>, as_proof: Vec<u8>) -> Self {
+		Self { svk, snarks: snarks.into_iter().map_into().collect(), as_proof: Some(as_proof) }
+	}
 }
 
 impl Clone for Aggregator {
 	/// Returns a copy of the value.
 	fn clone(&self) -> Self {
-		Self {
-			svk: self.svk,
-			snarks: self.snarks.clone(),
-			instances: self.instances.clone(),
-			as_proof: self.as_proof.clone(),
-		}
-	}
-}
-
-impl Aggregator {
-	/// Create a new aggregator.
-	pub fn new(params: &ParamsKZG<Bn256>, snarks: Vec<Snark>) -> Self {
-		let svk = params.get_g()[0].into();
-
-		let mut plonk_proofs = Vec::new();
-		for snark in &snarks {
-			let mut transcript_read: NativeTranscriptRead<
-				_,
-				G1Affine,
-				Bn256_4_68,
-				PoseidonSponge<Fr, WIDTH, Params>,
-			> = NativeTranscriptRead::init(snark.proof.as_slice());
-
-			let proof = Psv::read_proof(
-				&svk, &snark.protocol, &snark.instances, &mut transcript_read,
-			)
-			.unwrap();
-			let res = Psv::verify(&svk, &snark.protocol, &snark.instances, &proof).unwrap();
-
-			plonk_proofs.extend(res);
-		}
-
-		let mut transcript_write = NativeTranscriptWrite::<
-			Vec<u8>,
-			G1Affine,
-			Bn256_4_68,
-			PoseidonSponge<Fr, WIDTH, Params>,
-		>::new(Vec::new());
-		let rng = &mut thread_rng();
-		let accumulator = KzgAs::<Bn256, Gwc19>::create_proof(
-			&Default::default(),
-			&plonk_proofs,
-			&mut transcript_write,
-			rng,
-		)
-		.unwrap();
-		let as_proof = transcript_write.finalize();
-
-		let KzgAccumulator { lhs, rhs } = accumulator;
-		let accumulator_limbs = [lhs.x, lhs.y, rhs.x, rhs.y]
-			.map(|v| Integer::<_, _, NUM_LIMBS, NUM_BITS, Bn256_4_68>::from_w(v).limbs)
-			.concat();
-
-		Self {
-			svk,
-			snarks: snarks.into_iter().map_into().collect(),
-			instances: accumulator_limbs,
-			as_proof: Some(as_proof),
-		}
+		Self { svk: self.svk, snarks: self.snarks.clone(), as_proof: self.as_proof.clone() }
 	}
 }
 
@@ -249,7 +141,6 @@ impl Circuit<Fr> for Aggregator {
 		Self {
 			svk: self.svk,
 			snarks: self.snarks.iter().map(UnassignedSnark::without_witness).collect(),
-			instances: self.instances.clone(),
 			as_proof: None,
 		}
 	}
@@ -410,8 +301,7 @@ impl Circuit<Fr> for Aggregator {
 
 #[cfg(test)]
 mod test {
-
-	use super::{Aggregator, Snark};
+	use super::{native::NativeAggregator, Aggregator, Snark};
 	use crate::{utils::generate_params, CommonConfig, RegionCtx};
 	use halo2::{
 		circuit::{Layouter, Region, SimpleFloorPlanner, Value},
@@ -509,9 +399,11 @@ mod test {
 		let snark_2 = Snark::new(&params, random_circuit_2, instances_2, rng);
 
 		let snarks = vec![snark_1, snark_2];
-		let aggregator = Aggregator::new(&params, snarks);
+		let NativeAggregator { svk, snarks, instances, as_proof } =
+			NativeAggregator::new(&params, snarks);
+		let aggregator = Aggregator::new(svk, snarks, as_proof);
 
-		let prover = MockProver::run(k, &aggregator, vec![aggregator.instances.clone()]).unwrap();
+		let prover = MockProver::run(k, &aggregator, vec![instances]).unwrap();
 
 		assert_eq!(prover.verify(), Ok(()));
 	}
