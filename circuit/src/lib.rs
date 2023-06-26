@@ -73,9 +73,6 @@ pub mod utils;
 /// PLONK verifier
 pub mod verifier;
 
-/// PLONK proof aggregator
-pub mod aggregator;
-
 /// Extention to the traits provided by halo2
 pub trait FieldExt: PrimeField + FromUniformBytes<64> {}
 impl FieldExt for BnBase {}

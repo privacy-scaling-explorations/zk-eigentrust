@@ -180,7 +180,6 @@ impl NativeAggregator {
 
 #[cfg(test)]
 mod test {
-
 	use super::{NativeAggregator, Snark};
 	use crate::{utils::generate_params, CommonConfig, RegionCtx};
 	use halo2::{

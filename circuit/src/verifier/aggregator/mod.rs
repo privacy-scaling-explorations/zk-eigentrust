@@ -301,11 +301,8 @@ impl Circuit<Fr> for Aggregator {
 
 #[cfg(test)]
 mod test {
-
-	use super::{Aggregator, Snark};
-	use crate::{
-		aggregator::native::NativeAggregator, utils::generate_params, CommonConfig, RegionCtx,
-	};
+	use super::{native::NativeAggregator, Aggregator, Snark};
+	use crate::{utils::generate_params, CommonConfig, RegionCtx};
 	use halo2::{
 		circuit::{Layouter, Region, SimpleFloorPlanner, Value},
 		dev::MockProver,
