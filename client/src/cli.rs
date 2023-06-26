@@ -59,6 +59,9 @@ pub struct UpdateData {
 	/// Bandada group threshold.
 	#[clap(long = "band-th")]
 	band_th: Option<String>,
+	/// Bandada API base URL.
+	#[clap(long = "band-url")]
+	band_url: Option<String>,
 	/// Attestation domain identifier (20-byte hex string).
 	#[clap(long = "domain")]
 	domain: Option<String>,
@@ -84,8 +87,12 @@ pub fn handle_update(config: &mut ClientConfig, data: UpdateData) -> Result<(), 
 
 	if let Some(band_th) = data.band_th {
 		band_th.parse::<u32>().map_err(|_| "Failed to parse group threshold.")?;
-
 		config.band_th = band_th;
+	}
+
+	if let Some(band_url) = data.band_url {
+		Http::from_str(&band_url).map_err(|_| "Failed to parse bandada API base url.")?;
+		config.band_url = band_url;
 	}
 
 	if let Some(domain) = data.domain {
@@ -215,7 +222,7 @@ pub async fn handle_bandada(config: &ClientConfig, data: BandadaData) -> Result<
 		data.identity_commitment.as_deref().ok_or("Missing identity commitment.")?;
 	let address = data.address.as_deref().ok_or("Missing address.")?;
 
-	let bandada_api = BandadaApi::new()?;
+	let bandada_api = BandadaApi::new(&config.band_url)?;
 
 	match action {
 		Action::Add => {
@@ -239,13 +246,13 @@ pub async fn handle_bandada(config: &ClientConfig, data: BandadaData) -> Result<
 			}
 
 			bandada_api
-				.add_member(config.band_id.as_str(), identity_commitment)
+				.add_member(&config.band_id, identity_commitment)
 				.await
 				.map_err(|_| "Failed to add member.")?;
 		},
 		Action::Remove => {
 			bandada_api
-				.remove_member(config.band_id.as_str(), identity_commitment)
+				.remove_member(&config.band_id, identity_commitment)
 				.await
 				.map_err(|_| "Failed to remove member.")?;
 		},
@@ -273,6 +280,7 @@ mod tests {
 			as_address: "test".to_string(),
 			band_id: "38922764296632428858395574229367".to_string(),
 			band_th: "500".to_string(),
+			band_url: "http://localhost:3000".to_string(),
 			domain: "0x0000000000000000000000000000000000000000".to_string(),
 			node_url: "http://localhost:8545".to_string(),
 			verifier_address: "test".to_string(),

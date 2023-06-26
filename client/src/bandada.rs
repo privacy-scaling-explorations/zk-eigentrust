@@ -6,23 +6,21 @@ use dotenv::{dotenv, var};
 use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
 use reqwest::{Client, Error, Response};
 
-/// Base URL for the Bandada API.
-pub const BASE_URL: &str = "http://localhost:3000"; // "https://bandada.appliedzkp.org/api"
-
 /// Bandada API client.
 pub struct BandadaApi {
+	base_url: String,
 	client: Client,
 	key: String,
 }
 
 impl BandadaApi {
 	/// Creates a new `BandadaApi`.
-	pub fn new() -> Result<Self, &'static str> {
+	pub fn new(base_url: &str) -> Result<Self, &'static str> {
 		dotenv().ok();
 		let key = var("BANDADA_API_KEY")
 			.map_err(|_| "BANDADA_API_KEY environment variable is not set.")?;
 
-		Ok(Self { client: Client::new(), key })
+		Ok(Self { base_url: base_url.to_string(), client: Client::new(), key })
 	}
 
 	/// Adds Member.
@@ -36,7 +34,7 @@ impl BandadaApi {
 		self.client
 			.post(&format!(
 				"{}/groups/{}/members/{}",
-				BASE_URL, group_id, identity_commitment
+				self.base_url, group_id, identity_commitment
 			))
 			.headers(headers)
 			.send()
@@ -51,7 +49,7 @@ impl BandadaApi {
 		self.client
 			.delete(&format!(
 				"{}/groups/{}/members/{}",
-				BASE_URL, group_id, member_id
+				self.base_url, group_id, member_id
 			))
 			.headers(headers)
 			.send()
