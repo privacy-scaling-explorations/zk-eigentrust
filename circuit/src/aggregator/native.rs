@@ -262,7 +262,7 @@ mod test {
 
 	#[ignore = "Aggregator takes too long to run"]
 	#[test]
-	fn test_aggregator_native() {
+	fn test_native_aggregator() {
 		// Testing Aggregator
 		let rng = &mut thread_rng();
 		let k = 21;
