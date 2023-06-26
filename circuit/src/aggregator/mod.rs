@@ -95,33 +95,21 @@ struct Aggregator {
 	svk: Svk,
 	// Snarks for the aggregation
 	snarks: Vec<UnassignedSnark>,
-	// Instances
-	instances: Vec<Fr>,
 	// Accumulation Scheme Proof
 	as_proof: Option<Vec<u8>>,
 }
 
 impl Aggregator {
 	/// Create a new aggregator.
-	pub fn new(svk: Svk, snarks: Vec<Snark>, instances: Vec<Fr>, as_proof: Vec<u8>) -> Self {
-		Self {
-			svk,
-			snarks: snarks.into_iter().map_into().collect(),
-			instances,
-			as_proof: Some(as_proof),
-		}
+	pub fn new(svk: Svk, snarks: Vec<Snark>, as_proof: Vec<u8>) -> Self {
+		Self { svk, snarks: snarks.into_iter().map_into().collect(), as_proof: Some(as_proof) }
 	}
 }
 
 impl Clone for Aggregator {
 	/// Returns a copy of the value.
 	fn clone(&self) -> Self {
-		Self {
-			svk: self.svk,
-			snarks: self.snarks.clone(),
-			instances: self.instances.clone(),
-			as_proof: self.as_proof.clone(),
-		}
+		Self { svk: self.svk, snarks: self.snarks.clone(), as_proof: self.as_proof.clone() }
 	}
 }
 
@@ -153,7 +141,6 @@ impl Circuit<Fr> for Aggregator {
 		Self {
 			svk: self.svk,
 			snarks: self.snarks.iter().map(UnassignedSnark::without_witness).collect(),
-			instances: self.instances.clone(),
 			as_proof: None,
 		}
 	}
@@ -417,9 +404,9 @@ mod test {
 		let snarks = vec![snark_1, snark_2];
 		let NativeAggregator { svk, snarks, instances, as_proof } =
 			NativeAggregator::new(&params, snarks);
-		let aggregator = Aggregator::new(svk, snarks, instances, as_proof);
+		let aggregator = Aggregator::new(svk, snarks, as_proof);
 
-		let prover = MockProver::run(k, &aggregator, vec![aggregator.instances.clone()]).unwrap();
+		let prover = MockProver::run(k, &aggregator, vec![instances]).unwrap();
 
 		assert_eq!(prover.verify(), Ok(()));
 	}
