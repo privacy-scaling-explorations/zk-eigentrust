@@ -1,3 +1,4 @@
+mod bandada;
 mod cli;
 
 use clap::Parser;
@@ -25,7 +26,7 @@ async fn main() {
 			let attestation = match attest_data.to_attestation(&config) {
 				Ok(a) => a,
 				Err(e) => {
-					println!("Error while creating attestation: {:?}", e);
+					eprintln!("Error while creating attestation: {:?}", e);
 					return;
 				},
 			};
@@ -34,8 +35,12 @@ async fn main() {
 
 			let client = Client::new(config);
 			if let Err(e) = client.attest(attestation).await {
-				println!("Error while attesting: {:?}", e);
+				eprintln!("Error while attesting: {:?}", e);
 			}
+		},
+		Mode::Bandada(bandada_data) => match handle_bandada(&config, bandada_data).await {
+			Ok(_) => (),
+			Err(e) => eprintln!("Failed to execute bandada command: {:?}", e),
 		},
 		Mode::Compile => {
 			println!("Compiling contracts...");
