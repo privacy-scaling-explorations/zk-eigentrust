@@ -3,35 +3,21 @@ use self::native::Snark;
 /// Native version of Aggregator
 pub mod native;
 use crate::{
-	circuit::{FullRoundHasher, PartialRoundHasher},
-	ecc::same_curve::{
-		EccAddConfig, EccDoubleConfig, EccMulConfig, EccTableSelectConfig, EccUnreducedLadderConfig,
-	},
-	gadgets::{
-		absorb::AbsorbChip,
-		bits2num::Bits2NumChip,
-		main::{MainChip, MainConfig},
-	},
-	integer::{IntegerAddChip, IntegerDivChip, IntegerMulChip, IntegerReduceChip, IntegerSubChip},
+	ecc::same_curve::EccMulConfig,
+	gadgets::main::MainConfig,
 	params::rns::bn256::Bn256_4_68,
 	params::{ecc::bn254::Bn254Params, hasher::poseidon_bn254_5x5::Params},
-	poseidon::{
-		sponge::{PoseidonSpongeConfig, StatefulSpongeChipset},
-		PoseidonConfig,
-	},
+	poseidon::sponge::{PoseidonSpongeConfig, StatefulSpongeChipset},
 	verifier::{
-		loader::{
-			native::{NUM_BITS, NUM_LIMBS},
-			Halo2LScalar, LoaderConfig,
-		},
+		loader::{Halo2LScalar, LoaderConfig},
 		transcript::{native::WIDTH, TranscriptReadChipset},
 	},
-	Chip, CommonConfig, RegionCtx, ADVICE,
+	Chipset, CommonConfig, RegionCtx, ADVICE,
 };
 use halo2::{
-	circuit::{Layouter, Region, SimpleFloorPlanner, Value},
-	halo2curves::bn256::{Bn256, Fq, Fr, G1Affine},
-	plonk::{Circuit, ConstraintSystem, Error},
+	circuit::{AssignedCell, Layouter, Region, Value},
+	halo2curves::bn256::{Bn256, Fr, G1Affine},
+	plonk::Error,
 };
 use itertools::Itertools;
 use snark_verifier::{
@@ -90,7 +76,9 @@ impl UnassignedSnark {
 	}
 }
 
-struct Aggregator {
+#[derive(Debug)]
+/// AggregatorChipset
+pub struct AggregatorChipset {
 	// Succinct Verifying Key
 	svk: Svk,
 	// Snarks for the aggregation
@@ -99,14 +87,14 @@ struct Aggregator {
 	as_proof: Option<Vec<u8>>,
 }
 
-impl Aggregator {
+impl AggregatorChipset {
 	/// Create a new aggregator.
-	pub fn new(svk: Svk, snarks: Vec<Snark>, as_proof: Vec<u8>) -> Self {
-		Self { svk, snarks: snarks.into_iter().map_into().collect(), as_proof: Some(as_proof) }
+	pub fn new(svk: Svk, snarks: Vec<UnassignedSnark>, as_proof: Option<Vec<u8>>) -> Self {
+		Self { svk, snarks, as_proof }
 	}
 }
 
-impl Clone for Aggregator {
+impl Clone for AggregatorChipset {
 	/// Returns a copy of the value.
 	fn clone(&self) -> Self {
 		Self { svk: self.svk, snarks: self.snarks.clone(), as_proof: self.as_proof.clone() }
@@ -115,7 +103,7 @@ impl Clone for Aggregator {
 
 /// AggregatorConfig structure
 #[derive(Clone)]
-struct AggregatorConfig {
+pub struct AggregatorConfig {
 	// Configurations for the needed circuit configs.
 	pub(crate) common: CommonConfig,
 	pub(crate) main: MainConfig,
@@ -132,58 +120,14 @@ impl AggregatorConfig {
 	}
 }
 
-impl Circuit<Fr> for Aggregator {
+impl Chipset<Fr> for AggregatorChipset {
 	type Config = AggregatorConfig;
-	type FloorPlanner = SimpleFloorPlanner;
-
-	/// Returns a copy of this circuit with no witness values
-	fn without_witnesses(&self) -> Self {
-		Self {
-			svk: self.svk,
-			snarks: self.snarks.iter().map(UnassignedSnark::without_witness).collect(),
-			as_proof: None,
-		}
-	}
-
-	/// Configure the circuit.
-	fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
-		let common = CommonConfig::new(meta);
-		let main_selector = MainChip::configure(&common, meta);
-		let main = MainConfig::new(main_selector);
-
-		let full_round_selector = FullRoundHasher::configure(&common, meta);
-		let partial_round_selector = PartialRoundHasher::configure(&common, meta);
-		let poseidon = PoseidonConfig::new(full_round_selector, partial_round_selector);
-
-		let absorb_selector = AbsorbChip::<Fr, WIDTH>::configure(&common, meta);
-		let poseidon_sponge = PoseidonSpongeConfig::new(poseidon, absorb_selector);
-
-		let bits2num = Bits2NumChip::configure(&common, meta);
-
-		let int_red =
-			IntegerReduceChip::<Fq, Fr, NUM_LIMBS, NUM_BITS, Bn256_4_68>::configure(&common, meta);
-		let int_add =
-			IntegerAddChip::<Fq, Fr, NUM_LIMBS, NUM_BITS, Bn256_4_68>::configure(&common, meta);
-		let int_sub =
-			IntegerSubChip::<Fq, Fr, NUM_LIMBS, NUM_BITS, Bn256_4_68>::configure(&common, meta);
-		let int_mul =
-			IntegerMulChip::<Fq, Fr, NUM_LIMBS, NUM_BITS, Bn256_4_68>::configure(&common, meta);
-		let int_div =
-			IntegerDivChip::<Fq, Fr, NUM_LIMBS, NUM_BITS, Bn256_4_68>::configure(&common, meta);
-
-		let ladder = EccUnreducedLadderConfig::new(int_add, int_sub, int_mul, int_div);
-		let add = EccAddConfig::new(int_red, int_sub, int_mul, int_div);
-		let double = EccDoubleConfig::new(int_red, int_add, int_sub, int_mul, int_div);
-		let table_select = EccTableSelectConfig::new(main.clone());
-		let ecc_mul_scalar = EccMulConfig::new(ladder, add, double, table_select, bits2num);
-
-		AggregatorConfig { common, main, poseidon_sponge, ecc_mul_scalar }
-	}
+	type Output = Vec<AssignedCell<Fr, Fr>>;
 
 	/// Synthesize the circuit.
 	fn synthesize(
-		&self, config: Self::Config, mut layouter: impl Layouter<Fr>,
-	) -> Result<(), Error> {
+		self, _common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<Fr>,
+	) -> Result<Self::Output, Error> {
 		let assigned_instances = layouter.assign_region(
 			|| "assign_instances",
 			|region: Region<'_, Fr>| {
@@ -213,7 +157,7 @@ impl Circuit<Fr> for Aggregator {
 			},
 		)?;
 
-		let _accumulator_limbs = {
+		let accumulator_limbs = {
 			let loader_config = LoaderConfig::<
 				'_,
 				G1Affine,
@@ -224,9 +168,9 @@ impl Circuit<Fr> for Aggregator {
 			>::new(
 				layouter.namespace(|| "loader"),
 				config.common.clone(),
-				config.ecc_mul_scalar,
-				config.main,
-				config.poseidon_sponge,
+				config.ecc_mul_scalar.clone(),
+				config.main.clone(),
+				config.poseidon_sponge.clone(),
 			);
 
 			let mut accumulators = Vec::new();
@@ -287,29 +231,49 @@ impl Circuit<Fr> for Aggregator {
 			let rhs_x = accumulator.rhs.inner.x;
 			let rhs_y = accumulator.rhs.inner.y;
 
-			[lhs_x, lhs_y, rhs_x, rhs_y].map(|v| v.limbs).into_iter().flatten()
+			[lhs_x, lhs_y, rhs_x, rhs_y].map(|v| v.limbs).into_iter().flatten().collect_vec()
 		};
 
-		// TODO: Uncomment when the bug is fixed
-		// for (row, inst) in accumulator_limbs.enumerate() {
-		// 	layouter.constrain_instance(inst.cell(), config.common.instance, row)?;
-		// }
-
-		Ok(())
+		Ok(accumulator_limbs)
 	}
 }
 
 #[cfg(test)]
 mod test {
-	use super::{native::NativeAggregator, Aggregator, Snark};
-	use crate::{utils::generate_params, CommonConfig, RegionCtx};
+	use super::{
+		native::NativeAggregator, AggregatorChipset, AggregatorConfig, Snark, Svk, UnassignedSnark,
+	};
+	use crate::{
+		circuit::{FullRoundHasher, PartialRoundHasher},
+		ecc::same_curve::{
+			EccAddConfig, EccDoubleConfig, EccMulConfig, EccTableSelectConfig,
+			EccUnreducedLadderConfig,
+		},
+		gadgets::{
+			absorb::AbsorbChip,
+			bits2num::Bits2NumChip,
+			main::{MainChip, MainConfig},
+		},
+		integer::{
+			IntegerAddChip, IntegerDivChip, IntegerMulChip, IntegerReduceChip, IntegerSubChip,
+		},
+		params::rns::bn256::Bn256_4_68,
+		poseidon::{sponge::PoseidonSpongeConfig, PoseidonConfig},
+		utils::generate_params,
+		verifier::{
+			loader::native::{NUM_BITS, NUM_LIMBS},
+			transcript::native::WIDTH,
+		},
+		Chip, Chipset, CommonConfig, RegionCtx,
+	};
 	use halo2::{
 		circuit::{Layouter, Region, SimpleFloorPlanner, Value},
 		dev::MockProver,
-		halo2curves::bn256::{Bn256, Fr},
+		halo2curves::bn256::{Bn256, Fq, Fr},
 		plonk::{Circuit, ConstraintSystem, Error},
 		poly::Rotation,
 	};
+	use itertools::Itertools;
 	use rand::thread_rng;
 
 	type Scalar = Fr;
@@ -381,6 +345,85 @@ mod test {
 		}
 	}
 
+	#[derive(Clone)]
+	struct AggregatorTestCircuit {
+		svk: Svk,
+		snarks: Vec<UnassignedSnark>,
+		as_proof: Option<Vec<u8>>,
+	}
+
+	impl AggregatorTestCircuit {
+		fn new(svk: Svk, snarks: Vec<Snark>, as_proof: Vec<u8>) -> Self {
+			Self { svk, snarks: snarks.into_iter().map_into().collect(), as_proof: Some(as_proof) }
+		}
+	}
+
+	impl Circuit<Fr> for AggregatorTestCircuit {
+		type Config = AggregatorConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			Self {
+				svk: self.svk,
+				snarks: self.snarks.iter().map(UnassignedSnark::without_witness).collect(),
+				as_proof: None,
+			}
+		}
+
+		fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
+			let common = CommonConfig::new(meta);
+			let main_selector = MainChip::configure(&common, meta);
+			let main = MainConfig::new(main_selector);
+
+			let full_round_selector = FullRoundHasher::configure(&common, meta);
+			let partial_round_selector = PartialRoundHasher::configure(&common, meta);
+			let poseidon = PoseidonConfig::new(full_round_selector, partial_round_selector);
+
+			let absorb_selector = AbsorbChip::<Fr, WIDTH>::configure(&common, meta);
+			let poseidon_sponge = PoseidonSpongeConfig::new(poseidon, absorb_selector);
+
+			let bits2num = Bits2NumChip::configure(&common, meta);
+
+			let int_red = IntegerReduceChip::<Fq, Fr, NUM_LIMBS, NUM_BITS, Bn256_4_68>::configure(
+				&common, meta,
+			);
+			let int_add =
+				IntegerAddChip::<Fq, Fr, NUM_LIMBS, NUM_BITS, Bn256_4_68>::configure(&common, meta);
+			let int_sub =
+				IntegerSubChip::<Fq, Fr, NUM_LIMBS, NUM_BITS, Bn256_4_68>::configure(&common, meta);
+			let int_mul =
+				IntegerMulChip::<Fq, Fr, NUM_LIMBS, NUM_BITS, Bn256_4_68>::configure(&common, meta);
+			let int_div =
+				IntegerDivChip::<Fq, Fr, NUM_LIMBS, NUM_BITS, Bn256_4_68>::configure(&common, meta);
+
+			let ladder = EccUnreducedLadderConfig::new(int_add, int_sub, int_mul, int_div);
+			let add = EccAddConfig::new(int_red, int_sub, int_mul, int_div);
+			let double = EccDoubleConfig::new(int_red, int_add, int_sub, int_mul, int_div);
+			let table_select = EccTableSelectConfig::new(main.clone());
+			let ecc_mul_scalar = EccMulConfig::new(ladder, add, double, table_select, bits2num);
+
+			AggregatorConfig { common, main, poseidon_sponge, ecc_mul_scalar }
+		}
+
+		fn synthesize(
+			&self, config: Self::Config, mut layouter: impl Layouter<Fr>,
+		) -> Result<(), Error> {
+			let aggregator_chipset =
+				AggregatorChipset::new(self.svk, self.snarks.clone(), self.as_proof.clone());
+			let _accumulator_limbs = aggregator_chipset.synthesize(
+				&config.common,
+				&config,
+				layouter.namespace(|| "aggregator chipset"),
+			)?;
+
+			// TODO: Uncomment when the bug is fixed
+			// for (row, inst) in accumulator_limbs.enumerate() {
+			// 	layouter.constrain_instance(inst.cell(), config.common.instance, row)?;
+			// }
+			Ok(())
+		}
+	}
+
 	#[ignore = "Aggregator takes too long to run"]
 	#[test]
 	fn test_aggregator() {
@@ -401,9 +444,9 @@ mod test {
 		let snarks = vec![snark_1, snark_2];
 		let NativeAggregator { svk, snarks, instances, as_proof } =
 			NativeAggregator::new(&params, snarks);
-		let aggregator = Aggregator::new(svk, snarks, as_proof);
 
-		let prover = MockProver::run(k, &aggregator, vec![instances]).unwrap();
+		let aggregator_circuit = AggregatorTestCircuit::new(svk, snarks, as_proof);
+		let prover = MockProver::run(k, &aggregator_circuit, vec![instances]).unwrap();
 
 		assert_eq!(prover.verify(), Ok(()));
 	}
