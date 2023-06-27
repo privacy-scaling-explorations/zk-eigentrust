@@ -185,6 +185,9 @@ mod tests {
 		let anvil = Anvil::new().spawn();
 		let config = ClientConfig {
 			as_address: "0x5fbdb2315678afecb367f032d93f642f64180aa3".to_string(),
+			band_id: "38922764296632428858395574229367".to_string(),
+			band_th: "500".to_string(),
+			band_url: "http://localhost:3000".to_string(),
 			domain: "0x0000000000000000000000000000000000000000".to_string(),
 			node_url: anvil.endpoint().to_string(),
 			verifier_address: "0xe7f1725e7734ce288f8367e1bb143e90bb3f0512".to_string(),
@@ -204,6 +207,9 @@ mod tests {
 		let et_contract = read_bytes_data("et_verifier");
 		let config = ClientConfig {
 			as_address: "0x5fbdb2315678afecb367f032d93f642f64180aa3".to_string(),
+			band_id: "38922764296632428858395574229367".to_string(),
+			band_th: "500".to_string(),
+			band_url: "http://localhost:3000".to_string(),
 			domain: "0x0000000000000000000000000000000000000000".to_string(),
 			node_url: anvil.endpoint().to_string(),
 			verifier_address: "0xe7f1725e7734ce288f8367e1bb143e90bb3f0512".to_string(),
@@ -222,6 +228,9 @@ mod tests {
 		let anvil = Anvil::new().spawn();
 		let config = ClientConfig {
 			as_address: "0x5fbdb2315678afecb367f032d93f642f64180aa3".to_string(),
+			band_id: "38922764296632428858395574229367".to_string(),
+			band_th: "500".to_string(),
+			band_url: "http://localhost:3000".to_string(),
 			domain: "0x0000000000000000000000000000000000000000".to_string(),
 			node_url: anvil.endpoint().to_string(),
 			verifier_address: "0xe7f1725e7734ce288f8367e1bb143e90bb3f0512".to_string(),
