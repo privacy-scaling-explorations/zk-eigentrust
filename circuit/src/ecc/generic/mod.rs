@@ -13,5 +13,12 @@ where
     C::Base: FieldExt,
     C::Scalar: FieldExt,
 {
-    // Implementation goes here
+    type Config = ...;
+    type Output = ...;
+    fn synthesize(
+        self, common: &CommonConfig, config: &Self::Config, layouter: impl Layouter<F>,
+    ) -> Result<Self::Output, Error> {
+        // Implement the synthesis method
+        ...
+    }
 }
