@@ -105,7 +105,6 @@ impl Clone for AggregatorChipset {
 #[derive(Clone)]
 pub struct AggregatorConfig {
 	// Configurations for the needed circuit configs.
-	pub(crate) common: CommonConfig,
 	pub(crate) main: MainConfig,
 	pub(crate) poseidon_sponge: PoseidonSpongeConfig,
 	pub(crate) ecc_mul_scalar: EccMulConfig,
@@ -113,10 +112,9 @@ pub struct AggregatorConfig {
 
 impl AggregatorConfig {
 	fn new(
-		common: CommonConfig, main: MainConfig, poseidon_sponge: PoseidonSpongeConfig,
-		ecc_mul_scalar: EccMulConfig,
+		main: MainConfig, poseidon_sponge: PoseidonSpongeConfig, ecc_mul_scalar: EccMulConfig,
 	) -> Self {
-		Self { common, main, poseidon_sponge, ecc_mul_scalar }
+		Self { main, poseidon_sponge, ecc_mul_scalar }
 	}
 }
 
@@ -126,7 +124,7 @@ impl Chipset<Fr> for AggregatorChipset {
 
 	/// Synthesize the circuit.
 	fn synthesize(
-		self, _common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<Fr>,
+		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<Fr>,
 	) -> Result<Self::Output, Error> {
 		let assigned_instances = layouter.assign_region(
 			|| "assign_instances",
@@ -140,7 +138,7 @@ impl Chipset<Fr> for AggregatorChipset {
 					for inst_vec in &snark.instances {
 						let mut inst_vec_collector = Vec::new();
 						for inst in inst_vec {
-							let value = ctx.assign_advice(config.common.advice[advice_i], *inst)?;
+							let value = ctx.assign_advice(common.advice[advice_i], *inst)?;
 							inst_vec_collector.push(value);
 
 							advice_i += 1;
@@ -167,7 +165,7 @@ impl Chipset<Fr> for AggregatorChipset {
 				Bn254Params,
 			>::new(
 				layouter.namespace(|| "loader"),
-				config.common.clone(),
+				common.clone(),
 				config.ecc_mul_scalar.clone(),
 				config.main.clone(),
 				config.poseidon_sponge.clone(),
@@ -346,6 +344,12 @@ mod test {
 	}
 
 	#[derive(Clone)]
+	struct AggregatorTestCircuitConfig {
+		common: CommonConfig,
+		aggregator: AggregatorConfig,
+	}
+
+	#[derive(Clone)]
 	struct AggregatorTestCircuit {
 		svk: Svk,
 		snarks: Vec<UnassignedSnark>,
@@ -359,7 +363,7 @@ mod test {
 	}
 
 	impl Circuit<Fr> for AggregatorTestCircuit {
-		type Config = AggregatorConfig;
+		type Config = AggregatorTestCircuitConfig;
 		type FloorPlanner = SimpleFloorPlanner;
 
 		fn without_witnesses(&self) -> Self {
@@ -402,7 +406,9 @@ mod test {
 			let table_select = EccTableSelectConfig::new(main.clone());
 			let ecc_mul_scalar = EccMulConfig::new(ladder, add, double, table_select, bits2num);
 
-			AggregatorConfig { common, main, poseidon_sponge, ecc_mul_scalar }
+			let aggregator = AggregatorConfig { main, poseidon_sponge, ecc_mul_scalar };
+
+			AggregatorTestCircuitConfig { common, aggregator }
 		}
 
 		fn synthesize(
@@ -412,7 +418,7 @@ mod test {
 				AggregatorChipset::new(self.svk, self.snarks.clone(), self.as_proof.clone());
 			let _accumulator_limbs = aggregator_chipset.synthesize(
 				&config.common,
-				&config,
+				&config.aggregator,
 				layouter.namespace(|| "aggregator chipset"),
 			)?;
 
