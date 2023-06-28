@@ -49,11 +49,10 @@ pub mod attestation;
 pub mod error;
 pub mod eth;
 pub mod storage;
-pub mod utils;
 
 use crate::{
 	attestation::address_from_signed_att,
-	storage::{FileStorage, Storage},
+	storage::{CSVFileStorage, ScoreRecord, Storage},
 };
 use att_station::{AttestationCreatedFilter, AttestationStation};
 use attestation::{att_data_from_signed_att, Attestation, AttestationPayload};
@@ -260,19 +259,8 @@ impl Client {
 			"There are more participants than scores"
 		);
 
-		// Initialized formatted scores vec
-		let mut formatted_scores: Vec<Vec<String>> = Vec::new();
-
-		// Add headers
-		formatted_scores.push(vec![
-			"peer_address".to_string(),
-			"score_fr".to_string(),
-			"numerator".to_string(),
-			"denominator".to_string(),
-			"score".to_string(),
-		]);
-
 		// Format fields and push to vec
+		let mut formatted_scores: Vec<ScoreRecord> = Vec::new();
 		for ((&participant, &score_fr), score_rat) in
 			participants.iter().zip(scores_fr.iter()).zip(scores_rat.iter())
 		{
@@ -289,16 +277,16 @@ impl Client {
 			let denominator = score_rat.denom().to_string();
 			let score = score_rat.to_integer().to_string();
 
-			formatted_scores.push(vec![
-				peer_address, score_fr_hex, numerator, denominator, score,
-			]);
+			let record =
+				ScoreRecord::new(peer_address, score_fr_hex, numerator, denominator, score);
+
+			formatted_scores.push(record);
 		}
 
-		// Create a FileStorage for scores
-		let mut scores_storage = FileStorage::new("scores".to_string());
-
-		// Write scores to a CSV file using save method from the Storage trait
-		scores_storage.save(formatted_scores).unwrap();
+		// Save
+		CSVFileStorage::<ScoreRecord>::new("../data/scores.csv".into())
+			.save(formatted_scores)
+			.unwrap();
 
 		Ok(())
 	}
