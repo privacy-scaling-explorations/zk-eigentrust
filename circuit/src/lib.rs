@@ -240,9 +240,9 @@ impl<'a, F: FieldExt> RegionCtx<'a, F> {
 }
 
 /// Number of advice columns in common config
-pub const ADVICE: usize = 8;
+pub const ADVICE: usize = 20;
 /// Number of fixed columns in common config
-pub const FIXED: usize = 5;
+pub const FIXED: usize = 10;
 
 /// Common config for the whole circuit
 #[derive(Clone, Debug)]
