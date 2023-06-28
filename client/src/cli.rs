@@ -7,6 +7,7 @@ use clap::{Args, Parser, Subcommand};
 use eigen_trust_circuit::utils::write_json_data;
 use eigen_trust_client::{
 	attestation::{Attestation, DOMAIN_PREFIX, DOMAIN_PREFIX_LEN},
+	storage::{FileStorage, Storage},
 	utils::read_csv_file,
 };
 use ethers::{
@@ -226,7 +227,11 @@ pub async fn handle_bandada(config: &ClientConfig, data: BandadaData) -> Result<
 
 	match action {
 		Action::Add => {
-			let scores: Vec<ScoreRecord> = read_csv_file("scores")?;
+			// Create a FileStorage for scores
+			let scores_storage = FileStorage::new("scores".to_string());
+
+			// Read scores from the CSV file using load method from the Storage trait
+			let scores: Vec<ScoreRecord> = scores_storage.load()?;
 
 			let participant_record = scores
 				.iter()

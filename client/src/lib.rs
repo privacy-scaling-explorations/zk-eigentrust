@@ -48,9 +48,13 @@ pub mod att_station;
 pub mod attestation;
 pub mod error;
 pub mod eth;
+pub mod storage;
 pub mod utils;
 
-use crate::{attestation::address_from_signed_att, utils::create_csv_file};
+use crate::{
+	attestation::address_from_signed_att,
+	storage::{FileStorage, Storage},
+};
 use att_station::{AttestationCreatedFilter, AttestationStation};
 use attestation::{att_data_from_signed_att, Attestation, AttestationPayload};
 use dotenv::{dotenv, var};
@@ -290,8 +294,11 @@ impl Client {
 			]);
 		}
 
-		// Write scores to a CSV file
-		create_csv_file("scores", &formatted_scores).unwrap();
+		// Create a FileStorage for scores
+		let mut scores_storage = FileStorage::new("scores".to_string());
+
+		// Write scores to a CSV file using save method from the Storage trait
+		scores_storage.save(formatted_scores).unwrap();
 
 		Ok(())
 	}
