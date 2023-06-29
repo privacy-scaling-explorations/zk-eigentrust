@@ -54,6 +54,8 @@ pub mod edwards;
 /// Common gadgets used across circuits
 pub mod gadgets;
 /// Integer type - Wrong field arithmetic
+///
+/// NOTE: `integer`-related chipsets assume `NUM_LIMBS = 4` & `20 advice cols`
 pub mod integer;
 /// MerkleTree
 pub mod merkle_tree;

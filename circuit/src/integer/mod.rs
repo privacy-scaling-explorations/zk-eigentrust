@@ -28,36 +28,21 @@ where
 			ctx.copy_assign(common.advice[i + NUM_LIMBS], y[i].clone())?;
 		}
 	}
-	ctx.next();
 
 	// Assign intermediate values
 	for i in 0..NUM_LIMBS {
 		ctx.assign_advice(
-			common.advice[i],
+			common.advice[i + 2 * NUM_LIMBS],
 			Value::known(reduction_witness.intermediate[i]),
 		)?;
 	}
-
-	// Assign quotient
-	match &reduction_witness.quotient {
-		Quotient::Short(n) => {
-			ctx.assign_advice(common.advice[NUM_LIMBS], Value::known(*n))?;
-		},
-		Quotient::Long(n) => {
-			for i in 0..NUM_LIMBS {
-				ctx.assign_advice(common.advice[i + NUM_LIMBS], Value::known(n.limbs[i]))?;
-			}
-		},
-	}
-
-	ctx.next();
 
 	// Assign result
 	let mut assigned_result: [Option<AssignedCell<N, N>>; NUM_LIMBS] =
 		[(); NUM_LIMBS].map(|_| None);
 	for (i, limb) in assigned_result.iter_mut().enumerate().take(NUM_LIMBS) {
 		*limb = Some(ctx.assign_advice(
-			common.advice[i],
+			common.advice[i + 3 * NUM_LIMBS],
 			Value::known(reduction_witness.result.limbs[i]),
 		)?);
 	}
@@ -65,9 +50,22 @@ where
 	// Assign residues
 	for i in 0..reduction_witness.residues.len() {
 		ctx.assign_advice(
-			common.advice[i + NUM_LIMBS],
+			common.advice[i + 4 * NUM_LIMBS],
 			Value::known(reduction_witness.residues[i]),
 		)?;
+	}
+
+	// Assign quotient
+	match &reduction_witness.quotient {
+		Quotient::Short(n) => {
+			ctx.assign_advice(common.advice[5 * NUM_LIMBS - 1], Value::known(*n))?;
+		},
+		Quotient::Long(n) => {
+			ctx.next();
+			for i in 0..NUM_LIMBS {
+				ctx.assign_advice(common.advice[i], Value::known(n.limbs[i]))?;
+			}
+		},
 	}
 
 	let assigned_result = AssignedInteger::new(
@@ -125,8 +123,10 @@ where
 
 			for i in 0..NUM_LIMBS {
 				let limbs_exp_i = v_cells.query_advice(common.advice[i], Rotation::cur());
-				let t_exp_i = v_cells.query_advice(common.advice[i], Rotation::next());
-				let result_exp_i = v_cells.query_advice(common.advice[i], Rotation(2));
+				let t_exp_i =
+					v_cells.query_advice(common.advice[i + 2 * NUM_LIMBS], Rotation::cur());
+				let result_exp_i =
+					v_cells.query_advice(common.advice[i + 3 * NUM_LIMBS], Rotation::cur());
 
 				limbs_exp[i] = Some(limbs_exp_i);
 				t_exp[i] = Some(t_exp_i);
@@ -137,13 +137,15 @@ where
 			let limbs_exp = limbs_exp.map(|x| x.unwrap());
 			let result_exp = result_exp.map(|x| x.unwrap());
 
-			let reduce_q_exp = v_cells.query_advice(common.advice[NUM_LIMBS], Rotation::next());
-
 			let mut residues_exp = Vec::new();
 			for i in 0..NUM_LIMBS / 2 {
-				let res_exp_i = v_cells.query_advice(common.advice[i + NUM_LIMBS], Rotation(2));
+				let res_exp_i =
+					v_cells.query_advice(common.advice[i + 4 * NUM_LIMBS], Rotation::cur());
 				residues_exp.push(res_exp_i);
 			}
+
+			let reduce_q_exp =
+				v_cells.query_advice(common.advice[5 * NUM_LIMBS - 1], Rotation::cur());
 
 			let s = v_cells.query_selector(selector);
 
@@ -233,8 +235,10 @@ where
 			for i in 0..NUM_LIMBS {
 				let x_exp_i = v_cells.query_advice(common.advice[i], Rotation::cur());
 				let y_exp_i = v_cells.query_advice(common.advice[i + NUM_LIMBS], Rotation::cur());
-				let t_exp_i = v_cells.query_advice(common.advice[i], Rotation::next());
-				let result_exp_i = v_cells.query_advice(common.advice[i], Rotation(2));
+				let t_exp_i =
+					v_cells.query_advice(common.advice[i + 2 * NUM_LIMBS], Rotation::cur());
+				let result_exp_i =
+					v_cells.query_advice(common.advice[i + 3 * NUM_LIMBS], Rotation::cur());
 
 				x_limbs_exp[i] = Some(x_exp_i);
 				y_limbs_exp[i] = Some(y_exp_i);
@@ -247,13 +251,14 @@ where
 			let y_limbs_exp = y_limbs_exp.map(|x| x.unwrap());
 			let result_exp = result_exp.map(|x| x.unwrap());
 
-			let add_q_exp = v_cells.query_advice(common.advice[NUM_LIMBS], Rotation::next());
-
 			let mut residues_exp = Vec::new();
 			for i in 0..NUM_LIMBS / 2 {
-				let residue = v_cells.query_advice(common.advice[i + NUM_LIMBS], Rotation(2));
+				let residue =
+					v_cells.query_advice(common.advice[i + 4 * NUM_LIMBS], Rotation::cur());
 				residues_exp.push(residue);
 			}
+
+			let add_q_exp = v_cells.query_advice(common.advice[5 * NUM_LIMBS - 1], Rotation::cur());
 
 			let s = v_cells.query_selector(selector);
 
@@ -348,8 +353,10 @@ where
 			for i in 0..NUM_LIMBS {
 				let x_exp_i = v_cells.query_advice(common.advice[i], Rotation::cur());
 				let y_exp_i = v_cells.query_advice(common.advice[i + NUM_LIMBS], Rotation::cur());
-				let t_exp_i = v_cells.query_advice(common.advice[i], Rotation::next());
-				let result_exp_i = v_cells.query_advice(common.advice[i], Rotation(2));
+				let t_exp_i =
+					v_cells.query_advice(common.advice[i + 2 * NUM_LIMBS], Rotation::cur());
+				let result_exp_i =
+					v_cells.query_advice(common.advice[i + 3 * NUM_LIMBS], Rotation::cur());
 
 				x_limbs_exp[i] = Some(x_exp_i);
 				y_limbs_exp[i] = Some(y_exp_i);
@@ -362,12 +369,13 @@ where
 			let y_limbs_exp = y_limbs_exp.map(|x| x.unwrap());
 			let result_exp = result_exp.map(|x| x.unwrap());
 
-			let sub_q_exp = v_cells.query_advice(common.advice[NUM_LIMBS], Rotation::next());
-
 			let mut residues_exp = Vec::new();
 			for i in 0..NUM_LIMBS / 2 {
-				residues_exp.push(v_cells.query_advice(common.advice[i + NUM_LIMBS], Rotation(2)));
+				residues_exp
+					.push(v_cells.query_advice(common.advice[i + 4 * NUM_LIMBS], Rotation::cur()));
 			}
+
+			let sub_q_exp = v_cells.query_advice(common.advice[5 * NUM_LIMBS - 1], Rotation::cur());
 
 			let s = v_cells.query_selector(selector);
 
@@ -463,15 +471,17 @@ where
 			for i in 0..NUM_LIMBS {
 				let x_exp_i = v_cells.query_advice(common.advice[i], Rotation::cur());
 				let y_exp_i = v_cells.query_advice(common.advice[i + NUM_LIMBS], Rotation::cur());
-				let t_exp_i = v_cells.query_advice(common.advice[i], Rotation::next());
-				let q_exp_i = v_cells.query_advice(common.advice[i + NUM_LIMBS], Rotation::next());
-				let result_exp_i = v_cells.query_advice(common.advice[i], Rotation(2));
+				let t_exp_i =
+					v_cells.query_advice(common.advice[i + 2 * NUM_LIMBS], Rotation::cur());
+				let result_exp_i =
+					v_cells.query_advice(common.advice[i + 3 * NUM_LIMBS], Rotation::cur());
+				let q_exp_i = v_cells.query_advice(common.advice[i], Rotation::next());
 
 				x_limbs_exp[i] = Some(x_exp_i);
 				y_limbs_exp[i] = Some(y_exp_i);
 				t_exp[i] = Some(t_exp_i);
-				mul_q_exp[i] = Some(q_exp_i);
 				result_exp[i] = Some(result_exp_i);
+				mul_q_exp[i] = Some(q_exp_i);
 			}
 
 			let t_exp = t_exp.map(|x| x.unwrap());
@@ -482,7 +492,8 @@ where
 
 			let mut residues_exp = Vec::new();
 			for i in 0..NUM_LIMBS / 2 {
-				let res_exp_i = v_cells.query_advice(common.advice[i + NUM_LIMBS], Rotation(2));
+				let res_exp_i =
+					v_cells.query_advice(common.advice[i + 4 * NUM_LIMBS], Rotation::cur());
 				residues_exp.push(res_exp_i);
 			}
 
@@ -580,15 +591,17 @@ where
 			for i in 0..NUM_LIMBS {
 				let x_exp_i = v_cells.query_advice(common.advice[i], Rotation::cur());
 				let y_exp_i = v_cells.query_advice(common.advice[i + NUM_LIMBS], Rotation::cur());
-				let t_exp_i = v_cells.query_advice(common.advice[i], Rotation::next());
-				let q_exp_i = v_cells.query_advice(common.advice[i + NUM_LIMBS], Rotation::next());
-				let result_exp_i = v_cells.query_advice(common.advice[i], Rotation(2));
+				let t_exp_i =
+					v_cells.query_advice(common.advice[i + 2 * NUM_LIMBS], Rotation::cur());
+				let result_exp_i =
+					v_cells.query_advice(common.advice[i + 3 * NUM_LIMBS], Rotation::cur());
+				let q_exp_i = v_cells.query_advice(common.advice[i], Rotation::next());
 
 				x_limbs_exp[i] = Some(x_exp_i);
 				y_limbs_exp[i] = Some(y_exp_i);
 				t_exp[i] = Some(t_exp_i);
-				div_q_exp[i] = Some(q_exp_i);
 				result_exp[i] = Some(result_exp_i);
+				div_q_exp[i] = Some(q_exp_i);
 			}
 
 			let t_exp = t_exp.map(|x| x.unwrap());
@@ -599,7 +612,8 @@ where
 
 			let mut residues_exp = Vec::new();
 			for i in 0..NUM_LIMBS / 2 {
-				let res_exp_i = v_cells.query_advice(common.advice[i + NUM_LIMBS], Rotation(2));
+				let res_exp_i =
+					v_cells.query_advice(common.advice[i + 4 * NUM_LIMBS], Rotation::cur());
 				residues_exp.push(res_exp_i);
 			}
 
