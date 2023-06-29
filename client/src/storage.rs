@@ -2,6 +2,7 @@
 //!
 //! This module contains generic storage traits and implementations.
 
+use crate::Score;
 use csv::{ReaderBuilder, WriterBuilder};
 use serde::Deserialize;
 use serde::{de::DeserializeOwned, Serialize};
@@ -18,7 +19,34 @@ pub trait Storage<T> {
 	fn save(&mut self, data: T) -> Result<(), &'static str>;
 }
 
-/// CSV File data storage.
+/// The `CSVFileStorage` struct provides a mechanism for persisting
+/// and retrieving structured data to and from CSV files.
+///
+/// # Examples
+///
+/// ```no_run
+/// use serde::{Serialize, Deserialize};
+/// use std::path::PathBuf;
+/// use eigen_trust_client::storage::{CSVFileStorage, Storage};
+///
+/// #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+/// struct Record {
+///    id: u64,
+///    name: String,
+/// }
+///
+/// let filepath = PathBuf::from("/path/to/your/file.csv");
+/// let mut storage = CSVFileStorage::<Record>::new(filepath);
+///
+/// let data = vec![Record { id: 1, name: "Alice".into() }];
+///
+/// // Save the data to the CSV file.
+/// storage.save(data.clone()).unwrap();
+///
+/// // Load the data from the CSV file.
+/// let loaded_data = storage.load().unwrap();
+/// assert_eq!(data, loaded_data);
+/// ```
 pub struct CSVFileStorage<T> {
 	filepath: PathBuf,
 	phantom: PhantomData<T>,
@@ -82,6 +110,26 @@ impl ScoreRecord {
 		Self { peer_address, score_fr, numerator, denominator, score }
 	}
 
+	/// Creates a new score record from a score.
+	pub fn from_score(score: Score) -> Self {
+		let (participant, score_fr, score_rat) = score;
+
+		let peer_address = format!("{:?}", participant);
+
+		let score_fr_hex = {
+			let mut score_fr_bytes = score_fr.to_bytes();
+			score_fr_bytes.reverse(); // Reverse bytes for big endian format
+			score_fr_bytes.iter().map(|byte| format!("{:02x}", byte)).collect::<String>()
+		};
+		let score_fr_hex = format!("0x{}", score_fr_hex);
+
+		let numerator = score_rat.numer().to_string();
+		let denominator = score_rat.denom().to_string();
+		let score = score_rat.to_integer().to_string();
+
+		Self::new(peer_address, score_fr_hex, numerator, denominator, score)
+	}
+
 	/// Returns the peer's address.
 	pub fn peer_address(&self) -> &String {
 		&self.peer_address
@@ -110,7 +158,7 @@ impl ScoreRecord {
 
 #[cfg(test)]
 mod tests {
-	use super::*;
+	use crate::storage::*;
 	use serde::{Deserialize, Serialize};
 	use std::fs;
 	use std::path::PathBuf;
