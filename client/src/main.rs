@@ -3,9 +3,9 @@ mod cli;
 
 use clap::Parser;
 use cli::*;
-use eigen_trust_circuit::utils::{read_bytes_data, read_json_data};
 use eigen_trust_client::{
-	eth::{compile_sol_contract, compile_yul_contracts, deploy_as, deploy_verifier},
+	eth::{compile_sol_contracts, compile_yul_contracts, deploy_as, deploy_verifier},
+	fs::{read_binary, read_json},
 	storage::{CSVFileStorage, ScoreRecord, Storage},
 	Client, ClientConfig,
 };
@@ -13,7 +13,7 @@ use std::env::current_dir;
 
 #[tokio::main]
 async fn main() {
-	let mut config: ClientConfig = match read_json_data("client-config") {
+	let mut config: ClientConfig = match read_json("client-config") {
 		Ok(c) => c,
 		Err(_) => {
 			eprintln!("Failed to read configuration file.");
@@ -44,7 +44,7 @@ async fn main() {
 		},
 		Mode::Compile => {
 			println!("Compiling contracts...");
-			compile_sol_contract();
+			compile_sol_contracts();
 			compile_yul_contracts();
 			println!("Done!");
 		},
@@ -61,7 +61,7 @@ async fn main() {
 			};
 			println!("AttestationStation deployed at {:?}", as_address);
 
-			let verifier_contract = read_bytes_data("et_verifier");
+			let verifier_contract = read_binary("et_verifier").unwrap();
 
 			let verifier_address =
 				match deploy_verifier(client.get_signer(), verifier_contract).await {

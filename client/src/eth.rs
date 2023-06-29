@@ -2,11 +2,14 @@
 //!
 //! This module provides types and functionalities for general ethereum interactions.
 
-use crate::{eth::bindings::AttestationStation, ClientSigner};
+use crate::{
+	eth::bindings::AttestationStation,
+	fs::{get_data_directory, get_file_path, read_yul, write_binary, FileType},
+	ClientSigner,
+};
 use eigen_trust_circuit::{
 	dynamic_sets::native::ECDSAPublicKey,
 	halo2::halo2curves::bn256::Fr as Scalar,
-	utils::{read_yul_data, write_bytes_data},
 	verifier::{compile_yul, encode_calldata},
 	Proof as NativeProof,
 };
@@ -21,8 +24,7 @@ use ethers::{
 };
 use secp256k1::SecretKey;
 use std::{
-	env,
-	fs::{self, write},
+	fs::{read_dir, write},
 	sync::Arc,
 };
 
@@ -62,46 +64,39 @@ pub async fn call_verifier(
 	println!("{:#?}", res);
 }
 
-/// Compiles the solidity contracts.
-pub fn compile_sol_contract() {
-	let curr_dir = env::current_dir().unwrap();
-	let contracts_dir = curr_dir.join("../data/");
+// TODO: Review this function.
+/// Compiles the Solidity contracts in the `data` directory.
+pub fn compile_sol_contracts() {
+	let data_dir = get_data_directory().unwrap();
 
 	// compile it
-	let contracts = Solc::default().compile_source(&contracts_dir).unwrap();
+	let contracts = Solc::default().compile_source(&data_dir).unwrap();
 	for (name, contr) in contracts.contracts_iter() {
-		let bindings_path = contracts_dir.join(format!("{}.rs", name));
-		let cntr_path = contracts_dir.join(format!("{}.json", name));
-		println!("{:?}", name);
 		let contract: ContractBytecode = contr.clone().into();
 		let abi = contract.clone().abi.unwrap();
 		let abi_json = serde_json::to_string(&abi).unwrap();
 		let contract_json = serde_json::to_string(&contract).unwrap();
-		let bindings = Abigen::new(name, abi_json.clone()).unwrap().generate().unwrap();
+		let bindings = Abigen::new(name, abi_json).unwrap().generate().unwrap();
 
-		// write to /data folder
-		bindings.write_to_file(bindings_path.clone()).unwrap();
-		write(cntr_path.clone(), contract_json).unwrap();
+		bindings.write_to_file(get_file_path(name, FileType::Rs).unwrap()).unwrap();
+		write(get_file_path(name, FileType::Json).unwrap(), contract_json).unwrap();
 	}
 }
 
-/// Compiles the yul contracts.
+/// Compiles the Yul contracts in the `data` directory.
 pub fn compile_yul_contracts() {
-	let curr_dir = env::current_dir().unwrap();
-	let contracts_dir = curr_dir.join("../data/");
-	let paths = fs::read_dir(contracts_dir).unwrap();
+	let data_dir = get_data_directory().unwrap();
+	let paths = read_dir(data_dir).unwrap();
 
 	for path in paths {
-		let path = path.unwrap().path();
-		let name_with_suffix = path.file_name().unwrap().to_str().unwrap();
-		if !name_with_suffix.ends_with(".yul") {
-			continue;
+		if let Some(name_with_suffix) = path.unwrap().path().file_name().and_then(|n| n.to_str()) {
+			if name_with_suffix.ends_with(".yul") {
+				let name = name_with_suffix.strip_suffix(".yul").unwrap();
+				let compiled_contract = compile_yul(&read_yul(name).unwrap());
+
+				write_binary(compiled_contract, name).unwrap();
+			}
 		}
-		let name = name_with_suffix.strip_suffix(".yul").unwrap();
-		// compile it
-		let code = read_yul_data(name);
-		let compiled_contract = compile_yul(&code);
-		write_bytes_data(compiled_contract, name).unwrap();
 	}
 }
 
@@ -167,12 +162,10 @@ pub fn scalar_from_address(address: &Address) -> Result<Scalar, &'static str> {
 mod tests {
 	use crate::{
 		eth::{address_from_public_key, call_verifier, deploy_as, deploy_verifier},
+		fs::{read_binary, read_json},
 		Client, ClientConfig,
 	};
-	use eigen_trust_circuit::{
-		utils::{read_bytes_data, read_json_data},
-		Proof, ProofRaw,
-	};
+	use eigen_trust_circuit::{Proof, ProofRaw};
 	use ethers::{
 		prelude::k256::ecdsa::SigningKey,
 		signers::{Signer, Wallet},
@@ -204,7 +197,7 @@ mod tests {
 	#[tokio::test]
 	async fn test_deploy_verifier() {
 		let anvil = Anvil::new().spawn();
-		let et_contract = read_bytes_data("et_verifier");
+		let et_contract = read_binary("et_verifier").unwrap();
 		let config = ClientConfig {
 			as_address: "0x5fbdb2315678afecb367f032d93f642f64180aa3".to_string(),
 			band_id: "38922764296632428858395574229367".to_string(),
@@ -238,11 +231,11 @@ mod tests {
 		let client = Client::new(config);
 
 		// Read contract data and deploy verifier
-		let bytecode = read_bytes_data("et_verifier");
+		let bytecode = read_binary("et_verifier").unwrap();
 		let addr = deploy_verifier(client.get_signer(), bytecode).await.unwrap();
 
 		// Read proof data and call verifier
-		let proof_raw: ProofRaw = read_json_data("et_proof").unwrap();
+		let proof_raw: ProofRaw = read_json("et_proof").unwrap();
 		let proof = Proof::from(proof_raw);
 		call_verifier(client.get_signer(), addr, proof).await;
 

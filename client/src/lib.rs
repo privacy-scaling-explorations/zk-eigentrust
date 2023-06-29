@@ -48,6 +48,7 @@ pub mod att_station;
 pub mod attestation;
 pub mod error;
 pub mod eth;
+pub mod fs;
 pub mod storage;
 
 use crate::attestation::address_from_signed_att;
