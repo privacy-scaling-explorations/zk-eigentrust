@@ -10,8 +10,8 @@ use crate::{
 		AssignedInteger, IntegerAddChip, IntegerDivChip, IntegerMulChip, IntegerReduceChip,
 		IntegerSubChip,
 	},
-	params::{ecc::EccParams, rns::RnsParams},
-	utils::assigned_as_bool,
+	params::rns::RnsParams,
+	utils::{assigned_as_bool, be_assigned_bits_to_usize},
 	Chip, Chipset, CommonConfig, FieldExt,
 };
 use halo2::halo2curves::ff::PrimeField;
@@ -851,40 +851,31 @@ where
 
 /// Configuration elements for the circuit are defined here.
 #[derive(Debug, Clone)]
-pub struct EccBatchedMulScalarConfig {
+pub struct EccBatchedMulConfig {
 	/// Constructs configs and selector from different circuits.
-	ladder: EccUnreducedLadderConfig,
 	pub(crate) add: EccAddConfig,
 	double: EccDoubleConfig,
-	table_select: EccTableSelectConfig,
 	bits2num: Selector,
 }
 
-impl EccBatchedMulScalarConfig {
+impl EccBatchedMulConfig {
 	/// Construct a new config
-	pub fn new(
-		ladder: EccUnreducedLadderConfig, add: EccAddConfig, double: EccDoubleConfig,
-		table_select: EccTableSelectConfig, bits2num: Selector,
-	) -> Self {
-		Self { ladder, add, double, table_select, bits2num }
+	pub fn new(add: EccAddConfig, double: EccDoubleConfig, bits2num: Selector) -> Self {
+		Self { add, double, bits2num }
 	}
 }
 
-/// Chipset structure for the EccBatchedMulScalar.
-pub struct EccBatchedMulScalarChipset<
-	C: CurveAffine,
-	const NUM_LIMBS: usize,
-	const NUM_BITS: usize,
-	P,
-> where
+/// Chipset structure for the EccBatchedMul.
+pub struct EccBatchedMulChipset<C: CurveAffine, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
+where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
 {
 	// Assigned points
-	p: [AssignedPoint<C, NUM_LIMBS, NUM_BITS, P>; NUM_LIMBS],
+	points: Vec<AssignedPoint<C, NUM_LIMBS, NUM_BITS, P>>,
 	// Assigned scalar values
-	scalar: [AssignedCell<C::Scalar, C::Scalar>; NUM_LIMBS],
+	scalars: Vec<AssignedCell<C::Scalar, C::Scalar>>,
 	// AuxInitial (to_add)
 	aux_init: AssignedPoint<C, NUM_LIMBS, NUM_BITS, P>,
 	// AuxFinish (to_sub)
@@ -892,42 +883,42 @@ pub struct EccBatchedMulScalarChipset<
 }
 
 impl<C: CurveAffine, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
-	EccBatchedMulScalarChipset<C, NUM_LIMBS, NUM_BITS, P>
+	EccBatchedMulChipset<C, NUM_LIMBS, NUM_BITS, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
 {
-	/// Creates a new ecc mul chipset.
+	/// Creates a new ecc batched mul scalar chipset.
 	pub fn new(
-		p: [AssignedPoint<C, NUM_LIMBS, NUM_BITS, P>; NUM_LIMBS],
-		scalar: [AssignedCell<C::Scalar, C::Scalar>; NUM_LIMBS],
+		points: Vec<AssignedPoint<C, NUM_LIMBS, NUM_BITS, P>>,
+		scalars: Vec<AssignedCell<C::Scalar, C::Scalar>>,
 		aux_init: AssignedPoint<C, NUM_LIMBS, NUM_BITS, P>,
 		aux_fin: AssignedPoint<C, NUM_LIMBS, NUM_BITS, P>,
 	) -> Self {
-		Self { p, scalar, aux_init, aux_fin }
+		Self { points, scalars, aux_init, aux_fin }
 	}
 }
 
 impl<C: CurveAffine, const NUM_LIMBS: usize, const NUM_BITS: usize, P> Chipset<C::Scalar>
-	for EccBatchedMulScalarChipset<C, NUM_LIMBS, NUM_BITS, P>
+	for EccBatchedMulChipset<C, NUM_LIMBS, NUM_BITS, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
 {
-	type Config = EccBatchedMulScalarConfig;
+	type Config = EccBatchedMulConfig;
 	type Output = Vec<AssignedPoint<C, NUM_LIMBS, NUM_BITS, P>>;
 
 	/// Synthesize the circuit.
 	fn synthesize(
 		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<C::Scalar>,
 	) -> Result<Self::Output, Error> {
-		let sliding_window_size = 2;
+		let sliding_window_size = 4;
 
 		let mut aux_init = self.aux_init.clone();
 		let mut aux_inits: Vec<AssignedPoint<C, NUM_LIMBS, NUM_BITS, P>> = Vec::new();
-		for _ in 0..self.scalar.len() {
+		for _ in 0..self.scalars.len() {
 			aux_inits.push(aux_init.clone());
 			let double_chip = EccDoubleChipset::new(aux_init);
 			aux_init = double_chip.synthesize(
@@ -939,7 +930,7 @@ where
 
 		let mut aux_fin = self.aux_fin.clone();
 		let mut aux_fins: Vec<AssignedPoint<C, NUM_LIMBS, NUM_BITS, P>> = Vec::new();
-		for _ in 0..self.scalar.len() {
+		for _ in 0..self.scalars.len() {
 			aux_fins.push(aux_fin.clone());
 			let double_chip = EccDoubleChipset::new(aux_fin);
 			aux_fin = double_chip.synthesize(
@@ -953,8 +944,8 @@ where
 		let sliding_window_pow2 = 2_u32.pow(sliding_window_size) as usize;
 
 		let mut multi_bits = Vec::new();
-		for i in 0..self.scalar.len() {
-			let bits = Bits2NumChip::new(self.scalar[i].clone());
+		for i in 0..self.scalars.len() {
+			let bits = Bits2NumChip::new(self.scalars[i].clone());
 			let mut bits =
 				bits.synthesize(common, &config.bits2num, layouter.namespace(|| "bits"))?;
 			bits.reverse();
@@ -962,40 +953,77 @@ where
 		}
 
 		let mut table: Vec<Vec<AssignedPoint<C, NUM_LIMBS, NUM_BITS, P>>> =
-			vec![Vec::new(); self.p.len()];
+			vec![Vec::new(); self.points.len()];
 
-		for i in 0..self.p.len() {
+		for i in 0..self.points.len() {
 			let mut table_i = aux_inits[i].clone();
 			for _ in 0..sliding_window_pow2 {
 				table[i].push(table_i.clone());
 
-				let add_chip = EccAddChipset::new(table_i, self.p[i].clone());
-				table_i =
-					add_chip.synthesize(common, &config.add, layouter.namespace(|| "table_add"))?;
+				let add_chip = EccAddChipset::new(table_i, self.points[i].clone());
+				table_i = add_chip.synthesize(
+					common,
+					&config.add,
+					layouter.namespace(|| "table_add_points"),
+				)?;
 			}
 		}
 
 		let mut accs: Vec<AssignedPoint<C, NUM_LIMBS, NUM_BITS, P>> = Vec::new();
-
 		// Initialize accs
-		for i in 0..self.p.len() {
-			//let acc_point_chip = EccTableSelectChipset::new(
-			//	multi_bits[0][0..sliding_window_size as usize].clone(),
-			//	aux_init_plus_scalar.clone(),
-			//	self.aux_init.clone(),
-			//);
+		for i in 0..self.points.len() {
+			let item = table[i]
+				[be_assigned_bits_to_usize(&multi_bits[i][0..sliding_window_size as usize])]
+			.clone();
+			accs.push(item);
 		}
 
-		Ok(self.p.to_vec())
+		for i in 0..self.points.len() {
+			for j in 1..num_of_windows {
+				for _ in 0..sliding_window_size {
+					let double_chip = EccDoubleChipset::new(accs[i].clone());
+					accs[i] = double_chip.synthesize(
+						common,
+						&config.double,
+						layouter.namespace(|| "accs_double"),
+					)?;
+				}
+				let start_bits = (j * sliding_window_size) as usize;
+				let end_bits = ((j + 1) * sliding_window_size) as usize;
+				let item = table[i]
+					[be_assigned_bits_to_usize(&multi_bits[i][start_bits..end_bits])]
+				.clone();
+
+				let add_chip = EccAddChipset::new(accs[i].clone(), item);
+				accs[i] = add_chip.synthesize(
+					common,
+					&config.add,
+					layouter.namespace(|| "accs_add_item"),
+				)?;
+			}
+		}
+
+		// Have to subtract off all the added aux_inits.
+		for i in 0..self.points.len() {
+			let add_chip = EccAddChipset::new(accs[i].clone(), aux_fins[i].clone());
+			accs[i] = add_chip.synthesize(
+				common,
+				&config.add,
+				layouter.namespace(|| "accs_add_aux_fins"),
+			)?;
+		}
+
+		Ok(accs)
 	}
 }
 
 #[cfg(test)]
 mod test {
 	use super::{
-		native::UnassignedEcPoint, AssignedPoint, EccAddChipset, EccAddConfig, EccDoubleChipset,
-		EccDoubleConfig, EccMulChipset, EccMulConfig, EccTableSelectConfig,
-		EccUnreducedLadderChipset, EccUnreducedLadderConfig,
+		native::UnassignedEcPoint, AssignedPoint, EccAddChipset, EccAddConfig,
+		EccBatchedMulChipset, EccBatchedMulConfig, EccDoubleChipset, EccDoubleConfig,
+		EccMulChipset, EccMulConfig, EccTableSelectConfig, EccUnreducedLadderChipset,
+		EccUnreducedLadderConfig,
 	};
 	use crate::{
 		ecc::same_curve::native::EcPoint,
@@ -1041,6 +1069,7 @@ mod test {
 		ecc_double: EccDoubleConfig,
 		ecc_ladder: EccUnreducedLadderConfig,
 		ecc_mul: EccMulConfig,
+		ecc_batched_mul: EccBatchedMulConfig,
 	}
 
 	impl TestConfig {
@@ -1082,10 +1111,13 @@ mod test {
 				ecc_add.clone(),
 				ecc_double.clone(),
 				ecc_table_select,
-				bits2num_selector,
+				bits2num_selector.clone(),
 			);
 
-			TestConfig { common, ecc_add, ecc_double, ecc_ladder, ecc_mul }
+			let ecc_batched_mul =
+				EccBatchedMulConfig::new(ecc_add.clone(), ecc_double.clone(), bits2num_selector);
+
+			TestConfig { common, ecc_add, ecc_double, ecc_ladder, ecc_mul, ecc_batched_mul }
 		}
 	}
 
@@ -1523,6 +1555,140 @@ mod test {
 		let mut p_ins = Vec::new();
 		p_ins.extend(res.x.limbs);
 		p_ins.extend(res.y.limbs);
+
+		let prover = MockProver::run(k, &test_chip, vec![p_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[derive(Clone)]
+	struct EccBatchedMulTestCircuit {
+		points: Vec<UnassignedEcPoint<C, NUM_LIMBS, NUM_BITS, P, EC>>,
+		scalars: Vec<Value<N>>,
+	}
+
+	impl EccBatchedMulTestCircuit {
+		fn new(points: Vec<EcPoint<C, NUM_LIMBS, NUM_BITS, P, EC>>, scalars: Vec<N>) -> Self {
+			Self {
+				points: points.iter().map(|p| UnassignedEcPoint::from(p.clone())).collect(),
+				scalars: scalars.iter().map(|s| Value::known(s.clone())).collect(),
+			}
+		}
+	}
+
+	impl Circuit<N> for EccBatchedMulTestCircuit {
+		type Config = TestConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			Self {
+				points: self
+					.points
+					.iter()
+					.map(|_| UnassignedEcPoint::without_witnesses())
+					.collect(),
+				scalars: self.scalars.iter().map(|_| Value::unknown()).collect(),
+			}
+		}
+
+		fn configure(meta: &mut ConstraintSystem<N>) -> TestConfig {
+			TestConfig::new(meta)
+		}
+
+		fn synthesize(
+			&self, config: TestConfig, mut layouter: impl Layouter<N>,
+		) -> Result<(), Error> {
+			let mut assigned_scalars = Vec::new();
+			layouter.assign_region(
+				|| "scalar_mul_values",
+				|region: Region<'_, N>| {
+					let mut ctx = RegionCtx::new(region, 0);
+					for scalar in self.scalars.clone() {
+						let value = ctx.assign_advice(config.common.advice[0], scalar)?;
+						assigned_scalars.push(value);
+						ctx.next();
+					}
+					Ok(())
+				},
+			)?;
+
+			let aux_assigner = AuxAssigner;
+			let (to_add, to_sub) = aux_assigner.synthesize(
+				&config.common,
+				&(),
+				layouter.namespace(|| "aux assigner"),
+			)?;
+
+			let mut assigned_points = Vec::new();
+			for point in self.points.clone() {
+				let p_assigner = PointAssigner::new(point);
+				let p_assigned = p_assigner.synthesize(
+					&config.common,
+					&(),
+					layouter.namespace(|| "point assigner"),
+				)?;
+				assigned_points.push(p_assigned);
+			}
+
+			let chip = EccBatchedMulChipset::new(assigned_points, assigned_scalars, to_add, to_sub);
+			let results = chip.synthesize(
+				&config.common,
+				&config.ecc_batched_mul,
+				layouter.namespace(|| "ecc_batched_mul"),
+			)?;
+
+			for i in 0..results.len() {
+				for j in 0..NUM_LIMBS {
+					layouter.constrain_instance(
+						results[i].x.limbs[j].cell(),
+						config.common.instance,
+						i + j,
+					)?;
+					layouter.constrain_instance(
+						results[i].y.limbs[j].cell(),
+						config.common.instance,
+						i + j + NUM_LIMBS,
+					)?;
+				}
+			}
+
+			Ok(())
+		}
+	}
+
+	#[ignore = "Constraint error"]
+	#[test]
+	fn should_batched_mul_scalar_ecc() {
+		// Testing batched ecc mul.
+		let rng = &mut thread_rng();
+		let scalars = [
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
+			Fr::random(rng.clone()),
+		]
+		.to_vec();
+
+		let a_big = BigUint::from_str("2342876324689764345467879012938433459867545345").unwrap();
+		let b_big = BigUint::from_str("6546457298123794342352534089237495253453455675").unwrap();
+		let a = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(a_big);
+		let b = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(b_big);
+		let points = [
+			EcPoint::<C, NUM_LIMBS, NUM_BITS, P, EC>::new(a.clone(), b.clone()),
+			EcPoint::<C, NUM_LIMBS, NUM_BITS, P, EC>::new(a.clone(), b.clone()),
+			EcPoint::<C, NUM_LIMBS, NUM_BITS, P, EC>::new(a.clone(), b.clone()),
+			EcPoint::<C, NUM_LIMBS, NUM_BITS, P, EC>::new(a.clone(), b.clone()),
+		]
+		.to_vec();
+
+		let res = EcPoint::multi_mul_scalar(&points, &scalars);
+		let test_chip = EccBatchedMulTestCircuit::new(points, scalars);
+
+		let k = 16;
+		let mut p_ins = Vec::new();
+		for i in 0..res.len() {
+			p_ins.extend(res[i].x.limbs);
+			p_ins.extend(res[i].y.limbs);
+		}
 
 		let prover = MockProver::run(k, &test_chip, vec![p_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));

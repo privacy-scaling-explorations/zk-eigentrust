@@ -2,7 +2,7 @@
 //! proofs, etc.
 use crate::FieldExt;
 use halo2::{
-	circuit::AssignedCell,
+	circuit::{AssignedCell, Value},
 	halo2curves::{
 		ff::{PrimeField, WithSmallOrderMulGroup},
 		pairing::{Engine, MultiMillerLoop},
@@ -343,6 +343,18 @@ pub fn be_bits_to_usize(bits: &[bool]) -> usize {
 		.rev()
 		.enumerate()
 		.fold(0usize, |acc, (i, b)| acc + if *b { 1 << i } else { 0 })
+}
+
+/// Convert big endian bits to usize
+pub fn be_assigned_bits_to_usize<F: FieldExt>(bits: &[AssignedCell<F, F>]) -> usize {
+	let mut bool_bits = Vec::new();
+	for i in 0..bits.len() {
+		let _ = bits[i].value().and_then(|a| {
+			bool_bits.push(if a.clone().is_zero().into() { false } else { true });
+			Value::known(a)
+		});
+	}
+	be_bits_to_usize(bool_bits.as_slice())
 }
 
 /// Get the field element of `2 ^ n`
