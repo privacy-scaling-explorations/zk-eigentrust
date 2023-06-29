@@ -876,10 +876,12 @@ where
 	points: Vec<AssignedPoint<C, NUM_LIMBS, NUM_BITS, P>>,
 	// Assigned scalar values
 	scalars: Vec<AssignedCell<C::Scalar, C::Scalar>>,
+	// Window size
+	window_size: u32,
 	// AuxInitial (to_add)
-	aux_init: AssignedPoint<C, NUM_LIMBS, NUM_BITS, P>,
+	aux_inits: Vec<AssignedPoint<C, NUM_LIMBS, NUM_BITS, P>>,
 	// AuxFinish (to_sub)
-	aux_fin: AssignedPoint<C, NUM_LIMBS, NUM_BITS, P>,
+	aux_fins: Vec<AssignedPoint<C, NUM_LIMBS, NUM_BITS, P>>,
 }
 
 impl<C: CurveAffine, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
@@ -892,11 +894,11 @@ where
 	/// Creates a new ecc batched mul scalar chipset.
 	pub fn new(
 		points: Vec<AssignedPoint<C, NUM_LIMBS, NUM_BITS, P>>,
-		scalars: Vec<AssignedCell<C::Scalar, C::Scalar>>,
-		aux_init: AssignedPoint<C, NUM_LIMBS, NUM_BITS, P>,
-		aux_fin: AssignedPoint<C, NUM_LIMBS, NUM_BITS, P>,
+		scalars: Vec<AssignedCell<C::Scalar, C::Scalar>>, window_size: u32,
+		aux_inits: Vec<AssignedPoint<C, NUM_LIMBS, NUM_BITS, P>>,
+		aux_fins: Vec<AssignedPoint<C, NUM_LIMBS, NUM_BITS, P>>,
 	) -> Self {
-		Self { points, scalars, aux_init, aux_fin }
+		Self { points, scalars, window_size, aux_inits, aux_fins }
 	}
 }
 
@@ -914,34 +916,8 @@ where
 	fn synthesize(
 		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<C::Scalar>,
 	) -> Result<Self::Output, Error> {
-		let sliding_window_size = 4;
-
-		let mut aux_init = self.aux_init.clone();
-		let mut aux_inits: Vec<AssignedPoint<C, NUM_LIMBS, NUM_BITS, P>> = Vec::new();
-		for _ in 0..self.scalars.len() {
-			aux_inits.push(aux_init.clone());
-			let double_chip = EccDoubleChipset::new(aux_init);
-			aux_init = double_chip.synthesize(
-				common,
-				&config.double,
-				layouter.namespace(|| "init_double"),
-			)?;
-		}
-
-		let mut aux_fin = self.aux_fin.clone();
-		let mut aux_fins: Vec<AssignedPoint<C, NUM_LIMBS, NUM_BITS, P>> = Vec::new();
-		for _ in 0..self.scalars.len() {
-			aux_fins.push(aux_fin.clone());
-			let double_chip = EccDoubleChipset::new(aux_fin);
-			aux_fin = double_chip.synthesize(
-				common,
-				&config.double,
-				layouter.namespace(|| "fin_double"),
-			)?;
-		}
-
-		let num_of_windows = C::ScalarExt::NUM_BITS / sliding_window_size;
-		let sliding_window_pow2 = 2_u32.pow(sliding_window_size) as usize;
+		let num_of_windows = C::ScalarExt::NUM_BITS / self.window_size;
+		let sliding_window_pow2 = 2_u32.pow(self.window_size) as usize;
 
 		let mut multi_bits = Vec::new();
 		for i in 0..self.scalars.len() {
@@ -956,7 +932,7 @@ where
 			vec![Vec::new(); self.points.len()];
 
 		for i in 0..self.points.len() {
-			let mut table_i = aux_inits[i].clone();
+			let mut table_i = self.aux_inits[i].clone();
 			for _ in 0..sliding_window_pow2 {
 				table[i].push(table_i.clone());
 
@@ -973,14 +949,14 @@ where
 		// Initialize accs
 		for i in 0..self.points.len() {
 			let item = table[i]
-				[be_assigned_bits_to_usize(&multi_bits[i][0..sliding_window_size as usize])]
+				[be_assigned_bits_to_usize(&multi_bits[i][0..self.window_size as usize])]
 			.clone();
 			accs.push(item);
 		}
 
 		for i in 0..self.points.len() {
 			for j in 1..num_of_windows {
-				for _ in 0..sliding_window_size {
+				for _ in 0..self.window_size {
 					let double_chip = EccDoubleChipset::new(accs[i].clone());
 					accs[i] = double_chip.synthesize(
 						common,
@@ -988,8 +964,8 @@ where
 						layouter.namespace(|| "accs_double"),
 					)?;
 				}
-				let start_bits = (j * sliding_window_size) as usize;
-				let end_bits = ((j + 1) * sliding_window_size) as usize;
+				let start_bits = (j * self.window_size) as usize;
+				let end_bits = ((j + 1) * self.window_size) as usize;
 				let item = table[i]
 					[be_assigned_bits_to_usize(&multi_bits[i][start_bits..end_bits])]
 				.clone();
@@ -1005,7 +981,7 @@ where
 
 		// Have to subtract off all the added aux_inits.
 		for i in 0..self.points.len() {
-			let add_chip = EccAddChipset::new(accs[i].clone(), aux_fins[i].clone());
+			let add_chip = EccAddChipset::new(accs[i].clone(), self.aux_fins[i].clone());
 			accs[i] = add_chip.synthesize(
 				common,
 				&config.add,
@@ -1187,20 +1163,29 @@ mod test {
 		}
 	}
 
-	struct AuxAssigner;
+	struct AuxAssigner {
+		batch_length: usize,
+		window_size: u32,
+	}
+
+	impl AuxAssigner {
+		fn new(batch_length: usize, window_size: u32) -> Self {
+			Self { batch_length, window_size }
+		}
+	}
 
 	impl Chipset<N> for AuxAssigner {
-		type Config = ();
+		type Config = TestConfig;
 		type Output = (
-			AssignedPoint<C, NUM_LIMBS, NUM_BITS, P>,
-			AssignedPoint<C, NUM_LIMBS, NUM_BITS, P>,
+			Vec<AssignedPoint<C, NUM_LIMBS, NUM_BITS, P>>,
+			Vec<AssignedPoint<C, NUM_LIMBS, NUM_BITS, P>>,
 		);
 
 		fn synthesize(
-			self, common: &CommonConfig, _: &Self::Config, mut layouter: impl Layouter<N>,
+			self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<N>,
 		) -> Result<Self::Output, Error> {
 			let to_add = Bn254Params::aux_init();
-			let to_sub = Bn254Params::make_mul_aux(to_add, 1);
+			let to_sub = Bn254Params::make_mul_aux(to_add, self.window_size);
 
 			let to_add_x_coord = to_add.coordinates().unwrap();
 			let to_sub_x_coord = to_sub.coordinates().unwrap();
@@ -1232,7 +1217,31 @@ mod test {
 				layouter.namespace(|| "to_sub assigner"),
 			)?;
 
-			Ok((to_add, to_sub))
+			let mut aux_init = to_add.clone();
+			let mut aux_inits: Vec<AssignedPoint<C, NUM_LIMBS, NUM_BITS, P>> = Vec::new();
+			for _ in 0..self.batch_length {
+				aux_inits.push(aux_init.clone());
+				let double_chip = EccDoubleChipset::new(aux_init);
+				aux_init = double_chip.synthesize(
+					common,
+					&config.ecc_double,
+					layouter.namespace(|| "init_double"),
+				)?;
+			}
+
+			let mut aux_fin = to_sub.clone();
+			let mut aux_fins: Vec<AssignedPoint<C, NUM_LIMBS, NUM_BITS, P>> = Vec::new();
+			for _ in 0..self.batch_length {
+				aux_fins.push(aux_fin.clone());
+				let double_chip = EccDoubleChipset::new(aux_fin);
+				aux_fin = double_chip.synthesize(
+					common,
+					&config.ecc_double,
+					layouter.namespace(|| "fin_double"),
+				)?;
+			}
+
+			Ok((aux_inits, aux_fins))
 		}
 	}
 
@@ -1505,12 +1514,14 @@ mod test {
 				},
 			)?;
 
-			let aux_assigner = AuxAssigner;
-			let (to_add, to_sub) = aux_assigner.synthesize(
+			let aux_assigner = AuxAssigner::new(1, 1);
+			let auxes = aux_assigner.synthesize(
 				&config.common,
-				&(),
+				&config,
 				layouter.namespace(|| "aux assigner"),
 			)?;
+			let to_add = auxes.0[0].clone();
+			let to_sub = auxes.1[0].clone();
 
 			let p_assigner = PointAssigner::new(self.p.clone());
 			let p_assigned =
@@ -1564,13 +1575,17 @@ mod test {
 	struct EccBatchedMulTestCircuit {
 		points: Vec<UnassignedEcPoint<C, NUM_LIMBS, NUM_BITS, P, EC>>,
 		scalars: Vec<Value<N>>,
+		window_size: u32,
 	}
 
 	impl EccBatchedMulTestCircuit {
-		fn new(points: Vec<EcPoint<C, NUM_LIMBS, NUM_BITS, P, EC>>, scalars: Vec<N>) -> Self {
+		fn new(
+			points: Vec<EcPoint<C, NUM_LIMBS, NUM_BITS, P, EC>>, scalars: Vec<N>, window_size: u32,
+		) -> Self {
 			Self {
 				points: points.iter().map(|p| UnassignedEcPoint::from(p.clone())).collect(),
 				scalars: scalars.iter().map(|s| Value::known(s.clone())).collect(),
+				window_size,
 			}
 		}
 	}
@@ -1587,6 +1602,7 @@ mod test {
 					.map(|_| UnassignedEcPoint::without_witnesses())
 					.collect(),
 				scalars: self.scalars.iter().map(|_| Value::unknown()).collect(),
+				window_size: u32::default(),
 			}
 		}
 
@@ -1597,24 +1613,24 @@ mod test {
 		fn synthesize(
 			&self, config: TestConfig, mut layouter: impl Layouter<N>,
 		) -> Result<(), Error> {
-			let mut assigned_scalars = Vec::new();
+			let mut assigned_scalars_dum = [(); 10].map(|_| None);
 			layouter.assign_region(
 				|| "scalar_mul_values",
 				|region: Region<'_, N>| {
 					let mut ctx = RegionCtx::new(region, 0);
-					for scalar in self.scalars.clone() {
-						let value = ctx.assign_advice(config.common.advice[0], scalar)?;
-						assigned_scalars.push(value);
+					for i in 0..self.scalars.len() {
+						let value = ctx.assign_advice(config.common.advice[0], self.scalars[i])?;
+						assigned_scalars_dum[i] = Some(value.clone());
 						ctx.next();
 					}
 					Ok(())
 				},
 			)?;
 
-			let aux_assigner = AuxAssigner;
-			let (to_add, to_sub) = aux_assigner.synthesize(
+			let aux_assigner = AuxAssigner::new(self.points.len(), self.window_size);
+			let (aux_inits, aux_fins) = aux_assigner.synthesize(
 				&config.common,
-				&(),
+				&config,
 				layouter.namespace(|| "aux assigner"),
 			)?;
 
@@ -1629,7 +1645,11 @@ mod test {
 				assigned_points.push(p_assigned);
 			}
 
-			let chip = EccBatchedMulChipset::new(assigned_points, assigned_scalars, to_add, to_sub);
+			let assigned_scalars = assigned_scalars_dum.map(|x| x.unwrap()).to_vec();
+
+			let chip = EccBatchedMulChipset::new(
+				assigned_points, assigned_scalars, self.window_size, aux_inits, aux_fins,
+			);
 			let results = chip.synthesize(
 				&config.common,
 				&config.ecc_batched_mul,
@@ -1637,16 +1657,17 @@ mod test {
 			)?;
 
 			for i in 0..results.len() {
+				let row_tracker = i * 2 * NUM_LIMBS;
 				for j in 0..NUM_LIMBS {
 					layouter.constrain_instance(
 						results[i].x.limbs[j].cell(),
 						config.common.instance,
-						i + j,
+						row_tracker + j,
 					)?;
 					layouter.constrain_instance(
 						results[i].y.limbs[j].cell(),
 						config.common.instance,
-						i + j + NUM_LIMBS,
+						row_tracker + j + NUM_LIMBS,
 					)?;
 				}
 			}
@@ -1655,35 +1676,25 @@ mod test {
 		}
 	}
 
-	#[ignore = "Constraint error"]
 	#[test]
 	fn should_batched_mul_scalar_ecc() {
 		// Testing batched ecc mul.
 		let rng = &mut thread_rng();
-		let scalars = [
-			Fr::random(rng.clone()),
-			Fr::random(rng.clone()),
-			Fr::random(rng.clone()),
-			Fr::random(rng.clone()),
-		]
-		.to_vec();
+		let mut points_vec = Vec::new();
+		let mut scalars_vec = Vec::new();
 
-		let a_big = BigUint::from_str("2342876324689764345467879012938433459867545345").unwrap();
-		let b_big = BigUint::from_str("6546457298123794342352534089237495253453455675").unwrap();
-		let a = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(a_big);
-		let b = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(b_big);
-		let points = [
-			EcPoint::<C, NUM_LIMBS, NUM_BITS, P, EC>::new(a.clone(), b.clone()),
-			EcPoint::<C, NUM_LIMBS, NUM_BITS, P, EC>::new(a.clone(), b.clone()),
-			EcPoint::<C, NUM_LIMBS, NUM_BITS, P, EC>::new(a.clone(), b.clone()),
-			EcPoint::<C, NUM_LIMBS, NUM_BITS, P, EC>::new(a.clone(), b.clone()),
-		]
-		.to_vec();
+		for _ in 0..10 {
+			scalars_vec.push(Fr::random(rng.clone()));
+			let a = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::from_n(Fr::random(rng.clone()));
+			let b = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::from_n(Fr::random(rng.clone()));
+			let point = EcPoint::<C, NUM_LIMBS, NUM_BITS, P, EC>::new(a, b);
+			points_vec.push(point);
+		}
 
-		let res = EcPoint::multi_mul_scalar(&points, &scalars);
-		let test_chip = EccBatchedMulTestCircuit::new(points, scalars);
+		let res = EcPoint::multi_mul_scalar(&points_vec, &scalars_vec);
+		let test_chip = EccBatchedMulTestCircuit::new(points_vec, scalars_vec, 2);
 
-		let k = 16;
+		let k = 17;
 		let mut p_ins = Vec::new();
 		for i in 0..res.len() {
 			p_ins.extend(res[i].x.limbs);
