@@ -1218,8 +1218,8 @@ mod test {
 			)?;
 
 			let mut aux_init = to_add.clone();
-			let mut aux_inits: Vec<AssignedPoint<C, NUM_LIMBS, NUM_BITS, P>> = Vec::new();
-			for _ in 0..self.batch_length {
+			let mut aux_inits: Vec<AssignedPoint<C, NUM_LIMBS, NUM_BITS, P>> = vec![aux_init.clone()];
+			for _ in 1..self.batch_length {
 				aux_inits.push(aux_init.clone());
 				let double_chip = EccDoubleChipset::new(aux_init);
 				aux_init = double_chip.synthesize(
