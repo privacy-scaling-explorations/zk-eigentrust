@@ -878,9 +878,9 @@ where
 	scalars: Vec<AssignedCell<C::Scalar, C::Scalar>>,
 	// Window size
 	window_size: u32,
-	// AuxInitial (to_add)
+	// AuxInitial points (to_add points)
 	aux_inits: Vec<AssignedPoint<C, NUM_LIMBS, NUM_BITS, P>>,
-	// AuxFinish (to_sub)
+	// AuxFinish points (to_sub points)
 	aux_fins: Vec<AssignedPoint<C, NUM_LIMBS, NUM_BITS, P>>,
 }
 
