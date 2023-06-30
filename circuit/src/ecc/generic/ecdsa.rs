@@ -14,7 +14,6 @@ use halo2::{
 		CurveAffine,
 	},
 };
-use itertools::Interleave;
 use num_bigint::BigUint;
 use rand::thread_rng;
 
@@ -136,10 +135,8 @@ where
 	) -> bool {
 		let r = signature.0;
 		let s = signature.1;
-		// TODO: Check that advice value for s_inv is valid without using biguint_to_fq.
-		let advice_s_inv_fq = biguint_to_fq(advice_s_inv.value());
-		let s_fq = biguint_to_fq(s.value());
-		if !(advice_s_inv_fq * s_fq).is_zero_vartime() {
+		let s_mul_s_inv = s.mul(&advice_s_inv);
+		if s_mul_s_inv.result != Integer::one() {
 			return false;
 		}
 		let msg_hash_integer = Integer::<Fq, N, NUM_LIMBS, NUM_BITS, P>::new(msg_hash);
@@ -157,8 +154,9 @@ where
 
 		let r_point = v_1.add(&v_2);
 		let x_candidate = r_point.x;
-		// TODO: Implement check without using biguint_to_fq
-		let r_candidate_fq = biguint_to_fq(x_candidate.value());
-		biguint_to_fq(r.value()) == r_candidate_fq
+		let r_mod_n = <P as RnsParams<Fq, N, NUM_LIMBS, NUM_BITS>>::compose(r.limbs);
+		let x_candidate_mod_n =
+			<P as RnsParams<Fp, N, NUM_LIMBS, NUM_BITS>>::compose(x_candidate.limbs);
+		r_mod_n == x_candidate_mod_n
 	}
 }
