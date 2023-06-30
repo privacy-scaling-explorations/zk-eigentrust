@@ -886,7 +886,7 @@ mod test {
 		let res = a.reduce();
 		let test_chip = ReduceTestCircuit::new(a);
 
-		let k = 5;
+		let k = 4;
 		let p_ins = res.result.limbs.to_vec();
 		let prover = MockProver::run(k, &test_chip, vec![p_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
@@ -903,7 +903,7 @@ mod test {
 		let res = a.reduce();
 		let test_chip = ReduceTestCircuit::new(a);
 
-		let k = 5;
+		let k = 4;
 		let p_ins = res.result.limbs.to_vec();
 		let prover = MockProver::run(k, &test_chip, vec![p_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
@@ -976,7 +976,7 @@ mod test {
 		let res = a.add(&b);
 		let test_chip = AddTestCircuit::new(a, b);
 
-		let k = 5;
+		let k = 4;
 		let p_ins = res.result.limbs.to_vec();
 		let prover = MockProver::run(k, &test_chip, vec![p_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
@@ -1048,7 +1048,7 @@ mod test {
 		let b = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(b_big);
 		let res = a.sub(&b);
 		let test_chip = SubTestCircuit::new(a, b);
-		let k = 5;
+		let k = 4;
 		let pub_ins = res.result.limbs.to_vec();
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
@@ -1120,7 +1120,7 @@ mod test {
 		let b = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(b_big);
 		let res = a.mul(&b);
 		let test_chip = MulTestCircuit::new(a, b);
-		let k = 5;
+		let k = 4;
 		let pub_ins = res.result.limbs.to_vec();
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
@@ -1192,7 +1192,7 @@ mod test {
 		let b = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(b_big);
 		let res = a.div(&b);
 		let test_chip = DivTestCircuit::new(a, b);
-		let k = 5;
+		let k = 4;
 		let pub_ins = res.result.limbs.to_vec();
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
