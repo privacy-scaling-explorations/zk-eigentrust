@@ -36,8 +36,7 @@ pub fn biguint_to_fq(x: BigUint) -> Fq {
 	let x_le_len = x_le.len();
 	let zeros_vec = vec![0u8; 64 - x_le_len];
 	x_le.extend(zeros_vec);
-	let result = Fq::from_uniform_bytes(x_le[..].try_into().unwrap());
-	result
+	Fq::from_uniform_bytes(x_le[..].try_into().unwrap())
 }
 
 /// Keypair struct for ECDSA signature
