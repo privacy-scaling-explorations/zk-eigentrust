@@ -28,6 +28,7 @@
 use crate::circuit::{PoseidonNativeHasher, PoseidonNativeSponge};
 use eddsa::native::PublicKey;
 use halo2::halo2curves::bn256::Fr as Scalar;
+use halo2::plonk::TableColumn;
 use halo2::{
 	circuit::{AssignedCell, Layouter, Region, Value},
 	halo2curves::{
@@ -253,6 +254,8 @@ pub struct CommonConfig {
 	advice: [Column<Advice>; ADVICE],
 	/// Fixed columns
 	fixed: [Column<Fixed>; FIXED],
+	/// Table column
+	table: TableColumn,
 	/// Instance column
 	instance: Column<Instance>,
 }
@@ -262,13 +265,14 @@ impl CommonConfig {
 	pub fn new<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
 		let advice = [(); ADVICE].map(|_| meta.advice_column());
 		let fixed = [(); FIXED].map(|_| meta.fixed_column());
+		let table = meta.lookup_table_column();
 		let instance = meta.instance_column();
 
 		advice.map(|c| meta.enable_equality(c));
 		fixed.map(|c| meta.enable_constant(c));
 		meta.enable_equality(instance);
 
-		Self { advice, fixed, instance }
+		Self { advice, fixed, table, instance }
 	}
 }
 
