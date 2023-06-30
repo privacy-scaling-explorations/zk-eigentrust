@@ -5,11 +5,10 @@ use clap::Parser;
 use cli::*;
 use eigen_trust_client::{
 	eth::{compile_sol_contracts, compile_yul_contracts, deploy_as, deploy_verifier},
-	fs::{read_binary, read_json},
+	fs::{get_file_path, read_binary, read_json, FileType},
 	storage::{CSVFileStorage, ScoreRecord, Storage},
 	Client, ClientConfig,
 };
-use std::env::current_dir;
 
 #[tokio::main]
 async fn main() {
@@ -80,19 +79,26 @@ async fn main() {
 		Mode::Scores => {
 			println!("Calculating scores...");
 			let client = Client::new(config);
+			let score_records: Vec<ScoreRecord> = match client.calculate_scores().await {
+				Ok(scores) => scores.into_iter().map(ScoreRecord::from_score).collect(),
+				Err(e) => {
+					eprintln!("Score calculation failed: {:?}", e);
+					return;
+				},
+			};
 
-			if let Ok(scores) = client.calculate_scores().await {
-				let score_records: Vec<ScoreRecord> =
-					scores.into_iter().map(ScoreRecord::from_score).collect();
-				let filepath = current_dir().unwrap().join("../data/scores.csv");
-				let mut storage = CSVFileStorage::<ScoreRecord>::new(filepath);
+			let filepath = match get_file_path("scores", FileType::Csv) {
+				Ok(path) => path,
+				Err(e) => {
+					eprintln!("Failed to get file path: {:?}", e);
+					return;
+				},
+			};
 
-				match storage.save(score_records) {
-					Ok(_) => println!("Scores successfully saved to 'scores.csv'."),
-					Err(e) => eprintln!("Failed to save score records: {:?}", e),
-				}
-			} else {
-				eprintln!("Score calculation failed");
+			let mut storage = CSVFileStorage::<ScoreRecord>::new(filepath);
+			match storage.save(score_records) {
+				Err(e) => eprintln!("Failed to save score records: {:?}", e),
+				_ => println!("Scores saved at \"{}\".", storage.filepath().display()),
 			}
 		},
 		Mode::Show => println!("Client config:\n{:#?}", config),

@@ -15,6 +15,8 @@ use std::{
 pub enum FileType {
 	/// Binary file.
 	Bin,
+	/// CSV file.
+	Csv,
 	/// JSON file.
 	Json,
 	/// Rust file.
@@ -28,6 +30,7 @@ impl FileType {
 	fn as_str(&self) -> &'static str {
 		match self {
 			FileType::Bin => "bin",
+			FileType::Csv => "csv",
 			FileType::Json => "json",
 			FileType::Rs => "rs",
 			FileType::Yul => "yul",
