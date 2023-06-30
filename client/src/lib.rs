@@ -48,13 +48,16 @@ pub mod att_station;
 pub mod attestation;
 pub mod error;
 pub mod eth;
-pub mod utils;
+pub mod storage;
 
-use crate::{attestation::address_from_signed_att, utils::create_csv_file};
+use crate::attestation::address_from_signed_att;
 use att_station::{AttestationCreatedFilter, AttestationStation};
 use attestation::{att_data_from_signed_att, Attestation, AttestationPayload};
 use dotenv::{dotenv, var};
-use eigen_trust_circuit::dynamic_sets::ecdsa_native::{EigenTrustSet, SignedAttestation};
+use eigen_trust_circuit::{
+	dynamic_sets::ecdsa_native::{EigenTrustSet, RationalScore, SignedAttestation},
+	halo2::halo2curves::bn256::Fr as Scalar,
+};
 use error::EigenError;
 use eth::{address_from_public_key, ecdsa_secret_from_mnemonic, scalar_from_address};
 use ethers::{
@@ -106,6 +109,8 @@ pub struct ClientConfig {
 
 /// Signer type alias.
 pub type ClientSigner = SignerMiddleware<Provider<Http>, LocalWallet>;
+/// Scores type alias.
+pub type Score = (Address, Scalar, RationalScore);
 
 /// Client struct.
 pub struct Client {
@@ -187,7 +192,7 @@ impl Client {
 	}
 
 	/// Calculates the EigenTrust global scores.
-	pub async fn calculate_scores(&mut self) -> Result<(), EigenError> {
+	pub async fn calculate_scores(&self) -> Result<Vec<Score>, EigenError> {
 		// Get attestations
 		let attestations = self.get_attestations().await?;
 
@@ -256,44 +261,17 @@ impl Client {
 			"There are more participants than scores"
 		);
 
-		// Initialized formatted scores vec
-		let mut formatted_scores: Vec<Vec<String>> = Vec::new();
+		// Group the scores with the participants
+		let scores: Vec<Score> = participants
+			.iter()
+			.zip(scores_fr.iter())
+			.zip(scores_rat.iter())
+			.map(|((&participant, &score_fr), score_rat)| {
+				(participant, score_fr, score_rat.clone())
+			})
+			.collect();
 
-		// Add headers
-		formatted_scores.push(vec![
-			"peer_address".to_string(),
-			"score_fr".to_string(),
-			"numerator".to_string(),
-			"denominator".to_string(),
-			"score".to_string(),
-		]);
-
-		// Format fields and push to vec
-		for ((&participant, &score_fr), score_rat) in
-			participants.iter().zip(scores_fr.iter()).zip(scores_rat.iter())
-		{
-			let peer_address = format!("{:?}", participant);
-
-			let score_fr_hex = {
-				let mut score_fr_bytes = score_fr.to_bytes();
-				score_fr_bytes.reverse(); // Reverse bytes for big endian format
-				score_fr_bytes.iter().map(|byte| format!("{:02x}", byte)).collect::<String>()
-			};
-			let score_fr_hex = format!("0x{}", score_fr_hex);
-
-			let numerator = score_rat.numer().to_string();
-			let denominator = score_rat.denom().to_string();
-			let score = score_rat.to_integer().to_string();
-
-			formatted_scores.push(vec![
-				peer_address, score_fr_hex, numerator, denominator, score,
-			]);
-		}
-
-		// Write scores to a CSV file
-		create_csv_file("scores", &formatted_scores).unwrap();
-
-		Ok(())
+		Ok(scores)
 	}
 
 	/// Gets the attestations from the contract.

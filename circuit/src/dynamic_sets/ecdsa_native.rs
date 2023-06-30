@@ -15,6 +15,8 @@ use std::collections::HashMap;
 pub type ECDSAPublicKey = secp256k1::PublicKey;
 /// ECDSA signature
 pub type ECDSASignature = ecdsa::RecoverableSignature;
+/// Rational score
+pub type RationalScore = BigRational;
 
 /// Construct an Ethereum address for the given ECDSA public key
 pub fn address_from_pub_key(pub_key: &ECDSAPublicKey) -> Result<[u8; 20], &'static str> {
@@ -277,7 +279,7 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITERATIONS: usize, const INITIAL_SCO
 	}
 
 	/// Compute the EigenTrust score using BigRational numbers
-	pub fn converge_rational(&self) -> Vec<BigRational> {
+	pub fn converge_rational(&self) -> Vec<RationalScore> {
 		let mut filtered_ops: HashMap<Fr, Vec<Fr>> = self.filter_peers_ops();
 
 		let mut ops = Vec::new();
