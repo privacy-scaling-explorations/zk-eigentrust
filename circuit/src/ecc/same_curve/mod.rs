@@ -1170,6 +1170,8 @@ mod test {
 
 	impl AuxAssigner {
 		fn new(batch_length: usize, window_size: u32) -> Self {
+		        assert!(batch_length > 0);
+		        assert!(window_size > 0);
 			Self { batch_length, window_size }
 		}
 	}
