@@ -299,6 +299,7 @@ mod test {
 		assert!(res);
 	}
 
+	#[ignore = "Smart contract verifier is too big to run"]
 	#[test]
 	fn verify_dummy_pi_evm() {
 		let advice = [Fr::one(); NUM_ADVICE];

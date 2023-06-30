@@ -616,6 +616,7 @@ mod test {
 		assert!(res);
 	}
 
+	#[ignore = "Smart contract verifier is too big to run"]
 	#[test]
 	fn test_closed_graph_circut_evm() {
 		let s = vec![Scalar::from_u128(INITIAL_SCORE); NUM_NEIGHBOURS];

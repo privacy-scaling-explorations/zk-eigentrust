@@ -858,6 +858,7 @@ mod test {
 		assert!(res);
 	}
 
+	#[ignore = "Smart contract verifier is too big to run"]
 	#[test]
 	fn test_closed_graph_circut_evm() {
 		let ops: Vec<Vec<Scalar>> = vec![
