@@ -24,30 +24,35 @@ anvil
 
 Otherwise you should configure the `node_url` data field of the `client-config.json` file in the `data` directory to point to the correct Ethereum node. There's more about this in the configuration section.
 
-Open a new terminal to start interacting with the client through the CLI. The first step is to compile and deploy the contracts that the protocol is going to use to submit and verify the scores . This is done by running the following commands:
+Open a new terminal to start interacting with the client through the CLI. Let's build the release version of the client so we can run the program from the `target` directory:
 
 ```bash
-cd ../client
-cargo run --release -- compile
-cargo run --release -- deploy
+cargo build --release
+```
+
+Once the project is built, we need to compile and deploy the contracts that the protocol is going to use to submit and verify the scores:
+
+```bash
+./target/release/eigen-trust-client compile
+./target/release/eigen-trust-client deploy
 ```
 
 The next step is submitting an attestation to a peer in the network. Attestations allow us to give a score to a peer and store that in the blockchain. This is done by running the `attest` command:
 
 ```bash
-cargo run --release -- attest --to 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 --score 5
+./target/release/eigen-trust-client attest --to 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 --score 5
 ```
 
 It's now possible to fetch the peer-to-peer scores (from attestations), calculate the global scores and generate a proof. This is done by running the `proof` command:
 
 ```bash
-cargo run --release -- proof
+./target/release/eigen-trust-client proof
 ```
 
 This command will generate a proof and store it in the `data` directory. The final step is to verify it using the `verify` command:
 
 ```bash
-cargo run --release -- verify
+./target/release/eigen-trust-client verify
 ```
 
 ## CLI
@@ -80,21 +85,21 @@ The command-line interface was built using [clap.rs](http://clap.rs/). There is 
 ### Example of `update` command
 
 ```bash
-cargo run --release -- update --node http://localhost:8545
+./target/release/eigen-trust-client update --node http://localhost:8545
 ```
 
 ### Example of `attest` command
 
 ```bash
-cargo run --release -- attest --to 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 --score 5 --message 0x473fe1d0de78c8f334d059013d902c13c8b53eb0f669caa9cad677ce1a601167
+./target/release/eigen-trust-client attest --to 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 --score 5 --message 0x473fe1d0de78c8f334d059013d902c13c8b53eb0f669caa9cad677ce1a601167
 ```
 
 ### Example of `bandada` command
 
 ```bash
-cargo run --release -- scores # Can be skipped for testing, a scores.csv file is provided.
-cargo run -- update --band-id 51629751621128677209874422363557 --band-th 500
-cargo run -- bandada --action add --ic 82918723982 --addr 0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266
+./target/release/eigen-trust-client scores # Can be skipped for testing, a scores.csv file is provided.
+./target/release/eigen-trust-client update --band-id 51629751621128677209874422363557 --band-th 500
+./target/release/eigen-trust-client bandada --action add --ic 82918723982 --addr 0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266
 ```
 
 ## Configuration

@@ -27,7 +27,7 @@ use halo2::{
 use num_bigint::BigUint;
 use num_traits::{Num, One};
 use rand::Rng;
-use serde::{de::DeserializeOwned, Serialize};
+use serde::Serialize;
 use std::{
 	env::current_dir,
 	fmt::Debug,
@@ -45,18 +45,6 @@ pub fn read_bytes(path: impl AsRef<Path>) -> Vec<u8> {
 
 	// Read file into vector.
 	reader.read_to_end(&mut buffer).unwrap();
-
-	buffer
-}
-
-/// Reads string from the file
-pub fn read_string(path: impl AsRef<Path>) -> String {
-	let f = File::open(path).unwrap();
-	let mut reader = BufReader::new(f);
-	let mut buffer = String::new();
-
-	// Read file into string.
-	reader.read_to_string(&mut buffer).unwrap();
 
 	buffer
 }
@@ -87,13 +75,6 @@ pub fn write_yul_data(code: String, file_name: &str) -> Result<(), IoError> {
 	write(bin_path, code)
 }
 
-/// Read yul file
-pub fn read_yul_data(file_name: &str) -> String {
-	let current_dir = current_dir().unwrap();
-	let str_path = current_dir.join(format!("../data/{}.yul", file_name));
-	read_string(str_path)
-}
-
 /// Writes json to fule
 pub fn write_json_file<T: Serialize>(json: T, path: impl AsRef<Path>) -> Result<(), IoError> {
 	let bytes = serde_json::to_vec(&json)?;
@@ -107,22 +88,6 @@ pub fn write_json_data<T: Serialize>(json: T, file_name: &str) -> Result<(), IoE
 	let json_path = current_dir.join(format!("../data/{}.json", file_name));
 	write_json_file(json, json_path)?;
 	Ok(())
-}
-
-/// Reads the json file and deserialize it into the provided type
-pub fn read_json_file<T: DeserializeOwned>(path: impl AsRef<Path>) -> Result<T, IoError> {
-	let path = path.as_ref();
-	let file = std::fs::File::open(path)?;
-	let file = std::io::BufReader::new(file);
-	let val: T = serde_json::from_reader(file)?;
-	Ok(val)
-}
-
-/// Reads the json file and deserialize it into the provided type
-pub fn read_json_data<T: DeserializeOwned>(file_name: &str) -> Result<T, IoError> {
-	let current_dir = current_dir()?;
-	let json_path = current_dir.join(format!("../data/{}.json", file_name));
-	read_json_file(json_path)
 }
 
 /// Returns boolean value from the assigned cell value
