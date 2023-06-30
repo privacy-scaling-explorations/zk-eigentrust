@@ -1230,8 +1230,8 @@ mod test {
 			}
 
 			let mut aux_fin = to_sub.clone();
-			let mut aux_fins: Vec<AssignedPoint<C, NUM_LIMBS, NUM_BITS, P>> = Vec::new();
-			for _ in 0..self.batch_length {
+			let mut aux_fins: Vec<AssignedPoint<C, NUM_LIMBS, NUM_BITS, P>> = vec![aux_fin.clone()];
+			for _ in 1..self.batch_length {
 				aux_fins.push(aux_fin.clone());
 				let double_chip = EccDoubleChipset::new(aux_fin);
 				aux_fin = double_chip.synthesize(
