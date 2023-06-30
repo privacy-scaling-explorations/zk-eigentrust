@@ -1694,7 +1694,7 @@ mod test {
 		let res = EcPoint::multi_mul_scalar(&points_vec, &scalars_vec);
 		let test_chip = EccBatchedMulTestCircuit::new(points_vec, scalars_vec, 2);
 
-		let k = 17;
+		let k = 18;
 		let mut p_ins = Vec::new();
 		for i in 0..res.len() {
 			p_ins.extend(res[i].x.limbs);
