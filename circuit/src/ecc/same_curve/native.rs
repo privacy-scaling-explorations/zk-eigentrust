@@ -357,9 +357,6 @@ where
 
 #[cfg(test)]
 mod test {
-
-	use std::str::FromStr;
-
 	use super::EcPoint;
 	use crate::{
 		integer::native::Integer,
@@ -373,7 +370,6 @@ mod test {
 			group::Curve,
 		},
 	};
-	use num_bigint::BigUint;
 	use rand::thread_rng;
 
 	#[test]
