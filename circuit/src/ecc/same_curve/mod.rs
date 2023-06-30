@@ -1616,14 +1616,14 @@ mod test {
 		fn synthesize(
 			&self, config: TestConfig, mut layouter: impl Layouter<N>,
 		) -> Result<(), Error> {
-			let mut assigned_scalars_dum = [(); 10].map(|_| None);
+			let mut assigned_scalars_dum = Vec::new();
 			layouter.assign_region(
 				|| "scalar_mul_values",
 				|region: Region<'_, N>| {
 					let mut ctx = RegionCtx::new(region, 0);
 					for i in 0..self.scalars.len() {
 						let value = ctx.assign_advice(config.common.advice[0], self.scalars[i])?;
-						assigned_scalars_dum[i] = Some(value.clone());
+						assigned_scalars_dum.push(value);
 						ctx.next();
 					}
 					Ok(())
