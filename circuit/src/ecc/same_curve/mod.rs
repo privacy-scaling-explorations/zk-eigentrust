@@ -1170,8 +1170,8 @@ mod test {
 
 	impl AuxAssigner {
 		fn new(batch_length: usize, window_size: u32) -> Self {
-		        assert!(batch_length > 0);
-		        assert!(window_size > 0);
+			assert!(batch_length > 0);
+			assert!(window_size > 0);
 			Self { batch_length, window_size }
 		}
 	}
@@ -1220,27 +1220,28 @@ mod test {
 			)?;
 
 			let mut aux_init = to_add.clone();
-			let mut aux_inits: Vec<AssignedPoint<C, NUM_LIMBS, NUM_BITS, P>> = vec![aux_init.clone()];
+			let mut aux_inits: Vec<AssignedPoint<C, NUM_LIMBS, NUM_BITS, P>> =
+				vec![aux_init.clone()];
 			for _ in 1..self.batch_length {
-				aux_inits.push(aux_init.clone());
 				let double_chip = EccDoubleChipset::new(aux_init);
 				aux_init = double_chip.synthesize(
 					common,
 					&config.ecc_double,
 					layouter.namespace(|| "init_double"),
 				)?;
+				aux_inits.push(aux_init.clone());
 			}
 
 			let mut aux_fin = to_sub.clone();
 			let mut aux_fins: Vec<AssignedPoint<C, NUM_LIMBS, NUM_BITS, P>> = vec![aux_fin.clone()];
 			for _ in 1..self.batch_length {
-				aux_fins.push(aux_fin.clone());
 				let double_chip = EccDoubleChipset::new(aux_fin);
 				aux_fin = double_chip.synthesize(
 					common,
 					&config.ecc_double,
 					layouter.namespace(|| "fin_double"),
 				)?;
+				aux_fins.push(aux_fin.clone());
 			}
 
 			Ok((aux_inits, aux_fins))
