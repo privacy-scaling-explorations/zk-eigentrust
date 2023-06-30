@@ -1616,17 +1616,17 @@ mod test {
 		fn synthesize(
 			&self, config: TestConfig, mut layouter: impl Layouter<N>,
 		) -> Result<(), Error> {
-			let mut assigned_scalars_dum = Vec::new();
-			layouter.assign_region(
+			let assigned_scalars = layouter.assign_region(
 				|| "scalar_mul_values",
 				|region: Region<'_, N>| {
 					let mut ctx = RegionCtx::new(region, 0);
+					let mut assigned_scalars = Vec::new();
 					for i in 0..self.scalars.len() {
 						let value = ctx.assign_advice(config.common.advice[0], self.scalars[i])?;
-						assigned_scalars_dum.push(value);
+						assigned_scalars.push(value);
 						ctx.next();
 					}
-					Ok(())
+					Ok(assigned_scalars)
 				},
 			)?;
 
@@ -1647,8 +1647,6 @@ mod test {
 				)?;
 				assigned_points.push(p_assigned);
 			}
-
-			let assigned_scalars = assigned_scalars_dum.map(|x| x.unwrap()).to_vec();
 
 			let chip = EccBatchedMulChipset::new(
 				assigned_points, assigned_scalars, self.window_size, aux_inits, aux_fins,
