@@ -51,9 +51,9 @@ pub mod eth;
 pub mod fs;
 pub mod storage;
 
-use crate::attestation::address_from_signed_att;
+use crate::attestation::{address_from_signed_att, signed_att_from_log};
 use att_station::{AttestationCreatedFilter, AttestationStation};
-use attestation::{att_data_from_signed_att, Attestation, AttestationPayload};
+use attestation::{att_data_from_signed_att, Attestation};
 use dotenv::{dotenv, var};
 use eigen_trust_circuit::{
 	dynamic_sets::ecdsa_native::{EigenTrustSet, RationalScore, SignedAttestation},
@@ -67,7 +67,7 @@ use ethers::{
 	prelude::EthDisplay,
 	providers::Middleware,
 	signers::{LocalWallet, Signer},
-	types::{Filter, H256},
+	types::{Filter, Log, H256},
 };
 use ethers::{
 	middleware::SignerMiddleware,
@@ -195,7 +195,17 @@ impl Client {
 	/// Calculates the EigenTrust global scores.
 	pub async fn calculate_scores(&self) -> Result<Vec<Score>, EigenError> {
 		// Get attestations
-		let attestations = self.get_attestations().await?;
+		let att: Vec<AttestationCreatedFilter> = self.get_attestations().await?;
+
+		let attestations: Vec<(SignedAttestation, Attestation)> = att
+			.into_iter()
+			.map(|attestation_filter| {
+				let signed_att = signed_att_from_log(&attestation_filter)?;
+				let att = Attestation::from_log(&attestation_filter)?;
+				Result::Ok((signed_att, att))
+			})
+			.collect::<Result<Vec<_>, &'static str>>()
+			.unwrap();
 
 		// Construct a set to hold unique participant addresses
 		let mut participants_set = BTreeSet::<Address>::new();
@@ -275,42 +285,32 @@ impl Client {
 		Ok(scores)
 	}
 
-	/// Gets the attestations from the contract.
-	pub async fn get_attestations(
-		&self,
-	) -> Result<Vec<(SignedAttestation, Attestation)>, EigenError> {
+	/// Fetches attestations from the contract.
+	pub async fn get_attestations(&self) -> Result<Vec<AttestationCreatedFilter>, EigenError> {
+		// Get the logs from the contract
+		let logs = self.get_logs().await?;
+
+		// Decode the logs into attestations
+		let mut attestations: Vec<AttestationCreatedFilter> = Vec::new();
+		for log in logs.iter() {
+			let raw_log = RawLog::from((log.topics.clone(), log.data.to_vec()));
+			let att = AttestationCreatedFilter::decode_log(&raw_log).unwrap();
+			attestations.push(att);
+		}
+
+		Ok(attestations)
+	}
+
+	/// Fetches logs from the contract.
+	pub async fn get_logs(&self) -> Result<Vec<Log>, EigenError> {
 		let filter = Filter::new()
 			.address(self.config.as_address.parse::<Address>().unwrap())
 			.event("AttestationCreated(address,address,bytes32,bytes)")
 			.topic1(Vec::<H256>::new())
 			.topic2(Vec::<H256>::new())
 			.from_block(0);
-		let logs = &self.signer.get_logs(&filter).await.unwrap();
-		let mut att_tuple: Vec<(SignedAttestation, Attestation)> = Vec::new();
 
-		for log in logs.iter() {
-			let raw_log = RawLog::from((log.topics.clone(), log.data.to_vec()));
-			let att_created = AttestationCreatedFilter::decode_log(&raw_log).unwrap();
-			let att_data =
-				AttestationPayload::from_bytes(att_created.val.to_vec()).expect("Failed to decode");
-
-			let att = Attestation::new(
-				att_created.about,
-				att_created.key.into(),
-				att_data.get_value(),
-				Some(att_data.get_message().into()),
-			);
-
-			let att_fr = att.to_attestation_fr().unwrap();
-
-			let signature = att_data.get_signature();
-
-			let signed_att = SignedAttestation::new(att_fr, signature);
-
-			att_tuple.push((signed_att, att));
-		}
-
-		Ok(att_tuple)
+		self.signer.get_logs(&filter).await.map_err(|_| EigenError::Unknown)
 	}
 
 	/// Verifies last generated proof.
@@ -432,7 +432,9 @@ mod lib_tests {
 
 		assert_eq!(attestations.len(), 1);
 
-		let (_, returned_att) = attestations[0].clone();
+		let att_logs = attestations[0].clone();
+
+		let returned_att = Attestation::from_log(&att_logs).unwrap();
 
 		// Check that the attestations match
 		assert_eq!(returned_att.about, attestation.about);
