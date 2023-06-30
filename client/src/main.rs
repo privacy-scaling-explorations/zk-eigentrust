@@ -4,6 +4,7 @@ mod cli;
 use clap::Parser;
 use cli::*;
 use eigen_trust_client::{
+	attestation::AttestationRecord,
 	eth::{compile_sol_contracts, compile_yul_contracts, deploy_as, deploy_verifier},
 	fs::{get_file_path, read_binary, read_json, FileType},
 	storage::{CSVFileStorage, ScoreRecord, Storage},
@@ -35,6 +36,40 @@ async fn main() {
 			let client = Client::new(config);
 			if let Err(e) = client.attest(attestation).await {
 				eprintln!("Error while attesting: {:?}", e);
+			}
+		},
+		Mode::Attestations => {
+			let client = Client::new(config);
+
+			let attestations = match client.get_attestations().await {
+				Ok(attestations) => attestations,
+				Err(e) => {
+					eprintln!("Failed to get attestations: {:?}", e);
+					return;
+				},
+			};
+
+			let attestation_records = attestations
+				.into_iter()
+				.map(|log| AttestationRecord::from_log(&log))
+				.collect::<Vec<_>>();
+
+			let filepath = match get_file_path("attestations", FileType::Csv) {
+				Ok(path) => path,
+				Err(e) => {
+					eprintln!("Failed to get file path: {:?}", e);
+					return;
+				},
+			};
+
+			let mut storage = CSVFileStorage::<AttestationRecord>::new(filepath);
+			if let Err(e) = storage.save(attestation_records) {
+				eprintln!("Failed to save attestation records: {:?}", e);
+			} else {
+				println!(
+					"Attestations saved at \"{}\".",
+					storage.filepath().display()
+				);
 			}
 		},
 		Mode::Bandada(bandada_data) => match handle_bandada(&config, bandada_data).await {

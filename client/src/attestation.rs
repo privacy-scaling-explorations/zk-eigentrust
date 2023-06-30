@@ -11,8 +11,12 @@ use eigen_trust_circuit::{
 	dynamic_sets::ecdsa_native::{AttestationFr, SignedAttestation},
 	halo2::halo2curves::{bn256::Fr as Scalar, ff::FromUniformBytes},
 };
-use ethers::types::{Address, H256};
+use ethers::{
+	types::{Address, H256},
+	utils::hex,
+};
 use secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
+use serde::{Deserialize, Serialize};
 
 /// Domain prefix.
 pub const DOMAIN_PREFIX: [u8; DOMAIN_PREFIX_LEN] = *b"eigen_trust_";
@@ -86,10 +90,15 @@ impl Attestation {
 /// Attestation raw data payload.
 #[derive(Clone, Debug, PartialEq)]
 pub struct AttestationPayload {
+	/// The 'r' value of the ECDSA signature.
 	sig_r: [u8; 32],
+	/// The 's' value of the ECDSA signature.
 	sig_s: [u8; 32],
+	/// Recovery id of the ECDSA signature.
 	rec_id: u8,
+	/// Given rating for the action.
 	value: u8,
+	/// Optional field for attaching additional information to the attestation.
 	message: [u8; 32],
 }
 
@@ -169,6 +178,45 @@ impl AttestationPayload {
 	/// Gets the attestation message.
 	pub fn get_message(&self) -> [u8; 32] {
 		self.message
+	}
+}
+
+/// Attestation record.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AttestationRecord {
+	/// Ethereum address of the peer being rated.
+	about: String,
+	/// Unique identifier for the action being rated.
+	key: String,
+	/// Given rating for the action.
+	value: String,
+	/// Optional field for attaching additional information to the attestation.
+	message: String,
+	/// The 'r' value of the ECDSA signature.
+	sig_r: String,
+	/// The 's' value of the ECDSA signature.
+	sig_s: String,
+	/// Recovery id of the ECDSA signature.
+	rec_id: String,
+}
+
+impl AttestationRecord {
+	/// Creates a new AttestationRecord from an Attestation log.
+	pub fn from_log(log: &AttestationCreatedFilter) -> Self {
+		let payload = AttestationPayload::from_log(log).unwrap();
+		let attestation = Attestation::from_log(log).unwrap();
+
+		let encode_hex = |data: &[u8]| format!("0x{}", hex::encode(data));
+
+		Self {
+			about: encode_hex(attestation.about.as_fixed_bytes()),
+			key: encode_hex(attestation.key.as_fixed_bytes()),
+			value: attestation.value.to_string(),
+			message: encode_hex(attestation.message.as_fixed_bytes()),
+			sig_r: encode_hex(&payload.sig_r),
+			sig_s: encode_hex(&payload.sig_s),
+			rec_id: payload.rec_id.to_string(),
+		}
 	}
 }
 

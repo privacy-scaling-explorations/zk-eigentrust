@@ -28,6 +28,8 @@ pub struct Cli {
 pub enum Mode {
 	/// Submit an attestation. Requires 'AttestData'.
 	Attest(AttestData),
+	/// Retrieves and saves all attestations.
+	Attestations,
 	/// Create Bandada group.
 	Bandada(BandadaData),
 	/// Compile the contracts.
