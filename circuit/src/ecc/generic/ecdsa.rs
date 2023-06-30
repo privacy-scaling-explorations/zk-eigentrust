@@ -1,3 +1,5 @@
+use std::vec;
+
 use crate::{
 	ecc::generic::native::EcPoint,
 	integer::native::Integer,
@@ -30,9 +32,12 @@ pub fn fp_to_fq(x: Fp) -> Fq {
 pub fn biguint_to_fq(x: BigUint) -> Fq {
 	let order_biguint = BigUint::from_bytes_be(Fq::MODULUS.as_bytes());
 	let x = num_integer::Integer::mod_floor(&x, &order_biguint);
-	let mut x_bytes = [0u8; 64];
-	x_bytes[..32].copy_from_slice(&x.to_bytes_be());
-	Fq::from_uniform_bytes(&x_bytes)
+	let mut x_le = x.to_bytes_le();
+	let x_le_len = x_le.len();
+	let zeros_vec = vec![0u8; 64 - x_le_len];
+	x_le.extend(zeros_vec);
+	let result = Fq::from_uniform_bytes(x_le[..].try_into().unwrap());
+	result
 }
 
 /// Keypair struct for ECDSA signature
@@ -158,5 +163,58 @@ where
 		let x_candidate_mod_n =
 			<P as RnsParams<Fp, N, NUM_LIMBS, NUM_BITS>>::compose(x_candidate.limbs);
 		r_mod_n == x_candidate_mod_n
+	}
+}
+
+#[cfg(test)]
+mod test {
+	use crate::{
+		ecc::generic::ecdsa::{biguint_to_fq, EcdsaKeypair, EcdsaVerify},
+		integer::native::Integer,
+		params::ecc::secp256k1::Secp256k1Params,
+		params::rns::secp256k1::Secp256k1_4_68,
+	};
+	use halo2::{
+		arithmetic::Field,
+		halo2curves::{
+			bn256::Fr,
+			ff::PrimeField,
+			secp256k1::{Fq, Secp256k1, Secp256k1Affine},
+		},
+	};
+	use num_bigint::BigUint;
+	#[test]
+	fn should_verify_ecdsa_signature() {
+		let keypair =
+			EcdsaKeypair::<Fr, 4, 68, Secp256k1_4_68, Secp256k1Params>::generate_keypair();
+		let msg_hash = BigUint::from(123456789u64);
+		let signature = keypair.sign(msg_hash.clone());
+		let public_key = keypair.public_key.clone();
+		let advice_s_inv = Integer::from_w(biguint_to_fq(signature.1.value()).invert().unwrap());
+		let result = EcdsaVerify::<Fr, 4, 68,  Secp256k1_4_68, Secp256k1Params>::verify_signature_no_pubkey_check(
+            signature,
+            msg_hash,
+            public_key,
+            advice_s_inv,
+        );
+		assert!(result);
+	}
+
+	#[test]
+	fn should_not_verify_invalid_ecdsa_signature() {
+		let keypair =
+			EcdsaKeypair::<Fr, 4, 68, Secp256k1_4_68, Secp256k1Params>::generate_keypair();
+		let msg_hash = BigUint::from(123456789u64);
+		let signature = keypair.sign(msg_hash.clone());
+		let public_key = keypair.public_key.clone();
+		let advice_s_inv =
+			Integer::from_w(biguint_to_fq(signature.1.value()).invert().unwrap() + Fq::one());
+		let result = EcdsaVerify::<Fr, 4, 68,  Secp256k1_4_68, Secp256k1Params>::verify_signature_no_pubkey_check(
+            signature,
+            msg_hash,
+            public_key,
+            advice_s_inv,
+        );
+		assert!(!result);
 	}
 }
