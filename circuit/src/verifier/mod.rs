@@ -270,7 +270,7 @@ mod test {
 		}
 
 		let circuit = TestCircuitPi::<_, VERTICAL_SIZE>::new(advice, fixed);
-		let k = 9;
+		let k = 8;
 
 		let pub_ins = vec![sum; VERTICAL_SIZE];
 		let prover = MockProver::run(k, &circuit, vec![pub_ins]).unwrap();
@@ -291,7 +291,7 @@ mod test {
 		}
 		let circuit = TestCircuitPi::<_, VERTICAL_SIZE>::new(advice, fixed);
 
-		let k = 9;
+		let k = 8;
 		let params = generate_params(k);
 
 		let pub_ins = vec![sum; VERTICAL_SIZE];
@@ -313,7 +313,7 @@ mod test {
 		}
 		let circuit = TestCircuitPi::<_, VERTICAL_SIZE>::new(advice, fixed);
 
-		let k = 9;
+		let k = 8;
 		let params = read_params(k);
 		let pk = gen_pk(&params, &circuit);
 		let deployment_code = gen_evm_verifier(&params, pk.get_vk(), vec![VERTICAL_SIZE]);

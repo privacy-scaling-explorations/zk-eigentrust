@@ -311,7 +311,7 @@ mod test {
 		let leaves = vec![Fr::random(rng.clone()), Fr::random(rng.clone()), value];
 		let merkle = MerkleTree::<Fr, 2, 2, NativeH>::build_tree(leaves.clone());
 		let test_chip = MerkleTestCircuit::<2, 2>::new(leaves);
-		let k = 13;
+		let k = 12;
 		let pub_ins = vec![merkle.root];
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
@@ -334,7 +334,7 @@ mod test {
 		];
 		let merkle = MerkleTree::<Fr, 2, 5, NativeH>::build_tree(leaves.clone());
 		let test_chip = MerkleTestCircuit::<2, 5>::new(leaves);
-		let k = 13;
+		let k = 12;
 		let pub_ins = vec![merkle.root];
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
@@ -348,7 +348,7 @@ mod test {
 		let leaves = vec![Fr::random(rng.clone()), Fr::random(rng.clone()), value];
 		let merkle = MerkleTree::<Fr, 3, 4, NativeH>::build_tree(leaves.clone());
 		let test_chip = MerkleTestCircuit::<3, 4>::new(leaves);
-		let k = 13;
+		let k = 12;
 		let pub_ins = vec![merkle.root];
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
@@ -379,7 +379,7 @@ mod test {
 		];
 		let merkle = MerkleTree::<Fr, 4, 2, NativeH>::build_tree(leaves.clone());
 		let test_chip = MerkleTestCircuit::<4, 2>::new(leaves);
-		let k = 13;
+		let k = 12;
 		let pub_ins = vec![merkle.root];
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
@@ -536,7 +536,7 @@ mod test {
 		let merkle = MerkleTree::<Fr, 4, 4, NativeH>::build_tree(leaves);
 		let path = Path::<Fr, 4, 4, 5, NativeH>::find_path(&merkle, 3);
 		let test_chip = PathTestCircuit::<4, 5>::new(path.path_arr);
-		let k = 10;
+		let k = 9;
 		let pub_ins = vec![merkle.root];
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
