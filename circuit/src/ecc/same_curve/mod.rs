@@ -1321,7 +1321,7 @@ mod test {
 		let res = p_point.add(&q_point);
 		let test_chip = EccAddTestCircuit::new(p_point, q_point);
 
-		let k = 7;
+		let k = 6;
 		let mut p_ins = Vec::new();
 		p_ins.extend(res.x.limbs);
 		p_ins.extend(res.y.limbs);
@@ -1390,7 +1390,7 @@ mod test {
 		let res = p_point.double();
 		let test_chip = EccDoubleTestCircuit::new(p_point);
 
-		let k = 7;
+		let k = 6;
 		let mut p_ins = Vec::new();
 		p_ins.extend(res.x.limbs);
 		p_ins.extend(res.y.limbs);
@@ -1472,7 +1472,7 @@ mod test {
 		let res = p_point.ladder(&q_point);
 		let test_chip = EccLadderTestCircuit::new(p_point, q_point);
 
-		let k = 7;
+		let k = 6;
 		let mut p_ins = Vec::new();
 		p_ins.extend(res.x.limbs);
 		p_ins.extend(res.y.limbs);
@@ -1565,7 +1565,7 @@ mod test {
 		let res = p_point.mul_scalar(scalar);
 		let test_chip = EccMulTestCircuit::new(p_point, scalar);
 
-		let k = 15;
+		let k = 14;
 		let mut p_ins = Vec::new();
 		p_ins.extend(res.x.limbs);
 		p_ins.extend(res.y.limbs);
@@ -1695,7 +1695,7 @@ mod test {
 		let res = EcPoint::multi_mul_scalar(&points_vec, &scalars_vec);
 		let test_chip = EccBatchedMulTestCircuit::new(points_vec, scalars_vec, 2);
 
-		let k = 18;
+		let k = 17;
 		let mut p_ins = Vec::new();
 		for i in 0..res.len() {
 			p_ins.extend(res[i].x.limbs);

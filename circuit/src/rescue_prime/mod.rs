@@ -356,7 +356,7 @@ mod test {
 
 		let rescue_prime_tester = RescuePrimeTester::new(inputs);
 
-		let k = 7;
+		let k = 5;
 		let prover = MockProver::run(k, &rescue_prime_tester, vec![outputs.to_vec()]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
 	}
@@ -384,7 +384,7 @@ mod test {
 
 		let rescue_prime_tester = RescuePrimeTester::new(inputs);
 
-		let k = 7;
+		let k = 5;
 		let rng = &mut rand::thread_rng();
 		let params = generate_params(k);
 		let res =

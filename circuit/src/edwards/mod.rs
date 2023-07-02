@@ -550,7 +550,7 @@ mod test {
 		let r = UnassignedPoint::new(r.x, r.y, r.z);
 		let circuit = AddTestCircuit::new(e, r);
 
-		let k = 7;
+		let k = 6;
 		let pub_ins = vec![x_res, y_res, z_res];
 		let prover = MockProver::run(k, &circuit, vec![pub_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
@@ -568,7 +568,7 @@ mod test {
 		let r = UnassignedPoint::new(r.x, r.y, r.z);
 		let circuit = AddTestCircuit::new(e, r);
 
-		let k = 11;
+		let k = 10;
 		let rng = &mut rand::thread_rng();
 		let params = generate_params(k);
 		let pub_ins = [x_res, y_res, z_res];
@@ -632,7 +632,7 @@ mod test {
 		let r = UnassignedPoint::new(r.x, r.y, r.z);
 		let circuit = IntoAffineTestCircuit::new(r);
 
-		let k = 7;
+		let k = 6;
 		let pub_ins = vec![r_affine.x, r_affine.y];
 		let prover = MockProver::run(k, &circuit, vec![pub_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
@@ -647,7 +647,7 @@ mod test {
 		let r = UnassignedPoint::new(r.x, r.y, r.z);
 		let circuit = IntoAffineTestCircuit::new(r);
 
-		let k = 9;
+		let k = 8;
 		let rng = &mut rand::thread_rng();
 		let params = generate_params(k);
 		let pub_ins = vec![r_affine.x, r_affine.y];
@@ -734,7 +734,7 @@ mod test {
 		let r = UnassignedPoint::new(r.x, r.y, r.z);
 		let circuit = MulScalarTestCircuit::new(r, scalar);
 
-		let k = 11;
+		let k = 10;
 		let pub_ins = vec![res.x, res.y, res.z];
 		let prover = MockProver::run(k, &circuit, vec![pub_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
@@ -752,7 +752,7 @@ mod test {
 		let r = UnassignedPoint::new(r.x, r.y, r.z);
 		let circuit = MulScalarTestCircuit::new(r, scalar);
 
-		let k = 11;
+		let k = 10;
 		let pub_ins = vec![res.x, res.y, res.z];
 		let prover = MockProver::run(k, &circuit, vec![pub_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
@@ -770,7 +770,7 @@ mod test {
 		let r = UnassignedPoint::new(r.x, r.y, r.z);
 		let circuit = MulScalarTestCircuit::new(r, scalar);
 
-		let k = 11;
+		let k = 10;
 		let pub_ins = vec![res.x, res.y, res.z];
 		let prover = MockProver::run(k, &circuit, vec![pub_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
@@ -787,7 +787,7 @@ mod test {
 		let r = UnassignedPoint::new(r.x, r.y, r.z);
 		let circuit = MulScalarTestCircuit::new(r, scalar);
 
-		let k = 11;
+		let k = 10;
 		let rng = &mut rand::thread_rng();
 		let params = generate_params(k);
 		let pub_ins = [res.x, res.y, res.z];
