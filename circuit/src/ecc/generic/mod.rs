@@ -56,11 +56,11 @@ where
         let r_x_chip = IntegerSubChip::new(s_squared, p_x_reduced.clone());
         let r_x = r_x_chip.synthesize(common, &config.integer_sub_selector, layouter.namespace(|| "r_x"))?;
 
-        let r_x_chip = IntegerSubChip::new(r_x, q_x_reduced);
-        let r_x = r_x_chip.synthesize(common, &config.integer_sub_selector, layouter.namespace(|| "r_x"))?;
-
-        // Calculate the y-coordinate of the resulting point r
-        let r_y_chip = IntegerSubChip::new(s * (p_x_reduced - r_x), p_y_reduced);
+        let sub_chip = IntegerSubChip::new(p_x_reduced, r_x);
+        let sub_result = sub_chip.synthesize(common, &config.integer_sub_selector, layouter.namespace(|| "sub_result"))?;
+        let mul_chip = IntegerMulChip::new(s, sub_result);
+        let mul_result = mul_chip.synthesize(common, &config.integer_mul_selector, layouter.namespace(|| "mul_result"))?;
+        let r_y_chip = IntegerSubChip::new(mul_result, p_y_reduced);
         let r_y = r_y_chip.synthesize(common, &config.integer_sub_selector, layouter.namespace(|| "r_y"))?;
 
         // Return the resulting point r
