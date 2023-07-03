@@ -52,9 +52,10 @@ where
         // Create an instance of IntegerMulChip to multiply `s` by itself
         let s_squared_chip = IntegerMulChip::new(s.clone(), s);
         let s_squared = s_squared_chip.synthesize(common, &config.integer_mul_selector, layouter.namespace(|| "s_squared"))?;
+
         let r_x_chip = IntegerSubChip::new(s_squared, p_x_reduced.clone());
-        let r_x_chip = IntegerSubChip::new(s.pow(2), p_x_reduced.clone());
         let r_x = r_x_chip.synthesize(common, &config.integer_sub_selector, layouter.namespace(|| "r_x"))?;
+
         let r_x_chip = IntegerSubChip::new(r_x, q_x_reduced);
         let r_x = r_x_chip.synthesize(common, &config.integer_sub_selector, layouter.namespace(|| "r_x"))?;
 
