@@ -29,8 +29,17 @@ where
     fn synthesize(
         self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<N>,
     ) -> Result<Self::Output, Error> {
-        // Implement the logic for addition of points p and q here
-        // ...
+        // Calculate the slope s = (q.y - p.y) / (q.x - p.x)
+        let s = (self.q.y - self.p.y) / (self.q.x - self.p.x);
+
+        // Calculate the x-coordinate of the resulting point r
+        let r_x = s.pow(2) - self.p.x - self.q.x;
+
+        // Calculate the y-coordinate of the resulting point r
+        let r_y = s * (self.p.x - r_x) - self.p.y;
+
+        // Return the resulting point r
+        Ok(AssignedPoint::new(r_x, r_y))
     }
 }
 
