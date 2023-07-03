@@ -1067,7 +1067,7 @@ mod test {
 		p_ins.extend(res.inner.x.limbs);
 		p_ins.extend(res.inner.y.limbs);
 		let circuit = TestCircuit::new(pairs);
-		let k = 17;
+		let k = 16;
 		let prover = MockProver::run(k, &circuit, vec![p_ins]).unwrap();
 
 		assert_eq!(prover.verify(), Ok(()));

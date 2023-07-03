@@ -7,14 +7,13 @@ use clap::{Args, Parser, Subcommand};
 use eigen_trust_circuit::utils::write_json_data;
 use eigen_trust_client::{
 	attestation::{Attestation, DOMAIN_PREFIX, DOMAIN_PREFIX_LEN},
-	utils::read_csv_file,
+	storage::{CSVFileStorage, ScoreRecord, Storage},
 };
 use ethers::{
 	abi::Address,
 	providers::Http,
 	types::{H160, H256},
 };
-use serde::Deserialize;
 use std::str::FromStr;
 
 #[derive(Parser)]
@@ -167,22 +166,6 @@ impl AttestData {
 	}
 }
 
-#[allow(dead_code)]
-/// Score record.
-#[derive(Debug, Deserialize)]
-pub struct ScoreRecord {
-	/// The peer's address.
-	peer_address: String,
-	/// The peer's score.
-	score_fr: String,
-	/// Score numerator.
-	numerator: String,
-	/// Score denominator.
-	denominator: String,
-	/// Score.
-	score: String,
-}
-
 /// Attestation subcommand input.
 #[derive(Args, Debug)]
 pub struct BandadaData {
@@ -226,15 +209,19 @@ pub async fn handle_bandada(config: &ClientConfig, data: BandadaData) -> Result<
 
 	match action {
 		Action::Add => {
-			let scores: Vec<ScoreRecord> = read_csv_file("scores")?;
+			// Create a CSVFileStorage for scores
+			let scores_storage = CSVFileStorage::<ScoreRecord>::new("scores.csv".into());
+
+			// Read scores from the CSV file using load method from the Storage trait
+			let scores = scores_storage.load().map_err(|_| "Failed to load scores.")?;
 
 			let participant_record = scores
 				.iter()
-				.find(|record| record.peer_address == *address)
+				.find(|record| *record.peer_address().as_str() == *address)
 				.ok_or("Participant not found in score records.")?;
 
 			let participant_score: u32 = participant_record
-				.score
+				.score_fr()
 				.parse()
 				.map_err(|_| "Failed to parse participant score.")?;
 

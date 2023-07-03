@@ -253,7 +253,7 @@ mod test {
 		let test_chip = TestCircuit::new(set, target);
 
 		let pub_ins = vec![Fr::zero()];
-		let k = 6;
+		let k = 5;
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
 	}
@@ -266,7 +266,7 @@ mod test {
 		let test_chip = TestCircuit::new(set, target);
 
 		let pub_ins = vec![Fr::one()];
-		let k = 6;
+		let k = 5;
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
 	}

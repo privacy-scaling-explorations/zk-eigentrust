@@ -193,7 +193,7 @@ where
 	) -> Vec<Self> {
 		let sliding_window_size = EC::window_size();
 		// AuxGens from article.
-		let (mut aux_init, mut aux_fin) = Self::aux(EC::window_size());
+		let (mut aux_init, mut aux_fin) = Self::aux(sliding_window_size);
 
 		let mut aux_inits: Vec<EcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>> = Vec::new();
 		for _ in 0..points.len() {

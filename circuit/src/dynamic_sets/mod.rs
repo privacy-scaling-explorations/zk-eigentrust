@@ -792,7 +792,7 @@ mod test {
 			ops,
 		);
 
-		let k = 15;
+		let k = 14;
 		let prover = match MockProver::<Scalar>::run(k, &et, vec![res.to_vec()]) {
 			Ok(prover) => prover,
 			Err(e) => panic!("{}", e),
@@ -851,13 +851,14 @@ mod test {
 			ops,
 		);
 
-		let k = 15;
+		let k = 14;
 		let rng = &mut rand::thread_rng();
 		let params = generate_params(k);
 		let res = prove_and_verify::<Bn256, _, _>(params, et, &[&res], rng).unwrap();
 		assert!(res);
 	}
 
+	#[ignore = "Smart contract verifier is too big to run"]
 	#[test]
 	fn test_closed_graph_circut_evm() {
 		let ops: Vec<Vec<Scalar>> = vec![
@@ -908,7 +909,7 @@ mod test {
 			ops,
 		);
 
-		let k = 15;
+		let k = 14;
 		let params = read_params(k);
 		let pk = gen_pk(&params, &et);
 		let deployment_code = gen_evm_verifier(&params, pk.get_vk(), vec![NUM_NEIGHBOURS]);
