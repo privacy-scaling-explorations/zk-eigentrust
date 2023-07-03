@@ -66,3 +66,37 @@ where
     }
 }
 
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use halo2::{
+        arithmetic::Field,
+        circuit::{Layouter, SimpleFloorPlanner},
+        dev::MockProver,
+        plonk::{Circuit, ConstraintSystem, Error},
+    };
+    use rand::thread_rng;
+
+    #[test]
+    fn test_ecc_add_chipset_synthesize() {
+        // Create a mock prover for our tests
+        let mut prover = MockProver::<Scalar>::default();
+
+        // Create instances of EccAddChipset with different inputs
+        let ecc_add_chipset1 = EccAddChipset::new(/* insert appropriate arguments here */);
+        let ecc_add_chipset2 = EccAddChipset::new(/* insert appropriate arguments here */);
+
+        // Call the synthesize method on these instances
+        let result1 = ecc_add_chipset1.synthesize(/* insert appropriate arguments here */);
+        let result2 = ecc_add_chipset2.synthesize(/* insert appropriate arguments here */);
+
+        // Check the output
+        assert_eq!(result1, /* expected output */);
+        assert_eq!(result2, /* expected output */);
+
+        // Add additional tests to cover various scenarios and edge cases
+        // ...
+    }
+}
+
