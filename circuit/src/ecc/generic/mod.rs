@@ -95,8 +95,16 @@ mod tests {
         assert_eq!(result1, /* expected output */);
         assert_eq!(result2, /* expected output */);
 
-        // Add additional tests to cover various scenarios and edge cases
-        // ...
+        // Create instances of the native and halo2 versions of the EccAddChipset
+        let native_ecc_add_chipset = EccAddChipset::new(/* insert appropriate arguments here */);
+        let halo2_ecc_add_chipset = EccAddChipset::new(/* insert appropriate arguments here */);
+
+        // Perform the same operation using both versions
+        let native_result = native_ecc_add_chipset.synthesize(/* insert appropriate arguments here */);
+        let halo2_result = halo2_ecc_add_chipset.synthesize(/* insert appropriate arguments here */);
+
+        // Compare the results and assert that they are equal
+        assert_eq!(native_result, halo2_result);
     }
 }
 
