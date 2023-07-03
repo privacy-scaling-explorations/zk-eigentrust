@@ -1,10 +1,10 @@
 // Ecc implementation over wrong field (using Integer) where both the base field and the scalar field are from the wrong Ecc.
 
 use crate::{
-	integer::native::Integer,
+	integer::native::{Integer, UnassignedInteger},
 	params::{ecc::EccParams, rns::RnsParams},
 	utils::{be_bits_to_usize, big_to_fe, to_bits},
-	FieldExt,
+	FieldExt, UnassignedValue,
 };
 use halo2::halo2curves::ff::PrimeField;
 use halo2::halo2curves::CurveAffine;
@@ -271,6 +271,81 @@ where
 	/// Check if two points are equal
 	pub fn is_eq(&self, other: &Self) -> bool {
 		self.x.is_eq(&other.x) && self.y.is_eq(&other.y)
+	}
+}
+
+/// Structure for the UnassignedEcPoint
+#[derive(Clone, Debug)]
+pub struct UnassignedEcPoint<
+	C: CurveAffine,
+	N: FieldExt,
+	const NUM_LIMBS: usize,
+	const NUM_BITS: usize,
+	P,
+	EC,
+> where
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
+	<C as CurveAffine>::Base: FieldExt,
+	<C as CurveAffine>::ScalarExt: FieldExt,
+{
+	/// X coordinate of the UnassignedEcPoint
+	pub x: UnassignedInteger<C::Base, N, NUM_LIMBS, NUM_BITS, P>,
+	/// Y coordinate of the UnassignedEcPoint
+	pub y: UnassignedInteger<C::Base, N, NUM_LIMBS, NUM_BITS, P>,
+
+	_ec: PhantomData<EC>,
+}
+
+impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P, EC>
+	UnassignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>
+where
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
+	<C as CurveAffine>::Base: FieldExt,
+	<C as CurveAffine>::ScalarExt: FieldExt,
+{
+	/// Creates a new unassigned ec point object
+	pub fn new(
+		x: UnassignedInteger<C::Base, N, NUM_LIMBS, NUM_BITS, P>,
+		y: UnassignedInteger<C::Base, N, NUM_LIMBS, NUM_BITS, P>,
+	) -> Self {
+		Self { x, y, _ec: PhantomData }
+	}
+}
+
+impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P, EC>
+	From<EcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>>
+	for UnassignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>
+where
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
+	<C as CurveAffine>::Base: FieldExt,
+	<C as CurveAffine>::ScalarExt: FieldExt,
+{
+	fn from(ec_point: EcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>) -> Self {
+		Self {
+			x: UnassignedInteger::from(ec_point.x),
+			y: UnassignedInteger::from(ec_point.y),
+			_ec: PhantomData,
+		}
+	}
+}
+
+impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P, EC>
+	UnassignedValue for UnassignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>
+where
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
+	<C as CurveAffine>::Base: FieldExt,
+	<C as CurveAffine>::ScalarExt: FieldExt,
+{
+	fn without_witnesses() -> Self {
+		Self {
+			_ec: PhantomData,
+			x: UnassignedInteger::without_witnesses(),
+			y: UnassignedInteger::without_witnesses(),
+		}
 	}
 }
 
