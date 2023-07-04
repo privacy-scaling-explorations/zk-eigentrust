@@ -1,6 +1,7 @@
 /// Native version of the chip
 pub mod native;
 
+use self::native::EcPoint;
 use crate::{
 	gadgets::{
 		bits2num::Bits2NumChip,
@@ -8,11 +9,11 @@ use crate::{
 	},
 	integer::{
 		AssignedInteger, IntegerAddChip, IntegerDivChip, IntegerMulChip, IntegerReduceChip,
-		IntegerSubChip,
+		IntegerSubChip, UnassignedInteger,
 	},
-	params::rns::RnsParams,
+	params::{ecc::EccParams, rns::RnsParams},
 	utils::{assigned_as_bool, be_assigned_bits_to_usize},
-	Chip, Chipset, CommonConfig, FieldExt,
+	Chip, Chipset, CommonConfig, FieldExt, UnassignedValue,
 };
 use halo2::halo2curves::ff::PrimeField;
 use halo2::{
@@ -20,6 +21,75 @@ use halo2::{
 	halo2curves::CurveAffine,
 	plonk::{Error, Selector},
 };
+use std::marker::PhantomData;
+
+/// Structure for the UnassignedEcPoint
+#[derive(Clone, Debug)]
+pub struct UnassignedEcPoint<C: CurveAffine, const NUM_LIMBS: usize, const NUM_BITS: usize, P, EC>
+where
+	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
+{
+	/// X coordinate of the UnassignedEcPoint
+	pub x: UnassignedInteger<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS, P>,
+	/// Y coordinate of the UnassignedEcPoint
+	pub y: UnassignedInteger<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS, P>,
+
+	_ec: PhantomData<EC>,
+}
+
+impl<C: CurveAffine, const NUM_LIMBS: usize, const NUM_BITS: usize, P, EC>
+	UnassignedEcPoint<C, NUM_LIMBS, NUM_BITS, P, EC>
+where
+	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
+{
+	/// Creates a new unassigned ec point object
+	pub fn new(
+		x: UnassignedInteger<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS, P>,
+		y: UnassignedInteger<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS, P>,
+	) -> Self {
+		Self { x, y, _ec: PhantomData }
+	}
+}
+
+impl<C: CurveAffine, const NUM_LIMBS: usize, const NUM_BITS: usize, P, EC>
+	From<EcPoint<C, NUM_LIMBS, NUM_BITS, P, EC>> for UnassignedEcPoint<C, NUM_LIMBS, NUM_BITS, P, EC>
+where
+	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
+{
+	fn from(ec_point: EcPoint<C, NUM_LIMBS, NUM_BITS, P, EC>) -> Self {
+		Self {
+			x: UnassignedInteger::from(ec_point.x),
+			y: UnassignedInteger::from(ec_point.y),
+			_ec: PhantomData,
+		}
+	}
+}
+
+impl<C: CurveAffine, const NUM_LIMBS: usize, const NUM_BITS: usize, P, EC> UnassignedValue
+	for UnassignedEcPoint<C, NUM_LIMBS, NUM_BITS, P, EC>
+where
+	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
+{
+	fn without_witnesses() -> Self {
+		Self {
+			_ec: PhantomData,
+			x: UnassignedInteger::without_witnesses(),
+			y: UnassignedInteger::without_witnesses(),
+		}
+	}
+}
 
 /// Structure for the AssignedPoint.
 #[derive(Clone, Debug)]
@@ -996,10 +1066,9 @@ where
 #[cfg(test)]
 mod test {
 	use super::{
-		native::UnassignedEcPoint, AssignedPoint, EccAddChipset, EccAddConfig,
-		EccBatchedMulChipset, EccBatchedMulConfig, EccDoubleChipset, EccDoubleConfig,
-		EccMulChipset, EccMulConfig, EccTableSelectConfig, EccUnreducedLadderChipset,
-		EccUnreducedLadderConfig,
+		AssignedPoint, EccAddChipset, EccAddConfig, EccBatchedMulChipset, EccBatchedMulConfig,
+		EccDoubleChipset, EccDoubleConfig, EccMulChipset, EccMulConfig, EccTableSelectConfig,
+		EccUnreducedLadderChipset, EccUnreducedLadderConfig, UnassignedEcPoint,
 	};
 	use crate::{
 		ecc::same_curve::native::EcPoint,
@@ -1008,9 +1077,8 @@ mod test {
 			main::{MainChip, MainConfig},
 		},
 		integer::{
-			native::{Integer, UnassignedInteger},
-			AssignedInteger, IntegerAddChip, IntegerDivChip, IntegerMulChip, IntegerReduceChip,
-			IntegerSubChip,
+			native::Integer, AssignedInteger, IntegerAddChip, IntegerDivChip, IntegerMulChip,
+			IntegerReduceChip, IntegerSubChip, UnassignedInteger,
 		},
 		params::ecc::{bn254::Bn254Params, EccParams},
 		params::rns::bn256::Bn256_4_68,

@@ -279,9 +279,8 @@ mod test {
 	use crate::{
 		circuit::{FullRoundHasher, PartialRoundHasher},
 		ecc::same_curve::{
-			native::{EcPoint, UnassignedEcPoint},
-			AssignedPoint, EccAddConfig, EccDoubleConfig, EccMulConfig, EccTableSelectConfig,
-			EccUnreducedLadderConfig,
+			native::EcPoint, AssignedPoint, EccAddConfig, EccDoubleConfig, EccMulConfig,
+			EccTableSelectConfig, EccUnreducedLadderConfig, UnassignedEcPoint,
 		},
 		gadgets::{
 			absorb::AbsorbChip,
@@ -290,9 +289,8 @@ mod test {
 		},
 		halo2::transcript::TranscriptWriterBuffer,
 		integer::{
-			native::{Integer, UnassignedInteger},
-			AssignedInteger, IntegerAddChip, IntegerDivChip, IntegerMulChip, IntegerReduceChip,
-			IntegerSubChip,
+			native::Integer, AssignedInteger, IntegerAddChip, IntegerDivChip, IntegerMulChip,
+			IntegerReduceChip, IntegerSubChip, UnassignedInteger,
 		},
 		params::hasher::poseidon_bn254_5x5::Params,
 		params::{ecc::bn254::Bn254Params, rns::bn256::Bn256_4_68},

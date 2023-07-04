@@ -1,6 +1,7 @@
 /// Native implementation
 pub mod native;
 
+use self::native::EcPoint;
 use crate::{
 	gadgets::{
 		bits2integer::{Bits2IntegerChipset, Bits2IntegerChipsetConfig},
@@ -8,17 +9,95 @@ use crate::{
 	},
 	integer::{
 		AssignedInteger, IntegerAddChip, IntegerDivChip, IntegerMulChip, IntegerReduceChip,
-		IntegerSubChip,
+		IntegerSubChip, UnassignedInteger,
 	},
-	params::rns::RnsParams,
+	params::{ecc::EccParams, rns::RnsParams},
 	utils::{assigned_as_bool, be_assigned_bits_to_usize},
-	Chip, Chipset, CommonConfig, FieldExt,
+	Chip, Chipset, CommonConfig, FieldExt, UnassignedValue,
 };
 use halo2::{
 	circuit::{AssignedCell, Layouter},
+	halo2curves::ff::PrimeField,
 	halo2curves::CurveAffine,
 	plonk::{Error, Selector},
 };
+use itertools::Itertools;
+use std::marker::PhantomData;
+
+/// Structure for the UnassignedEcPoint
+#[derive(Clone, Debug)]
+pub struct UnassignedEcPoint<
+	C: CurveAffine,
+	N: FieldExt,
+	const NUM_LIMBS: usize,
+	const NUM_BITS: usize,
+	P,
+	EC,
+> where
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
+	<C as CurveAffine>::Base: FieldExt,
+	<C as CurveAffine>::ScalarExt: FieldExt,
+{
+	/// X coordinate of the UnassignedEcPoint
+	pub x: UnassignedInteger<C::Base, N, NUM_LIMBS, NUM_BITS, P>,
+	/// Y coordinate of the UnassignedEcPoint
+	pub y: UnassignedInteger<C::Base, N, NUM_LIMBS, NUM_BITS, P>,
+
+	_ec: PhantomData<EC>,
+}
+
+impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P, EC>
+	UnassignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>
+where
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
+	<C as CurveAffine>::Base: FieldExt,
+	<C as CurveAffine>::ScalarExt: FieldExt,
+{
+	/// Creates a new unassigned ec point object
+	pub fn new(
+		x: UnassignedInteger<C::Base, N, NUM_LIMBS, NUM_BITS, P>,
+		y: UnassignedInteger<C::Base, N, NUM_LIMBS, NUM_BITS, P>,
+	) -> Self {
+		Self { x, y, _ec: PhantomData }
+	}
+}
+
+impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P, EC>
+	From<EcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>>
+	for UnassignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>
+where
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
+	<C as CurveAffine>::Base: FieldExt,
+	<C as CurveAffine>::ScalarExt: FieldExt,
+{
+	fn from(ec_point: EcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>) -> Self {
+		Self {
+			x: UnassignedInteger::from(ec_point.x),
+			y: UnassignedInteger::from(ec_point.y),
+			_ec: PhantomData,
+		}
+	}
+}
+
+impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P, EC>
+	UnassignedValue for UnassignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>
+where
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
+	<C as CurveAffine>::Base: FieldExt,
+	<C as CurveAffine>::ScalarExt: FieldExt,
+{
+	fn without_witnesses() -> Self {
+		Self {
+			_ec: PhantomData,
+			x: UnassignedInteger::without_witnesses(),
+			y: UnassignedInteger::without_witnesses(),
+		}
+	}
+}
 
 /// Structure for the AssignedPoint.
 #[derive(Clone, Debug)]
@@ -817,6 +896,9 @@ where
 		let mut bits =
 			bits.synthesize(common, &config.bits2integer, layouter.namespace(|| "bits"))?;
 		bits.reverse();
+		// Subtracting curve's bit size from binary field bit size to find the bits difference
+		let bits_difference = NUM_BITS * NUM_LIMBS - (C::ScalarExt::NUM_BITS as usize);
+		let bits = &bits[bits_difference..];
 
 		let acc_point_chip = EccTableSelectChipset::new(
 			bits[0].clone(),
@@ -956,7 +1038,7 @@ where
 	fn synthesize(
 		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<N>,
 	) -> Result<Self::Output, Error> {
-		let num_of_windows = N::NUM_BITS / self.window_size;
+		let num_of_windows = C::ScalarExt::NUM_BITS / self.window_size;
 		let sliding_window_pow2 = 2_u32.pow(self.window_size) as usize;
 
 		let mut multi_bits = Vec::new();
@@ -967,6 +1049,9 @@ where
 			bits.reverse();
 			multi_bits.push(bits);
 		}
+		// Subtracting curve's bit size from binary field bit size to find the bits difference
+		let bits_difference = NUM_BITS * NUM_LIMBS - (C::ScalarExt::NUM_BITS as usize);
+		let multi_bits = multi_bits.iter().map(|x| &x[bits_difference..]).collect_vec();
 
 		let mut table: Vec<Vec<AssignedPoint<C, N, NUM_LIMBS, NUM_BITS, P>>> =
 			vec![Vec::new(); self.points.len()];
@@ -1036,10 +1121,9 @@ where
 #[cfg(test)]
 mod test {
 	use super::{
-		native::UnassignedEcPoint, AssignedPoint, EccAddChipset, EccAddConfig,
-		EccBatchedMulChipset, EccBatchedMulConfig, EccDoubleChipset, EccDoubleConfig,
-		EccMulChipset, EccMulConfig, EccTableSelectConfig, EccUnreducedLadderChipset,
-		EccUnreducedLadderConfig,
+		AssignedPoint, EccAddChipset, EccAddConfig, EccBatchedMulChipset, EccBatchedMulConfig,
+		EccDoubleChipset, EccDoubleConfig, EccMulChipset, EccMulConfig, EccTableSelectConfig,
+		EccUnreducedLadderChipset, EccUnreducedLadderConfig, UnassignedEcPoint,
 	};
 	use crate::{
 		ecc::generic::native::EcPoint,
@@ -1049,9 +1133,8 @@ mod test {
 			main::{MainChip, MainConfig},
 		},
 		integer::{
-			native::{Integer, UnassignedInteger},
-			AssignedInteger, IntegerAddChip, IntegerDivChip, IntegerMulChip, IntegerReduceChip,
-			IntegerSubChip,
+			native::Integer, AssignedInteger, IntegerAddChip, IntegerDivChip, IntegerMulChip,
+			IntegerReduceChip, IntegerSubChip, UnassignedInteger,
 		},
 		params::{
 			ecc::{secp256k1::Secp256k1Params, EccParams},

@@ -1,13 +1,14 @@
 // Ecc implementation over wrong field (using Integer) where both the base field and the scalar field are from the wrong Ecc.
 
 use crate::{
-	integer::native::{Integer, UnassignedInteger},
+	integer::native::Integer,
 	params::{ecc::EccParams, rns::RnsParams},
-	utils::{be_bits_to_usize, big_to_fe, field_to_bits, to_bits},
-	FieldExt, UnassignedValue,
+	utils::{be_bits_to_usize, to_bits},
+	FieldExt,
 };
 use halo2::halo2curves::ff::PrimeField;
 use halo2::halo2curves::CurveAffine;
+use itertools::Itertools;
 use std::marker::PhantomData;
 
 /// Structure for the EcPoint
@@ -174,6 +175,9 @@ where
 			bits.extend(sliced_bits);
 		}
 		bits.reverse();
+		// Subtracting curve's bit size from binary field bit size to find the bits difference
+		let bits_difference = NUM_BITS * NUM_LIMBS - (C::ScalarExt::NUM_BITS as usize);
+		let bits = &bits[bits_difference..];
 
 		let table = [aux_init.clone(), exp.add(&aux_init)];
 		let mut acc = Self::select(bits[0], table.clone());
@@ -195,7 +199,7 @@ where
 	pub fn multi_mul_scalar(
 		points: &[Self], scalars: &[Integer<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>],
 	) -> Vec<Self> {
-		let sliding_window_size = EC::window_size();
+		let sliding_window_size = 2;
 		// AuxGens from article.
 		let (mut aux_init, mut aux_fin) = Self::aux(sliding_window_size);
 
@@ -214,16 +218,22 @@ where
 		let num_of_windows = C::ScalarExt::NUM_BITS / sliding_window_size;
 
 		let exps: Vec<EcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>> = points.to_vec();
-		let bits: Vec<Vec<bool>> = scalars
+		let bits = scalars
 			.iter()
 			.map(|scalar| {
-				let mut scalar_as_bits =
-					to_bits(big_to_fe::<C::ScalarExt>(scalar.value()).to_repr().as_ref());
-				scalar_as_bits = scalar_as_bits[..C::ScalarExt::NUM_BITS as usize].to_vec();
-				scalar_as_bits.reverse();
-				scalar_as_bits
+				let mut bits = Vec::new();
+				for i in 0..NUM_LIMBS {
+					let limb_bits = to_bits(scalar.limbs[i].to_repr().as_ref());
+					let sliced_bits = limb_bits[..NUM_BITS].to_vec();
+					bits.extend(sliced_bits);
+				}
+				bits.reverse();
+				bits
 			})
-			.collect();
+			.collect_vec();
+		// Subtracting curve's bit size from binary field bit size to find the bits difference
+		let bits_difference = NUM_BITS * NUM_LIMBS - (C::ScalarExt::NUM_BITS as usize);
+		let bits = bits.iter().map(|x| &x[bits_difference..]).collect_vec();
 
 		let sliding_window_pow2 = 2_u32.pow(sliding_window_size) as usize;
 
@@ -275,81 +285,6 @@ where
 	/// Check if two points are equal
 	pub fn is_eq(&self, other: &Self) -> bool {
 		self.x.is_eq(&other.x) && self.y.is_eq(&other.y)
-	}
-}
-
-/// Structure for the UnassignedEcPoint
-#[derive(Clone, Debug)]
-pub struct UnassignedEcPoint<
-	C: CurveAffine,
-	N: FieldExt,
-	const NUM_LIMBS: usize,
-	const NUM_BITS: usize,
-	P,
-	EC,
-> where
-	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
-	EC: EccParams<C>,
-	<C as CurveAffine>::Base: FieldExt,
-	<C as CurveAffine>::ScalarExt: FieldExt,
-{
-	/// X coordinate of the UnassignedEcPoint
-	pub x: UnassignedInteger<C::Base, N, NUM_LIMBS, NUM_BITS, P>,
-	/// Y coordinate of the UnassignedEcPoint
-	pub y: UnassignedInteger<C::Base, N, NUM_LIMBS, NUM_BITS, P>,
-
-	_ec: PhantomData<EC>,
-}
-
-impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P, EC>
-	UnassignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>
-where
-	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
-	EC: EccParams<C>,
-	<C as CurveAffine>::Base: FieldExt,
-	<C as CurveAffine>::ScalarExt: FieldExt,
-{
-	/// Creates a new unassigned ec point object
-	pub fn new(
-		x: UnassignedInteger<C::Base, N, NUM_LIMBS, NUM_BITS, P>,
-		y: UnassignedInteger<C::Base, N, NUM_LIMBS, NUM_BITS, P>,
-	) -> Self {
-		Self { x, y, _ec: PhantomData }
-	}
-}
-
-impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P, EC>
-	From<EcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>>
-	for UnassignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>
-where
-	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
-	EC: EccParams<C>,
-	<C as CurveAffine>::Base: FieldExt,
-	<C as CurveAffine>::ScalarExt: FieldExt,
-{
-	fn from(ec_point: EcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>) -> Self {
-		Self {
-			x: UnassignedInteger::from(ec_point.x),
-			y: UnassignedInteger::from(ec_point.y),
-			_ec: PhantomData,
-		}
-	}
-}
-
-impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P, EC>
-	UnassignedValue for UnassignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>
-where
-	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
-	EC: EccParams<C>,
-	<C as CurveAffine>::Base: FieldExt,
-	<C as CurveAffine>::ScalarExt: FieldExt,
-{
-	fn without_witnesses() -> Self {
-		Self {
-			_ec: PhantomData,
-			x: UnassignedInteger::without_witnesses(),
-			y: UnassignedInteger::without_witnesses(),
-		}
 	}
 }
 
