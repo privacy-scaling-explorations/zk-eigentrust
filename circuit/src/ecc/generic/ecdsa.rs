@@ -1,9 +1,8 @@
-use std::vec;
-
 use crate::{
 	ecc::generic::native::EcPoint,
 	integer::native::Integer,
 	params::{ecc::EccParams, rns::RnsParams},
+	utils::big_to_fe,
 	FieldExt,
 };
 
@@ -17,7 +16,7 @@ use halo2::{
 	},
 };
 use num_bigint::BigUint;
-use rand::thread_rng;
+use rand::Rng;
 
 /// Helper function to convert Fp element to Fq element
 pub fn fp_to_fq(x: Fp) -> Fq {
@@ -26,17 +25,6 @@ pub fn fp_to_fq(x: Fp) -> Fq {
 	let mut x_bytes = [0u8; 64];
 	x_bytes[..32].copy_from_slice(&x_repr[..]);
 	Fq::from_uniform_bytes(&x_bytes)
-}
-
-/// Helper function converts BigUint to Fq
-pub fn biguint_to_fq(x: BigUint) -> Fq {
-	let order_biguint = BigUint::from_bytes_be(Fq::MODULUS.as_bytes());
-	let x = num_integer::Integer::mod_floor(&x, &order_biguint);
-	let mut x_le = x.to_bytes_le();
-	let x_le_len = x_le.len();
-	let zeros_vec = vec![0u8; 64 - x_le_len];
-	x_le.extend(zeros_vec);
-	Fq::from_uniform_bytes(x_le[..].try_into().unwrap())
 }
 
 /// Keypair struct for ECDSA signature
@@ -61,15 +49,9 @@ where
 	EC: EccParams<Secp256k1Affine>,
 {
 	/// Generate a random keypair
-	pub fn generate_keypair() -> Self {
-		let mut rng = thread_rng();
-		let private_key_fq = Fq::random(&mut rng);
-		let private_key = Integer::from_w(private_key_fq);
-		let public_key_affine = (Secp256k1::generator() * &private_key_fq).to_affine();
-		let public_key_x = Integer::from_w(public_key_affine.x.clone());
-		let public_key_y = Integer::from_w(public_key_affine.y.clone());
-		let public_key = EcPoint::new(public_key_x, public_key_y);
-		Self { private_key, public_key }
+	pub fn generate_keypair<R: Rng>(rng: &mut R) -> Self {
+		let private_key_fq = Fq::random(rng);
+		Self::from_private_key(private_key_fq)
 	}
 
 	/// Generate a keypair from a given private key
@@ -86,13 +68,12 @@ where
 	/// Note: it does not make sense to do this in wrong field arithmetic
 	/// because the signature requires fresh randomness (k) for security reasons so it cannot be
 	/// done in a ZK circuit.
-	pub fn sign(
-		&self, msg_hash: BigUint,
+	pub fn sign<R: Rng>(
+		&self, msg_hash: BigUint, rng: &mut R,
 	) -> (
 		Integer<Fq, N, NUM_LIMBS, NUM_BITS, P>,
 		Integer<Fq, N, NUM_LIMBS, NUM_BITS, P>,
 	) {
-		let mut rng = thread_rng();
 		// Draw randomness
 		let k = Fq::random(rng);
 		let k_inv = k.invert().unwrap();
@@ -101,8 +82,8 @@ where
 		let r_point = (Secp256k1::generator() * k).to_affine().coordinates().unwrap();
 		let x = r_point.x();
 		let r = fp_to_fq(*x);
-		let msg_hash_fq = biguint_to_fq(msg_hash);
-		let private_key_fq = biguint_to_fq(self.private_key.value());
+		let msg_hash_fq: Fq = big_to_fe(msg_hash);
+		let private_key_fq: Fq = big_to_fe(self.private_key.value());
 		// Calculate `s`
 		let s = k_inv * (msg_hash_fq + (r * private_key_fq));
 
@@ -137,8 +118,7 @@ where
 		msg_hash: BigUint, public_key: EcPoint<Secp256k1Affine, N, NUM_LIMBS, NUM_BITS, P, EC>,
 		advice_s_inv: Integer<Fq, N, NUM_LIMBS, NUM_BITS, P>,
 	) -> bool {
-		let r = signature.0;
-		let s = signature.1;
+		let (r, s) = signature;
 		let s_mul_s_inv = s.mul(&advice_s_inv);
 		if s_mul_s_inv.result != Integer::one() {
 			return false;
@@ -168,10 +148,11 @@ where
 #[cfg(test)]
 mod test {
 	use crate::{
-		ecc::generic::ecdsa::{biguint_to_fq, EcdsaKeypair, EcdsaVerify},
+		ecc::generic::ecdsa::{EcdsaKeypair, EcdsaVerify},
 		integer::native::Integer,
 		params::ecc::secp256k1::Secp256k1Params,
 		params::rns::secp256k1::Secp256k1_4_68,
+		utils::big_to_fe,
 	};
 	use halo2::{
 		arithmetic::Field,
@@ -184,12 +165,13 @@ mod test {
 	use num_bigint::BigUint;
 	#[test]
 	fn should_verify_ecdsa_signature() {
+		let rng = &mut rand::thread_rng();
 		let keypair =
-			EcdsaKeypair::<Fr, 4, 68, Secp256k1_4_68, Secp256k1Params>::generate_keypair();
+			EcdsaKeypair::<Fr, 4, 68, Secp256k1_4_68, Secp256k1Params>::generate_keypair(rng);
 		let msg_hash = BigUint::from(123456789u64);
-		let signature = keypair.sign(msg_hash.clone());
+		let signature = keypair.sign(msg_hash.clone(), rng);
 		let public_key = keypair.public_key.clone();
-		let advice_s_inv = Integer::from_w(biguint_to_fq(signature.1.value()).invert().unwrap());
+		let advice_s_inv = Integer::from_w(big_to_fe::<Fq>(signature.1.value()).invert().unwrap());
 		let result = EcdsaVerify::<Fr, 4, 68,  Secp256k1_4_68, Secp256k1Params>::verify_signature_no_pubkey_check(
             signature,
             msg_hash,
@@ -201,13 +183,14 @@ mod test {
 
 	#[test]
 	fn should_not_verify_invalid_ecdsa_signature() {
+		let rng = &mut rand::thread_rng();
 		let keypair =
-			EcdsaKeypair::<Fr, 4, 68, Secp256k1_4_68, Secp256k1Params>::generate_keypair();
+			EcdsaKeypair::<Fr, 4, 68, Secp256k1_4_68, Secp256k1Params>::generate_keypair(rng);
 		let msg_hash = BigUint::from(123456789u64);
-		let signature = keypair.sign(msg_hash.clone());
+		let signature = keypair.sign(msg_hash.clone(), rng);
 		let public_key = keypair.public_key.clone();
 		let advice_s_inv =
-			Integer::from_w(biguint_to_fq(signature.1.value()).invert().unwrap() + Fq::one());
+			Integer::from_w(big_to_fe::<Fq>(signature.1.value()).invert().unwrap() + Fq::one());
 		let result = EcdsaVerify::<Fr, 4, 68,  Secp256k1_4_68, Secp256k1Params>::verify_signature_no_pubkey_check(
             signature,
             msg_hash,
