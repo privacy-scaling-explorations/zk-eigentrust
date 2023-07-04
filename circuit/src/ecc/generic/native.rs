@@ -3,7 +3,7 @@
 use crate::{
 	integer::native::{Integer, UnassignedInteger},
 	params::{ecc::EccParams, rns::RnsParams},
-	utils::{be_bits_to_usize, big_to_fe, to_bits},
+	utils::{be_bits_to_usize, big_to_fe, field_to_bits, to_bits},
 	FieldExt, UnassignedValue,
 };
 use halo2::halo2curves::ff::PrimeField;
@@ -167,8 +167,12 @@ where
 
 		let exp = self.clone();
 		// Converts given input to its bit by Scalar Field's bit size
-		let mut bits = to_bits(big_to_fe::<C::ScalarExt>(scalar.value()).to_repr().as_ref());
-		bits = bits[..C::ScalarExt::NUM_BITS as usize].to_vec();
+		let mut bits = Vec::new();
+		for i in 0..NUM_LIMBS {
+			let limb_bits = to_bits(scalar.limbs[i].to_repr().as_ref());
+			let sliced_bits = limb_bits[..NUM_BITS].to_vec();
+			bits.extend(sliced_bits);
+		}
 		bits.reverse();
 
 		let table = [aux_init.clone(), exp.add(&aux_init)];

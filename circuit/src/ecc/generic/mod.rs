@@ -4,7 +4,6 @@ pub mod native;
 use crate::{
 	gadgets::{
 		bits2integer::{Bits2IntegerChipset, Bits2IntegerChipsetConfig},
-		bits2num::Bits2NumChip,
 		main::{MainConfig, SelectChipset},
 	},
 	integer::{
@@ -1563,7 +1562,7 @@ mod test {
 		fn synthesize(
 			&self, config: TestConfig, mut layouter: impl Layouter<N>,
 		) -> Result<(), Error> {
-			let value_assigned_limbs = layouter.assign_region(
+			let value_assigned = layouter.assign_region(
 				|| "temp",
 				|region: Region<'_, N>| {
 					let mut ctx = RegionCtx::new(region, 0);
@@ -1574,14 +1573,14 @@ mod test {
 							ctx.assign_advice(config.common.advice[i], self.value.limbs[i])?;
 						value_limbs[i] = Some(val);
 					}
-					Ok(value_limbs)
+
+					let value_assigned = AssignedInteger::new(
+						self.value.integer.clone(),
+						value_limbs.map(|x| x.unwrap()),
+					);
+					Ok(value_assigned)
 				},
 			)?;
-
-			let value_assigned = AssignedInteger::new(
-				self.value.integer.clone(),
-				value_assigned_limbs.map(|x| x.unwrap()),
-			);
 
 			let aux_assigner = AuxAssigner::new(1, 1);
 			let auxes = aux_assigner.synthesize(
