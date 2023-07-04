@@ -87,9 +87,9 @@ impl<F: FieldExt, P: EdwardsParams<F>> Chip<F> for PointAddChip<F, P> {
 			let e_y_exp = v_cells.query_advice(common.advice[4], Rotation::cur());
 			let e_z_exp = v_cells.query_advice(common.advice[5], Rotation::cur());
 
-			let r_x_next_exp = v_cells.query_advice(common.advice[0], Rotation::next());
-			let r_y_next_exp = v_cells.query_advice(common.advice[1], Rotation::next());
-			let r_z_next_exp = v_cells.query_advice(common.advice[2], Rotation::next());
+			let r_x_next_exp = v_cells.query_advice(common.advice[6], Rotation::cur());
+			let r_y_next_exp = v_cells.query_advice(common.advice[7], Rotation::cur());
+			let r_z_next_exp = v_cells.query_advice(common.advice[8], Rotation::cur());
 
 			let (r_x3, r_y3, r_z3) =
 				P::add_exp(r_x_exp, r_y_exp, r_z_exp, e_x_exp, e_y_exp, e_z_exp);
@@ -131,10 +131,9 @@ impl<F: FieldExt, P: EdwardsParams<F>> Chip<F> for PointAddChip<F, P> {
 					e_z.value().cloned(),
 				);
 
-				ctx.next();
-				let r_x_res = ctx.assign_advice(common.advice[0], r_x3)?;
-				let r_y_res = ctx.assign_advice(common.advice[1], r_y3)?;
-				let r_z_res = ctx.assign_advice(common.advice[2], r_z3)?;
+				let r_x_res = ctx.assign_advice(common.advice[6], r_x3)?;
+				let r_y_res = ctx.assign_advice(common.advice[7], r_y3)?;
+				let r_z_res = ctx.assign_advice(common.advice[8], r_z3)?;
 
 				let res = AssignedPoint::new(r_x_res, r_y_res, r_z_res);
 
