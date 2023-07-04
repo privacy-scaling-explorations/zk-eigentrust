@@ -278,9 +278,10 @@ mod test {
 	use super::{native::NativeTranscriptRead, LoaderConfig, TranscriptReadChipset};
 	use crate::{
 		circuit::{FullRoundHasher, PartialRoundHasher},
-		ecc::same_curve::{
-			native::EcPoint, AssignedPoint, EccAddConfig, EccDoubleConfig, EccMulConfig,
-			EccTableSelectConfig, EccUnreducedLadderConfig, UnassignedEcPoint,
+		ecc::{
+			same_curve::{native::EcPoint, AssignedPoint, UnassignedEcPoint},
+			EccAddConfig, EccDoubleConfig, EccMulConfig, EccTableSelectConfig,
+			EccUnreducedLadderConfig,
 		},
 		gadgets::{
 			absorb::AbsorbChip,

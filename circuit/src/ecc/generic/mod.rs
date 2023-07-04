@@ -2,11 +2,12 @@
 pub mod native;
 
 use self::native::EcPoint;
+use super::{
+	EccAddConfig, EccBatchedMulConfig, EccDoubleConfig, EccMulConfig, EccTableSelectConfig,
+	EccUnreducedLadderConfig,
+};
 use crate::{
-	gadgets::{
-		bits2integer::{Bits2IntegerChipset, Bits2IntegerChipsetConfig},
-		main::{MainConfig, SelectChipset},
-	},
+	gadgets::{bits2integer::Bits2IntegerChipset, main::SelectChipset},
 	integer::{
 		AssignedInteger, IntegerAddChip, IntegerDivChip, IntegerMulChip, IntegerReduceChip,
 		IntegerSubChip, UnassignedInteger,
@@ -19,7 +20,7 @@ use halo2::{
 	circuit::{AssignedCell, Layouter},
 	halo2curves::ff::PrimeField,
 	halo2curves::CurveAffine,
-	plonk::{Error, Selector},
+	plonk::Error,
 };
 use itertools::Itertools;
 use std::marker::PhantomData;
@@ -131,31 +132,6 @@ where
 		y: AssignedInteger<C::Base, N, NUM_LIMBS, NUM_BITS, P>,
 	) -> AssignedPoint<C, N, NUM_LIMBS, NUM_BITS, P> {
 		AssignedPoint { x, y }
-	}
-}
-
-/// Configuration elements for the circuit are defined here.
-#[derive(Debug, Clone)]
-pub struct EccAddConfig {
-	/// Constructs selectors from different circuits.
-	integer_reduce_selector: Selector,
-	integer_sub_selector: Selector,
-	integer_mul_selector: Selector,
-	integer_div_selector: Selector,
-}
-
-impl EccAddConfig {
-	/// Construct a new config given the selector of child chips
-	pub fn new(
-		integer_reduce_selector: Selector, integer_sub_selector: Selector,
-		integer_mul_selector: Selector, integer_div_selector: Selector,
-	) -> Self {
-		Self {
-			integer_reduce_selector,
-			integer_sub_selector,
-			integer_mul_selector,
-			integer_div_selector,
-		}
 	}
 }
 
@@ -316,34 +292,6 @@ where
 	}
 }
 
-/// Configuration elements for the circuit are defined here.
-#[derive(Debug, Clone)]
-pub struct EccDoubleConfig {
-	/// Constructs selectors from different circuits.
-	integer_reduce_selector: Selector,
-	integer_add_selector: Selector,
-	integer_sub_selector: Selector,
-	integer_mul_selector: Selector,
-	integer_div_selector: Selector,
-}
-
-impl EccDoubleConfig {
-	/// Construct a new config given the selector of child chips
-	pub fn new(
-		integer_reduce_selector: Selector, integer_add_selector: Selector,
-		integer_sub_selector: Selector, integer_mul_selector: Selector,
-		integer_div_selector: Selector,
-	) -> Self {
-		Self {
-			integer_reduce_selector,
-			integer_add_selector,
-			integer_sub_selector,
-			integer_mul_selector,
-			integer_div_selector,
-		}
-	}
-}
-
 /// Chipset structure for the EccDouble.
 struct EccDoubleChipset<
 	C: CurveAffine,
@@ -493,31 +441,6 @@ where
 
 		let r = AssignedPoint::new(r_x, r_y);
 		Ok(r)
-	}
-}
-
-/// Configuration elements for the circuit are defined here.
-#[derive(Debug, Clone)]
-pub struct EccUnreducedLadderConfig {
-	/// Constructs selectors from different circuits.
-	integer_add_selector: Selector,
-	integer_sub_selector: Selector,
-	integer_mul_selector: Selector,
-	integer_div_selector: Selector,
-}
-
-impl EccUnreducedLadderConfig {
-	/// Construct a new config given the selector of child chips
-	pub fn new(
-		integer_add_selector: Selector, integer_sub_selector: Selector,
-		integer_mul_selector: Selector, integer_div_selector: Selector,
-	) -> Self {
-		Self {
-			integer_add_selector,
-			integer_sub_selector,
-			integer_mul_selector,
-			integer_div_selector,
-		}
 	}
 }
 
@@ -704,20 +627,6 @@ where
 	}
 }
 
-/// Configuration elements for the circuit are defined here.
-#[derive(Debug, Clone)]
-pub struct EccTableSelectConfig {
-	/// Constructs config from main circuit.
-	main: MainConfig,
-}
-
-impl EccTableSelectConfig {
-	/// Construct a new config given the selector of child chips
-	pub fn new(main: MainConfig) -> Self {
-		Self { main }
-	}
-}
-
 /// Chipset structure for the EccTableSelectChipset.
 struct EccTableSelectChipset<
 	C: CurveAffine,
@@ -805,27 +714,6 @@ where
 		};
 
 		Ok(selected_point)
-	}
-}
-
-/// Configuration elements for the circuit are defined here.
-#[derive(Debug, Clone)]
-pub struct EccMulConfig {
-	/// Constructs configs and selector from different circuits.
-	ladder: EccUnreducedLadderConfig,
-	pub(crate) add: EccAddConfig,
-	double: EccDoubleConfig,
-	table_select: EccTableSelectConfig,
-	bits2integer: Bits2IntegerChipsetConfig,
-}
-
-impl EccMulConfig {
-	/// Construct a new config given the selector of child chips
-	pub fn new(
-		ladder: EccUnreducedLadderConfig, add: EccAddConfig, double: EccDoubleConfig,
-		table_select: EccTableSelectConfig, bits2integer: Bits2IntegerChipsetConfig,
-	) -> Self {
-		Self { ladder, add, double, table_select, bits2integer }
 	}
 }
 
@@ -961,24 +849,6 @@ where
 		)?;
 
 		Ok(acc_point)
-	}
-}
-
-/// Configuration elements for the circuit are defined here.
-#[derive(Debug, Clone)]
-pub struct EccBatchedMulConfig {
-	/// Constructs configs and selector from different circuits.
-	pub(crate) add: EccAddConfig,
-	double: EccDoubleConfig,
-	bits2integer: Bits2IntegerChipsetConfig,
-}
-
-impl EccBatchedMulConfig {
-	/// Construct a new config
-	pub fn new(
-		add: EccAddConfig, double: EccDoubleConfig, bits2integer: Bits2IntegerChipsetConfig,
-	) -> Self {
-		Self { add, double, bits2integer }
 	}
 }
 

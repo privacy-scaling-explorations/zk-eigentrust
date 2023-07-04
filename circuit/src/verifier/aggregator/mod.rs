@@ -3,7 +3,7 @@ use self::native::Snark;
 /// Native version of Aggregator
 pub mod native;
 use crate::{
-	ecc::same_curve::EccMulConfig,
+	ecc::EccMulConfig,
 	gadgets::main::MainConfig,
 	params::rns::bn256::Bn256_4_68,
 	params::{ecc::bn254::Bn254Params, hasher::poseidon_bn254_5x5::Params},
@@ -243,7 +243,7 @@ mod test {
 	};
 	use crate::{
 		circuit::{FullRoundHasher, PartialRoundHasher},
-		ecc::same_curve::{
+		ecc::{
 			EccAddConfig, EccDoubleConfig, EccMulConfig, EccTableSelectConfig,
 			EccUnreducedLadderConfig,
 		},

@@ -1,5 +1,8 @@
 use crate::{
-	ecc::same_curve::{AssignedPoint, EccAddChipset, EccMulChipset, EccMulConfig},
+	ecc::{
+		same_curve::{AssignedPoint, EccAddChipset, EccMulChipset},
+		EccMulConfig,
+	},
 	gadgets::main::{AddChipset, InverseChipset, MainConfig, MulChipset, SubChipset},
 	integer::{native::Integer, AssignedInteger},
 	params::{ecc::EccParams, rns::RnsParams},
@@ -851,9 +854,10 @@ mod test {
 	};
 	use crate::{
 		circuit::{FullRoundHasher, PartialRoundHasher},
-		ecc::same_curve::{
-			native::EcPoint, AssignedPoint, EccAddConfig, EccDoubleConfig, EccMulConfig,
-			EccTableSelectConfig, EccUnreducedLadderConfig,
+		ecc::{
+			same_curve::{native::EcPoint, AssignedPoint},
+			EccAddConfig, EccDoubleConfig, EccMulConfig, EccTableSelectConfig,
+			EccUnreducedLadderConfig,
 		},
 		gadgets::{
 			absorb::AbsorbChip,
