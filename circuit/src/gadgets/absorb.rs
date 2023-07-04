@@ -1,7 +1,7 @@
 use crate::{Chip, CommonConfig, FieldExt, RegionCtx};
 use halo2::{
 	circuit::{AssignedCell, Layouter, Region},
-	plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
+	plonk::{ConstraintSystem, Error, Expression, Selector},
 	poly::Rotation,
 };
 
@@ -45,8 +45,9 @@ impl<F: FieldExt, const WIDTH: usize> Chip<F> for AbsorbChip<F, WIDTH> {
 			let s = v_cells.query_selector(absorb_selector);
 			for (i, expr) in exprs.iter_mut().enumerate().take(WIDTH) {
 				let hasher_exp = v_cells.query_advice(common.advice[i], Rotation::cur());
-				let sponge_exp = v_cells.query_advice(common.advice[i], Rotation::next());
-				let next_sponge_exp = v_cells.query_advice(common.advice[i], Rotation(2));
+				let sponge_exp = v_cells.query_advice(common.advice[i + WIDTH], Rotation::cur());
+				let next_sponge_exp =
+					v_cells.query_advice(common.advice[i + 2 * WIDTH], Rotation::cur());
 				let diff = next_sponge_exp - (sponge_exp + hasher_exp);
 				*expr = s.clone() * diff;
 			}
@@ -67,26 +68,39 @@ impl<F: FieldExt, const WIDTH: usize> Chip<F> for AbsorbChip<F, WIDTH> {
 				ctx.enable(*selector)?;
 
 				// Load previous RescuePrime state
-				let loaded_state = copy_state(&mut ctx, common, &self.prev_state)?;
-				ctx.next();
+				let loaded_state = {
+					let mut loaded_state: [Option<AssignedCell<F, F>>; WIDTH] =
+						[(); WIDTH].map(|_| None);
+					for i in 0..WIDTH {
+						let new_state =
+							ctx.copy_assign(common.advice[i], self.prev_state[i].clone())?;
+						loaded_state[i] = Some(new_state);
+					}
+					loaded_state.map(|item| item.unwrap())
+				};
 
 				// Load next chunk
-				let loaded_chunk = copy_state(&mut ctx, common, &self.state)?;
-				ctx.next();
+				let loaded_chunk = {
+					let mut loaded_chunk: [Option<AssignedCell<F, F>>; WIDTH] =
+						[(); WIDTH].map(|_| None);
+					for i in 0..WIDTH {
+						let new_state =
+							ctx.copy_assign(common.advice[i + WIDTH], self.state[i].clone())?;
+						loaded_chunk[i] = Some(new_state);
+					}
+					loaded_chunk.map(|item| item.unwrap())
+				};
 
 				// Calculate the next state to permute
-				let columns: [Column<Advice>; WIDTH] =
-					common.advice[0..WIDTH].to_vec().try_into().unwrap();
 				let mut next_state: [Option<AssignedCell<F, F>>; WIDTH] = [(); WIDTH].map(|_| None);
 				for i in 0..WIDTH {
 					let chunk_state = &loaded_chunk[i];
 					let pos_state = &loaded_state[i];
-					let column = columns[i];
 					let sum = chunk_state.value().and_then(|&s| {
 						let pos_state_val = pos_state.value();
 						pos_state_val.map(|&ps| s + ps)
 					});
-					let assigned_sum = ctx.assign_advice(column, sum)?;
+					let assigned_sum = ctx.assign_advice(common.advice[i + 2 * WIDTH], sum)?;
 					next_state[i] = Some(assigned_sum);
 				}
 
