@@ -3,7 +3,7 @@ pub mod generic;
 /// Ecc where base field is the wrong field and scalar is the native
 pub mod same_curve;
 
-use crate::gadgets::{bits2integer::Bits2IntegerChipsetConfig, main::MainConfig};
+use crate::gadgets::main::MainConfig;
 use halo2::plonk::Selector;
 
 /// Configuration elements for the circuit are defined here.
@@ -106,16 +106,16 @@ pub struct EccMulConfig {
 	pub(crate) add: EccAddConfig,
 	double: EccDoubleConfig,
 	table_select: EccTableSelectConfig,
-	bits2integer: Bits2IntegerChipsetConfig,
+	bits2num: Selector,
 }
 
 impl EccMulConfig {
 	/// Construct a new config given the selector of child chips
 	pub fn new(
 		ladder: EccUnreducedLadderConfig, add: EccAddConfig, double: EccDoubleConfig,
-		table_select: EccTableSelectConfig, bits2integer: Bits2IntegerChipsetConfig,
+		table_select: EccTableSelectConfig, bits2num: Selector,
 	) -> Self {
-		Self { ladder, add, double, table_select, bits2integer }
+		Self { ladder, add, double, table_select, bits2num }
 	}
 }
 

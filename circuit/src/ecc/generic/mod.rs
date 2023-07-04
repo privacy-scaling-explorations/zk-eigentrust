@@ -7,7 +7,10 @@ use super::{
 	EccUnreducedLadderConfig,
 };
 use crate::{
-	gadgets::{bits2integer::Bits2IntegerChipset, main::SelectChipset},
+	gadgets::{
+		bits2integer::{Bits2IntegerChipset, Bits2IntegerChipsetConfig},
+		main::SelectChipset,
+	},
 	integer::{
 		AssignedInteger, IntegerAddChip, IntegerDivChip, IntegerMulChip, IntegerReduceChip,
 		IntegerSubChip, UnassignedInteger,
@@ -780,9 +783,11 @@ where
 			&config.add,
 			layouter.namespace(|| "aux_init_plus_scalar"),
 		)?;
+
+		let bits2integer_config = Bits2IntegerChipsetConfig::new(config.bits2num);
 		let bits = Bits2IntegerChipset::new(self.scalar);
 		let mut bits =
-			bits.synthesize(common, &config.bits2integer, layouter.namespace(|| "bits"))?;
+			bits.synthesize(common, &bits2integer_config, layouter.namespace(|| "bits"))?;
 		bits.reverse();
 		// Subtracting curve's bit size from binary field bit size to find the bits difference
 		let bits_difference = NUM_BITS * NUM_LIMBS - (C::ScalarExt::NUM_BITS as usize);
@@ -911,11 +916,12 @@ where
 		let num_of_windows = C::ScalarExt::NUM_BITS / self.window_size;
 		let sliding_window_pow2 = 2_u32.pow(self.window_size) as usize;
 
+		let bits2integer_config = Bits2IntegerChipsetConfig::new(config.bits2num);
 		let mut multi_bits = Vec::new();
 		for i in 0..self.scalars.len() {
 			let bits = Bits2IntegerChipset::new(self.scalars[i].clone());
 			let mut bits =
-				bits.synthesize(common, &config.bits2integer, layouter.namespace(|| "bits"))?;
+				bits.synthesize(common, &bits2integer_config, layouter.namespace(|| "bits"))?;
 			bits.reverse();
 			multi_bits.push(bits);
 		}
@@ -998,7 +1004,6 @@ mod test {
 	use crate::{
 		ecc::generic::native::EcPoint,
 		gadgets::{
-			bits2integer::Bits2IntegerChipsetConfig,
 			bits2num::Bits2NumChip,
 			main::{MainChip, MainConfig},
 		},
@@ -1051,7 +1056,6 @@ mod test {
 			let common = CommonConfig::new(meta);
 			let main = MainConfig::new(MainChip::configure(&common, meta));
 			let bits2num_selector = Bits2NumChip::configure(&common, meta);
-			let bits2integer = Bits2IntegerChipsetConfig::new(bits2num_selector.clone());
 
 			let integer_reduce_selector =
 				IntegerReduceChip::<W, N, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
@@ -1086,11 +1090,11 @@ mod test {
 				ecc_add.clone(),
 				ecc_double.clone(),
 				ecc_table_select,
-				bits2integer.clone(),
+				bits2num_selector.clone(),
 			);
 
 			let ecc_batched_mul =
-				EccBatchedMulConfig::new(ecc_add.clone(), ecc_double.clone(), bits2integer);
+				EccBatchedMulConfig::new(ecc_add.clone(), ecc_double.clone(), bits2num_selector);
 
 			TestConfig { common, ecc_add, ecc_double, ecc_ladder, ecc_mul, ecc_batched_mul }
 		}
