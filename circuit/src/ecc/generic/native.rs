@@ -23,8 +23,8 @@ pub struct EcPoint<
 > where
 	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
 	EC: EccParams<C>,
-	<C as CurveAffine>::Base: FieldExt,
-	<C as CurveAffine>::ScalarExt: FieldExt,
+	C::Base: FieldExt,
+	C::ScalarExt: FieldExt,
 {
 	/// X coordinate of the EcPoint
 	pub x: Integer<C::Base, N, NUM_LIMBS, NUM_BITS, P>,
@@ -39,8 +39,8 @@ impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize,
 where
 	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
 	EC: EccParams<C>,
-	<C as CurveAffine>::Base: FieldExt,
-	<C as CurveAffine>::ScalarExt: FieldExt,
+	C::Base: FieldExt,
+	C::ScalarExt: FieldExt,
 {
 	/// Create a new object
 	pub fn new(
