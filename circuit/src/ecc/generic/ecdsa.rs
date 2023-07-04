@@ -116,16 +116,12 @@ where
 			Integer<Fq, N, NUM_LIMBS, NUM_BITS, P>,
 		),
 		msg_hash: BigUint, public_key: EcPoint<Secp256k1Affine, N, NUM_LIMBS, NUM_BITS, P, EC>,
-		advice_s_inv: Integer<Fq, N, NUM_LIMBS, NUM_BITS, P>,
 	) -> bool {
 		let (r, s) = signature;
-		let s_mul_s_inv = s.mul(&advice_s_inv);
-		if s_mul_s_inv.result != Integer::one() {
-			return false;
-		}
 		let msg_hash_integer = Integer::<Fq, N, NUM_LIMBS, NUM_BITS, P>::new(msg_hash);
-		let u_1 = msg_hash_integer.mul(&advice_s_inv).result;
-		let u_2 = r.mul(&advice_s_inv).result;
+		let s_inv = s.invert();
+		let u_1 = msg_hash_integer.mul(&s_inv).result;
+		let u_2 = r.mul(&s_inv).result;
 
 		let g = Secp256k1::generator().to_affine();
 		let g_as_ecpoint = EcPoint::<Secp256k1Affine, N, NUM_LIMBS, NUM_BITS, P, EC>::new(
@@ -173,12 +169,10 @@ mod test {
 		let msg_hash = BigUint::from(123456789u64);
 		let signature = keypair.sign(msg_hash.clone(), rng);
 		let public_key = keypair.public_key.clone();
-		let advice_s_inv = Integer::from_w(big_to_fe::<Fq>(signature.1.value()).invert().unwrap());
 		let result = EcdsaVerify::<Fr, 4, 68,  Secp256k1_4_68, Secp256k1Params>::verify_signature_no_pubkey_check(
             signature,
             msg_hash,
             public_key,
-            advice_s_inv,
         );
 		assert!(result);
 	}
@@ -191,13 +185,10 @@ mod test {
 		let msg_hash = BigUint::from(123456789u64);
 		let signature = keypair.sign(msg_hash.clone(), rng);
 		let public_key = keypair.public_key.clone();
-		let advice_s_inv =
-			Integer::from_w(big_to_fe::<Fq>(signature.1.value()).invert().unwrap() + Fq::one());
 		let result = EcdsaVerify::<Fr, 4, 68,  Secp256k1_4_68, Secp256k1Params>::verify_signature_no_pubkey_check(
             signature,
             msg_hash,
-            public_key,
-            advice_s_inv,
+            public_key.mul_scalar(Integer::from_w(Fq::from(2u64))),
         );
 		assert!(!result);
 	}
