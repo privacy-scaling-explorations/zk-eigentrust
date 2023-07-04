@@ -199,7 +199,7 @@ where
 	pub fn multi_mul_scalar(
 		points: &[Self], scalars: &[Integer<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>],
 	) -> Vec<Self> {
-		let sliding_window_size = 2;
+		let sliding_window_size = EC::window_size();
 		// AuxGens from article.
 		let (mut aux_init, mut aux_fin) = Self::aux(sliding_window_size);
 

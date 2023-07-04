@@ -38,10 +38,8 @@ pub struct UnassignedEcPoint<
 	P,
 	EC,
 > where
-	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
-	EC: EccParams<C>,
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS>,
 	<C as CurveAffine>::Base: FieldExt,
-	<C as CurveAffine>::ScalarExt: FieldExt,
 {
 	/// X coordinate of the UnassignedEcPoint
 	pub x: UnassignedInteger<C::Base, N, NUM_LIMBS, NUM_BITS, P>,
@@ -54,10 +52,8 @@ pub struct UnassignedEcPoint<
 impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P, EC>
 	UnassignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>
 where
-	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
-	EC: EccParams<C>,
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS>,
 	<C as CurveAffine>::Base: FieldExt,
-	<C as CurveAffine>::ScalarExt: FieldExt,
 {
 	/// Creates a new unassigned ec point object
 	pub fn new(
@@ -89,10 +85,8 @@ where
 impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P, EC>
 	UnassignedValue for UnassignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>
 where
-	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
-	EC: EccParams<C>,
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS>,
 	<C as CurveAffine>::Base: FieldExt,
-	<C as CurveAffine>::ScalarExt: FieldExt,
 {
 	fn without_witnesses() -> Self {
 		Self {
@@ -112,9 +106,8 @@ pub struct AssignedPoint<
 	const NUM_BITS: usize,
 	P,
 > where
-	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS>,
 	<C as CurveAffine>::Base: FieldExt,
-	<C as CurveAffine>::ScalarExt: FieldExt,
 {
 	// x coordinate of the point
 	pub(crate) x: AssignedInteger<C::Base, N, NUM_LIMBS, NUM_BITS, P>,
@@ -125,9 +118,8 @@ pub struct AssignedPoint<
 impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
 	AssignedPoint<C, N, NUM_LIMBS, NUM_BITS, P>
 where
-	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS>,
 	<C as CurveAffine>::Base: FieldExt,
-	<C as CurveAffine>::ScalarExt: FieldExt,
 {
 	/// Returns a new `AssignedPoint` given its coordinates as `AssignedInteger`
 	pub fn new(
@@ -146,9 +138,8 @@ pub struct EccAddChipset<
 	const NUM_BITS: usize,
 	P,
 > where
-	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS>,
 	<C as CurveAffine>::Base: FieldExt,
-	<C as CurveAffine>::ScalarExt: FieldExt,
 {
 	// Assigned point p
 	p: AssignedPoint<C, N, NUM_LIMBS, NUM_BITS, P>,
@@ -159,9 +150,8 @@ pub struct EccAddChipset<
 impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
 	EccAddChipset<C, N, NUM_LIMBS, NUM_BITS, P>
 where
-	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS>,
 	<C as CurveAffine>::Base: FieldExt,
-	<C as CurveAffine>::ScalarExt: FieldExt,
 {
 	/// Creates a new ecc add chipset.
 	pub fn new(
@@ -175,9 +165,8 @@ where
 impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P> Chipset<N>
 	for EccAddChipset<C, N, NUM_LIMBS, NUM_BITS, P>
 where
-	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS>,
 	<C as CurveAffine>::Base: FieldExt,
-	<C as CurveAffine>::ScalarExt: FieldExt,
 {
 	type Config = EccAddConfig;
 	type Output = AssignedPoint<C, N, NUM_LIMBS, NUM_BITS, P>;
@@ -303,9 +292,8 @@ struct EccDoubleChipset<
 	const NUM_BITS: usize,
 	P,
 > where
-	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS>,
 	<C as CurveAffine>::Base: FieldExt,
-	<C as CurveAffine>::ScalarExt: FieldExt,
 {
 	// Assigned point p
 	p: AssignedPoint<C, N, NUM_LIMBS, NUM_BITS, P>,
@@ -327,9 +315,8 @@ where
 impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P> Chipset<N>
 	for EccDoubleChipset<C, N, NUM_LIMBS, NUM_BITS, P>
 where
-	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS>,
 	<C as CurveAffine>::Base: FieldExt,
-	<C as CurveAffine>::ScalarExt: FieldExt,
 {
 	type Config = EccDoubleConfig;
 	type Output = AssignedPoint<C, N, NUM_LIMBS, NUM_BITS, P>;
@@ -455,9 +442,8 @@ struct EccUnreducedLadderChipset<
 	const NUM_BITS: usize,
 	P,
 > where
-	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS>,
 	<C as CurveAffine>::Base: FieldExt,
-	<C as CurveAffine>::ScalarExt: FieldExt,
 {
 	// Assigned point p
 	p: AssignedPoint<C, N, NUM_LIMBS, NUM_BITS, P>,
@@ -468,9 +454,8 @@ struct EccUnreducedLadderChipset<
 impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
 	EccUnreducedLadderChipset<C, N, NUM_LIMBS, NUM_BITS, P>
 where
-	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS>,
 	<C as CurveAffine>::Base: FieldExt,
-	<C as CurveAffine>::ScalarExt: FieldExt,
 {
 	/// Creates a new ecc unreduced ladder chipset.
 	pub fn new(
@@ -484,9 +469,8 @@ where
 impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P> Chipset<N>
 	for EccUnreducedLadderChipset<C, N, NUM_LIMBS, NUM_BITS, P>
 where
-	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS>,
 	<C as CurveAffine>::Base: FieldExt,
-	<C as CurveAffine>::ScalarExt: FieldExt,
 {
 	type Config = EccUnreducedLadderConfig;
 	type Output = AssignedPoint<C, N, NUM_LIMBS, NUM_BITS, P>;
@@ -638,9 +622,8 @@ struct EccTableSelectChipset<
 	const NUM_BITS: usize,
 	P,
 > where
-	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS>,
 	<C as CurveAffine>::Base: FieldExt,
-	<C as CurveAffine>::ScalarExt: FieldExt,
 {
 	// Assigned bit
 	bit: AssignedCell<N, N>,
@@ -653,9 +636,8 @@ struct EccTableSelectChipset<
 impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
 	EccTableSelectChipset<C, N, NUM_LIMBS, NUM_BITS, P>
 where
-	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS>,
 	<C as CurveAffine>::Base: FieldExt,
-	<C as CurveAffine>::ScalarExt: FieldExt,
 {
 	/// Creates a new ecc table select chipset.
 	pub fn new(
@@ -669,9 +651,8 @@ where
 impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P> Chipset<N>
 	for EccTableSelectChipset<C, N, NUM_LIMBS, NUM_BITS, P>
 where
-	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS>,
 	<C as CurveAffine>::Base: FieldExt,
-	<C as CurveAffine>::ScalarExt: FieldExt,
 {
 	type Config = EccTableSelectConfig;
 	type Output = AssignedPoint<C, N, NUM_LIMBS, NUM_BITS, P>;
