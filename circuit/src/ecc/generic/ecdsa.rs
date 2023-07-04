@@ -138,10 +138,12 @@ where
 
 		let r_point = v_1.add(&v_2);
 		let x_candidate = r_point.x;
-		let r_mod_n = <P as RnsParams<Fq, N, NUM_LIMBS, NUM_BITS>>::compose(r.limbs);
-		let x_candidate_mod_n =
-			<P as RnsParams<Fp, N, NUM_LIMBS, NUM_BITS>>::compose(x_candidate.limbs);
-		r_mod_n == x_candidate_mod_n
+		for i in 0..NUM_LIMBS {
+			if x_candidate.limbs[i] != r.limbs[i] {
+				return false;
+			}
+		}
+		return true;
 	}
 }
 
