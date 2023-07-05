@@ -89,34 +89,39 @@ where
 }
 
 /// Struct for ECDSA verification using wrong field arithmetic.
-pub struct EcdsaVerify<N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P, EC>
+pub struct EcdsaVerifier<N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P, EC>
 where
 	P: RnsParams<<Secp256k1Affine as CurveAffine>::Base, N, NUM_LIMBS, NUM_BITS>
 		+ RnsParams<<Secp256k1Affine as CurveAffine>::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
 	EC: EccParams<Secp256k1Affine>,
 {
-	phantom: std::marker::PhantomData<(N, P, EC)>,
+	signature: (
+		Integer<Fq, N, NUM_LIMBS, NUM_BITS, P>,
+		Integer<Fq, N, NUM_LIMBS, NUM_BITS, P>,
+	),
+	msg_hash: Integer<Fq, N, NUM_LIMBS, NUM_BITS, P>,
+	public_key: EcPoint<Secp256k1Affine, N, NUM_LIMBS, NUM_BITS, P, EC>,
+	s_inv: Integer<Fq, N, NUM_LIMBS, NUM_BITS, P>,
+	g_as_ecpoint: EcPoint<Secp256k1Affine, N, NUM_LIMBS, NUM_BITS, P, EC>,
 }
 
 impl<N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P, EC>
-	EcdsaVerify<N, NUM_LIMBS, NUM_BITS, P, EC>
+	EcdsaVerifier<N, NUM_LIMBS, NUM_BITS, P, EC>
 where
 	P: RnsParams<<Secp256k1Affine as CurveAffine>::Base, N, NUM_LIMBS, NUM_BITS>
 		+ RnsParams<<Secp256k1Affine as CurveAffine>::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
 	EC: EccParams<Secp256k1Affine>,
 {
-	/// Verify a signature for a given message hash and public key using wrong field arithmetic
-	/// Similar to the ZK circuit setting instead of computing s_inverse we take it in as an advice value
-	pub fn verify_signature(
+	/// Construct the verifier given the signature, message hash and a public key
+	pub fn new(
 		signature: (
 			Integer<Fq, N, NUM_LIMBS, NUM_BITS, P>,
 			Integer<Fq, N, NUM_LIMBS, NUM_BITS, P>,
 		),
 		msg_hash: Integer<Fq, N, NUM_LIMBS, NUM_BITS, P>,
 		public_key: EcPoint<Secp256k1Affine, N, NUM_LIMBS, NUM_BITS, P, EC>,
-	) -> bool {
-		let (r, s) = signature;
-		let s_inv_fq = big_to_fe::<Fq>(s.value()).invert().unwrap();
+	) -> Self {
+		let s_inv_fq = big_to_fe::<Fq>(signature.1.value()).invert().unwrap();
 		let s_inv = Integer::from_w(s_inv_fq);
 
 		let g = Secp256k1::generator().to_affine();
@@ -125,13 +130,20 @@ where
 			Integer::from_w(g.y),
 		);
 
-		let u_1 = msg_hash.mul(&s_inv).result;
-		let u_2 = r.mul(&s_inv).result;
-		let v_1 = g_as_ecpoint.mul_scalar(u_1);
-		let v_2 = public_key.mul_scalar(u_2);
-		let r_point = v_1.add(&v_2);
-		let x_candidate = r_point.x;
+		Self { signature, msg_hash, public_key, s_inv, g_as_ecpoint }
+	}
+	/// Verify a signature for a given message hash and public key using wrong field arithmetic
+	/// Similar to the ZK circuit setting instead of computing s_inverse we take it in as an advice value
+	pub fn verify(&self) -> bool {
+		let (r, _) = &self.signature;
 
+		let u_1 = self.msg_hash.mul(&self.s_inv).result;
+		let u_2 = r.mul(&self.s_inv).result;
+		let v_1 = self.g_as_ecpoint.mul_scalar(u_1);
+		let v_2 = self.public_key.mul_scalar(u_2);
+		let r_point = v_1.add(&v_2);
+
+		let x_candidate = r_point.x;
 		for i in 0..NUM_LIMBS {
 			if x_candidate.limbs[i] != r.limbs[i] {
 				return false;
@@ -144,7 +156,7 @@ where
 #[cfg(test)]
 mod test {
 	use crate::{
-		ecdsa::native::{EcdsaKeypair, EcdsaVerify},
+		ecdsa::native::{EcdsaKeypair, EcdsaVerifier},
 		integer::native::Integer,
 		params::ecc::secp256k1::Secp256k1Params,
 		params::rns::secp256k1::Secp256k1_4_68,
@@ -159,12 +171,12 @@ mod test {
 		let msg_hash = Fq::from_u128(123456789);
 		let signature = keypair.sign(msg_hash.clone(), rng);
 		let public_key = keypair.public_key.clone();
-		let result = EcdsaVerify::<Fr, 4, 68, Secp256k1_4_68, Secp256k1Params>::verify_signature(
+		let verifier = EcdsaVerifier::<Fr, 4, 68, Secp256k1_4_68, Secp256k1Params>::new(
 			signature,
 			Integer::from_w(msg_hash),
 			public_key,
 		);
-		assert!(result);
+		assert!(verifier.verify());
 	}
 
 	#[test]
@@ -175,11 +187,11 @@ mod test {
 		let msg_hash = Fq::from_u128(123456789);
 		let signature = keypair.sign(msg_hash.clone(), rng);
 		let public_key = keypair.public_key.clone();
-		let result = EcdsaVerify::<Fr, 4, 68, Secp256k1_4_68, Secp256k1Params>::verify_signature(
+		let result = EcdsaVerifier::<Fr, 4, 68, Secp256k1_4_68, Secp256k1Params>::new(
 			signature,
 			Integer::from_w(msg_hash),
 			public_key.mul_scalar(Integer::from_w(Fq::from(2u64))),
 		);
-		assert!(!result);
+		assert!(!result.verify());
 	}
 }
