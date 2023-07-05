@@ -268,23 +268,6 @@ where
 		ReductionWitness { result: result_int, quotient: quotient_int, intermediate: t, residues }
 	}
 
-	/// Non-native exponentiation for given [`Integer`] and [`BigUint`].
-	pub fn exp(&self, exp: BigUint) -> Integer<W, N, NUM_LIMBS, NUM_BITS, P> {
-		// 11000
-		let mut res = Self::one();
-		let exp_as_bits = exp.to_radix_be(2);
-		for (i, e) in exp_as_bits.iter().enumerate() {
-			if e.eq(&1) {
-				res = res.mul(self).result;
-			}
-			if i == exp_as_bits.len() - 1 {
-				break;
-			}
-			res = res.mul(&res).result;
-		}
-		res
-	}
-
 	/// Non-native division for given two [`Integer`].
 	pub fn div(
 		&self, other: &Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
