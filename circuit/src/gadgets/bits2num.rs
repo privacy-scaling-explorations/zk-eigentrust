@@ -77,20 +77,20 @@ impl<F: FieldExt> Chip<F> for Bits2NumChip<F> {
 			//
 
 			// IMPORTANT: For the maximal usage of CommonConfig columns(20 advice + 10 fixed),
-			//			  we use the advice column 7 - 12. (8th ~ 13th)
+			//			  we use the advice column 10 - 15. (11th ~ 16th)
 
 			let one_exp = Expression::Constant(F::ONE);
 
-			let bit_i_exp = v_cells.query_advice(common.advice[7], Rotation::cur());
-			let e2_i_exp = v_cells.query_advice(common.advice[8], Rotation::cur());
-			let lc1_i_exp = v_cells.query_advice(common.advice[9], Rotation::cur());
+			let bit_i_exp = v_cells.query_advice(common.advice[10], Rotation::cur());
+			let e2_i_exp = v_cells.query_advice(common.advice[11], Rotation::cur());
+			let lc1_i_exp = v_cells.query_advice(common.advice[12], Rotation::cur());
 
-			let bit_i_1_exp = v_cells.query_advice(common.advice[10], Rotation::cur());
-			let e2_i_1_exp = v_cells.query_advice(common.advice[11], Rotation::cur());
-			let lc1_i_1_exp = v_cells.query_advice(common.advice[12], Rotation::cur());
+			let bit_i_1_exp = v_cells.query_advice(common.advice[13], Rotation::cur());
+			let e2_i_1_exp = v_cells.query_advice(common.advice[14], Rotation::cur());
+			let lc1_i_1_exp = v_cells.query_advice(common.advice[15], Rotation::cur());
 
-			let e2_next_exp = v_cells.query_advice(common.advice[8], Rotation::next());
-			let lc1_next_exp = v_cells.query_advice(common.advice[9], Rotation::next());
+			let e2_next_exp = v_cells.query_advice(common.advice[11], Rotation::next());
+			let lc1_next_exp = v_cells.query_advice(common.advice[12], Rotation::next());
 
 			let s_exp = v_cells.query_selector(selector);
 
@@ -130,8 +130,8 @@ impl<F: FieldExt> Chip<F> for Bits2NumChip<F> {
 			|| "bits2num",
 			|region: Region<'_, F>| {
 				let mut ctx = RegionCtx::new(region, 0);
-				let mut lc1 = ctx.assign_from_constant(common.advice[9], F::ZERO)?;
-				let mut e2 = ctx.assign_from_constant(common.advice[8], F::ONE)?;
+				let mut lc1 = ctx.assign_from_constant(common.advice[12], F::ZERO)?;
+				let mut e2 = ctx.assign_from_constant(common.advice[11], F::ONE)?;
 
 				let mut res_bits = Vec::new();
 
@@ -145,16 +145,16 @@ impl<F: FieldExt> Chip<F> for Bits2NumChip<F> {
 					ctx.enable(*selector)?;
 
 					// assign `bits[i]` & compute next values
-					let bit_i = ctx.assign_advice(common.advice[7], input_bits[i])?;
+					let bit_i = ctx.assign_advice(common.advice[10], input_bits[i])?;
 
 					let lc1_i_1 =
 						lc1.value().cloned() + bit_i.value().cloned() * e2.value().cloned();
 					let e2_i_1 = e2.value().cloned() + e2.value();
 
 					// assign `bits[i + 1]` & compute next values
-					let bit_i_1 = ctx.assign_advice(common.advice[10], input_bits[i + 1])?;
-					let e2_i_1 = ctx.assign_advice(common.advice[11], e2_i_1)?;
-					let lc1_1 = ctx.assign_advice(common.advice[12], lc1_i_1)?;
+					let bit_i_1 = ctx.assign_advice(common.advice[13], input_bits[i + 1])?;
+					let e2_i_1 = ctx.assign_advice(common.advice[14], e2_i_1)?;
+					let lc1_1 = ctx.assign_advice(common.advice[15], lc1_i_1)?;
 
 					let lc1_next =
 						lc1_1.value().cloned() + bit_i_1.value().cloned() * e2_i_1.value().cloned();
@@ -164,8 +164,8 @@ impl<F: FieldExt> Chip<F> for Bits2NumChip<F> {
 					res_bits.push(bit_i_1.clone());
 
 					ctx.next();
-					e2 = ctx.assign_advice(common.advice[8], e2_next)?;
-					lc1 = ctx.assign_advice(common.advice[9], lc1_next)?;
+					e2 = ctx.assign_advice(common.advice[11], e2_next)?;
+					lc1 = ctx.assign_advice(common.advice[12], lc1_next)?;
 				}
 				ctx.constrain_equal(self.value.clone(), lc1)?;
 
