@@ -42,13 +42,51 @@ impl<F: FieldExt> Chip<F> for Bits2NumChip<F> {
 		let selector = meta.selector();
 
 		meta.create_gate("bits2num", |v_cells| {
+			//
+			// Gate config
+			//
+			// | selector |   0    |    1    |    2     |      3     |    4    |    5     |
+			// |----------|--------|---------|----------|------------|---------|----------|
+			// |    *     | bit[i] |    e2   |   lc1    | bit[i + 1] |    e2   |   lc1    |
+			// |          |        | e2_next | lc1_next |            |         |          |
+			//
+			// NOTE: Current chip config & synthesize is based on assumption that
+			//       the length of `bits` is even number.
+			//
+			//		 bits.len() % 2 == 0
+
+			//
+			// Example: value = 13 (1101)
+			//			bits = 1011 (little-endian order)
+			//
+			// | selector |   0    |    1    |    2     |     3      |    4    |    5     |
+			// |----------|--------|---------|----------|------------|---------|----------|
+			// |    *     |   1    |    1    |    0     |     0      |    2    |    1     |
+			// |    *     |   1    |    4    |    1     |     1      |    8    |    5     |
+			// |          |        |    16   |    13    |            |         |          |
+			//
+			// Original, more intelligible config example
+			//
+			// | selector |   0    |    1    |    2     |
+			// |----------|--------|---------|----------|
+			// |    *     |   1    |    1    |    0     |
+			// |    *     |   0    |    2    |    1     |
+			// |    *     |   1    |    4    |    1     |
+			// |    *     |   1    |    8    |    5     |
+			// |          |        |    16   |    13    |
+			//
+
 			let one_exp = Expression::Constant(F::ONE);
-			let bit_exp = v_cells.query_advice(common.advice[0], Rotation::cur());
 
-			let e2_exp = v_cells.query_advice(common.advice[1], Rotation::cur());
+			let bit_i_exp = v_cells.query_advice(common.advice[0], Rotation::cur());
+			let e2_i_exp = v_cells.query_advice(common.advice[1], Rotation::cur());
+			let lc1_i_exp = v_cells.query_advice(common.advice[2], Rotation::cur());
+
+			let bit_i_1_exp = v_cells.query_advice(common.advice[3], Rotation::cur());
+			let e2_i_1_exp = v_cells.query_advice(common.advice[4], Rotation::cur());
+			let lc1_i_1_exp = v_cells.query_advice(common.advice[5], Rotation::cur());
+
 			let e2_next_exp = v_cells.query_advice(common.advice[1], Rotation::next());
-
-			let lc1_exp = v_cells.query_advice(common.advice[2], Rotation::cur());
 			let lc1_next_exp = v_cells.query_advice(common.advice[2], Rotation::next());
 
 			let s_exp = v_cells.query_selector(selector);
@@ -56,10 +94,12 @@ impl<F: FieldExt> Chip<F> for Bits2NumChip<F> {
 			vec![
 				// bit * (1 - bit) == 0
 				// Constraining bit to be a boolean.
-				s_exp.clone() * (bit_exp.clone() * (one_exp - bit_exp.clone())),
+				s_exp.clone() * (bit_i_exp.clone() * (one_exp.clone() - bit_i_exp.clone())),
+				s_exp.clone() * (bit_i_1_exp.clone() * (one_exp - bit_i_1_exp.clone())),
 				// e2 + e2 == e2_next
 				// Starting from 1, doubling.
-				s_exp.clone() * ((e2_exp.clone() + e2_exp.clone()) - e2_next_exp),
+				s_exp.clone() * ((e2_i_exp.clone() + e2_i_exp.clone()) - e2_i_1_exp.clone()),
+				s_exp.clone() * ((e2_i_1_exp.clone() + e2_i_1_exp.clone()) - e2_next_exp.clone()),
 				// lc1 + bit * e2 == lc1_next
 				// If the bit is equal to 1, e2 will be added to the sum.
 				// Example:
@@ -71,7 +111,8 @@ impl<F: FieldExt> Chip<F> for Bits2NumChip<F> {
 				//
 				// Check the constraint => (1 * 1 + 0)
 				// lc1_next = 1
-				s_exp * ((bit_exp * e2_exp + lc1_exp) - lc1_next_exp),
+				s_exp.clone() * ((bit_i_exp * e2_i_exp + lc1_i_exp) - lc1_i_1_exp.clone()),
+				s_exp * ((bit_i_1_exp * e2_i_1_exp + lc1_i_1_exp) - lc1_next_exp),
 			]
 		});
 
@@ -89,24 +130,49 @@ impl<F: FieldExt> Chip<F> for Bits2NumChip<F> {
 				let mut lc1 = ctx.assign_from_constant(common.advice[2], F::ZERO)?;
 				let mut e2 = ctx.assign_from_constant(common.advice[1], F::ONE)?;
 
-				let mut bits = Vec::new();
-				for i in 0..self.bits.len() {
+				let mut res_bits = Vec::new();
+
+				// If the length of `self.bits` is odd, we add extra zero at the end.
+				// It does not affect the proval since the most significant bit(last element of bits) becomes zero.
+				let mut input_bits = self.bits.clone();
+				if self.bits.len() % 2 == 1 {
+					input_bits.push(Value::known(F::ZERO));
+				}
+				for i in (0..input_bits.len()).step_by(2) {
 					ctx.enable(*selector)?;
 
-					let bit = ctx.assign_advice(common.advice[0], self.bits[i])?;
-					bits.push(bit.clone());
+					// assign `bits[i]` & compute next values
+					let bit_i = ctx.assign_advice(common.advice[0], input_bits[i])?;
 
-					let cond_e2 = bit.value().cloned() * e2.value().cloned();
-					let next_lc1 = lc1.value().cloned() + cond_e2;
-					let next_e2 = e2.value().cloned() + e2.value();
+					let lc1_i_1 =
+						lc1.value().cloned() + bit_i.value().cloned() * e2.value().cloned();
+					let e2_i_1 = e2.value().cloned() + e2.value();
+
+					// assign `bits[i + 1]` & compute next values
+					let bit_i_1 = ctx.assign_advice(common.advice[3], input_bits[i + 1])?;
+					let e2_i_1 = ctx.assign_advice(common.advice[4], e2_i_1)?;
+					let lc1_1 = ctx.assign_advice(common.advice[5], lc1_i_1)?;
+
+					let lc1_next =
+						lc1_1.value().cloned() + bit_i_1.value().cloned() * e2_i_1.value().cloned();
+					let e2_next = e2_i_1.value().cloned() + e2_i_1.value();
+
+					res_bits.push(bit_i.clone());
+					res_bits.push(bit_i_1.clone());
 
 					ctx.next();
-					e2 = ctx.assign_advice(common.advice[1], next_e2)?;
-					lc1 = ctx.assign_advice(common.advice[2], next_lc1)?;
+					e2 = ctx.assign_advice(common.advice[1], e2_next)?;
+					lc1 = ctx.assign_advice(common.advice[2], lc1_next)?;
 				}
 				ctx.constrain_equal(self.value.clone(), lc1)?;
 
-				Ok(bits)
+				// If the length of `self.bits` is odd, it means that we have added extra zero at the end of bits.
+				// Hence, we should pop the last bit element.
+				if self.bits.len() % 2 == 1 {
+					res_bits.pop();
+				}
+
+				Ok(res_bits)
 			},
 		)
 	}
