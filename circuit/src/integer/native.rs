@@ -285,11 +285,6 @@ where
 		res
 	}
 
-	/// Inverts the [`Integer`] using exponentiation.
-	pub fn invert(&self) -> Integer<W, N, NUM_LIMBS, NUM_BITS, P> {
-		self.exp(P::wrong_modulus() - BigUint::from(2u64))
-	}
-
 	/// Non-native division for given two [`Integer`].
 	pub fn div(
 		&self, other: &Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
@@ -339,10 +334,7 @@ where
 mod test {
 	use super::*;
 	use crate::params::rns::bn256::Bn256_4_68;
-	use halo2::{
-		arithmetic::Field,
-		halo2curves::bn256::{Fq, Fr},
-	};
+	use halo2::halo2curves::bn256::{Fq, Fr};
 	use num_integer::Integer as NumInteger;
 	use num_traits::{FromPrimitive, One, Zero};
 	use std::str::FromStr;
@@ -644,25 +636,5 @@ mod test {
 			c.result.value(),
 			big_answer.mod_floor(&Bn256_4_68::wrong_modulus())
 		);
-	}
-
-	#[test]
-	fn should_exp() {
-		let rng = &mut rand::thread_rng();
-		let a_fq = Fq::random(rng);
-		let a = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::from_w(a_fq);
-		let a_fq_cube = a_fq.cube();
-		let a_cube = a.exp(BigUint::from(3u64));
-		assert_eq!(a_cube.value(), fe_to_big(a_fq_cube),);
-	}
-
-	#[test]
-	fn should_invert() {
-		let rng = &mut rand::thread_rng();
-		let a_fq = Fq::random(rng);
-		let a = Integer::<Fq, Fr, 4, 68, Bn256_4_68>::from_w(a_fq);
-		let a_fq_inverse = a_fq.invert().unwrap();
-		let a_inverse = a.invert();
-		assert_eq!(a_inverse.value(), fe_to_big(a_fq_inverse));
 	}
 }
