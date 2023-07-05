@@ -27,16 +27,21 @@ impl<F: FieldExt> Chip<F> for SetChip<F> {
 
 	/// Make the circuit config.
 	fn configure(common: &CommonConfig, meta: &mut ConstraintSystem<F>) -> Selector {
+		//
+		// IMPORTANT: For the maximal usage of CommonConfig columns(20 advice + 10 fixed),
+		//			  we use the advice column 16 - 19. (17th ~ 20th)
+		//
+
 		let selector = meta.selector();
 
 		meta.create_gate("set_membership", |v_cells| {
-			let target_exp = v_cells.query_advice(common.advice[0], Rotation::cur());
+			let target_exp = v_cells.query_advice(common.advice[16], Rotation::cur());
 
-			let item_exp = v_cells.query_advice(common.advice[1], Rotation::cur());
-			let diff_exp = v_cells.query_advice(common.advice[2], Rotation::cur());
+			let item_exp = v_cells.query_advice(common.advice[17], Rotation::cur());
+			let diff_exp = v_cells.query_advice(common.advice[18], Rotation::cur());
 
-			let product_exp = v_cells.query_advice(common.advice[3], Rotation::cur());
-			let next_product_exp = v_cells.query_advice(common.advice[3], Rotation::next());
+			let product_exp = v_cells.query_advice(common.advice[19], Rotation::cur());
+			let next_product_exp = v_cells.query_advice(common.advice[19], Rotation::next());
 
 			let s_exp = v_cells.query_selector(selector);
 
@@ -65,23 +70,24 @@ impl<F: FieldExt> Chip<F> for SetChip<F> {
 			|region: Region<'_, F>| {
 				let mut ctx = RegionCtx::new(region, 0);
 
-				let mut assigned_product = ctx.assign_from_constant(common.advice[3], F::ONE)?;
-				let mut assigned_target = ctx.copy_assign(common.advice[0], self.target.clone())?;
+				let mut assigned_product = ctx.assign_from_constant(common.advice[19], F::ONE)?;
+				let mut assigned_target =
+					ctx.copy_assign(common.advice[16], self.target.clone())?;
 				for i in 0..self.items.len() {
 					ctx.enable(*selector)?;
 
-					let item_value = ctx.copy_assign(common.advice[1], self.items[i].clone())?;
+					let item_value = ctx.copy_assign(common.advice[17], self.items[i].clone())?;
 
 					// Calculating difference between given target and item from the set.
 					let diff = self.target.value().cloned() - item_value.value().cloned();
 					// If the difference is equal to 0, that means the target is in the set and next
 					// product will become 0.
 					let next_product = assigned_product.value().cloned() * diff;
-					ctx.assign_advice(common.advice[2], diff)?;
+					ctx.assign_advice(common.advice[18], diff)?;
 
 					ctx.next();
-					assigned_product = ctx.assign_advice(common.advice[3], next_product)?;
-					assigned_target = ctx.copy_assign(common.advice[0], assigned_target)?;
+					assigned_product = ctx.assign_advice(common.advice[19], next_product)?;
+					assigned_target = ctx.copy_assign(common.advice[16], assigned_target)?;
 				}
 
 				Ok(assigned_product)
