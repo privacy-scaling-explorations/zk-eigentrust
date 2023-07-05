@@ -219,6 +219,12 @@ impl Client {
 		// Create a vector of participants from the set
 		let participants: Vec<Address> = participants_set.into_iter().collect();
 
+		// Verify that the participants set is not larget than the maximum number of participants
+		assert!(
+			participants.len() <= MAX_NEIGHBOURS,
+			"Number of participants exceeds maximum number of neighbours"
+		);
+
 		// Initialize attestation matrix
 		let mut attestation_matrix: Vec<Vec<Option<SignedAttestation>>> =
 			vec![vec![None; MAX_NEIGHBOURS]; MAX_NEIGHBOURS];
