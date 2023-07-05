@@ -403,7 +403,7 @@ where
 #[cfg(test)]
 mod test {
 	use super::*;
-	use crate::{params::rns::bn256::Bn256_4_68, utils::big_to_fe};
+	use crate::params::rns::bn256::Bn256_4_68;
 	use halo2::{
 		arithmetic::Field,
 		halo2curves::bn256::{Fq, Fr},

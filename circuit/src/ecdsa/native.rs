@@ -146,20 +146,12 @@ where
 #[cfg(test)]
 mod test {
 	use crate::{
-		ecc::generic::ecdsa::{EcdsaKeypair, EcdsaVerify},
+		ecdsa::native::{EcdsaKeypair, EcdsaVerify},
 		integer::native::Integer,
 		params::ecc::secp256k1::Secp256k1Params,
 		params::rns::secp256k1::Secp256k1_4_68,
-		utils::big_to_fe,
 	};
-	use halo2::{
-		arithmetic::Field,
-		halo2curves::{
-			bn256::Fr,
-			ff::PrimeField,
-			secp256k1::{Fq, Secp256k1, Secp256k1Affine},
-		},
-	};
+	use halo2::halo2curves::{bn256::Fr, secp256k1::Fq};
 	use num_bigint::BigUint;
 	#[test]
 	fn should_verify_ecdsa_signature() {
