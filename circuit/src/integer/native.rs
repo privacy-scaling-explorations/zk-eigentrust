@@ -1,9 +1,8 @@
 use crate::{
 	params::rns::{compose_big, decompose_big, RnsParams},
 	utils::fe_to_big,
-	FieldExt, UnassignedValue,
+	FieldExt,
 };
-use halo2::circuit::Value;
 use num_bigint::BigUint;
 use num_traits::{One, Zero};
 use std::marker::PhantomData;
