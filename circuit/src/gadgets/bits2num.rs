@@ -76,10 +76,8 @@ impl<F: FieldExt> Chip<F> for Bits2NumChip<F> {
 			// |          |        |    16   |    13    |
 			//
 
-			// IMPORTANT: For the maximal usage of CommonConfig columns(20 advice + 10 fixed), we use the
-			//            advice column 7 - 12. Reason is that ScalarMulChip takes advice column 0 - 6.
-			//			  It means that this chip takes the right place of ScalarMulChip in the whole circuit layout.
-			//		      Also, it means that there are advice columns 13-19 available, which other chips can use for best layout.
+			// IMPORTANT: For the maximal usage of CommonConfig columns(20 advice + 10 fixed),
+			//			  we use the advice column 7 - 12. (8th ~ 13th)
 
 			let one_exp = Expression::Constant(F::ONE);
 

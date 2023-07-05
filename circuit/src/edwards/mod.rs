@@ -240,24 +240,28 @@ impl<F: FieldExt, P: EdwardsParams<F>> Chip<F> for ScalarMulChip<F, P> {
 		let selector = meta.selector();
 
 		meta.create_gate("scalar_mul", |v_cells| {
+			//
+			// IMPORTANT: For the maximal usage of CommonConfig columns(20 advice + 10 fixed),
+			//			  we use the advice column 13 - 19. (14th ~ 20th)
+			//
 			let s_exp = v_cells.query_selector(selector);
-			let bit_exp = v_cells.query_advice(common.advice[0], Rotation::cur());
+			let bit_exp = v_cells.query_advice(common.advice[13], Rotation::cur());
 
-			let r_x_exp = v_cells.query_advice(common.advice[1], Rotation::cur());
-			let r_y_exp = v_cells.query_advice(common.advice[2], Rotation::cur());
-			let r_z_exp = v_cells.query_advice(common.advice[3], Rotation::cur());
+			let r_x_exp = v_cells.query_advice(common.advice[14], Rotation::cur());
+			let r_y_exp = v_cells.query_advice(common.advice[15], Rotation::cur());
+			let r_z_exp = v_cells.query_advice(common.advice[16], Rotation::cur());
 
-			let e_x_exp = v_cells.query_advice(common.advice[4], Rotation::cur());
-			let e_y_exp = v_cells.query_advice(common.advice[5], Rotation::cur());
-			let e_z_exp = v_cells.query_advice(common.advice[6], Rotation::cur());
+			let e_x_exp = v_cells.query_advice(common.advice[17], Rotation::cur());
+			let e_y_exp = v_cells.query_advice(common.advice[18], Rotation::cur());
+			let e_z_exp = v_cells.query_advice(common.advice[19], Rotation::cur());
 
-			let r_x_next_exp = v_cells.query_advice(common.advice[1], Rotation::next());
-			let r_y_next_exp = v_cells.query_advice(common.advice[2], Rotation::next());
-			let r_z_next_exp = v_cells.query_advice(common.advice[3], Rotation::next());
+			let r_x_next_exp = v_cells.query_advice(common.advice[14], Rotation::next());
+			let r_y_next_exp = v_cells.query_advice(common.advice[15], Rotation::next());
+			let r_z_next_exp = v_cells.query_advice(common.advice[16], Rotation::next());
 
-			let e_x_next_exp = v_cells.query_advice(common.advice[4], Rotation::next());
-			let e_y_next_exp = v_cells.query_advice(common.advice[5], Rotation::next());
-			let e_z_next_exp = v_cells.query_advice(common.advice[6], Rotation::next());
+			let e_x_next_exp = v_cells.query_advice(common.advice[17], Rotation::next());
+			let e_y_next_exp = v_cells.query_advice(common.advice[18], Rotation::next());
+			let e_z_next_exp = v_cells.query_advice(common.advice[19], Rotation::next());
 
 			// TODO: Replace with special double_add operation
 			let (r_x3, r_y3, r_z3) = P::add_exp(
@@ -300,17 +304,17 @@ impl<F: FieldExt, P: EdwardsParams<F>> Chip<F> for ScalarMulChip<F, P> {
 			|| "scalar_mul",
 			|region: Region<'_, F>| {
 				let mut ctx = RegionCtx::new(region, 0);
-				let mut r_x = ctx.assign_from_constant(common.advice[1], F::ZERO)?;
-				let mut r_y = ctx.assign_from_constant(common.advice[2], F::ONE)?;
-				let mut r_z = ctx.assign_from_constant(common.advice[3], F::ONE)?;
-				let mut e_x = ctx.copy_assign(common.advice[4], self.e.x.clone())?;
-				let mut e_y = ctx.copy_assign(common.advice[5], self.e.y.clone())?;
-				let mut e_z = ctx.copy_assign(common.advice[6], self.e.z.clone())?;
+				let mut r_x = ctx.assign_from_constant(common.advice[14], F::ZERO)?;
+				let mut r_y = ctx.assign_from_constant(common.advice[15], F::ONE)?;
+				let mut r_z = ctx.assign_from_constant(common.advice[16], F::ONE)?;
+				let mut e_x = ctx.copy_assign(common.advice[17], self.e.x.clone())?;
+				let mut e_y = ctx.copy_assign(common.advice[18], self.e.y.clone())?;
+				let mut e_z = ctx.copy_assign(common.advice[19], self.e.z.clone())?;
 
 				// Double and add operation.
 				for i in 0..self.value_bits.len() {
 					ctx.enable(*selector)?;
-					ctx.copy_assign(common.advice[0], self.value_bits[i].clone())?;
+					ctx.copy_assign(common.advice[13], self.value_bits[i].clone())?;
 
 					// Add `r` and `e`.
 					let (r_x3, r_y3, r_z3) = P::add_value(
@@ -342,12 +346,12 @@ impl<F: FieldExt, P: EdwardsParams<F>> Chip<F> for ScalarMulChip<F, P> {
 					};
 
 					ctx.next();
-					r_x = ctx.assign_advice(common.advice[1], r_x_next)?;
-					r_y = ctx.assign_advice(common.advice[2], r_y_next)?;
-					r_z = ctx.assign_advice(common.advice[3], r_z_next)?;
-					e_x = ctx.assign_advice(common.advice[4], e_x3)?;
-					e_y = ctx.assign_advice(common.advice[5], e_y3)?;
-					e_z = ctx.assign_advice(common.advice[6], e_z3)?;
+					r_x = ctx.assign_advice(common.advice[14], r_x_next)?;
+					r_y = ctx.assign_advice(common.advice[15], r_y_next)?;
+					r_z = ctx.assign_advice(common.advice[16], r_z_next)?;
+					e_x = ctx.assign_advice(common.advice[17], e_x3)?;
+					e_y = ctx.assign_advice(common.advice[18], e_y3)?;
+					e_z = ctx.assign_advice(common.advice[19], e_z3)?;
 				}
 
 				let res = AssignedPoint::new(r_x, r_y, r_z);
