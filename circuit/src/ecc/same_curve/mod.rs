@@ -1,25 +1,96 @@
 /// Native version of the chip
 pub mod native;
 
+use self::native::EcPoint;
+use super::{
+	EccAddConfig, EccBatchedMulConfig, EccDoubleConfig, EccMulConfig, EccTableSelectConfig,
+	EccUnreducedLadderConfig,
+};
 use crate::{
-	gadgets::{
-		bits2num::Bits2NumChip,
-		main::{MainConfig, SelectChipset},
-	},
+	gadgets::{bits2num::Bits2NumChip, main::SelectChipset},
 	integer::{
 		AssignedInteger, IntegerAddChip, IntegerDivChip, IntegerMulChip, IntegerReduceChip,
-		IntegerSubChip,
+		IntegerSubChip, UnassignedInteger,
 	},
-	params::rns::RnsParams,
+	params::{ecc::EccParams, rns::RnsParams},
 	utils::{assigned_as_bool, be_assigned_bits_to_usize},
-	Chip, Chipset, CommonConfig, FieldExt,
+	Chip, Chipset, CommonConfig, FieldExt, UnassignedValue,
 };
 use halo2::halo2curves::ff::PrimeField;
 use halo2::{
 	circuit::{AssignedCell, Layouter},
 	halo2curves::CurveAffine,
-	plonk::{Error, Selector},
+	plonk::Error,
 };
+use std::marker::PhantomData;
+
+/// Structure for the UnassignedEcPoint
+#[derive(Clone, Debug)]
+pub struct UnassignedEcPoint<C: CurveAffine, const NUM_LIMBS: usize, const NUM_BITS: usize, P, EC>
+where
+	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
+{
+	/// X coordinate of the UnassignedEcPoint
+	pub x: UnassignedInteger<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS, P>,
+	/// Y coordinate of the UnassignedEcPoint
+	pub y: UnassignedInteger<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS, P>,
+
+	_ec: PhantomData<EC>,
+}
+
+impl<C: CurveAffine, const NUM_LIMBS: usize, const NUM_BITS: usize, P, EC>
+	UnassignedEcPoint<C, NUM_LIMBS, NUM_BITS, P, EC>
+where
+	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
+{
+	/// Creates a new unassigned ec point object
+	pub fn new(
+		x: UnassignedInteger<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS, P>,
+		y: UnassignedInteger<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS, P>,
+	) -> Self {
+		Self { x, y, _ec: PhantomData }
+	}
+}
+
+impl<C: CurveAffine, const NUM_LIMBS: usize, const NUM_BITS: usize, P, EC>
+	From<EcPoint<C, NUM_LIMBS, NUM_BITS, P, EC>> for UnassignedEcPoint<C, NUM_LIMBS, NUM_BITS, P, EC>
+where
+	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
+{
+	fn from(ec_point: EcPoint<C, NUM_LIMBS, NUM_BITS, P, EC>) -> Self {
+		Self {
+			x: UnassignedInteger::from(ec_point.x),
+			y: UnassignedInteger::from(ec_point.y),
+			_ec: PhantomData,
+		}
+	}
+}
+
+impl<C: CurveAffine, const NUM_LIMBS: usize, const NUM_BITS: usize, P, EC> UnassignedValue
+	for UnassignedEcPoint<C, NUM_LIMBS, NUM_BITS, P, EC>
+where
+	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
+{
+	fn without_witnesses() -> Self {
+		Self {
+			_ec: PhantomData,
+			x: UnassignedInteger::without_witnesses(),
+			y: UnassignedInteger::without_witnesses(),
+		}
+	}
+}
 
 /// Structure for the AssignedPoint.
 #[derive(Clone, Debug)]
@@ -48,31 +119,6 @@ where
 		y: AssignedInteger<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS, P>,
 	) -> AssignedPoint<C, NUM_LIMBS, NUM_BITS, P> {
 		AssignedPoint { x, y }
-	}
-}
-
-/// Configuration elements for the circuit are defined here.
-#[derive(Debug, Clone)]
-pub struct EccAddConfig {
-	/// Constructs selectors from different circuits.
-	integer_reduce_selector: Selector,
-	integer_sub_selector: Selector,
-	integer_mul_selector: Selector,
-	integer_div_selector: Selector,
-}
-
-impl EccAddConfig {
-	/// Construct a new config given the selector of child chips
-	pub fn new(
-		integer_reduce_selector: Selector, integer_sub_selector: Selector,
-		integer_mul_selector: Selector, integer_div_selector: Selector,
-	) -> Self {
-		Self {
-			integer_reduce_selector,
-			integer_sub_selector,
-			integer_mul_selector,
-			integer_div_selector,
-		}
 	}
 }
 
@@ -227,34 +273,6 @@ where
 	}
 }
 
-/// Configuration elements for the circuit are defined here.
-#[derive(Debug, Clone)]
-pub struct EccDoubleConfig {
-	/// Constructs selectors from different circuits.
-	integer_reduce_selector: Selector,
-	integer_add_selector: Selector,
-	integer_sub_selector: Selector,
-	integer_mul_selector: Selector,
-	integer_div_selector: Selector,
-}
-
-impl EccDoubleConfig {
-	/// Construct a new config given the selector of child chips
-	pub fn new(
-		integer_reduce_selector: Selector, integer_add_selector: Selector,
-		integer_sub_selector: Selector, integer_mul_selector: Selector,
-		integer_div_selector: Selector,
-	) -> Self {
-		Self {
-			integer_reduce_selector,
-			integer_add_selector,
-			integer_sub_selector,
-			integer_mul_selector,
-			integer_div_selector,
-		}
-	}
-}
-
 /// Chipset structure for the EccDouble.
 struct EccDoubleChipset<C: CurveAffine, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
 where
@@ -399,31 +417,6 @@ where
 
 		let r = AssignedPoint::new(r_x, r_y);
 		Ok(r)
-	}
-}
-
-/// Configuration elements for the circuit are defined here.
-#[derive(Debug, Clone)]
-pub struct EccUnreducedLadderConfig {
-	/// Constructs selectors from different circuits.
-	integer_add_selector: Selector,
-	integer_sub_selector: Selector,
-	integer_mul_selector: Selector,
-	integer_div_selector: Selector,
-}
-
-impl EccUnreducedLadderConfig {
-	/// Construct a new config given the selector of child chips
-	pub fn new(
-		integer_add_selector: Selector, integer_sub_selector: Selector,
-		integer_mul_selector: Selector, integer_div_selector: Selector,
-	) -> Self {
-		Self {
-			integer_add_selector,
-			integer_sub_selector,
-			integer_mul_selector,
-			integer_div_selector,
-		}
 	}
 }
 
@@ -604,20 +597,6 @@ where
 	}
 }
 
-/// Configuration elements for the circuit are defined here.
-#[derive(Debug, Clone)]
-pub struct EccTableSelectConfig {
-	/// Constructs config from main circuit.
-	main: MainConfig,
-}
-
-impl EccTableSelectConfig {
-	/// Construct a new config given the selector of child chips
-	pub fn new(main: MainConfig) -> Self {
-		Self { main }
-	}
-}
-
 /// Chipset structure for the EccTableSelectChipset.
 struct EccTableSelectChipset<C: CurveAffine, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
 where
@@ -702,27 +681,6 @@ where
 		};
 
 		Ok(selected_point)
-	}
-}
-
-/// Configuration elements for the circuit are defined here.
-#[derive(Debug, Clone)]
-pub struct EccMulConfig {
-	/// Constructs configs and selector from different circuits.
-	ladder: EccUnreducedLadderConfig,
-	pub(crate) add: EccAddConfig,
-	double: EccDoubleConfig,
-	table_select: EccTableSelectConfig,
-	bits2num: Selector,
-}
-
-impl EccMulConfig {
-	/// Construct a new config given the selector of child chips
-	pub fn new(
-		ladder: EccUnreducedLadderConfig, add: EccAddConfig, double: EccDoubleConfig,
-		table_select: EccTableSelectConfig, bits2num: Selector,
-	) -> Self {
-		Self { ladder, add, double, table_select, bits2num }
 	}
 }
 
@@ -846,22 +804,6 @@ where
 		)?;
 
 		Ok(acc_point)
-	}
-}
-
-/// Configuration elements for the circuit are defined here.
-#[derive(Debug, Clone)]
-pub struct EccBatchedMulConfig {
-	/// Constructs configs and selector from different circuits.
-	pub(crate) add: EccAddConfig,
-	double: EccDoubleConfig,
-	bits2num: Selector,
-}
-
-impl EccBatchedMulConfig {
-	/// Construct a new config
-	pub fn new(add: EccAddConfig, double: EccDoubleConfig, bits2num: Selector) -> Self {
-		Self { add, double, bits2num }
 	}
 }
 
@@ -996,10 +938,9 @@ where
 #[cfg(test)]
 mod test {
 	use super::{
-		native::UnassignedEcPoint, AssignedPoint, EccAddChipset, EccAddConfig,
-		EccBatchedMulChipset, EccBatchedMulConfig, EccDoubleChipset, EccDoubleConfig,
-		EccMulChipset, EccMulConfig, EccTableSelectConfig, EccUnreducedLadderChipset,
-		EccUnreducedLadderConfig,
+		AssignedPoint, EccAddChipset, EccAddConfig, EccBatchedMulChipset, EccBatchedMulConfig,
+		EccDoubleChipset, EccDoubleConfig, EccMulChipset, EccMulConfig, EccTableSelectConfig,
+		EccUnreducedLadderChipset, EccUnreducedLadderConfig, UnassignedEcPoint,
 	};
 	use crate::{
 		ecc::same_curve::native::EcPoint,
@@ -1008,9 +949,8 @@ mod test {
 			main::{MainChip, MainConfig},
 		},
 		integer::{
-			native::{Integer, UnassignedInteger},
-			AssignedInteger, IntegerAddChip, IntegerDivChip, IntegerMulChip, IntegerReduceChip,
-			IntegerSubChip,
+			native::Integer, AssignedInteger, IntegerAddChip, IntegerDivChip, IntegerMulChip,
+			IntegerReduceChip, IntegerSubChip, UnassignedInteger,
 		},
 		params::ecc::{bn254::Bn254Params, EccParams},
 		params::rns::bn256::Bn256_4_68,

@@ -3,11 +3,12 @@
 use crate::{
 	integer::native::Integer,
 	params::{ecc::EccParams, rns::RnsParams},
-	utils::{be_bits_to_usize, big_to_fe, to_bits},
+	utils::{be_bits_to_usize, to_bits},
 	FieldExt,
 };
 use halo2::halo2curves::ff::PrimeField;
 use halo2::halo2curves::CurveAffine;
+use itertools::Itertools;
 use std::marker::PhantomData;
 
 /// Structure for the EcPoint
@@ -22,8 +23,8 @@ pub struct EcPoint<
 > where
 	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
 	EC: EccParams<C>,
-	<C as CurveAffine>::Base: FieldExt,
-	<C as CurveAffine>::ScalarExt: FieldExt,
+	C::Base: FieldExt,
+	C::ScalarExt: FieldExt,
 {
 	/// X coordinate of the EcPoint
 	pub x: Integer<C::Base, N, NUM_LIMBS, NUM_BITS, P>,
@@ -38,8 +39,8 @@ impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize,
 where
 	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
 	EC: EccParams<C>,
-	<C as CurveAffine>::Base: FieldExt,
-	<C as CurveAffine>::ScalarExt: FieldExt,
+	C::Base: FieldExt,
+	C::ScalarExt: FieldExt,
 {
 	/// Create a new object
 	pub fn new(
@@ -167,9 +168,16 @@ where
 
 		let exp = self.clone();
 		// Converts given input to its bit by Scalar Field's bit size
-		let mut bits = to_bits(big_to_fe::<C::ScalarExt>(scalar.value()).to_repr().as_ref());
-		bits = bits[..C::ScalarExt::NUM_BITS as usize].to_vec();
+		let mut bits = Vec::new();
+		for i in 0..NUM_LIMBS {
+			let limb_bits = to_bits(scalar.limbs[i].to_repr().as_ref());
+			let sliced_bits = limb_bits[..NUM_BITS].to_vec();
+			bits.extend(sliced_bits);
+		}
 		bits.reverse();
+		// Subtracting curve's bit size from binary field bit size to find the bits difference
+		let bits_difference = NUM_BITS * NUM_LIMBS - (C::ScalarExt::NUM_BITS as usize);
+		let bits = &bits[bits_difference..];
 
 		let table = [aux_init.clone(), exp.add(&aux_init)];
 		let mut acc = Self::select(bits[0], table.clone());
@@ -210,16 +218,22 @@ where
 		let num_of_windows = C::ScalarExt::NUM_BITS / sliding_window_size;
 
 		let exps: Vec<EcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>> = points.to_vec();
-		let bits: Vec<Vec<bool>> = scalars
+		let bits = scalars
 			.iter()
 			.map(|scalar| {
-				let mut scalar_as_bits =
-					to_bits(big_to_fe::<C::ScalarExt>(scalar.value()).to_repr().as_ref());
-				scalar_as_bits = scalar_as_bits[..C::ScalarExt::NUM_BITS as usize].to_vec();
-				scalar_as_bits.reverse();
-				scalar_as_bits
+				let mut bits = Vec::new();
+				for i in 0..NUM_LIMBS {
+					let limb_bits = to_bits(scalar.limbs[i].to_repr().as_ref());
+					let sliced_bits = limb_bits[..NUM_BITS].to_vec();
+					bits.extend(sliced_bits);
+				}
+				bits.reverse();
+				bits
 			})
-			.collect();
+			.collect_vec();
+		// Subtracting curve's bit size from binary field bit size to find the bits difference
+		let bits_difference = NUM_BITS * NUM_LIMBS - (C::ScalarExt::NUM_BITS as usize);
+		let bits = bits.iter().map(|x| &x[bits_difference..]).collect_vec();
 
 		let sliding_window_pow2 = 2_u32.pow(sliding_window_size) as usize;
 

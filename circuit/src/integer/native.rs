@@ -1,9 +1,8 @@
 use crate::{
 	params::rns::{compose_big, decompose_big, RnsParams},
 	utils::fe_to_big,
-	FieldExt, UnassignedValue,
+	FieldExt,
 };
-use halo2::circuit::Value;
 use num_bigint::BigUint;
 use num_traits::{One, Zero};
 use std::marker::PhantomData;
@@ -333,70 +332,6 @@ where
 		let self_native = P::compose(self.limbs);
 		let other_native = P::compose(other.limbs);
 		self_native == other_native
-	}
-}
-
-/// UnassignedInteger struct
-#[derive(Clone, Debug)]
-pub struct UnassignedInteger<
-	W: FieldExt,
-	N: FieldExt,
-	const NUM_LIMBS: usize,
-	const NUM_BITS: usize,
-	P,
-> where
-	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
-{
-	// Original value of the unassigned integer.
-	pub(crate) integer: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
-	/// UnassignedInteger value limbs.
-	pub(crate) limbs: [Value<N>; NUM_LIMBS],
-	/// Phantom data for the Wrong Field.
-	_wrong_field: PhantomData<W>,
-	/// Phantom data for the RnsParams.
-	_rns: PhantomData<P>,
-}
-
-impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
-	UnassignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>
-where
-	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
-{
-	/// Creates a new unassigned integer object
-	pub fn new(
-		integer: Integer<W, N, NUM_LIMBS, NUM_BITS, P>, limbs: [Value<N>; NUM_LIMBS],
-	) -> Self {
-		Self { integer, limbs, _wrong_field: PhantomData, _rns: PhantomData }
-	}
-}
-
-impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
-	From<Integer<W, N, NUM_LIMBS, NUM_BITS, P>> for UnassignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>
-where
-	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
-{
-	fn from(int: Integer<W, N, NUM_LIMBS, NUM_BITS, P>) -> Self {
-		Self {
-			integer: Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::from_limbs(int.limbs),
-			limbs: int.limbs.map(|x| Value::known(x)),
-			_wrong_field: PhantomData,
-			_rns: PhantomData,
-		}
-	}
-}
-
-impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P> UnassignedValue
-	for UnassignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>
-where
-	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
-{
-	fn without_witnesses() -> Self {
-		Self {
-			integer: Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::default(),
-			limbs: [Value::unknown(); NUM_LIMBS],
-			_wrong_field: PhantomData,
-			_rns: PhantomData,
-		}
 	}
 }
 
