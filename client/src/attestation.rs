@@ -12,7 +12,7 @@ use eigen_trust_circuit::{
 	halo2::halo2curves::{bn256::Fr as Scalar, ff::FromUniformBytes},
 };
 use ethers::{
-	types::{Address, H256},
+	types::{Address, Bytes, H256},
 	utils::hex,
 };
 use secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
@@ -206,17 +206,65 @@ impl AttestationRecord {
 		let payload = AttestationPayload::from_log(log).unwrap();
 		let attestation = Attestation::from_log(log).unwrap();
 
-		let encode_hex = |data: &[u8]| format!("0x{}", hex::encode(data));
-
 		Self {
-			about: encode_hex(attestation.about.as_fixed_bytes()),
-			key: encode_hex(attestation.key.as_fixed_bytes()),
+			about: Self::encode_bytes_to_hex(attestation.about.as_fixed_bytes()),
+			key: Self::encode_bytes_to_hex(attestation.key.as_fixed_bytes()),
 			value: attestation.value.to_string(),
-			message: encode_hex(attestation.message.as_fixed_bytes()),
-			sig_r: encode_hex(&payload.sig_r),
-			sig_s: encode_hex(&payload.sig_s),
+			message: Self::encode_bytes_to_hex(attestation.message.as_fixed_bytes()),
+			sig_r: Self::encode_bytes_to_hex(&payload.sig_r),
+			sig_s: Self::encode_bytes_to_hex(&payload.sig_s),
 			rec_id: payload.rec_id.to_string(),
 		}
+	}
+
+	/// Returns a log from an AttestationRecord.
+	pub fn to_log(&self) -> Result<AttestationCreatedFilter, &'static str> {
+		// Use helper functions to simplify the conversion process
+		let about = Address::from_slice(&Self::decode_hex_to_bytes(&self.about)?);
+		let key = Self::parse_bytes32(&self.key)?;
+		let sig_r = Self::parse_bytes32(&self.sig_r)?;
+		let sig_s = Self::parse_bytes32(&self.sig_s)?;
+		let rec_id = Self::parse_u8(&self.rec_id)?;
+		let value = Self::parse_u8(&self.value)?;
+		let message = Self::parse_bytes32(&self.message)?;
+
+		// Construct AttestationPayload and serialize it
+		let payload = AttestationPayload { sig_r, sig_s, rec_id, value, message };
+		let val = Bytes::from(payload.to_bytes());
+
+		// Recover the signature
+		let attestation =
+			Attestation::new(about, H256::from(key), value, Some(H256::from(message)));
+		let att_fr = attestation.to_attestation_fr().unwrap();
+		let recoverable_sig = payload.get_signature();
+
+		let signed_att = SignedAttestation::new(att_fr, recoverable_sig);
+		let creator = address_from_signed_att(&signed_att).unwrap();
+
+		Ok(AttestationCreatedFilter { about, key, val, creator })
+	}
+
+	// Helper function for decoding hexadecimal string into a byte array
+	fn decode_hex_to_bytes(hex_str: &str) -> Result<Vec<u8>, &'static str> {
+		hex::decode(&hex_str[2..]).map_err(|_| "Failed to decode hexadecimal string")
+	}
+
+	// Helper function for encoding byte array into hexadecimal string
+	fn encode_bytes_to_hex(bytes: &[u8]) -> String {
+		format!("0x{}", hex::encode(bytes))
+	}
+
+	// Helper function for parsing string into a byte array
+	fn parse_bytes32(hex_str: &str) -> Result<[u8; 32], &'static str> {
+		let bytes = Self::decode_hex_to_bytes(hex_str)?;
+		let bytes_array: [u8; 32] =
+			bytes.try_into().map_err(|_| "Failed to convert into byte array")?;
+		Ok(bytes_array)
+	}
+
+	// Helper function for parsing string into u8
+	fn parse_u8(value: &str) -> Result<u8, &'static str> {
+		value.parse::<u8>().map_err(|_| "Failed to parse into u8")
 	}
 }
 

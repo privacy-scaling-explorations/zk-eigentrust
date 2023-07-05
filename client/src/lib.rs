@@ -193,10 +193,10 @@ impl Client {
 	}
 
 	/// Calculates the EigenTrust global scores.
-	pub async fn calculate_scores(&self) -> Result<Vec<Score>, EigenError> {
-		// Get attestations
-		let att: Vec<AttestationCreatedFilter> = self.get_attestations().await?;
-
+	pub async fn calculate_scores(
+		&self, att: Vec<AttestationCreatedFilter>,
+	) -> Result<Vec<Score>, EigenError> {
+		// Parse attestation logs into signed attestation and attestation structs
 		let attestations: Vec<(SignedAttestation, Attestation)> = att
 			.into_iter()
 			.map(|attestation_filter| {
@@ -317,6 +317,11 @@ impl Client {
 	pub async fn verify(&self) -> Result<(), EigenError> {
 		// TODO: Verify proof
 		Ok(())
+	}
+
+	/// Gets config.
+	pub fn get_config(&self) -> &ClientConfig {
+		&self.config
 	}
 
 	/// Gets signer.

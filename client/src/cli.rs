@@ -6,8 +6,11 @@ use crate::{bandada::BandadaApi, ClientConfig};
 use clap::{Args, Parser, Subcommand};
 use eigen_trust_circuit::utils::write_json_data;
 use eigen_trust_client::{
-	attestation::{Attestation, DOMAIN_PREFIX, DOMAIN_PREFIX_LEN},
+	att_station::AttestationCreatedFilter,
+	attestation::{Attestation, AttestationRecord, DOMAIN_PREFIX, DOMAIN_PREFIX_LEN},
+	fs::{get_file_path, FileType},
 	storage::{CSVFileStorage, ScoreRecord, Storage},
+	Client,
 };
 use ethers::{
 	abi::Address,
@@ -36,9 +39,11 @@ pub enum Mode {
 	Compile,
 	/// Deploy the contracts.
 	Deploy,
+	/// Calculate the global scores from the saved attestations.
+	LocalScores,
 	/// Generate the proofs.
 	Proof,
-	/// Calculate the global scores.
+	/// Retrieves and saves all attestations and calculates the global scores.
 	Scores,
 	/// Display the current client configuration.
 	Show,
@@ -46,6 +51,34 @@ pub enum Mode {
 	Update(UpdateData),
 	/// Verify the proofs.
 	Verify,
+}
+
+/// Attestation subcommand input.
+#[derive(Args, Debug)]
+pub struct AttestData {
+	/// Attested address (20-byte ethereum address).
+	#[clap(long = "to")]
+	address: Option<String>,
+	/// Given score (0-255).
+	#[clap(long = "score")]
+	score: Option<String>,
+	/// Attestation message (32-byte hex string).
+	#[clap(long = "message")]
+	message: Option<String>,
+}
+
+/// Attestation subcommand input.
+#[derive(Args, Debug)]
+pub struct BandadaData {
+	/// Desired action (add, remove).
+	#[clap(long = "action")]
+	action: Option<String>,
+	/// Identity commitment.
+	#[clap(long = "ic")]
+	identity_commitment: Option<String>,
+	/// Participant address.
+	#[clap(long = "addr")]
+	address: Option<String>,
 }
 
 /// Configuration update subcommand input.
@@ -74,59 +107,16 @@ pub struct UpdateData {
 	verifier_address: Option<String>,
 }
 
-/// Handles the CLI project configuration update.
-pub fn handle_update(config: &mut ClientConfig, data: UpdateData) -> Result<(), &'static str> {
-	if let Some(as_address) = data.as_address {
-		config.as_address =
-			Address::from_str(&as_address).map_err(|_| "Failed to parse address.")?.to_string();
-	}
-
-	if let Some(band_id) = data.band_id {
-		// TODO: Validate bandada group id type
-		config.band_id = band_id
-	}
-
-	if let Some(band_th) = data.band_th {
-		band_th.parse::<u32>().map_err(|_| "Failed to parse group threshold.")?;
-		config.band_th = band_th;
-	}
-
-	if let Some(band_url) = data.band_url {
-		Http::from_str(&band_url).map_err(|_| "Failed to parse bandada API base url.")?;
-		config.band_url = band_url;
-	}
-
-	if let Some(domain) = data.domain {
-		config.as_address =
-			H160::from_str(&domain).map_err(|_| "Failed to parse domain")?.to_string();
-	}
-
-	if let Some(node_url) = data.node_url {
-		Http::from_str(&node_url).map_err(|_| "Failed to parse node url.")?;
-		config.node_url = node_url;
-	}
-
-	if let Some(verifier_address) = data.verifier_address {
-		config.verifier_address = Address::from_str(&verifier_address)
-			.map_err(|_| "Failed to parse address.")?
-			.to_string();
-	}
-
-	write_json_data(config, "client-config").map_err(|_| "Failed to write config data.")
+/// Bandada API action.
+pub enum Action {
+	Add,
+	Remove,
 }
 
-/// Attestation subcommand input.
-#[derive(Args, Debug)]
-pub struct AttestData {
-	/// Attested address (20-byte ethereum address).
-	#[clap(long = "to")]
-	address: Option<String>,
-	/// Given score (0-255).
-	#[clap(long = "score")]
-	score: Option<String>,
-	/// Attestation message (32-byte hex string).
-	#[clap(long = "message")]
-	message: Option<String>,
+/// Attestations Origin.
+pub enum AttestationsOrigin {
+	Local,
+	Fetch,
 }
 
 impl AttestData {
@@ -168,26 +158,6 @@ impl AttestData {
 	}
 }
 
-/// Attestation subcommand input.
-#[derive(Args, Debug)]
-pub struct BandadaData {
-	/// Desired action (add, remove).
-	#[clap(long = "action")]
-	action: Option<String>,
-	/// Identity commitment.
-	#[clap(long = "ic")]
-	identity_commitment: Option<String>,
-	/// Participant address.
-	#[clap(long = "addr")]
-	address: Option<String>,
-}
-
-/// Bandada API action.
-pub enum Action {
-	Add,
-	Remove,
-}
-
 impl FromStr for Action {
 	type Err = &'static str;
 
@@ -197,6 +167,32 @@ impl FromStr for Action {
 			"remove" => Ok(Action::Remove),
 			_ => Err("Invalid action."),
 		}
+	}
+}
+
+/// Handle `attestations` command.
+pub async fn handle_attestations(config: ClientConfig) -> Result<(), &'static str> {
+	let client = Client::new(config);
+
+	let attestations =
+		client.get_attestations().await.map_err(|_| "Failed to get attestations.")?;
+
+	let attestation_records =
+		attestations.into_iter().map(|log| AttestationRecord::from_log(&log)).collect::<Vec<_>>();
+
+	let filepath =
+		get_file_path("attestations", FileType::Csv).map_err(|_| "Failed to get file path.")?;
+
+	let mut storage = CSVFileStorage::<AttestationRecord>::new(filepath);
+	if let Err(e) = storage.save(attestation_records) {
+		eprintln!("Failed to save attestation records: {:?}", e);
+		Err("Failed to save attestation records")
+	} else {
+		println!(
+			"Attestations saved at \"{}\".",
+			storage.filepath().display()
+		);
+		Ok(())
 	}
 }
 
@@ -248,6 +244,116 @@ pub async fn handle_bandada(config: &ClientConfig, data: BandadaData) -> Result<
 	}
 
 	Ok(())
+}
+
+/// Handle `scores` and `local_scores` commands.
+pub async fn handle_scores(
+	config: ClientConfig, origin: AttestationsOrigin,
+) -> Result<(), &'static str> {
+	let client = Client::new(config);
+
+	let att_fp = get_file_path("attestations", FileType::Csv)
+		.map_err(|_| "Failed to get file path.")
+		.unwrap();
+
+	// Get or Fetch attestations
+	let attestations = match origin {
+		AttestationsOrigin::Local => {
+			let att_storage = CSVFileStorage::<AttestationRecord>::new(att_fp);
+			let attestations: Vec<AttestationCreatedFilter> = att_storage
+				.load()
+				.map_err(|_| "Failed to load attestations.")
+				.unwrap()
+				.into_iter()
+				.map(|record| record.to_log().unwrap())
+				.collect();
+
+			attestations
+		},
+		AttestationsOrigin::Fetch => {
+			handle_attestations(client.get_config().clone()).await?;
+
+			let att_storage = CSVFileStorage::<AttestationRecord>::new(att_fp);
+			let attestations: Vec<AttestationCreatedFilter> = att_storage
+				.load()
+				.map_err(|_| "Failed to load attestations.")
+				.unwrap()
+				.into_iter()
+				.map(|record| record.to_log().unwrap())
+				.collect();
+
+			attestations
+		},
+	};
+
+	// Calculate scores
+	let score_records: Vec<ScoreRecord> = client
+		.calculate_scores(attestations)
+		.await
+		.unwrap()
+		.into_iter()
+		.map(ScoreRecord::from_score)
+		.collect();
+
+	let scores_fp =
+		get_file_path("scores", FileType::Csv).map_err(|_| "Failed to get file path.").unwrap();
+
+	// Save scores
+	let mut records_storage = CSVFileStorage::<ScoreRecord>::new(scores_fp);
+	match records_storage.save(score_records) {
+		Err(e) => {
+			eprintln!("Failed to save score records: {:?}", e);
+			Err("Failed to save score records")
+		},
+		_ => {
+			println!(
+				"Scores saved at \"{}\".",
+				records_storage.filepath().display()
+			);
+			Ok(())
+		},
+	}
+}
+
+/// Handles the CLI project configuration update.
+pub fn handle_update(config: &mut ClientConfig, data: UpdateData) -> Result<(), &'static str> {
+	if let Some(as_address) = data.as_address {
+		config.as_address =
+			Address::from_str(&as_address).map_err(|_| "Failed to parse address.")?.to_string();
+	}
+
+	if let Some(band_id) = data.band_id {
+		// TODO: Validate bandada group id type
+		config.band_id = band_id
+	}
+
+	if let Some(band_th) = data.band_th {
+		band_th.parse::<u32>().map_err(|_| "Failed to parse group threshold.")?;
+		config.band_th = band_th;
+	}
+
+	if let Some(band_url) = data.band_url {
+		Http::from_str(&band_url).map_err(|_| "Failed to parse bandada API base url.")?;
+		config.band_url = band_url;
+	}
+
+	if let Some(domain) = data.domain {
+		config.as_address =
+			H160::from_str(&domain).map_err(|_| "Failed to parse domain")?.to_string();
+	}
+
+	if let Some(node_url) = data.node_url {
+		Http::from_str(&node_url).map_err(|_| "Failed to parse node url.")?;
+		config.node_url = node_url;
+	}
+
+	if let Some(verifier_address) = data.verifier_address {
+		config.verifier_address = Address::from_str(&verifier_address)
+			.map_err(|_| "Failed to parse address.")?
+			.to_string();
+	}
+
+	write_json_data(config, "client-config").map_err(|_| "Failed to write config data.")
 }
 
 #[cfg(test)]
