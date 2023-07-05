@@ -102,7 +102,7 @@ impl<F: FieldExt> Chip<F> for Bits2NumChip<F> {
 				// e2 + e2 == e2_next
 				// Starting from 1, doubling.
 				s_exp.clone() * ((e2_i_exp.clone() + e2_i_exp.clone()) - e2_i_1_exp.clone()),
-				s_exp.clone() * ((e2_i_1_exp.clone() + e2_i_1_exp.clone()) - e2_next_exp.clone()),
+				s_exp.clone() * ((e2_i_1_exp.clone() + e2_i_1_exp.clone()) - e2_next_exp),
 				// lc1 + bit * e2 == lc1_next
 				// If the bit is equal to 1, e2 will be added to the sum.
 				// Example:
