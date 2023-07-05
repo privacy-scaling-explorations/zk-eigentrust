@@ -48,6 +48,8 @@ pub mod circuit;
 pub mod dynamic_sets;
 /// Ecc arithemtic on wrong field
 pub mod ecc;
+/// ECDSA signature scheme gadgets + native version
+pub mod ecdsa;
 /// EDDSA signature scheme gadgets + native version
 pub mod eddsa;
 /// Edwards curve operations
