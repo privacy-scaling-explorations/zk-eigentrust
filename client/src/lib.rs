@@ -56,7 +56,7 @@ use att_station::{AttestationCreatedFilter, AttestationStation};
 use attestation::{att_data_from_signed_att, Attestation};
 use dotenv::{dotenv, var};
 use eigen_trust_circuit::{
-	dynamic_sets::ecdsa_native::{EigenTrustSet, RationalScore, SignedAttestation},
+	dynamic_sets::ecdsa_native::{EigenTrustSet, RationalScore, SignedAttestation, MIN_PEER_COUNT},
 	halo2::halo2curves::bn256::Fr as Scalar,
 };
 use error::EigenError;
@@ -223,6 +223,12 @@ impl Client {
 		assert!(
 			participants.len() <= MAX_NEIGHBOURS,
 			"Number of participants exceeds maximum number of neighbours"
+		);
+
+		// Verify that the number of participants is greater than the minimum number of participants
+		assert!(
+			participants.len() >= MIN_PEER_COUNT,
+			"Number of participants is less than the minimum number of neighbours"
 		);
 
 		// Initialize attestation matrix

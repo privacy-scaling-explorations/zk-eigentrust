@@ -264,13 +264,16 @@ pub async fn handle_scores(
 	let attestations = match origin {
 		AttestationsOrigin::Local => {
 			let att_storage = CSVFileStorage::<AttestationRecord>::new(att_fp);
-			let attestations: Vec<AttestationCreatedFilter> = att_storage
-				.load()
-				.map_err(|_| "Failed to load attestations.")
-				.unwrap()
-				.into_iter()
-				.map(|record| record.to_log().unwrap())
-				.collect();
+
+			let records = att_storage.load().map_err(|_| "Failed to load attestations.").unwrap();
+
+			// Verify there are attestations
+			if records.len() == 0 {
+				return Err("No attestations found.");
+			}
+
+			let attestations: Vec<AttestationCreatedFilter> =
+				records.into_iter().map(|record| record.to_log().unwrap()).collect();
 
 			attestations
 		},
