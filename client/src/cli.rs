@@ -177,6 +177,10 @@ pub async fn handle_attestations(config: ClientConfig) -> Result<(), &'static st
 	let attestations =
 		client.get_attestations().await.map_err(|_| "Failed to get attestations.")?;
 
+	if attestations.len() == 0 {
+		return Err("No attestations found.");
+	}
+
 	let attestation_records =
 		attestations.into_iter().map(|log| AttestationRecord::from_log(&log)).collect::<Vec<_>>();
 
