@@ -255,7 +255,7 @@ mod test {
 		let numba = Fr::from(1311768467294899695u64);
 
 		let circuit = TestCircuit::<256>::new(numba);
-		let k = 9;
+		let k = 8;
 		let prover = MockProver::run(k, &circuit, vec![vec![]]).unwrap();
 
 		assert_eq!(prover.verify(), Ok(()));
@@ -267,7 +267,7 @@ mod test {
 		let numba = Fr::zero().sub(&Fr::one());
 
 		let circuit = TestCircuit::<256>::new(numba);
-		let k = 9;
+		let k = 8;
 		let prover = MockProver::run(k, &circuit, vec![vec![]]).unwrap();
 
 		assert_eq!(prover.verify(), Ok(()));
@@ -277,7 +277,7 @@ mod test {
 	fn test_bits_to_num_big_plus() {
 		// Testing biggest value in the field + 1.
 		let circuit = TestCircuit::<256>::new(Fr::zero());
-		let k = 9;
+		let k = 8;
 		let prover = MockProver::run(k, &circuit, vec![vec![]]).unwrap();
 
 		assert_eq!(prover.verify(), Ok(()));
@@ -287,7 +287,7 @@ mod test {
 	fn test_bits_to_num_zero_bits() {
 		// Testing zero as value with 0 bits.
 		let circuit = TestCircuit::<0>::new(Fr::zero());
-		let k = 9;
+		let k = 8;
 		let prover = MockProver::run(k, &circuit, vec![vec![]]).unwrap();
 
 		assert_eq!(prover.verify(), Ok(()));
@@ -297,7 +297,7 @@ mod test {
 	fn test_bits_to_num_zero_value() {
 		// Testing zero as value with 254 bits.
 		let circuit = TestCircuit::<254>::new(Fr::zero());
-		let k = 9;
+		let k = 8;
 		let prover = MockProver::run(k, &circuit, vec![vec![]]).unwrap();
 
 		assert_eq!(prover.verify(), Ok(()));
@@ -307,7 +307,7 @@ mod test {
 	fn test_bits_to_num_production() {
 		let numba = Fr::from(1311768467294899695u64);
 		let circuit = TestCircuit::<256>::new(numba);
-		let k = 9;
+		let k = 8;
 		let rng = &mut rand::thread_rng();
 		let params = generate_params(k);
 		let res = prove_and_verify::<Bn256, _, _>(params, circuit, &[&[]], rng).unwrap();

@@ -176,7 +176,7 @@ mod test {
 		let numba = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(numba_big);
 
 		let circuit = TestCircuit::new(numba);
-		let k = 9;
+		let k = 8;
 		let prover = MockProver::run(k, &circuit, vec![vec![]]).unwrap();
 
 		assert_eq!(prover.verify(), Ok(()));
@@ -192,7 +192,7 @@ mod test {
 		let numba = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(numba_big);
 
 		let circuit = TestCircuit::new(numba);
-		let k = 9;
+		let k = 8;
 		let prover = MockProver::run(k, &circuit, vec![vec![]]).unwrap();
 
 		assert_eq!(prover.verify(), Ok(()));
@@ -203,7 +203,7 @@ mod test {
 		let numba_big = BigUint::from_str("3823613239503432837285398709123").unwrap();
 		let numba = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(numba_big);
 		let circuit = TestCircuit::new(numba);
-		let k = 9;
+		let k = 8;
 		let rng = &mut rand::thread_rng();
 		let params = generate_params(k);
 		let res = prove_and_verify::<Bn256, _, _>(params, circuit, &[&[]], rng).unwrap();

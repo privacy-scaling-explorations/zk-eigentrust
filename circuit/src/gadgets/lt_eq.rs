@@ -254,7 +254,7 @@ mod test {
 
 		let test_chip = TestCircuit::new(x, y);
 
-		let k = 10;
+		let k = 9;
 		let pub_ins = vec![Fr::from(0)];
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
@@ -268,7 +268,7 @@ mod test {
 
 		let test_chip = TestCircuit::new(x, y);
 
-		let k = 10;
+		let k = 9;
 		let pub_ins = vec![Fr::from(1)];
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
@@ -282,7 +282,7 @@ mod test {
 
 		let test_chip = TestCircuit::new(x, y);
 
-		let k = 10;
+		let k = 9;
 		let pub_ins = vec![Fr::from(0)];
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
@@ -297,7 +297,7 @@ mod test {
 
 		let test_chip = TestCircuit::new(x, y);
 
-		let k = 10;
+		let k = 9;
 		let pub_ins = vec![Fr::from(0)];
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
@@ -312,7 +312,7 @@ mod test {
 
 		let test_chip = TestCircuit::new(x, y);
 
-		let k = 10;
+		let k = 9;
 		let pub_ins = vec![Fr::from(1)];
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
@@ -327,7 +327,7 @@ mod test {
 
 		let test_chip = TestCircuit::new(x, y);
 
-		let k = 10;
+		let k = 9;
 		let pub_ins = vec![Fr::from(0)];
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
@@ -339,7 +339,7 @@ mod test {
 		let y = Fr::from(4);
 		let test_chip = TestCircuit::new(x, y);
 
-		let k = 10;
+		let k = 9;
 		let rng = &mut rand::thread_rng();
 		let params = generate_params(k);
 		let pub_ins = [Fr::from(0)];
