@@ -79,10 +79,11 @@ mod test {
 	use std::str::FromStr;
 
 	use super::*;
+	use crate::integer::UnassignedInteger;
 	use crate::params::rns::bn256::Bn256_4_68;
 	use crate::RegionCtx;
 	use crate::{
-		integer::native::{Integer, UnassignedInteger},
+		integer::native::Integer,
 		utils::{generate_params, prove_and_verify},
 		CommonConfig, UnassignedValue,
 	};

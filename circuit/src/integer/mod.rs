@@ -2,7 +2,7 @@
 pub mod native;
 /// RNS operations for the non-native field arithmetic
 use self::native::Integer;
-use crate::{params::rns::RnsParams, Chip, CommonConfig, FieldExt, RegionCtx};
+use crate::{params::rns::RnsParams, Chip, CommonConfig, FieldExt, RegionCtx, UnassignedValue};
 use halo2::{
 	circuit::{AssignedCell, Layouter, Region, Value},
 	plonk::{ConstraintSystem, Error, Expression, Selector},
@@ -10,6 +10,70 @@ use halo2::{
 };
 use native::{Quotient, ReductionWitness};
 use std::marker::PhantomData;
+
+/// UnassignedInteger struct
+#[derive(Clone, Debug)]
+pub struct UnassignedInteger<
+	W: FieldExt,
+	N: FieldExt,
+	const NUM_LIMBS: usize,
+	const NUM_BITS: usize,
+	P,
+> where
+	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
+{
+	// Original value of the unassigned integer.
+	pub(crate) integer: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
+	/// UnassignedInteger value limbs.
+	pub(crate) limbs: [Value<N>; NUM_LIMBS],
+	/// Phantom data for the Wrong Field.
+	_wrong_field: PhantomData<W>,
+	/// Phantom data for the RnsParams.
+	_rns: PhantomData<P>,
+}
+
+impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
+	UnassignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>
+where
+	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
+{
+	/// Creates a new unassigned integer object
+	pub fn new(
+		integer: Integer<W, N, NUM_LIMBS, NUM_BITS, P>, limbs: [Value<N>; NUM_LIMBS],
+	) -> Self {
+		Self { integer, limbs, _wrong_field: PhantomData, _rns: PhantomData }
+	}
+}
+
+impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
+	From<Integer<W, N, NUM_LIMBS, NUM_BITS, P>> for UnassignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>
+where
+	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
+{
+	fn from(int: Integer<W, N, NUM_LIMBS, NUM_BITS, P>) -> Self {
+		Self {
+			integer: Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::from_limbs(int.limbs),
+			limbs: int.limbs.map(|x| Value::known(x)),
+			_wrong_field: PhantomData,
+			_rns: PhantomData,
+		}
+	}
+}
+
+impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P> UnassignedValue
+	for UnassignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>
+where
+	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
+{
+	fn without_witnesses() -> Self {
+		Self {
+			integer: Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::default(),
+			limbs: [Value::unknown(); NUM_LIMBS],
+			_wrong_field: PhantomData,
+			_rns: PhantomData,
+		}
+	}
+}
 
 /// Assigns given values and their reduction witnesses
 pub fn assign<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>(
@@ -687,10 +751,7 @@ where
 
 #[cfg(test)]
 mod test {
-	use super::{
-		native::{Integer, UnassignedInteger},
-		*,
-	};
+	use super::{native::Integer, *};
 	use crate::{params::rns::bn256::Bn256_4_68, Chipset, CommonConfig, UnassignedValue};
 	use halo2::{
 		circuit::SimpleFloorPlanner,
