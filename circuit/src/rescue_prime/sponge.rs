@@ -239,7 +239,7 @@ mod test {
 
 		let rescue_prime_sponge = RescuePrimeTester::new(inputs1, inputs2);
 
-		let k = 10;
+		let k = 5;
 		let prover = MockProver::run(k, &rescue_prime_sponge, vec![vec![native_result]]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
 	}

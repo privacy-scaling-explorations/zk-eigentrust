@@ -430,7 +430,7 @@ mod test {
 			);
 
 		let res = poseidon_read.squeeze_challenge();
-		let k = 9;
+		let k = 7;
 		let prover = MockProver::run(k, &TestSqueezeCircuit, vec![vec![res]]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
 	}
@@ -707,7 +707,7 @@ mod test {
 
 		let res = poseidon_read.read_scalar().unwrap();
 		let circuit = TestReadScalarCircuit::new(reader);
-		let k = 7;
+		let k = 6;
 		let prover = MockProver::run(k, &circuit, vec![vec![res]]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
 	}
@@ -792,7 +792,7 @@ mod test {
 		p_ins.extend(x.limbs);
 		p_ins.extend(y.limbs);
 		let circuit = TestReadEcPointCircuit::new(reader);
-		let k = 7;
+		let k = 6;
 		let prover = MockProver::run(k, &circuit, vec![p_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
 	}
@@ -919,7 +919,7 @@ mod test {
 		p_ins.push(res);
 
 		let circuit = TestReadMultipleEcPointCircuit::new(reader);
-		let k = 7;
+		let k = 6;
 		let prover = MockProver::run(k, &circuit, vec![p_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
 	}

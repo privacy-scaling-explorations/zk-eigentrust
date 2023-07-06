@@ -35,6 +35,11 @@ impl<F: FieldExt> Chip<F> for NShiftedChip<F> {
 	type Output = AssignedCell<F, F>;
 
 	fn configure(common: &CommonConfig, meta: &mut ConstraintSystem<F>) -> Selector {
+		//
+		// IMPORTANT: For the maximal usage of CommonConfig columns(20 advice + 10 fixed),
+		//			  we use the advice column 16 - 18. (17th ~ 19th)
+		//
+
 		let selector = meta.selector();
 		let n_shifted = F::from_uniform_bytes(&to_wide(&N_SHIFTED));
 
@@ -42,9 +47,9 @@ impl<F: FieldExt> Chip<F> for NShiftedChip<F> {
 			let n_shifted_exp = Expression::Constant(n_shifted);
 
 			let s_exp = v_cells.query_selector(selector);
-			let x_exp = v_cells.query_advice(common.advice[0], Rotation::cur());
-			let y_exp = v_cells.query_advice(common.advice[1], Rotation::cur());
-			let res_exp = v_cells.query_advice(common.advice[2], Rotation::cur());
+			let x_exp = v_cells.query_advice(common.advice[16], Rotation::cur());
+			let y_exp = v_cells.query_advice(common.advice[17], Rotation::cur());
+			let res_exp = v_cells.query_advice(common.advice[18], Rotation::cur());
 
 			vec![
 				// (x + n_shifted - y) - z == 0
@@ -74,13 +79,13 @@ impl<F: FieldExt> Chip<F> for NShiftedChip<F> {
 				let mut ctx = RegionCtx::new(region, 0);
 				ctx.enable(*selector)?;
 
-				let assigned_x = ctx.copy_assign(common.advice[0], self.x.clone())?;
-				let assigned_y = ctx.copy_assign(common.advice[1], self.y.clone())?;
+				let assigned_x = ctx.copy_assign(common.advice[16], self.x.clone())?;
+				let assigned_y = ctx.copy_assign(common.advice[17], self.y.clone())?;
 
 				let n_shifted = Value::known(F::from_uniform_bytes(&to_wide(&N_SHIFTED)));
 				let res = assigned_x.value().cloned() + n_shifted - assigned_y.value();
 
-				let assigned_res = ctx.assign_advice(common.advice[2], res)?;
+				let assigned_res = ctx.assign_advice(common.advice[18], res)?;
 
 				Ok(assigned_res)
 			},
@@ -254,7 +259,7 @@ mod test {
 
 		let test_chip = TestCircuit::new(x, y);
 
-		let k = 10;
+		let k = 9;
 		let pub_ins = vec![Fr::from(0)];
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
@@ -268,7 +273,7 @@ mod test {
 
 		let test_chip = TestCircuit::new(x, y);
 
-		let k = 10;
+		let k = 9;
 		let pub_ins = vec![Fr::from(1)];
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
@@ -282,7 +287,7 @@ mod test {
 
 		let test_chip = TestCircuit::new(x, y);
 
-		let k = 10;
+		let k = 9;
 		let pub_ins = vec![Fr::from(0)];
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
@@ -297,7 +302,7 @@ mod test {
 
 		let test_chip = TestCircuit::new(x, y);
 
-		let k = 10;
+		let k = 9;
 		let pub_ins = vec![Fr::from(0)];
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
@@ -312,7 +317,7 @@ mod test {
 
 		let test_chip = TestCircuit::new(x, y);
 
-		let k = 10;
+		let k = 9;
 		let pub_ins = vec![Fr::from(1)];
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
@@ -327,7 +332,7 @@ mod test {
 
 		let test_chip = TestCircuit::new(x, y);
 
-		let k = 10;
+		let k = 9;
 		let pub_ins = vec![Fr::from(0)];
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
@@ -339,7 +344,7 @@ mod test {
 		let y = Fr::from(4);
 		let test_chip = TestCircuit::new(x, y);
 
-		let k = 10;
+		let k = 9;
 		let rng = &mut rand::thread_rng();
 		let params = generate_params(k);
 		let pub_ins = [Fr::from(0)];

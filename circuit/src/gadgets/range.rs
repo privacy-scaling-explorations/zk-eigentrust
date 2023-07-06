@@ -28,12 +28,17 @@ impl<F: FieldExt, const K: usize, const S: usize> MockChip<F>
 	type Output = AssignedCell<F, F>;
 
 	fn configure(mock_common: &MockCommonConfig, meta: &mut ConstraintSystem<F>) -> Selector {
+		//
+		// IMPORTANT: For the maximal usage of CommonConfig columns(20 advice + 10 fixed),
+		//			  we use the advice column 16 - 17. (17th ~ 18th)
+		//
+
 		assert!(0 < S && S < K, "Word bits should be less than target bits.");
 
 		let bitshift_selector = meta.complex_selector();
 
-		let word_column = mock_common.common.advice[0];
-		let shifted_word_column = mock_common.common.advice[1];
+		let word_column = mock_common.common.advice[16];
+		let shifted_word_column = mock_common.common.advice[17];
 
 		meta.lookup("Check K bits limit", |meta| {
 			let bitshift_selector = meta.query_selector(bitshift_selector);
@@ -71,11 +76,11 @@ impl<F: FieldExt, const K: usize, const S: usize> MockChip<F>
 				ctx.enable(*selector)?;
 
 				// Assign original value
-				let assigned_x = ctx.copy_assign(mock_common.common.advice[0], self.x.clone())?;
+				let assigned_x = ctx.copy_assign(mock_common.common.advice[16], self.x.clone())?;
 
 				// Assign shifted value
 				let shifted_word = self.x.value().cloned() * Value::known(F::from(1 << (K - S)));
-				ctx.assign_advice(mock_common.common.advice[1], shifted_word)?;
+				ctx.assign_advice(mock_common.common.advice[17], shifted_word)?;
 
 				Ok(assigned_x)
 			},
@@ -102,9 +107,14 @@ impl<F: FieldExt, const K: usize, const N: usize> MockChip<F> for LookupRangeChe
 	type Output = (AssignedCell<F, F>, AssignedCell<F, F>);
 
 	fn configure(mock_common: &MockCommonConfig, meta: &mut ConstraintSystem<F>) -> Selector {
+		//
+		// IMPORTANT: For the maximal usage of CommonConfig columns(20 advice + 10 fixed),
+		//			  we use the advice column 16 - 17. (17th ~ 18th)
+		//
+
 		let running_sum_selector = meta.complex_selector();
 
-		let running_sum = mock_common.common.advice[0];
+		let running_sum = mock_common.common.advice[16];
 
 		meta.lookup("running_sum check", |meta| {
 			let running_sum_selector = meta.query_selector(running_sum_selector);
@@ -144,7 +154,7 @@ impl<F: FieldExt, const K: usize, const N: usize> MockChip<F> for LookupRangeChe
 			|| "range check chip",
 			|region: Region<'_, F>| {
 				let mut ctx = RegionCtx::new(region, 0);
-				let x = ctx.copy_assign(mock_common.common.advice[0], self.x.clone())?;
+				let x = ctx.copy_assign(mock_common.common.advice[16], self.x.clone())?;
 
 				// Take first "num_bits" bits of `element`.
 				let words = x
@@ -192,7 +202,7 @@ impl<F: FieldExt, const K: usize, const N: usize> MockChip<F> for LookupRangeChe
 
 					// Assign z_next
 					ctx.next();
-					z = ctx.assign_advice(mock_common.common.advice[0], z_next)?;
+					z = ctx.assign_advice(mock_common.common.advice[16], z_next)?;
 				}
 
 				ctx.constrain_to_constant(z, F::ZERO)?;

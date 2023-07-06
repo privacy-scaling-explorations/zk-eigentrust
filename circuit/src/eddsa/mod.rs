@@ -325,7 +325,7 @@ mod test {
 		let sig = sign(&sk, &pk, m);
 		let circuit = TestCircuit::new(sig.big_r.x, sig.big_r.y, sig.s, pk.0.x, pk.0.y, m);
 
-		let k = 11;
+		let k = 10;
 		let prover = MockProver::run(k, &circuit, vec![vec![]]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
 	}
@@ -348,7 +348,7 @@ mod test {
 		sig.big_r = b8.mul_scalar(different_r).affine();
 		let circuit = TestCircuit::new(sig.big_r.x, sig.big_r.y, sig.s, pk.0.x, pk.0.y, m);
 
-		let k = 11;
+		let k = 10;
 		let prover = MockProver::run(k, &circuit, vec![vec![]]).unwrap();
 		assert!(prover.verify().is_err());
 	}
@@ -366,7 +366,7 @@ mod test {
 		sig.s = sig.s.add(&Fr::from(1));
 		let circuit = TestCircuit::new(sig.big_r.x, sig.big_r.y, sig.s, pk.0.x, pk.0.y, m);
 
-		let k = 11;
+		let k = 10;
 		let prover = MockProver::run(k, &circuit, vec![vec![]]).unwrap();
 		assert!(prover.verify().is_err());
 	}
@@ -385,7 +385,7 @@ mod test {
 		let m = Fr::from_str_vartime("123456789012345678901234567890").unwrap();
 		let sig = sign(&sk1, &pk1, m);
 		let circuit = TestCircuit::new(sig.big_r.x, sig.big_r.y, sig.s, pk2.0.x, pk2.0.y, m);
-		let k = 11;
+		let k = 10;
 		let prover = MockProver::run(k, &circuit, vec![vec![]]).unwrap();
 		assert!(prover.verify().is_err());
 	}
@@ -404,7 +404,7 @@ mod test {
 		let sig = sign(&sk, &pk, m1);
 		let circuit = TestCircuit::new(sig.big_r.x, sig.big_r.y, sig.s, pk.0.x, pk.0.y, m2);
 
-		let k = 11;
+		let k = 10;
 		let prover = MockProver::run(k, &circuit, vec![vec![]]).unwrap();
 
 		assert!(prover.verify().is_err());
@@ -421,7 +421,7 @@ mod test {
 		let sig = sign(&sk, &pk, m);
 		let circuit = TestCircuit::new(sig.big_r.x, sig.big_r.y, sig.s, pk.0.x, pk.0.y, m);
 
-		let k = 11;
+		let k = 10;
 		let rng = &mut rand::thread_rng();
 		let params = generate_params(k);
 		let res = prove_and_verify::<Bn256, _, _>(params, circuit, &[&[]], rng).unwrap();

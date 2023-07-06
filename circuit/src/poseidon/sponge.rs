@@ -271,7 +271,7 @@ mod test {
 		let native_result = sponge.squeeze();
 		let poseidon_sponge = PoseidonTester::new(inputs);
 
-		let k = 9;
+		let k = 8;
 		let prover = MockProver::run(k, &poseidon_sponge, vec![vec![native_result]]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
 	}
@@ -286,7 +286,7 @@ mod test {
 		let native_result = sponge.squeeze();
 		let poseidon_sponge = PoseidonTester::new(inputs);
 
-		let k = 9;
+		let k = 8;
 		let prover = MockProver::run(k, &poseidon_sponge, vec![vec![native_result]]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
 	}
