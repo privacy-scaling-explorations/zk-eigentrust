@@ -7,9 +7,9 @@ use clap::{Args, Parser, Subcommand};
 use eigen_trust_circuit::utils::write_json_data;
 use eigen_trust_client::{
 	att_station::AttestationCreatedFilter,
-	attestation::{Attestation, AttestationRecord, DOMAIN_PREFIX, DOMAIN_PREFIX_LEN},
+	attestation::{Attestation, DOMAIN_PREFIX, DOMAIN_PREFIX_LEN},
 	fs::{get_file_path, FileType},
-	storage::{CSVFileStorage, ScoreRecord, Storage},
+	storage::{AttestationRecord, CSVFileStorage, ScoreRecord, Storage},
 	Client,
 };
 use ethers::{
