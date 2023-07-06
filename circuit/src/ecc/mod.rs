@@ -134,3 +134,16 @@ impl EccBatchedMulConfig {
 		Self { add, double, bits2num }
 	}
 }
+
+#[derive(Clone, Debug)]
+/// Config for Aux assigner
+pub struct AuxConfig {
+	ecc_double: EccDoubleConfig,
+}
+
+impl AuxConfig {
+	/// AuxConfig constructor
+	pub fn new(ecc_double: EccDoubleConfig) -> Self {
+		Self { ecc_double }
+	}
+}
