@@ -3,7 +3,7 @@ use self::native::Snark;
 /// Native version of Aggregator
 pub mod native;
 use crate::{
-	ecc::EccMulConfig,
+	ecc::{AuxConfig, EccMulConfig},
 	gadgets::main::MainConfig,
 	params::rns::bn256::Bn256_4_68,
 	params::{ecc::bn254::Bn254Params, hasher::poseidon_bn254_5x5::Params},
@@ -108,13 +108,15 @@ pub struct AggregatorConfig {
 	pub(crate) main: MainConfig,
 	pub(crate) poseidon_sponge: PoseidonSpongeConfig,
 	pub(crate) ecc_mul_scalar: EccMulConfig,
+	pub(crate) aux: AuxConfig,
 }
 
 impl AggregatorConfig {
 	fn new(
 		main: MainConfig, poseidon_sponge: PoseidonSpongeConfig, ecc_mul_scalar: EccMulConfig,
+		aux: AuxConfig,
 	) -> Self {
-		Self { main, poseidon_sponge, ecc_mul_scalar }
+		Self { main, poseidon_sponge, ecc_mul_scalar, aux }
 	}
 }
 
@@ -167,6 +169,7 @@ impl Chipset<Fr> for AggregatorChipset {
 				layouter.namespace(|| "loader"),
 				common.clone(),
 				config.ecc_mul_scalar.clone(),
+				config.aux.clone(),
 				config.main.clone(),
 				config.poseidon_sponge.clone(),
 			);
@@ -244,7 +247,7 @@ mod test {
 	use crate::{
 		circuit::{FullRoundHasher, PartialRoundHasher},
 		ecc::{
-			EccAddConfig, EccDoubleConfig, EccMulConfig, EccTableSelectConfig,
+			AuxConfig, EccAddConfig, EccDoubleConfig, EccMulConfig, EccTableSelectConfig,
 			EccUnreducedLadderConfig,
 		},
 		gadgets::{
@@ -404,9 +407,11 @@ mod test {
 			let add = EccAddConfig::new(int_red, int_sub, int_mul, int_div);
 			let double = EccDoubleConfig::new(int_red, int_add, int_sub, int_mul, int_div);
 			let table_select = EccTableSelectConfig::new(main.clone());
-			let ecc_mul_scalar = EccMulConfig::new(ladder, add, double, table_select, bits2num);
+			let ecc_mul_scalar =
+				EccMulConfig::new(ladder, add, double.clone(), table_select, bits2num);
+			let aux = AuxConfig::new(double);
 
-			let aggregator = AggregatorConfig { main, poseidon_sponge, ecc_mul_scalar };
+			let aggregator = AggregatorConfig { main, poseidon_sponge, ecc_mul_scalar, aux };
 
 			AggregatorTestCircuitConfig { common, aggregator }
 		}

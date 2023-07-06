@@ -280,7 +280,7 @@ mod test {
 		circuit::{FullRoundHasher, PartialRoundHasher},
 		ecc::{
 			same_curve::{native::EcPoint, AssignedPoint, UnassignedEcPoint},
-			EccAddConfig, EccDoubleConfig, EccMulConfig, EccTableSelectConfig,
+			AuxConfig, EccAddConfig, EccDoubleConfig, EccMulConfig, EccTableSelectConfig,
 			EccUnreducedLadderConfig,
 		},
 		gadgets::{
@@ -341,6 +341,7 @@ mod test {
 		main: MainConfig,
 		poseidon_sponge: PoseidonSpongeConfig,
 		ecc_mul_scalar: EccMulConfig,
+		aux: AuxConfig,
 	}
 
 	impl TestConfig {
@@ -373,8 +374,10 @@ mod test {
 			let add = EccAddConfig::new(int_red, int_sub, int_mul, int_div);
 			let double = EccDoubleConfig::new(int_red, int_add, int_sub, int_mul, int_div);
 			let table_select = EccTableSelectConfig::new(main.clone());
-			let ecc_mul_scalar = EccMulConfig::new(ladder, add, double, table_select, bits2num);
-			TestConfig { common, main, poseidon_sponge, ecc_mul_scalar }
+			let ecc_mul_scalar =
+				EccMulConfig::new(ladder, add, double.clone(), table_select, bits2num);
+			let aux = AuxConfig::new(double);
+			TestConfig { common, main, poseidon_sponge, ecc_mul_scalar, aux }
 		}
 	}
 
@@ -401,6 +404,7 @@ mod test {
 					layouter.namespace(|| "loader"),
 					config.common.clone(),
 					config.ecc_mul_scalar,
+					config.aux,
 					config.main,
 					config.poseidon_sponge,
 				);
@@ -498,6 +502,7 @@ mod test {
 					loader_layouter,
 					config.common.clone(),
 					config.ecc_mul_scalar,
+					config.aux,
 					config.main,
 					config.poseidon_sponge.clone(),
 				);
@@ -602,6 +607,7 @@ mod test {
 					layouter.namespace(|| "loader"),
 					config.common.clone(),
 					config.ecc_mul_scalar,
+					config.aux,
 					config.main,
 					config.poseidon_sponge.clone(),
 				);
@@ -674,6 +680,7 @@ mod test {
 					layouter.namespace(|| "loader"),
 					config.common.clone(),
 					config.ecc_mul_scalar,
+					config.aux,
 					config.main,
 					config.poseidon_sponge.clone(),
 				);
@@ -743,6 +750,7 @@ mod test {
 					layouter.namespace(|| "loader"),
 					config.common.clone(),
 					config.ecc_mul_scalar,
+					config.aux,
 					config.main,
 					config.poseidon_sponge.clone(),
 				);
@@ -828,6 +836,7 @@ mod test {
 					layouter.namespace(|| "loader"),
 					config.common.clone(),
 					config.ecc_mul_scalar,
+					config.aux,
 					config.main,
 					config.poseidon_sponge.clone(),
 				);
@@ -955,6 +964,7 @@ mod test {
 					layouter.namespace(|| "loader"),
 					config.common.clone(),
 					config.ecc_mul_scalar,
+					config.aux,
 					config.main,
 					config.poseidon_sponge.clone(),
 				);
@@ -1039,6 +1049,7 @@ mod test {
 					layouter.namespace(|| "loader"),
 					config.common.clone(),
 					config.ecc_mul_scalar,
+					config.aux,
 					config.main,
 					config.poseidon_sponge.clone(),
 				);

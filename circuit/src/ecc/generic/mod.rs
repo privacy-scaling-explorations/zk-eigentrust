@@ -12,15 +12,15 @@ use crate::{
 		main::SelectChipset,
 	},
 	integer::{
-		native::Integer, AssignedInteger, IntegerAddChip, IntegerDivChip, IntegerMulChip,
-		IntegerReduceChip, IntegerSubChip, UnassignedInteger,
+		native::Integer, AssignedInteger, IntegerAddChip, IntegerAssigner, IntegerDivChip,
+		IntegerMulChip, IntegerReduceChip, IntegerSubChip, UnassignedInteger,
 	},
 	params::{ecc::EccParams, rns::RnsParams},
 	utils::{assigned_as_bool, be_assigned_bits_to_usize},
-	Chip, Chipset, CommonConfig, FieldExt, RegionCtx, UnassignedValue,
+	Chip, Chipset, CommonConfig, FieldExt, UnassignedValue,
 };
 use halo2::{
-	circuit::{AssignedCell, Layouter, Region},
+	circuit::{AssignedCell, Layouter},
 	halo2curves::ff::PrimeField,
 	halo2curves::CurveAffine,
 	plonk::Error,
@@ -980,53 +980,6 @@ where
 	}
 }
 
-struct IntegerAssigner<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
-where
-	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
-{
-	x: UnassignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
-}
-
-impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
-	IntegerAssigner<W, N, NUM_LIMBS, NUM_BITS, P>
-where
-	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
-{
-	fn new(x: UnassignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>) -> Self {
-		Self { x }
-	}
-}
-
-impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P> Chipset<N>
-	for IntegerAssigner<W, N, NUM_LIMBS, NUM_BITS, P>
-where
-	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
-{
-	type Config = ();
-	type Output = AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>;
-
-	fn synthesize(
-		self, common: &CommonConfig, _: &Self::Config, mut layouter: impl Layouter<N>,
-	) -> Result<Self::Output, Error> {
-		let assigned_limbs = layouter.assign_region(
-			|| "int_assigner",
-			|region: Region<'_, N>| {
-				let mut ctx = RegionCtx::new(region, 0);
-				let mut limbs = Vec::new();
-				for i in 0..NUM_LIMBS {
-					let assigned_limb = ctx.assign_advice(common.advice[i], self.x.limbs[i])?;
-					limbs.push(assigned_limb);
-				}
-
-				Ok(limbs)
-			},
-		)?;
-
-		let x_assigned = AssignedInteger::new(self.x.integer, assigned_limbs.try_into().unwrap());
-		Ok(x_assigned)
-	}
-}
-
 struct PointAssigner<
 	C: CurveAffine,
 	N: FieldExt,
@@ -1237,10 +1190,7 @@ mod test {
 			native::Integer, AssignedInteger, IntegerAddChip, IntegerDivChip, IntegerMulChip,
 			IntegerReduceChip, IntegerSubChip, UnassignedInteger,
 		},
-		params::{
-			ecc::{secp256k1::Secp256k1Params, EccParams},
-			rns::secp256k1::Secp256k1_4_68,
-		},
+		params::{ecc::secp256k1::Secp256k1Params, rns::secp256k1::Secp256k1_4_68},
 		Chip, Chipset, CommonConfig, RegionCtx, UnassignedValue,
 	};
 	use halo2::{
@@ -1675,18 +1625,16 @@ mod test {
 	struct EccBatchedMulTestCircuit {
 		points: Vec<UnassignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>>,
 		scalars: Vec<UnassignedInteger<SecpScalar, N, NUM_LIMBS, NUM_BITS, P>>,
-		window_size: u32,
 	}
 
 	impl EccBatchedMulTestCircuit {
 		fn new(
 			points: Vec<EcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>>,
-			scalars: Vec<Integer<SecpScalar, N, NUM_LIMBS, NUM_BITS, P>>, window_size: u32,
+			scalars: Vec<Integer<SecpScalar, N, NUM_LIMBS, NUM_BITS, P>>,
 		) -> Self {
 			Self {
 				points: points.iter().map(|p| UnassignedEcPoint::from(p.clone())).collect(),
 				scalars: scalars.iter().map(|s| UnassignedInteger::from(s.clone())).collect(),
-				window_size,
 			}
 		}
 	}
@@ -1707,7 +1655,6 @@ mod test {
 					.iter()
 					.map(|_| UnassignedInteger::without_witnesses())
 					.collect(),
-				window_size: u32::default(),
 			}
 		}
 
@@ -1812,7 +1759,7 @@ mod test {
 		}
 
 		let res = EcPoint::multi_mul_scalar(&points_vec, &scalars_vec);
-		let test_chip = EccBatchedMulTestCircuit::new(points_vec, scalars_vec, 4);
+		let test_chip = EccBatchedMulTestCircuit::new(points_vec, scalars_vec);
 
 		let k = 18;
 		let mut p_ins = Vec::new();
