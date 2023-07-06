@@ -64,13 +64,17 @@ pub async fn call_verifier(
 	println!("{:#?}", res);
 }
 
-// TODO: Review this function.
-/// Compiles the Solidity contracts in the `data` directory.
-pub fn compile_sol_contracts() {
-	let data_dir = get_data_directory().unwrap();
+/// Compiles the AttestationStation contract.
+pub fn compile_att_station() {
+	let path = get_data_directory().unwrap().join("AttestationStation.sol");
 
 	// compile it
-	let contracts = Solc::default().compile_source(&data_dir).unwrap();
+	let contracts = Solc::default().compile_source(&path).unwrap();
+
+	if contracts.errors.len() > 0 {
+		panic!("Compilation errors: {:#?}", contracts.errors);
+	}
+
 	for (name, contr) in contracts.contracts_iter() {
 		let contract: ContractBytecode = contr.clone().into();
 		let abi = contract.clone().abi.unwrap();

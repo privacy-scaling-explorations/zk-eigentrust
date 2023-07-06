@@ -4,8 +4,9 @@ mod cli;
 use clap::Parser;
 use cli::*;
 use eigen_trust_client::{
-	eth::{compile_sol_contracts, compile_yul_contracts, deploy_as, deploy_verifier},
-	fs::{read_binary, read_json},
+	eth::{compile_att_station, compile_yul_contracts, deploy_as, deploy_verifier},
+	fs::{get_file_path, read_binary, read_json, FileType},
+	storage::{CSVFileStorage, ScoreRecord, Storage},
 	Client, ClientConfig,
 };
 
@@ -46,7 +47,7 @@ async fn main() {
 		},
 		Mode::Compile => {
 			println!("Compiling contracts...");
-			compile_sol_contracts();
+			compile_att_station();
 			compile_yul_contracts();
 			println!("Done!");
 		},
