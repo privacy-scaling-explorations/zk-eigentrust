@@ -1,6 +1,6 @@
 use crate::{gadgets::main::IsZeroChipset, Chip, Chipset, CommonConfig, FieldExt, RegionCtx};
 use halo2::{
-	circuit::{AssignedCell, Layouter, Region, Value},
+	circuit::{AssignedCell, Layouter, Region},
 	plonk::{ConstraintSystem, Error, Expression, Selector},
 	poly::Rotation,
 };
@@ -170,7 +170,7 @@ impl<F: FieldExt> Chip<F> for SetPositionChip<F> {
 	fn configure(common: &CommonConfig, meta: &mut ConstraintSystem<F>) -> Selector {
 		let selector = meta.selector();
 
-		meta.create_gate("set_membership", |v_cells| {
+		meta.create_gate("set_position_index", |v_cells| {
 			//
 			// Gate config
 			//
@@ -236,7 +236,7 @@ impl<F: FieldExt> Chip<F> for SetPositionChip<F> {
 		self, common: &CommonConfig, selector: &Selector, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
 		layouter.assign_region(
-			|| "set_membership",
+			|| "set_position_index",
 			|region: Region<'_, F>| {
 				let mut ctx = RegionCtx::new(region, 0);
 
@@ -264,7 +264,7 @@ impl<F: FieldExt> Chip<F> for SetPositionChip<F> {
 					let next_idx = assigned_idx.value().cloned() + add_value;
 
 					ctx.next();
-					assigned_idx = ctx.assign_advice(common.advice[3], next_idx)?;
+					assigned_idx = ctx.assign_advice(common.advice[4], next_idx)?;
 					assigned_target = ctx.copy_assign(common.advice[0], assigned_target)?;
 				}
 
@@ -426,6 +426,134 @@ mod test {
 		let rng = &mut rand::thread_rng();
 		let params = generate_params(k);
 		let res = prove_and_verify::<Bn256, _, _>(params, test_chip, &[&[Fr::one()]], rng).unwrap();
+		assert!(res);
+	}
+
+	#[derive(Clone)]
+	struct TestSetPositionConfig {
+		common: CommonConfig,
+		set_pos_selector: Selector,
+	}
+
+	#[derive(Clone)]
+	struct TestSetPositionCircuit<F: FieldExt> {
+		items: Vec<Value<F>>,
+		target: Value<F>,
+	}
+
+	impl<F: FieldExt> TestSetPositionCircuit<F> {
+		fn new(items: Vec<F>, target: F) -> Self {
+			Self {
+				items: items.into_iter().map(|x| Value::known(x)).collect(),
+				target: Value::known(target),
+			}
+		}
+	}
+
+	impl<F: FieldExt> Circuit<F> for TestSetPositionCircuit<F> {
+		type Config = TestSetPositionConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			Self {
+				items: self.items.clone().into_iter().map(|_| Value::unknown()).collect(),
+				target: Value::unknown(),
+			}
+		}
+
+		fn configure(meta: &mut ConstraintSystem<F>) -> TestSetPositionConfig {
+			let common = CommonConfig::new(meta);
+			let set_pos_selector = SetPositionChip::configure(&common, meta);
+
+			TestSetPositionConfig { common, set_pos_selector }
+		}
+
+		fn synthesize(
+			&self, config: TestSetPositionConfig, mut layouter: impl Layouter<F>,
+		) -> Result<(), Error> {
+			let (target, items) = layouter.assign_region(
+				|| "temp",
+				|region: Region<'_, F>| {
+					let mut ctx = RegionCtx::new(region, 0);
+					let target = ctx.assign_advice(config.common.advice[0], self.target.clone())?;
+
+					ctx.next();
+					let mut items = Vec::new();
+					for i in 0..self.items.len() {
+						let item = self.items[i].clone();
+						let assigned_item = ctx.assign_advice(config.common.advice[0], item)?;
+						items.push(assigned_item);
+						ctx.next();
+					}
+
+					Ok((target, items))
+				},
+			)?;
+			let set_pos_chip = SetPositionChip::new(items, target);
+			let idx = set_pos_chip.synthesize(
+				&config.common,
+				&config.set_pos_selector,
+				layouter.namespace(|| "set_position"),
+			)?;
+			layouter.constrain_instance(idx.cell(), config.common.instance, 0)?;
+
+			Ok(())
+		}
+	}
+
+	#[test]
+	fn test_position_index() {
+		// Testing a target value from the set.
+		let set = vec![Fr::from(1), Fr::from(2), Fr::from(3)];
+		let target_index = 2;
+		let target = set[target_index].clone();
+		let test_chip = TestSetPositionCircuit::new(set, target);
+
+		let pub_ins = vec![Fr::from(target_index as u64)];
+		let k = 5;
+		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[test]
+	fn test_no_position_index() {
+		// Testing a target value that is not in the set.
+		let set = vec![Fr::from(1), Fr::from(2), Fr::from(4), Fr::from(15), Fr::from(23)];
+		let target = Fr::from(12);
+		let test_chip = TestSetPositionCircuit::new(set, target);
+
+		let pub_ins = vec![Fr::from(5)];
+		let k = 5;
+		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[test]
+	fn test_big_set_position_index() {
+		// Testing a big set.
+		let set = [(); 1024].map(|_| <Fr as Field>::random(rand::thread_rng())).to_vec();
+		let target_index = 722;
+		let target = set[target_index].clone();
+		let test_chip = TestSetPositionCircuit::new(set, target);
+
+		let pub_ins = vec![Fr::from(target_index as u64)];
+		let k = 12;
+		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[test]
+	fn test_position_index_production() {
+		let set = vec![Fr::from(1), Fr::from(2), Fr::from(3)];
+		let target_index = 1;
+		let target = set[target_index].clone();
+		let test_chip = TestSetPositionCircuit::new(set, target);
+
+		let k = 5;
+		let pub_ins = vec![Fr::from(target_index as u64)];
+		let rng = &mut rand::thread_rng();
+		let params = generate_params(k);
+		let res = prove_and_verify::<Bn256, _, _>(params, test_chip, &[&pub_ins], rng).unwrap();
 		assert!(res);
 	}
 }
