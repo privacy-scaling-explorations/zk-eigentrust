@@ -285,7 +285,7 @@ where
 }
 
 /// Chipset structure for the EccDouble.
-struct EccDoubleChipset<
+pub struct EccDoubleChipset<
 	C: CurveAffine,
 	N: FieldExt,
 	const NUM_LIMBS: usize,
