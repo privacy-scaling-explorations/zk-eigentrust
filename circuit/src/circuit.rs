@@ -541,7 +541,7 @@ mod test {
 			ops,
 		);
 
-		let k = 14;
+		let k = 13;
 		let prover = match MockProver::<Scalar>::run(k, &et, vec![res.to_vec()]) {
 			Ok(prover) => prover,
 			Err(e) => panic!("{}", e),
@@ -609,7 +609,7 @@ mod test {
 			ops,
 		);
 
-		let k = 14;
+		let k = 13;
 		let rng = &mut rand::thread_rng();
 		let params = generate_params(k);
 		let res = prove_and_verify::<Bn256, _, _>(params, et, &[&res], rng).unwrap();
@@ -676,7 +676,7 @@ mod test {
 			ops,
 		);
 
-		let k = 14;
+		let k = 13;
 		let params = read_params(k);
 		let pk = gen_pk(&params, &et);
 		let deployment_code = gen_evm_verifier(&params, pk.get_vk(), vec![NUM_NEIGHBOURS]);

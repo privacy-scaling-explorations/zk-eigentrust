@@ -311,7 +311,7 @@ mod test {
 		let leaves = vec![Fr::random(rng.clone()), Fr::random(rng.clone()), value];
 		let merkle = MerkleTree::<Fr, 2, 2, NativeH>::build_tree(leaves.clone());
 		let test_chip = MerkleTestCircuit::<2, 2>::new(leaves);
-		let k = 12;
+		let k = 8;
 		let pub_ins = vec![merkle.root];
 		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));

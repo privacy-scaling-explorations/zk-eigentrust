@@ -21,7 +21,7 @@ fn load_round_constants<F: FieldExt, const WIDTH: usize>(
 ) -> Result<[Value<F>; WIDTH], Error> {
 	let mut rc_values: [Value<F>; WIDTH] = [(); WIDTH].map(|_| Value::unknown());
 	for i in 0..WIDTH {
-		let rc = round_constants[(ctx.offset() / 2) * WIDTH + i];
+		let rc = round_constants[ctx.offset() * WIDTH + i];
 		ctx.assign_fixed(config.fixed[i], rc)?;
 		rc_values[i] = Value::known(rc);
 	}
@@ -59,24 +59,24 @@ where
 		let selector = meta.selector();
 
 		let state_columns: [Column<Advice>; WIDTH] = common.advice[0..WIDTH].try_into().unwrap();
+		let sbox_inv_columns: [Column<Advice>; WIDTH] =
+			common.advice[WIDTH..(2 * WIDTH)].try_into().unwrap();
 		let rc_columns: [Column<Fixed>; WIDTH] = common.fixed[0..WIDTH].try_into().unwrap();
 
 		meta.create_gate("full_round", |v_cells| {
 			//
-			//   |  i  | round |    state     |   constants   |  selector  |
-			//   |-----|-------|--------------|---------------|------------|
-			//   |  0  |   1   |  state(1)    |    const(1)   |     *      |
-			//   |  1  |       | sbox_invs(1) |               |            |
-			//   |  2  |   2   |  state(2)    |    const(2)   |     *      |
-			//   |  3  |       | sbox_invs(2) |               |            |
-			//   |  4  |   3   |  state(3)    |    const(3)   |     *      |
+			//   |  i  | round |    state     |   sbox_invs   |   constants   |  selector  |
+			//   |-----|-------|--------------|---------------|---------------|------------|
+			//   |  0  |   1   |  state(1)    |  sbox_invs(1) |    const(1)   |     *      |
+			//   |  1  |   2   |  state(2)    |  sbox_invs(2) |    const(2)   |     *      |
+			//   |  2  |   3   |  state(3)    |  sbox_invs(3) |    const(3)   |     *      |
 			//                 ...
 
 			let s_cells = v_cells.query_selector(selector);
 			let mut state = state_columns.map(|c| v_cells.query_advice(c, Rotation::cur()));
-			let sbox_inverts = state_columns.map(|c| v_cells.query_advice(c, Rotation::next()));
+			let sbox_inverts = sbox_inv_columns.map(|c| v_cells.query_advice(c, Rotation::cur()));
 			let round_constants = rc_columns.map(|c| v_cells.query_fixed(c, Rotation::cur()));
-			let next_round_constants = rc_columns.map(|c| v_cells.query_fixed(c, Rotation(2)));
+			let next_round_constants = rc_columns.map(|c| v_cells.query_fixed(c, Rotation::next()));
 
 			let mut exprs = vec![];
 
@@ -115,7 +115,7 @@ where
 
 			// It should be equal to the state in next row
 			for i in 0..WIDTH {
-				let next_state = v_cells.query_advice(state_columns[i], Rotation(2));
+				let next_state = v_cells.query_advice(state_columns[i], Rotation::next());
 				exprs.push(s_cells.clone() * (state[i].clone() - next_state));
 			}
 
@@ -161,10 +161,9 @@ where
 
 					// 4. step for the TRF
 					// Apply S-box inverse
-					ctx.next();
 					for (i, next_state_i) in next_state.iter_mut().enumerate().take(WIDTH) {
 						*next_state_i = next_state_i.map(|s| P::sbox_inv_f(s));
-						ctx.assign_advice(common.advice[i], *next_state_i)?;
+						ctx.assign_advice(common.advice[i + WIDTH], *next_state_i)?;
 					}
 
 					// 5. step for the TRF
@@ -356,7 +355,7 @@ mod test {
 
 		let rescue_prime_tester = RescuePrimeTester::new(inputs);
 
-		let k = 5;
+		let k = 4;
 		let prover = MockProver::run(k, &rescue_prime_tester, vec![outputs.to_vec()]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
 	}
@@ -384,7 +383,7 @@ mod test {
 
 		let rescue_prime_tester = RescuePrimeTester::new(inputs);
 
-		let k = 5;
+		let k = 4;
 		let rng = &mut rand::thread_rng();
 		let params = generate_params(k);
 		let res =
