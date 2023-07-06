@@ -1,7 +1,7 @@
 use crate::{gadgets::main::IsZeroChipset, Chip, Chipset, CommonConfig, FieldExt, RegionCtx};
 use halo2::{
-	circuit::{AssignedCell, Layouter, Region},
-	plonk::{ConstraintSystem, Error, Selector},
+	circuit::{AssignedCell, Layouter, Region, Value},
+	plonk::{ConstraintSystem, Error, Expression, Selector},
 	poly::Rotation,
 };
 
@@ -145,6 +145,132 @@ impl<F: FieldExt> Chipset<F> for SetChipset<F> {
 			is_zero_chip.synthesize(common, &config.main, layouter.namespace(|| "is_member"))?;
 
 		Ok(is_zero)
+	}
+}
+
+/// A chip for checking item membership in a set of field values
+pub struct SetPositionChip<F: FieldExt> {
+	/// Constructs items variable for the circuit.
+	items: Vec<AssignedCell<F, F>>,
+	/// Assigns a cell for the target.
+	target: AssignedCell<F, F>,
+}
+
+impl<F: FieldExt> SetPositionChip<F> {
+	/// Construct a new chip
+	pub fn new(items: Vec<AssignedCell<F, F>>, target: AssignedCell<F, F>) -> Self {
+		SetPositionChip { items, target }
+	}
+}
+
+impl<F: FieldExt> Chip<F> for SetPositionChip<F> {
+	type Output = AssignedCell<F, F>;
+
+	/// Make the circuit config.
+	fn configure(common: &CommonConfig, meta: &mut ConstraintSystem<F>) -> Selector {
+		let selector = meta.selector();
+
+		meta.create_gate("set_membership", |v_cells| {
+			//
+			// Gate config
+			//
+			//  |  selector  |     0      |     1      |     2     |   3   |   4   |
+			//  |------------|------------|------------|-----------|-------|-------|
+			//  |     *      |   target   |    item    |    diff   |  add  |  idx  |
+
+			//
+			// Example: set = [1, 2, 3, 4, 5], target = 4
+			//
+			//  |  selector  |   target   |    item    |   diff    |  add  |  idx  |
+			//  |------------|------------|------------|-----------|-------|-------|
+			//  |     *      |     4      |     1	   |     3     |   1   |   0   |
+			//  |     *      |     4      |     2      |     2     |   1   |   1   |
+			//  |     *      |     4      |     3      |     1     |   1   |   2   |
+			//  |     *      |     4      |     4      |     0     |   0   |   3   |
+			//  |     *      |     4      |     5      |    -1     |   0   |   3   |
+
+			let target_exp = v_cells.query_advice(common.advice[0], Rotation::cur());
+
+			let item_exp = v_cells.query_advice(common.advice[1], Rotation::cur());
+			let diff_exp = v_cells.query_advice(common.advice[2], Rotation::cur());
+
+			let add_prev_exp = v_cells.query_advice(common.advice[3], Rotation::prev());
+			let add_exp = v_cells.query_advice(common.advice[3], Rotation::cur());
+
+			let idx_exp = v_cells.query_advice(common.advice[4], Rotation::cur());
+			let idx_next_exp = v_cells.query_advice(common.advice[4], Rotation::next());
+
+			let s_exp = v_cells.query_selector(selector);
+
+			vec![
+				// If the difference is equal to 0, that will make the `add` equal to 0.
+				// The following `add`s all become 0.
+
+				// diff = target - item
+				s_exp.clone() * (target_exp - (diff_exp.clone() + item_exp)),
+				// idx_next = idx + add
+				s_exp.clone() * (idx_next_exp - (idx_exp + add_exp.clone())),
+				// add * (1 - add) = 0
+				s_exp.clone()
+					* (add_exp.clone() * (Expression::Constant(F::ONE) - add_exp.clone())),
+				// add * (1 - add_prev) = 0
+				s_exp.clone()
+					* (add_exp.clone() * (Expression::Constant(F::ONE) - add_prev_exp.clone())),
+				//
+				// base constraint  => if diff = 0 { add = 0 } else { add = 1 }
+				// 		diff * (1 / diff) = add
+				// 		diff - diff * add = 0
+				//
+				// final constraint => if add_prev = 0 { no base constraint check } else { base constraint check }
+				// 		(diff - diff * add) * add_prev = 0
+				//
+				s_exp * ((diff_exp.clone() - diff_exp * add_exp) * add_prev_exp),
+			]
+		});
+
+		selector
+	}
+
+	/// Synthesize the circuit.
+	fn synthesize(
+		self, common: &CommonConfig, selector: &Selector, mut layouter: impl Layouter<F>,
+	) -> Result<Self::Output, Error> {
+		layouter.assign_region(
+			|| "set_membership",
+			|region: Region<'_, F>| {
+				let mut ctx = RegionCtx::new(region, 0);
+
+				let mut add_prev_cell = ctx.assign_from_constant(common.advice[3], F::ONE)?;
+				ctx.next();
+
+				let mut assigned_idx = ctx.assign_from_constant(common.advice[4], F::ZERO)?;
+				let mut assigned_target = ctx.copy_assign(common.advice[0], self.target.clone())?;
+				for i in 0..self.items.len() {
+					ctx.enable(*selector)?;
+
+					let item_cell = ctx.copy_assign(common.advice[1], self.items[i].clone())?;
+
+					// Calculating difference between given target and item from the set.
+					let diff = self.target.value().cloned() - item_cell.value().cloned();
+					let diff_cell = ctx.assign_advice(common.advice[2], diff)?;
+
+					// Calculating the "add" value
+					let add_value = {
+						diff_cell.value().cloned()
+							* diff_cell.value().map(|x| x.invert().unwrap_or(F::ZERO))
+							* add_prev_cell.value().cloned()
+					};
+					add_prev_cell = ctx.assign_advice(common.advice[3], add_value)?;
+					let next_idx = assigned_idx.value().cloned() + add_value;
+
+					ctx.next();
+					assigned_idx = ctx.assign_advice(common.advice[3], next_idx)?;
+					assigned_target = ctx.copy_assign(common.advice[0], assigned_target)?;
+				}
+
+				Ok(assigned_idx)
+			},
+		)
 	}
 }
 
