@@ -47,7 +47,10 @@ async fn main() {
 		},
 		Mode::Compile => {
 			println!("Compiling contracts...");
-			compile_att_station();
+			match compile_att_station() {
+				Ok(_) => println!("AttestationStation Compilation successful"),
+				Err(e) => println!("Error during AttestationStation compilation: {}", e),
+			}
 			compile_yul_contracts();
 			println!("Done!");
 		},
