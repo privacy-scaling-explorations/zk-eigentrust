@@ -672,12 +672,14 @@ where
 						[(); NUM_LIMBS].map(|_| None);
 					let mut y_limbs: [Option<AssignedCell<C::Scalar, C::Scalar>>; NUM_LIMBS] =
 						[(); NUM_LIMBS].map(|_| None);
-					for (i, limb) in x.limbs.iter().enumerate().take(NUM_LIMBS) {
-						x_limbs[i] = Some(ctx.assign_fixed(self.common.fixed[i], *limb).unwrap());
+					for i in 0..NUM_LIMBS {
+						x_limbs[i] =
+							Some(ctx.assign_fixed(self.common.fixed[i], x.limbs[i]).unwrap());
 					}
 					ctx.next();
-					for (i, limb) in y.limbs.iter().enumerate().take(NUM_LIMBS) {
-						y_limbs[i] = Some(ctx.assign_fixed(self.common.fixed[i], *limb).unwrap());
+					for i in 0..NUM_LIMBS {
+						y_limbs[i] =
+							Some(ctx.assign_fixed(self.common.fixed[i], y.limbs[i]).unwrap());
 					}
 					Ok((x_limbs.map(|x| x.unwrap()), y_limbs.map(|x| x.unwrap())))
 				},

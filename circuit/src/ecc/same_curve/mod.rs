@@ -1037,6 +1037,19 @@ where
 	_p: PhantomData<(C, P, EC)>,
 }
 
+impl<C: CurveAffine, const NUM_LIMBS: usize, const NUM_BITS: usize, P, EC> Default
+	for AuxAssigner<C, NUM_LIMBS, NUM_BITS, P, EC>
+where
+	P: RnsParams<C::Base, C::ScalarExt, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
+	C::Base: FieldExt,
+	C::ScalarExt: FieldExt,
+{
+	fn default() -> Self {
+		Self::new()
+	}
+}
+
 impl<C: CurveAffine, const NUM_LIMBS: usize, const NUM_BITS: usize, P, EC>
 	AuxAssigner<C, NUM_LIMBS, NUM_BITS, P, EC>
 where
@@ -1082,11 +1095,11 @@ where
 		let to_sub_x = to_sub_x_coord.x();
 		let to_sub_y = to_sub_x_coord.y();
 
-		let to_add_x_int = Integer::from_w(to_add_x.clone());
-		let to_add_y_int = Integer::from_w(to_add_y.clone());
+		let to_add_x_int = Integer::from_w(*to_add_x);
+		let to_add_y_int = Integer::from_w(*to_add_y);
 
-		let to_sub_x_int = Integer::from_w(to_sub_x.clone());
-		let to_sub_y_int = Integer::from_w(to_sub_y.clone());
+		let to_sub_x_int = Integer::from_w(*to_sub_x);
+		let to_sub_y_int = Integer::from_w(*to_sub_y);
 
 		let to_add_point =
 			EcPoint::<_, NUM_LIMBS, NUM_BITS, _, EC>::new(to_add_x_int, to_add_y_int);
@@ -1100,7 +1113,7 @@ where
 		let to_sub =
 			to_sub_assigner.synthesize(common, &(), layouter.namespace(|| "to_sub assigner"))?;
 
-		let mut aux_init = to_add.clone();
+		let mut aux_init = to_add;
 		let mut aux_inits: Vec<AssignedPoint<C, NUM_LIMBS, NUM_BITS, P>> = vec![aux_init.clone()];
 		for _ in 1..self.batch_length {
 			let double_chip = EccDoubleChipset::new(aux_init);
@@ -1112,7 +1125,7 @@ where
 			aux_inits.push(aux_init.clone());
 		}
 
-		let mut aux_fin = to_sub.clone();
+		let mut aux_fin = to_sub;
 		let mut aux_fins: Vec<AssignedPoint<C, NUM_LIMBS, NUM_BITS, P>> = vec![aux_fin.clone()];
 		for _ in 1..self.batch_length {
 			let double_chip = EccDoubleChipset::new(aux_fin);

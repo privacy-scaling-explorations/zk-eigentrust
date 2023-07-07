@@ -219,11 +219,11 @@ where
 
 				let mut x_limbs: [Value<C::Scalar>; NUM_LIMBS] = [Value::unknown(); NUM_LIMBS];
 				let mut y_limbs: [Value<C::Scalar>; NUM_LIMBS] = [Value::unknown(); NUM_LIMBS];
-				for (i, limb) in x.limbs.iter().enumerate().take(NUM_LIMBS) {
-					x_limbs[i] = Value::known(*limb);
+				for i in 0..NUM_LIMBS {
+					x_limbs[i] = Value::known(x.limbs[i]);
 				}
-				for (i, limb) in y.limbs.iter().enumerate().take(NUM_LIMBS) {
-					y_limbs[i] = Value::known(*limb);
+				for i in 0..NUM_LIMBS {
+					y_limbs[i] = Value::known(y.limbs[i]);
 				}
 
 				Ok((x, y, x_limbs, y_limbs))
@@ -240,17 +240,19 @@ where
 						let mut ctx = RegionCtx::new(region, 0);
 						let mut assigned_x_limbs = Vec::new();
 						let mut assigned_y_limbs = Vec::new();
-						for (i, limb) in x_limbs.iter().enumerate().take(NUM_LIMBS) {
-							let assigned_x_limb =
-								ctx.assign_advice(self.loader.common.advice[i], *limb).unwrap();
+						for i in 0..NUM_LIMBS {
+							let assigned_x_limb = ctx
+								.assign_advice(self.loader.common.advice[i], x_limbs[i])
+								.unwrap();
 							assigned_x_limbs.push(assigned_x_limb);
 						}
 
 						ctx.next();
 
-						for (i, limb) in y_limbs.iter().enumerate().take(NUM_LIMBS) {
-							let assigned_y_limb =
-								ctx.assign_advice(self.loader.common.advice[i], *limb).unwrap();
+						for i in 0..NUM_LIMBS {
+							let assigned_y_limb = ctx
+								.assign_advice(self.loader.common.advice[i], y_limbs[i])
+								.unwrap();
 							assigned_y_limbs.push(assigned_y_limb);
 						}
 						Ok((assigned_x_limbs, assigned_y_limbs))

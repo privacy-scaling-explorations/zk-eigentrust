@@ -106,8 +106,8 @@ where
 	// Assign result
 	let mut assigned_result: [Option<AssignedCell<N, N>>; NUM_LIMBS] =
 		[(); NUM_LIMBS].map(|_| None);
-	for (i, limb) in assigned_result.iter_mut().enumerate().take(NUM_LIMBS) {
-		*limb = Some(ctx.assign_advice(
+	for i in 0..NUM_LIMBS {
+		assigned_result[i] = Some(ctx.assign_advice(
 			common.advice[i + 3 * NUM_LIMBS],
 			Value::known(reduction_witness.result.limbs[i]),
 		)?);
