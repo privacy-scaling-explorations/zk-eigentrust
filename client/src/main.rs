@@ -5,8 +5,7 @@ use clap::Parser;
 use cli::*;
 use eigen_trust_client::{
 	eth::{compile_att_station, compile_yul_contracts, deploy_as, deploy_verifier},
-	fs::{get_file_path, read_binary, read_json, FileType},
-	storage::{CSVFileStorage, ScoreRecord, Storage},
+	fs::{read_binary, read_json},
 	Client, ClientConfig,
 };
 
