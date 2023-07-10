@@ -4,7 +4,7 @@
 //! data types and functionalities.
 
 use crate::{
-	att_station::AttestationData as ContractAttestationData,
+	att_station::{AttestationCreatedFilter, AttestationData as ContractAttestationData},
 	eth::{address_from_public_key, scalar_from_address},
 };
 use eigen_trust_circuit::{
@@ -36,6 +36,18 @@ impl Attestation {
 	/// Constructs a new attestation struct.
 	pub fn new(about: Address, key: H256, value: u8, message: Option<H256>) -> Self {
 		Self { about, key, value, message: message.unwrap_or(H256::from([0u8; 32])) }
+	}
+
+	/// Constructs a new attestation struct from an attestation log.
+	pub fn from_log(log: &AttestationCreatedFilter) -> Result<Self, &'static str> {
+		let payload = AttestationPayload::from_log(log)?;
+
+		Ok(Self {
+			about: log.about,
+			key: H256::from(log.key),
+			value: payload.value,
+			message: H256::from(payload.message),
+		})
 	}
 
 	/// Converts the attestation to the scalar representation.
@@ -74,14 +86,24 @@ impl Attestation {
 /// Attestation raw data payload.
 #[derive(Clone, Debug, PartialEq)]
 pub struct AttestationPayload {
+	/// The 'r' value of the ECDSA signature.
 	sig_r: [u8; 32],
+	/// The 's' value of the ECDSA signature.
 	sig_s: [u8; 32],
+	/// Recovery id of the ECDSA signature.
 	rec_id: u8,
+	/// Given rating for the action.
 	value: u8,
+	/// Optional field for attaching additional information to the attestation.
 	message: [u8; 32],
 }
 
 impl AttestationPayload {
+	/// Creates a new AttestationPayload.
+	pub fn new(sig_r: [u8; 32], sig_s: [u8; 32], rec_id: u8, value: u8, message: [u8; 32]) -> Self {
+		Self { sig_r, sig_s, rec_id, value, message }
+	}
+
 	/// Converts a vector of bytes into the struct.
 	pub fn from_bytes(bytes: Vec<u8>) -> Result<Self, &'static str> {
 		if bytes.len() != 98 {
@@ -99,6 +121,11 @@ impl AttestationPayload {
 		message.copy_from_slice(&bytes[66..98]);
 
 		Ok(Self { sig_r, sig_s, rec_id, value, message })
+	}
+
+	/// Creates a new AttestationPayload from an Attestation log
+	pub fn from_log(log: &AttestationCreatedFilter) -> Result<Self, &'static str> {
+		Self::from_bytes(log.val.to_vec())
 	}
 
 	/// Creates an AttestationPayload from a SignedAttestation.
@@ -142,6 +169,12 @@ impl AttestationPayload {
 		let recovery_id = RecoveryId::from_i32(i32::from(self.rec_id)).unwrap();
 
 		RecoverableSignature::from_compact(concat_sig.as_slice(), recovery_id).unwrap()
+	}
+
+	/// Gets the raw signature.
+	/// Returns (sig_r, sig_s, rec_id).
+	pub fn get_raw_signature(&self) -> ([u8; 32], [u8; 32], u8) {
+		(self.sig_r, self.sig_s, self.rec_id)
 	}
 
 	/// Gets the attestation value.
@@ -190,6 +223,16 @@ pub fn att_data_from_signed_att(
 		key,
 		payload.to_bytes().into(),
 	))
+}
+
+/// Constructs a SignedAttestation from an attestation log.
+pub fn signed_att_from_log(
+	log: &AttestationCreatedFilter,
+) -> Result<SignedAttestation, &'static str> {
+	let payload = AttestationPayload::from_log(log)?;
+	let att_fr = Attestation::from_log(log)?.to_attestation_fr()?;
+
+	Ok(SignedAttestation::new(att_fr, payload.get_signature()))
 }
 
 #[cfg(test)]
