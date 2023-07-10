@@ -1,6 +1,6 @@
 use crate::{gadgets::main::IsZeroChipset, Chip, Chipset, CommonConfig, FieldExt, RegionCtx};
 use halo2::{
-	circuit::{AssignedCell, Layouter, Region},
+	circuit::{AssignedCell, Layouter, Region, Value},
 	plonk::{ConstraintSystem, Error, Expression, Selector},
 	poly::Rotation,
 };
@@ -274,6 +274,141 @@ impl<F: FieldExt> Chip<F> for SetPositionChip<F> {
 				}
 
 				Ok(assigned_idx)
+			},
+		)
+	}
+}
+
+/// A chip for selecting item with index in a set of field values
+pub struct SelectItemChip<F: FieldExt> {
+	/// Constructs items variable for the circuit.
+	items: Vec<AssignedCell<F, F>>,
+	/// Assigns a cell for the index.
+	idx: AssignedCell<F, F>,
+}
+
+impl<F: FieldExt> SelectItemChip<F> {
+	/// Construct a new chip
+	pub fn new(items: Vec<AssignedCell<F, F>>, idx: AssignedCell<F, F>) -> Self {
+		SelectItemChip { items, idx }
+	}
+}
+
+impl<F: FieldExt> Chip<F> for SelectItemChip<F> {
+	type Output = AssignedCell<F, F>;
+
+	/// Make the circuit config.
+	fn configure(common: &CommonConfig, meta: &mut ConstraintSystem<F>) -> Selector {
+		let selector = meta.selector();
+
+		meta.create_gate("select_item_with_idx", |v_cells| {
+			//
+			// Gate config
+			//
+			//  |  selector  |    0    |    1     |   2     |     3     |   4    |   5   |   6   |  7   |
+			//  |------------|---------|----------|---------|-----------|--------|-------|-------|------|
+			//  |     *      |   idx   |    id    |  diff   |  diff_inv | select |  elem |  add  | item |
+
+			//
+			// Example: set = [1, 2, 3, 4, 5], idx = 2
+			//
+			//  |  selector  |    idx     |     id     |   diff    | diff_inv | select |  elem |  add  | item  |
+			//  |------------|------------|------------|-----------|----------|--------|-------|-------|-------|
+			//  |     *      |     2      |     0	   |     2     |  2^(-1)  |   0    |   1   |   0   |   0   |
+			//  |     *      |     2      |     1      |     1     |  1^(-1)  |   0    |   2   |   0   |   0   |
+			//  |     *      |     2      |     2      |     0     |    1     |   1    |   3   |   3   |   3   |
+			//  |     *      |     2      |     3      |    -1     | (-1)^(-1)|   0    |   4   |   0   |   3   |
+			//  |     *      |     2      |     4      |    -2     | (-2)^(-1)|   0    |   5   |   0   |   3   |
+			//
+
+			let idx_exp = v_cells.query_advice(common.advice[0], Rotation::cur());
+			let id_exp = v_cells.query_advice(common.advice[1], Rotation::cur());
+			let diff_exp = v_cells.query_advice(common.advice[2], Rotation::cur());
+			let diff_inv_exp = v_cells.query_advice(common.advice[3], Rotation::cur());
+			let select_exp = v_cells.query_advice(common.advice[4], Rotation::cur());
+			let elem_exp = v_cells.query_advice(common.advice[5], Rotation::cur());
+			let add_exp = v_cells.query_advice(common.advice[6], Rotation::cur());
+
+			let item_prev_exp = v_cells.query_advice(common.advice[7], Rotation::prev());
+			let item_exp = v_cells.query_advice(common.advice[7], Rotation::cur());
+
+			let s_exp = v_cells.query_selector(selector);
+
+			vec![
+				// If the difference is equal to 0, that will make the `select` equal to 1.
+
+				// diff = idx(target) - id(elem)
+				s_exp.clone() * (idx_exp - (diff_exp.clone() + id_exp)),
+				// select * (1 - select) = 0
+				s_exp.clone()
+					* (select_exp.clone() * (Expression::Constant(F::ONE) - select_exp.clone())),
+				//
+				// if diff = 0 { select = 1 } else { select = 0 }
+				// 		diff * (1 / diff) = 1 - select
+				//      1 - select - diff * diff_inv = 0
+				//
+				s_exp.clone()
+					* (Expression::Constant(F::ONE) - select_exp.clone() - diff_exp * diff_inv_exp),
+				// add = select * elem
+				s_exp.clone() * (add_exp.clone() - (select_exp.clone() * elem_exp)),
+				// item = add + item_prev
+				s_exp * (item_exp - (item_prev_exp + add_exp.clone())),
+			]
+		});
+
+		selector
+	}
+
+	/// Synthesize the circuit.
+	fn synthesize(
+		self, common: &CommonConfig, selector: &Selector, mut layouter: impl Layouter<F>,
+	) -> Result<Self::Output, Error> {
+		layouter.assign_region(
+			|| "select_item_with_idx",
+			|region: Region<'_, F>| {
+				let mut ctx = RegionCtx::new(region, 0);
+
+				let mut item_prev_cell = ctx.assign_from_constant(common.advice[7], F::ZERO)?;
+				ctx.next();
+
+				let mut assigned_item = ctx.assign_from_constant(common.advice[7], F::ZERO)?;
+				let mut assigned_target_idx =
+					ctx.copy_assign(common.advice[0], self.idx.clone())?;
+				for i in 0..self.items.len() {
+					ctx.enable(*selector)?;
+
+					let id_cell = ctx.assign_from_constant(common.advice[1], F::from(i as u64))?;
+
+					// Calculating difference between given target idx and id of element from the set.
+					let diff = self.idx.value().cloned() - id_cell.value().cloned();
+					let diff_cell = ctx.assign_advice(common.advice[2], diff)?;
+
+					// Calculating the inverse of difference
+					let diff_inverse = diff.map(|x| x.invert().unwrap_or(F::ONE));
+					let diff_inverse_cell = ctx.assign_advice(common.advice[3], diff_inverse)?;
+
+					// Calculating the "select" value
+					let select_value = Value::known(F::ONE)
+						- diff_cell.value().cloned() * diff_inverse_cell.value().cloned();
+					let select_cell = ctx.assign_advice(common.advice[4], select_value)?;
+
+					// Assign set element
+					let elem_cell = ctx.copy_assign(common.advice[5], self.items[i].clone())?;
+
+					// Calculating the "add" value
+					let add_value = select_cell.value().cloned() * elem_cell.value().cloned();
+					let add_cell = ctx.assign_advice(common.advice[6], add_value)?;
+
+					// Calculating the "item"
+					let item_value = item_prev_cell.value().cloned() + add_cell.value().cloned();
+					assigned_item = ctx.assign_advice(common.advice[7], item_value)?;
+
+					ctx.next();
+					assigned_target_idx = ctx.copy_assign(common.advice[0], assigned_target_idx)?;
+					item_prev_cell = assigned_item.clone();
+				}
+
+				Ok(assigned_item)
 			},
 		)
 	}
