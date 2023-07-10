@@ -9,7 +9,7 @@ use halo2::{
 	arithmetic::Field,
 	halo2curves::{
 		group::Curve,
-		secp256k1::{Fq, Secp256k1, Secp256k1Affine},
+		secp256k1::{Fp, Fq, Secp256k1, Secp256k1Affine},
 		CurveAffine,
 	},
 };
@@ -25,6 +25,90 @@ where
 	big_to_fe(x_big)
 }
 
+/// Ecdsa public key
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct PublicKey<N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P, EC>(
+	EcPoint<Secp256k1Affine, N, NUM_LIMBS, NUM_BITS, P, EC>,
+)
+where
+	P: RnsParams<<Secp256k1Affine as CurveAffine>::Base, N, NUM_LIMBS, NUM_BITS>
+		+ RnsParams<<Secp256k1Affine as CurveAffine>::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<Secp256k1Affine>;
+
+impl<N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P, EC>
+	PublicKey<N, NUM_LIMBS, NUM_BITS, P, EC>
+where
+	P: RnsParams<<Secp256k1Affine as CurveAffine>::Base, N, NUM_LIMBS, NUM_BITS>
+		+ RnsParams<<Secp256k1Affine as CurveAffine>::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<Secp256k1Affine>,
+{
+	/// Construct new PublicKey
+	fn new(p: EcPoint<Secp256k1Affine, N, NUM_LIMBS, NUM_BITS, P, EC>) -> Self {
+		Self(p)
+	}
+}
+
+impl<N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P, EC> From<([u8; 32], [u8; 32])>
+	for PublicKey<N, NUM_LIMBS, NUM_BITS, P, EC>
+where
+	P: RnsParams<<Secp256k1Affine as CurveAffine>::Base, N, NUM_LIMBS, NUM_BITS>
+		+ RnsParams<<Secp256k1Affine as CurveAffine>::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<Secp256k1Affine>,
+{
+	fn from(xy: ([u8; 32], [u8; 32])) -> Self {
+		let (x_bytes, y_bytes) = xy;
+		let x = Fp::from_bytes(&x_bytes).unwrap();
+		let y = Fp::from_bytes(&y_bytes).unwrap();
+		let p = EcPoint::new(Integer::from_w(x), Integer::from_w(y));
+		Self::new(p)
+	}
+}
+
+/// Ecdsa signature
+pub struct Signature<N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
+where
+	P: RnsParams<<Secp256k1Affine as CurveAffine>::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+{
+	r: Integer<Fq, N, NUM_LIMBS, NUM_BITS, P>,
+	s: Integer<Fq, N, NUM_LIMBS, NUM_BITS, P>,
+}
+
+impl<N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
+	Signature<N, NUM_LIMBS, NUM_BITS, P>
+where
+	P: RnsParams<<Secp256k1Affine as CurveAffine>::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+{
+	fn new(
+		r: Integer<Fq, N, NUM_LIMBS, NUM_BITS, P>, s: Integer<Fq, N, NUM_LIMBS, NUM_BITS, P>,
+	) -> Self {
+		Self { r, s }
+	}
+}
+
+impl<N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P> From<(Fq, Fq)>
+	for Signature<N, NUM_LIMBS, NUM_BITS, P>
+where
+	P: RnsParams<<Secp256k1Affine as CurveAffine>::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+{
+	fn from(rs: (Fq, Fq)) -> Self {
+		let (r, s) = rs;
+		Self::new(Integer::from_w(r), Integer::from_w(s))
+	}
+}
+
+impl<N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P> From<([u8; 32], [u8; 32])>
+	for Signature<N, NUM_LIMBS, NUM_BITS, P>
+where
+	P: RnsParams<<Secp256k1Affine as CurveAffine>::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+{
+	fn from(rs: ([u8; 32], [u8; 32])) -> Self {
+		let (r_bytes, s_bytes) = rs;
+		let r = Fq::from_bytes(&r_bytes).unwrap();
+		let s = Fq::from_bytes(&s_bytes).unwrap();
+		Self::new(Integer::from_w(r), Integer::from_w(s))
+	}
+}
+
 /// Keypair struct for ECDSA signature
 #[derive(Clone, Default, Debug, PartialEq)]
 pub struct EcdsaKeypair<N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P, EC>
@@ -36,7 +120,7 @@ where
 	/// Private key is a random integer in the range from Fq
 	pub private_key: Integer<Fq, N, NUM_LIMBS, NUM_BITS, P>,
 	/// Public key is a point on the Secp256k1 curve
-	pub public_key: EcPoint<Secp256k1Affine, N, NUM_LIMBS, NUM_BITS, P, EC>,
+	pub public_key: PublicKey<N, NUM_LIMBS, NUM_BITS, P, EC>,
 }
 
 impl<N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P, EC>
@@ -58,7 +142,8 @@ where
 		let public_key_affine = (Secp256k1::generator() * &private_key_fq).to_affine();
 		let public_key_x = Integer::from_w(public_key_affine.x.clone());
 		let public_key_y = Integer::from_w(public_key_affine.y.clone());
-		let public_key = EcPoint::new(public_key_x, public_key_y);
+		let public_key_point = EcPoint::new(public_key_x, public_key_y);
+		let public_key = PublicKey(public_key_point);
 		Self { private_key, public_key }
 	}
 
@@ -66,12 +151,7 @@ where
 	/// Note: it does not make sense to do this in wrong field arithmetic
 	/// because the signature requires fresh randomness (k) for security reasons so it cannot be
 	/// done in a ZK circuit.
-	pub fn sign<R: Rng>(
-		&self, msg_hash: Fq, rng: &mut R,
-	) -> (
-		Integer<Fq, N, NUM_LIMBS, NUM_BITS, P>,
-		Integer<Fq, N, NUM_LIMBS, NUM_BITS, P>,
-	) {
+	pub fn sign<R: Rng>(&self, msg_hash: Fq, rng: &mut R) -> Signature<N, NUM_LIMBS, NUM_BITS, P> {
 		// Draw randomness
 		let k = Fq::random(rng);
 		let k_inv = k.invert().unwrap();
@@ -84,7 +164,7 @@ where
 		// Calculate `s`
 		let s = k_inv * (msg_hash + (r * private_key_fq));
 
-		(Integer::from_w(r), Integer::from_w(s))
+		Signature::from((r, s))
 	}
 }
 
@@ -95,12 +175,9 @@ where
 		+ RnsParams<<Secp256k1Affine as CurveAffine>::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
 	EC: EccParams<Secp256k1Affine>,
 {
-	signature: (
-		Integer<Fq, N, NUM_LIMBS, NUM_BITS, P>,
-		Integer<Fq, N, NUM_LIMBS, NUM_BITS, P>,
-	),
+	signature: Signature<N, NUM_LIMBS, NUM_BITS, P>,
 	msg_hash: Integer<Fq, N, NUM_LIMBS, NUM_BITS, P>,
-	public_key: EcPoint<Secp256k1Affine, N, NUM_LIMBS, NUM_BITS, P, EC>,
+	public_key: PublicKey<N, NUM_LIMBS, NUM_BITS, P, EC>,
 	s_inv: Integer<Fq, N, NUM_LIMBS, NUM_BITS, P>,
 	g_as_ecpoint: EcPoint<Secp256k1Affine, N, NUM_LIMBS, NUM_BITS, P, EC>,
 }
@@ -114,14 +191,11 @@ where
 {
 	/// Construct the verifier given the signature, message hash and a public key
 	pub fn new(
-		signature: (
-			Integer<Fq, N, NUM_LIMBS, NUM_BITS, P>,
-			Integer<Fq, N, NUM_LIMBS, NUM_BITS, P>,
-		),
+		signature: Signature<N, NUM_LIMBS, NUM_BITS, P>,
 		msg_hash: Integer<Fq, N, NUM_LIMBS, NUM_BITS, P>,
-		public_key: EcPoint<Secp256k1Affine, N, NUM_LIMBS, NUM_BITS, P, EC>,
+		public_key: PublicKey<N, NUM_LIMBS, NUM_BITS, P, EC>,
 	) -> Self {
-		let s_inv_fq = big_to_fe::<Fq>(signature.1.value()).invert().unwrap();
+		let s_inv_fq = big_to_fe::<Fq>(signature.s.value()).invert().unwrap();
 		let s_inv = Integer::from_w(s_inv_fq);
 
 		let g = Secp256k1::generator().to_affine();
@@ -135,12 +209,12 @@ where
 	/// Verify a signature for a given message hash and public key using wrong field arithmetic
 	/// Similar to the ZK circuit setting instead of computing s_inverse we take it in as an advice value
 	pub fn verify(&self) -> bool {
-		let (r, _) = &self.signature;
+		let Signature { r, .. } = &self.signature;
 
 		let u_1 = self.msg_hash.mul(&self.s_inv).result;
 		let u_2 = r.mul(&self.s_inv).result;
 		let v_1 = self.g_as_ecpoint.mul_scalar(u_1);
-		let v_2 = self.public_key.mul_scalar(u_2);
+		let v_2 = self.public_key.0.mul_scalar(u_2);
 		let r_point = v_1.add(&v_2);
 
 		let x_candidate = r_point.x;
@@ -156,7 +230,7 @@ where
 #[cfg(test)]
 mod test {
 	use crate::{
-		ecdsa::native::{EcdsaKeypair, EcdsaVerifier},
+		ecdsa::native::{EcdsaKeypair, EcdsaVerifier, PublicKey},
 		integer::native::Integer,
 		params::ecc::secp256k1::Secp256k1Params,
 		params::rns::secp256k1::Secp256k1_4_68,
@@ -187,10 +261,13 @@ mod test {
 		let msg_hash = Fq::from_u128(123456789);
 		let signature = keypair.sign(msg_hash.clone(), rng);
 		let public_key = keypair.public_key.clone();
+
+		let wrong_pk_point = public_key.0.mul_scalar(Integer::from_w(Fq::from(2u64)));
+		let wrong_pk = PublicKey::new(wrong_pk_point);
 		let result = EcdsaVerifier::<Fr, 4, 68, Secp256k1_4_68, Secp256k1Params>::new(
 			signature,
 			Integer::from_w(msg_hash),
-			public_key.mul_scalar(Integer::from_w(Fq::from(2u64))),
+			wrong_pk,
 		);
 		assert!(!result.verify());
 	}
