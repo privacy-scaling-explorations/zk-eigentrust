@@ -161,9 +161,9 @@ where
 
 					// 4. step for the TRF
 					// Apply S-box inverse
-					for (i, next_state_i) in next_state.iter_mut().enumerate().take(WIDTH) {
-						*next_state_i = next_state_i.map(|s| P::sbox_inv_f(s));
-						ctx.assign_advice(common.advice[i + WIDTH], *next_state_i)?;
+					for i in 0..WIDTH {
+						next_state[i] = next_state[i].map(|s| P::sbox_inv_f(s));
+						ctx.assign_advice(common.advice[i + WIDTH], next_state[i])?;
 					}
 
 					// 5. step for the TRF

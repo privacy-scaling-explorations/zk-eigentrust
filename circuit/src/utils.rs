@@ -312,10 +312,10 @@ pub fn be_bits_to_usize(bits: &[bool]) -> usize {
 
 /// Convert big endian bits to usize
 pub fn be_assigned_bits_to_usize<F: FieldExt>(bits: &[AssignedCell<F, F>]) -> usize {
-	let mut bool_bits = Vec::new();
-	for i in 0..bits.len() {
-		let _ = bits[i].value().and_then(|a| {
-			bool_bits.push(if a.clone().is_zero().into() { false } else { true });
+	let mut bool_bits: Vec<bool> = Vec::new();
+	for bit in bits {
+		let _ = bit.value().and_then(|a| {
+			bool_bits.push(!bool::from(a.clone().is_zero()));
 			Value::known(a)
 		});
 	}
