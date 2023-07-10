@@ -696,4 +696,134 @@ mod test {
 		let res = prove_and_verify::<Bn256, _, _>(params, test_chip, &[&pub_ins], rng).unwrap();
 		assert!(res);
 	}
+
+	#[derive(Clone)]
+	struct TestSelectItemConfig {
+		common: CommonConfig,
+		select_item_selector: Selector,
+	}
+
+	#[derive(Clone)]
+	struct TestSelectItemCircuit<F: FieldExt> {
+		items: Vec<Value<F>>,
+		idx: Value<F>,
+	}
+
+	impl<F: FieldExt> TestSelectItemCircuit<F> {
+		fn new(items: Vec<F>, idx: F) -> Self {
+			Self {
+				items: items.into_iter().map(|x| Value::known(x)).collect(),
+				idx: Value::known(idx),
+			}
+		}
+	}
+
+	impl<F: FieldExt> Circuit<F> for TestSelectItemCircuit<F> {
+		type Config = TestSelectItemConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			Self {
+				items: self.items.clone().into_iter().map(|_| Value::unknown()).collect(),
+				idx: Value::unknown(),
+			}
+		}
+
+		fn configure(meta: &mut ConstraintSystem<F>) -> TestSelectItemConfig {
+			let common = CommonConfig::new(meta);
+			let select_item_selector = SelectItemChip::configure(&common, meta);
+
+			TestSelectItemConfig { common, select_item_selector }
+		}
+
+		fn synthesize(
+			&self, config: TestSelectItemConfig, mut layouter: impl Layouter<F>,
+		) -> Result<(), Error> {
+			let (idx, items) = layouter.assign_region(
+				|| "temp",
+				|region: Region<'_, F>| {
+					let mut ctx = RegionCtx::new(region, 0);
+					let idx = ctx.assign_advice(config.common.advice[0], self.idx.clone())?;
+
+					ctx.next();
+					let mut items = Vec::new();
+					for i in 0..self.items.len() {
+						let item = self.items[i].clone();
+						let assigned_item = ctx.assign_advice(config.common.advice[0], item)?;
+						items.push(assigned_item);
+						ctx.next();
+					}
+
+					Ok((idx, items))
+				},
+			)?;
+			let select_item_chip = SelectItemChip::new(items, idx);
+			let idx = select_item_chip.synthesize(
+				&config.common,
+				&config.select_item_selector,
+				layouter.namespace(|| "select_item"),
+			)?;
+			layouter.constrain_instance(idx.cell(), config.common.instance, 0)?;
+
+			Ok(())
+		}
+	}
+
+	#[test]
+	fn test_select_item() {
+		// Testing a normal index.
+		let set = vec![Fr::from(1), Fr::from(2), Fr::from(3)];
+		let target_index = 1;
+		let target_item = set[target_index].clone();
+		let test_chip = TestSelectItemCircuit::new(set, Fr::from(target_index as u64));
+
+		let pub_ins = vec![Fr::from(target_item)];
+		let k = 5;
+		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[test]
+	fn test_no_item_at_index() {
+		// Testing a index that is out of original set length
+		// In this case, the output of circuit is zero. (F::ZERO)
+		let set = vec![Fr::from(1), Fr::from(2), Fr::from(4), Fr::from(15), Fr::from(23)];
+		let idx = set.len() + 1;
+
+		let test_chip = TestSelectItemCircuit::new(set, Fr::from(idx as u64));
+
+		let pub_ins = vec![Fr::zero()];
+		let k = 5;
+		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[test]
+	fn test_big_set_select_item() {
+		// Testing a big set.
+		let set = [(); 1024].map(|_| <Fr as Field>::random(rand::thread_rng())).to_vec();
+		let target_index = 722;
+		let target_item = set[target_index].clone();
+		let test_chip = TestSelectItemCircuit::new(set, Fr::from(target_index as u64));
+
+		let pub_ins = vec![target_item];
+		let k = 12;
+		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[test]
+	fn test_select_item_production() {
+		let set = vec![Fr::from(1), Fr::from(2), Fr::from(3)];
+		let target_index = 1;
+		let target_item = set[target_index].clone();
+		let test_chip = TestSelectItemCircuit::new(set, Fr::from(target_index as u64));
+
+		let k = 5;
+		let pub_ins = vec![target_item];
+		let rng = &mut rand::thread_rng();
+		let params = generate_params(k);
+		let res = prove_and_verify::<Bn256, _, _>(params, test_chip, &[&pub_ins], rng).unwrap();
+		assert!(res);
+	}
 }
