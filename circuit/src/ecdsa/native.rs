@@ -43,8 +43,18 @@ where
 	EC: EccParams<Secp256k1Affine>,
 {
 	/// Construct new PublicKey
-	fn new(p: EcPoint<Secp256k1Affine, N, NUM_LIMBS, NUM_BITS, P, EC>) -> Self {
+	pub fn new(p: EcPoint<Secp256k1Affine, N, NUM_LIMBS, NUM_BITS, P, EC>) -> Self {
 		Self(p)
+	}
+
+	/// Convert pk to raw bytes form
+	pub fn to_bytes(&self) -> [u8; 64] {
+		let x = big_to_fe::<Fp>(self.0.x.value()).to_bytes();
+		let y = big_to_fe::<Fp>(self.0.y.value()).to_bytes();
+		let mut bytes: [u8; 64] = [0; 64];
+		bytes[..32].copy_from_slice(&x);
+		bytes[32..].copy_from_slice(&y);
+		bytes
 	}
 }
 
@@ -65,6 +75,7 @@ where
 }
 
 /// Ecdsa signature
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct Signature<N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
 where
 	P: RnsParams<<Secp256k1Affine as CurveAffine>::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
