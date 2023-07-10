@@ -2,7 +2,9 @@
 pub mod native;
 /// RNS operations for the non-native field arithmetic
 use self::native::Integer;
-use crate::{params::rns::RnsParams, Chip, CommonConfig, FieldExt, RegionCtx, UnassignedValue};
+use crate::{
+	params::rns::RnsParams, Chip, Chipset, CommonConfig, FieldExt, RegionCtx, UnassignedValue,
+};
 use halo2::{
 	circuit::{AssignedCell, Layouter, Region, Value},
 	plonk::{ConstraintSystem, Error, Expression, Selector},
@@ -104,8 +106,8 @@ where
 	// Assign result
 	let mut assigned_result: [Option<AssignedCell<N, N>>; NUM_LIMBS] =
 		[(); NUM_LIMBS].map(|_| None);
-	for (i, limb) in assigned_result.iter_mut().enumerate().take(NUM_LIMBS) {
-		*limb = Some(ctx.assign_advice(
+	for i in 0..NUM_LIMBS {
+		assigned_result[i] = Some(ctx.assign_advice(
 			common.advice[i + 3 * NUM_LIMBS],
 			Value::known(reduction_witness.result.limbs[i]),
 		)?);
@@ -746,6 +748,60 @@ where
 		integer: Integer<W, N, NUM_LIMBS, NUM_BITS, P>, limbs: [AssignedCell<N, N>; NUM_LIMBS],
 	) -> Self {
 		Self { integer, limbs }
+	}
+}
+
+/// Integer assigner chip
+pub struct IntegerAssigner<
+	W: FieldExt,
+	N: FieldExt,
+	const NUM_LIMBS: usize,
+	const NUM_BITS: usize,
+	P,
+> where
+	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
+{
+	x: UnassignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
+}
+
+impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
+	IntegerAssigner<W, N, NUM_LIMBS, NUM_BITS, P>
+where
+	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
+{
+	/// Constructor for Integer assigner
+	pub fn new(x: UnassignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>) -> Self {
+		Self { x }
+	}
+}
+
+impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P> Chipset<N>
+	for IntegerAssigner<W, N, NUM_LIMBS, NUM_BITS, P>
+where
+	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
+{
+	type Config = ();
+	type Output = AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>;
+
+	fn synthesize(
+		self, common: &CommonConfig, _: &Self::Config, mut layouter: impl Layouter<N>,
+	) -> Result<Self::Output, Error> {
+		let assigned_limbs = layouter.assign_region(
+			|| "int_assigner",
+			|region: Region<'_, N>| {
+				let mut ctx = RegionCtx::new(region, 0);
+				let mut limbs = Vec::new();
+				for i in 0..NUM_LIMBS {
+					let assigned_limb = ctx.assign_advice(common.advice[i], self.x.limbs[i])?;
+					limbs.push(assigned_limb);
+				}
+
+				Ok(limbs)
+			},
+		)?;
+
+		let x_assigned = AssignedInteger::new(self.x.integer, assigned_limbs.try_into().unwrap());
+		Ok(x_assigned)
 	}
 }
 
