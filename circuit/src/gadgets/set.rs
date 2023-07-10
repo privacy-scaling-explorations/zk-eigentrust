@@ -1,7 +1,7 @@
 use crate::{gadgets::main::IsZeroChipset, Chip, Chipset, CommonConfig, FieldExt, RegionCtx};
 use halo2::{
 	circuit::{AssignedCell, Layouter, Region},
-	plonk::{ConstraintSystem, Error, Selector},
+	plonk::{ConstraintSystem, Error, Expression, Selector},
 	poly::Rotation,
 };
 
@@ -145,6 +145,137 @@ impl<F: FieldExt> Chipset<F> for SetChipset<F> {
 			is_zero_chip.synthesize(common, &config.main, layouter.namespace(|| "is_member"))?;
 
 		Ok(is_zero)
+	}
+}
+
+/// A chip for checking item membership in a set of field values
+pub struct SetPositionChip<F: FieldExt> {
+	/// Constructs items variable for the circuit.
+	items: Vec<AssignedCell<F, F>>,
+	/// Assigns a cell for the target.
+	target: AssignedCell<F, F>,
+}
+
+impl<F: FieldExt> SetPositionChip<F> {
+	/// Construct a new chip
+	pub fn new(items: Vec<AssignedCell<F, F>>, target: AssignedCell<F, F>) -> Self {
+		SetPositionChip { items, target }
+	}
+}
+
+impl<F: FieldExt> Chip<F> for SetPositionChip<F> {
+	type Output = AssignedCell<F, F>;
+
+	/// Make the circuit config.
+	fn configure(common: &CommonConfig, meta: &mut ConstraintSystem<F>) -> Selector {
+		let selector = meta.selector();
+
+		meta.create_gate("set_position_index", |v_cells| {
+			//
+			// Gate config
+			//
+			//  |  selector  |     0      |     1      |    2     |     3    |   4   |   5   |
+			//  |------------|------------|------------|----------|----------|-------|-------|
+			//  |     *      |   target   |    item    |   diff   | diff_inv |  add  |  idx  |
+
+			//
+			// Example: set = [1, 2, 3, 4, 5], target = 4
+			//
+			//  |  selector  |   target   |    item    |   diff    | diff_inv |  add  |  idx  |
+			//  |------------|------------|------------|-----------|----------|-------|-------|
+			//  |            |            |      	   |           |          |   1   |       |
+			//  |     *      |     4      |     1	   |     3     |   3^(-1) |   1   |   0   |
+			//  |     *      |     4      |     2      |     2     |   2^(-1) |   1   |   1   |
+			//  |     *      |     4      |     3      |     1     |   1^(-1) |   1   |   2   |
+			//  |     *      |     4      |     4      |     0     |   1      |   0   |   3   |
+			//  |     *      |     4      |     5      |    -1     |  -1^(-1) |   0   |   3   |
+
+			let target_exp = v_cells.query_advice(common.advice[0], Rotation::cur());
+
+			let item_exp = v_cells.query_advice(common.advice[1], Rotation::cur());
+			let diff_exp = v_cells.query_advice(common.advice[2], Rotation::cur());
+			let diff_inv_exp = v_cells.query_advice(common.advice[3], Rotation::cur());
+
+			let add_prev_exp = v_cells.query_advice(common.advice[4], Rotation::prev());
+			let add_exp = v_cells.query_advice(common.advice[4], Rotation::cur());
+
+			let idx_exp = v_cells.query_advice(common.advice[5], Rotation::cur());
+			let idx_next_exp = v_cells.query_advice(common.advice[5], Rotation::next());
+
+			let s_exp = v_cells.query_selector(selector);
+
+			let one_exp = Expression::Constant(F::ONE);
+
+			vec![
+				// If the difference is equal to 0, that will make the `add` equal to 0.
+				// The following `add`s all become 0.
+
+				// diff = target - item
+				s_exp.clone() * (target_exp - (diff_exp.clone() + item_exp)),
+				// idx_next = idx + add
+				s_exp.clone() * (idx_next_exp - (idx_exp + add_exp.clone())),
+				// add * (1 - add) = 0
+				s_exp.clone() * (add_exp.clone() * (one_exp.clone() - add_exp.clone())),
+				// add * (1 - add_prev) = 0
+				s_exp.clone() * (add_exp.clone() * (one_exp - add_prev_exp.clone())),
+				//
+				// base constraint  => if diff = 0 { add = 0 } else { add = 1 }
+				//      diff * (1 / diff) = add
+				//      diff * diff_inv - add = 0
+				//
+				// final constraint => if add_prev = 0 { no base constraint check } else { base constraint check }
+				//      (diff * diff_inv - add) * add_prev = 0
+				//
+				s_exp * ((diff_exp * diff_inv_exp - add_exp) * add_prev_exp),
+			]
+		});
+
+		selector
+	}
+
+	/// Synthesize the circuit.
+	fn synthesize(
+		self, common: &CommonConfig, selector: &Selector, mut layouter: impl Layouter<F>,
+	) -> Result<Self::Output, Error> {
+		layouter.assign_region(
+			|| "set_position_index",
+			|region: Region<'_, F>| {
+				let mut ctx = RegionCtx::new(region, 0);
+
+				let mut add_prev_cell = ctx.assign_from_constant(common.advice[4], F::ONE)?;
+				ctx.next();
+
+				let mut assigned_idx = ctx.assign_from_constant(common.advice[5], F::ZERO)?;
+				let mut assigned_target = ctx.copy_assign(common.advice[0], self.target.clone())?;
+				for i in 0..self.items.len() {
+					ctx.enable(*selector)?;
+
+					let item_cell = ctx.copy_assign(common.advice[1], self.items[i].clone())?;
+
+					// Calculating difference between given target and item from the set.
+					let diff = self.target.value().cloned() - item_cell.value().cloned();
+					let diff_cell = ctx.assign_advice(common.advice[2], diff)?;
+
+					let diff_inv = diff.map(|x| x.invert().unwrap_or(F::ONE));
+					let diff_inv_cell = ctx.assign_advice(common.advice[3], diff_inv)?;
+
+					// Calculating the "add" value
+					let add_value = {
+						diff_cell.value().cloned()
+							* diff_inv_cell.value().cloned()
+							* add_prev_cell.value().cloned()
+					};
+					add_prev_cell = ctx.assign_advice(common.advice[4], add_value)?;
+					let next_idx = assigned_idx.value().cloned() + add_value;
+
+					ctx.next();
+					assigned_idx = ctx.assign_advice(common.advice[5], next_idx)?;
+					assigned_target = ctx.copy_assign(common.advice[0], assigned_target)?;
+				}
+
+				Ok(assigned_idx)
+			},
+		)
 	}
 }
 
@@ -300,6 +431,134 @@ mod test {
 		let rng = &mut rand::thread_rng();
 		let params = generate_params(k);
 		let res = prove_and_verify::<Bn256, _, _>(params, test_chip, &[&[Fr::one()]], rng).unwrap();
+		assert!(res);
+	}
+
+	#[derive(Clone)]
+	struct TestSetPositionConfig {
+		common: CommonConfig,
+		set_pos_selector: Selector,
+	}
+
+	#[derive(Clone)]
+	struct TestSetPositionCircuit<F: FieldExt> {
+		items: Vec<Value<F>>,
+		target: Value<F>,
+	}
+
+	impl<F: FieldExt> TestSetPositionCircuit<F> {
+		fn new(items: Vec<F>, target: F) -> Self {
+			Self {
+				items: items.into_iter().map(|x| Value::known(x)).collect(),
+				target: Value::known(target),
+			}
+		}
+	}
+
+	impl<F: FieldExt> Circuit<F> for TestSetPositionCircuit<F> {
+		type Config = TestSetPositionConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			Self {
+				items: self.items.clone().into_iter().map(|_| Value::unknown()).collect(),
+				target: Value::unknown(),
+			}
+		}
+
+		fn configure(meta: &mut ConstraintSystem<F>) -> TestSetPositionConfig {
+			let common = CommonConfig::new(meta);
+			let set_pos_selector = SetPositionChip::configure(&common, meta);
+
+			TestSetPositionConfig { common, set_pos_selector }
+		}
+
+		fn synthesize(
+			&self, config: TestSetPositionConfig, mut layouter: impl Layouter<F>,
+		) -> Result<(), Error> {
+			let (target, items) = layouter.assign_region(
+				|| "temp",
+				|region: Region<'_, F>| {
+					let mut ctx = RegionCtx::new(region, 0);
+					let target = ctx.assign_advice(config.common.advice[0], self.target.clone())?;
+
+					ctx.next();
+					let mut items = Vec::new();
+					for i in 0..self.items.len() {
+						let item = self.items[i].clone();
+						let assigned_item = ctx.assign_advice(config.common.advice[0], item)?;
+						items.push(assigned_item);
+						ctx.next();
+					}
+
+					Ok((target, items))
+				},
+			)?;
+			let set_pos_chip = SetPositionChip::new(items, target);
+			let idx = set_pos_chip.synthesize(
+				&config.common,
+				&config.set_pos_selector,
+				layouter.namespace(|| "set_position"),
+			)?;
+			layouter.constrain_instance(idx.cell(), config.common.instance, 0)?;
+
+			Ok(())
+		}
+	}
+
+	#[test]
+	fn test_position_index() {
+		// Testing a target value from the set.
+		let set = vec![Fr::from(1), Fr::from(2), Fr::from(3)];
+		let target_index = 2;
+		let target = set[target_index].clone();
+		let test_chip = TestSetPositionCircuit::new(set, target);
+
+		let pub_ins = vec![Fr::from(target_index as u64)];
+		let k = 5;
+		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[test]
+	fn test_no_position_index() {
+		// Testing a target value that is not in the set.
+		let set = vec![Fr::from(1), Fr::from(2), Fr::from(4), Fr::from(15), Fr::from(23)];
+		let target = Fr::from(12);
+		let test_chip = TestSetPositionCircuit::new(set, target);
+
+		let pub_ins = vec![Fr::from(5)];
+		let k = 5;
+		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[test]
+	fn test_big_set_position_index() {
+		// Testing a big set.
+		let set = [(); 1024].map(|_| <Fr as Field>::random(rand::thread_rng())).to_vec();
+		let target_index = 722;
+		let target = set[target_index].clone();
+		let test_chip = TestSetPositionCircuit::new(set, target);
+
+		let pub_ins = vec![Fr::from(target_index as u64)];
+		let k = 12;
+		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[test]
+	fn test_position_index_production() {
+		let set = vec![Fr::from(1), Fr::from(2), Fr::from(3)];
+		let target_index = 1;
+		let target = set[target_index].clone();
+		let test_chip = TestSetPositionCircuit::new(set, target);
+
+		let k = 5;
+		let pub_ins = vec![Fr::from(target_index as u64)];
+		let rng = &mut rand::thread_rng();
+		let params = generate_params(k);
+		let res = prove_and_verify::<Bn256, _, _>(params, test_chip, &[&pub_ins], rng).unwrap();
 		assert!(res);
 	}
 }
