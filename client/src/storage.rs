@@ -2,8 +2,13 @@
 //!
 //! This module contains generic storage traits and implementations.
 
+use crate::att_station::AttestationCreatedFilter;
+use crate::attestation::{address_from_signed_att, Attestation, AttestationPayload};
 use crate::Score;
 use csv::{ReaderBuilder, WriterBuilder};
+use eigen_trust_circuit::dynamic_sets::ecdsa_native::SignedAttestation;
+use ethers::types::{Address, Bytes, H256};
+use ethers::utils::hex;
 use serde::Deserialize;
 use serde::{de::DeserializeOwned, Serialize};
 use std::fs::File;
@@ -158,6 +163,94 @@ impl ScoreRecord {
 	/// Returns the score.
 	pub fn score(&self) -> &String {
 		&self.score
+	}
+}
+
+/// Attestation record.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AttestationRecord {
+	/// Ethereum address of the peer being rated.
+	about: String,
+	/// Unique identifier for the action being rated.
+	key: String,
+	/// Given rating for the action.
+	value: String,
+	/// Optional field for attaching additional information to the attestation.
+	message: String,
+	/// The 'r' value of the ECDSA signature.
+	sig_r: String,
+	/// The 's' value of the ECDSA signature.
+	sig_s: String,
+	/// Recovery id of the ECDSA signature.
+	rec_id: String,
+}
+
+impl AttestationRecord {
+	/// Creates a new AttestationRecord from an Attestation log.
+	pub fn from_log(log: &AttestationCreatedFilter) -> Self {
+		let payload = AttestationPayload::from_log(log).unwrap();
+		let attestation = Attestation::from_log(log).unwrap();
+		let (sig_r, sig_s, rec_id) = payload.get_raw_signature();
+
+		Self {
+			about: Self::encode_bytes_to_hex(attestation.about.as_fixed_bytes()),
+			key: Self::encode_bytes_to_hex(attestation.key.as_fixed_bytes()),
+			value: attestation.value.to_string(),
+			message: Self::encode_bytes_to_hex(attestation.message.as_fixed_bytes()),
+			sig_r: Self::encode_bytes_to_hex(&sig_r),
+			sig_s: Self::encode_bytes_to_hex(&sig_s),
+			rec_id: rec_id.to_string(),
+		}
+	}
+
+	/// Returns a log from an AttestationRecord.
+	pub fn to_log(&self) -> Result<AttestationCreatedFilter, &'static str> {
+		// Use helper functions to simplify the conversion process
+		let about = Address::from_slice(&Self::decode_hex_to_bytes(&self.about)?);
+		let key = Self::parse_bytes32(&self.key)?;
+		let sig_r = Self::parse_bytes32(&self.sig_r)?;
+		let sig_s = Self::parse_bytes32(&self.sig_s)?;
+		let rec_id = Self::parse_u8(&self.rec_id)?;
+		let value = Self::parse_u8(&self.value)?;
+		let message = Self::parse_bytes32(&self.message)?;
+
+		// Construct AttestationPayload and serialize it
+		let payload = AttestationPayload::new(sig_r, sig_s, rec_id, value, message);
+		let val = Bytes::from(payload.to_bytes());
+
+		// Recover the signature
+		let attestation =
+			Attestation::new(about, H256::from(key), value, Some(H256::from(message)));
+		let att_fr = attestation.to_attestation_fr().unwrap();
+		let recoverable_sig = payload.get_signature();
+
+		let signed_att = SignedAttestation::new(att_fr, recoverable_sig);
+		let creator = address_from_signed_att(&signed_att).unwrap();
+
+		Ok(AttestationCreatedFilter { about, key, val, creator })
+	}
+
+	// Helper function for decoding hexadecimal string into a byte array
+	fn decode_hex_to_bytes(hex_str: &str) -> Result<Vec<u8>, &'static str> {
+		hex::decode(&hex_str[2..]).map_err(|_| "Failed to decode hexadecimal string")
+	}
+
+	// Helper function for encoding byte array into hexadecimal string
+	fn encode_bytes_to_hex(bytes: &[u8]) -> String {
+		format!("0x{}", hex::encode(bytes))
+	}
+
+	// Helper function for parsing string into a byte array
+	fn parse_bytes32(hex_str: &str) -> Result<[u8; 32], &'static str> {
+		let bytes = Self::decode_hex_to_bytes(hex_str)?;
+		let bytes_array: [u8; 32] =
+			bytes.try_into().map_err(|_| "Failed to convert into byte array")?;
+		Ok(bytes_array)
+	}
+
+	// Helper function for parsing string into u8
+	fn parse_u8(value: &str) -> Result<u8, &'static str> {
+		value.parse::<u8>().map_err(|_| "Failed to parse into u8")
 	}
 }
 
