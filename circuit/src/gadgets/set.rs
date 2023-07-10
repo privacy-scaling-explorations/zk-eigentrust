@@ -174,31 +174,32 @@ impl<F: FieldExt> Chip<F> for SetPositionChip<F> {
 			//
 			// Gate config
 			//
-			//  |  selector  |     0      |     1      |     2     |   3   |   4   |
-			//  |------------|------------|------------|-----------|-------|-------|
-			//  |     *      |   target   |    item    |    diff   |  add  |  idx  |
+			//  |  selector  |     0      |     1      |    2     |     3    |   4   |   5   |
+			//  |------------|------------|------------|----------|----------|-------|-------|
+			//  |     *      |   target   |    item    |   diff   | diff_inv |  add  |  idx  |
 
 			//
 			// Example: set = [1, 2, 3, 4, 5], target = 4
 			//
-			//  |  selector  |   target   |    item    |   diff    |  add  |  idx  |
-			//  |------------|------------|------------|-----------|-------|-------|
-			//  |     *      |     4      |     1	   |     3     |   1   |   0   |
-			//  |     *      |     4      |     2      |     2     |   1   |   1   |
-			//  |     *      |     4      |     3      |     1     |   1   |   2   |
-			//  |     *      |     4      |     4      |     0     |   0   |   3   |
-			//  |     *      |     4      |     5      |    -1     |   0   |   3   |
+			//  |  selector  |   target   |    item    |   diff    | diff_inv |  add  |  idx  |
+			//  |------------|------------|------------|-----------|----------|-------|-------|
+			//  |     *      |     4      |     1	   |     3     |   3^(-1) |   1   |   0   |
+			//  |     *      |     4      |     2      |     2     |   2^(-1) |   1   |   1   |
+			//  |     *      |     4      |     3      |     1     |   1^(-1) |   1   |   2   |
+			//  |     *      |     4      |     4      |     0     |   1      |   0   |   3   |
+			//  |     *      |     4      |     5      |    -1     |   -1^(-1)|   0   |   3   |
 
 			let target_exp = v_cells.query_advice(common.advice[0], Rotation::cur());
 
 			let item_exp = v_cells.query_advice(common.advice[1], Rotation::cur());
 			let diff_exp = v_cells.query_advice(common.advice[2], Rotation::cur());
+			let diff_inv_exp = v_cells.query_advice(common.advice[3], Rotation::cur());
 
-			let add_prev_exp = v_cells.query_advice(common.advice[3], Rotation::prev());
-			let add_exp = v_cells.query_advice(common.advice[3], Rotation::cur());
+			let add_prev_exp = v_cells.query_advice(common.advice[4], Rotation::prev());
+			let add_exp = v_cells.query_advice(common.advice[4], Rotation::cur());
 
-			let idx_exp = v_cells.query_advice(common.advice[4], Rotation::cur());
-			let idx_next_exp = v_cells.query_advice(common.advice[4], Rotation::next());
+			let idx_exp = v_cells.query_advice(common.advice[5], Rotation::cur());
+			let idx_next_exp = v_cells.query_advice(common.advice[5], Rotation::next());
 
 			let s_exp = v_cells.query_selector(selector);
 
@@ -219,12 +220,12 @@ impl<F: FieldExt> Chip<F> for SetPositionChip<F> {
 				//
 				// base constraint  => if diff = 0 { add = 0 } else { add = 1 }
 				// 		diff * (1 / diff) = add
-				// 		diff - diff * add = 0
+				//      diff * diff_inv - add = 0
 				//
 				// final constraint => if add_prev = 0 { no base constraint check } else { base constraint check }
-				// 		(diff - diff * add) * add_prev = 0
+				// 		(diff * diff_inv - add) * add_prev = 0
 				//
-				s_exp * ((diff_exp.clone() - diff_exp * add_exp) * add_prev_exp),
+				s_exp * ((diff_exp * diff_inv_exp - add_exp) * add_prev_exp),
 			]
 		});
 
