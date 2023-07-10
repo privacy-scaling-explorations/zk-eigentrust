@@ -17,6 +17,8 @@ pub type ECDSAPublicKey = secp256k1::PublicKey;
 pub type ECDSASignature = ecdsa::RecoverableSignature;
 /// Rational score
 pub type RationalScore = BigRational;
+/// Minimum peers for scores calculation
+pub const MIN_PEER_COUNT: usize = 2;
 
 /// Construct an Ethereum address for the given ECDSA public key
 pub fn address_from_pub_key(pub_key: &ECDSAPublicKey) -> Result<[u8; 20], &'static str> {
@@ -228,7 +230,10 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITERATIONS: usize, const INITIAL_SCO
 	pub fn converge(&self) -> Vec<Fr> {
 		// There should be at least 2 valid peers(valid opinions) for calculation
 		let valid_peers = self.set.iter().filter(|(pk, _)| *pk != Fr::zero()).count();
-		assert!(valid_peers >= 2, "Insufficient peers for calculation!");
+		assert!(
+			valid_peers >= MIN_PEER_COUNT,
+			"Insufficient peers for calculation!"
+		);
 
 		// Prepare the opinion scores
 		let mut ops = Vec::new();
