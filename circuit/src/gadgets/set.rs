@@ -351,9 +351,9 @@ impl<F: FieldExt> Chip<F> for SelectItemChip<F> {
 				//
 				s_exp.clone() * (one_exp - select_exp.clone() - diff_exp * diff_inv_exp),
 				// add = select * elem
-				s_exp.clone() * (add_exp.clone() - (select_exp.clone() * elem_exp)),
+				s_exp.clone() * (add_exp.clone() - (select_exp * elem_exp)),
 				// item = add + item_prev
-				s_exp * (item_exp - (item_prev_exp + add_exp.clone())),
+				s_exp * (item_exp - (item_prev_exp + add_exp)),
 			]
 		});
 
