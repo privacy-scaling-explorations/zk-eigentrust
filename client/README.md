@@ -5,7 +5,13 @@ This crate is an implementation of the EigenTrust Protocol. It's intended use is
 ## Requirements
 
 - Rust: To install, follow the instructions found [here](https://www.rust-lang.org/tools/install).
-- Solidity Compiler: To install, follow the instructions found [here](https://docs.soliditylang.org/en/v0.8.9/installing-solidity.html).
+- Solidity Compiler: To install, follow the instructions found [here](https://docs.soliditylang.org/en/v0.8.9/installing-solidity.html), or use the [Solidity Compiler Version Manager](https://github.com/alloy-rs/svm-rs):
+
+```bash
+cargo install svm-rs
+svm install 0.8.17
+```
+
 - Anvil: CLI tool for running a local EVM blockchain. Follow these steps to install Anvil from source:
 
 ```bash
