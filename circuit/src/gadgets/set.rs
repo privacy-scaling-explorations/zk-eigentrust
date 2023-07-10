@@ -241,10 +241,10 @@ impl<F: FieldExt> Chip<F> for SetPositionChip<F> {
 			|region: Region<'_, F>| {
 				let mut ctx = RegionCtx::new(region, 0);
 
-				let mut add_prev_cell = ctx.assign_from_constant(common.advice[3], F::ONE)?;
+				let mut add_prev_cell = ctx.assign_from_constant(common.advice[4], F::ONE)?;
 				ctx.next();
 
-				let mut assigned_idx = ctx.assign_from_constant(common.advice[4], F::ZERO)?;
+				let mut assigned_idx = ctx.assign_from_constant(common.advice[5], F::ZERO)?;
 				let mut assigned_target = ctx.copy_assign(common.advice[0], self.target.clone())?;
 				for i in 0..self.items.len() {
 					ctx.enable(*selector)?;
@@ -255,17 +255,20 @@ impl<F: FieldExt> Chip<F> for SetPositionChip<F> {
 					let diff = self.target.value().cloned() - item_cell.value().cloned();
 					let diff_cell = ctx.assign_advice(common.advice[2], diff)?;
 
+					let diff_inv = diff.map(|x| x.invert().unwrap_or(F::ONE));
+					let diff_inv_cell = ctx.assign_advice(common.advice[3], diff_inv)?;
+
 					// Calculating the "add" value
 					let add_value = {
 						diff_cell.value().cloned()
-							* diff_cell.value().map(|x| x.invert().unwrap_or(F::ZERO))
+							* diff_inv_cell.value().cloned()
 							* add_prev_cell.value().cloned()
 					};
-					add_prev_cell = ctx.assign_advice(common.advice[3], add_value)?;
+					add_prev_cell = ctx.assign_advice(common.advice[4], add_value)?;
 					let next_idx = assigned_idx.value().cloned() + add_value;
 
 					ctx.next();
-					assigned_idx = ctx.assign_advice(common.advice[4], next_idx)?;
+					assigned_idx = ctx.assign_advice(common.advice[5], next_idx)?;
 					assigned_target = ctx.copy_assign(common.advice[0], assigned_target)?;
 				}
 
