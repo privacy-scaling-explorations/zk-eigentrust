@@ -312,13 +312,14 @@ impl<F: FieldExt> Chip<F> for SelectItemChip<F> {
 			//
 			// Example: set = [1, 2, 3, 4, 5], idx = 2
 			//
-			//  |  selector  |    idx     |     id     |   diff    | diff_inv | select |  elem |  add  | item  |
-			//  |------------|------------|------------|-----------|----------|--------|-------|-------|-------|
-			//  |     *      |     2      |     0	   |     2     |  2^(-1)  |   0    |   1   |   0   |   0   |
-			//  |     *      |     2      |     1      |     1     |  1^(-1)  |   0    |   2   |   0   |   0   |
-			//  |     *      |     2      |     2      |     0     |    1     |   1    |   3   |   3   |   3   |
-			//  |     *      |     2      |     3      |    -1     | (-1)^(-1)|   0    |   4   |   0   |   3   |
-			//  |     *      |     2      |     4      |    -2     | (-2)^(-1)|   0    |   5   |   0   |   3   |
+			//  |  selector  |   idx   |   id   |   diff    | diff_inv  | select |  elem |  add  | item  |
+			//  |------------|---------|--------|-----------|-----------|--------|-------|-------|-------|
+			//  |            |         |        |           |           |        |       |       |   0   |
+			//  |     *      |    2    |    0   |     2     |   2^(-1)  |   0    |   1   |   0   |   0   |
+			//  |     *      |    2    |    1   |     1     |   1^(-1)  |   0    |   2   |   0   |   0   |
+			//  |     *      |    2    |    2   |     0     |   1       |   1    |   3   |   3   |   3   |
+			//  |     *      |    2    |    3   |    -1     |  -1^(-1)  |   0    |   4   |   0   |   3   |
+			//  |     *      |    2    |    4   |    -2     |  -2^(-1)  |   0    |   5   |   0   |   3   |
 			//
 
 			let idx_exp = v_cells.query_advice(common.advice[0], Rotation::cur());
@@ -334,21 +335,21 @@ impl<F: FieldExt> Chip<F> for SelectItemChip<F> {
 
 			let s_exp = v_cells.query_selector(selector);
 
+			let one_exp = Expression::Constant(F::ONE);
+
 			vec![
 				// If the difference is equal to 0, that will make the `select` equal to 1.
 
 				// diff = idx(target) - id(elem)
 				s_exp.clone() * (idx_exp - (diff_exp.clone() + id_exp)),
 				// select * (1 - select) = 0
-				s_exp.clone()
-					* (select_exp.clone() * (Expression::Constant(F::ONE) - select_exp.clone())),
+				s_exp.clone() * (select_exp.clone() * (one_exp.clone() - select_exp.clone())),
 				//
 				// if diff = 0 { select = 1 } else { select = 0 }
 				// 		diff * (1 / diff) = 1 - select
 				//      1 - select - diff * diff_inv = 0
 				//
-				s_exp.clone()
-					* (Expression::Constant(F::ONE) - select_exp.clone() - diff_exp * diff_inv_exp),
+				s_exp.clone() * (one_exp - select_exp.clone() - diff_exp * diff_inv_exp),
 				// add = select * elem
 				s_exp.clone() * (add_exp.clone() - (select_exp.clone() * elem_exp)),
 				// item = add + item_prev
