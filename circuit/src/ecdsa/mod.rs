@@ -24,8 +24,11 @@ use std::marker::PhantomData;
 #[derive(Clone, Debug)]
 /// Configuration structure for the Ecdsa
 pub struct EcdsaConfig {
+	// ECC scalar multiplication configuration
 	ecc_mul_scalar: EccMulConfig,
+	// ECC addition configuration
 	ecc_add: EccAddConfig,
+	// Integer multiplication selector
 	integer_mul_selector: Selector,
 }
 
@@ -565,12 +568,15 @@ mod test {
 		let rng = &mut rand::thread_rng();
 		let keypair =
 			EcdsaKeypair::<Fr, 4, 68, Secp256k1_4_68, Secp256k1Params>::generate_keypair(rng);
+		let public_key = keypair.public_key.clone();
+
 		let msg_hash = Fq::from_u128(123456789);
 		let msg_hash_integer = Integer::from_w(msg_hash);
+
 		let signature = keypair.sign(msg_hash.clone(), rng);
-		let public_key = keypair.public_key.clone();
 		let s_inv_fq = big_to_fe::<Fq>(signature.1.value()).invert().unwrap();
 		let s_inv = Integer::from_w(s_inv_fq);
+
 		let g = Secp256k1::generator().to_affine();
 		let g_as_ecpoint = EcPoint::<Secp256k1Affine, N, NUM_LIMBS, NUM_BITS, P, EC>::new(
 			Integer::from_w(g.x),
