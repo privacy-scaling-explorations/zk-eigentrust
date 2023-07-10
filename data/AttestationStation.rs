@@ -5,17 +5,15 @@ pub mod attestation_station {
 	#![allow(dead_code)]
 	#![allow(clippy::type_complexity)]
 	#![allow(unused_imports)]
-	use ethers::{
-		contract::{
-			builders::{ContractCall, Event},
-			Contract, Lazy,
-		},
-		core::{
-			abi::{Abi, Detokenize, InvalidOutputType, Token, Tokenizable},
-			types::*,
-		},
-		providers::Middleware,
+	use ethers::contract::{
+		builders::{ContractCall, Event},
+		Contract, Lazy,
 	};
+	use ethers::core::{
+		abi::{Abi, Detokenize, InvalidOutputType, Token, Tokenizable},
+		types::*,
+	};
+	use ethers::providers::Middleware;
 	#[doc = "AttestationStation was auto-generated with ethers-rs Abigen. More information at: https://github.com/gakonst/ethers-rs"]
 	use std::sync::Arc;
 	# [rustfmt :: skip] const __ABI : & str = "[{\"type\":\"function\",\"name\":\"attest\",\"inputs\":[{\"internalType\":\"struct AttestationStation.AttestationData[]\",\"name\":\"_attestations\",\"type\":\"tuple[]\",\"components\":[{\"type\":\"address\"},{\"type\":\"bytes32\"},{\"type\":\"bytes\"}]}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"attestations\",\"inputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"},{\"internalType\":\"bytes32\",\"name\":\"\",\"type\":\"bytes32\"}],\"outputs\":[{\"internalType\":\"bytes\",\"name\":\"\",\"type\":\"bytes\"}],\"stateMutability\":\"view\"},{\"type\":\"event\",\"name\":\"AttestationCreated\",\"inputs\":[{\"name\":\"creator\",\"type\":\"address\",\"indexed\":true},{\"name\":\"about\",\"type\":\"address\",\"indexed\":true},{\"name\":\"key\",\"type\":\"bytes32\",\"indexed\":true},{\"name\":\"val\",\"type\":\"bytes\",\"indexed\":false}],\"anonymous\":false}]" ;
@@ -32,7 +30,6 @@ pub mod attestation_station {
 	}
 	impl<M> std::ops::Deref for AttestationStation<M> {
 		type Target = ethers::contract::Contract<M>;
-
 		fn deref(&self) -> &Self::Target {
 			&self.0
 		}
@@ -52,7 +49,6 @@ pub mod attestation_station {
 			ethers::contract::Contract::new(address.into(), ATTESTATIONSTATION_ABI.clone(), client)
 				.into()
 		}
-
 		#[doc = "Calls the contract's `attest` (0x5eb5ea10) function"]
 		pub fn attest(
 			&self, attestations: ::std::vec::Vec<AttestationData>,
@@ -61,7 +57,6 @@ pub mod attestation_station {
 				.method_hash([94, 181, 234, 16], attestations)
 				.expect("method not found (this should never happen)")
 		}
-
 		#[doc = "Calls the contract's `attestations` (0x29b42cb5) function"]
 		pub fn attestations(
 			&self, p0: ethers::core::types::Address, p1: ethers::core::types::Address, p2: [u8; 32],
@@ -70,14 +65,12 @@ pub mod attestation_station {
 				.method_hash([41, 180, 44, 181], (p0, p1, p2))
 				.expect("method not found (this should never happen)")
 		}
-
 		#[doc = "Gets the contract's `AttestationCreated` event"]
 		pub fn attestation_created_filter(
 			&self,
 		) -> ethers::contract::builders::Event<M, AttestationCreatedFilter> {
 			self.0.event()
 		}
-
 		#[doc = r" Returns an [`Event`](#ethers_contract::builders::Event) builder for all events of this contract"]
 		pub fn events(&self) -> ethers::contract::builders::Event<M, AttestationCreatedFilter> {
 			self.0.event_with_filter(Default::default())
