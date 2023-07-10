@@ -48,13 +48,18 @@ pub struct EcdsaChipset<
 	C::Base: FieldExt,
 	C::ScalarExt: FieldExt,
 {
+	// Public key
 	public_key: AssignedPoint<C, N, NUM_LIMBS, NUM_BITS, P>,
+	// Generator as a ec point
 	g_as_ecpoint: AssignedPoint<C, N, NUM_LIMBS, NUM_BITS, P>,
+	// Signature
 	signature: (
 		AssignedInteger<C::Scalar, N, NUM_LIMBS, NUM_BITS, P>,
 		AssignedInteger<C::Scalar, N, NUM_LIMBS, NUM_BITS, P>,
 	),
+	// Message hash
 	msg_hash: AssignedInteger<C::Scalar, N, NUM_LIMBS, NUM_BITS, P>,
+	// Signature inverse
 	s_inv: AssignedInteger<C::Scalar, N, NUM_LIMBS, NUM_BITS, P>,
 	// AuxInitial (to_add)
 	aux_init: AssignedPoint<C, N, NUM_LIMBS, NUM_BITS, P>,
@@ -80,9 +85,7 @@ where
 		),
 		msg_hash: AssignedInteger<C::Scalar, N, NUM_LIMBS, NUM_BITS, P>,
 		s_inv: AssignedInteger<C::Scalar, N, NUM_LIMBS, NUM_BITS, P>,
-		// AuxInitial (to_add)
 		aux_init: AssignedPoint<C, N, NUM_LIMBS, NUM_BITS, P>,
-		// AuxFinish (to_sub)
 		aux_fin: AssignedPoint<C, N, NUM_LIMBS, NUM_BITS, P>,
 	) -> Self {
 		Self {
@@ -152,7 +155,6 @@ where
 			layouter.namespace(|| "v_2"),
 		)?;
 
-		//let r_point = v_1.add(&v_2);
 		let r_point_add_chip = EccAddChipset::<C, N, NUM_LIMBS, NUM_BITS, P>::new(v_1, v_2);
 		let r_point = r_point_add_chip.synthesize(
 			common,
@@ -248,7 +250,8 @@ mod test {
 				IntegerMulChip::<W, N, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
 			let integer_div_selector =
 				IntegerDivChip::<W, N, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
-
+			let integer_mul_selector_secp_scalar =
+				IntegerMulChip::<SecpScalar, N, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
 			let ecc_add = EccAddConfig::new(
 				integer_reduce_selector, integer_sub_selector, integer_mul_selector,
 				integer_div_selector,
@@ -274,7 +277,7 @@ mod test {
 				bits2num_selector.clone(),
 			);
 
-			let ecdsa = EcdsaConfig::new(ecc_mul_scalar, integer_mul_selector);
+			let ecdsa = EcdsaConfig::new(ecc_mul_scalar, integer_mul_selector_secp_scalar);
 
 			TestConfig { common, ecdsa }
 		}
@@ -558,22 +561,21 @@ mod test {
 
 	#[test]
 	fn test_ecdsa() {
+		// Test Halo2 ECDSA verify
 		let rng = &mut rand::thread_rng();
 		let keypair =
 			EcdsaKeypair::<Fr, 4, 68, Secp256k1_4_68, Secp256k1Params>::generate_keypair(rng);
 		let msg_hash = Fq::from_u128(123456789);
+		let msg_hash_integer = Integer::from_w(msg_hash);
 		let signature = keypair.sign(msg_hash.clone(), rng);
-
 		let public_key = keypair.public_key.clone();
 		let s_inv_fq = big_to_fe::<Fq>(signature.1.value()).invert().unwrap();
 		let s_inv = Integer::from_w(s_inv_fq);
-
 		let g = Secp256k1::generator().to_affine();
 		let g_as_ecpoint = EcPoint::<Secp256k1Affine, N, NUM_LIMBS, NUM_BITS, P, EC>::new(
 			Integer::from_w(g.x),
 			Integer::from_w(g.y),
 		);
-		let msg_hash_integer = Integer::from_w(msg_hash);
 
 		let circuit =
 			TestEcdsaCircuit::new(public_key, g_as_ecpoint, signature, msg_hash_integer, s_inv);
