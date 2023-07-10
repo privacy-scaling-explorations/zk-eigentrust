@@ -183,11 +183,12 @@ impl<F: FieldExt> Chip<F> for SetPositionChip<F> {
 			//
 			//  |  selector  |   target   |    item    |   diff    | diff_inv |  add  |  idx  |
 			//  |------------|------------|------------|-----------|----------|-------|-------|
+			//  |            |            |      	   |           |          |   1   |       |
 			//  |     *      |     4      |     1	   |     3     |   3^(-1) |   1   |   0   |
 			//  |     *      |     4      |     2      |     2     |   2^(-1) |   1   |   1   |
 			//  |     *      |     4      |     3      |     1     |   1^(-1) |   1   |   2   |
 			//  |     *      |     4      |     4      |     0     |   1      |   0   |   3   |
-			//  |     *      |     4      |     5      |    -1     |   -1^(-1)|   0   |   3   |
+			//  |     *      |     4      |     5      |    -1     |  -1^(-1) |   0   |   3   |
 
 			let target_exp = v_cells.query_advice(common.advice[0], Rotation::cur());
 
@@ -203,6 +204,8 @@ impl<F: FieldExt> Chip<F> for SetPositionChip<F> {
 
 			let s_exp = v_cells.query_selector(selector);
 
+			let one_exp = Expression::Constant(F::ONE);
+
 			vec![
 				// If the difference is equal to 0, that will make the `add` equal to 0.
 				// The following `add`s all become 0.
@@ -212,18 +215,16 @@ impl<F: FieldExt> Chip<F> for SetPositionChip<F> {
 				// idx_next = idx + add
 				s_exp.clone() * (idx_next_exp - (idx_exp + add_exp.clone())),
 				// add * (1 - add) = 0
-				s_exp.clone()
-					* (add_exp.clone() * (Expression::Constant(F::ONE) - add_exp.clone())),
+				s_exp.clone() * (add_exp.clone() * (one_exp - add_exp.clone())),
 				// add * (1 - add_prev) = 0
-				s_exp.clone()
-					* (add_exp.clone() * (Expression::Constant(F::ONE) - add_prev_exp.clone())),
+				s_exp.clone() * (add_exp.clone() * (one_exp - add_prev_exp.clone())),
 				//
 				// base constraint  => if diff = 0 { add = 0 } else { add = 1 }
-				// 		diff * (1 / diff) = add
+				//      diff * (1 / diff) = add
 				//      diff * diff_inv - add = 0
 				//
 				// final constraint => if add_prev = 0 { no base constraint check } else { base constraint check }
-				// 		(diff * diff_inv - add) * add_prev = 0
+				//      (diff * diff_inv - add) * add_prev = 0
 				//
 				s_exp * ((diff_exp * diff_inv_exp - add_exp) * add_prev_exp),
 			]
