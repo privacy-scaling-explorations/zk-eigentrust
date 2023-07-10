@@ -1,8 +1,9 @@
 /// Native version of Ecdsa
 pub mod native;
 
-use crate::ecc::generic::EccAddChipset;
+use crate::ecc::generic::{AssignedAux, EccAddChipset};
 use crate::ecc::EccAddConfig;
+use crate::params::ecc::EccParams;
 use crate::{
 	ecc::{
 		generic::{AssignedPoint, EccMulChipset},
@@ -46,8 +47,10 @@ pub struct EcdsaChipset<
 	const NUM_LIMBS: usize,
 	const NUM_BITS: usize,
 	P,
+	EC,
 > where
 	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::ScalarExt: FieldExt,
 {
@@ -64,17 +67,16 @@ pub struct EcdsaChipset<
 	msg_hash: AssignedInteger<C::Scalar, N, NUM_LIMBS, NUM_BITS, P>,
 	// Signature inverse
 	s_inv: AssignedInteger<C::Scalar, N, NUM_LIMBS, NUM_BITS, P>,
-	// AuxInitial (to_add)
-	aux_init: AssignedPoint<C, N, NUM_LIMBS, NUM_BITS, P>,
-	// AuxFinish (to_sub)
-	aux_fin: AssignedPoint<C, N, NUM_LIMBS, NUM_BITS, P>,
-	_p: PhantomData<P>,
+	// Aux for to_add and to_sub
+	aux: AssignedAux<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
+	_p: PhantomData<(P, EC)>,
 }
 
-impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
-	EcdsaChipset<C, N, NUM_LIMBS, NUM_BITS, P>
+impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P, EC>
+	EcdsaChipset<C, N, NUM_LIMBS, NUM_BITS, P, EC>
 where
 	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::ScalarExt: FieldExt,
 {
@@ -88,26 +90,17 @@ where
 		),
 		msg_hash: AssignedInteger<C::Scalar, N, NUM_LIMBS, NUM_BITS, P>,
 		s_inv: AssignedInteger<C::Scalar, N, NUM_LIMBS, NUM_BITS, P>,
-		aux_init: AssignedPoint<C, N, NUM_LIMBS, NUM_BITS, P>,
-		aux_fin: AssignedPoint<C, N, NUM_LIMBS, NUM_BITS, P>,
+		aux: AssignedAux<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
 	) -> Self {
-		Self {
-			public_key,
-			g_as_ecpoint,
-			signature,
-			msg_hash,
-			s_inv,
-			aux_init,
-			aux_fin,
-			_p: PhantomData,
-		}
+		Self { public_key, g_as_ecpoint, signature, msg_hash, s_inv, aux, _p: PhantomData }
 	}
 }
 
-impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P> Chipset<N>
-	for EcdsaChipset<C, N, NUM_LIMBS, NUM_BITS, P>
+impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P, EC> Chipset<N>
+	for EcdsaChipset<C, N, NUM_LIMBS, NUM_BITS, P, EC>
 where
 	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::ScalarExt: FieldExt,
 {
@@ -134,11 +127,10 @@ where
 			layouter.namespace(|| "u_2"),
 		)?;
 
-		let v_1_ecc_mul_scalar_chip = EccMulChipset::<C, N, NUM_LIMBS, NUM_BITS, P>::new(
+		let v_1_ecc_mul_scalar_chip = EccMulChipset::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::new(
 			self.g_as_ecpoint,
 			u_1,
-			self.aux_init.clone(),
-			self.aux_fin.clone(),
+			self.aux.clone(),
 		);
 		let v_1 = v_1_ecc_mul_scalar_chip.synthesize(
 			common,
@@ -146,12 +138,8 @@ where
 			layouter.namespace(|| "v_1"),
 		)?;
 
-		let v_2_ecc_mul_scalar_chip = EccMulChipset::<C, N, NUM_LIMBS, NUM_BITS, P>::new(
-			self.public_key,
-			u_2,
-			self.aux_init.clone(),
-			self.aux_fin.clone(),
-		);
+		let v_2_ecc_mul_scalar_chip =
+			EccMulChipset::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::new(self.public_key, u_2, self.aux);
 		let v_2 = v_2_ecc_mul_scalar_chip.synthesize(
 			common,
 			&config.ecc_mul_scalar,
@@ -184,12 +172,17 @@ where
 #[cfg(test)]
 mod test {
 	use super::{EcdsaChipset, EcdsaConfig};
+	use crate::ecc::generic::{AuxAssigner, PointAssigner};
+	use crate::ecc::AuxConfig;
 	use crate::ecdsa::native::EcdsaKeypair;
+	use crate::integer::IntegerAssigner;
+	use crate::params::ecc::secp256k1::Secp256k1Params;
+	use crate::params::rns::secp256k1::Secp256k1_4_68;
 	use crate::utils::big_to_fe;
 	use crate::UnassignedValue;
 	use crate::{
 		ecc::{
-			generic::{native::EcPoint, AssignedPoint, UnassignedEcPoint},
+			generic::{native::EcPoint, UnassignedEcPoint},
 			EccAddConfig, EccDoubleConfig, EccMulConfig, EccTableSelectConfig,
 			EccUnreducedLadderConfig,
 		},
@@ -198,14 +191,10 @@ mod test {
 			main::{MainChip, MainConfig},
 		},
 		integer::{
-			native::Integer, AssignedInteger, IntegerAddChip, IntegerDivChip, IntegerMulChip,
-			IntegerReduceChip, IntegerSubChip, UnassignedInteger,
+			native::Integer, IntegerAddChip, IntegerDivChip, IntegerMulChip, IntegerReduceChip,
+			IntegerSubChip, UnassignedInteger,
 		},
-		params::{
-			ecc::{secp256k1::Secp256k1Params, EccParams},
-			rns::secp256k1::Secp256k1_4_68,
-		},
-		Chip, Chipset, CommonConfig, RegionCtx,
+		Chip, Chipset, CommonConfig,
 	};
 	use halo2::arithmetic::Field;
 	use halo2::dev::MockProver;
@@ -213,11 +202,10 @@ mod test {
 	use halo2::halo2curves::group::Curve;
 	use halo2::halo2curves::secp256k1::Secp256k1;
 	use halo2::{
-		circuit::{Layouter, Region, SimpleFloorPlanner},
+		circuit::{Layouter, SimpleFloorPlanner},
 		halo2curves::{
 			bn256::Fr,
 			secp256k1::{Fp, Fq, Secp256k1Affine},
-			CurveAffine,
 		},
 		plonk::{Circuit, ConstraintSystem, Error},
 	};
@@ -235,6 +223,7 @@ mod test {
 	struct TestConfig {
 		common: CommonConfig,
 		ecdsa: EcdsaConfig,
+		aux: AuxConfig,
 	}
 
 	impl TestConfig {
@@ -282,159 +271,9 @@ mod test {
 
 			let ecdsa = EcdsaConfig::new(ecc_mul_scalar, integer_mul_selector_secp_scalar);
 
-			TestConfig { common, ecdsa }
-		}
-	}
+			let aux = AuxConfig::new(ecc_double);
 
-	struct IntegerAssigner {
-		x: UnassignedInteger<SecpScalar, N, NUM_LIMBS, NUM_BITS, P>,
-	}
-
-	impl IntegerAssigner {
-		fn new(x: UnassignedInteger<SecpScalar, N, NUM_LIMBS, NUM_BITS, P>) -> Self {
-			Self { x }
-		}
-	}
-
-	impl Chipset<N> for IntegerAssigner {
-		type Config = ();
-		type Output = AssignedInteger<SecpScalar, N, NUM_LIMBS, NUM_BITS, P>;
-
-		fn synthesize(
-			self, common: &CommonConfig, _: &Self::Config, mut layouter: impl Layouter<N>,
-		) -> Result<Self::Output, Error> {
-			let assigned_limbs = layouter.assign_region(
-				|| "integer assigner",
-				|region: Region<'_, N>| {
-					let mut ctx = RegionCtx::new(region, 0);
-					let x_limbs = [
-						ctx.assign_advice(common.advice[0], self.x.limbs[0])?,
-						ctx.assign_advice(common.advice[1], self.x.limbs[1])?,
-						ctx.assign_advice(common.advice[2], self.x.limbs[2])?,
-						ctx.assign_advice(common.advice[3], self.x.limbs[3])?,
-					];
-
-					Ok(x_limbs)
-				},
-			)?;
-
-			let x_assigned = AssignedInteger::new(self.x.integer, assigned_limbs);
-			Ok(x_assigned)
-		}
-	}
-
-	struct IntegerForPointAssigner {
-		x: UnassignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
-	}
-
-	impl IntegerForPointAssigner {
-		fn new(x: UnassignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>) -> Self {
-			Self { x }
-		}
-	}
-
-	impl Chipset<N> for IntegerForPointAssigner {
-		type Config = ();
-		type Output = AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>;
-
-		fn synthesize(
-			self, common: &CommonConfig, _: &Self::Config, mut layouter: impl Layouter<N>,
-		) -> Result<Self::Output, Error> {
-			let assigned_limbs = layouter.assign_region(
-				|| "integer assigner for point",
-				|region: Region<'_, N>| {
-					let mut ctx = RegionCtx::new(region, 0);
-					let x_limbs = [
-						ctx.assign_advice(common.advice[0], self.x.limbs[0])?,
-						ctx.assign_advice(common.advice[1], self.x.limbs[1])?,
-						ctx.assign_advice(common.advice[2], self.x.limbs[2])?,
-						ctx.assign_advice(common.advice[3], self.x.limbs[3])?,
-					];
-
-					Ok(x_limbs)
-				},
-			)?;
-
-			let x_assigned = AssignedInteger::new(self.x.integer, assigned_limbs);
-			Ok(x_assigned)
-		}
-	}
-
-	struct PointAssigner {
-		point: UnassignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
-	}
-
-	impl PointAssigner {
-		fn new(point: UnassignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>) -> Self {
-			Self { point }
-		}
-	}
-
-	impl Chipset<N> for PointAssigner {
-		type Config = ();
-		type Output = AssignedPoint<C, N, NUM_LIMBS, NUM_BITS, P>;
-
-		fn synthesize(
-			self, common: &CommonConfig, _: &Self::Config, mut layouter: impl Layouter<N>,
-		) -> Result<Self::Output, Error> {
-			let x_assigner = IntegerForPointAssigner::new(self.point.x);
-			let y_assigner = IntegerForPointAssigner::new(self.point.y);
-
-			let x = x_assigner.synthesize(common, &(), layouter.namespace(|| "x assigner"))?;
-			let y = y_assigner.synthesize(common, &(), layouter.namespace(|| "y assigner"))?;
-
-			let point = AssignedPoint::new(x, y);
-
-			Ok(point)
-		}
-	}
-
-	struct AuxAssigner;
-
-	impl Chipset<N> for AuxAssigner {
-		type Config = TestConfig;
-		type Output = (
-			AssignedPoint<C, N, NUM_LIMBS, NUM_BITS, P>,
-			AssignedPoint<C, N, NUM_LIMBS, NUM_BITS, P>,
-		);
-
-		fn synthesize(
-			self, common: &CommonConfig, _: &Self::Config, mut layouter: impl Layouter<N>,
-		) -> Result<Self::Output, Error> {
-			let to_add = Secp256k1Params::aux_init();
-			let to_sub = Secp256k1Params::make_mul_aux(to_add, 1);
-
-			let to_add_x_coord = to_add.coordinates().unwrap();
-			let to_sub_x_coord = to_sub.coordinates().unwrap();
-
-			let to_add_x = to_add_x_coord.x();
-			let to_add_y = to_add_x_coord.y();
-			let to_sub_x = to_sub_x_coord.x();
-			let to_sub_y = to_sub_x_coord.y();
-
-			let to_add_x_int = Integer::from_w(to_add_x.clone());
-			let to_add_y_int = Integer::from_w(to_add_y.clone());
-
-			let to_sub_x_int = Integer::from_w(to_sub_x.clone());
-			let to_sub_y_int = Integer::from_w(to_sub_y.clone());
-
-			let to_add_point = EcPoint::new(to_add_x_int, to_add_y_int);
-			let to_sub_point = EcPoint::new(to_sub_x_int, to_sub_y_int);
-
-			let to_add_assigner = PointAssigner::new(UnassignedEcPoint::from(to_add_point));
-			let to_add = to_add_assigner.synthesize(
-				common,
-				&(),
-				layouter.namespace(|| "to_add assigner"),
-			)?;
-			let to_sub_assigner = PointAssigner::new(UnassignedEcPoint::from(to_sub_point));
-			let to_sub = to_sub_assigner.synthesize(
-				common,
-				&(),
-				layouter.namespace(|| "to_sub assigner"),
-			)?;
-
-			Ok((to_add, to_sub))
+			TestConfig { common, ecdsa, aux }
 		}
 	}
 
@@ -498,10 +337,10 @@ mod test {
 		fn synthesize(
 			&self, config: TestConfig, mut layouter: impl Layouter<Fr>,
 		) -> Result<(), Error> {
-			let aux_assigner = AuxAssigner;
-			let (aux_init, aux_fin) = aux_assigner.synthesize(
+			let aux_assigner = AuxAssigner::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::new();
+			let auxes = aux_assigner.synthesize(
 				&config.common,
-				&config,
+				&config.aux,
 				layouter.namespace(|| "aux assigner"),
 			)?;
 
@@ -549,9 +388,8 @@ mod test {
 				layouter.namespace(|| "s_inv assigner"),
 			)?;
 
-			let chip = EcdsaChipset::new(
-				public_key, g_as_ecpoint, signature, msg_hash, s_inv, aux_init, aux_fin,
-			);
+			let chip =
+				EcdsaChipset::new(public_key, g_as_ecpoint, signature, msg_hash, s_inv, auxes);
 
 			chip.synthesize(
 				&config.common,

@@ -980,7 +980,8 @@ where
 	}
 }
 
-struct PointAssigner<
+/// PointAssigner structure
+pub struct PointAssigner<
 	C: CurveAffine,
 	N: FieldExt,
 	const NUM_LIMBS: usize,
@@ -992,6 +993,7 @@ struct PointAssigner<
 	EC: EccParams<C>,
 	C::Base: FieldExt,
 {
+	// Unassigned Point
 	point: UnassignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
 }
 
@@ -1002,7 +1004,8 @@ where
 	EC: EccParams<C>,
 	C::Base: FieldExt,
 {
-	fn new(point: UnassignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>) -> Self {
+	/// Creates a new PointAssigner object
+	pub fn new(point: UnassignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>) -> Self {
 		Self { point }
 	}
 }
@@ -1079,8 +1082,11 @@ pub struct AuxAssigner<
 	EC: EccParams<C>,
 	C::Base: FieldExt,
 {
+	// Batch length
 	batch_length: usize,
+	// Window size
 	window_size: u32,
+	// Phantom Data
 	_p: PhantomData<(C, N, P, EC)>,
 }
 
@@ -1091,11 +1097,13 @@ where
 	EC: EccParams<C>,
 	C::Base: FieldExt,
 {
-	fn new() -> Self {
+	/// Creates a new aux object
+	pub fn new() -> Self {
 		Self { batch_length: 1, window_size: 1, _p: PhantomData }
 	}
 
-	fn new_batched(batch_length: usize) -> Self {
+	/// Creates a new aux object for batched operations
+	pub fn new_batched(batch_length: usize) -> Self {
 		Self { batch_length, window_size: EC::window_size(), _p: PhantomData }
 	}
 }
