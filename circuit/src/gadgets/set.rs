@@ -215,7 +215,7 @@ impl<F: FieldExt> Chip<F> for SetPositionChip<F> {
 				// idx_next = idx + add
 				s_exp.clone() * (idx_next_exp - (idx_exp + add_exp.clone())),
 				// add * (1 - add) = 0
-				s_exp.clone() * (add_exp.clone() * (one_exp - add_exp.clone())),
+				s_exp.clone() * (add_exp.clone() * (one_exp.clone() - add_exp.clone())),
 				// add * (1 - add_prev) = 0
 				s_exp.clone() * (add_exp.clone() * (one_exp - add_prev_exp.clone())),
 				//
