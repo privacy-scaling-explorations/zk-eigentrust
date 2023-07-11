@@ -178,7 +178,7 @@ pub async fn handle_attestations(config: ClientConfig) -> Result<(), &'static st
 	let attestations =
 		client.get_attestations().await.map_err(|_| "Failed to get attestations.")?;
 
-	if attestations.len() == 0 {
+	if attestations.is_empty() {
 		return Err("No attestations found.");
 	}
 
@@ -269,7 +269,7 @@ pub async fn handle_scores(
 			let records = att_storage.load().map_err(|_| "Failed to load attestations.").unwrap();
 
 			// Verify there are attestations
-			if records.len() == 0 {
+			if records.is_empty() {
 				return Err("No attestations found.");
 			}
 

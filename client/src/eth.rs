@@ -75,7 +75,7 @@ pub fn compile_att_station() -> Result<(), EigenError> {
 	let contracts =
 		Solc::default().compile_source(&path).map_err(|_| EigenError::ContractCompilationError)?;
 
-	if contracts.errors.len() > 0 {
+	if !contracts.errors.is_empty() {
 		return Err(EigenError::ContractCompilationError);
 	}
 
