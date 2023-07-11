@@ -9,13 +9,14 @@ use eigen_trust_client::{
 	fs::{read_binary, read_json},
 	Client, ClientConfig,
 };
+use env_logger::{init_from_env, Env};
 use log::{error, info};
 
 #[tokio::main]
 async fn main() {
 	// Initialize logger and read .env file
 	dotenv().ok();
-	env_logger::init();
+	init_from_env(Env::default().filter_or("LOG_LEVEL", "info"));
 
 	// Read configuration file
 	let mut config: ClientConfig = match read_json("client-config") {

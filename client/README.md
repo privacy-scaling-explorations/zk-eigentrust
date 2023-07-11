@@ -128,7 +128,7 @@ You can customize some settings through environment variables:
 
 - `MNEMONIC`: Your Ethereum wallet's mnemonic phrase.
 - `BANDADA_API_KEY`: The Bandada group API key.
-- `RUST_LOG`: The logging level. Available options are `error | warn | info | debug | trace`. Default is `error`
+- `LOG_LEVEL`: The logging level. Available options are `error | warn | info | debug | trace`. Default is `info`.
 
 We've provided a template for these variables in a file named `.env.origin`. You can create a copy of this file and rename it to `.env`:
 
@@ -141,7 +141,7 @@ Next, edit the `.env` file and replace the placeholder values with your actual o
 ```bash
 MNEMONIC="your mnemonic phrase"
 BANDADA_API_KEY="your bandada group api key"
-RUST_LOG="info"
+LOG_LEVEL="info"
 ```
 
 Feel free to only specify variables you want to change from their defaults.

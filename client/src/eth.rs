@@ -23,6 +23,7 @@ use ethers::{
 	types::TransactionRequest,
 	utils::keccak256,
 };
+use log::info;
 use secp256k1::SecretKey;
 use std::{
 	fs::{read_dir, write},
@@ -62,7 +63,7 @@ pub async fn call_verifier(
 
 	let tx = TransactionRequest::default().data(calldata).to(verifier_address);
 	let res = signer.send_transaction(tx, None).await.unwrap().await.unwrap();
-	println!("{:#?}", res);
+	info!("{:#?}", res);
 }
 
 /// Compiles the AttestationStation contract.
