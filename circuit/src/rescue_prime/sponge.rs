@@ -76,9 +76,9 @@ where
 				let mut ctx = RegionCtx::new(region, 0);
 
 				let mut state: [Option<AssignedCell<F, F>>; WIDTH] = [(); WIDTH].map(|_| None);
-				for (i, state) in state.iter_mut().enumerate().take(WIDTH) {
+				for i in 0..WIDTH {
 					let zero_asgn = ctx.assign_from_constant(common.advice[i], F::ZERO)?;
-					*state = Some(zero_asgn);
+					state[i] = Some(zero_asgn);
 				}
 				Ok(state.map(|item| item.unwrap()))
 			},
