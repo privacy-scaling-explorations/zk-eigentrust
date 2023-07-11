@@ -58,15 +58,19 @@ where
 	}
 }
 
-impl<N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P, EC> From<([u8; 32], [u8; 32])>
+impl<N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P, EC> From<[u8; 64]>
 	for PublicKey<N, NUM_LIMBS, NUM_BITS, P, EC>
 where
 	P: RnsParams<<Secp256k1Affine as CurveAffine>::Base, N, NUM_LIMBS, NUM_BITS>
 		+ RnsParams<<Secp256k1Affine as CurveAffine>::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
 	EC: EccParams<Secp256k1Affine>,
 {
-	fn from(xy: ([u8; 32], [u8; 32])) -> Self {
-		let (x_bytes, y_bytes) = xy;
+	fn from(xy: [u8; 64]) -> Self {
+		let mut x_bytes: [u8; 32] = [0; 32];
+		let mut y_bytes: [u8; 32] = [0; 32];
+		x_bytes.copy_from_slice(&xy[..32]);
+		y_bytes.copy_from_slice(&xy[32..]);
+
 		let x = Fp::from_bytes(&x_bytes).unwrap();
 		let y = Fp::from_bytes(&y_bytes).unwrap();
 		let p = EcPoint::new(Integer::from_w(x), Integer::from_w(y));
@@ -107,13 +111,17 @@ where
 	}
 }
 
-impl<N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P> From<([u8; 32], [u8; 32])>
+impl<N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P> From<[u8; 64]>
 	for Signature<N, NUM_LIMBS, NUM_BITS, P>
 where
 	P: RnsParams<<Secp256k1Affine as CurveAffine>::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
 {
-	fn from(rs: ([u8; 32], [u8; 32])) -> Self {
-		let (r_bytes, s_bytes) = rs;
+	fn from(rs: [u8; 64]) -> Self {
+		let mut r_bytes: [u8; 32] = [0; 32];
+		let mut s_bytes: [u8; 32] = [0; 32];
+		r_bytes.copy_from_slice(&rs[..32]);
+		s_bytes.copy_from_slice(&rs[32..]);
+
 		let r = Fq::from_bytes(&r_bytes).unwrap();
 		let s = Fq::from_bytes(&s_bytes).unwrap();
 		Self::new(Integer::from_w(r), Integer::from_w(s))

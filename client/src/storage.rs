@@ -3,10 +3,11 @@
 //! This module contains generic storage traits and implementations.
 
 use crate::att_station::AttestationCreatedFilter;
-use crate::attestation::{address_from_signed_att, Attestation, AttestationPayload};
+use crate::attestation::{
+	address_from_signed_att, Attestation, AttestationPayload, SignedAttestation,
+};
 use crate::Score;
 use csv::{ReaderBuilder, WriterBuilder};
-use eigen_trust_circuit::dynamic_sets::ecdsa_native::SignedAttestation;
 use ethers::types::{Address, Bytes, H256};
 use ethers::utils::hex;
 use serde::Deserialize;
