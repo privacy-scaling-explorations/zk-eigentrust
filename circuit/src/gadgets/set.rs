@@ -1,6 +1,6 @@
 use crate::{gadgets::main::IsZeroChipset, Chip, Chipset, CommonConfig, FieldExt, RegionCtx};
 use halo2::{
-	circuit::{AssignedCell, Layouter, Region},
+	circuit::{AssignedCell, Layouter, Region, Value},
 	plonk::{ConstraintSystem, Error, Expression, Selector},
 	poly::Rotation,
 };
@@ -274,6 +274,145 @@ impl<F: FieldExt> Chip<F> for SetPositionChip<F> {
 				}
 
 				Ok(assigned_idx)
+			},
+		)
+	}
+}
+
+/// A chip for selecting item with index in a set of field values
+pub struct SelectItemChip<F: FieldExt> {
+	/// Constructs items variable for the circuit.
+	items: Vec<AssignedCell<F, F>>,
+	/// Assigns a cell for the index.
+	idx: AssignedCell<F, F>,
+}
+
+impl<F: FieldExt> SelectItemChip<F> {
+	/// Construct a new chip
+	pub fn new(items: Vec<AssignedCell<F, F>>, idx: AssignedCell<F, F>) -> Self {
+		SelectItemChip { items, idx }
+	}
+}
+
+impl<F: FieldExt> Chip<F> for SelectItemChip<F> {
+	type Output = AssignedCell<F, F>;
+
+	/// Make the circuit config.
+	fn configure(common: &CommonConfig, meta: &mut ConstraintSystem<F>) -> Selector {
+		let selector = meta.selector();
+
+		meta.create_gate("select_item_with_idx", |v_cells| {
+			//
+			// Gate config
+			//
+			//  |  selector  |    0    |   0(f)   |   1     |     2     |   3    |   4   |   5   |  6   |
+			//  |------------|---------|----------|---------|-----------|--------|-------|-------|------|
+			//  |     *      |   idx   |    id    |  diff   |  diff_inv | select |  elem |  add  | item |
+
+			//
+			// Example: set = [1, 2, 3, 4, 5], idx = 2
+			//
+			//  |  selector  |   idx   |   id   |   diff    | diff_inv  | select |  elem |  add  | item  |
+			//  |------------|---------|--------|-----------|-----------|--------|-------|-------|-------|
+			//  |            |         |        |           |           |        |       |       |   0   |
+			//  |     *      |    2    |    0   |     2     |   2^(-1)  |   0    |   1   |   0   |   0   |
+			//  |     *      |    2    |    1   |     1     |   1^(-1)  |   0    |   2   |   0   |   0   |
+			//  |     *      |    2    |    2   |     0     |   1       |   1    |   3   |   3   |   3   |
+			//  |     *      |    2    |    3   |    -1     |  -1^(-1)  |   0    |   4   |   0   |   3   |
+			//  |     *      |    2    |    4   |    -2     |  -2^(-1)  |   0    |   5   |   0   |   3   |
+			//
+			// NOTE: In the chip implementation, we use fixed column for "id" column.
+			//       The reason is that it is cheaper than using advice column.
+
+			let idx_exp = v_cells.query_advice(common.advice[0], Rotation::cur());
+			let id_exp = v_cells.query_fixed(common.fixed[0], Rotation::cur());
+			let diff_exp = v_cells.query_advice(common.advice[1], Rotation::cur());
+			let diff_inv_exp = v_cells.query_advice(common.advice[2], Rotation::cur());
+			let select_exp = v_cells.query_advice(common.advice[3], Rotation::cur());
+			let elem_exp = v_cells.query_advice(common.advice[4], Rotation::cur());
+			let add_exp = v_cells.query_advice(common.advice[5], Rotation::cur());
+
+			let item_prev_exp = v_cells.query_advice(common.advice[6], Rotation::prev());
+			let item_exp = v_cells.query_advice(common.advice[6], Rotation::cur());
+
+			let s_exp = v_cells.query_selector(selector);
+
+			let one_exp = Expression::Constant(F::ONE);
+
+			vec![
+				// If the difference is equal to 0, that will make the `select` equal to 1.
+
+				// diff = idx(target) - id(elem)
+				s_exp.clone() * (idx_exp - (diff_exp.clone() + id_exp)),
+				// select * (1 - select) = 0
+				s_exp.clone() * (select_exp.clone() * (one_exp.clone() - select_exp.clone())),
+				//
+				// if diff = 0 { select = 1 } else { select = 0 }
+				//      diff * (1 / diff) = 1 - select
+				//      1 - select - diff * diff_inv = 0
+				//
+				s_exp.clone() * (one_exp - select_exp.clone() - diff_exp * diff_inv_exp),
+				// add = select * elem
+				s_exp.clone() * (add_exp.clone() - (select_exp * elem_exp)),
+				// item = add + item_prev
+				s_exp * (item_exp - (item_prev_exp + add_exp)),
+			]
+		});
+
+		selector
+	}
+
+	/// Synthesize the circuit.
+	fn synthesize(
+		self, common: &CommonConfig, selector: &Selector, mut layouter: impl Layouter<F>,
+	) -> Result<Self::Output, Error> {
+		layouter.assign_region(
+			|| "select_item_with_idx",
+			|region: Region<'_, F>| {
+				let mut ctx = RegionCtx::new(region, 0);
+
+				let mut item_prev_cell = ctx.assign_from_constant(common.advice[6], F::ZERO)?;
+				ctx.next();
+
+				let mut assigned_item = ctx.assign_from_constant(common.advice[6], F::ZERO)?;
+				let mut assigned_target_idx =
+					ctx.copy_assign(common.advice[0], self.idx.clone())?;
+				for i in 0..self.items.len() {
+					ctx.enable(*selector)?;
+
+					let id = F::from(i as u64);
+					ctx.assign_fixed(common.fixed[0], id)?;
+
+					// Calculating difference between given target idx and id of element from the set.
+					let diff = self.idx.value().cloned() - Value::known(id);
+					let diff_cell = ctx.assign_advice(common.advice[1], diff)?;
+
+					// Calculating the inverse of difference
+					let diff_inverse = diff.map(|x| x.invert().unwrap_or(F::ONE));
+					let diff_inverse_cell = ctx.assign_advice(common.advice[2], diff_inverse)?;
+
+					// Calculating the "select" value
+					let select_value = Value::known(F::ONE)
+						- diff_cell.value().cloned() * diff_inverse_cell.value().cloned();
+					let select_cell = ctx.assign_advice(common.advice[3], select_value)?;
+
+					// Assign set element
+					let elem_cell = ctx.copy_assign(common.advice[4], self.items[i].clone())?;
+
+					// Calculating the "add" value
+					let add_value = select_cell.value().cloned() * elem_cell.value().cloned();
+					let add_cell = ctx.assign_advice(common.advice[5], add_value)?;
+
+					// Calculating the "item"
+					let item_value = item_prev_cell.value().cloned() + add_cell.value().cloned();
+					assigned_item = ctx.assign_advice(common.advice[6], item_value)?;
+
+					ctx.next();
+					assigned_target_idx = ctx.copy_assign(common.advice[0], assigned_target_idx)?;
+					item_prev_cell = assigned_item.clone();
+				}
+
+				Ok(assigned_item)
 			},
 		)
 	}
@@ -556,6 +695,136 @@ mod test {
 
 		let k = 5;
 		let pub_ins = vec![Fr::from(target_index as u64)];
+		let rng = &mut rand::thread_rng();
+		let params = generate_params(k);
+		let res = prove_and_verify::<Bn256, _, _>(params, test_chip, &[&pub_ins], rng).unwrap();
+		assert!(res);
+	}
+
+	#[derive(Clone)]
+	struct TestSelectItemConfig {
+		common: CommonConfig,
+		select_item_selector: Selector,
+	}
+
+	#[derive(Clone)]
+	struct TestSelectItemCircuit<F: FieldExt> {
+		items: Vec<Value<F>>,
+		idx: Value<F>,
+	}
+
+	impl<F: FieldExt> TestSelectItemCircuit<F> {
+		fn new(items: Vec<F>, idx: F) -> Self {
+			Self {
+				items: items.into_iter().map(|x| Value::known(x)).collect(),
+				idx: Value::known(idx),
+			}
+		}
+	}
+
+	impl<F: FieldExt> Circuit<F> for TestSelectItemCircuit<F> {
+		type Config = TestSelectItemConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			Self {
+				items: self.items.clone().into_iter().map(|_| Value::unknown()).collect(),
+				idx: Value::unknown(),
+			}
+		}
+
+		fn configure(meta: &mut ConstraintSystem<F>) -> TestSelectItemConfig {
+			let common = CommonConfig::new(meta);
+			let select_item_selector = SelectItemChip::configure(&common, meta);
+
+			TestSelectItemConfig { common, select_item_selector }
+		}
+
+		fn synthesize(
+			&self, config: TestSelectItemConfig, mut layouter: impl Layouter<F>,
+		) -> Result<(), Error> {
+			let (idx, items) = layouter.assign_region(
+				|| "temp",
+				|region: Region<'_, F>| {
+					let mut ctx = RegionCtx::new(region, 0);
+					let idx = ctx.assign_advice(config.common.advice[0], self.idx.clone())?;
+
+					ctx.next();
+					let mut items = Vec::new();
+					for i in 0..self.items.len() {
+						let item = self.items[i].clone();
+						let assigned_item = ctx.assign_advice(config.common.advice[0], item)?;
+						items.push(assigned_item);
+						ctx.next();
+					}
+
+					Ok((idx, items))
+				},
+			)?;
+			let select_item_chip = SelectItemChip::new(items, idx);
+			let idx = select_item_chip.synthesize(
+				&config.common,
+				&config.select_item_selector,
+				layouter.namespace(|| "select_item"),
+			)?;
+			layouter.constrain_instance(idx.cell(), config.common.instance, 0)?;
+
+			Ok(())
+		}
+	}
+
+	#[test]
+	fn test_select_item() {
+		// Testing a normal index.
+		let set = vec![Fr::from(1), Fr::from(2), Fr::from(3)];
+		let target_index = 1;
+		let target_item = set[target_index].clone();
+		let test_chip = TestSelectItemCircuit::new(set, Fr::from(target_index as u64));
+
+		let pub_ins = vec![Fr::from(target_item)];
+		let k = 5;
+		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[test]
+	fn test_no_item_at_index() {
+		// Testing a index that is out of original set length
+		// In this case, the output of circuit is zero. (F::ZERO)
+		let set = vec![Fr::from(1), Fr::from(2), Fr::from(4), Fr::from(15), Fr::from(23)];
+		let idx = set.len() + 1;
+
+		let test_chip = TestSelectItemCircuit::new(set, Fr::from(idx as u64));
+
+		let pub_ins = vec![Fr::zero()];
+		let k = 5;
+		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[test]
+	fn test_big_set_select_item() {
+		// Testing a big set.
+		let set = [(); 1024].map(|_| <Fr as Field>::random(rand::thread_rng())).to_vec();
+		let target_index = 722;
+		let target_item = set[target_index].clone();
+		let test_chip = TestSelectItemCircuit::new(set, Fr::from(target_index as u64));
+
+		let pub_ins = vec![target_item];
+		let k = 12;
+		let prover = MockProver::run(k, &test_chip, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[test]
+	fn test_select_item_production() {
+		let set = vec![Fr::from(1), Fr::from(2), Fr::from(3)];
+		let target_index = 1;
+		let target_item = set[target_index].clone();
+		let test_chip = TestSelectItemCircuit::new(set, Fr::from(target_index as u64));
+
+		let k = 5;
+		let pub_ins = vec![target_item];
 		let rng = &mut rand::thread_rng();
 		let params = generate_params(k);
 		let res = prove_and_verify::<Bn256, _, _>(params, test_chip, &[&pub_ins], rng).unwrap();
