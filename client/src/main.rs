@@ -3,18 +3,25 @@ mod cli;
 
 use clap::Parser;
 use cli::*;
+use dotenv::dotenv;
 use eigen_trust_client::{
 	eth::{compile_att_station, compile_yul_contracts, deploy_as, deploy_verifier},
 	fs::{read_binary, read_json},
 	Client, ClientConfig,
 };
+use log::{error, info};
 
 #[tokio::main]
 async fn main() {
+	// Initialize logger and read .env file
+	dotenv().ok();
+	env_logger::init();
+
+	// Read configuration file
 	let mut config: ClientConfig = match read_json("client-config") {
 		Ok(c) => c,
 		Err(_) => {
-			eprintln!("Failed to read configuration file.");
+			error!("Failed to read configuration file.");
 			return;
 		},
 	};
@@ -24,47 +31,47 @@ async fn main() {
 			let attestation = match attest_data.to_attestation(&config) {
 				Ok(a) => a,
 				Err(e) => {
-					eprintln!("Error while creating attestation: {:?}", e);
+					error!("Error while creating attestation: {:?}", e);
 					return;
 				},
 			};
 
-			println!("Attesting...\n{:#?}", attestation);
+			info!("Attesting...\n{:#?}", attestation);
 
 			let client = Client::new(config);
 			if let Err(e) = client.attest(attestation).await {
-				eprintln!("Error while attesting: {:?}", e);
+				error!("Error while attesting: {:?}", e);
 			}
 		},
 		Mode::Attestations => match handle_attestations(config).await {
 			Ok(_) => (),
-			Err(e) => eprintln!("Failed to execute attestations command: {:?}", e),
+			Err(e) => error!("Failed to execute attestations command: {:?}", e),
 		},
 		Mode::Bandada(bandada_data) => match handle_bandada(&config, bandada_data).await {
 			Ok(_) => (),
-			Err(e) => eprintln!("Failed to execute bandada command: {:?}", e),
+			Err(e) => error!("Failed to execute bandada command: {:?}", e),
 		},
 		Mode::Compile => {
-			println!("Compiling contracts...");
+			info!("Compiling contracts...");
 			match compile_att_station() {
-				Ok(_) => println!("AttestationStation Compilation successful"),
-				Err(e) => println!("Error during AttestationStation compilation: {}", e),
+				Ok(_) => info!("AttestationStation Compilation successful"),
+				Err(e) => error!("Error during AttestationStation compilation: {}", e),
 			}
 			compile_yul_contracts();
-			println!("Done!");
+			info!("Done!");
 		},
 		Mode::Deploy => {
-			println!("Deploying contracts...");
+			info!("Deploying contracts...");
 			let client = Client::new(config);
 
 			let as_address = match deploy_as(client.get_signer()).await {
 				Ok(a) => a,
 				Err(e) => {
-					eprintln!("Failed to deploy AttestationStation: {:?}", e);
+					error!("Failed to deploy AttestationStation: {:?}", e);
 					return;
 				},
 			};
-			println!("AttestationStation deployed at {:?}", as_address);
+			info!("AttestationStation deployed at {:?}", as_address);
 
 			let verifier_contract = read_binary("et_verifier").unwrap();
 
@@ -72,38 +79,38 @@ async fn main() {
 				match deploy_verifier(client.get_signer(), verifier_contract).await {
 					Ok(a) => a,
 					Err(e) => {
-						eprintln!("Failed to deploy EigenTrustVerifier: {:?}", e);
+						error!("Failed to deploy EigenTrustVerifier: {:?}", e);
 						return;
 					},
 				};
 
-			println!("EigenTrustVerifier deployed at {:?}", verifier_address);
+			info!("EigenTrustVerifier deployed at {:?}", verifier_address);
 		},
 		Mode::LocalScores => match handle_scores(config, AttestationsOrigin::Local).await {
-			Ok(_) => println!("Scores calculated."),
-			Err(e) => eprintln!("LocalScores command failed: {}", e),
+			Ok(_) => info!("Scores calculated."),
+			Err(e) => error!("LocalScores command failed: {}", e),
 		},
 		Mode::Proof => {
-			println!("Not implemented yet.");
+			info!("Not implemented yet.");
 		},
 		Mode::Scores => match handle_scores(config, AttestationsOrigin::Fetch).await {
-			Ok(_) => println!("Scores calculated."),
-			Err(e) => eprintln!("Scores command failed: {}", e),
+			Ok(_) => info!("Scores calculated."),
+			Err(e) => error!("Scores command failed: {}", e),
 		},
-		Mode::Show => println!("Client config:\n{:#?}", config),
+		Mode::Show => info!("Client config:\n{:#?}", config),
 		Mode::Update(update_data) => match handle_update(&mut config, update_data) {
-			Ok(_) => println!("Client configuration updated."),
-			Err(e) => eprintln!("Failed to update client configuration: {}", e),
+			Ok(_) => info!("Client configuration updated."),
+			Err(e) => error!("Failed to update client configuration: {}", e),
 		},
 		Mode::Verify => {
 			let client = Client::new(config);
 
 			if let Err(e) = client.verify().await {
-				eprintln!("Failed to verify the proof: {:?}", e);
+				error!("Failed to verify the proof: {:?}", e);
 				return;
 			}
 
-			println!("Proof verified.");
+			info!("Proof verified.");
 		},
 	}
 }
