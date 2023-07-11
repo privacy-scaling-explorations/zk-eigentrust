@@ -14,11 +14,11 @@ use log::{error, info};
 
 #[tokio::main]
 async fn main() {
-	// Initialize logger and read .env file
+	// Load .env and initialize logger
 	dotenv().ok();
 	init_from_env(Env::default().filter_or("LOG_LEVEL", "info"));
 
-	// Read configuration file
+	// Read configuration
 	let mut config: ClientConfig = match read_json("client-config") {
 		Ok(c) => c,
 		Err(_) => {
