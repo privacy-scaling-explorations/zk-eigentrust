@@ -2,3 +2,8 @@
 /data/*-proof.json
 /target
 .env
+
+# Compiled assets
+/data/attestation_station.json
+/data/attestation_station.rs
+/data/et_verifier.bin

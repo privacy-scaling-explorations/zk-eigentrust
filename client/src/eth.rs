@@ -5,7 +5,6 @@
 use crate::{
 	attestation::ECDSAPublicKey,
 	error::EigenError,
-	eth::bindings::AttestationStation,
 	fs::{get_data_directory, get_file_path, read_yul, write_binary, FileType},
 	ClientSigner,
 };
@@ -16,10 +15,10 @@ use eigen_trust_circuit::{
 };
 use ethers::{
 	abi::Address,
-	prelude::{k256::ecdsa::SigningKey, Abigen, ContractError},
+	prelude::{k256::ecdsa::SigningKey, Abigen, ContractError, ContractFactory},
 	providers::Middleware,
 	signers::coins_bip39::{English, Mnemonic},
-	solc::{artifacts::ContractBytecode, Solc},
+	solc::{artifacts::ContractBytecode, Artifact, Solc},
 	types::TransactionRequest,
 	utils::keccak256,
 };
@@ -30,17 +29,34 @@ use std::{
 	sync::Arc,
 };
 
-/// The contract bindings module.
-/// This is a workaround for the `abigen` macro not supporting doc comments as attributes.
-pub mod bindings {
-	#![allow(missing_docs)]
-	ethers::prelude::abigen!(AttestationStation, "../data/AttestationStation.json");
-}
-
 /// Deploys the AttestationStation contract.
-pub async fn deploy_as(signer: Arc<ClientSigner>) -> Result<Address, ContractError<ClientSigner>> {
-	let contract = AttestationStation::deploy(signer, ())?.send().await?;
-	Ok(contract.address())
+pub async fn deploy_as(signer: Arc<ClientSigner>) -> Result<Address, EigenError> {
+	let path = get_data_directory().unwrap().join("AttestationStation.sol");
+	let compiler_output =
+		Solc::default().compile_source(&path).map_err(|_| EigenError::ContractCompilationError)?;
+
+	if !compiler_output.errors.is_empty() {
+		return Err(EigenError::ContractCompilationError);
+	}
+
+	let mut address: Option<Address> = None;
+	for (_, contract) in compiler_output.contracts_iter() {
+		let (abi, bytecode, _) = contract.clone().into_parts();
+		let abi = abi.ok_or(EigenError::ParseError)?;
+		let bytecode = bytecode.ok_or(EigenError::ParseError)?;
+
+		let factory = ContractFactory::new(abi, bytecode, signer.clone());
+
+		match factory.deploy(()).unwrap().send().await {
+			Ok(contract) => {
+				address = Some(contract.address());
+				break;
+			},
+			Err(_) => continue,
+		}
+	}
+
+	address.ok_or(EigenError::ParseError)
 }
 
 /// Deploys the EtVerifier contract.
@@ -90,10 +106,13 @@ pub fn compile_att_station() -> Result<(), EigenError> {
 			.map_err(|_| EigenError::ParseError)?;
 
 		bindings
-			.write_to_file(get_file_path(name, FileType::Rs).unwrap())
+			.write_to_file(get_file_path("attestation_station", FileType::Rs).unwrap())
 			.map_err(|_| EigenError::ParseError)?;
-		write(get_file_path(name, FileType::Json).unwrap(), contract_json)
-			.map_err(|_| EigenError::ParseError)?;
+		write(
+			get_file_path("attestation_station", FileType::Json).unwrap(),
+			contract_json,
+		)
+		.map_err(|_| EigenError::ParseError)?;
 	}
 	Ok(())
 }
