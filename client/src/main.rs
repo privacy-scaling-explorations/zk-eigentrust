@@ -5,8 +5,8 @@ use clap::Parser;
 use cli::*;
 use dotenv::dotenv;
 use eigen_trust_client::{
-	eth::{compile_att_station, compile_yul_contracts, deploy_as, deploy_verifier},
-	fs::{read_binary, read_json},
+	eth::{compile_att_station, deploy_as, deploy_verifier},
+	fs::read_json,
 	Client, ClientConfig,
 };
 use env_logger::{init_from_env, Env};
@@ -58,7 +58,6 @@ async fn main() {
 				Ok(_) => info!("AttestationStation Compilation successful"),
 				Err(e) => error!("Error during AttestationStation compilation: {}", e),
 			}
-			compile_yul_contracts();
 			info!("Done!");
 		},
 		Mode::Deploy => {
@@ -74,16 +73,13 @@ async fn main() {
 			};
 			info!("AttestationStation deployed at {:?}", as_address);
 
-			let verifier_contract = read_binary("et_verifier").unwrap();
-
-			let verifier_address =
-				match deploy_verifier(client.get_signer(), verifier_contract).await {
-					Ok(a) => a,
-					Err(e) => {
-						error!("Failed to deploy EigenTrustVerifier: {:?}", e);
-						return;
-					},
-				};
+			let verifier_address = match deploy_verifier(client.get_signer()).await {
+				Ok(a) => a,
+				Err(e) => {
+					error!("Failed to deploy EigenTrustVerifier: {:?}", e);
+					return;
+				},
+			};
 
 			info!("EigenTrustVerifier deployed at {:?}", verifier_address);
 		},

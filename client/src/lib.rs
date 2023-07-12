@@ -370,7 +370,6 @@ mod lib_tests {
 		eth::{deploy_as, deploy_verifier},
 		Client, ClientConfig,
 	};
-	use eigen_trust_circuit::utils::read_bytes_data;
 	use ethers::{abi::Address, types::H256, utils::Anvil};
 
 	#[tokio::test]
@@ -389,8 +388,7 @@ mod lib_tests {
 
 		// Deploy attestation station and verifier
 		let as_address = deploy_as(client.get_signer()).await.unwrap();
-		let verifier_address =
-			deploy_verifier(client.get_signer(), read_bytes_data("et_verifier")).await.unwrap();
+		let verifier_address = deploy_verifier(client.get_signer()).await.unwrap();
 
 		// Update config with new addresses
 		let config = ClientConfig {
@@ -426,8 +424,7 @@ mod lib_tests {
 
 		// Deploy attestation station and verifier
 		let as_address = deploy_as(client.get_signer()).await.unwrap();
-		let verifier_address =
-			deploy_verifier(client.get_signer(), read_bytes_data("et_verifier")).await.unwrap();
+		let verifier_address = deploy_verifier(client.get_signer()).await.unwrap();
 
 		// Update config with new addresses and instantiate client
 		let config = ClientConfig {

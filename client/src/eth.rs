@@ -5,7 +5,7 @@
 use crate::{
 	attestation::ECDSAPublicKey,
 	error::EigenError,
-	fs::{get_assets_path, get_file_path, read_yul, write_binary, FileType},
+	fs::{get_assets_path, get_file_path, read_yul, FileType},
 	ClientSigner,
 };
 use eigen_trust_circuit::{
@@ -15,7 +15,7 @@ use eigen_trust_circuit::{
 };
 use ethers::{
 	abi::Address,
-	prelude::{k256::ecdsa::SigningKey, Abigen, ContractError, ContractFactory},
+	prelude::{k256::ecdsa::SigningKey, Abigen, ContractFactory},
 	providers::Middleware,
 	signers::coins_bip39::{English, Mnemonic},
 	solc::{artifacts::ContractBytecode, Artifact, Solc},
@@ -24,10 +24,7 @@ use ethers::{
 };
 use log::info;
 use secp256k1::SecretKey;
-use std::{
-	fs::{read_dir, write},
-	sync::Arc,
-};
+use std::{fs::write, sync::Arc};
 
 /// Deploys the AttestationStation contract.
 pub async fn deploy_as(signer: Arc<ClientSigner>) -> Result<Address, EigenError> {
@@ -57,18 +54,6 @@ pub async fn deploy_as(signer: Arc<ClientSigner>) -> Result<Address, EigenError>
 	}
 
 	address.ok_or(EigenError::ParseError)
-}
-
-/// Deploys the EtVerifier contract.
-pub async fn deploy_verifier(
-	signer: Arc<ClientSigner>, contract_bytes: Vec<u8>,
-) -> Result<Address, ContractError<ClientSigner>> {
-	let tx = TransactionRequest::default().data(contract_bytes);
-	let pen_tx = signer.send_transaction(tx, None).await.unwrap();
-	let tx = pen_tx.await;
-
-	let rec = tx.unwrap().unwrap();
-	Ok(rec.contract_address.unwrap())
 }
 
 /// Calls the EtVerifier contract.
@@ -117,21 +102,23 @@ pub fn compile_att_station() -> Result<(), EigenError> {
 	Ok(())
 }
 
-/// Compiles the Yul contracts in the `data` directory.
-pub fn compile_yul_contracts() {
-	let data_dir = get_assets_path().unwrap();
-	let paths = read_dir(data_dir).unwrap();
+/// Deploys the EtVerifier contract.
+pub async fn deploy_verifier(signer: Arc<ClientSigner>) -> Result<Address, EigenError> {
+	// Compile the et_verifier.yul contract
+	let path = get_assets_path().map_err(|_| EigenError::ParseError)?.join("et_verifier.yul");
+	let path_str = path.to_str().ok_or(EigenError::ParseError)?;
+	let compiled_contract =
+		compile_yul(&read_yul(path_str).map_err(|_| EigenError::ContractCompilationError)?);
 
-	for path in paths {
-		if let Some(name_with_suffix) = path.unwrap().path().file_name().and_then(|n| n.to_str()) {
-			if name_with_suffix.ends_with(".yul") {
-				let name = name_with_suffix.strip_suffix(".yul").unwrap();
-				let compiled_contract = compile_yul(&read_yul(name).unwrap());
+	// Deploy the contract
+	let tx = TransactionRequest::default().data(compiled_contract);
+	let pen_tx =
+		signer.send_transaction(tx, None).await.map_err(|_| EigenError::TransactionError)?;
+	let tx = pen_tx.await.map_err(|_| EigenError::TransactionError)?;
 
-				write_binary(compiled_contract, name).unwrap();
-			}
-		}
-	}
+	let rec = tx.ok_or(EigenError::TransactionError)?;
+
+	rec.contract_address.ok_or(EigenError::TransactionError)
 }
 
 /// Returns a vector of ECDSA private keys derived from the given mnemonic phrase.
@@ -196,7 +183,7 @@ pub fn scalar_from_address(address: &Address) -> Result<Scalar, &'static str> {
 mod tests {
 	use crate::{
 		eth::{address_from_public_key, call_verifier, deploy_as, deploy_verifier},
-		fs::{read_binary, read_json},
+		fs::read_json,
 		Client, ClientConfig,
 	};
 	use eigen_trust_circuit::{Proof, ProofRaw};
@@ -231,7 +218,6 @@ mod tests {
 	#[tokio::test]
 	async fn test_deploy_verifier() {
 		let anvil = Anvil::new().spawn();
-		let et_contract = read_binary("et_verifier").unwrap();
 		let config = ClientConfig {
 			as_address: "0x5fbdb2315678afecb367f032d93f642f64180aa3".to_string(),
 			band_id: "38922764296632428858395574229367".to_string(),
@@ -244,7 +230,7 @@ mod tests {
 		let client = Client::new(config);
 
 		// Deploy
-		let res = deploy_verifier(client.get_signer(), et_contract).await;
+		let res = deploy_verifier(client.get_signer()).await;
 		assert!(res.is_ok());
 
 		drop(anvil);
@@ -264,9 +250,8 @@ mod tests {
 		};
 		let client = Client::new(config);
 
-		// Read contract data and deploy verifier
-		let bytecode = read_binary("et_verifier").unwrap();
-		let addr = deploy_verifier(client.get_signer(), bytecode).await.unwrap();
+		// Deploy the verifier contract
+		let addr = deploy_verifier(client.get_signer()).await.unwrap();
 
 		// Read proof data and call verifier
 		let proof_raw: ProofRaw = read_json("et_proof").unwrap();
