@@ -66,9 +66,9 @@ pub trait RoundParams<F: FieldExt, const WIDTH: usize>: Sbox + Clone {
 		let mut new_state = [F::ZERO; WIDTH];
 		let mds = Self::mds();
 		for i in 0..WIDTH {
-			for (j, state) in state.iter().enumerate().take(WIDTH) {
+			for j in 0..WIDTH {
 				let mds_ij = &mds[i][j];
-				let m_product = *state * mds_ij;
+				let m_product = state[j] * mds_ij;
 				new_state[i] += m_product;
 			}
 		}
@@ -94,9 +94,9 @@ pub trait RoundParams<F: FieldExt, const WIDTH: usize>: Sbox + Clone {
 		let mut new_state = [Value::known(F::ZERO); WIDTH];
 		let mds = Self::mds();
 		for i in 0..WIDTH {
-			for (j, next_state_j) in next_state.iter().enumerate().take(WIDTH) {
+			for j in 0..WIDTH {
 				let mds_ij = &Value::known(mds[i][j]);
-				let m_product = *next_state_j * mds_ij;
+				let m_product = next_state[j] * mds_ij;
 				new_state[i] = new_state[i] + m_product;
 			}
 		}
@@ -121,8 +121,8 @@ pub trait RoundParams<F: FieldExt, const WIDTH: usize>: Sbox + Clone {
 		// Mat mul with MDS
 		let mds = Self::mds();
 		for i in 0..WIDTH {
-			for (j, expr) in exprs.iter().enumerate().take(WIDTH) {
-				new_exprs[i] = new_exprs[i].clone() + (expr.clone() * mds[i][j]);
+			for j in 0..WIDTH {
+				new_exprs[i] = new_exprs[i].clone() + (exprs[j].clone() * mds[i][j]);
 			}
 		}
 		new_exprs

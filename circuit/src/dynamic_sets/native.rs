@@ -221,13 +221,13 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITERATIONS: usize, const INITIAL_SCO
 		let mut s: Vec<Fr> = self.set.iter().map(|(_, score)| *score).collect();
 		let mut new_s: Vec<Fr> = self.set.iter().map(|(_, score)| *score).collect();
 		for _ in 0..NUM_ITERATIONS {
-			for (i, new_s_i) in new_s.iter_mut().enumerate().take(NUM_NEIGHBOURS) {
+			for i in 0..NUM_NEIGHBOURS {
 				let mut score_i_sum = Fr::zero();
 				for j in 0..NUM_NEIGHBOURS {
 					let score = ops_norm[j][i] * s[j];
 					score_i_sum = score + score_i_sum;
 				}
-				*new_s_i = score_i_sum;
+				new_s[i] = score_i_sum;
 			}
 			s = new_s.clone();
 		}
@@ -285,13 +285,13 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITERATIONS: usize, const INITIAL_SCO
 
 		let mut new_s = s.clone();
 		for _ in 0..NUM_ITERATIONS {
-			for (i, new_s_i) in new_s.iter_mut().enumerate().take(NUM_NEIGHBOURS) {
+			for i in 0..NUM_NEIGHBOURS {
 				let mut score_i_sum = BigRational::zero();
 				for j in 0..NUM_NEIGHBOURS {
 					let score = ops_norm[j][i].clone() * s[j].clone();
 					score_i_sum = score + score_i_sum;
 				}
-				*new_s_i = score_i_sum;
+				new_s[i] = score_i_sum;
 			}
 			s = new_s.clone();
 		}

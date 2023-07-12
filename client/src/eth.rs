@@ -4,6 +4,7 @@
 
 use crate::{
 	attestation::ECDSAPublicKey,
+	error::EigenError,
 	eth::bindings::AttestationStation,
 	fs::{get_data_directory, get_file_path, read_yul, write_binary, FileType},
 	ClientSigner,
@@ -64,23 +65,36 @@ pub async fn call_verifier(
 	println!("{:#?}", res);
 }
 
-// TODO: Review this function.
-/// Compiles the Solidity contracts in the `data` directory.
-pub fn compile_sol_contracts() {
-	let data_dir = get_data_directory().unwrap();
+/// Compiles the AttestationStation contract.
+pub fn compile_att_station() -> Result<(), EigenError> {
+	let path =
+		get_data_directory().map_err(|_| EigenError::ParseError)?.join("AttestationStation.sol");
 
 	// compile it
-	let contracts = Solc::default().compile_source(&data_dir).unwrap();
+	let contracts =
+		Solc::default().compile_source(&path).map_err(|_| EigenError::ContractCompilationError)?;
+
+	if contracts.errors.len() > 0 {
+		return Err(EigenError::ContractCompilationError);
+	}
+
 	for (name, contr) in contracts.contracts_iter() {
 		let contract: ContractBytecode = contr.clone().into();
-		let abi = contract.clone().abi.unwrap();
-		let abi_json = serde_json::to_string(&abi).unwrap();
-		let contract_json = serde_json::to_string(&contract).unwrap();
-		let bindings = Abigen::new(name, abi_json).unwrap().generate().unwrap();
+		let abi = contract.clone().abi.ok_or(EigenError::ParseError)?;
+		let abi_json = serde_json::to_string(&abi).map_err(|_| EigenError::ParseError)?;
+		let contract_json = serde_json::to_string(&contract).map_err(|_| EigenError::ParseError)?;
+		let bindings = Abigen::new(name, abi_json)
+			.map_err(|_| EigenError::ParseError)?
+			.generate()
+			.map_err(|_| EigenError::ParseError)?;
 
-		bindings.write_to_file(get_file_path(name, FileType::Rs).unwrap()).unwrap();
-		write(get_file_path(name, FileType::Json).unwrap(), contract_json).unwrap();
+		bindings
+			.write_to_file(get_file_path(name, FileType::Rs).unwrap())
+			.map_err(|_| EigenError::ParseError)?;
+		write(get_file_path(name, FileType::Json).unwrap(), contract_json)
+			.map_err(|_| EigenError::ParseError)?;
 	}
+	Ok(())
 }
 
 /// Compiles the Yul contracts in the `data` directory.
@@ -120,8 +134,8 @@ pub fn ecdsa_secret_from_mnemonic(
 
 		let raw_pk: &SigningKey = derived_pk.as_ref();
 
-		let secret_key =
-			SecretKey::from_slice(&raw_pk.to_bytes()).expect("32 bytes, within curve order");
+		let secret_key = SecretKey::from_slice(&raw_pk.to_bytes().as_slice())
+			.expect("32 bytes, within curve order");
 
 		keys.push(secret_key);
 	}

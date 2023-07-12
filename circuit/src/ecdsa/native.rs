@@ -28,7 +28,7 @@ where
 /// Ecdsa public key
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct PublicKey<N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P, EC>(
-	EcPoint<Secp256k1Affine, N, NUM_LIMBS, NUM_BITS, P, EC>,
+	pub(crate) EcPoint<Secp256k1Affine, N, NUM_LIMBS, NUM_BITS, P, EC>,
 )
 where
 	P: RnsParams<<Secp256k1Affine as CurveAffine>::Base, N, NUM_LIMBS, NUM_BITS>
@@ -84,8 +84,8 @@ pub struct Signature<N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize,
 where
 	P: RnsParams<<Secp256k1Affine as CurveAffine>::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
 {
-	r: Integer<Fq, N, NUM_LIMBS, NUM_BITS, P>,
-	s: Integer<Fq, N, NUM_LIMBS, NUM_BITS, P>,
+	pub(crate) r: Integer<Fq, N, NUM_LIMBS, NUM_BITS, P>,
+	pub(crate) s: Integer<Fq, N, NUM_LIMBS, NUM_BITS, P>,
 }
 
 impl<N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
@@ -158,11 +158,11 @@ where
 	/// Generate a keypair from a given private key
 	pub fn from_private_key(private_key_fq: Fq) -> Self {
 		let private_key = Integer::from_w(private_key_fq);
-		let public_key_affine = (Secp256k1::generator() * &private_key_fq).to_affine();
-		let public_key_x = Integer::from_w(public_key_affine.x.clone());
-		let public_key_y = Integer::from_w(public_key_affine.y.clone());
-		let public_key_point = EcPoint::new(public_key_x, public_key_y);
-		let public_key = PublicKey(public_key_point);
+		let public_key_affine = (Secp256k1::generator() * private_key_fq).to_affine();
+		let public_key_x = Integer::from_w(public_key_affine.x);
+		let public_key_y = Integer::from_w(public_key_affine.y);
+		let public_key_p = EcPoint::new(public_key_x, public_key_y);
+		let public_key = PublicKey::new(public_key_p);
 		Self { private_key, public_key }
 	}
 
@@ -242,7 +242,7 @@ where
 				return false;
 			}
 		}
-		return true;
+		true
 	}
 }
 

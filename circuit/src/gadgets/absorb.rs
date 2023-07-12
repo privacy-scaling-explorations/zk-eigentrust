@@ -43,13 +43,13 @@ impl<F: FieldExt, const WIDTH: usize> Chip<F> for AbsorbChip<F, WIDTH> {
 			let mut exprs = [(); WIDTH].map(|_| Expression::Constant(F::ZERO));
 
 			let s = v_cells.query_selector(absorb_selector);
-			for (i, expr) in exprs.iter_mut().enumerate().take(WIDTH) {
+			for i in 0..WIDTH {
 				let hasher_exp = v_cells.query_advice(common.advice[i], Rotation::cur());
 				let sponge_exp = v_cells.query_advice(common.advice[i + WIDTH], Rotation::cur());
 				let next_sponge_exp =
 					v_cells.query_advice(common.advice[i + 2 * WIDTH], Rotation::cur());
 				let diff = next_sponge_exp - (sponge_exp + hasher_exp);
-				*expr = s.clone() * diff;
+				exprs[i] = s.clone() * diff;
 			}
 
 			exprs

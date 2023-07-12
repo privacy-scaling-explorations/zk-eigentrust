@@ -82,10 +82,10 @@ where
 		let value = merkle_tree.nodes[&0][value_index];
 		let mut path_arr: [[F; ARITY]; LENGTH] = [[F::ZERO; ARITY]; LENGTH];
 
-		for (level, nodes) in path_arr.iter_mut().enumerate().take(merkle_tree.height) {
+		for level in 0..merkle_tree.height {
 			let wrap = value_index.div_rem(&ARITY);
-			for (i, node) in nodes.iter_mut().enumerate().take(ARITY) {
-				*node = merkle_tree.nodes[&level][wrap.0 * ARITY + i];
+			for i in 0..ARITY {
+				path_arr[level][i] = merkle_tree.nodes[&level][wrap.0 * ARITY + i];
 			}
 			value_index /= ARITY;
 		}

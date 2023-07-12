@@ -1,7 +1,7 @@
 use crate::{
 	ecc::{
-		same_curve::{AssignedPoint, EccAddChipset, EccMulChipset},
-		EccMulConfig,
+		same_curve::{AssignedAux, AssignedEcPoint, AuxAssigner, EccAddChipset, EccMulChipset},
+		AuxConfig, EccMulConfig,
 	},
 	gadgets::main::{AddChipset, InverseChipset, MainConfig, MulChipset, SubChipset},
 	integer::{native::Integer, AssignedInteger},
@@ -47,14 +47,10 @@ where
 	pub(crate) main: MainConfig,
 	pub(crate) sponge: H::Config,
 	// Aux_init and Aux_fin for the ecc_mul operation
-	pub(crate) auxes: (
-		AssignedPoint<C, NUM_LIMBS, NUM_BITS, P>,
-		AssignedPoint<C, NUM_LIMBS, NUM_BITS, P>,
-	),
+	pub(crate) aux: AssignedAux<C, NUM_LIMBS, NUM_BITS, P, EC>,
 	// PhantomData
 	_curve: PhantomData<C>,
 	_p: PhantomData<P>,
-	_ec: PhantomData<EC>,
 }
 
 impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, H, EC> LoaderConfig<'a, C, L, P, H, EC>
@@ -68,79 +64,11 @@ where
 	/// Construct a new LoaderConfig
 	pub fn new(
 		mut layouter: NamespacedLayouter<'a, C::Scalar, L>, common: CommonConfig,
-		ecc_mul_scalar: EccMulConfig, main: MainConfig, sponge: H::Config,
+		ecc_mul_scalar: EccMulConfig, aux_config: AuxConfig, main: MainConfig, sponge: H::Config,
 	) -> Self {
-		let (aux_init, aux_fin) = layouter
-			.assign_region(
-				|| "aux",
-				|region: Region<'_, C::Scalar>| {
-					let mut ctx = RegionCtx::new(region, 0);
-
-					let to_add = EC::aux_init();
-					let to_sub = EC::make_mul_aux(to_add, 1);
-
-					let to_add_x_coord = to_add.coordinates().unwrap();
-					let to_sub_x_coord = to_sub.coordinates().unwrap();
-
-					let to_add_x = to_add_x_coord.x();
-					let to_add_y = to_add_x_coord.y();
-					let to_sub_x = to_sub_x_coord.x();
-					let to_sub_y = to_sub_x_coord.y();
-
-					let to_add_x_int = Integer::from_w(*to_add_x);
-					let to_add_y_int = Integer::from_w(*to_add_y);
-
-					let to_sub_x_int = Integer::from_w(*to_sub_x);
-					let to_sub_y_int = Integer::from_w(*to_sub_y);
-
-					let mut init_x_limbs: [Option<AssignedCell<C::Scalar, C::Scalar>>; NUM_LIMBS] =
-						[(); NUM_LIMBS].map(|_| None);
-					let mut init_y_limbs: [Option<AssignedCell<C::Scalar, C::Scalar>>; NUM_LIMBS] =
-						[(); NUM_LIMBS].map(|_| None);
-
-					for (i, limb) in init_x_limbs.iter_mut().enumerate().take(NUM_LIMBS) {
-						let x = ctx.assign_fixed(common.fixed[i], to_add_x_int.limbs[i])?;
-						*limb = Some(x);
-					}
-					ctx.next();
-					for (i, limb) in init_y_limbs.iter_mut().enumerate().take(NUM_LIMBS) {
-						let y = ctx.assign_fixed(common.fixed[i], to_add_y_int.limbs[i])?;
-						*limb = Some(y);
-					}
-
-					ctx.next();
-
-					let mut fin_x_limbs: [Option<AssignedCell<C::Scalar, C::Scalar>>; NUM_LIMBS] =
-						[(); NUM_LIMBS].map(|_| None);
-					let mut fin_y_limbs: [Option<AssignedCell<C::Scalar, C::Scalar>>; NUM_LIMBS] =
-						[(); NUM_LIMBS].map(|_| None);
-
-					for (i, limb) in fin_x_limbs.iter_mut().enumerate().take(NUM_LIMBS) {
-						let x = ctx.assign_fixed(common.fixed[i], to_sub_x_int.limbs[i])?;
-						*limb = Some(x);
-					}
-					ctx.next();
-					for (i, limb) in fin_y_limbs.iter_mut().enumerate().take(NUM_LIMBS) {
-						let y = ctx.assign_fixed(common.fixed[i], to_sub_y_int.limbs[i])?;
-						*limb = Some(y);
-					}
-
-					let init_x_limbs = init_x_limbs.map(|x| x.unwrap());
-					let init_y_limbs = init_y_limbs.map(|x| x.unwrap());
-					let fin_x_limbs = fin_x_limbs.map(|x| x.unwrap());
-					let fin_y_limbs = fin_y_limbs.map(|x| x.unwrap());
-
-					let aux_init_x = AssignedInteger::new(to_add_x_int, init_x_limbs);
-					let aux_init_y = AssignedInteger::new(to_add_y_int, init_y_limbs);
-					let aux_init = AssignedPoint::new(aux_init_x, aux_init_y);
-
-					let aux_fin_x = AssignedInteger::new(to_sub_x_int, fin_x_limbs);
-					let aux_fin_y = AssignedInteger::new(to_sub_y_int, fin_y_limbs);
-					let aux_fin = AssignedPoint::new(aux_fin_x, aux_fin_y);
-
-					Ok((aux_init, aux_fin))
-				},
-			)
+		let aux_assigner = AuxAssigner::new();
+		let aux = aux_assigner
+			.synthesize(&common, &aux_config, layouter.namespace(|| "aux_assigner"))
 			.unwrap();
 
 		let layouter_rc = Rc::new(RefCell::new(layouter));
@@ -150,10 +78,9 @@ where
 			ecc_mul_scalar,
 			main,
 			sponge,
-			auxes: (aux_init, aux_fin),
+			aux,
 			_curve: PhantomData,
 			_p: PhantomData,
-			_ec: PhantomData,
 		}
 	}
 }
@@ -175,10 +102,9 @@ where
 			ecc_mul_scalar: self.ecc_mul_scalar.clone(),
 			main: self.main.clone(),
 			sponge: self.sponge.clone(),
-			auxes: self.auxes.clone(),
+			aux: self.aux.clone(),
 			_curve: PhantomData,
 			_p: PhantomData,
-			_ec: PhantomData,
 		}
 	}
 }
@@ -634,7 +560,7 @@ where
 	C::Scalar: FieldExt,
 {
 	// Inner value for the halo2 loaded point
-	pub(crate) inner: AssignedPoint<C, NUM_LIMBS, NUM_BITS, P>,
+	pub(crate) inner: AssignedEcPoint<C, NUM_LIMBS, NUM_BITS, P>,
 	// Loader
 	pub(crate) loader: LoaderConfig<'a, C, L, P, H, EC>,
 	_h: PhantomData<H>,
@@ -650,7 +576,7 @@ where
 {
 	/// Creates a new Halo2LScalar
 	pub fn new(
-		value: AssignedPoint<C, NUM_LIMBS, NUM_BITS, P>, loader: LoaderConfig<'a, C, L, P, H, EC>,
+		value: AssignedEcPoint<C, NUM_LIMBS, NUM_BITS, P>, loader: LoaderConfig<'a, C, L, P, H, EC>,
 	) -> Self {
 		Self { inner: value, loader, _h: PhantomData }
 	}
@@ -746,12 +672,14 @@ where
 						[(); NUM_LIMBS].map(|_| None);
 					let mut y_limbs: [Option<AssignedCell<C::Scalar, C::Scalar>>; NUM_LIMBS] =
 						[(); NUM_LIMBS].map(|_| None);
-					for (i, limb) in x.limbs.iter().enumerate().take(NUM_LIMBS) {
-						x_limbs[i] = Some(ctx.assign_fixed(self.common.fixed[i], *limb).unwrap());
+					for i in 0..NUM_LIMBS {
+						x_limbs[i] =
+							Some(ctx.assign_fixed(self.common.fixed[i], x.limbs[i]).unwrap());
 					}
 					ctx.next();
-					for (i, limb) in y.limbs.iter().enumerate().take(NUM_LIMBS) {
-						y_limbs[i] = Some(ctx.assign_fixed(self.common.fixed[i], *limb).unwrap());
+					for i in 0..NUM_LIMBS {
+						y_limbs[i] =
+							Some(ctx.assign_fixed(self.common.fixed[i], y.limbs[i]).unwrap());
 					}
 					Ok((x_limbs.map(|x| x.unwrap()), y_limbs.map(|x| x.unwrap())))
 				},
@@ -760,7 +688,7 @@ where
 		let x_assigned = AssignedInteger::new(x, x_limbs);
 		let y_assigned = AssignedInteger::new(y, y_limbs);
 
-		let assigned_point = AssignedPoint::new(x_assigned, y_assigned);
+		let assigned_point = AssignedEcPoint::new(x_assigned, y_assigned);
 		Halo2LEcPoint::new(assigned_point, self.clone())
 	}
 
@@ -802,12 +730,10 @@ where
 			.cloned()
 			.map(|(scalar, base)| {
 				let config = base.loader.clone();
-				let auxes = base.loader.auxes.clone();
-				let (aux_init, aux_fin) = auxes;
+				let aux = base.loader.aux.clone();
 
 				let mut layouter = base.loader.layouter.borrow_mut();
-				let chip =
-					EccMulChipset::new(base.inner.clone(), scalar.inner.clone(), aux_init, aux_fin);
+				let chip = EccMulChipset::new(base.inner.clone(), scalar.inner.clone(), aux);
 				let mul = chip
 					.synthesize(
 						&config.common,
@@ -855,8 +781,8 @@ mod test {
 	use crate::{
 		circuit::{FullRoundHasher, PartialRoundHasher},
 		ecc::{
-			same_curve::{native::EcPoint, AssignedPoint},
-			EccAddConfig, EccDoubleConfig, EccMulConfig, EccTableSelectConfig,
+			same_curve::{native::EcPoint, AssignedEcPoint},
+			AuxConfig, EccAddConfig, EccDoubleConfig, EccMulConfig, EccTableSelectConfig,
 			EccUnreducedLadderConfig,
 		},
 		gadgets::{
@@ -900,6 +826,7 @@ mod test {
 		main: MainConfig,
 		poseidon_sponge: PoseidonSpongeConfig,
 		ecc_mul_scalar: EccMulConfig,
+		aux: AuxConfig,
 	}
 
 	#[derive(Clone)]
@@ -950,8 +877,10 @@ mod test {
 			let add = EccAddConfig::new(int_red, int_sub, int_mul, int_div);
 			let double = EccDoubleConfig::new(int_red, int_add, int_sub, int_mul, int_div);
 			let table_select = EccTableSelectConfig::new(main.clone());
-			let ecc_mul_scalar = EccMulConfig::new(ladder, add, double, table_select, bits2num);
-			TestConfig { common, main, poseidon_sponge, ecc_mul_scalar }
+			let ecc_mul_scalar =
+				EccMulConfig::new(ladder, add, double.clone(), table_select, bits2num);
+			let aux = AuxConfig::new(double);
+			TestConfig { common, main, poseidon_sponge, ecc_mul_scalar, aux }
 		}
 
 		fn synthesize(
@@ -999,6 +928,7 @@ mod test {
 					layouter.namespace(|| "loader"),
 					config.common.clone(),
 					config.ecc_mul_scalar,
+					config.aux,
 					config.main,
 					config.poseidon_sponge,
 				);
@@ -1012,7 +942,7 @@ mod test {
 					let x = AssignedInteger::new(lpoint.inner.x.clone(), x_limbs.clone());
 					let y = AssignedInteger::new(lpoint.inner.y.clone(), y_limbs.clone());
 
-					let assigned_point = AssignedPoint::new(x, y);
+					let assigned_point = AssignedEcPoint::new(x, y);
 					let halo2_point = Halo2LEcPoint::new(assigned_point, loader_config.clone());
 
 					halo2_pairs.push((halo2_scalar, halo2_point));
