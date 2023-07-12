@@ -43,7 +43,7 @@ pub fn address_from_pub_key(
 pub fn field_value_from_pub_key(
 	pub_key: &PublicKey<Fr, 4, 68, Secp256k1_4_68, Secp256k1Params>,
 ) -> Fr {
-	let mut address = address_from_pub_key(&pub_key).unwrap();
+	let mut address = address_from_pub_key(pub_key).unwrap();
 	address.reverse();
 
 	let mut address_bytes = [0u8; 32];

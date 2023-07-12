@@ -116,14 +116,14 @@ where
 	) -> Result<Self::Output, Error> {
 		let signature_r_assigner = IntegerAssigner::new(self.sig.r);
 		let signature_r = signature_r_assigner.synthesize(
-			&common,
+			common,
 			&(),
 			layouter.namespace(|| "signature_r assigner"),
 		)?;
 
 		let signature_s_assigner = IntegerAssigner::new(self.sig.s);
 		let signature_s = signature_s_assigner.synthesize(
-			&common,
+			common,
 			&(),
 			layouter.namespace(|| "signature_s assigner"),
 		)?;
@@ -216,7 +216,7 @@ where
 	) -> Result<Self::Output, Error> {
 		let public_key_assigner = PointAssigner::new(self.0 .0);
 		let public_key = public_key_assigner.synthesize(
-			&common,
+			common,
 			&(),
 			layouter.namespace(|| "public_key assigner"),
 		)?;

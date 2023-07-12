@@ -134,7 +134,7 @@ pub fn ecdsa_secret_from_mnemonic(
 
 		let raw_pk: &SigningKey = derived_pk.as_ref();
 
-		let secret_key = SecretKey::from_slice(&raw_pk.to_bytes().as_slice())
+		let secret_key = SecretKey::from_slice(raw_pk.to_bytes().as_slice())
 			.expect("32 bytes, within curve order");
 
 		keys.push(secret_key);
