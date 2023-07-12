@@ -60,6 +60,7 @@ use dotenv::{dotenv, var};
 use eigen_trust_circuit::{
 	dynamic_sets::ecdsa_native::{
 		EigenTrustSet, RationalScore, SignedAttestation as SignedAttestationFr, MIN_PEER_COUNT,
+		NUM_BITS, NUM_LIMBS,
 	},
 	ecdsa::native::PublicKey,
 	halo2::halo2curves::bn256::Fr as Scalar,
@@ -92,10 +93,6 @@ const MAX_NEIGHBOURS: usize = 4;
 const NUM_ITERATIONS: usize = 20;
 /// Initial score for each participant before the algorithms is run.
 const INITIAL_SCORE: u128 = 1000;
-/// Number of limbs for integer operations
-pub const NUM_LIMBS: usize = 4;
-/// Number of bits for integer operations
-pub const NUM_BITS: usize = 68;
 /// Number of limbs for representing big numbers in threshold checking.
 const _NUM_DECIMAL_LIMBS: usize = 2;
 /// Number of digits of each limbs for threshold checking.

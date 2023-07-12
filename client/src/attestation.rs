@@ -11,7 +11,7 @@ use crate::{
 use eigen_trust_circuit::{
 	dynamic_sets::ecdsa_native::AttestationFr,
 	ecdsa::native::Signature,
-	halo2::halo2curves::{bn256::Fr as Scalar, ff::FromUniformBytes},
+	halo2::halo2curves::{bn256::Fr as Scalar, ff::FromUniformBytes, secp256k1::Secp256k1Affine},
 	params::rns::secp256k1::Secp256k1_4_68,
 };
 use ethers::types::{Address, H256};
@@ -30,7 +30,7 @@ pub type ECDSAPublicKey = secp256k1::PublicKey;
 /// ECDSA signature
 pub type ECDSASignature = ecdsa::RecoverableSignature;
 /// Signature represented with field elements
-pub type SignatureFr = Signature<Scalar, NUM_LIMBS, NUM_BITS, Secp256k1_4_68>;
+pub type SignatureFr = Signature<Secp256k1Affine, Scalar, NUM_LIMBS, NUM_BITS, Secp256k1_4_68>;
 
 /// Attestation struct.
 #[derive(Clone, Debug)]

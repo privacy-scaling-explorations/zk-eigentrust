@@ -3,7 +3,7 @@ pub mod native;
 use crate::eddsa::native::Signature;
 use crate::UnassignedValue;
 
-/// Native version of EigenTrustSet(ECDSA)  
+/// Native version of EigenTrustSet(ECDSA)
 ///
 /// NOTE: This is temporary since Halo2 version of ECDSA is not ready
 pub mod ecdsa_native;
