@@ -1,4 +1,4 @@
-use halo2::halo2curves::bn256::Fr;
+use halo2::halo2curves::{bn256::Fr, secp256k1::Secp256k1Affine};
 
 use crate::{
 	circuit::{PoseidonNativeHasher, PoseidonNativeSponge},
@@ -10,14 +10,14 @@ use crate::{
 
 /// Opinion info of peer
 pub struct Opinion<const NUM_NEIGHBOURS: usize> {
-	from: PublicKey<Fr, 4, 68, Secp256k1_4_68, Secp256k1Params>,
+	from: PublicKey<Secp256k1Affine, Fr, 4, 68, Secp256k1_4_68, Secp256k1Params>,
 	attestations: Vec<SignedAttestation>,
 }
 
 impl<const NUM_NEIGHBOURS: usize> Opinion<NUM_NEIGHBOURS> {
 	/// Construct new instance
 	pub fn new(
-		from: PublicKey<Fr, 4, 68, Secp256k1_4_68, Secp256k1Params>,
+		from: PublicKey<Secp256k1Affine, Fr, 4, 68, Secp256k1_4_68, Secp256k1Params>,
 		attestations: Vec<SignedAttestation>,
 	) -> Self {
 		Self { from, attestations }

@@ -16,7 +16,6 @@ use crate::{
 };
 use crate::{Chip, RegionCtx, UnassignedValue};
 use halo2::circuit::{Region, Value};
-use halo2::halo2curves::secp256k1::{Fp, Fq, Secp256k1Affine};
 use halo2::{
 	circuit::Layouter,
 	halo2curves::CurveAffine,
@@ -26,21 +25,28 @@ use std::marker::PhantomData;
 
 #[derive(Clone, Debug)]
 /// Unassigned signature structure
-pub struct UnassignedSignature<N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
-where
-	P: RnsParams<<Secp256k1Affine as CurveAffine>::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+pub struct UnassignedSignature<
+	C: CurveAffine,
+	N: FieldExt,
+	const NUM_LIMBS: usize,
+	const NUM_BITS: usize,
+	P,
+> where
+	P: RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	C::ScalarExt: FieldExt,
 {
-	r: UnassignedInteger<Fq, N, NUM_LIMBS, NUM_BITS, P>,
-	s: UnassignedInteger<Fq, N, NUM_LIMBS, NUM_BITS, P>,
+	r: UnassignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>,
+	s: UnassignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>,
 }
 
-impl<N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
-	UnassignedSignature<N, NUM_LIMBS, NUM_BITS, P>
+impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
+	UnassignedSignature<C, N, NUM_LIMBS, NUM_BITS, P>
 where
-	P: RnsParams<<Secp256k1Affine as CurveAffine>::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	P: RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	C::ScalarExt: FieldExt,
 {
 	/// Constructor for unassigned signature
-	pub fn new(sig: Signature<N, NUM_LIMBS, NUM_BITS, P>) -> Self {
+	pub fn new(sig: Signature<C, N, NUM_LIMBS, NUM_BITS, P>) -> Self {
 		Self {
 			r: UnassignedInteger::new(sig.r.clone(), sig.r.limbs.map(|x| Value::known(x))),
 			s: UnassignedInteger::new(sig.s.clone(), sig.s.limbs.map(|x| Value::known(x))),
@@ -48,10 +54,11 @@ where
 	}
 }
 
-impl<N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P> UnassignedValue
-	for UnassignedSignature<N, NUM_LIMBS, NUM_BITS, P>
+impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P> UnassignedValue
+	for UnassignedSignature<C, N, NUM_LIMBS, NUM_BITS, P>
 where
-	P: RnsParams<<Secp256k1Affine as CurveAffine>::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	P: RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	C::ScalarExt: FieldExt,
 {
 	fn without_witnesses() -> Self {
 		Self {
@@ -63,53 +70,68 @@ where
 
 #[derive(Clone, Debug)]
 /// Assigned signature structure
-pub struct AssignedSignature<N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
-where
-	P: RnsParams<<Secp256k1Affine as CurveAffine>::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+pub struct AssignedSignature<
+	C: CurveAffine,
+	N: FieldExt,
+	const NUM_LIMBS: usize,
+	const NUM_BITS: usize,
+	P,
+> where
+	P: RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	C::ScalarExt: FieldExt,
 {
-	r: AssignedInteger<Fq, N, NUM_LIMBS, NUM_BITS, P>,
-	s: AssignedInteger<Fq, N, NUM_LIMBS, NUM_BITS, P>,
+	r: AssignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>,
+	s: AssignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>,
 }
 
-impl<N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
-	AssignedSignature<N, NUM_LIMBS, NUM_BITS, P>
+impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
+	AssignedSignature<C, N, NUM_LIMBS, NUM_BITS, P>
 where
-	P: RnsParams<<Secp256k1Affine as CurveAffine>::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	P: RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	C::ScalarExt: FieldExt,
 {
 	fn new(
-		r: AssignedInteger<Fq, N, NUM_LIMBS, NUM_BITS, P>,
-		s: AssignedInteger<Fq, N, NUM_LIMBS, NUM_BITS, P>,
+		r: AssignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>,
+		s: AssignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>,
 	) -> Self {
 		Self { r, s }
 	}
 }
 
 /// Signature assigner chipset
-pub struct SingatureAssigner<N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
-where
-	P: RnsParams<<Secp256k1Affine as CurveAffine>::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+pub struct SingatureAssigner<
+	C: CurveAffine,
+	N: FieldExt,
+	const NUM_LIMBS: usize,
+	const NUM_BITS: usize,
+	P,
+> where
+	P: RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	C::ScalarExt: FieldExt,
 {
-	sig: UnassignedSignature<N, NUM_LIMBS, NUM_BITS, P>,
+	sig: UnassignedSignature<C, N, NUM_LIMBS, NUM_BITS, P>,
 }
 
-impl<N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
-	SingatureAssigner<N, NUM_LIMBS, NUM_BITS, P>
+impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
+	SingatureAssigner<C, N, NUM_LIMBS, NUM_BITS, P>
 where
-	P: RnsParams<<Secp256k1Affine as CurveAffine>::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	P: RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	C::ScalarExt: FieldExt,
 {
 	/// Constructor for Signature assigner
-	pub fn new(sig: UnassignedSignature<N, NUM_LIMBS, NUM_BITS, P>) -> Self {
+	pub fn new(sig: UnassignedSignature<C, N, NUM_LIMBS, NUM_BITS, P>) -> Self {
 		Self { sig }
 	}
 }
 
-impl<N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P> Chipset<N>
-	for SingatureAssigner<N, NUM_LIMBS, NUM_BITS, P>
+impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P> Chipset<N>
+	for SingatureAssigner<C, N, NUM_LIMBS, NUM_BITS, P>
 where
-	P: RnsParams<<Secp256k1Affine as CurveAffine>::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	P: RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	C::ScalarExt: FieldExt,
 {
 	type Config = ();
-	type Output = AssignedSignature<N, NUM_LIMBS, NUM_BITS, P>;
+	type Output = AssignedSignature<C, N, NUM_LIMBS, NUM_BITS, P>;
 
 	fn synthesize(
 		self, common: &CommonConfig, _: &Self::Config, mut layouter: impl Layouter<N>,
@@ -143,15 +165,18 @@ struct UnassignedPublicKey<
 >(UnassignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>)
 where
 	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS>,
-	EC: EccParams<C>;
+	EC: EccParams<C>,
+	C::Base: FieldExt;
 
 impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P, EC>
 	UnassignedPublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>
 where
 	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
-	EC: EccParams<Secp256k1Affine>,
+	C::Base: FieldExt,
+	C::ScalarExt: FieldExt,
+	EC: EccParams<C>,
 {
-	fn new(pk: PublicKey<N, NUM_LIMBS, NUM_BITS, P, EC>) -> Self {
+	fn new(pk: PublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>) -> Self {
 		let x = UnassignedInteger::new(pk.0.x.clone(), pk.0.x.limbs.map(|x| Value::known(x)));
 		let y = UnassignedInteger::new(pk.0.y.clone(), pk.0.y.limbs.map(|x| Value::known(x)));
 		let p = UnassignedEcPoint::new(x, y);
@@ -163,6 +188,8 @@ impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize,
 	UnassignedValue for UnassignedPublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>
 where
 	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS>,
+	C::Base: FieldExt,
+	C::ScalarExt: FieldExt,
 	EC: EccParams<C>,
 {
 	fn without_witnesses() -> Self {
@@ -180,16 +207,14 @@ pub struct AssignedPublicKey<
 	P,
 >(AssignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P>)
 where
-	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
-	C::Base: FieldExt,
-	C::ScalarExt: FieldExt;
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS>,
+	C::Base: FieldExt;
 
 impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
 	AssignedPublicKey<C, N, NUM_LIMBS, NUM_BITS, P>
 where
 	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS>,
 	C::Base: FieldExt,
-	C::ScalarExt: FieldExt,
 {
 	/// Constructor for assigned public key
 	pub fn new(p: AssignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P>) -> Self {
@@ -204,21 +229,20 @@ struct PublicKeyAssigner<
 	const NUM_BITS: usize,
 	P,
 	EC,
->(UnassignedPublicKey<C::Base, N, NUM_LIMBS, NUM_BITS, P, EC>)
+>(UnassignedPublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>)
 where
-	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
-	EC: EccParams<Secp256k1Affine>,
-	C::Base: FieldExt,
-	C::ScalarExt: FieldExt;
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
+	C::Base: FieldExt;
+
 impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P, EC>
 	PublicKeyAssigner<C, N, NUM_LIMBS, NUM_BITS, P, EC>
 where
-	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS>,
 	EC: EccParams<C>,
 	C::Base: FieldExt,
-	C::ScalarExt: FieldExt,
 {
-	pub fn new(p: UnassignedPublicKey<C::Base, N, NUM_LIMBS, NUM_BITS, P, EC>) -> Self {
+	pub fn new(p: UnassignedPublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>) -> Self {
 		Self(p)
 	}
 }
@@ -227,7 +251,7 @@ impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize,
 	for PublicKeyAssigner<C, N, NUM_LIMBS, NUM_BITS, P, EC>
 where
 	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
-	EC: EccParams<Secp256k1Affine>,
+	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
 {
@@ -286,7 +310,7 @@ pub struct EcdsaChipset<
 	// Generator as a ec point
 	g_as_ecpoint: AssignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P>,
 	// Signature
-	signature: AssignedSignature<N, NUM_LIMBS, NUM_BITS, P>,
+	signature: AssignedSignature<C, N, NUM_LIMBS, NUM_BITS, P>,
 	// Message hash
 	msg_hash: AssignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>,
 	// Signature inverse
@@ -300,7 +324,7 @@ impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize,
 	EcdsaChipset<C, N, NUM_LIMBS, NUM_BITS, P, EC>
 where
 	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
-	EC: EccParams<Secp256k1Affine>,
+	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::ScalarExt: FieldExt,
 {
@@ -308,7 +332,7 @@ where
 	pub fn new(
 		public_key: AssignedPublicKey<C, N, NUM_LIMBS, NUM_BITS, P>,
 		g_as_ecpoint: AssignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P>,
-		signature: AssignedSignature<N, NUM_LIMBS, NUM_BITS, P>,
+		signature: AssignedSignature<C, N, NUM_LIMBS, NUM_BITS, P>,
 		msg_hash: AssignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>,
 		s_inv: AssignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>,
 		aux: AssignedAux<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
@@ -321,7 +345,7 @@ impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize,
 	for EcdsaChipset<C, N, NUM_LIMBS, NUM_BITS, P, EC>
 where
 	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
-	EC: EccParams<Secp256k1Affine>,
+	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::ScalarExt: FieldExt,
 {
@@ -348,30 +372,27 @@ where
 			layouter.namespace(|| "u_2"),
 		)?;
 
-		let v_1_ecc_mul_scalar_chip =
-			EccMulChipset::<Secp256k1Affine, N, NUM_LIMBS, NUM_BITS, P, EC>::new(
-				self.g_as_ecpoint,
-				u_1,
-				self.aux.clone(),
-			);
+		let v_1_ecc_mul_scalar_chip = EccMulChipset::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::new(
+			self.g_as_ecpoint,
+			u_1,
+			self.aux.clone(),
+		);
 		let v_1 = v_1_ecc_mul_scalar_chip.synthesize(
 			common,
 			&config.ecc_mul_scalar,
 			layouter.namespace(|| "v_1"),
 		)?;
 
-		let v_2_ecc_mul_scalar_chip =
-			EccMulChipset::<Secp256k1Affine, N, NUM_LIMBS, NUM_BITS, P, EC>::new(
-				self.public_key.0, u_2, self.aux,
-			);
+		let v_2_ecc_mul_scalar_chip = EccMulChipset::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::new(
+			self.public_key.0, u_2, self.aux,
+		);
 		let v_2 = v_2_ecc_mul_scalar_chip.synthesize(
 			common,
 			&config.ecc_mul_scalar,
 			layouter.namespace(|| "v_2"),
 		)?;
 
-		let r_point_add_chip =
-			EccAddChipset::<Secp256k1Affine, N, NUM_LIMBS, NUM_BITS, P>::new(v_1, v_2);
+		let r_point_add_chip = EccAddChipset::<C, N, NUM_LIMBS, NUM_BITS, P>::new(v_1, v_2);
 		let r_point = r_point_add_chip.synthesize(
 			common,
 			&config.ecc_add,
@@ -508,18 +529,18 @@ mod test {
 
 	#[derive(Clone)]
 	struct TestEcdsaCircuit {
-		public_key: UnassignedPublicKey<N, NUM_LIMBS, NUM_BITS, P, EC>,
+		public_key: UnassignedPublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
 		g_as_ecpoint: UnassignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
-		signature: UnassignedSignature<N, NUM_LIMBS, NUM_BITS, P>,
+		signature: UnassignedSignature<C, N, NUM_LIMBS, NUM_BITS, P>,
 		msg_hash: UnassignedInteger<SecpScalar, N, NUM_LIMBS, NUM_BITS, P>,
 		s_inv: UnassignedInteger<SecpScalar, N, NUM_LIMBS, NUM_BITS, P>,
 	}
 
 	impl TestEcdsaCircuit {
 		fn new(
-			public_key: PublicKey<N, NUM_LIMBS, NUM_BITS, P, EC>,
+			public_key: PublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
 			g_as_ecpoint: EcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
-			signature: Signature<N, NUM_LIMBS, NUM_BITS, P>,
+			signature: Signature<C, N, NUM_LIMBS, NUM_BITS, P>,
 			msg_hash: Integer<SecpScalar, N, NUM_LIMBS, NUM_BITS, P>,
 			s_inv: Integer<SecpScalar, N, NUM_LIMBS, NUM_BITS, P>,
 		) -> Self {
@@ -613,7 +634,7 @@ mod test {
 		// Test Halo2 ECDSA verify
 		let rng = &mut rand::thread_rng();
 		let keypair =
-			EcdsaKeypair::<Fr, 4, 68, Secp256k1_4_68, Secp256k1Params>::generate_keypair(rng);
+			EcdsaKeypair::<Secp256k1Affine, Fr, 4, 68, Secp256k1_4_68, Secp256k1Params>::generate_keypair(rng);
 		let public_key = keypair.public_key.clone();
 
 		let msg_hash = Fq::from_u128(123456789);

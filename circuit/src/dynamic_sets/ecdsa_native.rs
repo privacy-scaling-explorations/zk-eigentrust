@@ -7,7 +7,7 @@ use crate::{
 };
 use halo2::{
 	arithmetic::Field,
-	halo2curves::{bn256::Fr, ff::PrimeField},
+	halo2curves::{bn256::Fr, ff::PrimeField, secp256k1::Secp256k1Affine},
 };
 use itertools::Itertools;
 use num_bigint::{BigInt, ToBigInt};
@@ -27,7 +27,7 @@ pub const NUM_BITS: usize = 68;
 
 /// Construct an Ethereum address for the given ECDSA public key
 pub fn address_from_pub_key(
-	pub_key: &PublicKey<Fr, NUM_LIMBS, NUM_BITS, Secp256k1_4_68, Secp256k1Params>,
+	pub_key: &PublicKey<Secp256k1Affine, Fr, NUM_LIMBS, NUM_BITS, Secp256k1_4_68, Secp256k1Params>,
 ) -> Result<[u8; 20], &'static str> {
 	let pub_key_bytes = pub_key.to_bytes();
 
@@ -45,7 +45,7 @@ pub fn address_from_pub_key(
 
 /// Calculate the address field value from a public key
 pub fn field_value_from_pub_key(
-	pub_key: &PublicKey<Fr, NUM_LIMBS, NUM_BITS, Secp256k1_4_68, Secp256k1Params>,
+	pub_key: &PublicKey<Secp256k1Affine, Fr, NUM_LIMBS, NUM_BITS, Secp256k1_4_68, Secp256k1Params>,
 ) -> Fr {
 	let mut address = address_from_pub_key(pub_key).unwrap();
 	address.reverse();
@@ -62,13 +62,14 @@ pub struct SignedAttestation {
 	/// Attestation
 	pub attestation: AttestationFr,
 	/// Signature
-	pub signature: Signature<Fr, NUM_LIMBS, NUM_BITS, Secp256k1_4_68>,
+	pub signature: Signature<Secp256k1Affine, Fr, NUM_LIMBS, NUM_BITS, Secp256k1_4_68>,
 }
 
 impl SignedAttestation {
 	/// Constructs a new instance
 	pub fn new(
-		attestation: AttestationFr, signature: Signature<Fr, NUM_LIMBS, NUM_BITS, Secp256k1_4_68>,
+		attestation: AttestationFr,
+		signature: Signature<Secp256k1Affine, Fr, NUM_LIMBS, NUM_BITS, Secp256k1_4_68>,
 	) -> Self {
 		Self { attestation, signature }
 	}
@@ -156,7 +157,8 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITERATIONS: usize, const INITIAL_SCO
 
 	/// Update the opinion of the member
 	pub fn update_op(
-		&mut self, from: PublicKey<Fr, NUM_LIMBS, NUM_BITS, Secp256k1_4_68, Secp256k1Params>,
+		&mut self,
+		from: PublicKey<Secp256k1Affine, Fr, NUM_LIMBS, NUM_BITS, Secp256k1_4_68, Secp256k1Params>,
 		op: Vec<Option<SignedAttestation>>,
 	) -> Fr {
 		let default_att = SignedAttestation::default();
@@ -355,7 +357,14 @@ mod test {
 		const NUM_ITERATIONS: usize,
 		const INITIAL_SCORE: u128,
 	>(
-		keypair: &EcdsaKeypair<Fr, NUM_LIMBS, NUM_BITS, Secp256k1_4_68, Secp256k1Params>,
+		keypair: &EcdsaKeypair<
+			Secp256k1Affine,
+			Fr,
+			NUM_LIMBS,
+			NUM_BITS,
+			Secp256k1_4_68,
+			Secp256k1Params,
+		>,
 		pks: &[Fr], scores: &[Fr],
 	) -> Vec<Option<SignedAttestation>> {
 		assert!(pks.len() == NUM_NEIGHBOURS);
@@ -840,8 +849,9 @@ mod test {
 
 		let rng = &mut thread_rng();
 
-		let keys: Vec<EcdsaKeypair<Fr, NUM_LIMBS, NUM_BITS, Secp256k1_4_68, Secp256k1Params>> =
-			(0..NUM_NEIGHBOURS).into_iter().map(|_| EcdsaKeypair::generate_keypair(rng)).collect();
+		let keys: Vec<
+			EcdsaKeypair<Secp256k1Affine, Fr, NUM_LIMBS, NUM_BITS, Secp256k1_4_68, Secp256k1Params>,
+		> = (0..NUM_NEIGHBOURS).into_iter().map(|_| EcdsaKeypair::generate_keypair(rng)).collect();
 
 		let pks_fr: Vec<Fr> =
 			keys.iter().map(|key| field_value_from_pub_key(&key.public_key.clone())).collect();
