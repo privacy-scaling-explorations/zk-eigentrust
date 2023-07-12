@@ -38,41 +38,31 @@ impl FileType {
 	}
 }
 
-/// Retrieves the path to the `data` directory.
-pub fn get_data_directory() -> Result<PathBuf> {
+/// Retrieves the path to the `assets` directory.
+pub fn get_assets_path() -> Result<PathBuf> {
 	let current_dir = current_dir()?;
-
-	// Workaround for the tests running in the `client` directory.
-	#[cfg(test)]
-	{
-		Ok(current_dir.join("../data"))
-	}
-
-	#[cfg(not(test))]
-	{
-		Ok(current_dir.join("data"))
-	}
+	Ok(current_dir.join("assets"))
 }
 
-/// Helper function to get the path of a file in the `data` directory.
+/// Helper function to get the path of a file in the `assets` directory.
 pub fn get_file_path(file_name: &str, file_type: FileType) -> Result<PathBuf> {
-	let current_dir = get_data_directory()?;
-	Ok(current_dir.join(format!("{}.{}", file_name, file_type.as_str())))
+	let assets_path = get_assets_path()?;
+	Ok(assets_path.join(format!("{}.{}", file_name, file_type.as_str())))
 }
 
-/// Reads a binary file from the `data` directory and returns its contents as bytes.
+/// Reads a binary file from the `assets` directory and returns its contents as bytes.
 pub fn read_binary(file_name: &str) -> Result<Vec<u8>> {
 	let bin_path = get_file_path(file_name, FileType::Bin)?;
 	read(bin_path)
 }
 
-/// Writes bytes to a binary file in the `data` directory.
+/// Writes bytes to a binary file in the `assets` directory.
 pub fn write_binary(bytes: Vec<u8>, file_name: &str) -> Result<()> {
 	let bin_path = get_file_path(file_name, FileType::Bin)?;
 	write(bin_path, bytes)
 }
 
-/// Reads a JSON file from the `data` directory and returns its deserialized contents.
+/// Reads a JSON file from the `assets` directory and returns its deserialized contents.
 pub fn read_json<T: DeserializeOwned>(file_name: &str) -> Result<T> {
 	let json_path = get_file_path(file_name, FileType::Json)?;
 	let file = File::open(json_path)?;
@@ -80,7 +70,7 @@ pub fn read_json<T: DeserializeOwned>(file_name: &str) -> Result<T> {
 	from_reader(reader).map_err(Into::into)
 }
 
-/// Reads a file from the `data` directory and returns its contents as a string.
+/// Reads a file from the `assets` directory and returns its contents as a string.
 pub fn read_yul(file_name: &str) -> Result<String> {
 	let yul_path = get_file_path(file_name, FileType::Yul)?;
 	read_to_string(yul_path)

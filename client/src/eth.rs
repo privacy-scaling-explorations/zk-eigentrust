@@ -5,7 +5,7 @@
 use crate::{
 	attestation::ECDSAPublicKey,
 	error::EigenError,
-	fs::{get_data_directory, get_file_path, read_yul, write_binary, FileType},
+	fs::{get_assets_path, get_file_path, read_yul, write_binary, FileType},
 	ClientSigner,
 };
 use eigen_trust_circuit::{
@@ -31,7 +31,7 @@ use std::{
 
 /// Deploys the AttestationStation contract.
 pub async fn deploy_as(signer: Arc<ClientSigner>) -> Result<Address, EigenError> {
-	let path = get_data_directory().unwrap().join("AttestationStation.sol");
+	let path = get_assets_path().unwrap().join("AttestationStation.sol");
 	let compiler_output =
 		Solc::default().compile_source(&path).map_err(|_| EigenError::ContractCompilationError)?;
 
@@ -85,7 +85,7 @@ pub async fn call_verifier(
 /// Compiles the AttestationStation contract.
 pub fn compile_att_station() -> Result<(), EigenError> {
 	let path =
-		get_data_directory().map_err(|_| EigenError::ParseError)?.join("AttestationStation.sol");
+		get_assets_path().map_err(|_| EigenError::ParseError)?.join("AttestationStation.sol");
 
 	// compile it
 	let contracts =
@@ -119,7 +119,7 @@ pub fn compile_att_station() -> Result<(), EigenError> {
 
 /// Compiles the Yul contracts in the `data` directory.
 pub fn compile_yul_contracts() {
-	let data_dir = get_data_directory().unwrap();
+	let data_dir = get_assets_path().unwrap();
 	let paths = read_dir(data_dir).unwrap();
 
 	for path in paths {

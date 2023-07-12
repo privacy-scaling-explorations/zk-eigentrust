@@ -28,7 +28,7 @@ If you want to use a local EVM blockchain, the first step is to spin up Anvil by
 anvil
 ```
 
-Otherwise you should configure the `node_url` data field of the `client-config.json` file in the `data` directory to point to the correct Ethereum node. There's more about this in the configuration section.
+Otherwise you should configure the `node_url` data field of the `client_config.json` file in the `assets` folder to point to the correct Ethereum node. There's more about this in the configuration section.
 
 Open a new terminal to start interacting with the client through the CLI. Let's build the release version of the client so we can run the program from the `target` directory:
 
@@ -55,7 +55,7 @@ It's now possible to fetch the peer-to-peer scores (from attestations), calculat
 ./target/release/eigen-trust-client proof
 ```
 
-This command will generate a proof and store it in the `data` directory. The final step is to verify it using the `verify` command:
+This command will generate a proof and store it in the `assets` directory. The final step is to verify it using the `verify` command:
 
 ```bash
 ./target/release/eigen-trust-client verify
@@ -73,12 +73,12 @@ The command-line interface was built using [clap.rs](http://clap.rs/). There is 
   - `--action (add | remove)`: Defines the action to perform. You can choose to `add` a new member to a group or `remove` an existing member from it.
   - `--ic`: Provides the identity commitment of the participant you intend to add or remove from the group.
   - `--addr`: Specifies the participant's Ethereum address.
-- `compile`: Compiles all the `.sol` and `.yul` contracts available in the `data` folder. For `.sol` contracts, it generates an ABI JSON file and a Rust binding file. For `.yul` smart contracts, it compiles Yul code into binary.
+- `compile`: Compiles all the `.sol` and `.yul` contracts available in the `assets` folder. For `.sol` contracts, it generates an ABI JSON file and a Rust binding file. For `.yul` smart contracts, it compiles Yul code into binary.
 - `deploy`: Deploys all the contracts.
-- `proof`: Calculates the global scores, generates the zk proof and stores it in `et-proof.json` at the `data` directory.
-- `scores`: Calculates the global scores and stores them in the `scores.csv` file within the data directory.
-- `show`: Displays the `client-config.json` file.
-- `update`: Updates the specified field in `client-config.json`. Takes the following options:
+- `proof`: Calculates the global scores, generates the zk proof and stores it in `et-proof.json` at the `assets` folder.
+- `scores`: Calculates the global scores and stores them in the `scores.csv` file within the `assets` folder.
+- `show`: Displays the `client_config.json` file.
+- `update`: Updates the specified field in `client_config.json`. Takes the following options:
   - `--as-address`: Updates the address of the AttestationStation contract.
   - `--domain`: Updates the domain identifier.
   - `--band-id`: Updates the bandada group id.
@@ -110,7 +110,7 @@ The command-line interface was built using [clap.rs](http://clap.rs/). There is 
 
 ## Configuration
 
-The configuration file is stored in `data/client-config.json`. You may need to update these parameters if, for example, the smart contracts are redeployed to new addresses or if you want to connect to a different Ethereum node. You can modify the following parameters:
+The configuration file is stored in `assets/client_config.json`. You may need to update these parameters if, for example, the smart contracts are redeployed to new addresses or if you want to connect to a different Ethereum node. You can modify the following parameters:
 
 - `as_address`: AttestationStation smart contract address. This is the contract that will receive the attestations.
 - `mnemonic`: Ethereum wallet mnemonic phrase.

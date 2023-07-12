@@ -361,7 +361,7 @@ pub fn handle_update(config: &mut ClientConfig, data: UpdateData) -> Result<(), 
 			.to_string();
 	}
 
-	write_json_data(config, "client-config").map_err(|_| "Failed to write config data.")
+	write_json_data(config, "client_config").map_err(|_| "Failed to write config data.")
 }
 
 #[cfg(test)]
