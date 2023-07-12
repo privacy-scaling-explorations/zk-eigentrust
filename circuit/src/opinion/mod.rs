@@ -7,11 +7,7 @@ use crate::{
 	params::{ecc::EccParams, rns::RnsParams},
 	Chipset, CommonConfig, FieldExt, HasherChipset,
 };
-use halo2::{
-	circuit::{AssignedCell, Layouter},
-	halo2curves::CurveAffine,
-	plonk::Error,
-};
+use halo2::{circuit::Layouter, halo2curves::CurveAffine, plonk::Error};
 use std::marker::PhantomData;
 
 const WIDTH: usize = 5;
