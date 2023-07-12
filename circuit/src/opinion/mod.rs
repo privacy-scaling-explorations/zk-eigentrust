@@ -2,7 +2,7 @@
 pub mod native;
 
 use crate::{
-	ecc::generic::AssignedPoint,
+	ecc::generic::AssignedEcPoint,
 	integer::AssignedInteger,
 	params::{ecc::EccParams, rns::RnsParams},
 	Chipset, CommonConfig, FieldExt, HasherChipset,
@@ -48,7 +48,7 @@ pub struct OpinionChipset<
 	C::ScalarExt: FieldExt,
 	H: HasherChipset<N, WIDTH>,
 {
-	public_key: AssignedPoint<C, N, NUM_LIMBS, NUM_BITS, P>,
+	public_key: AssignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P>,
 	signature: (
 		AssignedInteger<C::Scalar, N, NUM_LIMBS, NUM_BITS, P>,
 		AssignedInteger<C::Scalar, N, NUM_LIMBS, NUM_BITS, P>,
@@ -72,7 +72,7 @@ where
 			AssignedInteger<C::Scalar, N, NUM_LIMBS, NUM_BITS, P>,
 			AssignedInteger<C::Scalar, N, NUM_LIMBS, NUM_BITS, P>,
 		),
-		public_key: AssignedPoint<C, N, NUM_LIMBS, NUM_BITS, P>,
+		public_key: AssignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P>,
 	) -> Self {
 		OpinionChipset { signature, public_key, _hasher: PhantomData }
 	}
