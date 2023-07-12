@@ -51,12 +51,17 @@ pub mod eth;
 pub mod fs;
 pub mod storage;
 
-use crate::attestation::{address_from_signed_att, signed_att_from_log};
+use crate::attestation::{
+	address_from_signed_att, signed_att_from_log, SignatureFr, SignedAttestation,
+};
 use att_station::{AttestationCreatedFilter, AttestationStation};
 use attestation::{att_data_from_signed_att, Attestation};
 use dotenv::{dotenv, var};
 use eigen_trust_circuit::{
-	dynamic_sets::ecdsa_native::{EigenTrustSet, RationalScore, SignedAttestation, MIN_PEER_COUNT},
+	dynamic_sets::ecdsa_native::{
+		EigenTrustSet, RationalScore, SignedAttestation as SignedAttestationFr, MIN_PEER_COUNT,
+	},
+	ecdsa::native::PublicKey,
 	halo2::halo2curves::bn256::Fr as Scalar,
 };
 use error::EigenError;
@@ -76,7 +81,10 @@ use ethers::{
 };
 use secp256k1::{ecdsa::RecoverableSignature, Message, SecretKey, SECP256K1};
 use serde::{Deserialize, Serialize};
-use std::{collections::BTreeSet, sync::Arc};
+use std::{
+	collections::{BTreeSet, HashMap},
+	sync::Arc,
+};
 
 /// Max amount of participants.
 const MAX_NEIGHBOURS: usize = 4;
@@ -84,8 +92,12 @@ const MAX_NEIGHBOURS: usize = 4;
 const NUM_ITERATIONS: usize = 20;
 /// Initial score for each participant before the algorithms is run.
 const INITIAL_SCORE: u128 = 1000;
+/// Number of limbs for integer operations
+pub const NUM_LIMBS: usize = 4;
+/// Number of bits for integer operations
+pub const NUM_BITS: usize = 68;
 /// Number of limbs for representing big numbers in threshold checking.
-const _NUM_LIMBS: usize = 2;
+const _NUM_DECIMAL_LIMBS: usize = 2;
 /// Number of digits of each limbs for threshold checking.
 const _POWER_OF_TEN: usize = 72;
 
@@ -209,11 +221,16 @@ impl Client {
 
 		// Construct a set to hold unique participant addresses
 		let mut participants_set = BTreeSet::<Address>::new();
+		let mut pks = HashMap::new();
 
 		// Insert the attester and attested of each attestation into the set
 		for (signed_att, att) in &attestations {
+			let attester = address_from_signed_att(signed_att).unwrap();
 			participants_set.insert(att.about);
-			participants_set.insert(address_from_signed_att(signed_att).unwrap());
+			participants_set.insert(attester);
+
+			let pk = signed_att.recover_public_key().unwrap();
+			pks.insert(attester, pk);
 		}
 
 		// Create a vector of participants from the set
@@ -232,7 +249,7 @@ impl Client {
 		);
 
 		// Initialize attestation matrix
-		let mut attestation_matrix: Vec<Vec<Option<SignedAttestation>>> =
+		let mut attestation_matrix: Vec<Vec<Option<SignedAttestationFr>>> =
 			vec![vec![None; MAX_NEIGHBOURS]; MAX_NEIGHBOURS];
 
 		// Populate the attestation matrix with the attestations data
@@ -241,7 +258,12 @@ impl Client {
 			let attester_pos = participants.iter().position(|&r| r == attester_address).unwrap();
 			let attested_pos = participants.iter().position(|&r| r == att.about).unwrap();
 
-			attestation_matrix[attester_pos][attested_pos] = Some(signed_att.clone());
+			let (_, sig_bytes) = signed_att.signature.serialize_compact();
+			let sig_fr = SignatureFr::from(sig_bytes);
+			let att_fr = signed_att.attestation.clone();
+			let signed_attestation_fr = SignedAttestationFr::new(att_fr, sig_fr);
+
+			attestation_matrix[attester_pos][attested_pos] = Some(signed_attestation_fr);
 		}
 
 		// Initialize EigenTrustSet
@@ -255,16 +277,17 @@ impl Client {
 		}
 
 		// Update the set with the opinions of each participant
-		for attestation_matrix_i in attestation_matrix.iter().take(participants.len()) {
-			for j in 0..attestation_matrix_i.len() {
-				if let Some(att) = attestation_matrix_i[j].clone() {
-					let participant_pub_key = att.recover_public_key().unwrap();
+		for i in 0..participants.len() {
+			let addr = participants[i];
+			let pk = pks.get(&addr).unwrap();
 
-					eigen_trust_set.update_op(participant_pub_key, attestation_matrix_i.clone());
+			let pk_x = pk.serialize_uncompressed();
+			let mut pk_bytes: [u8; 64] = [0; 64];
+			pk_bytes.copy_from_slice(&pk_x[1..]);
+			let pk_fr = PublicKey::from(pk_bytes);
 
-					break;
-				}
-			}
+			let opinion = attestation_matrix[i].clone();
+			eigen_trust_set.update_op(pk_fr, opinion);
 		}
 
 		// Calculate scores

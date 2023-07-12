@@ -1,20 +1,25 @@
 use halo2::halo2curves::bn256::Fr;
-use secp256k1::PublicKey;
 
 use crate::{
-	circuit::PoseidonNativeSponge,
+	circuit::{PoseidonNativeHasher, PoseidonNativeSponge},
 	dynamic_sets::ecdsa_native::{field_value_from_pub_key, AttestationFr, SignedAttestation},
+	ecdsa::native::{EcdsaVerifier, PublicKey},
+	integer::native::Integer,
+	params::{ecc::secp256k1::Secp256k1Params, rns::secp256k1::Secp256k1_4_68},
 };
 
 /// Opinion info of peer
 pub struct Opinion<const NUM_NEIGHBOURS: usize> {
-	from: PublicKey,
+	from: PublicKey<Fr, 4, 68, Secp256k1_4_68, Secp256k1Params>,
 	attestations: Vec<SignedAttestation>,
 }
 
 impl<const NUM_NEIGHBOURS: usize> Opinion<NUM_NEIGHBOURS> {
 	/// Construct new instance
-	pub fn new(from: PublicKey, attestations: Vec<SignedAttestation>) -> Self {
+	pub fn new(
+		from: PublicKey<Fr, 4, 68, Secp256k1_4_68, Secp256k1Params>,
+		attestations: Vec<SignedAttestation>,
+	) -> Self {
 		Self { from, attestations }
 	}
 
@@ -29,7 +34,14 @@ impl<const NUM_NEIGHBOURS: usize> Opinion<NUM_NEIGHBOURS> {
 		let mut hashes = Vec::new();
 
 		let default_att = SignedAttestation::default();
-		let default_hash = default_att.attestation.hash();
+		let default_hasher = PoseidonNativeHasher::new([
+			default_att.attestation.about,
+			default_att.attestation.domain,
+			default_att.attestation.value,
+			default_att.attestation.message,
+			Fr::zero(),
+		]);
+		let default_hash = default_hasher.permute()[0];
 		for i in 0..NUM_NEIGHBOURS {
 			let is_default_pubkey = set[i] == Fr::zero();
 
@@ -42,13 +54,23 @@ impl<const NUM_NEIGHBOURS: usize> Opinion<NUM_NEIGHBOURS> {
 			} else {
 				assert!(att.attestation.about == set[i]);
 
-				let recovered = att.recover_public_key().unwrap();
-				assert!(recovered == self.from);
+				let att_hasher = PoseidonNativeHasher::new([
+					att.attestation.about,
+					att.attestation.domain,
+					att.attestation.value,
+					att.attestation.message,
+					Fr::zero(),
+				]);
+				let att_hash = att_hasher.permute()[0];
+
+				let sig = self.attestations[i].signature.clone();
+				let msg_hash = Integer::from_n(att_hash);
+				let ecdsa_verifier = EcdsaVerifier::new(sig, msg_hash, self.from.clone());
+				assert!(ecdsa_verifier.verify());
 
 				scores[i] = att.attestation.value;
 
-				let hash = att.attestation.hash();
-				hashes.push(hash);
+				hashes.push(att_hash);
 			}
 		}
 

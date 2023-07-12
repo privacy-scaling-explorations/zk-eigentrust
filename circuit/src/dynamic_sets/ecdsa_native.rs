@@ -1,4 +1,10 @@
-use crate::{circuit::PoseidonNativeHasher, opinion::native::Opinion, utils::fe_to_big};
+use crate::{
+	circuit::PoseidonNativeHasher,
+	ecdsa::native::{PublicKey, Signature},
+	opinion::native::Opinion,
+	params::{ecc::secp256k1::Secp256k1Params, rns::secp256k1::Secp256k1_4_68},
+	utils::fe_to_big,
+};
 use halo2::{
 	arithmetic::Field,
 	halo2curves::{bn256::Fr, ff::PrimeField},
@@ -7,26 +13,23 @@ use itertools::Itertools;
 use num_bigint::{BigInt, ToBigInt};
 use num_rational::BigRational;
 use num_traits::{FromPrimitive, One, Zero};
-use secp256k1::{constants::ONE, ecdsa, Message, Secp256k1, SecretKey};
 use sha3::{Digest, Keccak256};
 use std::collections::HashMap;
 
-/// ECDSA public key
-pub type ECDSAPublicKey = secp256k1::PublicKey;
-/// ECDSA signature
-pub type ECDSASignature = ecdsa::RecoverableSignature;
 /// Rational score
 pub type RationalScore = BigRational;
 /// Minimum peers for scores calculation
 pub const MIN_PEER_COUNT: usize = 2;
 
 /// Construct an Ethereum address for the given ECDSA public key
-pub fn address_from_pub_key(pub_key: &ECDSAPublicKey) -> Result<[u8; 20], &'static str> {
-	let pub_key_bytes: [u8; 65] = pub_key.serialize_uncompressed();
+pub fn address_from_pub_key(
+	pub_key: &PublicKey<Fr, 4, 68, Secp256k1_4_68, Secp256k1Params>,
+) -> Result<[u8; 20], &'static str> {
+	let pub_key_bytes = pub_key.to_bytes();
 
 	// Hash with Keccak256
 	let mut hasher = Keccak256::new();
-	hasher.update(&pub_key_bytes[1..]);
+	hasher.update(&pub_key_bytes[..]);
 	let hashed_public_key = hasher.finalize().to_vec();
 
 	// Get the last 20 bytes of the hash
@@ -37,8 +40,10 @@ pub fn address_from_pub_key(pub_key: &ECDSAPublicKey) -> Result<[u8; 20], &'stat
 }
 
 /// Calculate the address field value from a public key
-pub fn field_value_from_pub_key(&pub_key: &ECDSAPublicKey) -> Fr {
-	let mut address = address_from_pub_key(&pub_key).unwrap();
+pub fn field_value_from_pub_key(
+	pub_key: &PublicKey<Fr, 4, 68, Secp256k1_4_68, Secp256k1Params>,
+) -> Fr {
+	let mut address = address_from_pub_key(pub_key).unwrap();
 	address.reverse();
 
 	let mut address_bytes = [0u8; 32];
@@ -53,37 +58,25 @@ pub struct SignedAttestation {
 	/// Attestation
 	pub attestation: AttestationFr,
 	/// Signature
-	pub signature: ECDSASignature,
+	pub signature: Signature<Fr, 4, 68, Secp256k1_4_68>,
 }
 
 impl SignedAttestation {
 	/// Constructs a new instance
-	pub fn new(attestation: AttestationFr, signature: ECDSASignature) -> Self {
+	pub fn new(
+		attestation: AttestationFr, signature: Signature<Fr, 4, 68, Secp256k1_4_68>,
+	) -> Self {
 		Self { attestation, signature }
-	}
-
-	/// Recover the public key from the attestation signature
-	pub fn recover_public_key(&self) -> Result<ECDSAPublicKey, &'static str> {
-		let message = self.attestation.hash().to_bytes();
-
-		let public_key = self
-			.signature
-			.recover(&Message::from_slice(message.as_slice()).unwrap())
-			.map_err(|_| "Failed to recover public key")?;
-
-		Ok(public_key)
 	}
 }
 
+//PublicKey<Fr, 4, 68, Secp256k1_4_68, Secp256k1Params>
+// PoseidonNativeHasher::new([self.about, self.domain, self.value, self.message, Fr::zero()])
+// .permute()
 impl Default for SignedAttestation {
 	fn default() -> Self {
 		let attestation = AttestationFr::default();
-
-		let s = Secp256k1::signing_only();
-		let msg = attestation.hash().to_bytes();
-		let sk = SecretKey::from_slice(&ONE).unwrap();
-		let signature =
-			s.sign_ecdsa_recoverable(&Message::from_slice(msg.as_slice()).unwrap(), &sk);
+		let signature = Signature::default();
 
 		Self { attestation, signature }
 	}
@@ -161,7 +154,10 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITERATIONS: usize, const INITIAL_SCO
 	}
 
 	/// Update the opinion of the member
-	pub fn update_op(&mut self, from: ECDSAPublicKey, op: Vec<Option<SignedAttestation>>) -> Fr {
+	pub fn update_op(
+		&mut self, from: PublicKey<Fr, 4, 68, Secp256k1_4_68, Secp256k1Params>,
+		op: Vec<Option<SignedAttestation>>,
+	) -> Fr {
 		let default_att = SignedAttestation::default();
 		let op_unwrapped =
 			op.iter().map(|x| x.clone().unwrap_or(default_att.clone())).collect_vec();
@@ -341,14 +337,13 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITERATIONS: usize, const INITIAL_SCO
 
 #[cfg(test)]
 mod test {
-	use std::time::Instant;
+	use crate::{ecdsa::native::EcdsaKeypair, utils::big_to_fe};
 
 	use super::*;
-
 	use halo2::halo2curves::{bn256::Fr, ff::PrimeField};
 	use num_rational::BigRational;
 	use rand::thread_rng;
-	use secp256k1::{generate_keypair, PublicKey};
+	use std::time::Instant;
 
 	const NUM_NEIGHBOURS: usize = 12;
 	const NUM_ITERATIONS: usize = 10;
@@ -359,12 +354,12 @@ mod test {
 		const NUM_ITERATIONS: usize,
 		const INITIAL_SCORE: u128,
 	>(
-		sk: &SecretKey, pks: &[Fr], scores: &[Fr],
+		keypair: &EcdsaKeypair<Fr, 4, 68, Secp256k1_4_68, Secp256k1Params>, pks: &[Fr],
+		scores: &[Fr],
 	) -> Vec<Option<SignedAttestation>> {
 		assert!(pks.len() == NUM_NEIGHBOURS);
 		assert!(scores.len() == NUM_NEIGHBOURS);
-
-		let sign = Secp256k1::signing_only();
+		let rng = &mut thread_rng();
 
 		let mut res = Vec::new();
 		for i in 0..NUM_NEIGHBOURS {
@@ -373,9 +368,8 @@ mod test {
 			} else {
 				let (about, key, value, message) = (pks[i], Fr::zero(), scores[i], Fr::zero());
 				let attestation = AttestationFr::new(about, key, value, message);
-				let msg = attestation.hash().to_bytes();
-				let signature =
-					sign.sign_ecdsa_recoverable(&Message::from_slice(msg.as_slice()).unwrap(), sk);
+				let msg = big_to_fe(fe_to_big(attestation.hash()));
+				let signature = keypair.sign(msg, rng);
 				let signed_attestation = SignedAttestation::new(attestation, signature);
 
 				res.push(Some(signed_attestation));
@@ -391,8 +385,8 @@ mod test {
 
 		let rng = &mut thread_rng();
 
-		let (_sk, pk) = generate_keypair(rng);
-		let pk = field_value_from_pub_key(&pk);
+		let keypair = EcdsaKeypair::generate_keypair(rng);
+		let pk = field_value_from_pub_key(&keypair.public_key);
 
 		set.add_member(pk);
 
@@ -407,8 +401,8 @@ mod test {
 
 		let rng = &mut thread_rng();
 
-		let (_sk, pk) = generate_keypair(rng);
-		let pk_fr = field_value_from_pub_key(&pk);
+		let keypair = EcdsaKeypair::generate_keypair(rng);
+		let pk_fr = field_value_from_pub_key(&keypair.public_key);
 
 		set.add_member(pk_fr);
 
@@ -421,11 +415,11 @@ mod test {
 
 		let rng = &mut thread_rng();
 
-		let (_sk1, pk1) = generate_keypair(rng);
-		let (_sk2, pk2) = generate_keypair(rng);
+		let keypair1 = EcdsaKeypair::generate_keypair(rng);
+		let keypair2 = EcdsaKeypair::generate_keypair(rng);
 
-		let pk1 = field_value_from_pub_key(&pk1);
-		let pk2 = field_value_from_pub_key(&pk2);
+		let pk1 = field_value_from_pub_key(&keypair1.public_key);
+		let pk2 = field_value_from_pub_key(&keypair2.public_key);
 
 		set.add_member(pk1);
 		set.add_member(pk2);
@@ -439,11 +433,11 @@ mod test {
 
 		let rng = &mut thread_rng();
 
-		let (sk1, pk1) = generate_keypair(rng);
-		let (_sk2, pk2) = generate_keypair(rng);
+		let keypair1 = EcdsaKeypair::generate_keypair(rng);
+		let keypair2 = EcdsaKeypair::generate_keypair(rng);
 
-		let pk1_fr = field_value_from_pub_key(&pk1);
-		let pk2_fr = field_value_from_pub_key(&pk2);
+		let pk1_fr = field_value_from_pub_key(&keypair1.public_key);
+		let pk2_fr = field_value_from_pub_key(&keypair2.public_key);
 
 		set.add_member(pk1_fr);
 		set.add_member(pk2_fr);
@@ -457,9 +451,9 @@ mod test {
 		scores[1] = Fr::from_u128(INITIAL_SCORE);
 
 		let op1 =
-			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&sk1, &pks, &scores);
+			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&keypair1, &pks, &scores);
 
-		set.update_op(pk1, op1);
+		set.update_op(keypair1.public_key, op1);
 
 		set.converge();
 	}
@@ -470,11 +464,11 @@ mod test {
 
 		let rng = &mut thread_rng();
 
-		let (sk1, pk1) = generate_keypair(rng);
-		let (sk2, pk2) = generate_keypair(rng);
+		let keypair1 = EcdsaKeypair::generate_keypair(rng);
+		let keypair2 = EcdsaKeypair::generate_keypair(rng);
 
-		let pk1_fr = field_value_from_pub_key(&pk1);
-		let pk2_fr = field_value_from_pub_key(&pk2);
+		let pk1_fr = field_value_from_pub_key(&keypair1.public_key);
+		let pk2_fr = field_value_from_pub_key(&keypair2.public_key);
 
 		set.add_member(pk1_fr);
 		set.add_member(pk2_fr);
@@ -488,9 +482,9 @@ mod test {
 		scores[1] = Fr::from_u128(INITIAL_SCORE);
 
 		let op1 =
-			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&sk1, &pks, &scores);
+			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&keypair1, &pks, &scores);
 
-		set.update_op(pk1, op1);
+		set.update_op(keypair1.public_key, op1);
 
 		// Peer2(pk2) signs the opinion
 		let mut pks = [Fr::zero(); NUM_NEIGHBOURS];
@@ -501,9 +495,9 @@ mod test {
 		scores[0] = Fr::from_u128(INITIAL_SCORE);
 
 		let op2 =
-			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&sk2, &pks, &scores);
+			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&keypair2, &pks, &scores);
 
-		set.update_op(pk2, op2);
+		set.update_op(keypair2.public_key, op2);
 
 		set.converge();
 	}
@@ -513,13 +507,13 @@ mod test {
 		let mut set = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
 
 		let rng = &mut thread_rng();
-		let (sk1, pk1) = generate_keypair(rng);
-		let (sk2, pk2) = generate_keypair(rng);
-		let (sk3, pk3) = generate_keypair(rng);
+		let keypair1 = EcdsaKeypair::generate_keypair(rng);
+		let keypair2 = EcdsaKeypair::generate_keypair(rng);
+		let keypair3 = EcdsaKeypair::generate_keypair(rng);
 
-		let pk1_fr = field_value_from_pub_key(&pk1);
-		let pk2_fr = field_value_from_pub_key(&pk2);
-		let pk3_fr = field_value_from_pub_key(&pk3);
+		let pk1_fr = field_value_from_pub_key(&keypair1.public_key);
+		let pk2_fr = field_value_from_pub_key(&keypair2.public_key);
+		let pk3_fr = field_value_from_pub_key(&keypair3.public_key);
 
 		set.add_member(pk1_fr);
 		set.add_member(pk2_fr);
@@ -536,9 +530,9 @@ mod test {
 		scores[2] = Fr::from_u128(700);
 
 		let op1 =
-			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&sk1, &pks, &scores);
+			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&keypair1, &pks, &scores);
 
-		set.update_op(pk1, op1);
+		set.update_op(keypair1.public_key, op1);
 
 		// Peer2(pk2) signs the opinion
 		let mut pks = [Fr::zero(); NUM_NEIGHBOURS];
@@ -551,9 +545,9 @@ mod test {
 		scores[2] = Fr::from_u128(400);
 
 		let op2 =
-			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&sk2, &pks, &scores);
+			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&keypair2, &pks, &scores);
 
-		set.update_op(pk2, op2);
+		set.update_op(keypair2.public_key, op2);
 
 		// Peer3(pk3) signs the opinion
 		let mut pks = [Fr::zero(); NUM_NEIGHBOURS];
@@ -566,9 +560,9 @@ mod test {
 		scores[1] = Fr::from_u128(400);
 
 		let op3 =
-			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&sk3, &pks, &scores);
+			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&keypair3, &pks, &scores);
 
-		set.update_op(pk3, op3);
+		set.update_op(keypair3.public_key, op3);
 
 		set.converge();
 	}
@@ -579,13 +573,13 @@ mod test {
 
 		let rng = &mut thread_rng();
 
-		let (sk1, pk1) = generate_keypair(rng);
-		let (sk2, pk2) = generate_keypair(rng);
-		let (_, pk3) = generate_keypair(rng);
+		let keypair1 = EcdsaKeypair::generate_keypair(rng);
+		let keypair2 = EcdsaKeypair::generate_keypair(rng);
+		let keypair3 = EcdsaKeypair::generate_keypair(rng);
 
-		let pk1_fr = field_value_from_pub_key(&pk1);
-		let pk2_fr = field_value_from_pub_key(&pk2);
-		let pk3_fr = field_value_from_pub_key(&pk3);
+		let pk1_fr = field_value_from_pub_key(&keypair1.public_key);
+		let pk2_fr = field_value_from_pub_key(&keypair2.public_key);
+		let pk3_fr = field_value_from_pub_key(&keypair3.public_key);
 
 		set.add_member(pk1_fr);
 		set.add_member(pk2_fr);
@@ -602,9 +596,9 @@ mod test {
 		scores[2] = Fr::from_u128(700);
 
 		let op1 =
-			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&sk1, &pks, &scores);
+			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&keypair1, &pks, &scores);
 
-		set.update_op(pk1, op1);
+		set.update_op(keypair1.public_key, op1);
 
 		// Peer2(pk2) signs the opinion
 		let mut pks = [Fr::zero(); NUM_NEIGHBOURS];
@@ -617,9 +611,9 @@ mod test {
 		scores[2] = Fr::from_u128(400);
 
 		let op2 =
-			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&sk2, &pks, &scores);
+			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&keypair2, &pks, &scores);
 
-		set.update_op(pk2, op2);
+		set.update_op(keypair2.public_key, op2);
 
 		set.converge();
 	}
@@ -630,13 +624,13 @@ mod test {
 
 		let rng = &mut thread_rng();
 
-		let (sk1, pk1) = generate_keypair(rng);
-		let (sk2, pk2) = generate_keypair(rng);
-		let (sk3, pk3) = generate_keypair(rng);
+		let keypair1 = EcdsaKeypair::generate_keypair(rng);
+		let keypair2 = EcdsaKeypair::generate_keypair(rng);
+		let keypair3 = EcdsaKeypair::generate_keypair(rng);
 
-		let pk1_fr = field_value_from_pub_key(&pk1);
-		let pk2_fr = field_value_from_pub_key(&pk2);
-		let pk3_fr = field_value_from_pub_key(&pk3);
+		let pk1_fr = field_value_from_pub_key(&keypair1.public_key);
+		let pk2_fr = field_value_from_pub_key(&keypair2.public_key);
+		let pk3_fr = field_value_from_pub_key(&keypair3.public_key);
 
 		set.add_member(pk1_fr);
 		set.add_member(pk2_fr);
@@ -653,9 +647,9 @@ mod test {
 		scores[2] = Fr::from_u128(700);
 
 		let op1 =
-			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&sk1, &pks, &scores);
+			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&keypair1, &pks, &scores);
 
-		set.update_op(pk1, op1);
+		set.update_op(keypair1.public_key, op1);
 
 		// Peer2(pk2) signs the opinion
 		let mut pks = [Fr::zero(); NUM_NEIGHBOURS];
@@ -668,9 +662,9 @@ mod test {
 		scores[2] = Fr::from_u128(400);
 
 		let op2 =
-			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&sk2, &pks, &scores);
+			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&keypair2, &pks, &scores);
 
-		set.update_op(pk2, op2);
+		set.update_op(keypair2.public_key, op2);
 
 		// Peer3(pk3) signs the opinion
 		let mut pks = [Fr::zero(); NUM_NEIGHBOURS];
@@ -683,9 +677,9 @@ mod test {
 		scores[1] = Fr::from_u128(400);
 
 		let op3 =
-			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&sk3, &pks, &scores);
+			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&keypair3, &pks, &scores);
 
-		set.update_op(pk3, op3);
+		set.update_op(keypair3.public_key, op3);
 
 		set.converge();
 
@@ -701,13 +695,13 @@ mod test {
 
 		let rng = &mut thread_rng();
 
-		let (sk1, pk1) = generate_keypair(rng);
-		let (sk2, pk2) = generate_keypair(rng);
-		let (_, pk3) = generate_keypair(rng);
+		let keypair1 = EcdsaKeypair::generate_keypair(rng);
+		let keypair2 = EcdsaKeypair::generate_keypair(rng);
+		let keypair3 = EcdsaKeypair::generate_keypair(rng);
 
-		let pk1_fr = field_value_from_pub_key(&pk1);
-		let pk2_fr = field_value_from_pub_key(&pk2);
-		let pk3_fr = field_value_from_pub_key(&pk3);
+		let pk1_fr = field_value_from_pub_key(&keypair1.public_key);
+		let pk2_fr = field_value_from_pub_key(&keypair2.public_key);
+		let pk3_fr = field_value_from_pub_key(&keypair3.public_key);
 
 		set.add_member(pk1_fr);
 		set.add_member(pk2_fr);
@@ -724,9 +718,9 @@ mod test {
 		scores[2] = Fr::from_u128(700);
 
 		let op1 =
-			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&sk1, &pks, &scores);
+			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&keypair1, &pks, &scores);
 
-		set.update_op(pk1, op1);
+		set.update_op(keypair1.public_key, op1);
 
 		// Peer2(pk2) signs the opinion
 		let mut pks = [Fr::zero(); NUM_NEIGHBOURS];
@@ -739,9 +733,9 @@ mod test {
 		scores[2] = Fr::from_u128(400);
 
 		let op2 =
-			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&sk2, &pks, &scores);
+			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&keypair2, &pks, &scores);
 
-		set.update_op(pk2, op2);
+		set.update_op(keypair2.public_key, op2);
 
 		set.converge();
 
@@ -764,13 +758,13 @@ mod test {
 
 		let rng = &mut thread_rng();
 
-		let (sk1, pk1) = generate_keypair(rng);
-		let (sk2, pk2) = generate_keypair(rng);
-		let (sk3, pk3) = generate_keypair(rng);
+		let keypair1 = EcdsaKeypair::generate_keypair(rng);
+		let keypair2 = EcdsaKeypair::generate_keypair(rng);
+		let keypair3 = EcdsaKeypair::generate_keypair(rng);
 
-		let pk1_fr = field_value_from_pub_key(&pk1);
-		let pk2_fr = field_value_from_pub_key(&pk2);
-		let pk3_fr = field_value_from_pub_key(&pk3);
+		let pk1_fr = field_value_from_pub_key(&keypair1.public_key);
+		let pk2_fr = field_value_from_pub_key(&keypair2.public_key);
+		let pk3_fr = field_value_from_pub_key(&keypair3.public_key);
 
 		// Peer1(pk1) signs the opinion
 		let mut pks = [Fr::zero(); NUM_NEIGHBOURS];
@@ -783,7 +777,7 @@ mod test {
 		scores[1] = Fr::from_u128(10);
 
 		let op1 =
-			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&sk1, &pks, &scores);
+			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&keypair1, &pks, &scores);
 
 		// Peer2(pk2) signs the opinion
 		let mut pks = [Fr::zero(); NUM_NEIGHBOURS];
@@ -795,7 +789,7 @@ mod test {
 		scores[2] = Fr::from_u128(30);
 
 		let op2 =
-			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&sk2, &pks, &scores);
+			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&keypair2, &pks, &scores);
 
 		// Peer3(pk3) signs the opinion
 		let mut pks = [Fr::zero(); NUM_NEIGHBOURS];
@@ -807,7 +801,7 @@ mod test {
 		scores[0] = Fr::from_u128(10);
 
 		let op3 =
-			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&sk3, &pks, &scores);
+			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&keypair3, &pks, &scores);
 
 		// Setup EigenTrustSet
 		let mut eigen_trust_set =
@@ -817,9 +811,9 @@ mod test {
 		eigen_trust_set.add_member(pk2_fr);
 		eigen_trust_set.add_member(pk3_fr);
 
-		eigen_trust_set.update_op(pk1, op1);
-		eigen_trust_set.update_op(pk2, op2);
-		eigen_trust_set.update_op(pk3, op3);
+		eigen_trust_set.update_op(keypair1.public_key, op1);
+		eigen_trust_set.update_op(keypair2.public_key, op2);
+		eigen_trust_set.update_op(keypair3.public_key, op3);
 
 		let filtered_ops = eigen_trust_set.filter_peers_ops();
 
@@ -845,25 +839,24 @@ mod test {
 
 		let rng = &mut thread_rng();
 
-		let keys: Vec<(SecretKey, PublicKey)> =
-			(0..NUM_NEIGHBOURS).into_iter().map(|_| generate_keypair(rng)).collect();
-		let sks: Vec<SecretKey> = keys.iter().map(|(sk, _)| sk.clone()).collect();
-		let pks: Vec<PublicKey> = keys.iter().map(|(_, pk)| pk.clone()).collect();
+		let keys: Vec<EcdsaKeypair<Fr, 4, 68, Secp256k1_4_68, Secp256k1Params>> =
+			(0..NUM_NEIGHBOURS).into_iter().map(|_| EcdsaKeypair::generate_keypair(rng)).collect();
+
+		let pks_fr: Vec<Fr> =
+			keys.iter().map(|key| field_value_from_pub_key(&key.public_key.clone())).collect();
 
 		// Add the publicKey to the set
-		pks.iter().for_each(|pk| set.add_member(field_value_from_pub_key(&pk.clone())));
-
-		let pks_fr: Vec<Fr> = pks.iter().map(|pk| field_value_from_pub_key(&pk.clone())).collect();
+		pks_fr.iter().for_each(|f| set.add_member(f.clone()));
 
 		// Update the opinions
 		for i in 0..NUM_NEIGHBOURS {
 			let scores = ops[i].to_vec();
 
 			let op_i = sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
-				&sks[i], &pks_fr, &scores,
+				&keys[i], &pks_fr, &scores,
 			);
 
-			let pk_i = pks[i];
+			let pk_i = keys[i].public_key.clone();
 			set.update_op(pk_i, op_i);
 		}
 

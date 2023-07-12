@@ -1,6 +1,6 @@
 use crate::{
 	ecc::{
-		same_curve::{AssignedAux, AssignedPoint, AuxAssigner, EccAddChipset, EccMulChipset},
+		same_curve::{AssignedAux, AssignedEcPoint, AuxAssigner, EccAddChipset, EccMulChipset},
 		AuxConfig, EccMulConfig,
 	},
 	gadgets::main::{AddChipset, InverseChipset, MainConfig, MulChipset, SubChipset},
@@ -560,7 +560,7 @@ where
 	C::Scalar: FieldExt,
 {
 	// Inner value for the halo2 loaded point
-	pub(crate) inner: AssignedPoint<C, NUM_LIMBS, NUM_BITS, P>,
+	pub(crate) inner: AssignedEcPoint<C, NUM_LIMBS, NUM_BITS, P>,
 	// Loader
 	pub(crate) loader: LoaderConfig<'a, C, L, P, H, EC>,
 	_h: PhantomData<H>,
@@ -576,7 +576,7 @@ where
 {
 	/// Creates a new Halo2LScalar
 	pub fn new(
-		value: AssignedPoint<C, NUM_LIMBS, NUM_BITS, P>, loader: LoaderConfig<'a, C, L, P, H, EC>,
+		value: AssignedEcPoint<C, NUM_LIMBS, NUM_BITS, P>, loader: LoaderConfig<'a, C, L, P, H, EC>,
 	) -> Self {
 		Self { inner: value, loader, _h: PhantomData }
 	}
@@ -688,7 +688,7 @@ where
 		let x_assigned = AssignedInteger::new(x, x_limbs);
 		let y_assigned = AssignedInteger::new(y, y_limbs);
 
-		let assigned_point = AssignedPoint::new(x_assigned, y_assigned);
+		let assigned_point = AssignedEcPoint::new(x_assigned, y_assigned);
 		Halo2LEcPoint::new(assigned_point, self.clone())
 	}
 
@@ -781,7 +781,7 @@ mod test {
 	use crate::{
 		circuit::{FullRoundHasher, PartialRoundHasher},
 		ecc::{
-			same_curve::{native::EcPoint, AssignedPoint},
+			same_curve::{native::EcPoint, AssignedEcPoint},
 			AuxConfig, EccAddConfig, EccDoubleConfig, EccMulConfig, EccTableSelectConfig,
 			EccUnreducedLadderConfig,
 		},
@@ -942,7 +942,7 @@ mod test {
 					let x = AssignedInteger::new(lpoint.inner.x.clone(), x_limbs.clone());
 					let y = AssignedInteger::new(lpoint.inner.y.clone(), y_limbs.clone());
 
-					let assigned_point = AssignedPoint::new(x, y);
+					let assigned_point = AssignedEcPoint::new(x, y);
 					let halo2_point = Halo2LEcPoint::new(assigned_point, loader_config.clone());
 
 					halo2_pairs.push((halo2_scalar, halo2_point));
