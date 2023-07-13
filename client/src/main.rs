@@ -52,36 +52,30 @@ async fn main() {
 			Ok(_) => (),
 			Err(e) => error!("Failed to execute bandada command: {:?}", e),
 		},
-		Mode::Compile => {
-			info!("Compiling AttestationStation...");
-			match gen_as_bindings() {
-				Ok(_) => info!("Compilation successful"),
-				Err(e) => error!("Error during compilation: {}", e),
-			}
-			info!("Done!");
+		Mode::Compile => match gen_as_bindings() {
+			Ok(_) => info!("Compilation successful"),
+			Err(e) => error!("Error during compilation: {}", e),
 		},
 		Mode::Deploy => {
-			info!("Deploying contracts...");
 			let client = Client::new(config);
 
-			let as_address = match deploy_as(client.get_signer()).await {
-				Ok(a) => a,
+			match deploy_as(client.get_signer()).await {
+				Ok(as_address) => info!("AttestationStation deployed at {:?}", as_address),
 				Err(e) => {
 					error!("Failed to deploy AttestationStation: {:?}", e);
 					return;
 				},
 			};
-			info!("AttestationStation deployed at {:?}", as_address);
 
-			let verifier_address = match deploy_verifier(client.get_signer()).await {
-				Ok(a) => a,
+			match deploy_verifier(client.get_signer()).await {
+				Ok(verifier_address) => {
+					info!("EigenTrustVerifier deployed at {:?}", verifier_address)
+				},
 				Err(e) => {
 					error!("Failed to deploy EigenTrustVerifier: {:?}", e);
 					return;
 				},
 			};
-
-			info!("EigenTrustVerifier deployed at {:?}", verifier_address);
 		},
 		Mode::LocalScores => match handle_scores(config, AttestationsOrigin::Local).await {
 			Ok(_) => info!("Scores calculated."),
