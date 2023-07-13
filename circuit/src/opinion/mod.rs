@@ -2,7 +2,7 @@
 pub mod native;
 
 use crate::{
-	ecc::generic::AssignedEcPoint,
+	ecdsa::{AssignedPublicKey, AssignedSignature},
 	integer::AssignedInteger,
 	params::{ecc::EccParams, rns::RnsParams},
 	Chipset, CommonConfig, FieldExt, HasherChipset,
@@ -11,6 +11,82 @@ use halo2::{circuit::Layouter, halo2curves::CurveAffine, plonk::Error};
 use std::marker::PhantomData;
 
 const WIDTH: usize = 5;
+
+/// Assigned Attestation variables.
+#[derive(Debug, Clone)]
+pub struct AssignedAttestation<
+	C: CurveAffine,
+	N: FieldExt,
+	const NUM_LIMBS: usize,
+	const NUM_BITS: usize,
+	P,
+> where
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	C::Base: FieldExt,
+	C::ScalarExt: FieldExt,
+{
+	/// Ethereum address of peer being rated
+	pub about: AssignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>,
+	/// Unique identifier for the action being rated
+	pub domain: AssignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>,
+	/// Given rating for the action
+	pub value: AssignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>,
+	/// Optional field for attaching additional information to the attestation
+	pub message: AssignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>,
+}
+
+impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
+	AssignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>
+where
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	C::Base: FieldExt,
+	C::ScalarExt: FieldExt,
+{
+	/// Creates a new AssignedAttestation
+	pub fn new(
+		about: AssignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>,
+		domain: AssignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>,
+		value: AssignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>,
+		message: AssignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>,
+	) -> Self {
+		Self { about, domain, value, message }
+	}
+}
+
+/// Signed Attestation variables.
+#[derive(Debug, Clone)]
+pub struct SignedAttestation<
+	C: CurveAffine,
+	N: FieldExt,
+	const NUM_LIMBS: usize,
+	const NUM_BITS: usize,
+	P,
+> where
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	C::Base: FieldExt,
+	C::ScalarExt: FieldExt,
+{
+	// Attestation
+	attestation: AssignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>,
+	// Signature
+	signature: AssignedSignature<C, N, NUM_LIMBS, NUM_BITS, P>,
+}
+
+impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
+	SignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>
+where
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	C::Base: FieldExt,
+	C::ScalarExt: FieldExt,
+{
+	/// Creates a new SignedAttestation
+	pub fn new(
+		attestation: AssignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>,
+		signature: AssignedSignature<C, N, NUM_LIMBS, NUM_BITS, P>,
+	) -> Self {
+		Self { attestation, signature }
+	}
+}
 
 /// Configuration elements for the circuit are defined here.
 #[derive(Debug, Clone)]
@@ -48,11 +124,10 @@ pub struct OpinionChipset<
 	C::ScalarExt: FieldExt,
 	H: HasherChipset<N, WIDTH>,
 {
-	public_key: AssignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P>,
-	signature: (
-		AssignedInteger<C::Scalar, N, NUM_LIMBS, NUM_BITS, P>,
-		AssignedInteger<C::Scalar, N, NUM_LIMBS, NUM_BITS, P>,
-	),
+	// Attestations
+	attestations: Vec<SignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>>,
+	// Public key
+	public_key: AssignedPublicKey<C, N, NUM_LIMBS, NUM_BITS, P>,
 	/// Constructs a phantom data for the hasher.
 	_hasher: PhantomData<(H, EC)>,
 }
@@ -68,13 +143,10 @@ where
 {
 	/// Create a new chip.
 	pub fn new(
-		signature: (
-			AssignedInteger<C::Scalar, N, NUM_LIMBS, NUM_BITS, P>,
-			AssignedInteger<C::Scalar, N, NUM_LIMBS, NUM_BITS, P>,
-		),
-		public_key: AssignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P>,
+		attestations: Vec<SignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>>,
+		public_key: AssignedPublicKey<C, N, NUM_LIMBS, NUM_BITS, P>,
 	) -> Self {
-		OpinionChipset { signature, public_key, _hasher: PhantomData }
+		OpinionChipset { attestations, public_key, _hasher: PhantomData }
 	}
 }
 
