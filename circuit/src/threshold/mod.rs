@@ -6,10 +6,10 @@ use halo2::{
 use crate::{
 	gadgets::{
 		bits2num::Bits2NumChip,
-		lt_eq::{LessEqualConfig, NShiftedChip},
-		main::{MainChip, MainConfig},
+		lt_eq::{LessEqualChipset, LessEqualConfig, NShiftedChip},
+		main::{InverseChipset, IsZeroChipset, MainChip, MainConfig, MulAddChipset, MulChipset},
 	},
-	Chip, CommonConfig, FieldExt,
+	Chip, Chipset, CommonConfig, FieldExt, RegionCtx, ADVICE,
 };
 
 /// Native version of checking score threshold
@@ -19,6 +19,7 @@ pub mod native;
 /// The columns config for the Threshold circuit.
 pub struct ThresholdCircuitConfig {
 	common: CommonConfig,
+	main: MainConfig,
 	lt_eq: LessEqualConfig,
 }
 
@@ -84,14 +85,227 @@ impl<
 
 		let bits_2_num_selector = Bits2NumChip::configure(&common, meta);
 		let n_shifted_selector = NShiftedChip::configure(&common, meta);
-		let lt_eq = LessEqualConfig::new(main, bits_2_num_selector, n_shifted_selector);
+		let lt_eq = LessEqualConfig::new(main.clone(), bits_2_num_selector, n_shifted_selector);
 
-		ThresholdCircuitConfig { common, lt_eq }
+		ThresholdCircuitConfig { common, main, lt_eq }
 	}
 
 	fn synthesize(
-		&self, config: Self::Config, layouter: impl halo2::circuit::Layouter<F>,
+		&self, config: Self::Config, mut layouter: impl halo2::circuit::Layouter<F>,
 	) -> Result<(), halo2::plonk::Error> {
-		todo!()
+		let (num_neighbor, init_score, max_limb_value, threshold, one) = layouter.assign_region(
+			|| "temp",
+			|region| {
+				let mut ctx = RegionCtx::new(region, 0);
+
+				let num_neighbor = ctx.assign_from_constant(
+					config.common.advice[0],
+					F::from_u128(NUM_NEIGHBOURS as u128),
+				)?;
+				let init_score = ctx.assign_from_constant(
+					config.common.advice[1],
+					F::from_u128(INITIAL_SCORE as u128),
+				)?;
+
+				let max_limb_value = ctx.assign_from_constant(
+					config.common.advice[2],
+					F::from_u128(10_u128).pow([POWER_OF_TEN as u64]),
+				)?;
+
+				let threshold = ctx.assign_advice(config.common.advice[3], self.threshold)?;
+
+				let one = ctx.assign_from_constant(config.common.advice[4], F::ONE)?;
+
+				Ok((num_neighbor, init_score, max_limb_value, threshold, one))
+			},
+		)?;
+
+		// max_score_bn = NUM_NEIGHBOURS * INITIAL_SCORE
+		let max_score = {
+			let mul_chipset = MulChipset::new(num_neighbor, init_score);
+			mul_chipset.synthesize(
+				&config.common,
+				&config.main,
+				layouter.namespace(|| "NUM_NEIGHBOURS * INITIAL_SCORE"),
+			)?
+		};
+
+		// assert!(threshold_bn < max_score_bn)
+		let lt_eq_chipset = LessEqualChipset::new(threshold.clone(), max_score);
+		let res = lt_eq_chipset.synthesize(
+			&config.common,
+			&config.lt_eq,
+			layouter.namespace(|| "threshold < max_score"),
+		)?;
+		res.value().assert_if_known(|v| v == &&F::ONE);
+
+		// check every element of "num_decomposed"
+		let num_decomposed_limbs = {
+			let mut limbs = vec![];
+			layouter.assign_region(
+				|| "num_decomposed",
+				|region| {
+					let mut ctx = RegionCtx::new(region, 0);
+					for i in 0..self.num_decomposed.len() {
+						let limb = ctx.assign_advice(
+							config.common.advice[i % ADVICE],
+							self.num_decomposed[i],
+						)?;
+						limbs.push(limb);
+
+						if i % ADVICE == ADVICE - 1 {
+							ctx.next();
+						}
+					}
+					Ok(())
+				},
+			)?;
+			limbs
+		};
+
+		for i in 0..num_decomposed_limbs.len() {
+			// assert!(limb_bn < max_limb_value_bn)
+			let lt_eq_chipset =
+				LessEqualChipset::new(num_decomposed_limbs[i].clone(), max_limb_value.clone());
+			let res = lt_eq_chipset.synthesize(
+				&config.common,
+				&config.lt_eq,
+				layouter.namespace(|| "(num_decomposed) limb < max_limb_value"),
+			)?;
+			res.value().assert_if_known(|v| v == &&F::ONE);
+		}
+
+		// check every element of "den_decomposed"
+		let den_decomposed_limbs = {
+			let mut limbs = vec![];
+			layouter.assign_region(
+				|| "den_decomposed",
+				|region| {
+					let mut ctx = RegionCtx::new(region, 0);
+					for i in 0..self.den_decomposed.len() {
+						let limb = ctx.assign_advice(
+							config.common.advice[i % ADVICE],
+							self.den_decomposed[i],
+						)?;
+						limbs.push(limb);
+
+						if i % ADVICE == ADVICE - 1 {
+							ctx.next();
+						}
+					}
+					Ok(())
+				},
+			)?;
+			limbs
+		};
+
+		for i in 0..den_decomposed_limbs.len() {
+			// assert!(limb_bn < max_limb_value_bn)
+			let lt_eq_chipset =
+				LessEqualChipset::new(den_decomposed_limbs[i].clone(), max_limb_value.clone());
+			let res = lt_eq_chipset.synthesize(
+				&config.common,
+				&config.lt_eq,
+				layouter.namespace(|| "(den_decomposed) limb < max_limb_value"),
+			)?;
+			res.value().assert_if_known(|v| v == &&F::ONE);
+		}
+
+		// composed_num * composed_den_inv == score
+		let composed_num = {
+			let mut limbs = num_decomposed_limbs.clone();
+			limbs.reverse();
+			let scale = max_limb_value.clone();
+
+			let mut val = limbs[0].clone();
+			for limb in limbs.iter().take(NUM_LIMBS).skip(1) {
+				let mul_add_chipset = MulAddChipset::new(val, scale.clone(), limb.clone());
+				val = mul_add_chipset.synthesize(
+					&config.common,
+					&config.main,
+					layouter.namespace(|| "val * scale + limb"),
+				)?;
+			}
+
+			val
+		};
+
+		let composed_den = {
+			let mut limbs = den_decomposed_limbs.clone();
+			limbs.reverse();
+			let scale = max_limb_value;
+
+			let mut val = limbs[0].clone();
+			for limb in limbs.iter().take(NUM_LIMBS).skip(1) {
+				let mul_add_chipset = MulAddChipset::new(val, scale.clone(), limb.clone());
+				val = mul_add_chipset.synthesize(
+					&config.common,
+					&config.main,
+					layouter.namespace(|| "val * scale + limb"),
+				)?;
+			}
+
+			val
+		};
+
+		let composed_den_inv = {
+			let inv_chipset = InverseChipset::new(composed_den);
+			let res = inv_chipset.synthesize(
+				&config.common,
+				&config.main,
+				layouter.namespace(|| "composed_den ^ -1"),
+			)?;
+			res
+		};
+
+		let mul_chipset = MulChipset::new(composed_num, composed_den_inv);
+		let res = mul_chipset.synthesize(
+			&config.common,
+			&config.main,
+			layouter.namespace(|| "composed_num * composed_den_inv"),
+		)?;
+		layouter.assign_region(
+			|| "res == score",
+			|region| {
+				let mut ctx = RegionCtx::new(region, 0);
+				let score = ctx.assign_advice(config.common.advice[0], self.score.clone())?;
+				ctx.constrain_equal(res.clone(), score)?;
+
+				Ok(())
+			},
+		)?;
+
+		// Take the highest POWER_OF_TEN digits for comparison
+		// This just means lower precision
+		let last_limb_num = num_decomposed_limbs.last().unwrap();
+		let last_limb_den = den_decomposed_limbs.last().unwrap();
+
+		// assert!(last_limb_den != 0)
+		let is_zero_chipset = IsZeroChipset::new(last_limb_den.clone());
+		let res = is_zero_chipset.synthesize(
+			&config.common,
+			&config.main,
+			layouter.namespace(|| "last_limb_den != 0"),
+		)?;
+		res.value().assert_if_known(|v| v == &&F::ONE);
+
+		let mul_chipset = MulChipset::new(last_limb_den.clone(), threshold);
+		let comp = mul_chipset.synthesize(
+			&config.common,
+			&config.main,
+			layouter.namespace(|| "last_limb_den * threshold"),
+		)?;
+
+		let lt_eq_chipset = LessEqualChipset::new(comp, last_limb_num.clone());
+		let res = lt_eq_chipset.synthesize(
+			&config.common,
+			&config.lt_eq,
+			layouter.namespace(|| "comp <= last_limb_num"),
+		)?;
+
+		// Todo: really?
+		layouter.constrain_instance(res.cell(), config.common.instance, 0)?;
+
+		Ok(())
 	}
 }
