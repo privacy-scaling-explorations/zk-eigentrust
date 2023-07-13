@@ -1,26 +1,277 @@
 /// Native version of Ecdsa
 pub mod native;
 
-use crate::ecc::generic::{AssignedAux, EccAddChipset};
+use self::native::{PublicKey, Signature};
+use crate::ecc::generic::{
+	AssignedAux, AssignedEcPoint, EccAddChipset, PointAssigner, UnassignedEcPoint,
+};
 use crate::ecc::EccAddConfig;
+use crate::integer::{IntegerAssigner, UnassignedInteger};
 use crate::params::ecc::EccParams;
 use crate::{
-	ecc::{
-		generic::{AssignedPoint, EccMulChipset},
-		EccMulConfig,
-	},
+	ecc::{generic::EccMulChipset, EccMulConfig},
 	integer::{AssignedInteger, IntegerMulChip},
 	params::rns::RnsParams,
 	Chipset, CommonConfig, FieldExt,
 };
-use crate::{Chip, RegionCtx};
-use halo2::circuit::Region;
+use crate::{Chip, RegionCtx, UnassignedValue};
+use halo2::circuit::{Region, Value};
 use halo2::{
 	circuit::Layouter,
 	halo2curves::CurveAffine,
 	plonk::{Error, Selector},
 };
 use std::marker::PhantomData;
+
+#[derive(Clone, Debug)]
+/// Unassigned signature structure
+pub struct UnassignedSignature<
+	C: CurveAffine,
+	N: FieldExt,
+	const NUM_LIMBS: usize,
+	const NUM_BITS: usize,
+	P,
+> where
+	P: RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	C::ScalarExt: FieldExt,
+{
+	r: UnassignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>,
+	s: UnassignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>,
+}
+
+impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
+	UnassignedSignature<C, N, NUM_LIMBS, NUM_BITS, P>
+where
+	P: RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	C::ScalarExt: FieldExt,
+{
+	/// Constructor for unassigned signature
+	pub fn new(sig: Signature<C, N, NUM_LIMBS, NUM_BITS, P>) -> Self {
+		Self {
+			r: UnassignedInteger::new(sig.r.clone(), sig.r.limbs.map(|x| Value::known(x))),
+			s: UnassignedInteger::new(sig.s.clone(), sig.s.limbs.map(|x| Value::known(x))),
+		}
+	}
+}
+
+impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P> UnassignedValue
+	for UnassignedSignature<C, N, NUM_LIMBS, NUM_BITS, P>
+where
+	P: RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	C::ScalarExt: FieldExt,
+{
+	fn without_witnesses() -> Self {
+		Self {
+			r: UnassignedInteger::without_witnesses(),
+			s: UnassignedInteger::without_witnesses(),
+		}
+	}
+}
+
+#[derive(Clone, Debug)]
+/// Assigned signature structure
+pub struct AssignedSignature<
+	C: CurveAffine,
+	N: FieldExt,
+	const NUM_LIMBS: usize,
+	const NUM_BITS: usize,
+	P,
+> where
+	P: RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	C::ScalarExt: FieldExt,
+{
+	r: AssignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>,
+	s: AssignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>,
+}
+
+impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
+	AssignedSignature<C, N, NUM_LIMBS, NUM_BITS, P>
+where
+	P: RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	C::ScalarExt: FieldExt,
+{
+	fn new(
+		r: AssignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>,
+		s: AssignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>,
+	) -> Self {
+		Self { r, s }
+	}
+}
+
+/// Signature assigner chipset
+pub struct SignatureAssigner<
+	C: CurveAffine,
+	N: FieldExt,
+	const NUM_LIMBS: usize,
+	const NUM_BITS: usize,
+	P,
+> where
+	P: RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	C::ScalarExt: FieldExt,
+{
+	sig: UnassignedSignature<C, N, NUM_LIMBS, NUM_BITS, P>,
+}
+
+impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
+	SignatureAssigner<C, N, NUM_LIMBS, NUM_BITS, P>
+where
+	P: RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	C::ScalarExt: FieldExt,
+{
+	/// Constructor for Signature assigner
+	pub fn new(sig: UnassignedSignature<C, N, NUM_LIMBS, NUM_BITS, P>) -> Self {
+		Self { sig }
+	}
+}
+
+impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P> Chipset<N>
+	for SignatureAssigner<C, N, NUM_LIMBS, NUM_BITS, P>
+where
+	P: RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	C::ScalarExt: FieldExt,
+{
+	type Config = ();
+	type Output = AssignedSignature<C, N, NUM_LIMBS, NUM_BITS, P>;
+
+	fn synthesize(
+		self, common: &CommonConfig, _: &Self::Config, mut layouter: impl Layouter<N>,
+	) -> Result<Self::Output, Error> {
+		let signature_r_assigner = IntegerAssigner::new(self.sig.r);
+		let signature_r = signature_r_assigner.synthesize(
+			common,
+			&(),
+			layouter.namespace(|| "signature_r assigner"),
+		)?;
+
+		let signature_s_assigner = IntegerAssigner::new(self.sig.s);
+		let signature_s = signature_s_assigner.synthesize(
+			common,
+			&(),
+			layouter.namespace(|| "signature_s assigner"),
+		)?;
+
+		Ok(AssignedSignature::new(signature_r, signature_s))
+	}
+}
+
+#[derive(Clone, Debug)]
+struct UnassignedPublicKey<
+	C: CurveAffine,
+	N: FieldExt,
+	const NUM_LIMBS: usize,
+	const NUM_BITS: usize,
+	P,
+	EC,
+>(UnassignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>)
+where
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
+	C::Base: FieldExt;
+
+impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P, EC>
+	UnassignedPublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>
+where
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	C::Base: FieldExt,
+	C::ScalarExt: FieldExt,
+	EC: EccParams<C>,
+{
+	fn new(pk: PublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>) -> Self {
+		let x = UnassignedInteger::new(pk.0.x.clone(), pk.0.x.limbs.map(|x| Value::known(x)));
+		let y = UnassignedInteger::new(pk.0.y.clone(), pk.0.y.limbs.map(|x| Value::known(x)));
+		let p = UnassignedEcPoint::new(x, y);
+		Self(p)
+	}
+}
+
+impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P, EC>
+	UnassignedValue for UnassignedPublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>
+where
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS>,
+	C::Base: FieldExt,
+	C::ScalarExt: FieldExt,
+	EC: EccParams<C>,
+{
+	fn without_witnesses() -> Self {
+		Self(UnassignedEcPoint::without_witnesses())
+	}
+}
+
+#[derive(Clone, Debug)]
+/// Assigned public key structure
+pub struct AssignedPublicKey<
+	C: CurveAffine,
+	N: FieldExt,
+	const NUM_LIMBS: usize,
+	const NUM_BITS: usize,
+	P,
+>(AssignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P>)
+where
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS>,
+	C::Base: FieldExt;
+
+impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
+	AssignedPublicKey<C, N, NUM_LIMBS, NUM_BITS, P>
+where
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS>,
+	C::Base: FieldExt,
+{
+	/// Constructor for assigned public key
+	pub fn new(p: AssignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P>) -> Self {
+		Self(p)
+	}
+}
+
+struct PublicKeyAssigner<
+	C: CurveAffine,
+	N: FieldExt,
+	const NUM_LIMBS: usize,
+	const NUM_BITS: usize,
+	P,
+	EC,
+>(UnassignedPublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>)
+where
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
+	C::Base: FieldExt;
+
+impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P, EC>
+	PublicKeyAssigner<C, N, NUM_LIMBS, NUM_BITS, P, EC>
+where
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
+	C::Base: FieldExt,
+{
+	pub fn new(p: UnassignedPublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>) -> Self {
+		Self(p)
+	}
+}
+
+impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P, EC> Chipset<N>
+	for PublicKeyAssigner<C, N, NUM_LIMBS, NUM_BITS, P, EC>
+where
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
+{
+	type Config = ();
+	type Output = AssignedPublicKey<C, N, NUM_LIMBS, NUM_BITS, P>;
+
+	fn synthesize(
+		self, common: &CommonConfig, _: &Self::Config, mut layouter: impl Layouter<N>,
+	) -> Result<Self::Output, Error> {
+		let public_key_assigner = PointAssigner::new(self.0 .0);
+		let public_key = public_key_assigner.synthesize(
+			common,
+			&(),
+			layouter.namespace(|| "public_key assigner"),
+		)?;
+
+		let pk = AssignedPublicKey::new(public_key);
+		Ok(pk)
+	}
+}
 
 #[derive(Clone, Debug)]
 /// Configuration structure for the Ecdsa
@@ -55,18 +306,15 @@ pub struct EcdsaChipset<
 	C::ScalarExt: FieldExt,
 {
 	// Public key
-	public_key: AssignedPoint<C, N, NUM_LIMBS, NUM_BITS, P>,
+	public_key: AssignedPublicKey<C, N, NUM_LIMBS, NUM_BITS, P>,
 	// Generator as a ec point
-	g_as_ecpoint: AssignedPoint<C, N, NUM_LIMBS, NUM_BITS, P>,
+	g_as_ecpoint: AssignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P>,
 	// Signature
-	signature: (
-		AssignedInteger<C::Scalar, N, NUM_LIMBS, NUM_BITS, P>,
-		AssignedInteger<C::Scalar, N, NUM_LIMBS, NUM_BITS, P>,
-	),
+	signature: AssignedSignature<C, N, NUM_LIMBS, NUM_BITS, P>,
 	// Message hash
-	msg_hash: AssignedInteger<C::Scalar, N, NUM_LIMBS, NUM_BITS, P>,
+	msg_hash: AssignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>,
 	// Signature inverse
-	s_inv: AssignedInteger<C::Scalar, N, NUM_LIMBS, NUM_BITS, P>,
+	s_inv: AssignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>,
 	// Aux for to_add and to_sub
 	aux: AssignedAux<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
 	_p: PhantomData<(P, EC)>,
@@ -82,14 +330,11 @@ where
 {
 	/// Creates a new chipset.
 	pub fn new(
-		public_key: AssignedPoint<C, N, NUM_LIMBS, NUM_BITS, P>,
-		g_as_ecpoint: AssignedPoint<C, N, NUM_LIMBS, NUM_BITS, P>,
-		signature: (
-			AssignedInteger<C::Scalar, N, NUM_LIMBS, NUM_BITS, P>,
-			AssignedInteger<C::Scalar, N, NUM_LIMBS, NUM_BITS, P>,
-		),
-		msg_hash: AssignedInteger<C::Scalar, N, NUM_LIMBS, NUM_BITS, P>,
-		s_inv: AssignedInteger<C::Scalar, N, NUM_LIMBS, NUM_BITS, P>,
+		public_key: AssignedPublicKey<C, N, NUM_LIMBS, NUM_BITS, P>,
+		g_as_ecpoint: AssignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P>,
+		signature: AssignedSignature<C, N, NUM_LIMBS, NUM_BITS, P>,
+		msg_hash: AssignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>,
+		s_inv: AssignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>,
 		aux: AssignedAux<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
 	) -> Self {
 		Self { public_key, g_as_ecpoint, signature, msg_hash, s_inv, aux, _p: PhantomData }
@@ -111,7 +356,7 @@ where
 	fn synthesize(
 		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<N>,
 	) -> Result<Self::Output, Error> {
-		let (r, _) = &self.signature;
+		let r = self.signature.r;
 
 		let u_1_chip = IntegerMulChip::new(self.msg_hash, self.s_inv.clone());
 		let u_1 = u_1_chip.synthesize(
@@ -138,8 +383,9 @@ where
 			layouter.namespace(|| "v_1"),
 		)?;
 
-		let v_2_ecc_mul_scalar_chip =
-			EccMulChipset::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::new(self.public_key, u_2, self.aux);
+		let v_2_ecc_mul_scalar_chip = EccMulChipset::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::new(
+			self.public_key.0, u_2, self.aux,
+		);
 		let v_2 = v_2_ecc_mul_scalar_chip.synthesize(
 			common,
 			&config.ecc_mul_scalar,
@@ -171,7 +417,11 @@ where
 
 #[cfg(test)]
 mod test {
-	use super::{EcdsaChipset, EcdsaConfig};
+	use super::native::{PublicKey, Signature};
+	use super::{
+		EcdsaChipset, EcdsaConfig, PublicKeyAssigner, SignatureAssigner, UnassignedPublicKey,
+		UnassignedSignature,
+	};
 	use crate::ecc::generic::{AuxAssigner, PointAssigner};
 	use crate::ecc::AuxConfig;
 	use crate::ecdsa::native::EcdsaKeypair;
@@ -279,34 +529,25 @@ mod test {
 
 	#[derive(Clone)]
 	struct TestEcdsaCircuit {
-		public_key: UnassignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
+		public_key: UnassignedPublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
 		g_as_ecpoint: UnassignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
-		signature: (
-			UnassignedInteger<SecpScalar, N, NUM_LIMBS, NUM_BITS, P>,
-			UnassignedInteger<SecpScalar, N, NUM_LIMBS, NUM_BITS, P>,
-		),
+		signature: UnassignedSignature<C, N, NUM_LIMBS, NUM_BITS, P>,
 		msg_hash: UnassignedInteger<SecpScalar, N, NUM_LIMBS, NUM_BITS, P>,
 		s_inv: UnassignedInteger<SecpScalar, N, NUM_LIMBS, NUM_BITS, P>,
 	}
 
 	impl TestEcdsaCircuit {
 		fn new(
-			public_key: EcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
+			public_key: PublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
 			g_as_ecpoint: EcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
-			signature: (
-				Integer<SecpScalar, N, NUM_LIMBS, NUM_BITS, P>,
-				Integer<SecpScalar, N, NUM_LIMBS, NUM_BITS, P>,
-			),
+			signature: Signature<C, N, NUM_LIMBS, NUM_BITS, P>,
 			msg_hash: Integer<SecpScalar, N, NUM_LIMBS, NUM_BITS, P>,
 			s_inv: Integer<SecpScalar, N, NUM_LIMBS, NUM_BITS, P>,
 		) -> Self {
 			Self {
-				public_key: UnassignedEcPoint::from(public_key),
+				public_key: UnassignedPublicKey::new(public_key),
 				g_as_ecpoint: UnassignedEcPoint::from(g_as_ecpoint),
-				signature: (
-					UnassignedInteger::from(signature.0),
-					UnassignedInteger::from(signature.1),
-				),
+				signature: UnassignedSignature::new(signature),
 				msg_hash: UnassignedInteger::from(msg_hash),
 				s_inv: UnassignedInteger::from(s_inv),
 			}
@@ -319,12 +560,9 @@ mod test {
 
 		fn without_witnesses(&self) -> Self {
 			Self {
-				public_key: UnassignedEcPoint::without_witnesses(),
+				public_key: UnassignedPublicKey::without_witnesses(),
 				g_as_ecpoint: UnassignedEcPoint::without_witnesses(),
-				signature: (
-					UnassignedInteger::without_witnesses(),
-					UnassignedInteger::without_witnesses(),
-				),
+				signature: UnassignedSignature::without_witnesses(),
 				msg_hash: UnassignedInteger::without_witnesses(),
 				s_inv: UnassignedInteger::without_witnesses(),
 			}
@@ -344,7 +582,7 @@ mod test {
 				layouter.namespace(|| "aux assigner"),
 			)?;
 
-			let public_key_assigner = PointAssigner::new(self.public_key.clone());
+			let public_key_assigner = PublicKeyAssigner::new(self.public_key.clone());
 			let public_key = public_key_assigner.synthesize(
 				&config.common,
 				&(),
@@ -358,21 +596,12 @@ mod test {
 				layouter.namespace(|| "g_as_ec_point assigner"),
 			)?;
 
-			let signature_left_assigner = IntegerAssigner::new(self.signature.clone().0);
-			let signature_left = signature_left_assigner.synthesize(
+			let signature_assigner = SignatureAssigner::new(self.signature.clone());
+			let signature = signature_assigner.synthesize(
 				&config.common,
 				&(),
 				layouter.namespace(|| "signature_left assigner"),
 			)?;
-
-			let signature_right_assigner = IntegerAssigner::new(self.signature.clone().1);
-			let signature_right = signature_right_assigner.synthesize(
-				&config.common,
-				&(),
-				layouter.namespace(|| "signature_right assigner"),
-			)?;
-
-			let signature = (signature_left, signature_right);
 
 			let msg_hash_assigner = IntegerAssigner::new(self.msg_hash.clone());
 			let msg_hash = msg_hash_assigner.synthesize(
@@ -405,14 +634,14 @@ mod test {
 		// Test Halo2 ECDSA verify
 		let rng = &mut rand::thread_rng();
 		let keypair =
-			EcdsaKeypair::<Fr, 4, 68, Secp256k1_4_68, Secp256k1Params>::generate_keypair(rng);
+			EcdsaKeypair::<Secp256k1Affine, Fr, 4, 68, Secp256k1_4_68, Secp256k1Params>::generate_keypair(rng);
 		let public_key = keypair.public_key.clone();
 
 		let msg_hash = Fq::from_u128(123456789);
 		let msg_hash_integer = Integer::from_w(msg_hash);
 
 		let signature = keypair.sign(msg_hash.clone(), rng);
-		let s_inv_fq = big_to_fe::<Fq>(signature.1.value()).invert().unwrap();
+		let s_inv_fq = big_to_fe::<Fq>(signature.s.value()).invert().unwrap();
 		let s_inv = Integer::from_w(s_inv_fq);
 
 		let g = Secp256k1::generator().to_affine();

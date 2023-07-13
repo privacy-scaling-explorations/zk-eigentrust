@@ -3,13 +3,13 @@
 //! This module provides types and functionalities for general ethereum interactions.
 
 use crate::{
+	attestation::ECDSAPublicKey,
 	error::EigenError,
 	eth::bindings::AttestationStation,
 	fs::{get_data_directory, get_file_path, read_yul, write_binary, FileType},
 	ClientSigner,
 };
 use eigen_trust_circuit::{
-	dynamic_sets::native::ECDSAPublicKey,
 	halo2::halo2curves::bn256::Fr as Scalar,
 	verifier::{compile_yul, encode_calldata},
 	Proof as NativeProof,
@@ -135,8 +135,8 @@ pub fn ecdsa_secret_from_mnemonic(
 
 		let raw_pk: &SigningKey = derived_pk.as_ref();
 
-		let secret_key =
-			SecretKey::from_slice(&raw_pk.to_bytes()).expect("32 bytes, within curve order");
+		let secret_key = SecretKey::from_slice(raw_pk.to_bytes().as_slice())
+			.expect("32 bytes, within curve order");
 
 		keys.push(secret_key);
 	}
