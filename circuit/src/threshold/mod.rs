@@ -49,10 +49,8 @@ impl<
 	/// Constructs a new ThresholdCircuit
 	pub fn new(score: F, num_decomposed: &[F], den_decomposed: &[F], threshold: F) -> Self {
 		let score = Value::known(score);
-		let num_decomposed =
-			(0..NUM_LIMBS).map(|i| Value::known(num_decomposed[i].clone())).collect();
-		let den_decomposed =
-			(0..NUM_LIMBS).map(|i| Value::known(den_decomposed[i].clone())).collect();
+		let num_decomposed = (0..NUM_LIMBS).map(|i| Value::known(num_decomposed[i])).collect();
+		let den_decomposed = (0..NUM_LIMBS).map(|i| Value::known(den_decomposed[i])).collect();
 		let threshold = Value::known(threshold);
 
 		Self { score, num_decomposed, den_decomposed, threshold }
@@ -105,7 +103,7 @@ impl<
 					)?;
 					let init_score = ctx.assign_from_constant(
 						config.common.advice[1],
-						F::from_u128(INITIAL_SCORE as u128),
+						F::from_u128(INITIAL_SCORE),
 					)?;
 					let max_limb_value = ctx.assign_from_constant(
 						config.common.advice[2],
@@ -282,12 +280,11 @@ impl<
 
 		let composed_den_inv = {
 			let inv_chipset = InverseChipset::new(composed_den);
-			let res = inv_chipset.synthesize(
+			inv_chipset.synthesize(
 				&config.common,
 				&config.main,
 				layouter.namespace(|| "composed_den ^ -1"),
-			)?;
-			res
+			)?
 		};
 
 		let mul_chipset = MulChipset::new(composed_num, composed_den_inv);
@@ -326,7 +323,7 @@ impl<
 				let mut ctx = RegionCtx::new(region, 0);
 				let res = ctx.copy_assign(config.common.advice[0], res.clone())?;
 				let zero = ctx.copy_assign(config.common.advice[1], zero.clone())?;
-				ctx.constrain_equal(res.clone(), zero.clone())?;
+				ctx.constrain_equal(res, zero)?;
 
 				Ok(())
 			},
@@ -346,7 +343,7 @@ impl<
 			layouter.namespace(|| "comp <= last_limb_num"),
 		)?;
 
-		// TODO: where to get constraint inputs
+		// TODO: where to get constraint inputs?
 		layouter.constrain_instance(res.cell(), config.common.instance, 0)?;
 
 		Ok(())
