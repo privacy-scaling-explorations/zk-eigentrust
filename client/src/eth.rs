@@ -31,7 +31,7 @@ pub fn compile_as() -> Result<CompilerOutput, EigenError> {
 		get_assets_path().map_err(|_| EigenError::ParseError)?.join("AttestationStation.sol");
 
 	let compiler_output =
-		Solc::default().compile_source(&path).map_err(|_| EigenError::ContractCompilationError)?;
+		Solc::default().compile_source(path).map_err(|_| EigenError::ContractCompilationError)?;
 
 	if !compiler_output.errors.is_empty() {
 		return Err(EigenError::ContractCompilationError);
@@ -45,7 +45,7 @@ pub fn gen_as_bindings() -> Result<(), EigenError> {
 	let contracts = compile_as()?;
 
 	for (name, contract) in contracts.contracts_iter() {
-		let abi = contract.clone().abi.ok_or_else(|| EigenError::ParseError)?;
+		let abi = contract.clone().abi.ok_or(EigenError::ParseError)?;
 		let abi_json = serde_json::to_string(&abi).map_err(|_| EigenError::ParseError)?;
 
 		let bindings = Abigen::new(name, abi_json)
@@ -68,8 +68,8 @@ pub async fn deploy_as(signer: Arc<ClientSigner>) -> Result<Address, EigenError>
 
 	for (_, contract) in contracts.contracts_iter() {
 		let (abi, bytecode, _) = contract.clone().into_parts();
-		let abi = abi.ok_or_else(|| EigenError::ParseError)?;
-		let bytecode = bytecode.ok_or_else(|| EigenError::ParseError)?;
+		let abi = abi.ok_or(EigenError::ParseError)?;
+		let bytecode = bytecode.ok_or(EigenError::ParseError)?;
 
 		let factory = ContractFactory::new(abi, bytecode, signer.clone());
 
@@ -82,7 +82,7 @@ pub async fn deploy_as(signer: Arc<ClientSigner>) -> Result<Address, EigenError>
 		}
 	}
 
-	address.ok_or_else(|| EigenError::ParseError)
+	address.ok_or(EigenError::ParseError)
 }
 
 /// Deploys the EtVerifier contract.
