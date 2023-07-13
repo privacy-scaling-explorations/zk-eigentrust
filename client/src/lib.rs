@@ -80,6 +80,7 @@ use ethers::{
 	providers::{Http, Provider},
 	signers::{coins_bip39::English, MnemonicBuilder},
 };
+use log::{info, warn};
 use secp256k1::{ecdsa::RecoverableSignature, Message, SecretKey, SECP256K1};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -135,7 +136,7 @@ impl Client {
 		// Load environment config
 		dotenv().ok();
 		let mnemonic = var("MNEMONIC").unwrap_or_else(|_| {
-			println!("MNEMONIC environment variable is not set. Using default.");
+			warn!("MNEMONIC environment variable is not set. Using default.");
 			"test test test test test test test test test test test junk".to_string()
 		});
 
@@ -195,7 +196,7 @@ impl Client {
 		let res = tx.await.map_err(|_| EigenError::TransactionError)?;
 
 		if let Some(receipt) = res {
-			println!("Transaction status: {:?}", receipt.status);
+			info!("Transaction status: {:?}", receipt.status);
 		}
 
 		Ok(())

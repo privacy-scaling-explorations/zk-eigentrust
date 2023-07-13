@@ -23,6 +23,7 @@ use ethers::{
 	types::TransactionRequest,
 	utils::keccak256,
 };
+use log::info;
 use secp256k1::SecretKey;
 use std::{
 	fs::{read_dir, write},
@@ -62,7 +63,7 @@ pub async fn call_verifier(
 
 	let tx = TransactionRequest::default().data(calldata).to(verifier_address);
 	let res = signer.send_transaction(tx, None).await.unwrap().await.unwrap();
-	println!("{:#?}", res);
+	info!("{:#?}", res);
 }
 
 /// Compiles the AttestationStation contract.
@@ -74,7 +75,7 @@ pub fn compile_att_station() -> Result<(), EigenError> {
 	let contracts =
 		Solc::default().compile_source(&path).map_err(|_| EigenError::ContractCompilationError)?;
 
-	if contracts.errors.len() > 0 {
+	if !contracts.errors.is_empty() {
 		return Err(EigenError::ContractCompilationError);
 	}
 

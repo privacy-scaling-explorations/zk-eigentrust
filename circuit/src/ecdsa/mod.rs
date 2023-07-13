@@ -99,7 +99,7 @@ where
 }
 
 /// Signature assigner chipset
-pub struct SingatureAssigner<
+pub struct SignatureAssigner<
 	C: CurveAffine,
 	N: FieldExt,
 	const NUM_LIMBS: usize,
@@ -113,7 +113,7 @@ pub struct SingatureAssigner<
 }
 
 impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
-	SingatureAssigner<C, N, NUM_LIMBS, NUM_BITS, P>
+	SignatureAssigner<C, N, NUM_LIMBS, NUM_BITS, P>
 where
 	P: RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
 	C::ScalarExt: FieldExt,
@@ -125,7 +125,7 @@ where
 }
 
 impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P> Chipset<N>
-	for SingatureAssigner<C, N, NUM_LIMBS, NUM_BITS, P>
+	for SignatureAssigner<C, N, NUM_LIMBS, NUM_BITS, P>
 where
 	P: RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
 	C::ScalarExt: FieldExt,
@@ -419,7 +419,7 @@ where
 mod test {
 	use super::native::{PublicKey, Signature};
 	use super::{
-		EcdsaChipset, EcdsaConfig, PublicKeyAssigner, SingatureAssigner, UnassignedPublicKey,
+		EcdsaChipset, EcdsaConfig, PublicKeyAssigner, SignatureAssigner, UnassignedPublicKey,
 		UnassignedSignature,
 	};
 	use crate::ecc::generic::{AuxAssigner, PointAssigner};
@@ -596,7 +596,7 @@ mod test {
 				layouter.namespace(|| "g_as_ec_point assigner"),
 			)?;
 
-			let signature_assigner = SingatureAssigner::new(self.signature.clone());
+			let signature_assigner = SignatureAssigner::new(self.signature.clone());
 			let signature = signature_assigner.synthesize(
 				&config.common,
 				&(),
