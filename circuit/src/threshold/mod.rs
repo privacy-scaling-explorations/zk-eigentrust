@@ -346,7 +346,7 @@ impl<
 			layouter.namespace(|| "comp <= last_limb_num"),
 		)?;
 
-		// Todo: really?
+		// TODO: where to get constraint inputs
 		layouter.constrain_instance(res.cell(), config.common.instance, 0)?;
 
 		Ok(())
