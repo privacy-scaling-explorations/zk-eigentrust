@@ -93,34 +93,36 @@ impl<
 	fn synthesize(
 		&self, config: Self::Config, mut layouter: impl halo2::circuit::Layouter<F>,
 	) -> Result<(), halo2::plonk::Error> {
-		let (num_neighbor, init_score, max_limb_value, threshold, one) = layouter.assign_region(
-			|| "temp",
-			|region| {
-				let mut ctx = RegionCtx::new(region, 0);
+		let (num_neighbor, init_score, max_limb_value, threshold, score, one, zero) = layouter
+			.assign_region(
+				|| "temp",
+				|region| {
+					let mut ctx = RegionCtx::new(region, 0);
 
-				let num_neighbor = ctx.assign_from_constant(
-					config.common.advice[0],
-					F::from_u128(NUM_NEIGHBOURS as u128),
-				)?;
-				let init_score = ctx.assign_from_constant(
-					config.common.advice[1],
-					F::from_u128(INITIAL_SCORE as u128),
-				)?;
+					let num_neighbor = ctx.assign_from_constant(
+						config.common.advice[0],
+						F::from_u128(NUM_NEIGHBOURS as u128),
+					)?;
+					let init_score = ctx.assign_from_constant(
+						config.common.advice[1],
+						F::from_u128(INITIAL_SCORE as u128),
+					)?;
+					let max_limb_value = ctx.assign_from_constant(
+						config.common.advice[2],
+						F::from_u128(10_u128).pow([POWER_OF_TEN as u64]),
+					)?;
+					let threshold = ctx.assign_advice(config.common.advice[3], self.threshold)?;
+					let score = ctx.assign_advice(config.common.advice[4], self.score)?;
+					let one = ctx.assign_from_constant(config.common.advice[5], F::ONE)?;
+					let zero = ctx.assign_from_constant(config.common.advice[6], F::ZERO)?;
 
-				let max_limb_value = ctx.assign_from_constant(
-					config.common.advice[2],
-					F::from_u128(10_u128).pow([POWER_OF_TEN as u64]),
-				)?;
+					Ok((
+						num_neighbor, init_score, max_limb_value, threshold, score, one, zero,
+					))
+				},
+			)?;
 
-				let threshold = ctx.assign_advice(config.common.advice[3], self.threshold)?;
-
-				let one = ctx.assign_from_constant(config.common.advice[4], F::ONE)?;
-
-				Ok((num_neighbor, init_score, max_limb_value, threshold, one))
-			},
-		)?;
-
-		// max_score_bn = NUM_NEIGHBOURS * INITIAL_SCORE
+		// max_score = NUM_NEIGHBOURS * INITIAL_SCORE
 		let max_score = {
 			let mul_chipset = MulChipset::new(num_neighbor, init_score);
 			mul_chipset.synthesize(
@@ -130,14 +132,22 @@ impl<
 			)?
 		};
 
-		// assert!(threshold_bn < max_score_bn)
+		// assert!(threshold < max_score)
 		let lt_eq_chipset = LessEqualChipset::new(threshold.clone(), max_score);
 		let res = lt_eq_chipset.synthesize(
 			&config.common,
 			&config.lt_eq,
 			layouter.namespace(|| "threshold < max_score"),
 		)?;
-		res.value().assert_if_known(|v| v == &&F::ONE);
+		layouter.assign_region(
+			|| "res == 1",
+			|region| {
+				let mut ctx = RegionCtx::new(region, 0);
+				ctx.constrain_equal(res.clone(), one.clone())?;
+
+				Ok(())
+			},
+		)?;
 
 		// check every element of "num_decomposed"
 		let num_decomposed_limbs = {
@@ -164,7 +174,7 @@ impl<
 		};
 
 		for i in 0..num_decomposed_limbs.len() {
-			// assert!(limb_bn < max_limb_value_bn)
+			// assert!(limb < max_limb_value)
 			let lt_eq_chipset =
 				LessEqualChipset::new(num_decomposed_limbs[i].clone(), max_limb_value.clone());
 			let res = lt_eq_chipset.synthesize(
@@ -172,7 +182,15 @@ impl<
 				&config.lt_eq,
 				layouter.namespace(|| "(num_decomposed) limb < max_limb_value"),
 			)?;
-			res.value().assert_if_known(|v| v == &&F::ONE);
+			layouter.assign_region(
+				|| "res == 1",
+				|region| {
+					let mut ctx = RegionCtx::new(region, 0);
+					ctx.constrain_equal(res.clone(), one.clone())?;
+
+					Ok(())
+				},
+			)?;
 		}
 
 		// check every element of "den_decomposed"
@@ -200,7 +218,7 @@ impl<
 		};
 
 		for i in 0..den_decomposed_limbs.len() {
-			// assert!(limb_bn < max_limb_value_bn)
+			// assert!(limb < max_limb_value)
 			let lt_eq_chipset =
 				LessEqualChipset::new(den_decomposed_limbs[i].clone(), max_limb_value.clone());
 			let res = lt_eq_chipset.synthesize(
@@ -208,7 +226,15 @@ impl<
 				&config.lt_eq,
 				layouter.namespace(|| "(den_decomposed) limb < max_limb_value"),
 			)?;
-			res.value().assert_if_known(|v| v == &&F::ONE);
+			layouter.assign_region(
+				|| "res == 1",
+				|region| {
+					let mut ctx = RegionCtx::new(region, 0);
+					ctx.constrain_equal(res.clone(), one.clone())?;
+
+					Ok(())
+				},
+			)?;
 		}
 
 		// composed_num * composed_den_inv == score
@@ -268,8 +294,7 @@ impl<
 			|| "res == score",
 			|region| {
 				let mut ctx = RegionCtx::new(region, 0);
-				let score = ctx.assign_advice(config.common.advice[0], self.score.clone())?;
-				ctx.constrain_equal(res.clone(), score)?;
+				ctx.constrain_equal(res.clone(), score.clone())?;
 
 				Ok(())
 			},
@@ -287,7 +312,15 @@ impl<
 			&config.main,
 			layouter.namespace(|| "last_limb_den != 0"),
 		)?;
-		res.value().assert_if_known(|v| v == &&F::ONE);
+		layouter.assign_region(
+			|| "res == 0",
+			|region| {
+				let mut ctx = RegionCtx::new(region, 0);
+				ctx.constrain_equal(res.clone(), zero.clone())?;
+
+				Ok(())
+			},
+		)?;
 
 		let mul_chipset = MulChipset::new(last_limb_den.clone(), threshold);
 		let comp = mul_chipset.synthesize(
