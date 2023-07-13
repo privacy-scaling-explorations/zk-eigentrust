@@ -3,51 +3,40 @@ pub mod native;
 
 use crate::{
 	ecdsa::{AssignedPublicKey, AssignedSignature},
-	integer::AssignedInteger,
+	gadgets::{
+		main::{IsZeroChipset, MainConfig},
+		set::{SetChipset, SetConfig},
+	},
 	params::{ecc::EccParams, rns::RnsParams},
-	Chipset, CommonConfig, FieldExt, HasherChipset,
+	Chipset, CommonConfig, FieldExt, HasherChipset, RegionCtx,
 };
-use halo2::{circuit::Layouter, halo2curves::CurveAffine, plonk::Error};
+use halo2::{
+	circuit::{AssignedCell, Layouter, Region},
+	halo2curves::CurveAffine,
+	plonk::Error,
+};
 use std::marker::PhantomData;
 
 const WIDTH: usize = 5;
 
 /// Assigned Attestation variables.
 #[derive(Debug, Clone)]
-pub struct AssignedAttestation<
-	C: CurveAffine,
-	N: FieldExt,
-	const NUM_LIMBS: usize,
-	const NUM_BITS: usize,
-	P,
-> where
-	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
-	C::Base: FieldExt,
-	C::ScalarExt: FieldExt,
-{
+pub struct AssignedAttestation<F: FieldExt> {
 	/// Ethereum address of peer being rated
-	pub about: AssignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>,
+	pub about: AssignedCell<F, F>,
 	/// Unique identifier for the action being rated
-	pub domain: AssignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>,
+	pub domain: AssignedCell<F, F>,
 	/// Given rating for the action
-	pub value: AssignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>,
+	pub value: AssignedCell<F, F>,
 	/// Optional field for attaching additional information to the attestation
-	pub message: AssignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>,
+	pub message: AssignedCell<F, F>,
 }
 
-impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
-	AssignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>
-where
-	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
-	C::Base: FieldExt,
-	C::ScalarExt: FieldExt,
-{
+impl<F: FieldExt> AssignedAttestation<F> {
 	/// Creates a new AssignedAttestation
 	pub fn new(
-		about: AssignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>,
-		domain: AssignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>,
-		value: AssignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>,
-		message: AssignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>,
+		about: AssignedCell<F, F>, domain: AssignedCell<F, F>, value: AssignedCell<F, F>,
+		message: AssignedCell<F, F>,
 	) -> Self {
 		Self { about, domain, value, message }
 	}
@@ -55,7 +44,7 @@ where
 
 /// Signed Attestation variables.
 #[derive(Debug, Clone)]
-pub struct SignedAttestation<
+pub struct SignedAssignedAttestation<
 	C: CurveAffine,
 	N: FieldExt,
 	const NUM_LIMBS: usize,
@@ -67,21 +56,21 @@ pub struct SignedAttestation<
 	C::ScalarExt: FieldExt,
 {
 	// Attestation
-	attestation: AssignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>,
+	attestation: AssignedAttestation<N>,
 	// Signature
 	signature: AssignedSignature<C, N, NUM_LIMBS, NUM_BITS, P>,
 }
 
 impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
-	SignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>
+	SignedAssignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>
 where
 	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
 	C::Base: FieldExt,
 	C::ScalarExt: FieldExt,
 {
-	/// Creates a new SignedAttestation
+	/// Creates a new SignedAssignedAttestation
 	pub fn new(
-		attestation: AssignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>,
+		attestation: AssignedAttestation<N>,
 		signature: AssignedSignature<C, N, NUM_LIMBS, NUM_BITS, P>,
 	) -> Self {
 		Self { attestation, signature }
@@ -94,6 +83,8 @@ pub struct OpinionConfig<F: FieldExt, H>
 where
 	H: HasherChipset<F, WIDTH>,
 {
+	main: MainConfig,
+	set: SetConfig,
 	hasher: H::Config,
 }
 
@@ -102,8 +93,8 @@ where
 	H: HasherChipset<F, WIDTH>,
 {
 	/// Construct a new config
-	pub fn new(hasher: H::Config) -> Self {
-		Self { hasher }
+	pub fn new(main: MainConfig, set: SetConfig, hasher: H::Config) -> Self {
+		Self { main, set, hasher }
 	}
 }
 
@@ -114,6 +105,7 @@ pub struct OpinionChipset<
 	N: FieldExt,
 	const NUM_LIMBS: usize,
 	const NUM_BITS: usize,
+	const NUM_NEIGHBOURS: usize,
 	H,
 	P,
 	EC,
@@ -125,15 +117,25 @@ pub struct OpinionChipset<
 	H: HasherChipset<N, WIDTH>,
 {
 	// Attestations
-	attestations: Vec<SignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>>,
+	attestations: Vec<SignedAssignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>>,
 	// Public key
 	public_key: AssignedPublicKey<C, N, NUM_LIMBS, NUM_BITS, P>,
+	// Set
+	set: Vec<AssignedCell<N, N>>,
 	/// Constructs a phantom data for the hasher.
 	_hasher: PhantomData<(H, EC)>,
 }
 
-impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, H, P, EC>
-	OpinionChipset<C, N, NUM_LIMBS, NUM_BITS, H, P, EC>
+impl<
+		C: CurveAffine,
+		N: FieldExt,
+		const NUM_LIMBS: usize,
+		const NUM_BITS: usize,
+		const NUM_NEIGHBOURS: usize,
+		H,
+		P,
+		EC,
+	> OpinionChipset<C, N, NUM_LIMBS, NUM_BITS, NUM_NEIGHBOURS, H, P, EC>
 where
 	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
 	EC: EccParams<C>,
@@ -143,15 +145,23 @@ where
 {
 	/// Create a new chip.
 	pub fn new(
-		attestations: Vec<SignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>>,
-		public_key: AssignedPublicKey<C, N, NUM_LIMBS, NUM_BITS, P>,
+		attestations: Vec<SignedAssignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>>,
+		public_key: AssignedPublicKey<C, N, NUM_LIMBS, NUM_BITS, P>, set: Vec<AssignedCell<N, N>>,
 	) -> Self {
-		OpinionChipset { attestations, public_key, _hasher: PhantomData }
+		OpinionChipset { attestations, public_key, set, _hasher: PhantomData }
 	}
 }
 
-impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, H, P, EC>
-	Chipset<N> for OpinionChipset<C, N, NUM_LIMBS, NUM_BITS, H, P, EC>
+impl<
+		C: CurveAffine,
+		N: FieldExt,
+		const NUM_LIMBS: usize,
+		const NUM_BITS: usize,
+		const NUM_NEIGHBOURS: usize,
+		H,
+		P,
+		EC,
+	> Chipset<N> for OpinionChipset<C, N, NUM_LIMBS, NUM_BITS, NUM_NEIGHBOURS, H, P, EC>
 where
 	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
 	EC: EccParams<C>,
@@ -166,6 +176,68 @@ where
 	fn synthesize(
 		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<N>,
 	) -> Result<Self::Output, Error> {
+		let zero = layouter.assign_region(
+			|| "assign_zero",
+			|region: Region<'_, N>| {
+				let mut ctx = RegionCtx::new(region, 0);
+				ctx.assign_from_constant(common.advice[0], N::ZERO)
+			},
+		)?;
+
+		let mut scores = vec![zero; self.set.len()];
+
+		// Hashing default values for default attestation
+		let poseidon =
+			H::new([zero.clone(), zero.clone(), zero.clone(), zero.clone(), zero.clone()]);
+		let default_hash = poseidon.synthesize(
+			&common,
+			&config.hasher,
+			layouter.namespace(|| "default_hash"),
+		)?;
+
+		for i in 0..NUM_NEIGHBOURS {
+			// Checking pubkey and attestation values if they are default or not (default is zero)
+			let is_zero_chip = IsZeroChipset::new(self.set[i]);
+			let is_default_pubkey = is_zero_chip.synthesize(
+				&config.common,
+				&config.main,
+				layouter.namespace(|| "is_default_pubkey"),
+			)?;
+
+			let att = self.attestations[i].clone();
+			let is_zero_chip = IsZeroChipset::new(att.attestation.about);
+			let att_about = is_zero_chip.synthesize(
+				&config.common,
+				&config.main,
+				layouter.namespace(|| "att_about"),
+			)?;
+
+			let is_zero_chip = IsZeroChipset::new(att.attestation.domain);
+			let att_domain = is_zero_chip.synthesize(
+				&config.common,
+				&config.main,
+				layouter.namespace(|| "att_domain"),
+			)?;
+
+			let is_zero_chip = IsZeroChipset::new(att.attestation.value);
+			let att_value = is_zero_chip.synthesize(
+				&config.common,
+				&config.main,
+				layouter.namespace(|| "att_value"),
+			)?;
+
+			let is_zero_chip = IsZeroChipset::new(att.attestation.message);
+			let att_message = is_zero_chip.synthesize(
+				&config.common,
+				&config.main,
+				layouter.namespace(|| "att_message"),
+			)?;
+
+			if is_default_pubkey && att_about && att_domain && att_value && att_message {
+			} else {
+			}
+		}
+
 		Ok(())
 	}
 }

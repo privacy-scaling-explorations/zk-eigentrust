@@ -112,6 +112,7 @@ impl SetConfig {
 
 /// A chipset for checking a set membership
 /// Also contains the result inverter
+#[derive(Debug, Clone)]
 pub struct SetChipset<F: FieldExt> {
 	/// Constructs items variable for the circuit.
 	items: Vec<AssignedCell<F, F>>,
