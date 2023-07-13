@@ -6,7 +6,7 @@ use serde::de::DeserializeOwned;
 use serde_json::from_reader;
 use std::{
 	env::current_dir,
-	fs::{read, read_to_string, write, File},
+	fs::{read_to_string, File},
 	io::{BufReader, Result},
 	path::PathBuf,
 };
@@ -50,18 +50,6 @@ pub fn get_file_path(file_name: &str, file_type: FileType) -> Result<PathBuf> {
 	Ok(assets_path.join(format!("{}.{}", file_name, file_type.as_str())))
 }
 
-/// Reads a binary file from the `assets` directory and returns its contents as bytes.
-pub fn read_binary(file_name: &str) -> Result<Vec<u8>> {
-	let bin_path = get_file_path(file_name, FileType::Bin)?;
-	read(bin_path)
-}
-
-/// Writes bytes to a binary file in the `assets` directory.
-pub fn write_binary(bytes: Vec<u8>, file_name: &str) -> Result<()> {
-	let bin_path = get_file_path(file_name, FileType::Bin)?;
-	write(bin_path, bytes)
-}
-
 /// Reads a JSON file from the `assets` directory and returns its deserialized contents.
 pub fn read_json<T: DeserializeOwned>(file_name: &str) -> Result<T> {
 	let json_path = get_file_path(file_name, FileType::Json)?;
@@ -70,7 +58,7 @@ pub fn read_json<T: DeserializeOwned>(file_name: &str) -> Result<T> {
 	from_reader(reader).map_err(Into::into)
 }
 
-/// Reads a file from the `assets` directory and returns its contents as a string.
+/// Reads a `.yul` file from the `assets` directory and returns its contents as a string.
 pub fn read_yul(file_name: &str) -> Result<String> {
 	let yul_path = get_file_path(file_name, FileType::Yul)?;
 	read_to_string(yul_path)
@@ -86,38 +74,6 @@ mod tests {
 	#[derive(Deserialize, Debug, PartialEq)]
 	struct TestStruct {
 		field: String,
-	}
-
-	#[test]
-	fn test_read_binary() {
-		let file_name = "test_read_binary";
-
-		// Write test file
-		let mut file = File::create(get_file_path(file_name, FileType::Bin).unwrap()).unwrap();
-		file.write_all(b"binary data").unwrap();
-
-		// Test reading
-		let data = read_binary(file_name).unwrap();
-		assert_eq!(data, b"binary data");
-
-		// Cleanup
-		fs::remove_file(get_file_path(file_name, FileType::Bin).unwrap()).unwrap();
-	}
-
-	#[test]
-	fn test_write_binary() {
-		let file_name = "test_write_binary";
-		let binary_data: Vec<u8> = vec![0xff, 0x61, 0x4a, 0x6d, 0x59, 0x56, 0x2a, 0x42, 0x37, 0x72];
-
-		// Write binary data
-		write_binary(binary_data.clone(), file_name).unwrap();
-
-		// Test if the file was written correctly
-		let data = fs::read(get_file_path(file_name, FileType::Bin).unwrap()).unwrap();
-		assert_eq!(data, binary_data);
-
-		// Cleanup
-		fs::remove_file(get_file_path(file_name, FileType::Bin).unwrap()).unwrap();
 	}
 
 	#[test]

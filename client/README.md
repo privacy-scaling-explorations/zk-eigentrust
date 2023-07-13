@@ -36,10 +36,9 @@ Open a new terminal to start interacting with the client through the CLI. Let's 
 cargo build --release
 ```
 
-Once the project is built, we need to compile and deploy the contracts that the protocol is going to use to submit and verify the scores:
+Once the project is built, we need to deploy the contracts that the protocol is going to use to submit and verify the scores:
 
 ```bash
-./target/release/eigen-trust-client compile
 ./target/release/eigen-trust-client deploy
 ```
 
@@ -73,7 +72,7 @@ The command-line interface was built using [clap.rs](http://clap.rs/). There is 
   - `--action (add | remove)`: Defines the action to perform. You can choose to `add` a new member to a group or `remove` an existing member from it.
   - `--ic`: Provides the identity commitment of the participant you intend to add or remove from the group.
   - `--addr`: Specifies the participant's Ethereum address.
-- `compile`: Compiles all the `.sol` and `.yul` contracts available in the `assets` folder. For `.sol` contracts, it generates an ABI JSON file and a Rust binding file. For `.yul` smart contracts, it compiles Yul code into binary.
+- `compile`: Compiles the AttestationStation and stores the generated bindings.
 - `deploy`: Deploys all the contracts.
 - `proof`: Calculates the global scores, generates the zk proof and stores it in `et-proof.json` at the `assets` folder.
 - `scores`: Calculates the global scores and stores them in the `scores.csv` file within the `assets` folder.

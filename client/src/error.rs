@@ -30,6 +30,8 @@ pub enum EigenError {
 	TransactionError,
 	/// Contract compilation error
 	ContractCompilationError,
+	/// Path error
+	PathError,
 	/// Unknown error.
 	Unknown,
 }
@@ -48,6 +50,7 @@ impl From<EigenError> for u8 {
 			EigenError::ParseError => 8,
 			EigenError::TransactionError => 9,
 			EigenError::ContractCompilationError => 10,
+			EigenError::PathError => 11,
 			EigenError::Unknown => 255,
 		}
 	}
@@ -67,6 +70,7 @@ impl From<u8> for EigenError {
 			8 => EigenError::ParseError,
 			9 => EigenError::TransactionError,
 			10 => EigenError::ContractCompilationError,
+			11 => EigenError::PathError,
 			_ => EigenError::Unknown,
 		}
 	}

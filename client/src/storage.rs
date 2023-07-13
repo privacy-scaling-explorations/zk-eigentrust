@@ -257,10 +257,10 @@ impl AttestationRecord {
 
 #[cfg(test)]
 mod tests {
+	use crate::fs::get_assets_path;
 	use crate::storage::*;
 	use serde::{Deserialize, Serialize};
 	use std::fs;
-	use std::path::PathBuf;
 
 	// Define the test struct
 	#[derive(Debug, Deserialize, PartialEq, Clone, Serialize)]
@@ -273,7 +273,7 @@ mod tests {
 	fn test_csv_file_storage() {
 		// Create the CSV file
 		let filename = "test.csv";
-		let filepath = PathBuf::from("../data").join(filename);
+		let filepath = get_assets_path().unwrap().join(filename);
 		let mut csv_storage = CSVFileStorage::<Record>::new(filepath.clone());
 
 		let content = vec![Record {

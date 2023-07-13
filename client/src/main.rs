@@ -5,7 +5,7 @@ use clap::Parser;
 use cli::*;
 use dotenv::dotenv;
 use eigen_trust_client::{
-	eth::{compile_att_station, deploy_as, deploy_verifier},
+	eth::{deploy_as, deploy_verifier, gen_as_bindings},
 	fs::read_json,
 	Client, ClientConfig,
 };
@@ -53,10 +53,10 @@ async fn main() {
 			Err(e) => error!("Failed to execute bandada command: {:?}", e),
 		},
 		Mode::Compile => {
-			info!("Compiling contracts...");
-			match compile_att_station() {
-				Ok(_) => info!("AttestationStation Compilation successful"),
-				Err(e) => error!("Error during AttestationStation compilation: {}", e),
+			info!("Compiling AttestationStation...");
+			match gen_as_bindings() {
+				Ok(_) => info!("Compilation successful"),
+				Err(e) => error!("Error during compilation: {}", e),
 			}
 			info!("Done!");
 		},

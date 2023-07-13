@@ -18,17 +18,18 @@ use ethers::{
 	prelude::{k256::ecdsa::SigningKey, Abigen, ContractFactory},
 	providers::Middleware,
 	signers::coins_bip39::{English, Mnemonic},
-	solc::{artifacts::ContractBytecode, Artifact, Solc},
+	solc::{Artifact, CompilerOutput, Solc},
 	types::TransactionRequest,
 	utils::keccak256,
 };
-use log::info;
 use secp256k1::SecretKey;
-use std::{fs::write, sync::Arc};
+use std::sync::Arc;
 
-/// Deploys the AttestationStation contract.
-pub async fn deploy_as(signer: Arc<ClientSigner>) -> Result<Address, EigenError> {
-	let path = get_assets_path().unwrap().join("AttestationStation.sol");
+/// Compiles the AttestationStation contract.
+pub fn compile_as() -> Result<CompilerOutput, EigenError> {
+	let path =
+		get_assets_path().map_err(|_| EigenError::ParseError)?.join("AttestationStation.sol");
+
 	let compiler_output =
 		Solc::default().compile_source(&path).map_err(|_| EigenError::ContractCompilationError)?;
 
@@ -36,11 +37,39 @@ pub async fn deploy_as(signer: Arc<ClientSigner>) -> Result<Address, EigenError>
 		return Err(EigenError::ContractCompilationError);
 	}
 
+	Ok(compiler_output)
+}
+
+/// Generates the bindings for the AttestationStation contract and save them into a file.
+pub fn gen_as_bindings() -> Result<(), EigenError> {
+	let contracts = compile_as()?;
+
+	for (name, contract) in contracts.contracts_iter() {
+		let abi = contract.clone().abi.ok_or_else(|| EigenError::ParseError)?;
+		let abi_json = serde_json::to_string(&abi).map_err(|_| EigenError::ParseError)?;
+
+		let bindings = Abigen::new(name, abi_json)
+			.map_err(|_| EigenError::ParseError)?
+			.generate()
+			.map_err(|_| EigenError::ParseError)?;
+
+		bindings
+			.write_to_file(get_file_path("attestation_station", FileType::Rs).unwrap())
+			.map_err(|_| EigenError::ParseError)?;
+	}
+
+	Ok(())
+}
+
+/// Deploys the AttestationStation contract.
+pub async fn deploy_as(signer: Arc<ClientSigner>) -> Result<Address, EigenError> {
+	let contracts = compile_as()?;
 	let mut address: Option<Address> = None;
-	for (_, contract) in compiler_output.contracts_iter() {
+
+	for (_, contract) in contracts.contracts_iter() {
 		let (abi, bytecode, _) = contract.clone().into_parts();
-		let abi = abi.ok_or(EigenError::ParseError)?;
-		let bytecode = bytecode.ok_or(EigenError::ParseError)?;
+		let abi = abi.ok_or_else(|| EigenError::ParseError)?;
+		let bytecode = bytecode.ok_or_else(|| EigenError::ParseError)?;
 
 		let factory = ContractFactory::new(abi, bytecode, signer.clone());
 
@@ -53,64 +82,14 @@ pub async fn deploy_as(signer: Arc<ClientSigner>) -> Result<Address, EigenError>
 		}
 	}
 
-	address.ok_or(EigenError::ParseError)
-}
-
-/// Calls the EtVerifier contract.
-pub async fn call_verifier(
-	signer: Arc<ClientSigner>, verifier_address: Address, proof: NativeProof,
-) {
-	let calldata = encode_calldata::<Scalar>(&[proof.pub_ins], &proof.proof);
-
-	let tx = TransactionRequest::default().data(calldata).to(verifier_address);
-	let res = signer.send_transaction(tx, None).await.unwrap().await.unwrap();
-	info!("{:#?}", res);
-}
-
-/// Compiles the AttestationStation contract.
-pub fn compile_att_station() -> Result<(), EigenError> {
-	let path =
-		get_assets_path().map_err(|_| EigenError::ParseError)?.join("AttestationStation.sol");
-
-	// compile it
-	let contracts =
-		Solc::default().compile_source(&path).map_err(|_| EigenError::ContractCompilationError)?;
-
-	if !contracts.errors.is_empty() {
-		return Err(EigenError::ContractCompilationError);
-	}
-
-	for (name, contr) in contracts.contracts_iter() {
-		let contract: ContractBytecode = contr.clone().into();
-		let abi = contract.clone().abi.ok_or(EigenError::ParseError)?;
-		let abi_json = serde_json::to_string(&abi).map_err(|_| EigenError::ParseError)?;
-		let contract_json = serde_json::to_string(&contract).map_err(|_| EigenError::ParseError)?;
-		let bindings = Abigen::new(name, abi_json)
-			.map_err(|_| EigenError::ParseError)?
-			.generate()
-			.map_err(|_| EigenError::ParseError)?;
-
-		bindings
-			.write_to_file(get_file_path("attestation_station", FileType::Rs).unwrap())
-			.map_err(|_| EigenError::ParseError)?;
-		write(
-			get_file_path("attestation_station", FileType::Json).unwrap(),
-			contract_json,
-		)
-		.map_err(|_| EigenError::ParseError)?;
-	}
-	Ok(())
+	address.ok_or_else(|| EigenError::ParseError)
 }
 
 /// Deploys the EtVerifier contract.
 pub async fn deploy_verifier(signer: Arc<ClientSigner>) -> Result<Address, EigenError> {
-	// Compile the et_verifier.yul contract
-	let path = get_assets_path().map_err(|_| EigenError::ParseError)?.join("et_verifier.yul");
-	let path_str = path.to_str().ok_or(EigenError::ParseError)?;
-	let compiled_contract =
-		compile_yul(&read_yul(path_str).map_err(|_| EigenError::ContractCompilationError)?);
+	let yul_result = read_yul("et_verifier").map_err(|_| EigenError::ContractCompilationError)?;
+	let compiled_contract = compile_yul(&yul_result);
 
-	// Deploy the contract
 	let tx = TransactionRequest::default().data(compiled_contract);
 	let pen_tx =
 		signer.send_transaction(tx, None).await.map_err(|_| EigenError::TransactionError)?;
@@ -119,6 +98,23 @@ pub async fn deploy_verifier(signer: Arc<ClientSigner>) -> Result<Address, Eigen
 	let rec = tx.ok_or(EigenError::TransactionError)?;
 
 	rec.contract_address.ok_or(EigenError::TransactionError)
+}
+
+/// Calls the EtVerifier contract.
+pub async fn call_verifier(
+	signer: Arc<ClientSigner>, verifier_address: Address, proof: NativeProof,
+) -> Result<(), EigenError> {
+	let calldata = encode_calldata::<Scalar>(&[proof.pub_ins], &proof.proof);
+	let tx = TransactionRequest::default().data(calldata).to(verifier_address);
+
+	// Send transaction
+	let tx_result =
+		signer.send_transaction(tx, None).await.map_err(|_| EigenError::TransactionError)?;
+
+	// Await for transaction confirmation
+	tx_result.await.map_err(|_| EigenError::TransactionError)?;
+
+	Ok(())
 }
 
 /// Returns a vector of ECDSA private keys derived from the given mnemonic phrase.
@@ -256,7 +252,7 @@ mod tests {
 		// Read proof data and call verifier
 		let proof_raw: ProofRaw = read_json("et_proof").unwrap();
 		let proof = Proof::from(proof_raw);
-		call_verifier(client.get_signer(), addr, proof).await;
+		call_verifier(client.get_signer(), addr, proof).await.unwrap();
 
 		drop(anvil);
 	}
