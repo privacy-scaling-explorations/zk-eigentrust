@@ -143,7 +143,9 @@ impl<
 			|| "res == 1",
 			|region| {
 				let mut ctx = RegionCtx::new(region, 0);
-				ctx.constrain_equal(res.clone(), one.clone())?;
+				let res = ctx.copy_assign(config.common.advice[0], res.clone())?;
+				let one = ctx.copy_assign(config.common.advice[1], one.clone())?;
+				ctx.constrain_equal(res, one)?;
 
 				Ok(())
 			},
@@ -186,7 +188,9 @@ impl<
 				|| "res == 1",
 				|region| {
 					let mut ctx = RegionCtx::new(region, 0);
-					ctx.constrain_equal(res.clone(), one.clone())?;
+					let res = ctx.copy_assign(config.common.advice[0], res.clone())?;
+					let one = ctx.copy_assign(config.common.advice[1], one.clone())?;
+					ctx.constrain_equal(res, one)?;
 
 					Ok(())
 				},
@@ -230,7 +234,9 @@ impl<
 				|| "res == 1",
 				|region| {
 					let mut ctx = RegionCtx::new(region, 0);
-					ctx.constrain_equal(res.clone(), one.clone())?;
+					let res = ctx.copy_assign(config.common.advice[0], res.clone())?;
+					let one = ctx.copy_assign(config.common.advice[1], one.clone())?;
+					ctx.constrain_equal(res, one)?;
 
 					Ok(())
 				},
@@ -294,7 +300,9 @@ impl<
 			|| "res == score",
 			|region| {
 				let mut ctx = RegionCtx::new(region, 0);
-				ctx.constrain_equal(res.clone(), score.clone())?;
+				let res = ctx.copy_assign(config.common.advice[0], res.clone())?;
+				let score = ctx.copy_assign(config.common.advice[1], score.clone())?;
+				ctx.constrain_equal(res, score)?;
 
 				Ok(())
 			},
@@ -316,6 +324,8 @@ impl<
 			|| "res == 0",
 			|region| {
 				let mut ctx = RegionCtx::new(region, 0);
+				let res = ctx.copy_assign(config.common.advice[0], res.clone())?;
+				let zero = ctx.copy_assign(config.common.advice[1], zero.clone())?;
 				ctx.constrain_equal(res.clone(), zero.clone())?;
 
 				Ok(())
