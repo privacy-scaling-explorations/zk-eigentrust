@@ -41,7 +41,17 @@ impl FileType {
 /// Retrieves the path to the `assets` directory.
 pub fn get_assets_path() -> Result<PathBuf> {
 	let current_dir = current_dir()?;
-	Ok(current_dir.join("assets"))
+
+	// Workaround for the tests running in the `client` directory.
+	#[cfg(test)]
+	{
+		Ok(current_dir.join("assets"))
+	}
+
+	#[cfg(not(test))]
+	{
+		Ok(current_dir.join("client/assets"))
+	}
 }
 
 /// Helper function to get the path of a file in the `assets` directory.

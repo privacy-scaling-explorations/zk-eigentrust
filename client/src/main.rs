@@ -19,7 +19,7 @@ async fn main() {
 	init_from_env(Env::default().filter_or("LOG_LEVEL", "info"));
 
 	// Read configuration
-	let mut config: ClientConfig = match read_json("client-config") {
+	let mut config: ClientConfig = match read_json("client_config") {
 		Ok(c) => c,
 		Err(_) => {
 			error!("Failed to read configuration file.");
