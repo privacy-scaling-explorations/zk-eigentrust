@@ -268,28 +268,25 @@ impl<
 		)?;
 
 		// check every element of "num_decomposed"
-		let num_decomposed_limbs = {
-			let mut limbs = vec![];
-			layouter.assign_region(
-				|| "num_decomposed",
-				|region| {
-					let mut ctx = RegionCtx::new(region, 0);
-					for i in 0..self.num_decomposed.len() {
-						let limb = ctx.assign_advice(
-							config.common.advice[i % ADVICE],
-							self.num_decomposed[i],
-						)?;
-						limbs.push(limb);
+		let num_decomposed_limbs = layouter.assign_region(
+			|| "num_decomposed",
+			|region| {
+				let mut limbs = vec![];
 
-						if i % ADVICE == ADVICE - 1 {
-							ctx.next();
-						}
+				let mut ctx = RegionCtx::new(region, 0);
+				for i in 0..self.num_decomposed.len() {
+					let limb = ctx
+						.assign_advice(config.common.advice[i % ADVICE], self.num_decomposed[i])?;
+					limbs.push(limb);
+
+					if i % ADVICE == ADVICE - 1 {
+						ctx.next();
 					}
-					Ok(())
-				},
-			)?;
-			limbs
-		};
+				}
+
+				Ok(limbs)
+			},
+		)?;
 
 		for i in 0..num_decomposed_limbs.len() {
 			// assert!(limb < max_limb_value)
@@ -314,28 +311,24 @@ impl<
 		}
 
 		// check every element of "den_decomposed"
-		let den_decomposed_limbs = {
-			let mut limbs = vec![];
-			layouter.assign_region(
-				|| "den_decomposed",
-				|region| {
-					let mut ctx = RegionCtx::new(region, 0);
-					for i in 0..self.den_decomposed.len() {
-						let limb = ctx.assign_advice(
-							config.common.advice[i % ADVICE],
-							self.den_decomposed[i],
-						)?;
-						limbs.push(limb);
+		let den_decomposed_limbs = layouter.assign_region(
+			|| "den_decomposed",
+			|region| {
+				let mut limbs = vec![];
 
-						if i % ADVICE == ADVICE - 1 {
-							ctx.next();
-						}
+				let mut ctx = RegionCtx::new(region, 0);
+				for i in 0..self.den_decomposed.len() {
+					let limb = ctx
+						.assign_advice(config.common.advice[i % ADVICE], self.den_decomposed[i])?;
+					limbs.push(limb);
+
+					if i % ADVICE == ADVICE - 1 {
+						ctx.next();
 					}
-					Ok(())
-				},
-			)?;
-			limbs
-		};
+				}
+				Ok(limbs)
+			},
+		)?;
 
 		for i in 0..den_decomposed_limbs.len() {
 			// assert!(limb < max_limb_value)
@@ -629,7 +622,7 @@ mod tests {
 		let circuit: ThresholdCircuit<Fr, NUM_LIMBS, POWER_OF_TEN, NUM_NEIGHBOURS, INITIAL_SCORE> =
 			ThresholdCircuit::new(score, &num_decomposed, &den_decomposed, threshold);
 
-		let k = 14;
+		let k = 12;
 		let prover = match MockProver::<Fr>::run(k, &circuit, vec![pub_ins]) {
 			Ok(prover) => prover,
 			Err(e) => panic!("{}", e),
