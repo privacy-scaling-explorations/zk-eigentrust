@@ -5,114 +5,78 @@
 use crate::{
 	attestation::ECDSAPublicKey,
 	error::EigenError,
-	eth::bindings::AttestationStation,
-	fs::{get_data_directory, get_file_path, read_yul, write_binary, FileType},
+	fs::{get_assets_path, get_file_path, FileType},
 	ClientSigner,
 };
-use eigen_trust_circuit::{
-	halo2::halo2curves::bn256::Fr as Scalar,
-	verifier::{compile_yul, encode_calldata},
-	Proof as NativeProof,
-};
+use eigen_trust_circuit::halo2::halo2curves::bn256::Fr as Scalar;
 use ethers::{
 	abi::Address,
-	prelude::{k256::ecdsa::SigningKey, Abigen, ContractError},
-	providers::Middleware,
+	prelude::{k256::ecdsa::SigningKey, Abigen, ContractFactory},
 	signers::coins_bip39::{English, Mnemonic},
-	solc::{artifacts::ContractBytecode, Solc},
-	types::TransactionRequest,
+	solc::{Artifact, CompilerOutput, Solc},
 	utils::keccak256,
 };
-use log::info;
 use secp256k1::SecretKey;
-use std::{
-	fs::{read_dir, write},
-	sync::Arc,
-};
-
-/// The contract bindings module.
-/// This is a workaround for the `abigen` macro not supporting doc comments as attributes.
-pub mod bindings {
-	#![allow(missing_docs)]
-	ethers::prelude::abigen!(AttestationStation, "../data/AttestationStation.json");
-}
-
-/// Deploys the AttestationStation contract.
-pub async fn deploy_as(signer: Arc<ClientSigner>) -> Result<Address, ContractError<ClientSigner>> {
-	let contract = AttestationStation::deploy(signer, ())?.send().await?;
-	Ok(contract.address())
-}
-
-/// Deploys the EtVerifier contract.
-pub async fn deploy_verifier(
-	signer: Arc<ClientSigner>, contract_bytes: Vec<u8>,
-) -> Result<Address, ContractError<ClientSigner>> {
-	let tx = TransactionRequest::default().data(contract_bytes);
-	let pen_tx = signer.send_transaction(tx, None).await.unwrap();
-	let tx = pen_tx.await;
-
-	let rec = tx.unwrap().unwrap();
-	Ok(rec.contract_address.unwrap())
-}
-
-/// Calls the EtVerifier contract.
-pub async fn call_verifier(
-	signer: Arc<ClientSigner>, verifier_address: Address, proof: NativeProof,
-) {
-	let calldata = encode_calldata::<Scalar>(&[proof.pub_ins], &proof.proof);
-
-	let tx = TransactionRequest::default().data(calldata).to(verifier_address);
-	let res = signer.send_transaction(tx, None).await.unwrap().await.unwrap();
-	info!("{:#?}", res);
-}
+use std::sync::Arc;
 
 /// Compiles the AttestationStation contract.
-pub fn compile_att_station() -> Result<(), EigenError> {
+pub fn compile_as() -> Result<CompilerOutput, EigenError> {
 	let path =
-		get_data_directory().map_err(|_| EigenError::ParseError)?.join("AttestationStation.sol");
+		get_assets_path().map_err(|_| EigenError::ParseError)?.join("AttestationStation.sol");
 
-	// compile it
-	let contracts =
-		Solc::default().compile_source(&path).map_err(|_| EigenError::ContractCompilationError)?;
+	let compiler_output =
+		Solc::default().compile_source(path).map_err(|_| EigenError::ContractCompilationError)?;
 
-	if !contracts.errors.is_empty() {
+	if !compiler_output.errors.is_empty() {
 		return Err(EigenError::ContractCompilationError);
 	}
 
-	for (name, contr) in contracts.contracts_iter() {
-		let contract: ContractBytecode = contr.clone().into();
+	Ok(compiler_output)
+}
+
+/// Generates the bindings for the AttestationStation contract and save them into a file.
+pub fn gen_as_bindings() -> Result<(), EigenError> {
+	let contracts = compile_as()?;
+
+	for (name, contract) in contracts.contracts_iter() {
 		let abi = contract.clone().abi.ok_or(EigenError::ParseError)?;
 		let abi_json = serde_json::to_string(&abi).map_err(|_| EigenError::ParseError)?;
-		let contract_json = serde_json::to_string(&contract).map_err(|_| EigenError::ParseError)?;
+
 		let bindings = Abigen::new(name, abi_json)
 			.map_err(|_| EigenError::ParseError)?
 			.generate()
 			.map_err(|_| EigenError::ParseError)?;
 
 		bindings
-			.write_to_file(get_file_path(name, FileType::Rs).unwrap())
-			.map_err(|_| EigenError::ParseError)?;
-		write(get_file_path(name, FileType::Json).unwrap(), contract_json)
+			.write_to_file(get_file_path("attestation_station", FileType::Rs).unwrap())
 			.map_err(|_| EigenError::ParseError)?;
 	}
+
 	Ok(())
 }
 
-/// Compiles the Yul contracts in the `data` directory.
-pub fn compile_yul_contracts() {
-	let data_dir = get_data_directory().unwrap();
-	let paths = read_dir(data_dir).unwrap();
+/// Deploys the AttestationStation contract.
+pub async fn deploy_as(signer: Arc<ClientSigner>) -> Result<Address, EigenError> {
+	let contracts = compile_as()?;
+	let mut address: Option<Address> = None;
 
-	for path in paths {
-		if let Some(name_with_suffix) = path.unwrap().path().file_name().and_then(|n| n.to_str()) {
-			if name_with_suffix.ends_with(".yul") {
-				let name = name_with_suffix.strip_suffix(".yul").unwrap();
-				let compiled_contract = compile_yul(&read_yul(name).unwrap());
+	for (_, contract) in contracts.contracts_iter() {
+		let (abi, bytecode, _) = contract.clone().into_parts();
+		let abi = abi.ok_or(EigenError::ParseError)?;
+		let bytecode = bytecode.ok_or(EigenError::ParseError)?;
 
-				write_binary(compiled_contract, name).unwrap();
-			}
+		let factory = ContractFactory::new(abi, bytecode, signer.clone());
+
+		match factory.deploy(()).unwrap().send().await {
+			Ok(contract) => {
+				address = Some(contract.address());
+				break;
+			},
+			Err(_) => continue,
 		}
 	}
+
+	address.ok_or(EigenError::ParseError)
 }
 
 /// Returns a vector of ECDSA private keys derived from the given mnemonic phrase.
@@ -176,11 +140,9 @@ pub fn scalar_from_address(address: &Address) -> Result<Scalar, &'static str> {
 #[cfg(test)]
 mod tests {
 	use crate::{
-		eth::{address_from_public_key, call_verifier, deploy_as, deploy_verifier},
-		fs::{read_binary, read_json},
+		eth::{address_from_public_key, deploy_as},
 		Client, ClientConfig,
 	};
-	use eigen_trust_circuit::{Proof, ProofRaw};
 	use ethers::{
 		prelude::k256::ecdsa::SigningKey,
 		signers::{Signer, Wallet},
@@ -198,61 +160,12 @@ mod tests {
 			band_url: "http://localhost:3000".to_string(),
 			domain: "0x0000000000000000000000000000000000000000".to_string(),
 			node_url: anvil.endpoint().to_string(),
-			verifier_address: "0xe7f1725e7734ce288f8367e1bb143e90bb3f0512".to_string(),
 		};
 		let client = Client::new(config);
 
 		// Deploy
 		let res = deploy_as(client.signer).await;
 		assert!(res.is_ok());
-
-		drop(anvil);
-	}
-
-	#[tokio::test]
-	async fn test_deploy_verifier() {
-		let anvil = Anvil::new().spawn();
-		let et_contract = read_binary("et_verifier").unwrap();
-		let config = ClientConfig {
-			as_address: "0x5fbdb2315678afecb367f032d93f642f64180aa3".to_string(),
-			band_id: "38922764296632428858395574229367".to_string(),
-			band_th: "500".to_string(),
-			band_url: "http://localhost:3000".to_string(),
-			domain: "0x0000000000000000000000000000000000000000".to_string(),
-			node_url: anvil.endpoint().to_string(),
-			verifier_address: "0xe7f1725e7734ce288f8367e1bb143e90bb3f0512".to_string(),
-		};
-		let client = Client::new(config);
-
-		// Deploy
-		let res = deploy_verifier(client.get_signer(), et_contract).await;
-		assert!(res.is_ok());
-
-		drop(anvil);
-	}
-
-	#[tokio::test]
-	async fn test_call_verifier() {
-		let anvil = Anvil::new().spawn();
-		let config = ClientConfig {
-			as_address: "0x5fbdb2315678afecb367f032d93f642f64180aa3".to_string(),
-			band_id: "38922764296632428858395574229367".to_string(),
-			band_th: "500".to_string(),
-			band_url: "http://localhost:3000".to_string(),
-			domain: "0x0000000000000000000000000000000000000000".to_string(),
-			node_url: anvil.endpoint().to_string(),
-			verifier_address: "0xe7f1725e7734ce288f8367e1bb143e90bb3f0512".to_string(),
-		};
-		let client = Client::new(config);
-
-		// Read contract data and deploy verifier
-		let bytecode = read_binary("et_verifier").unwrap();
-		let addr = deploy_verifier(client.get_signer(), bytecode).await.unwrap();
-
-		// Read proof data and call verifier
-		let proof_raw: ProofRaw = read_json("et_proof").unwrap();
-		let proof = Proof::from(proof_raw);
-		call_verifier(client.get_signer(), addr, proof).await;
 
 		drop(anvil);
 	}
