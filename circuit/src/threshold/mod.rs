@@ -8,6 +8,7 @@ use crate::{
 		bits2num::Bits2NumChip,
 		lt_eq::{LessEqualChipset, LessEqualConfig, NShiftedChip},
 		main::{InverseChipset, IsZeroChipset, MainChip, MainConfig, MulAddChipset, MulChipset},
+		set::SetPositionChip,
 	},
 	Chip, Chipset, CommonConfig, FieldExt, RegionCtx, ADVICE,
 };
@@ -91,34 +92,102 @@ impl<
 	fn synthesize(
 		&self, config: Self::Config, mut layouter: impl halo2::circuit::Layouter<F>,
 	) -> Result<(), halo2::plonk::Error> {
-		let (num_neighbor, init_score, max_limb_value, threshold, score, one, zero) = layouter
-			.assign_region(
-				|| "temp",
-				|region| {
-					let mut ctx = RegionCtx::new(region, 0);
+		let (
+			num_neighbor,
+			init_score,
+			max_limb_value,
+			threshold,
+			score,
+			one,
+			zero,
+			sets_pk_x,
+			sets_pk_y,
+			final_scores,
+			target_pk_x,
+			target_pk_y,
+		) = layouter.assign_region(
+			|| "temp",
+			|region| {
+				let mut ctx = RegionCtx::new(region, 0);
 
-					let num_neighbor = ctx.assign_from_constant(
-						config.common.advice[0],
-						F::from_u128(NUM_NEIGHBOURS as u128),
-					)?;
-					let init_score = ctx.assign_from_constant(
-						config.common.advice[1],
-						F::from_u128(INITIAL_SCORE),
-					)?;
-					let max_limb_value = ctx.assign_from_constant(
-						config.common.advice[2],
-						F::from_u128(10_u128).pow([POWER_OF_TEN as u64]),
-					)?;
-					let threshold = ctx.assign_advice(config.common.advice[3], self.threshold)?;
-					let score = ctx.assign_advice(config.common.advice[4], self.score)?;
-					let one = ctx.assign_from_constant(config.common.advice[5], F::ONE)?;
-					let zero = ctx.assign_from_constant(config.common.advice[6], F::ZERO)?;
+				let num_neighbor = ctx.assign_from_constant(
+					config.common.advice[0],
+					F::from_u128(NUM_NEIGHBOURS as u128),
+				)?;
+				let init_score =
+					ctx.assign_from_constant(config.common.advice[1], F::from_u128(INITIAL_SCORE))?;
+				let max_limb_value = ctx.assign_from_constant(
+					config.common.advice[2],
+					F::from_u128(10_u128).pow([POWER_OF_TEN as u64]),
+				)?;
+				let threshold = ctx.assign_advice(config.common.advice[3], self.threshold)?;
+				let score = ctx.assign_advice(config.common.advice[4], self.score)?;
+				let one = ctx.assign_from_constant(config.common.advice[5], F::ONE)?;
+				let zero = ctx.assign_from_constant(config.common.advice[6], F::ZERO)?;
+				ctx.next();
 
-					Ok((
-						num_neighbor, init_score, max_limb_value, threshold, score, one, zero,
-					))
-				},
-			)?;
+				let mut sets_pk_x = vec![];
+				for i in 0..NUM_NEIGHBOURS {
+					let member = ctx.assign_from_instance(
+						config.common.advice[i % ADVICE],
+						config.common.instance,
+						i,
+					)?;
+					sets_pk_x.push(member);
+
+					if i % ADVICE == ADVICE - 1 {
+						ctx.next();
+					}
+				}
+				ctx.next();
+
+				let mut sets_pk_y = vec![];
+				for i in 0..NUM_NEIGHBOURS {
+					let member = ctx.assign_from_instance(
+						config.common.advice[i % ADVICE],
+						config.common.instance,
+						i + NUM_NEIGHBOURS,
+					)?;
+					sets_pk_y.push(member);
+
+					if i % ADVICE == ADVICE - 1 {
+						ctx.next();
+					}
+				}
+				ctx.next();
+
+				let mut final_scores = vec![];
+				for i in 0..NUM_NEIGHBOURS {
+					let score = ctx.assign_from_instance(
+						config.common.advice[i % ADVICE],
+						config.common.instance,
+						i + 2 * NUM_NEIGHBOURS,
+					)?;
+					final_scores.push(score);
+
+					if i % ADVICE == ADVICE - 1 {
+						ctx.next();
+					}
+				}
+				ctx.next();
+
+				let target_pk_x = ctx.assign_from_instance(
+					config.common.advice[0],
+					config.common.instance,
+					3 * NUM_NEIGHBOURS,
+				)?;
+				let target_pk_y = ctx.assign_from_instance(
+					config.common.advice[1],
+					config.common.instance,
+					3 * NUM_NEIGHBOURS + 1,
+				)?;
+
+				Ok((
+					num_neighbor, init_score, max_limb_value, threshold, score, one, zero,
+					sets_pk_x, sets_pk_y, final_scores, target_pk_x, target_pk_y,
+				))
+			},
+		)?;
 
 		// max_score = NUM_NEIGHBOURS * INITIAL_SCORE
 		let max_score = {
