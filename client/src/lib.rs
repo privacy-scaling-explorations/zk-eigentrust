@@ -114,8 +114,6 @@ pub struct ClientConfig {
 	pub domain: String,
 	/// Ethereum node URL.
 	pub node_url: String,
-	/// EigenTrustVerifier contract address.
-	pub verifier_address: String,
 }
 
 /// Signer type alias.
@@ -382,7 +380,6 @@ mod lib_tests {
 			band_url: "http://localhost:3000".to_string(),
 			domain: "0x0000000000000000000000000000000000000000".to_string(),
 			node_url: anvil.endpoint().to_string(),
-			verifier_address: "0xe7f1725e7734ce288f8367e1bb143e90bb3f0512".to_string(),
 		};
 		let client = Client::new(config);
 
@@ -397,7 +394,6 @@ mod lib_tests {
 			band_url: "http://localhost:3000".to_string(),
 			domain: "0x0000000000000000000000000000000000000000".to_string(),
 			node_url: anvil.endpoint().to_string(),
-			verifier_address: "0xe7f1725e7734ce288f8367e1bb143e90bb3f0512".to_string(),
 		};
 
 		// Attest
@@ -417,7 +413,6 @@ mod lib_tests {
 			band_url: "http://localhost:3000".to_string(),
 			domain: "0x0000000000000000000000000000000000000000".to_string(),
 			node_url: anvil.endpoint().to_string(),
-			verifier_address: "0xe7f1725e7734ce288f8367e1bb143e90bb3f0512".to_string(),
 		};
 		let client = Client::new(config);
 
@@ -432,7 +427,6 @@ mod lib_tests {
 			band_url: "http://localhost:3000".to_string(),
 			domain: "0x0000000000000000000000000000000000000000".to_string(),
 			node_url: anvil.endpoint().to_string(),
-			verifier_address: "0xe7f1725e7734ce288f8367e1bb143e90bb3f0512".to_string(),
 		};
 		let client = Client::new(config);
 

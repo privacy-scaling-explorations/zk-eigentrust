@@ -103,9 +103,6 @@ pub struct UpdateData {
 	/// Ethereum node URL.
 	#[clap(long = "node")]
 	node_url: Option<String>,
-	/// EigenTrustVerifier contract address (20-byte ethereum address).
-	#[clap(long = "verifier")]
-	verifier_address: Option<String>,
 }
 
 /// Bandada API action.
@@ -355,12 +352,6 @@ pub fn handle_update(config: &mut ClientConfig, data: UpdateData) -> Result<(), 
 		config.node_url = node_url;
 	}
 
-	if let Some(verifier_address) = data.verifier_address {
-		config.verifier_address = Address::from_str(&verifier_address)
-			.map_err(|_| "Failed to parse address.")?
-			.to_string();
-	}
-
 	write_json_data(config, "client_config").map_err(|_| "Failed to write config data.")
 }
 
@@ -386,7 +377,6 @@ mod tests {
 			band_url: "http://localhost:3000".to_string(),
 			domain: "0x0000000000000000000000000000000000000000".to_string(),
 			node_url: "http://localhost:8545".to_string(),
-			verifier_address: "test".to_string(),
 		};
 
 		let data = AttestData {
