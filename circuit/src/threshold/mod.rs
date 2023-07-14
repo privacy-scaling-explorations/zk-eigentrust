@@ -110,9 +110,11 @@ impl<
 			final_scores,
 			target_pk_x,
 			target_pk_y,
+			inst_col_offset,
 		) = layouter.assign_region(
 			|| "temp",
 			|region| {
+				let mut inst_col_offset = 0;
 				let mut ctx = RegionCtx::new(region, 0);
 
 				let num_neighbor = ctx.assign_from_constant(
@@ -136,7 +138,7 @@ impl<
 					let member = ctx.assign_from_instance(
 						config.common.advice[i % ADVICE],
 						config.common.instance,
-						i,
+						inst_col_offset + i,
 					)?;
 					sets_pk_x.push(member);
 
@@ -144,6 +146,7 @@ impl<
 						ctx.next();
 					}
 				}
+				inst_col_offset += NUM_NEIGHBOURS;
 				ctx.next();
 
 				let mut sets_pk_y = vec![];
@@ -151,7 +154,7 @@ impl<
 					let member = ctx.assign_from_instance(
 						config.common.advice[i % ADVICE],
 						config.common.instance,
-						i + NUM_NEIGHBOURS,
+						inst_col_offset + i,
 					)?;
 					sets_pk_y.push(member);
 
@@ -159,6 +162,7 @@ impl<
 						ctx.next();
 					}
 				}
+				inst_col_offset += NUM_NEIGHBOURS;
 				ctx.next();
 
 				let mut final_scores = vec![];
@@ -166,7 +170,7 @@ impl<
 					let score = ctx.assign_from_instance(
 						config.common.advice[i % ADVICE],
 						config.common.instance,
-						i + 2 * NUM_NEIGHBOURS,
+						inst_col_offset + i,
 					)?;
 					final_scores.push(score);
 
@@ -174,22 +178,22 @@ impl<
 						ctx.next();
 					}
 				}
+				inst_col_offset += NUM_NEIGHBOURS;
 				ctx.next();
 
 				let target_pk_x = ctx.assign_from_instance(
-					config.common.advice[0],
-					config.common.instance,
-					3 * NUM_NEIGHBOURS,
+					config.common.advice[0], config.common.instance, inst_col_offset,
 				)?;
 				let target_pk_y = ctx.assign_from_instance(
 					config.common.advice[1],
 					config.common.instance,
-					3 * NUM_NEIGHBOURS + 1,
+					inst_col_offset + 1,
 				)?;
+				inst_col_offset += 2;
 
 				Ok((
 					num_neighbor, init_score, max_limb_value, threshold, score, one, zero,
-					sets_pk_x, sets_pk_y, final_scores, target_pk_x, target_pk_y,
+					sets_pk_x, sets_pk_y, final_scores, target_pk_x, target_pk_y, inst_col_offset,
 				))
 			},
 		)?;
@@ -448,14 +452,18 @@ impl<
 		)?;
 
 		let lt_eq_chipset = LessEqualChipset::new(comp, last_limb_num.clone());
-		let _res = lt_eq_chipset.synthesize(
+		let threshold_check_res = lt_eq_chipset.synthesize(
 			&config.common,
 			&config.lt_eq,
 			layouter.namespace(|| "comp <= last_limb_num"),
 		)?;
 
-		// // TODO: where to get constraint inputs?
-		// layouter.constrain_instance(res.cell(), config.common.instance, 0)?;
+		// final constraint
+		layouter.constrain_instance(
+			threshold_check_res.cell(),
+			config.common.instance,
+			inst_col_offset,
+		)?;
 
 		Ok(())
 	}
@@ -473,6 +481,7 @@ mod tests {
 		threshold::native::Threshold,
 	};
 	use halo2::{
+		arithmetic::Field,
 		dev::MockProver,
 		halo2curves::{bn256::Fr, ff::PrimeField},
 	};
@@ -593,18 +602,6 @@ mod tests {
 
 		let target_idx = 2;
 
-		let sets_pk_x: Vec<Fr> = pks.iter().map(|pk| pk.0.x.clone()).collect();
-		let sets_pk_y: Vec<Fr> = pks.iter().map(|pk| pk.0.y.clone()).collect();
-		let target_pk_x = sets_pk_x[target_idx].clone();
-		let target_pk_y = sets_pk_y[target_idx].clone();
-
-		let mut pub_ins = vec![];
-		pub_ins.extend(sets_pk_x);
-		pub_ins.extend(sets_pk_y);
-		pub_ins.extend(final_scores.clone());
-		pub_ins.push(target_pk_x);
-		pub_ins.push(target_pk_y);
-
 		let score = final_scores[target_idx].clone();
 		let score_ratio = score_ratios[target_idx].clone();
 		let (num_decomposed, den_decomposed) =
@@ -621,6 +618,20 @@ mod tests {
 
 		let circuit: ThresholdCircuit<Fr, NUM_LIMBS, POWER_OF_TEN, NUM_NEIGHBOURS, INITIAL_SCORE> =
 			ThresholdCircuit::new(score, &num_decomposed, &den_decomposed, threshold);
+
+		let mut pub_ins = vec![];
+		let sets_pk_x: Vec<Fr> = pks.iter().map(|pk| pk.0.x.clone()).collect();
+		let sets_pk_y: Vec<Fr> = pks.iter().map(|pk| pk.0.y.clone()).collect();
+		let target_pk_x = sets_pk_x[target_idx].clone();
+		let target_pk_y = sets_pk_y[target_idx].clone();
+		let threshold_check_res =
+			if native_threshold.check_threshold() { Fr::ONE } else { Fr::ZERO };
+		pub_ins.extend(sets_pk_x);
+		pub_ins.extend(sets_pk_y);
+		pub_ins.extend(final_scores.clone());
+		pub_ins.push(target_pk_x);
+		pub_ins.push(target_pk_y);
+		pub_ins.push(threshold_check_res);
 
 		let k = 12;
 		let prover = match MockProver::<Fr>::run(k, &circuit, vec![pub_ins]) {
