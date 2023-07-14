@@ -616,8 +616,13 @@ mod tests {
 			INITIAL_SCORE,
 		> = Threshold::new(score, score_ratio, threshold);
 
-		let circuit: ThresholdCircuit<Fr, NUM_LIMBS, POWER_OF_TEN, NUM_NEIGHBOURS, INITIAL_SCORE> =
-			ThresholdCircuit::new(score, &num_decomposed, &den_decomposed, threshold);
+		let threshold_circuit: ThresholdCircuit<
+			Fr,
+			NUM_LIMBS,
+			POWER_OF_TEN,
+			NUM_NEIGHBOURS,
+			INITIAL_SCORE,
+		> = ThresholdCircuit::new(score, &num_decomposed, &den_decomposed, threshold);
 
 		let mut pub_ins = vec![];
 		let sets_pk_x: Vec<Fr> = pks.iter().map(|pk| pk.0.x.clone()).collect();
@@ -634,7 +639,7 @@ mod tests {
 		pub_ins.push(threshold_check_res);
 
 		let k = 12;
-		let prover = match MockProver::<Fr>::run(k, &circuit, vec![pub_ins]) {
+		let prover = match MockProver::<Fr>::run(k, &threshold_circuit, vec![pub_ins]) {
 			Ok(prover) => prover,
 			Err(e) => panic!("{}", e),
 		};
