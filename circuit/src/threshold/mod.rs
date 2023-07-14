@@ -105,11 +105,9 @@ impl<
 			score,
 			one,
 			zero,
-			sets_pk_x,
-			sets_pk_y,
+			sets,
 			final_scores,
-			target_pk_x,
-			target_pk_y,
+			target_addr,
 			inst_col_offset,
 		) = layouter.assign_region(
 			|| "temp",
@@ -133,30 +131,14 @@ impl<
 				let zero = ctx.assign_from_constant(config.common.advice[6], F::ZERO)?;
 				ctx.next();
 
-				let mut sets_pk_x = vec![];
+				let mut sets = vec![];
 				for i in 0..NUM_NEIGHBOURS {
 					let member = ctx.assign_from_instance(
 						config.common.advice[i % ADVICE],
 						config.common.instance,
 						inst_col_offset + i,
 					)?;
-					sets_pk_x.push(member);
-
-					if i % ADVICE == ADVICE - 1 {
-						ctx.next();
-					}
-				}
-				inst_col_offset += NUM_NEIGHBOURS;
-				ctx.next();
-
-				let mut sets_pk_y = vec![];
-				for i in 0..NUM_NEIGHBOURS {
-					let member = ctx.assign_from_instance(
-						config.common.advice[i % ADVICE],
-						config.common.instance,
-						inst_col_offset + i,
-					)?;
-					sets_pk_y.push(member);
+					sets.push(member);
 
 					if i % ADVICE == ADVICE - 1 {
 						ctx.next();
@@ -181,63 +163,42 @@ impl<
 				inst_col_offset += NUM_NEIGHBOURS;
 				ctx.next();
 
-				let target_pk_x = ctx.assign_from_instance(
+				let target_addr = ctx.assign_from_instance(
 					config.common.advice[0], config.common.instance, inst_col_offset,
 				)?;
-				let target_pk_y = ctx.assign_from_instance(
-					config.common.advice[1],
-					config.common.instance,
-					inst_col_offset + 1,
-				)?;
-				inst_col_offset += 2;
+				inst_col_offset += 1;
 
 				Ok((
-					num_neighbor, init_score, max_limb_value, threshold, score, one, zero,
-					sets_pk_x, sets_pk_y, final_scores, target_pk_x, target_pk_y, inst_col_offset,
+					num_neighbor, init_score, max_limb_value, threshold, score, one, zero, sets,
+					final_scores, target_addr, inst_col_offset,
 				))
 			},
 		)?;
 
 		// TODO: verify if the "sets" & "final_scores" are valid, using aggregation verify
 
-		// check if the eigentrust score of "target_pk" is the same as "score"
-		let set_pos_chip = SetPositionChip::new(sets_pk_x, target_pk_x);
-		let target_pk_x_idx = set_pos_chip.synthesize(
+		// check if the eigentrust score of "target_addr" is the same as "score"
+		let set_pos_chip = SetPositionChip::new(sets, target_addr);
+		let target_addr_idx = set_pos_chip.synthesize(
 			&config.common,
 			&config.set_pos_selector,
-			layouter.namespace(|| "target_pk_x_idx"),
-		)?;
-		let set_pos_chip = SetPositionChip::new(sets_pk_y, target_pk_y);
-		let target_pk_y_idx = set_pos_chip.synthesize(
-			&config.common,
-			&config.set_pos_selector,
-			layouter.namespace(|| "target_pk_y_idx"),
-		)?;
-		layouter.assign_region(
-			|| "target_pk_x_idx == target_pk_y_idx",
-			|region| {
-				let mut ctx = RegionCtx::new(region, 0);
-				let x_idx = ctx.copy_assign(config.common.advice[0], target_pk_x_idx.clone())?;
-				let y_idx = ctx.copy_assign(config.common.advice[1], target_pk_y_idx.clone())?;
-				ctx.constrain_equal(x_idx, y_idx)?;
-				Ok(())
-			},
+			layouter.namespace(|| "target_addr_idx"),
 		)?;
 
-		let select_item_chip = SelectItemChip::new(final_scores, target_pk_x_idx);
-		let target_pk_score = select_item_chip.synthesize(
+		let select_item_chip = SelectItemChip::new(final_scores, target_addr_idx);
+		let target_addr_score = select_item_chip.synthesize(
 			&config.common,
 			&config.select_item_selector,
-			layouter.namespace(|| "select score from final_scores"),
+			layouter.namespace(|| "target_addr_score"),
 		)?;
 		layouter.assign_region(
-			|| "target_pk_score(PI) == score(input)",
+			|| "target_addr_score(PI) == score(input)",
 			|region| {
 				let mut ctx = RegionCtx::new(region, 0);
-				let target_pk_score =
-					ctx.copy_assign(config.common.advice[0], target_pk_score.clone())?;
+				let target_addr_score =
+					ctx.copy_assign(config.common.advice[0], target_addr_score.clone())?;
 				let input_score = ctx.copy_assign(config.common.advice[1], score.clone())?;
-				ctx.constrain_equal(target_pk_score, input_score)?;
+				ctx.constrain_equal(target_addr_score, input_score)?;
 				Ok(())
 			},
 		)?;
@@ -470,16 +431,22 @@ mod tests {
 	use super::*;
 
 	use crate::{
-		calculate_message_hash,
-		dynamic_sets::native::{EigenTrustSet, Opinion},
-		eddsa::native::{sign, PublicKey, SecretKey},
-		params::rns::decompose_big_decimal,
+		dynamic_sets::ecdsa_native::{
+			field_value_from_pub_key, AttestationFr, EigenTrustSet, SignedAttestation, NUM_BITS,
+			NUM_LIMBS,
+		},
+		ecdsa::native::{EcdsaKeypair, PublicKey},
+		params::{
+			ecc::secp256k1::Secp256k1Params,
+			rns::{decompose_big_decimal, secp256k1::Secp256k1_4_68},
+		},
 		threshold::native::Threshold,
+		utils::{big_to_fe, fe_to_big},
 	};
 	use halo2::{
 		arithmetic::Field,
 		dev::MockProver,
-		halo2curves::{bn256::Fr, ff::PrimeField},
+		halo2curves::{bn256::Fr, ff::PrimeField, secp256k1::Secp256k1Affine},
 	};
 	use num_bigint::BigInt;
 	use num_rational::BigRational;
@@ -490,22 +457,35 @@ mod tests {
 		const NUM_ITERATIONS: usize,
 		const INITIAL_SCORE: u128,
 	>(
-		sk: &SecretKey, pk: &PublicKey, pks: &[PublicKey], scores: &[Fr],
-	) -> Opinion<NUM_NEIGHBOURS> {
+		keypair: &EcdsaKeypair<
+			Secp256k1Affine,
+			Fr,
+			NUM_LIMBS,
+			NUM_BITS,
+			Secp256k1_4_68,
+			Secp256k1Params,
+		>,
+		pks: &[Fr], scores: &[Fr],
+	) -> Vec<Option<SignedAttestation>> {
 		assert!(pks.len() == NUM_NEIGHBOURS);
 		assert!(scores.len() == NUM_NEIGHBOURS);
+		let rng = &mut thread_rng();
 
-		let (_, message_hashes) =
-			calculate_message_hash::<NUM_NEIGHBOURS, 1>(pks.to_vec(), vec![scores.to_vec()]);
-		let sig = sign(sk, pk, message_hashes[0]);
-
-		// let scores = pks.zip(*scores);
-		let mut op_scores = vec![];
+		let mut res = Vec::new();
 		for i in 0..NUM_NEIGHBOURS {
-			op_scores.push((pks[i], scores[i]));
+			if pks[i] == Fr::zero() {
+				res.push(None)
+			} else {
+				let (about, key, value, message) = (pks[i], Fr::zero(), scores[i], Fr::zero());
+				let attestation = AttestationFr::new(about, key, value, message);
+				let msg = big_to_fe(fe_to_big(attestation.hash()));
+				let signature = keypair.sign(msg, rng);
+				let signed_attestation = SignedAttestation::new(attestation, signature);
+
+				res.push(Some(signed_attestation));
+			}
 		}
-		let op = Opinion::new(sig, message_hashes[0], op_scores.to_vec());
-		op
+		res
 	}
 
 	fn eigen_trust_set_testing_helper<
@@ -514,7 +494,7 @@ mod tests {
 		const INITIAL_SCORE: u128,
 	>(
 		ops: Vec<Vec<Fr>>,
-	) -> (Vec<PublicKey>, Vec<Fr>, Vec<BigRational>) {
+	) -> (Vec<Fr>, Vec<Fr>, Vec<BigRational>) {
 		assert!(ops.len() == NUM_NEIGHBOURS);
 		for op in &ops {
 			assert!(op.len() == NUM_NEIGHBOURS);
@@ -524,28 +504,31 @@ mod tests {
 
 		let rng = &mut thread_rng();
 
-		let sks: Vec<SecretKey> =
-			(0..NUM_NEIGHBOURS).into_iter().map(|__| SecretKey::random(rng)).collect();
-		let pks: Vec<PublicKey> = sks.iter().map(|s| s.public()).collect();
+		let keypairs: Vec<EcdsaKeypair<Secp256k1Affine, _, NUM_LIMBS, NUM_BITS, _, _>> =
+			(0..NUM_NEIGHBOURS).into_iter().map(|_| EcdsaKeypair::generate_keypair(rng)).collect();
 
-		// Add the publicKey to the set
-		pks.iter().for_each(|pk| set.add_member(*pk));
+		let pks: Vec<PublicKey<Secp256k1Affine, _, NUM_LIMBS, NUM_BITS, _, _>> =
+			keypairs.iter().map(|kp| kp.public_key.clone()).collect();
+
+		let pks_fr: Vec<Fr> =
+			keypairs.iter().map(|kp| field_value_from_pub_key(&kp.public_key)).collect();
+
+		// Add the "address"(pk_fr) to the set
+		pks_fr.iter().for_each(|pk| set.add_member(*pk));
 
 		// Update the opinions
 		for i in 0..NUM_NEIGHBOURS {
 			let scores = ops[i].to_vec();
-
 			let op_i = sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
-				&sks[i], &pks[i], &pks, &scores,
+				&keypairs[i], &pks_fr, &scores,
 			);
-
-			set.update_op(pks[i], op_i);
+			set.update_op(pks[i].clone(), op_i);
 		}
 
 		let s = set.converge();
 		let s_ratios = set.converge_rational();
 
-		(pks, s, s_ratios)
+		(pks_fr, s, s_ratios)
 	}
 
 	fn ratio_to_decomposed_helper<
@@ -593,7 +576,7 @@ mod tests {
 		.map(|arr| arr.into_iter().map(|x| Fr::from_u128(x)).collect())
 		.collect();
 
-		let (pks, final_scores, score_ratios) =
+		let (addrs, final_scores, score_ratios) =
 			eigen_trust_set_testing_helper::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(ops);
 
 		let target_idx = 2;
@@ -621,17 +604,13 @@ mod tests {
 		> = ThresholdCircuit::new(score, &num_decomposed, &den_decomposed, threshold);
 
 		let mut pub_ins = vec![];
-		let sets_pk_x: Vec<Fr> = pks.iter().map(|pk| pk.0.x.clone()).collect();
-		let sets_pk_y: Vec<Fr> = pks.iter().map(|pk| pk.0.y.clone()).collect();
-		let target_pk_x = sets_pk_x[target_idx].clone();
-		let target_pk_y = sets_pk_y[target_idx].clone();
+		let sets: Vec<Fr> = addrs;
+		let target_addr = sets[target_idx].clone();
 		let threshold_check_res =
 			if native_threshold.check_threshold() { Fr::ONE } else { Fr::ZERO };
-		pub_ins.extend(sets_pk_x);
-		pub_ins.extend(sets_pk_y);
-		pub_ins.extend(final_scores.clone());
-		pub_ins.push(target_pk_x);
-		pub_ins.push(target_pk_y);
+		pub_ins.extend(sets);
+		pub_ins.extend(final_scores);
+		pub_ins.push(target_addr);
 		pub_ins.push(threshold_check_res);
 
 		let k = 12;
