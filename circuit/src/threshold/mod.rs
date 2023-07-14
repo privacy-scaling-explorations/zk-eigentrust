@@ -243,14 +243,12 @@ impl<
 		)?;
 
 		// max_score = NUM_NEIGHBOURS * INITIAL_SCORE
-		let max_score = {
-			let mul_chipset = MulChipset::new(num_neighbor, init_score);
-			mul_chipset.synthesize(
-				&config.common,
-				&config.main,
-				layouter.namespace(|| "NUM_NEIGHBOURS * INITIAL_SCORE"),
-			)?
-		};
+		let mul_chipset = MulChipset::new(num_neighbor, init_score);
+		let max_score = mul_chipset.synthesize(
+			&config.common,
+			&config.main,
+			layouter.namespace(|| "NUM_NEIGHBOURS * INITIAL_SCORE"),
+		)?;
 
 		// assert!(threshold < max_score)
 		let lt_eq_chipset = LessEqualChipset::new(threshold.clone(), max_score);
@@ -393,14 +391,12 @@ impl<
 			val
 		};
 
-		let composed_den_inv = {
-			let inv_chipset = InverseChipset::new(composed_den);
-			inv_chipset.synthesize(
-				&config.common,
-				&config.main,
-				layouter.namespace(|| "composed_den ^ -1"),
-			)?
-		};
+		let inv_chipset = InverseChipset::new(composed_den);
+		let composed_den_inv = inv_chipset.synthesize(
+			&config.common,
+			&config.main,
+			layouter.namespace(|| "composed_den ^ -1"),
+		)?;
 
 		let mul_chipset = MulChipset::new(composed_num, composed_den_inv);
 		let res = mul_chipset.synthesize(
