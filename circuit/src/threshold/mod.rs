@@ -194,6 +194,50 @@ impl<
 			},
 		)?;
 
+		// TODO: verify if the "sets" & "final_scores" are valid, using aggregation verify
+
+		// check if the eigentrust score of "target_pk" is the same as "score"
+		let set_pos_chip = SetPositionChip::new(sets_pk_x, target_pk_x);
+		let target_pk_x_idx = set_pos_chip.synthesize(
+			&config.common,
+			&config.set_pos_selector,
+			layouter.namespace(|| "target_pk_x_idx"),
+		)?;
+		let set_pos_chip = SetPositionChip::new(sets_pk_y, target_pk_y);
+		let target_pk_y_idx = set_pos_chip.synthesize(
+			&config.common,
+			&config.set_pos_selector,
+			layouter.namespace(|| "target_pk_y_idx"),
+		)?;
+		layouter.assign_region(
+			|| "target_pk_x_idx == target_pk_y_idx",
+			|region| {
+				let mut ctx = RegionCtx::new(region, 0);
+				let x_idx = ctx.copy_assign(config.common.advice[0], target_pk_x_idx.clone())?;
+				let y_idx = ctx.copy_assign(config.common.advice[1], target_pk_y_idx.clone())?;
+				ctx.constrain_equal(x_idx, y_idx)?;
+				Ok(())
+			},
+		)?;
+
+		let select_item_chip = SelectItemChip::new(final_scores, target_pk_x_idx);
+		let target_pk_score = select_item_chip.synthesize(
+			&config.common,
+			&config.select_item_selector,
+			layouter.namespace(|| "select score from final_scores"),
+		)?;
+		layouter.assign_region(
+			|| "target_pk_score(PI) == score(input)",
+			|region| {
+				let mut ctx = RegionCtx::new(region, 0);
+				let target_pk_score =
+					ctx.copy_assign(config.common.advice[0], target_pk_score.clone())?;
+				let input_score = ctx.copy_assign(config.common.advice[1], score.clone())?;
+				ctx.constrain_equal(target_pk_score, input_score)?;
+				Ok(())
+			},
+		)?;
+
 		// max_score = NUM_NEIGHBOURS * INITIAL_SCORE
 		let max_score = {
 			let mul_chipset = MulChipset::new(num_neighbor, init_score);
