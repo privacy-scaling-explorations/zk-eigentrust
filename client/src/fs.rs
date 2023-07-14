@@ -6,34 +6,28 @@ use serde::de::DeserializeOwned;
 use serde_json::from_reader;
 use std::{
 	env::current_dir,
-	fs::{read_to_string, File},
+	fs::File,
 	io::{BufReader, Result},
 	path::PathBuf,
 };
 
 /// Enum representing the possible file extensions.
 pub enum FileType {
-	/// Binary file.
-	Bin,
 	/// CSV file.
 	Csv,
 	/// JSON file.
 	Json,
 	/// Rust file.
 	Rs,
-	/// Yul file.
-	Yul,
 }
 
 impl FileType {
 	/// Converts the enum variant into its corresponding file extension.
 	fn as_str(&self) -> &'static str {
 		match self {
-			FileType::Bin => "bin",
 			FileType::Csv => "csv",
 			FileType::Json => "json",
 			FileType::Rs => "rs",
-			FileType::Yul => "yul",
 		}
 	}
 }
@@ -68,12 +62,6 @@ pub fn read_json<T: DeserializeOwned>(file_name: &str) -> Result<T> {
 	from_reader(reader).map_err(Into::into)
 }
 
-/// Reads a `.yul` file from the `assets` directory and returns its contents as a string.
-pub fn read_yul(file_name: &str) -> Result<String> {
-	let yul_path = get_file_path(file_name, FileType::Yul)?;
-	read_to_string(yul_path)
-}
-
 #[cfg(test)]
 mod tests {
 	use super::*;
@@ -100,21 +88,5 @@ mod tests {
 
 		// Cleanup
 		fs::remove_file(get_file_path(file_name, FileType::Json).unwrap()).unwrap();
-	}
-
-	#[test]
-	fn test_read_yul() {
-		let file_name = "test_read_yul";
-
-		// Write test file
-		let mut file = File::create(get_file_path(file_name, FileType::Yul).unwrap()).unwrap();
-		file.write_all(b"yul data").unwrap();
-
-		// Test reading
-		let data = read_yul(file_name).unwrap();
-		assert_eq!(data, "yul data");
-
-		// Cleanup
-		fs::remove_file(get_file_path(file_name, FileType::Yul).unwrap()).unwrap();
 	}
 }

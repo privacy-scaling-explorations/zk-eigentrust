@@ -367,7 +367,7 @@ impl Client {
 mod lib_tests {
 	use crate::{
 		attestation::{Attestation, DOMAIN_PREFIX, DOMAIN_PREFIX_LEN},
-		eth::{deploy_as, deploy_verifier},
+		eth::deploy_as,
 		Client, ClientConfig,
 	};
 	use ethers::{abi::Address, types::H256, utils::Anvil};
@@ -386,9 +386,8 @@ mod lib_tests {
 		};
 		let client = Client::new(config);
 
-		// Deploy attestation station and verifier
+		// Deploy attestation station
 		let as_address = deploy_as(client.get_signer()).await.unwrap();
-		let verifier_address = deploy_verifier(client.get_signer()).await.unwrap();
 
 		// Update config with new addresses
 		let config = ClientConfig {
@@ -398,7 +397,7 @@ mod lib_tests {
 			band_url: "http://localhost:3000".to_string(),
 			domain: "0x0000000000000000000000000000000000000000".to_string(),
 			node_url: anvil.endpoint().to_string(),
-			verifier_address: format!("{:?}", verifier_address),
+			verifier_address: "0xe7f1725e7734ce288f8367e1bb143e90bb3f0512".to_string(),
 		};
 
 		// Attest
@@ -422,9 +421,8 @@ mod lib_tests {
 		};
 		let client = Client::new(config);
 
-		// Deploy attestation station and verifier
+		// Deploy attestation station
 		let as_address = deploy_as(client.get_signer()).await.unwrap();
-		let verifier_address = deploy_verifier(client.get_signer()).await.unwrap();
 
 		// Update config with new addresses and instantiate client
 		let config = ClientConfig {
@@ -434,7 +432,7 @@ mod lib_tests {
 			band_url: "http://localhost:3000".to_string(),
 			domain: "0x0000000000000000000000000000000000000000".to_string(),
 			node_url: anvil.endpoint().to_string(),
-			verifier_address: format!("{:?}", verifier_address),
+			verifier_address: "0xe7f1725e7734ce288f8367e1bb143e90bb3f0512".to_string(),
 		};
 		let client = Client::new(config);
 

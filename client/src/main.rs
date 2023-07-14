@@ -5,7 +5,7 @@ use clap::Parser;
 use cli::*;
 use dotenv::dotenv;
 use eigen_trust_client::{
-	eth::{deploy_as, deploy_verifier, gen_as_bindings},
+	eth::{deploy_as, gen_as_bindings},
 	fs::read_json,
 	Client, ClientConfig,
 };
@@ -63,16 +63,6 @@ async fn main() {
 				Ok(as_address) => info!("AttestationStation deployed at {:?}", as_address),
 				Err(e) => {
 					error!("Failed to deploy AttestationStation: {:?}", e);
-					return;
-				},
-			};
-
-			match deploy_verifier(client.get_signer()).await {
-				Ok(verifier_address) => {
-					info!("EigenTrustVerifier deployed at {:?}", verifier_address)
-				},
-				Err(e) => {
-					error!("Failed to deploy EigenTrustVerifier: {:?}", e);
 					return;
 				},
 			};

@@ -5,21 +5,15 @@
 use crate::{
 	attestation::ECDSAPublicKey,
 	error::EigenError,
-	fs::{get_assets_path, get_file_path, read_yul, FileType},
+	fs::{get_assets_path, get_file_path, FileType},
 	ClientSigner,
 };
-use eigen_trust_circuit::{
-	halo2::halo2curves::bn256::Fr as Scalar,
-	verifier::{compile_yul, encode_calldata},
-	Proof as NativeProof,
-};
+use eigen_trust_circuit::halo2::halo2curves::bn256::Fr as Scalar;
 use ethers::{
 	abi::Address,
 	prelude::{k256::ecdsa::SigningKey, Abigen, ContractFactory},
-	providers::Middleware,
 	signers::coins_bip39::{English, Mnemonic},
 	solc::{Artifact, CompilerOutput, Solc},
-	types::TransactionRequest,
 	utils::keccak256,
 };
 use secp256k1::SecretKey;
@@ -85,38 +79,6 @@ pub async fn deploy_as(signer: Arc<ClientSigner>) -> Result<Address, EigenError>
 	address.ok_or(EigenError::ParseError)
 }
 
-/// Deploys the EtVerifier contract.
-pub async fn deploy_verifier(signer: Arc<ClientSigner>) -> Result<Address, EigenError> {
-	let yul_result = read_yul("et_verifier").map_err(|_| EigenError::ContractCompilationError)?;
-	let compiled_contract = compile_yul(&yul_result);
-
-	let tx = TransactionRequest::default().data(compiled_contract);
-	let pen_tx =
-		signer.send_transaction(tx, None).await.map_err(|_| EigenError::TransactionError)?;
-	let tx = pen_tx.await.map_err(|_| EigenError::TransactionError)?;
-
-	let rec = tx.ok_or(EigenError::TransactionError)?;
-
-	rec.contract_address.ok_or(EigenError::TransactionError)
-}
-
-/// Calls the EtVerifier contract.
-pub async fn call_verifier(
-	signer: Arc<ClientSigner>, verifier_address: Address, proof: NativeProof,
-) -> Result<(), EigenError> {
-	let calldata = encode_calldata::<Scalar>(&[proof.pub_ins], &proof.proof);
-	let tx = TransactionRequest::default().data(calldata).to(verifier_address);
-
-	// Send transaction
-	let tx_result =
-		signer.send_transaction(tx, None).await.map_err(|_| EigenError::TransactionError)?;
-
-	// Await for transaction confirmation
-	tx_result.await.map_err(|_| EigenError::TransactionError)?;
-
-	Ok(())
-}
-
 /// Returns a vector of ECDSA private keys derived from the given mnemonic phrase.
 pub fn ecdsa_secret_from_mnemonic(
 	mnemonic: &str, count: u32,
@@ -178,11 +140,9 @@ pub fn scalar_from_address(address: &Address) -> Result<Scalar, &'static str> {
 #[cfg(test)]
 mod tests {
 	use crate::{
-		eth::{address_from_public_key, call_verifier, deploy_as, deploy_verifier},
-		fs::read_json,
+		eth::{address_from_public_key, deploy_as},
 		Client, ClientConfig,
 	};
-	use eigen_trust_circuit::{Proof, ProofRaw};
 	use ethers::{
 		prelude::k256::ecdsa::SigningKey,
 		signers::{Signer, Wallet},
@@ -207,52 +167,6 @@ mod tests {
 		// Deploy
 		let res = deploy_as(client.signer).await;
 		assert!(res.is_ok());
-
-		drop(anvil);
-	}
-
-	#[tokio::test]
-	async fn test_deploy_verifier() {
-		let anvil = Anvil::new().spawn();
-		let config = ClientConfig {
-			as_address: "0x5fbdb2315678afecb367f032d93f642f64180aa3".to_string(),
-			band_id: "38922764296632428858395574229367".to_string(),
-			band_th: "500".to_string(),
-			band_url: "http://localhost:3000".to_string(),
-			domain: "0x0000000000000000000000000000000000000000".to_string(),
-			node_url: anvil.endpoint().to_string(),
-			verifier_address: "0xe7f1725e7734ce288f8367e1bb143e90bb3f0512".to_string(),
-		};
-		let client = Client::new(config);
-
-		// Deploy
-		let res = deploy_verifier(client.get_signer()).await;
-		assert!(res.is_ok());
-
-		drop(anvil);
-	}
-
-	#[tokio::test]
-	async fn test_call_verifier() {
-		let anvil = Anvil::new().spawn();
-		let config = ClientConfig {
-			as_address: "0x5fbdb2315678afecb367f032d93f642f64180aa3".to_string(),
-			band_id: "38922764296632428858395574229367".to_string(),
-			band_th: "500".to_string(),
-			band_url: "http://localhost:3000".to_string(),
-			domain: "0x0000000000000000000000000000000000000000".to_string(),
-			node_url: anvil.endpoint().to_string(),
-			verifier_address: "0xe7f1725e7734ce288f8367e1bb143e90bb3f0512".to_string(),
-		};
-		let client = Client::new(config);
-
-		// Deploy the verifier contract
-		let addr = deploy_verifier(client.get_signer()).await.unwrap();
-
-		// Read proof data and call verifier
-		let proof_raw: ProofRaw = read_json("et_proof").unwrap();
-		let proof = Proof::from(proof_raw);
-		call_verifier(client.get_signer(), addr, proof).await.unwrap();
 
 		drop(anvil);
 	}
