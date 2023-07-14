@@ -3,13 +3,13 @@
 //! This module provides types and functionalities for general ethereum interactions.
 
 use crate::{
+	attestation::ECDSAPublicKey,
 	error::EigenError,
 	eth::bindings::AttestationStation,
 	fs::{get_data_directory, get_file_path, read_yul, write_binary, FileType},
 	ClientSigner,
 };
 use eigen_trust_circuit::{
-	dynamic_sets::native::ECDSAPublicKey,
 	halo2::halo2curves::bn256::Fr as Scalar,
 	verifier::{compile_yul, encode_calldata},
 	Proof as NativeProof,
@@ -23,6 +23,7 @@ use ethers::{
 	types::TransactionRequest,
 	utils::keccak256,
 };
+use log::info;
 use secp256k1::SecretKey;
 use std::{
 	fs::{read_dir, write},
@@ -62,7 +63,7 @@ pub async fn call_verifier(
 
 	let tx = TransactionRequest::default().data(calldata).to(verifier_address);
 	let res = signer.send_transaction(tx, None).await.unwrap().await.unwrap();
-	println!("{:#?}", res);
+	info!("{:#?}", res);
 }
 
 /// Compiles the AttestationStation contract.
@@ -74,7 +75,7 @@ pub fn compile_att_station() -> Result<(), EigenError> {
 	let contracts =
 		Solc::default().compile_source(&path).map_err(|_| EigenError::ContractCompilationError)?;
 
-	if contracts.errors.len() > 0 {
+	if !contracts.errors.is_empty() {
 		return Err(EigenError::ContractCompilationError);
 	}
 
@@ -134,8 +135,8 @@ pub fn ecdsa_secret_from_mnemonic(
 
 		let raw_pk: &SigningKey = derived_pk.as_ref();
 
-		let secret_key =
-			SecretKey::from_slice(&raw_pk.to_bytes()).expect("32 bytes, within curve order");
+		let secret_key = SecretKey::from_slice(raw_pk.to_bytes().as_slice())
+			.expect("32 bytes, within curve order");
 
 		keys.push(secret_key);
 	}

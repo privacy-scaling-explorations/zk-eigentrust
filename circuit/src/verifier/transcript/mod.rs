@@ -3,7 +3,7 @@ use super::loader::{
 	Halo2LEcPoint, Halo2LScalar, LoaderConfig,
 };
 use crate::{
-	ecc::same_curve::AssignedPoint,
+	ecc::same_curve::AssignedEcPoint,
 	integer::{native::Integer, AssignedInteger},
 	params::{ecc::EccParams, rns::RnsParams},
 	FieldExt, RegionCtx, SpongeHasherChipset,
@@ -266,8 +266,9 @@ where
 		let assigned_integer_y =
 			AssignedInteger::<_, _, NUM_LIMBS, NUM_BITS, P>::new(y, assigned_y.try_into().unwrap());
 
-		let assigned_point =
-			AssignedPoint::<_, NUM_LIMBS, NUM_BITS, P>::new(assigned_integer_x, assigned_integer_y);
+		let assigned_point = AssignedEcPoint::<_, NUM_LIMBS, NUM_BITS, P>::new(
+			assigned_integer_x, assigned_integer_y,
+		);
 		let loaded_point = Halo2LEcPoint::new(assigned_point, loader.clone());
 		self.common_ec_point(&loaded_point)?;
 
@@ -281,7 +282,7 @@ mod test {
 	use crate::{
 		circuit::{FullRoundHasher, PartialRoundHasher},
 		ecc::{
-			same_curve::{native::EcPoint, AssignedPoint, UnassignedEcPoint},
+			same_curve::{native::EcPoint, AssignedEcPoint, UnassignedEcPoint},
 			AuxConfig, EccAddConfig, EccDoubleConfig, EccMulConfig, EccTableSelectConfig,
 			EccUnreducedLadderConfig,
 		},
@@ -518,7 +519,7 @@ mod test {
 					assigned_coordinates.1,
 				);
 
-				let assigned_point = AssignedPoint::<_, NUM_LIMBS, NUM_BITS, P>::new(
+				let assigned_point = AssignedEcPoint::<_, NUM_LIMBS, NUM_BITS, P>::new(
 					assigned_integer_x, assigned_integer_y,
 				);
 				let ec_point = Halo2LEcPoint::new(assigned_point, loader.clone());

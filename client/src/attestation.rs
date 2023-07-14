@@ -6,18 +6,31 @@
 use crate::{
 	att_station::{AttestationCreatedFilter, AttestationData as ContractAttestationData},
 	eth::{address_from_public_key, scalar_from_address},
+	NUM_BITS, NUM_LIMBS,
 };
 use eigen_trust_circuit::{
-	dynamic_sets::ecdsa_native::{AttestationFr, SignedAttestation},
-	halo2::halo2curves::{bn256::Fr as Scalar, ff::FromUniformBytes},
+	dynamic_sets::ecdsa_native::AttestationFr,
+	ecdsa::native::Signature,
+	halo2::halo2curves::{bn256::Fr as Scalar, ff::FromUniformBytes, secp256k1::Secp256k1Affine},
+	params::rns::secp256k1::Secp256k1_4_68,
 };
 use ethers::types::{Address, H256};
-use secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
+use secp256k1::{
+	constants::ONE,
+	ecdsa::{self, RecoverableSignature, RecoveryId},
+	Message, Secp256k1, SecretKey,
+};
 
 /// Domain prefix.
 pub const DOMAIN_PREFIX: [u8; DOMAIN_PREFIX_LEN] = *b"eigen_trust_";
 /// Domain prefix length.
 pub const DOMAIN_PREFIX_LEN: usize = 12;
+/// ECDSA public key
+pub type ECDSAPublicKey = secp256k1::PublicKey;
+/// ECDSA signature
+pub type ECDSASignature = ecdsa::RecoverableSignature;
+/// Signature represented with field elements
+pub type SignatureFr = Signature<Secp256k1Affine, Scalar, NUM_LIMBS, NUM_BITS, Secp256k1_4_68>;
 
 /// Attestation struct.
 #[derive(Clone, Debug)]
@@ -185,6 +198,48 @@ impl AttestationPayload {
 	/// Gets the attestation message.
 	pub fn get_message(&self) -> [u8; 32] {
 		self.message
+	}
+}
+
+/// Attestation submission struct
+#[derive(Clone, Debug)]
+pub struct SignedAttestation {
+	/// Attestation
+	pub attestation: AttestationFr,
+	/// Signature
+	pub signature: ECDSASignature,
+}
+
+impl SignedAttestation {
+	/// Constructs a new instance
+	pub fn new(attestation: AttestationFr, signature: ECDSASignature) -> Self {
+		Self { attestation, signature }
+	}
+
+	/// Recover the public key from the attestation signature
+	pub fn recover_public_key(&self) -> Result<ECDSAPublicKey, &'static str> {
+		let message = self.attestation.hash().to_bytes();
+
+		let public_key = self
+			.signature
+			.recover(&Message::from_slice(message.as_slice()).unwrap())
+			.map_err(|_| "Failed to recover public key")?;
+
+		Ok(public_key)
+	}
+}
+
+impl Default for SignedAttestation {
+	fn default() -> Self {
+		let attestation = AttestationFr::default();
+
+		let s = Secp256k1::signing_only();
+		let msg = attestation.hash().to_bytes();
+		let sk = SecretKey::from_slice(&ONE).unwrap();
+		let signature =
+			s.sign_ecdsa_recoverable(&Message::from_slice(msg.as_slice()).unwrap(), &sk);
+
+		Self { attestation, signature }
 	}
 }
 
