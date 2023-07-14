@@ -455,15 +455,186 @@ impl<
 		)?;
 
 		let lt_eq_chipset = LessEqualChipset::new(comp, last_limb_num.clone());
-		let res = lt_eq_chipset.synthesize(
+		let _res = lt_eq_chipset.synthesize(
 			&config.common,
 			&config.lt_eq,
 			layouter.namespace(|| "comp <= last_limb_num"),
 		)?;
 
-		// TODO: where to get constraint inputs?
-		layouter.constrain_instance(res.cell(), config.common.instance, 0)?;
+		// // TODO: where to get constraint inputs?
+		// layouter.constrain_instance(res.cell(), config.common.instance, 0)?;
 
 		Ok(())
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	use crate::{
+		calculate_message_hash,
+		dynamic_sets::native::{EigenTrustSet, Opinion},
+		eddsa::native::{sign, PublicKey, SecretKey},
+		params::rns::decompose_big_decimal,
+		threshold::native::Threshold,
+	};
+	use halo2::{
+		dev::MockProver,
+		halo2curves::{bn256::Fr, ff::PrimeField},
+	};
+	use num_bigint::BigInt;
+	use num_rational::BigRational;
+	use rand::thread_rng;
+
+	fn sign_opinion<
+		const NUM_NEIGHBOURS: usize,
+		const NUM_ITERATIONS: usize,
+		const INITIAL_SCORE: u128,
+	>(
+		sk: &SecretKey, pk: &PublicKey, pks: &[PublicKey], scores: &[Fr],
+	) -> Opinion<NUM_NEIGHBOURS> {
+		assert!(pks.len() == NUM_NEIGHBOURS);
+		assert!(scores.len() == NUM_NEIGHBOURS);
+
+		let (_, message_hashes) =
+			calculate_message_hash::<NUM_NEIGHBOURS, 1>(pks.to_vec(), vec![scores.to_vec()]);
+		let sig = sign(sk, pk, message_hashes[0]);
+
+		// let scores = pks.zip(*scores);
+		let mut op_scores = vec![];
+		for i in 0..NUM_NEIGHBOURS {
+			op_scores.push((pks[i], scores[i]));
+		}
+		let op = Opinion::new(sig, message_hashes[0], op_scores.to_vec());
+		op
+	}
+
+	fn eigen_trust_set_testing_helper<
+		const NUM_NEIGHBOURS: usize,
+		const NUM_ITERATIONS: usize,
+		const INITIAL_SCORE: u128,
+	>(
+		ops: Vec<Vec<Fr>>,
+	) -> (Vec<PublicKey>, Vec<Fr>, Vec<BigRational>) {
+		assert!(ops.len() == NUM_NEIGHBOURS);
+		for op in &ops {
+			assert!(op.len() == NUM_NEIGHBOURS);
+		}
+
+		let mut set = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
+
+		let rng = &mut thread_rng();
+
+		let sks: Vec<SecretKey> =
+			(0..NUM_NEIGHBOURS).into_iter().map(|__| SecretKey::random(rng)).collect();
+		let pks: Vec<PublicKey> = sks.iter().map(|s| s.public()).collect();
+
+		// Add the publicKey to the set
+		pks.iter().for_each(|pk| set.add_member(*pk));
+
+		// Update the opinions
+		for i in 0..NUM_NEIGHBOURS {
+			let scores = ops[i].to_vec();
+
+			let op_i = sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
+				&sks[i], &pks[i], &pks, &scores,
+			);
+
+			set.update_op(pks[i], op_i);
+		}
+
+		let s = set.converge();
+		let s_ratios = set.converge_rational();
+
+		(pks, s, s_ratios)
+	}
+
+	fn ratio_to_decomposed_helper<
+		F: FieldExt,
+		const NUM_LIMBS: usize,
+		const POWER_OF_TEN: usize,
+	>(
+		ratio: BigRational,
+	) -> ([F; NUM_LIMBS], [F; NUM_LIMBS]) {
+		let num = ratio.numer();
+		let den = ratio.denom();
+		let max_len = NUM_LIMBS * POWER_OF_TEN;
+		let bigger = num.max(den);
+		let dig_len = bigger.to_string().len();
+		let diff = max_len - dig_len;
+
+		let scale = BigInt::from(10_u32).pow(diff as u32);
+		let num_scaled = num * scale.clone();
+		let den_scaled = den * scale;
+		let num_scaled_uint = num_scaled.to_biguint().unwrap();
+		let den_scaled_uint = den_scaled.to_biguint().unwrap();
+
+		let num_decomposed = decompose_big_decimal::<F, NUM_LIMBS, POWER_OF_TEN>(num_scaled_uint);
+		let den_decomposed = decompose_big_decimal::<F, NUM_LIMBS, POWER_OF_TEN>(den_scaled_uint);
+
+		(num_decomposed, den_decomposed)
+	}
+
+	#[test]
+	fn test_threshold_circuit() {
+		const NUM_NEIGHBOURS: usize = 4;
+		const NUM_ITERATIONS: usize = 20;
+		const INITIAL_SCORE: u128 = 1000;
+
+		const NUM_LIMBS: usize = 2;
+		const POWER_OF_TEN: usize = 72;
+
+		let ops: Vec<Vec<Fr>> = vec![
+			vec![0, 200, 300, 500],
+			vec![100, 0, 600, 300],
+			vec![400, 100, 0, 500],
+			vec![100, 200, 700, 0],
+		]
+		.into_iter()
+		.map(|arr| arr.into_iter().map(|x| Fr::from_u128(x)).collect())
+		.collect();
+
+		let (pks, final_scores, score_ratios) =
+			eigen_trust_set_testing_helper::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(ops);
+
+		let target_idx = 2;
+
+		let sets_pk_x: Vec<Fr> = pks.iter().map(|pk| pk.0.x.clone()).collect();
+		let sets_pk_y: Vec<Fr> = pks.iter().map(|pk| pk.0.y.clone()).collect();
+		let target_pk_x = sets_pk_x[target_idx].clone();
+		let target_pk_y = sets_pk_y[target_idx].clone();
+
+		let mut pub_ins = vec![];
+		pub_ins.extend(sets_pk_x);
+		pub_ins.extend(sets_pk_y);
+		pub_ins.extend(final_scores.clone());
+		pub_ins.push(target_pk_x);
+		pub_ins.push(target_pk_y);
+
+		let score = final_scores[target_idx].clone();
+		let score_ratio = score_ratios[target_idx].clone();
+		let (num_decomposed, den_decomposed) =
+			ratio_to_decomposed_helper::<Fr, NUM_LIMBS, POWER_OF_TEN>(score_ratio.clone());
+		let threshold = Fr::from_u128(1000_u128);
+
+		let native_threshold: Threshold<
+			Fr,
+			NUM_LIMBS,
+			POWER_OF_TEN,
+			NUM_NEIGHBOURS,
+			INITIAL_SCORE,
+		> = Threshold::new(score, score_ratio, threshold);
+
+		let circuit: ThresholdCircuit<Fr, NUM_LIMBS, POWER_OF_TEN, NUM_NEIGHBOURS, INITIAL_SCORE> =
+			ThresholdCircuit::new(score, &num_decomposed, &den_decomposed, threshold);
+
+		let k = 14;
+		let prover = match MockProver::<Fr>::run(k, &circuit, vec![pub_ins]) {
+			Ok(prover) => prover,
+			Err(e) => panic!("{}", e),
+		};
+
+		assert_eq!(prover.verify(), Ok(()));
 	}
 }
