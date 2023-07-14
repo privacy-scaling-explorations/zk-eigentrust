@@ -5,8 +5,8 @@ use clap::Parser;
 use cli::*;
 use dotenv::dotenv;
 use eigen_trust_client::{
-	eth::{compile_att_station, compile_yul_contracts, deploy_as, deploy_verifier},
-	fs::{read_binary, read_json},
+	eth::{deploy_as, gen_as_bindings},
+	fs::read_json,
 	Client, ClientConfig,
 };
 use env_logger::{init_from_env, Env};
@@ -19,7 +19,7 @@ async fn main() {
 	init_from_env(Env::default().filter_or("LOG_LEVEL", "info"));
 
 	// Read configuration
-	let mut config: ClientConfig = match read_json("client-config") {
+	let mut config: ClientConfig = match read_json("client_config") {
 		Ok(c) => c,
 		Err(_) => {
 			error!("Failed to read configuration file.");
@@ -52,40 +52,20 @@ async fn main() {
 			Ok(_) => (),
 			Err(e) => error!("Failed to execute bandada command: {:?}", e),
 		},
-		Mode::Compile => {
-			info!("Compiling contracts...");
-			match compile_att_station() {
-				Ok(_) => info!("AttestationStation Compilation successful"),
-				Err(e) => error!("Error during AttestationStation compilation: {}", e),
-			}
-			compile_yul_contracts();
-			info!("Done!");
+		Mode::Compile => match gen_as_bindings() {
+			Ok(_) => info!("Compilation successful"),
+			Err(e) => error!("Error during compilation: {}", e),
 		},
 		Mode::Deploy => {
-			info!("Deploying contracts...");
 			let client = Client::new(config);
 
-			let as_address = match deploy_as(client.get_signer()).await {
-				Ok(a) => a,
+			match deploy_as(client.get_signer()).await {
+				Ok(as_address) => info!("AttestationStation deployed at {:?}", as_address),
 				Err(e) => {
 					error!("Failed to deploy AttestationStation: {:?}", e);
 					return;
 				},
 			};
-			info!("AttestationStation deployed at {:?}", as_address);
-
-			let verifier_contract = read_binary("et_verifier").unwrap();
-
-			let verifier_address =
-				match deploy_verifier(client.get_signer(), verifier_contract).await {
-					Ok(a) => a,
-					Err(e) => {
-						error!("Failed to deploy EigenTrustVerifier: {:?}", e);
-						return;
-					},
-				};
-
-			info!("EigenTrustVerifier deployed at {:?}", verifier_address);
 		},
 		Mode::LocalScores => match handle_scores(config, AttestationsOrigin::Local).await {
 			Ok(_) => info!("Scores calculated."),

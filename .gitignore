@@ -1,4 +1,10 @@
+# Local
 .DS_Store
-/data/*-proof.json
-/target
 .env
+
+# Build
+/target
+
+# Assets
+/client/assets/attestation_station.rs
+/client/assets/params-*.bin
