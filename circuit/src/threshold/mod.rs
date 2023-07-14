@@ -1,6 +1,6 @@
 use halo2::{
 	circuit::{SimpleFloorPlanner, Value},
-	plonk::Circuit,
+	plonk::{Circuit, Selector},
 };
 
 use crate::{
@@ -8,7 +8,7 @@ use crate::{
 		bits2num::Bits2NumChip,
 		lt_eq::{LessEqualChipset, LessEqualConfig, NShiftedChip},
 		main::{InverseChipset, IsZeroChipset, MainChip, MainConfig, MulAddChipset, MulChipset},
-		set::SetPositionChip,
+		set::{SelectItemChip, SetPositionChip},
 	},
 	Chip, Chipset, CommonConfig, FieldExt, RegionCtx, ADVICE,
 };
@@ -22,6 +22,8 @@ pub struct ThresholdCircuitConfig {
 	common: CommonConfig,
 	main: MainConfig,
 	lt_eq: LessEqualConfig,
+	set_pos_selector: Selector,
+	select_item_selector: Selector,
 }
 
 #[derive(Clone, Debug)]
@@ -86,7 +88,10 @@ impl<
 		let n_shifted_selector = NShiftedChip::configure(&common, meta);
 		let lt_eq = LessEqualConfig::new(main.clone(), bits_2_num_selector, n_shifted_selector);
 
-		ThresholdCircuitConfig { common, main, lt_eq }
+		let set_pos_selector = SetPositionChip::configure(&common, meta);
+		let select_item_selector = SelectItemChip::configure(&common, meta);
+
+		ThresholdCircuitConfig { common, main, lt_eq, set_pos_selector, select_item_selector }
 	}
 
 	fn synthesize(
