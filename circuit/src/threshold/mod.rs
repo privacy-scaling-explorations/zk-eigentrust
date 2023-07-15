@@ -50,7 +50,7 @@ impl<
 	> ThresholdCircuit<F, NUM_LIMBS, POWER_OF_TEN, NUM_NEIGHBOURS, INITIAL_SCORE>
 {
 	/// Constructs a new ThresholdCircuit
-	pub fn new(sets: &[F], num_decomposed: &[F], den_decomposed: &[F], scores: &[F]) -> Self {
+	pub fn new(sets: &[F], scores: &[F], num_decomposed: &[F], den_decomposed: &[F]) -> Self {
 		let sets = sets.iter().map(|s| Value::known(s.clone())).collect();
 		let scores = scores.iter().map(|s| Value::known(s.clone())).collect();
 		let target_score_num_decomposed =
