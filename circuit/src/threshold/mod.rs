@@ -93,20 +93,19 @@ impl<
 			num_neighbor,
 			init_score,
 			max_limb_value,
-			threshold,
-			score,
 			one,
 			zero,
 			sets,
-			final_scores,
+			scores,
 			target_addr,
-			inst_col_offset,
+			threshold,
+			expected_check_res,
 		) = layouter.assign_region(
 			|| "temp",
 			|region| {
-				let mut inst_col_offset = 0;
 				let mut ctx = RegionCtx::new(region, 0);
 
+				// constants
 				let num_neighbor = ctx.assign_from_constant(
 					config.common.advice[0],
 					F::from_u128(NUM_NEIGHBOURS as u128),
@@ -117,83 +116,67 @@ impl<
 					config.common.advice[2],
 					F::from_u128(10_u128).pow([POWER_OF_TEN as u64]),
 				)?;
-				let threshold = ctx.assign_advice(config.common.advice[3], self.threshold)?;
-				let score = ctx.assign_advice(config.common.advice[4], self.score)?;
 				let one = ctx.assign_from_constant(config.common.advice[5], F::ONE)?;
 				let zero = ctx.assign_from_constant(config.common.advice[6], F::ZERO)?;
+
+				// Public input
+				let target_addr =
+					ctx.assign_from_instance(config.common.advice[7], config.common.instance, 0)?;
+				let threshold =
+					ctx.assign_from_instance(config.common.advice[8], config.common.instance, 1)?;
+				let expected_check_res =
+					ctx.assign_from_instance(config.common.advice[9], config.common.instance, 2)?;
+
 				ctx.next();
 
+				// private inputs - sets & scores
 				let mut sets = vec![];
 				for i in 0..NUM_NEIGHBOURS {
-					let member = ctx.assign_from_instance(
-						config.common.advice[i % ADVICE],
-						config.common.instance,
-						inst_col_offset + i,
-					)?;
+					let member =
+						ctx.assign_advice(config.common.advice[i % ADVICE], self.sets[i].clone())?;
 					sets.push(member);
 
 					if i % ADVICE == ADVICE - 1 {
 						ctx.next();
 					}
 				}
-				inst_col_offset += NUM_NEIGHBOURS;
 				ctx.next();
 
-				let mut final_scores = vec![];
+				let mut scores = vec![];
 				for i in 0..NUM_NEIGHBOURS {
-					let score = ctx.assign_from_instance(
-						config.common.advice[i % ADVICE],
-						config.common.instance,
-						inst_col_offset + i,
-					)?;
-					final_scores.push(score);
+					let score = ctx
+						.assign_advice(config.common.advice[i % ADVICE], self.scores[i].clone())?;
+					scores.push(score);
 
 					if i % ADVICE == ADVICE - 1 {
 						ctx.next();
 					}
 				}
-				inst_col_offset += NUM_NEIGHBOURS;
-				ctx.next();
-
-				let target_addr = ctx.assign_from_instance(
-					config.common.advice[0], config.common.instance, inst_col_offset,
-				)?;
-				inst_col_offset += 1;
 
 				Ok((
-					num_neighbor, init_score, max_limb_value, threshold, score, one, zero, sets,
-					final_scores, target_addr, inst_col_offset,
+					num_neighbor, init_score, max_limb_value, one, zero, sets, scores, target_addr,
+					threshold, expected_check_res,
 				))
 			},
 		)?;
 
-		// TODO: verify if the "sets" & "final_scores" are valid, using aggregation verify
+		// TODO: verify if the "sets" & "scores" are valid, using aggregation verify
 
-		// check if the eigentrust score of "target_addr" is the same as "score"
+		// obtain the score of "target_addr" from "scores", using SetPositionChip & SelectItemChip
 		let set_pos_chip = SetPositionChip::new(sets, target_addr);
 		let target_addr_idx = set_pos_chip.synthesize(
 			&config.common,
 			&config.set_pos_selector,
 			layouter.namespace(|| "target_addr_idx"),
 		)?;
-
-		let select_item_chip = SelectItemChip::new(final_scores, target_addr_idx);
-		let target_addr_score = select_item_chip.synthesize(
+		let select_item_chip = SelectItemChip::new(scores, target_addr_idx);
+		let score = select_item_chip.synthesize(
 			&config.common,
 			&config.select_item_selector,
 			layouter.namespace(|| "target_addr_score"),
 		)?;
-		layouter.assign_region(
-			|| "target_addr_score(PI) == score(input)",
-			|region| {
-				let mut ctx = RegionCtx::new(region, 0);
-				let target_addr_score =
-					ctx.copy_assign(config.common.advice[0], target_addr_score.clone())?;
-				let input_score = ctx.copy_assign(config.common.advice[1], score.clone())?;
-				ctx.constrain_equal(target_addr_score, input_score)?;
-				Ok(())
-			},
-		)?;
+
+		let (num_decomposed, den_decomposed) = todo!();
 
 		// max_score = NUM_NEIGHBOURS * INITIAL_SCORE
 		let mul_chipset = MulChipset::new(num_neighbor, init_score);
@@ -229,9 +212,9 @@ impl<
 				let mut limbs = vec![];
 
 				let mut ctx = RegionCtx::new(region, 0);
-				for i in 0..self.num_decomposed.len() {
-					let limb = ctx
-						.assign_advice(config.common.advice[i % ADVICE], self.num_decomposed[i])?;
+				for i in 0..num_decomposed.len() {
+					let limb =
+						ctx.assign_advice(config.common.advice[i % ADVICE], num_decomposed[i])?;
 					limbs.push(limb);
 
 					if i % ADVICE == ADVICE - 1 {
@@ -272,9 +255,9 @@ impl<
 				let mut limbs = vec![];
 
 				let mut ctx = RegionCtx::new(region, 0);
-				for i in 0..self.den_decomposed.len() {
-					let limb = ctx
-						.assign_advice(config.common.advice[i % ADVICE], self.den_decomposed[i])?;
+				for i in 0..den_decomposed.len() {
+					let limb =
+						ctx.assign_advice(config.common.advice[i % ADVICE], den_decomposed[i])?;
 					limbs.push(limb);
 
 					if i % ADVICE == ADVICE - 1 {
@@ -408,10 +391,18 @@ impl<
 		)?;
 
 		// final constraint
-		layouter.constrain_instance(
-			threshold_check_res.cell(),
-			config.common.instance,
-			inst_col_offset,
+		layouter.assign_region(
+			|| "threshold_check_res == expected_check_res",
+			|region| {
+				let mut ctx = RegionCtx::new(region, 0);
+				let threshold_check_res =
+					ctx.copy_assign(config.common.advice[0], threshold_check_res)?;
+				let expected_check_res =
+					ctx.copy_assign(config.common.advice[1], expected_check_res)?;
+				ctx.constrain_equal(threshold_check_res, expected_check_res)?;
+
+				Ok(())
+			},
 		)?;
 
 		Ok(())
