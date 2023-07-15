@@ -2,16 +2,18 @@
 pub mod native;
 
 use crate::{
-	ecdsa::{AssignedPublicKey, AssignedSignature},
+	ecc::generic::{AssignedAux, AssignedEcPoint},
+	ecdsa::{AssignedPublicKey, AssignedSignature, EcdsaChipset, EcdsaConfig},
 	gadgets::{
 		main::{IsZeroChipset, MainConfig},
-		set::{SetChipset, SetConfig},
+		set::SetConfig,
 	},
+	integer::AssignedInteger,
 	params::{ecc::EccParams, rns::RnsParams},
 	Chipset, CommonConfig, FieldExt, HasherChipset, RegionCtx,
 };
 use halo2::{
-	circuit::{AssignedCell, Layouter, Region},
+	circuit::{AssignedCell, Layouter, Region, Value},
 	halo2curves::CurveAffine,
 	plonk::Error,
 };
@@ -19,7 +21,7 @@ use std::marker::PhantomData;
 
 const WIDTH: usize = 5;
 
-/// Assigned Attestation variables.
+/// Assigned Attestation structure.
 #[derive(Debug, Clone)]
 pub struct AssignedAttestation<F: FieldExt> {
 	/// Ethereum address of peer being rated
@@ -42,7 +44,7 @@ impl<F: FieldExt> AssignedAttestation<F> {
 	}
 }
 
-/// Signed Attestation variables.
+/// SignedAssignedAttestation structure.
 #[derive(Debug, Clone)]
 pub struct SignedAssignedAttestation<
 	C: CurveAffine,
@@ -83,6 +85,7 @@ pub struct OpinionConfig<F: FieldExt, H>
 where
 	H: HasherChipset<F, WIDTH>,
 {
+	ecdsa: EcdsaConfig,
 	main: MainConfig,
 	set: SetConfig,
 	hasher: H::Config,
@@ -93,8 +96,8 @@ where
 	H: HasherChipset<F, WIDTH>,
 {
 	/// Construct a new config
-	pub fn new(main: MainConfig, set: SetConfig, hasher: H::Config) -> Self {
-		Self { main, set, hasher }
+	pub fn new(ecdsa: EcdsaConfig, main: MainConfig, set: SetConfig, hasher: H::Config) -> Self {
+		Self { ecdsa, main, set, hasher }
 	}
 }
 
@@ -122,6 +125,14 @@ pub struct OpinionChipset<
 	public_key: AssignedPublicKey<C, N, NUM_LIMBS, NUM_BITS, P>,
 	// Set
 	set: Vec<AssignedCell<N, N>>,
+	// msg_hash as AssignedInteger
+	msg_hash: Vec<AssignedInteger<C::Base, N, NUM_LIMBS, NUM_BITS, P>>,
+	// Generator as EC point
+	g_as_ec_point: AssignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P>,
+	// Signature Inverse
+	s_inv: AssignedInteger<C::Base, N, NUM_LIMBS, NUM_BITS, P>,
+	// Aux for to_add and to_sub
+	aux: AssignedAux<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
 	/// Constructs a phantom data for the hasher.
 	_hasher: PhantomData<(H, EC)>,
 }
@@ -147,8 +158,21 @@ where
 	pub fn new(
 		attestations: Vec<SignedAssignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>>,
 		public_key: AssignedPublicKey<C, N, NUM_LIMBS, NUM_BITS, P>, set: Vec<AssignedCell<N, N>>,
+		msg_hash: Vec<AssignedInteger<C::Base, N, NUM_LIMBS, NUM_BITS, P>>,
+		g_as_ec_point: AssignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P>,
+		s_inv: AssignedInteger<C::Base, N, NUM_LIMBS, NUM_BITS, P>,
+		aux: AssignedAux<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
 	) -> Self {
-		OpinionChipset { attestations, public_key, set, _hasher: PhantomData }
+		OpinionChipset {
+			attestations,
+			public_key,
+			set,
+			msg_hash,
+			g_as_ec_point,
+			s_inv,
+			aux,
+			_hasher: PhantomData,
+		}
 	}
 }
 
@@ -185,11 +209,11 @@ where
 		)?;
 
 		let mut scores = vec![zero; self.set.len()];
+		let mut hashes = Vec::new();
 
 		// Hashing default values for default attestation
-		let poseidon =
-			H::new([zero.clone(), zero.clone(), zero.clone(), zero.clone(), zero.clone()]);
-		let default_hash = poseidon.synthesize(
+		let hash = H::new([zero.clone(), zero.clone(), zero.clone(), zero.clone(), zero.clone()]);
+		let default_hash = hash.synthesize(
 			&common,
 			&config.hasher,
 			layouter.namespace(|| "default_hash"),
@@ -234,7 +258,49 @@ where
 			)?;
 
 			if is_default_pubkey && att_about && att_domain && att_value && att_message {
+				hashes.push(default_hash);
 			} else {
+				//assert!(att.attestation.about == self.set[i]);
+
+				let hash = H::new([
+					att.attestation.about,
+					att.attestation.domain,
+					att.attestation.value,
+					att.attestation.message,
+					zero.clone(),
+				]);
+				let att_hash =
+					hash.synthesize(&common, &config.hasher, layouter.namespace(|| "att_hash"))?;
+
+				let signature = self.attestations[i].signature.clone();
+
+				// Constraint equality for the msg_hash from hasher and constructor
+				layouter.assign_region(
+					|| "constraint equality",
+					|region: Region<'_, N>| {
+						let mut ctx = RegionCtx::new(region, 0);
+						ctx.assign_advice(
+							common.advice[0],
+							Value::known(P::compose(self.msg_hash[i].integer.limbs)),
+						);
+						ctx.constrain_equal(self.msg_hash, N::ZERO)
+					},
+				)?;
+
+				let chip = EcdsaChipset::new(
+					self.public_key.clone(),
+					self.g_as_ecpoint,
+					signature,
+					self.msg_hash[i],
+					self.s_inv,
+					self.aux,
+				);
+
+				chip.synthesize(
+					&config.common,
+					&config.ecdsa,
+					layouter.namespace(|| "ecdsa_verify"),
+				)?;
 			}
 		}
 
