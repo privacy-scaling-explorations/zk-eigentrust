@@ -37,6 +37,8 @@ pub struct ThresholdCircuit<
 > {
 	sets: Vec<Value<F>>,
 	scores: Vec<Value<F>>,
+	target_score_num_decomposed: Vec<Value<F>>,
+	target_score_den_decomposed: Vec<Value<F>>,
 }
 
 impl<
@@ -48,10 +50,14 @@ impl<
 	> ThresholdCircuit<F, NUM_LIMBS, POWER_OF_TEN, NUM_NEIGHBOURS, INITIAL_SCORE>
 {
 	/// Constructs a new ThresholdCircuit
-	pub fn new(sets: &[F], scores: &[F]) -> Self {
+	pub fn new(sets: &[F], num_decomposed: &[F], den_decomposed: &[F], scores: &[F]) -> Self {
 		let sets = sets.iter().map(|s| Value::known(s.clone())).collect();
 		let scores = scores.iter().map(|s| Value::known(s.clone())).collect();
-		Self { sets, scores }
+		let target_score_num_decomposed =
+			(0..NUM_LIMBS).map(|i| Value::known(num_decomposed[i])).collect();
+		let target_score_den_decomposed =
+			(0..NUM_LIMBS).map(|i| Value::known(den_decomposed[i])).collect();
+		Self { sets, scores, target_score_den_decomposed, target_score_num_decomposed }
 	}
 }
 
@@ -69,7 +75,9 @@ impl<
 	fn without_witnesses(&self) -> Self {
 		let sets = (0..NUM_NEIGHBOURS).map(|_| Value::unknown()).collect();
 		let scores = (0..NUM_NEIGHBOURS).map(|_| Value::unknown()).collect();
-		Self { sets, scores }
+		let target_score_num_decomposed = (0..NUM_LIMBS).map(|_| Value::unknown()).collect();
+		let target_score_den_decomposed = (0..NUM_LIMBS).map(|_| Value::unknown()).collect();
+		Self { sets, scores, target_score_num_decomposed, target_score_den_decomposed }
 	}
 
 	fn configure(meta: &mut halo2::plonk::ConstraintSystem<F>) -> Self::Config {
@@ -176,8 +184,6 @@ impl<
 			layouter.namespace(|| "target_addr_score"),
 		)?;
 
-		let (num_decomposed, den_decomposed) = todo!();
-
 		// max_score = NUM_NEIGHBOURS * INITIAL_SCORE
 		let mul_chipset = MulChipset::new(num_neighbor, init_score);
 		let max_score = mul_chipset.synthesize(
@@ -212,9 +218,11 @@ impl<
 				let mut limbs = vec![];
 
 				let mut ctx = RegionCtx::new(region, 0);
-				for i in 0..num_decomposed.len() {
-					let limb =
-						ctx.assign_advice(config.common.advice[i % ADVICE], num_decomposed[i])?;
+				for i in 0..self.target_score_num_decomposed.len() {
+					let limb = ctx.assign_advice(
+						config.common.advice[i % ADVICE],
+						self.target_score_num_decomposed[i],
+					)?;
 					limbs.push(limb);
 
 					if i % ADVICE == ADVICE - 1 {
@@ -255,9 +263,11 @@ impl<
 				let mut limbs = vec![];
 
 				let mut ctx = RegionCtx::new(region, 0);
-				for i in 0..den_decomposed.len() {
-					let limb =
-						ctx.assign_advice(config.common.advice[i % ADVICE], den_decomposed[i])?;
+				for i in 0..self.target_score_den_decomposed.len() {
+					let limb = ctx.assign_advice(
+						config.common.advice[i % ADVICE],
+						self.target_score_den_decomposed[i],
+					)?;
 					limbs.push(limb);
 
 					if i % ADVICE == ADVICE - 1 {
@@ -396,9 +406,9 @@ impl<
 			|region| {
 				let mut ctx = RegionCtx::new(region, 0);
 				let threshold_check_res =
-					ctx.copy_assign(config.common.advice[0], threshold_check_res)?;
+					ctx.copy_assign(config.common.advice[0], threshold_check_res.clone())?;
 				let expected_check_res =
-					ctx.copy_assign(config.common.advice[1], expected_check_res)?;
+					ctx.copy_assign(config.common.advice[1], expected_check_res.clone())?;
 				ctx.constrain_equal(threshold_check_res, expected_check_res)?;
 
 				Ok(())
@@ -589,7 +599,7 @@ mod tests {
 			POWER_OF_TEN,
 			NUM_NEIGHBOURS,
 			INITIAL_SCORE,
-		> = ThresholdCircuit::new(&sets, &scores);
+		> = ThresholdCircuit::new(&sets, &scores, &num_decomposed, &den_decomposed);
 
 		let k = 12;
 		let prover = match MockProver::<Fr>::run(k, &threshold_circuit, vec![pub_ins]) {
