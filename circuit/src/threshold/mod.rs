@@ -36,7 +36,7 @@ pub struct ThresholdCircuit<
 	const INITIAL_SCORE: u128,
 > {
 	sets: Vec<Value<F>>,
-	scores: Vec<Vec<Value<F>>>,
+	scores: Vec<Value<F>>,
 }
 
 impl<
@@ -48,12 +48,9 @@ impl<
 	> ThresholdCircuit<F, NUM_LIMBS, POWER_OF_TEN, NUM_NEIGHBOURS, INITIAL_SCORE>
 {
 	/// Constructs a new ThresholdCircuit
-	pub fn new(sets: &[F], scores: &[Vec<F>]) -> Self {
+	pub fn new(sets: &[F], scores: &[F]) -> Self {
 		let sets = sets.iter().map(|s| Value::known(s.clone())).collect();
-		let scores = scores
-			.iter()
-			.map(|member_scores| member_scores.iter().map(|s| Value::known(s.clone())).collect())
-			.collect();
+		let scores = scores.iter().map(|s| Value::known(s.clone())).collect();
 		Self { sets, scores }
 	}
 }
@@ -71,9 +68,7 @@ impl<
 
 	fn without_witnesses(&self) -> Self {
 		let sets = (0..NUM_NEIGHBOURS).map(|_| Value::unknown()).collect();
-		let scores = (0..NUM_NEIGHBOURS)
-			.map(|_| (0..NUM_NEIGHBOURS).map(|_| Value::unknown()).collect())
-			.collect();
+		let scores = (0..NUM_NEIGHBOURS).map(|_| Value::unknown()).collect();
 		Self { sets, scores }
 	}
 
@@ -573,12 +568,13 @@ mod tests {
 		.map(|arr| arr.into_iter().map(|x| Fr::from_u128(x)).collect())
 		.collect();
 
-		let (addrs, final_scores, score_ratios) =
+		let (sets, scores, score_ratios) =
 			eigen_trust_set_testing_helper::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(ops);
 
 		let target_idx = 2;
 
-		let score = final_scores[target_idx].clone();
+		let target_addr = sets[target_idx].clone();
+		let score = scores[target_idx].clone();
 		let score_ratio = score_ratios[target_idx].clone();
 		let (num_decomposed, den_decomposed) =
 			ratio_to_decomposed_helper::<Fr, NUM_LIMBS, POWER_OF_TEN>(score_ratio.clone());
@@ -591,6 +587,10 @@ mod tests {
 			NUM_NEIGHBOURS,
 			INITIAL_SCORE,
 		> = Threshold::new(score, score_ratio, threshold);
+		let native_threshold_check =
+			if native_threshold.check_threshold() { Fr::ONE } else { Fr::ZERO };
+
+		let pub_ins = vec![target_addr, threshold, native_threshold_check];
 
 		let threshold_circuit: ThresholdCircuit<
 			Fr,
@@ -598,17 +598,7 @@ mod tests {
 			POWER_OF_TEN,
 			NUM_NEIGHBOURS,
 			INITIAL_SCORE,
-		> = ThresholdCircuit::new(score, &num_decomposed, &den_decomposed, threshold);
-
-		let mut pub_ins = vec![];
-		let sets: Vec<Fr> = addrs;
-		let target_addr = sets[target_idx].clone();
-		let threshold_check_res =
-			if native_threshold.check_threshold() { Fr::ONE } else { Fr::ZERO };
-		pub_ins.extend(sets);
-		pub_ins.extend(final_scores);
-		pub_ins.push(target_addr);
-		pub_ins.push(threshold_check_res);
+		> = ThresholdCircuit::new(&sets, &scores);
 
 		let k = 12;
 		let prover = match MockProver::<Fr>::run(k, &threshold_circuit, vec![pub_ins]) {
