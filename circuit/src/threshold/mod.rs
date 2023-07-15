@@ -35,10 +35,8 @@ pub struct ThresholdCircuit<
 	const NUM_NEIGHBOURS: usize,
 	const INITIAL_SCORE: u128,
 > {
-	score: Value<F>,
-	num_decomposed: Vec<Value<F>>,
-	den_decomposed: Vec<Value<F>>,
-	threshold: Value<F>,
+	sets: Vec<Value<F>>,
+	scores: Vec<Vec<Value<F>>>,
 }
 
 impl<
@@ -50,13 +48,13 @@ impl<
 	> ThresholdCircuit<F, NUM_LIMBS, POWER_OF_TEN, NUM_NEIGHBOURS, INITIAL_SCORE>
 {
 	/// Constructs a new ThresholdCircuit
-	pub fn new(score: F, num_decomposed: &[F], den_decomposed: &[F], threshold: F) -> Self {
-		let score = Value::known(score);
-		let num_decomposed = (0..NUM_LIMBS).map(|i| Value::known(num_decomposed[i])).collect();
-		let den_decomposed = (0..NUM_LIMBS).map(|i| Value::known(den_decomposed[i])).collect();
-		let threshold = Value::known(threshold);
-
-		Self { score, num_decomposed, den_decomposed, threshold }
+	pub fn new(sets: &[F], scores: &[Vec<F>]) -> Self {
+		let sets = sets.iter().map(|s| Value::known(s.clone())).collect();
+		let scores = scores
+			.iter()
+			.map(|member_scores| member_scores.iter().map(|s| Value::known(s.clone())).collect())
+			.collect();
+		Self { sets, scores }
 	}
 }
 
@@ -72,12 +70,11 @@ impl<
 	type FloorPlanner = SimpleFloorPlanner;
 
 	fn without_witnesses(&self) -> Self {
-		Self {
-			score: Value::unknown(),
-			num_decomposed: (0..NUM_LIMBS).map(|_| Value::unknown()).collect(),
-			den_decomposed: (0..NUM_LIMBS).map(|_| Value::unknown()).collect(),
-			threshold: Value::unknown(),
-		}
+		let sets = (0..NUM_NEIGHBOURS).map(|_| Value::unknown()).collect();
+		let scores = (0..NUM_NEIGHBOURS)
+			.map(|_| (0..NUM_NEIGHBOURS).map(|_| Value::unknown()).collect())
+			.collect();
+		Self { sets, scores }
 	}
 
 	fn configure(meta: &mut halo2::plonk::ConstraintSystem<F>) -> Self::Config {
