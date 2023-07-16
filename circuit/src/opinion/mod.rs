@@ -5,8 +5,8 @@ use crate::{
 	ecc::generic::{AssignedAux, AssignedEcPoint},
 	ecdsa::{AssignedPublicKey, AssignedSignature, EcdsaChipset, EcdsaConfig},
 	gadgets::{
-		main::{IsZeroChipset, MainConfig},
-		set::SetConfig,
+		main::{IsZeroChipset, MainConfig, SelectChipset},
+		set::{SetChipset, SetConfig},
 	},
 	integer::AssignedInteger,
 	params::{ecc::EccParams, rns::RnsParams},
@@ -88,6 +88,7 @@ where
 	ecdsa: EcdsaConfig,
 	main: MainConfig,
 	set: SetConfig,
+	select: SelectChipset<F>,
 	hasher: H::Config,
 }
 
@@ -96,8 +97,11 @@ where
 	H: HasherChipset<F, WIDTH>,
 {
 	/// Construct a new config
-	pub fn new(ecdsa: EcdsaConfig, main: MainConfig, set: SetConfig, hasher: H::Config) -> Self {
-		Self { ecdsa, main, set, hasher }
+	pub fn new(
+		ecdsa: EcdsaConfig, main: MainConfig, set: SetConfig, select: SelectChipset<F>,
+		hasher: H::Config,
+	) -> Self {
+		Self { ecdsa, main, set, select, hasher }
 	}
 }
 
@@ -214,7 +218,7 @@ where
 			},
 		)?;
 
-		let mut scores = vec![zero; self.set.len()];
+		let mut scores = vec![zero.clone(); self.set.len()];
 		let mut hashes = Vec::new();
 
 		// Hashing default values for default attestation
@@ -227,7 +231,7 @@ where
 
 		for i in 0..NUM_NEIGHBOURS {
 			// Checking pubkey and attestation values if they are default or not (default is zero)
-			let is_zero_chip = IsZeroChipset::new(self.set[i]);
+			let is_zero_chip = IsZeroChipset::new(self.set[i].clone());
 			let is_default_pubkey = is_zero_chip.synthesize(
 				&common,
 				&config.main,
@@ -235,90 +239,107 @@ where
 			)?;
 
 			let att = self.attestations[i].clone();
-			let is_zero_chip = IsZeroChipset::new(att.attestation.about);
+			let is_zero_chip = IsZeroChipset::new(att.attestation.about.clone());
 			let att_about = is_zero_chip.synthesize(
 				&common,
 				&config.main,
 				layouter.namespace(|| "att_about"),
 			)?;
 
-			let is_zero_chip = IsZeroChipset::new(att.attestation.domain);
+			let is_zero_chip = IsZeroChipset::new(att.attestation.domain.clone());
 			let att_domain = is_zero_chip.synthesize(
 				&common,
 				&config.main,
 				layouter.namespace(|| "att_domain"),
 			)?;
 
-			let is_zero_chip = IsZeroChipset::new(att.attestation.value);
+			let is_zero_chip = IsZeroChipset::new(att.attestation.value.clone());
 			let att_value = is_zero_chip.synthesize(
 				&common,
 				&config.main,
 				layouter.namespace(|| "att_value"),
 			)?;
 
-			let is_zero_chip = IsZeroChipset::new(att.attestation.message);
+			let is_zero_chip = IsZeroChipset::new(att.attestation.message.clone());
 			let att_message = is_zero_chip.synthesize(
 				&common,
 				&config.main,
 				layouter.namespace(|| "att_message"),
 			)?;
 
-			//let something =
-			//	is_default_pubkey && att_about && att_domain && att_value && att_message;
+			let multi_and_check =
+				vec![is_default_pubkey, att_about, att_domain, att_message, att_value];
 
-			if true {
-				hashes.push(default_hash[0]);
-			} else {
-				//assert!(att.attestation.about == self.set[i]);
+			// Checks if there is a zero value. If there is a zero value in the set that means one of the variable is not default.
+			// Basically, instead of doing 3 AND operation we did one set check
+			let set_chip = SetChipset::new(multi_and_check, zero.clone());
+			let is_default_values_zero = set_chip.synthesize(
+				&common,
+				&config.set,
+				layouter.namespace(|| "set_check_zero"),
+			)?;
 
-				let hash = H::new([
-					att.attestation.about,
-					att.attestation.domain,
-					att.attestation.value,
-					att.attestation.message,
-					zero.clone(),
-				]);
-				let att_hash =
-					hash.finalize(&common, &config.hasher, layouter.namespace(|| "att_hash"))?;
+			//assert!(att.attestation.about == self.set[i]);
 
-				let signature = self.attestations[i].signature.clone();
+			let hash = H::new([
+				att.attestation.about,
+				att.attestation.domain,
+				att.attestation.value.clone(),
+				att.attestation.message.clone(),
+				zero.clone(),
+			]);
+			let att_hash =
+				hash.finalize(&common, &config.hasher, layouter.namespace(|| "att_hash"))?;
 
-				// Constraint equality for the msg_hash from hasher and constructor
-				layouter.assign_region(
-					|| "constraint equality",
-					|region: Region<'_, N>| {
-						let mut ctx = RegionCtx::new(region, 0);
-						let msg_hash = ctx.assign_advice(
-							common.advice[0],
-							Value::known(P::compose(self.msg_hash[i].integer.limbs)),
-						)?;
-						ctx.constrain_equal(att_hash[0], msg_hash)
-					},
-				)?;
+			let signature = self.attestations[i].signature.clone();
 
-				let chip = EcdsaChipset::new(
-					self.public_key.clone(),
-					self.g_as_ecpoint,
-					signature,
-					self.msg_hash[i],
-					self.s_inv,
-					self.aux,
-				);
+			// Constraint equality for the msg_hash from hasher and constructor
+			//layouter.assign_region(
+			//	|| "constraint equality",
+			//	|region: Region<'_, N>| {
+			//		let mut ctx = RegionCtx::new(region, 0);
+			//		let msg_hash = ctx.assign_advice(
+			//			common.advice[0],
+			//			Value::known(P::compose(self.msg_hash[i].integer.limbs)),
+			//		)?;
+			//		ctx.constrain_equal(att_hash[0], msg_hash)
+			//	},
+			//)?;
 
-				chip.synthesize(
-					&common,
-					&config.ecdsa,
-					layouter.namespace(|| "ecdsa_verify"),
-				)?;
+			let chip = EcdsaChipset::new(
+				self.public_key.clone(),
+				self.g_as_ecpoint.clone(),
+				signature.clone(),
+				self.msg_hash[i].clone(),
+				self.s_inv.clone(),
+				self.aux.clone(),
+			);
+			chip.synthesize(
+				&common,
+				&config.ecdsa,
+				layouter.namespace(|| "ecdsa_verify"),
+			)?;
 
-				scores[i] = att.attestation.value;
+			scores[i] = att.attestation.value;
 
-				hashes.push(att_hash[0]);
-			}
+			// Select chip for if case
+			let select_chip = SelectChipset::new(
+				is_default_values_zero,
+				default_hash[0].clone(),
+				att_hash[0].clone(),
+			);
+			let selected_value = select_chip.synthesize(
+				&common,
+				&config.main,
+				layouter.namespace(|| "select chipset"),
+			)?;
+
+			hashes.push(selected_value);
 		}
 
 		let mut sponge = S::init(common, layouter.namespace(|| "sponge"))?;
 		sponge.update(&hashes);
+		let op_hash = sponge.squeeze(common, config, layouter.namespace(|| "squeeze!"))?;
 
 		Ok(())
 	}
