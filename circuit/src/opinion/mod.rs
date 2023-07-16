@@ -10,7 +10,7 @@ use crate::{
 	},
 	integer::AssignedInteger,
 	params::{ecc::EccParams, rns::RnsParams},
-	Chipset, CommonConfig, FieldExt, HasherChipset, RegionCtx,
+	Chipset, CommonConfig, FieldExt, HasherChipset, RegionCtx, SpongeHasherChipset,
 };
 use halo2::{
 	circuit::{AssignedCell, Layouter, Region, Value},
@@ -110,6 +110,7 @@ pub struct OpinionChipset<
 	const NUM_BITS: usize,
 	const NUM_NEIGHBOURS: usize,
 	H,
+	S,
 	P,
 	EC,
 > where
@@ -118,6 +119,7 @@ pub struct OpinionChipset<
 	C::Base: FieldExt,
 	C::ScalarExt: FieldExt,
 	H: HasherChipset<N, WIDTH>,
+	S: SpongeHasherChipset<N>,
 {
 	// Attestations
 	attestations: Vec<SignedAssignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>>,
@@ -126,15 +128,15 @@ pub struct OpinionChipset<
 	// Set
 	set: Vec<AssignedCell<N, N>>,
 	// msg_hash as AssignedInteger
-	msg_hash: Vec<AssignedInteger<C::Base, N, NUM_LIMBS, NUM_BITS, P>>,
+	msg_hash: Vec<AssignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>>,
 	// Generator as EC point
-	g_as_ec_point: AssignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P>,
+	g_as_ecpoint: AssignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P>,
 	// Signature Inverse
-	s_inv: AssignedInteger<C::Base, N, NUM_LIMBS, NUM_BITS, P>,
+	s_inv: AssignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>,
 	// Aux for to_add and to_sub
 	aux: AssignedAux<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
 	/// Constructs a phantom data for the hasher.
-	_hasher: PhantomData<(H, EC)>,
+	_hasher: PhantomData<(H, S, EC)>,
 }
 
 impl<
@@ -144,23 +146,25 @@ impl<
 		const NUM_BITS: usize,
 		const NUM_NEIGHBOURS: usize,
 		H,
+		S,
 		P,
 		EC,
-	> OpinionChipset<C, N, NUM_LIMBS, NUM_BITS, NUM_NEIGHBOURS, H, P, EC>
+	> OpinionChipset<C, N, NUM_LIMBS, NUM_BITS, NUM_NEIGHBOURS, H, S, P, EC>
 where
 	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
 	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::ScalarExt: FieldExt,
 	H: HasherChipset<N, WIDTH>,
+	S: SpongeHasherChipset<N>,
 {
 	/// Create a new chip.
 	pub fn new(
 		attestations: Vec<SignedAssignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>>,
 		public_key: AssignedPublicKey<C, N, NUM_LIMBS, NUM_BITS, P>, set: Vec<AssignedCell<N, N>>,
-		msg_hash: Vec<AssignedInteger<C::Base, N, NUM_LIMBS, NUM_BITS, P>>,
-		g_as_ec_point: AssignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P>,
-		s_inv: AssignedInteger<C::Base, N, NUM_LIMBS, NUM_BITS, P>,
+		msg_hash: Vec<AssignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>>,
+		g_as_ecpoint: AssignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P>,
+		s_inv: AssignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>,
 		aux: AssignedAux<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
 	) -> Self {
 		OpinionChipset {
@@ -168,7 +172,7 @@ where
 			public_key,
 			set,
 			msg_hash,
-			g_as_ec_point,
+			g_as_ecpoint,
 			s_inv,
 			aux,
 			_hasher: PhantomData,
@@ -183,15 +187,17 @@ impl<
 		const NUM_BITS: usize,
 		const NUM_NEIGHBOURS: usize,
 		H,
+		S,
 		P,
 		EC,
-	> Chipset<N> for OpinionChipset<C, N, NUM_LIMBS, NUM_BITS, NUM_NEIGHBOURS, H, P, EC>
+	> Chipset<N> for OpinionChipset<C, N, NUM_LIMBS, NUM_BITS, NUM_NEIGHBOURS, H, S, P, EC>
 where
 	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
 	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::ScalarExt: FieldExt,
 	H: HasherChipset<N, WIDTH>,
+	S: SpongeHasherChipset<N>,
 {
 	type Config = OpinionConfig<N, H>;
 	type Output = ();
@@ -213,7 +219,7 @@ where
 
 		// Hashing default values for default attestation
 		let hash = H::new([zero.clone(), zero.clone(), zero.clone(), zero.clone(), zero.clone()]);
-		let default_hash = hash.synthesize(
+		let default_hash = hash.finalize(
 			&common,
 			&config.hasher,
 			layouter.namespace(|| "default_hash"),
@@ -223,7 +229,7 @@ where
 			// Checking pubkey and attestation values if they are default or not (default is zero)
 			let is_zero_chip = IsZeroChipset::new(self.set[i]);
 			let is_default_pubkey = is_zero_chip.synthesize(
-				&config.common,
+				&common,
 				&config.main,
 				layouter.namespace(|| "is_default_pubkey"),
 			)?;
@@ -231,34 +237,37 @@ where
 			let att = self.attestations[i].clone();
 			let is_zero_chip = IsZeroChipset::new(att.attestation.about);
 			let att_about = is_zero_chip.synthesize(
-				&config.common,
+				&common,
 				&config.main,
 				layouter.namespace(|| "att_about"),
 			)?;
 
 			let is_zero_chip = IsZeroChipset::new(att.attestation.domain);
 			let att_domain = is_zero_chip.synthesize(
-				&config.common,
+				&common,
 				&config.main,
 				layouter.namespace(|| "att_domain"),
 			)?;
 
 			let is_zero_chip = IsZeroChipset::new(att.attestation.value);
 			let att_value = is_zero_chip.synthesize(
-				&config.common,
+				&common,
 				&config.main,
 				layouter.namespace(|| "att_value"),
 			)?;
 
 			let is_zero_chip = IsZeroChipset::new(att.attestation.message);
 			let att_message = is_zero_chip.synthesize(
-				&config.common,
+				&common,
 				&config.main,
 				layouter.namespace(|| "att_message"),
 			)?;
 
-			if is_default_pubkey && att_about && att_domain && att_value && att_message {
-				hashes.push(default_hash);
+			//let something =
+			//	is_default_pubkey && att_about && att_domain && att_value && att_message;
+
+			if true {
+				hashes.push(default_hash[0]);
 			} else {
 				//assert!(att.attestation.about == self.set[i]);
 
@@ -270,7 +279,7 @@ where
 					zero.clone(),
 				]);
 				let att_hash =
-					hash.synthesize(&common, &config.hasher, layouter.namespace(|| "att_hash"))?;
+					hash.finalize(&common, &config.hasher, layouter.namespace(|| "att_hash"))?;
 
 				let signature = self.attestations[i].signature.clone();
 
@@ -279,11 +288,11 @@ where
 					|| "constraint equality",
 					|region: Region<'_, N>| {
 						let mut ctx = RegionCtx::new(region, 0);
-						ctx.assign_advice(
+						let msg_hash = ctx.assign_advice(
 							common.advice[0],
 							Value::known(P::compose(self.msg_hash[i].integer.limbs)),
-						);
-						ctx.constrain_equal(self.msg_hash, N::ZERO)
+						)?;
+						ctx.constrain_equal(att_hash[0], msg_hash)
 					},
 				)?;
 
@@ -297,12 +306,19 @@ where
 				);
 
 				chip.synthesize(
-					&config.common,
+					&common,
 					&config.ecdsa,
 					layouter.namespace(|| "ecdsa_verify"),
 				)?;
+
+				scores[i] = att.attestation.value;
+
+				hashes.push(att_hash[0]);
 			}
 		}
+
+		let mut sponge = S::init(common, layouter.namespace(|| "sponge"))?;
+		sponge.update(&hashes);
 
 		Ok(())
 	}
