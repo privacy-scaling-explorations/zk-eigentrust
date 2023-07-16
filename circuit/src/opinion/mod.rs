@@ -5,7 +5,7 @@ use crate::{
 	ecc::generic::{AssignedAux, AssignedEcPoint},
 	ecdsa::{AssignedPublicKey, AssignedSignature, EcdsaChipset, EcdsaConfig},
 	gadgets::{
-		main::{IsZeroChipset, MainConfig, SelectChipset},
+		main::{IsEqualChipset, IsZeroChipset, MainConfig, SelectChipset},
 		set::{SetChipset, SetConfig},
 	},
 	integer::AssignedInteger,
@@ -81,27 +81,28 @@ where
 
 /// Configuration elements for the circuit are defined here.
 #[derive(Debug, Clone)]
-pub struct OpinionConfig<F: FieldExt, H>
+pub struct OpinionConfig<F: FieldExt, H, S>
 where
 	H: HasherChipset<F, WIDTH>,
+	S: SpongeHasherChipset<F>,
 {
 	ecdsa: EcdsaConfig,
 	main: MainConfig,
 	set: SetConfig,
-	select: SelectChipset<F>,
 	hasher: H::Config,
+	sponge: S::Config,
 }
 
-impl<F: FieldExt, H> OpinionConfig<F, H>
+impl<F: FieldExt, H, S> OpinionConfig<F, H, S>
 where
 	H: HasherChipset<F, WIDTH>,
+	S: SpongeHasherChipset<F>,
 {
 	/// Construct a new config
 	pub fn new(
-		ecdsa: EcdsaConfig, main: MainConfig, set: SetConfig, select: SelectChipset<F>,
-		hasher: H::Config,
+		ecdsa: EcdsaConfig, main: MainConfig, set: SetConfig, hasher: H::Config, sponge: S::Config,
 	) -> Self {
-		Self { ecdsa, main, set, select, hasher }
+		Self { ecdsa, main, set, hasher, sponge }
 	}
 }
 
@@ -203,18 +204,33 @@ where
 	H: HasherChipset<N, WIDTH>,
 	S: SpongeHasherChipset<N>,
 {
-	type Config = OpinionConfig<N, H>;
-	type Output = ();
+	type Config = OpinionConfig<N, H, S>;
+	type Output = (
+		AssignedPublicKey<C, N, NUM_LIMBS, NUM_BITS, P>,
+		Vec<AssignedCell<N, N>>,
+		AssignedCell<N, N>,
+	);
 
 	/// Synthesize the circuit.
 	fn synthesize(
 		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<N>,
 	) -> Result<Self::Output, Error> {
-		let zero = layouter.assign_region(
+		// TODO: Checks given set for the public key
+		//let set_chip = SetChipset::new(self.set, self.public_key);
+		//let is_public_key_in_set = set_chip.synthesize(
+		//	common,
+		//	&config.set,
+		//	layouter.namespace(|| "set_check_pub_key"),
+		//)?;
+
+		let (zero, one) = layouter.assign_region(
 			|| "assign_zero",
 			|region: Region<'_, N>| {
 				let mut ctx = RegionCtx::new(region, 0);
-				ctx.assign_from_constant(common.advice[0], N::ZERO)
+				let zero = ctx.assign_from_constant(common.advice[0], N::ZERO)?;
+				let one = ctx.assign_from_constant(common.advice[1], N::ONE)?;
+
+				Ok((zero, one))
 			},
 		)?;
 
@@ -224,7 +240,7 @@ where
 		// Hashing default values for default attestation
 		let hash = H::new([zero.clone(), zero.clone(), zero.clone(), zero.clone(), zero.clone()]);
 		let default_hash = hash.finalize(
-			&common,
+			common,
 			&config.hasher,
 			layouter.namespace(|| "default_hash"),
 		)?;
@@ -233,7 +249,7 @@ where
 			// Checking pubkey and attestation values if they are default or not (default is zero)
 			let is_zero_chip = IsZeroChipset::new(self.set[i].clone());
 			let is_default_pubkey = is_zero_chip.synthesize(
-				&common,
+				common,
 				&config.main,
 				layouter.namespace(|| "is_default_pubkey"),
 			)?;
@@ -241,28 +257,28 @@ where
 			let att = self.attestations[i].clone();
 			let is_zero_chip = IsZeroChipset::new(att.attestation.about.clone());
 			let att_about = is_zero_chip.synthesize(
-				&common,
+				common,
 				&config.main,
 				layouter.namespace(|| "att_about"),
 			)?;
 
 			let is_zero_chip = IsZeroChipset::new(att.attestation.domain.clone());
 			let att_domain = is_zero_chip.synthesize(
-				&common,
+				common,
 				&config.main,
 				layouter.namespace(|| "att_domain"),
 			)?;
 
 			let is_zero_chip = IsZeroChipset::new(att.attestation.value.clone());
 			let att_value = is_zero_chip.synthesize(
-				&common,
+				common,
 				&config.main,
 				layouter.namespace(|| "att_value"),
 			)?;
 
 			let is_zero_chip = IsZeroChipset::new(att.attestation.message.clone());
 			let att_message = is_zero_chip.synthesize(
-				&common,
+				common,
 				&config.main,
 				layouter.namespace(|| "att_message"),
 			)?;
@@ -274,12 +290,19 @@ where
 			// Basically, instead of doing 3 AND operation we did one set check
 			let set_chip = SetChipset::new(multi_and_check, zero.clone());
 			let is_default_values_zero = set_chip.synthesize(
-				&common,
+				common,
 				&config.set,
 				layouter.namespace(|| "set_check_zero"),
 			)?;
 
-			//assert!(att.attestation.about == self.set[i]);
+			// Checks equality of the attestation about and set index
+			let is_equal_chip =
+				IsEqualChipset::new(att.attestation.about.clone(), self.set[i].clone());
+			let equality_check_set_about = is_equal_chip.synthesize(
+				common,
+				&config.main,
+				layouter.namespace(|| "is_equal_chipset_set"),
+			)?;
 
 			let hash = H::new([
 				att.attestation.about,
@@ -289,22 +312,22 @@ where
 				zero.clone(),
 			]);
 			let att_hash =
-				hash.finalize(&common, &config.hasher, layouter.namespace(|| "att_hash"))?;
+				hash.finalize(common, &config.hasher, layouter.namespace(|| "att_hash"))?;
 
 			let signature = self.attestations[i].signature.clone();
 
-			// Constraint equality for the msg_hash from hasher and constructor
-			//layouter.assign_region(
-			//	|| "constraint equality",
-			//	|region: Region<'_, N>| {
-			//		let mut ctx = RegionCtx::new(region, 0);
-			//		let msg_hash = ctx.assign_advice(
-			//			common.advice[0],
-			//			Value::known(P::compose(self.msg_hash[i].integer.limbs)),
-			//		)?;
-			//		ctx.constrain_equal(att_hash[0], msg_hash)
-			//	},
-			//)?;
+			//TODO: Constraint equality for the msg_hash from hasher and constructor
+			// layouter.assign_region(
+			// 	|| "constraint equality",
+			// 	|region: Region<'_, N>| {
+			// 		let mut ctx = RegionCtx::new(region, 0);
+			// 		let val = P::compose(self.msg_hash[i].integer.limbs);
+			// 		let msg_hash = ctx.assign_advice(common.advice[0], Value::known(val))?;
+			// 		ctx.constrain_equal(att_hash[0], msg_hash);
+			// 		ctx.constrain_equal(equality_check_set_about, one);
+			// 		Ok(())
+			// 	},
+			// )?;
 
 			let chip = EcdsaChipset::new(
 				self.public_key.clone(),
@@ -314,11 +337,7 @@ where
 				self.s_inv.clone(),
 				self.aux.clone(),
 			);
-			chip.synthesize(
-				&common,
-				&config.ecdsa,
-				layouter.namespace(|| "ecdsa_verify"),
-			)?;
+			chip.synthesize(common, &config.ecdsa, layouter.namespace(|| "ecdsa_verify"))?;
 
 			scores[i] = att.attestation.value;
 
@@ -329,7 +348,7 @@ where
 				att_hash[0].clone(),
 			);
 			let selected_value = select_chip.synthesize(
-				&common,
+				common,
 				&config.main,
 				layouter.namespace(|| "select chipset"),
 			)?;
@@ -339,8 +358,8 @@ where
 
 		let mut sponge = S::init(common, layouter.namespace(|| "sponge"))?;
 		sponge.update(&hashes);
-		let op_hash = sponge.squeeze(common, config, layouter.namespace(|| "squeeze!"))?;
+		let op_hash = sponge.squeeze(common, &config.sponge, layouter.namespace(|| "squeeze!"))?;
 
-		Ok(())
+		Ok((self.public_key, scores, op_hash))
 	}
 }
