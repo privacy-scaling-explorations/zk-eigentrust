@@ -2,14 +2,10 @@
 //!
 //! This module provides functionalities for filesystem actions.
 
+use crate::EigenError;
 use serde::de::DeserializeOwned;
 use serde_json::from_reader;
-use std::{
-	env::current_dir,
-	fs::File,
-	io::{BufReader, Result},
-	path::PathBuf,
-};
+use std::{env::current_dir, fs::File, io::BufReader, path::PathBuf};
 
 /// Enum representing the possible file extensions.
 pub enum FileType {
@@ -33,33 +29,33 @@ impl FileType {
 }
 
 /// Retrieves the path to the `assets` directory.
-pub fn get_assets_path() -> Result<PathBuf> {
-	let current_dir = current_dir()?;
+pub fn get_assets_path() -> Result<PathBuf, EigenError> {
+	current_dir().map_err(EigenError::IOError).map(|current_dir| {
+		// Workaround for the tests running in the `client` directory.
+		#[cfg(test)]
+		{
+			current_dir.join("assets")
+		}
 
-	// Workaround for the tests running in the `client` directory.
-	#[cfg(test)]
-	{
-		Ok(current_dir.join("assets"))
-	}
-
-	#[cfg(not(test))]
-	{
-		Ok(current_dir.join("client/assets"))
-	}
+		#[cfg(not(test))]
+		{
+			current_dir.join("client/assets")
+		}
+	})
 }
 
 /// Helper function to get the path of a file in the `assets` directory.
-pub fn get_file_path(file_name: &str, file_type: FileType) -> Result<PathBuf> {
+pub fn get_file_path(file_name: &str, file_type: FileType) -> Result<PathBuf, EigenError> {
 	let assets_path = get_assets_path()?;
 	Ok(assets_path.join(format!("{}.{}", file_name, file_type.as_str())))
 }
 
 /// Reads a JSON file from the `assets` directory and returns its deserialized contents.
-pub fn read_json<T: DeserializeOwned>(file_name: &str) -> Result<T> {
+pub fn read_json<T: DeserializeOwned>(file_name: &str) -> Result<T, EigenError> {
 	let json_path = get_file_path(file_name, FileType::Json)?;
-	let file = File::open(json_path)?;
+	let file = File::open(&json_path).map_err(EigenError::IOError)?;
 	let reader = BufReader::new(file);
-	from_reader(reader).map_err(Into::into)
+	from_reader(reader).map_err(|e| EigenError::ParsingError(e.to_string()))
 }
 
 #[cfg(test)]
