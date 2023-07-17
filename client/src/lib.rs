@@ -191,8 +191,7 @@ impl Client {
 		let recovered_pubkey = signed_attestation
 			.recover_public_key()
 			.map_err(|e| EigenError::RecoveryError(e.to_string()))?;
-		let recovered_address = address_from_public_key(&recovered_pubkey)
-			.map_err(|e| EigenError::RecoveryError(e.to_string()))?;
+		let recovered_address = address_from_public_key(&recovered_pubkey);
 		assert!(recovered_address == self.signer.address());
 
 		// Stored contract data

@@ -66,7 +66,8 @@ impl Attestation {
 	/// Converts the attestation to the scalar representation.
 	pub fn to_attestation_fr(&self) -> Result<AttestationFr, &'static str> {
 		// About
-		let about = scalar_from_address(&self.about)?;
+		let about =
+			scalar_from_address(&self.about).map_err(|_| "Failed to convert address to scalar")?;
 
 		// Domain
 		let mut key_fixed: [u8; 32] = *self.key.as_fixed_bytes();
@@ -251,7 +252,7 @@ pub fn address_from_signed_att(
 	let public_key = signed_attestation.recover_public_key()?;
 
 	// Get the address from the public key
-	address_from_public_key(&public_key)
+	Ok(address_from_public_key(&public_key))
 }
 
 /// Constructs the contract attestation data from a signed attestation.

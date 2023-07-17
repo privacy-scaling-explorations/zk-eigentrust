@@ -22,7 +22,7 @@ use std::sync::Arc;
 /// Compiles the AttestationStation contract.
 pub fn compile_as() -> Result<CompilerOutput, EigenError> {
 	let path = get_assets_path()
-		.map_err(|e| EigenError::ParsingError(e.to_string()))?
+		.map_err(|_| EigenError::FileIOError("Error getting assets path".to_string()))?
 		.join("AttestationStation.sol");
 
 	let compiler_output = Solc::default()
@@ -47,13 +47,13 @@ pub fn gen_as_bindings() -> Result<(), EigenError> {
 			.clone()
 			.abi
 			.ok_or_else(|| EigenError::ParsingError("Missing contract ABI".to_string()))?;
-		let abi_json =
-			serde_json::to_string(&abi).map_err(|e| EigenError::ParsingError(e.to_string()))?;
+		let abi_json = serde_json::to_string(&abi)
+			.map_err(|_| EigenError::ParsingError("Error serializing ABI".to_string()))?;
 
 		let bindings = Abigen::new(name, abi_json)
-			.map_err(|e| EigenError::ParsingError(e.to_string()))?
+			.map_err(|_| EigenError::ParsingError("Error generating bindings".to_string()))?
 			.generate()
-			.map_err(|e| EigenError::ParsingError(e.to_string()))?;
+			.map_err(|_| EigenError::ParsingError("Error generating bindings".to_string()))?;
 
 		bindings
 			.write_to_file(get_file_path("attestation_station", FileType::Rs).unwrap())
@@ -79,7 +79,9 @@ pub async fn deploy_as(signer: Arc<ClientSigner>) -> Result<Address, EigenError>
 
 		match factory
 			.deploy(())
-			.map_err(|e| EigenError::ContractCompilationError(e.to_string()))?
+			.map_err(|_| {
+				EigenError::ContractCompilationError("Error deploying contract".to_string())
+			})?
 			.send()
 			.await
 		{
@@ -98,7 +100,7 @@ pub async fn deploy_as(signer: Arc<ClientSigner>) -> Result<Address, EigenError>
 /// Returns a vector of ECDSA private keys derived from the given mnemonic phrase.
 pub fn ecdsa_secret_from_mnemonic(
 	mnemonic: &str, count: u32,
-) -> Result<Vec<SecretKey>, &'static str> {
+) -> Result<Vec<SecretKey>, EigenError> {
 	let mnemonic = Mnemonic::<English>::new_from_phrase(mnemonic).unwrap();
 	let mut keys = Vec::new();
 
@@ -125,7 +127,7 @@ pub fn ecdsa_secret_from_mnemonic(
 }
 
 /// Constructs an Ethereum address for the given ECDSA public key.
-pub fn address_from_public_key(pub_key: &ECDSAPublicKey) -> Result<Address, &'static str> {
+pub fn address_from_public_key(pub_key: &ECDSAPublicKey) -> Address {
 	let pub_key_bytes: [u8; 65] = pub_key.serialize_uncompressed();
 
 	// Hash with Keccak256
@@ -134,11 +136,11 @@ pub fn address_from_public_key(pub_key: &ECDSAPublicKey) -> Result<Address, &'st
 	// Get the last 20 bytes of the hash
 	let address_bytes = &hashed_public_key[hashed_public_key.len() - 20..];
 
-	Ok(Address::from_slice(address_bytes))
+	Address::from_slice(address_bytes)
 }
 
 /// Constructs a Scalar from the given Ethereum address.
-pub fn scalar_from_address(address: &Address) -> Result<Scalar, &'static str> {
+pub fn scalar_from_address(address: &Address) -> Result<Scalar, EigenError> {
 	let mut address_fixed = address.to_fixed_bytes();
 	address_fixed.reverse();
 
@@ -147,7 +149,11 @@ pub fn scalar_from_address(address: &Address) -> Result<Scalar, &'static str> {
 
 	let about = match Scalar::from_bytes(&address_bytes).is_some().into() {
 		true => Scalar::from_bytes(&address_bytes).unwrap(),
-		false => return Err("Failed to convert about address to scalar"),
+		false => {
+			return Err(EigenError::ParsingError(
+				"Failed to convert address to scalar".to_string(),
+			))
+		},
 	};
 
 	Ok(about)
@@ -197,7 +203,7 @@ mod tests {
 
 		let pub_key = PublicKey::from_secret_key(&secp, &secret_key);
 
-		let recovered_address = address_from_public_key(&pub_key).unwrap();
+		let recovered_address = address_from_public_key(&pub_key);
 
 		let expected_address =
 			Wallet::from(SigningKey::from_bytes(secret_key_as_bytes.as_ref()).unwrap()).address();
