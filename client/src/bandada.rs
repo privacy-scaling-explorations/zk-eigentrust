@@ -18,11 +18,8 @@ impl BandadaApi {
 	/// Creates a new `BandadaApi`.
 	pub fn new(base_url: &str) -> Result<Self, EigenError> {
 		dotenv().ok();
-		let key = var("BANDADA_API_KEY").map_err(|_| {
-			EigenError::ConfigurationError(
-				"BANDADA_API_KEY environment variable is not set.".to_string(),
-			)
-		})?;
+		let key =
+			var("BANDADA_API_KEY").map_err(|e| EigenError::ConfigurationError(e.to_string()))?;
 
 		Ok(Self { base_url: base_url.to_string(), client: Client::new(), key })
 	}

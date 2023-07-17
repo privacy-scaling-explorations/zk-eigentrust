@@ -5,6 +5,7 @@
 
 use crate::{
 	att_station::{AttestationCreatedFilter, AttestationData as ContractAttestationData},
+	error::EigenError,
 	eth::{address_from_public_key, scalar_from_address},
 	NUM_BITS, NUM_LIMBS,
 };
@@ -52,7 +53,7 @@ impl Attestation {
 	}
 
 	/// Constructs a new attestation struct from an attestation log.
-	pub fn from_log(log: &AttestationCreatedFilter) -> Result<Self, &'static str> {
+	pub fn from_log(log: &AttestationCreatedFilter) -> Result<Self, EigenError> {
 		let payload = AttestationPayload::from_log(log)?;
 
 		Ok(Self {
@@ -64,10 +65,9 @@ impl Attestation {
 	}
 
 	/// Converts the attestation to the scalar representation.
-	pub fn to_attestation_fr(&self) -> Result<AttestationFr, &'static str> {
+	pub fn to_attestation_fr(&self) -> Result<AttestationFr, EigenError> {
 		// About
-		let about =
-			scalar_from_address(&self.about).map_err(|_| "Failed to convert address to scalar")?;
+		let about = scalar_from_address(&self.about)?;
 
 		// Domain
 		let mut key_fixed: [u8; 32] = *self.key.as_fixed_bytes();
@@ -78,7 +78,11 @@ impl Attestation {
 
 		let domain = match Scalar::from_bytes(&key_bytes).is_some().into() {
 			true => Scalar::from_bytes(&key_bytes).unwrap(),
-			false => return Err("Failed to convert key to scalar"),
+			false => {
+				return Err(EigenError::ParsingError(
+					"Failed to convert key to scalar".to_string(),
+				))
+			},
 		};
 
 		// Value
@@ -119,9 +123,11 @@ impl AttestationPayload {
 	}
 
 	/// Converts a vector of bytes into the struct.
-	pub fn from_bytes(bytes: Vec<u8>) -> Result<Self, &'static str> {
+	pub fn from_bytes(bytes: Vec<u8>) -> Result<Self, EigenError> {
 		if bytes.len() != 98 {
-			return Err("Input bytes vector should be of length 98");
+			return Err(EigenError::ParsingError(
+				"Input bytes vector should be of length 98".to_string(),
+			));
 		}
 
 		let mut sig_r = [0u8; 32];
@@ -138,14 +144,12 @@ impl AttestationPayload {
 	}
 
 	/// Creates a new AttestationPayload from an Attestation log
-	pub fn from_log(log: &AttestationCreatedFilter) -> Result<Self, &'static str> {
+	pub fn from_log(log: &AttestationCreatedFilter) -> Result<Self, EigenError> {
 		Self::from_bytes(log.val.to_vec())
 	}
 
 	/// Creates an AttestationPayload from a SignedAttestation.
-	pub fn from_signed_attestation(
-		signed_attestation: &SignedAttestation,
-	) -> Result<Self, &'static str> {
+	pub fn from_signed_attestation(signed_attestation: &SignedAttestation) -> Self {
 		let (rec_id, signature) = signed_attestation.signature.serialize_compact();
 
 		let mut sig_r = [0u8; 32];
@@ -161,7 +165,7 @@ impl AttestationPayload {
 		let mut message = signed_attestation.attestation.message.to_bytes();
 		message.reverse();
 
-		Ok(Self { sig_r, sig_s, rec_id, value, message })
+		Self { sig_r, sig_s, rec_id, value, message }
 	}
 
 	/// Converts the struct into a vector of bytes.
@@ -218,13 +222,13 @@ impl SignedAttestation {
 	}
 
 	/// Recover the public key from the attestation signature
-	pub fn recover_public_key(&self) -> Result<ECDSAPublicKey, &'static str> {
+	pub fn recover_public_key(&self) -> Result<ECDSAPublicKey, EigenError> {
 		let message = self.attestation.hash().to_bytes();
 
 		let public_key = self
 			.signature
 			.recover(&Message::from_slice(message.as_slice()).unwrap())
-			.map_err(|_| "Failed to recover public key")?;
+			.map_err(|e| EigenError::RecoveryError(e.to_string()))?;
 
 		Ok(public_key)
 	}
@@ -247,7 +251,7 @@ impl Default for SignedAttestation {
 /// Recovers the signing Ethereum address from a signed attestation.
 pub fn address_from_signed_att(
 	signed_attestation: &SignedAttestation,
-) -> Result<Address, &'static str> {
+) -> Result<Address, EigenError> {
 	// Get the signing key
 	let public_key = signed_attestation.recover_public_key()?;
 
@@ -257,9 +261,7 @@ pub fn address_from_signed_att(
 
 /// Constructs the contract attestation data from a signed attestation.
 /// The return of this function is the actual data stored on the contract.
-pub fn att_data_from_signed_att(
-	signed_attestation: &SignedAttestation,
-) -> Result<ContractAttestationData, &'static str> {
+pub fn att_data_from_signed_att(signed_attestation: &SignedAttestation) -> ContractAttestationData {
 	// Recover the about Ethereum address from the signed attestation
 	let mut about_bytes = signed_attestation.attestation.about.to_bytes();
 	about_bytes.reverse();
@@ -272,19 +274,15 @@ pub fn att_data_from_signed_att(
 	key[..DOMAIN_PREFIX_LEN].copy_from_slice(&DOMAIN_PREFIX);
 
 	// Get the payload bytes
-	let payload = AttestationPayload::from_signed_attestation(signed_attestation)?;
+	let payload = AttestationPayload::from_signed_attestation(signed_attestation);
 
-	Ok(ContractAttestationData(
-		address,
-		key,
-		payload.to_bytes().into(),
-	))
+	ContractAttestationData(address, key, payload.to_bytes().into())
 }
 
 /// Constructs a SignedAttestation from an attestation log.
 pub fn signed_att_from_log(
 	log: &AttestationCreatedFilter,
-) -> Result<SignedAttestation, &'static str> {
+) -> Result<SignedAttestation, EigenError> {
 	let payload = AttestationPayload::from_log(log)?;
 	let att_fr = Attestation::from_log(log)?.to_attestation_fr()?;
 
@@ -386,8 +384,7 @@ mod tests {
 		let signed_attestation = SignedAttestation { attestation, signature };
 
 		// Convert the signed attestation to attestation payload
-		let attestation_payload =
-			AttestationPayload::from_signed_attestation(&signed_attestation).unwrap();
+		let attestation_payload = AttestationPayload::from_signed_attestation(&signed_attestation);
 
 		// Check the attestation payload
 		let (recid, sig) = signed_attestation.signature.serialize_compact();
@@ -543,7 +540,7 @@ mod tests {
 
 		let signed_attestation = SignedAttestation { attestation: attestation_fr, signature };
 
-		let contract_att_data = att_data_from_signed_att(&signed_attestation).unwrap();
+		let contract_att_data = att_data_from_signed_att(&signed_attestation);
 
 		let expected_address = Address::from(about_bytes);
 		assert_eq!(contract_att_data.0, expected_address);
@@ -557,10 +554,7 @@ mod tests {
 		assert_eq!(contract_att_data.1, expected_key);
 
 		let expected_payload: Bytes =
-			AttestationPayload::from_signed_attestation(&signed_attestation)
-				.unwrap()
-				.to_bytes()
-				.into();
+			AttestationPayload::from_signed_attestation(&signed_attestation).to_bytes().into();
 		assert_eq!(contract_att_data.2, expected_payload);
 	}
 }

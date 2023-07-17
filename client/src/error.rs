@@ -23,6 +23,10 @@ pub enum EigenError {
 	#[error("ContractCompilationError: {0}")]
 	ContractCompilationError(String),
 
+	/// Conversion error
+	#[error("ConversionError: {0}")]
+	ConversionError(String),
+
 	/// File read/write error
 	#[error("FileIOError: {0}")]
 	FileIOError(String),

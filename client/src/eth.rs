@@ -21,9 +21,7 @@ use std::sync::Arc;
 
 /// Compiles the AttestationStation contract.
 pub fn compile_as() -> Result<CompilerOutput, EigenError> {
-	let path = get_assets_path()
-		.map_err(|_| EigenError::FileIOError("Error getting assets path".to_string()))?
-		.join("AttestationStation.sol");
+	let path = get_assets_path()?.join("AttestationStation.sol");
 
 	let compiler_output = Solc::default()
 		.compile_source(path)

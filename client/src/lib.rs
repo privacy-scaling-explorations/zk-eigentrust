@@ -160,43 +160,34 @@ impl Client {
 	/// Submits an attestation to the attestation station.
 	pub async fn attest(&self, attestation: Attestation) -> Result<(), EigenError> {
 		let ctx = SECP256K1;
-		let secret_keys = ecdsa_secret_from_mnemonic(&self.mnemonic, 1).map_err(|_| {
-			EigenError::UnknownError("Secret key extraction from mnemonic failed".to_string())
-		})?;
+		let secret_keys = ecdsa_secret_from_mnemonic(&self.mnemonic, 1)?;
 
 		// Get AttestationFr
-		let attestation_fr = attestation
-			.to_attestation_fr()
-			.map_err(|e| EigenError::RecoveryError(e.to_string()))?;
+		let attestation_fr = attestation.to_attestation_fr()?;
 
 		// Format for signature
 		let att_hash = attestation_fr.hash();
 
 		// Sign attestation
 		let signature: RecoverableSignature = ctx.sign_ecdsa_recoverable(
-			&Message::from_slice(att_hash.to_bytes().as_slice()).map_err(|_| {
-				EigenError::UnknownError("Failed to create message from hash".to_string())
-			})?,
+			&Message::from_slice(att_hash.to_bytes().as_slice())
+				.map_err(|e| EigenError::RecoveryError(e.to_string()))?,
 			&secret_keys[0],
 		);
 
 		let signed_attestation = SignedAttestation::new(attestation_fr, signature);
 
 		let as_address_res = self.config.as_address.parse::<Address>();
-		let as_address = as_address_res
-			.map_err(|_| EigenError::ParsingError("Address parsing failed".to_string()))?;
+		let as_address = as_address_res.map_err(|e| EigenError::ParsingError(e.to_string()))?;
 		let as_contract = AttestationStation::new(as_address, self.signer.clone());
 
 		// Verify signature is recoverable
-		let recovered_pubkey = signed_attestation
-			.recover_public_key()
-			.map_err(|e| EigenError::RecoveryError(e.to_string()))?;
+		let recovered_pubkey = signed_attestation.recover_public_key()?;
 		let recovered_address = address_from_public_key(&recovered_pubkey);
 		assert!(recovered_address == self.signer.address());
 
 		// Stored contract data
-		let contract_data = att_data_from_signed_att(&signed_attestation)
-			.map_err(|e| EigenError::RecoveryError(e.to_string()))?;
+		let contract_data = att_data_from_signed_att(&signed_attestation);
 
 		let tx_call = as_contract.attest(vec![contract_data]);
 		let tx_res = tx_call.send().await;
@@ -225,8 +216,7 @@ impl Client {
 				let att = Attestation::from_log(&attestation_filter)?;
 				Result::Ok((signed_att, att))
 			})
-			.collect::<Result<Vec<_>, &'static str>>()
-			.unwrap();
+			.collect::<Result<Vec<_>, EigenError>>()?;
 
 		// Construct a set to hold unique participant addresses
 		let mut participants_set = BTreeSet::<Address>::new();

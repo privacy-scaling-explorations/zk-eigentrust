@@ -18,7 +18,7 @@ use ethers::{
 	providers::Http,
 	types::{H160, H256},
 };
-use log::{error, info};
+use log::info;
 use std::str::FromStr;
 
 #[derive(Parser)]
@@ -135,25 +135,21 @@ impl AttestData {
 			.as_ref()
 			.ok_or_else(|| EigenError::ParsingError("Missing score".to_string()))?
 			.parse::<u8>()
-			.map_err(|_| {
-				EigenError::ParsingError(
-					"Failed to parse score. It must be a number between 0 and 255.".to_string(),
-				)
-			})?;
+			.map_err(|e| EigenError::ParsingError(e.to_string()))?;
 
 		// Parse message
 		let message = match &self.message {
 			Some(message_str) => {
 				let message = H256::from_str(message_str)
-					.map_err(|_| EigenError::ParsingError("Failed to parse message".to_string()))?;
+					.map_err(|e| EigenError::ParsingError(e.to_string()))?;
 				Some(message)
 			},
 			None => None,
 		};
 
 		// Key
-		let domain = H160::from_str(&config.domain)
-			.map_err(|_| EigenError::ParsingError("Failed to parse domain".to_string()))?;
+		let domain =
+			H160::from_str(&config.domain).map_err(|e| EigenError::ParsingError(e.to_string()))?;
 		let mut key_bytes: [u8; 32] = [0; 32];
 		key_bytes[..DOMAIN_PREFIX_LEN].copy_from_slice(&DOMAIN_PREFIX);
 		key_bytes[DOMAIN_PREFIX_LEN..].copy_from_slice(domain.as_bytes());
@@ -179,10 +175,7 @@ impl FromStr for Action {
 pub async fn handle_attestations(config: ClientConfig) -> Result<(), EigenError> {
 	let client = Client::new(config);
 
-	let attestations = client
-		.get_attestations()
-		.await
-		.map_err(|_| EigenError::AttestationError("Failed to get attestations.".to_string()))?;
+	let attestations = client.get_attestations().await?;
 
 	if attestations.is_empty() {
 		return Err(EigenError::AttestationError(
@@ -190,24 +183,23 @@ pub async fn handle_attestations(config: ClientConfig) -> Result<(), EigenError>
 		));
 	}
 
-	let attestation_records =
-		attestations.into_iter().map(|log| AttestationRecord::from_log(&log)).collect::<Vec<_>>();
+	let attestation_records = attestations
+		.into_iter()
+		.map(|log| AttestationRecord::from_log(&log))
+		.collect::<Result<Vec<AttestationRecord>, EigenError>>()?;
 
 	let filepath = get_file_path("attestations", FileType::Csv)?;
 
 	let mut storage = CSVFileStorage::<AttestationRecord>::new(filepath);
-	if let Err(e) = storage.save(attestation_records) {
-		error!("Failed to save attestation records: {:?}", e);
-		Err(EigenError::FileIOError(
-			"Failed to save attestation records".to_string(),
-		))
-	} else {
-		info!(
-			"Attestations saved at \"{}\".",
-			storage.filepath().display()
-		);
-		Ok(())
-	}
+
+	storage.save(attestation_records)?;
+
+	info!(
+		"Attestations saved at \"{}\".",
+		storage.filepath().display()
+	);
+
+	Ok(())
 }
 
 /// Handles the bandada subcommand.
@@ -233,9 +225,7 @@ pub async fn handle_bandada(config: &ClientConfig, data: BandadaData) -> Result<
 			let scores_storage = CSVFileStorage::<ScoreRecord>::new("scores.csv".into());
 
 			// Read scores from the CSV file using load method from the Storage trait
-			let scores = scores_storage
-				.load()
-				.map_err(|_| EigenError::FileIOError("Failed to load scores.".to_string()))?;
+			let scores = scores_storage.load()?;
 
 			let participant_record = scores
 				.iter()
@@ -244,7 +234,7 @@ pub async fn handle_bandada(config: &ClientConfig, data: BandadaData) -> Result<
 					"Participant not found in score records.".to_string(),
 				))?;
 
-			let participant_score: u32 = participant_record.score_fr().parse().map_err(|_| {
+			let participant_score: u32 = participant_record.score_fr().parse().map_err(|e| {
 				EigenError::ParsingError("Failed to parse participant score.".to_string())
 			})?;
 
@@ -282,9 +272,7 @@ pub async fn handle_scores(
 		AttestationsOrigin::Local => {
 			let att_storage = CSVFileStorage::<AttestationRecord>::new(att_fp);
 
-			let records = att_storage
-				.load()
-				.map_err(|_| EigenError::FileIOError("Failed to load attestations.".to_string()))?;
+			let records = att_storage.load()?;
 
 			// Verify there are attestations
 			if records.is_empty() {
@@ -302,12 +290,8 @@ pub async fn handle_scores(
 			handle_attestations(client.get_config().clone()).await?;
 
 			let att_storage = CSVFileStorage::<AttestationRecord>::new(att_fp);
-			let attestations: Vec<AttestationCreatedFilter> = att_storage
-				.load()
-				.map_err(|_| EigenError::FileIOError("Failed to load attestations.".to_string()))?
-				.into_iter()
-				.map(|record| record.to_log().unwrap())
-				.collect();
+			let attestations: Vec<AttestationCreatedFilter> =
+				att_storage.load()?.into_iter().map(|record| record.to_log().unwrap()).collect();
 
 			attestations
 		},
@@ -325,23 +309,22 @@ pub async fn handle_scores(
 
 	// Save scores
 	let mut records_storage = CSVFileStorage::<ScoreRecord>::new(scores_fp);
-	match records_storage.save(score_records) {
-		Err(e) => Err(EigenError::FileIOError(e.to_string())),
-		_ => {
-			info!(
-				"Scores saved at \"{}\".",
-				records_storage.filepath().display()
-			);
-			Ok(())
-		},
-	}
+
+	records_storage.save(score_records)?;
+
+	info!(
+		"Attestations saved at \"{}\".",
+		records_storage.filepath().display()
+	);
+
+	Ok(())
 }
 
 /// Handles the CLI project configuration update.
 pub fn handle_update(config: &mut ClientConfig, data: UpdateData) -> Result<(), EigenError> {
 	if let Some(as_address) = data.as_address {
 		config.as_address = Address::from_str(&as_address)
-			.map_err(|_| EigenError::ParsingError("Failed to parse address.".to_string()))?
+			.map_err(|e| EigenError::ParsingError(e.to_string()))?
 			.to_string();
 	}
 
@@ -351,28 +334,23 @@ pub fn handle_update(config: &mut ClientConfig, data: UpdateData) -> Result<(), 
 	}
 
 	if let Some(band_th) = data.band_th {
-		band_th.parse::<u32>().map_err(|_| {
-			EigenError::ParsingError("Failed to parse group threshold.".to_string())
-		})?;
+		band_th.parse::<u32>().map_err(|e| EigenError::ParsingError(e.to_string()))?;
 		config.band_th = band_th;
 	}
 
 	if let Some(band_url) = data.band_url {
-		Http::from_str(&band_url).map_err(|_| {
-			EigenError::ParsingError("Failed to parse bandada API base url.".to_string())
-		})?;
+		Http::from_str(&band_url).map_err(|e| EigenError::ParsingError(e.to_string()))?;
 		config.band_url = band_url;
 	}
 
 	if let Some(domain) = data.domain {
 		config.as_address = H160::from_str(&domain)
-			.map_err(|_| EigenError::ParsingError("Failed to parse domain".to_string()))?
+			.map_err(|e| EigenError::ParsingError(e.to_string()))?
 			.to_string();
 	}
 
 	if let Some(node_url) = data.node_url {
-		Http::from_str(&node_url)
-			.map_err(|_| EigenError::ParsingError("Failed to parse node url.".to_string()))?;
+		Http::from_str(&node_url).map_err(|e| EigenError::ParsingError(e.to_string()))?;
 		config.node_url = node_url;
 	}
 

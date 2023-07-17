@@ -195,12 +195,12 @@ pub struct AttestationRecord {
 
 impl AttestationRecord {
 	/// Creates a new AttestationRecord from an Attestation log.
-	pub fn from_log(log: &AttestationCreatedFilter) -> Self {
-		let payload = AttestationPayload::from_log(log).unwrap();
-		let attestation = Attestation::from_log(log).unwrap();
+	pub fn from_log(log: &AttestationCreatedFilter) -> Result<Self, EigenError> {
+		let payload = AttestationPayload::from_log(log)?;
+		let attestation = Attestation::from_log(log)?;
 		let (sig_r, sig_s, rec_id) = payload.get_raw_signature();
 
-		Self {
+		Ok(Self {
 			about: Self::encode_bytes_to_hex(attestation.about.as_fixed_bytes()),
 			key: Self::encode_bytes_to_hex(attestation.key.as_fixed_bytes()),
 			value: attestation.value.to_string(),
@@ -208,11 +208,11 @@ impl AttestationRecord {
 			sig_r: Self::encode_bytes_to_hex(&sig_r),
 			sig_s: Self::encode_bytes_to_hex(&sig_s),
 			rec_id: rec_id.to_string(),
-		}
+		})
 	}
 
 	/// Returns a log from an AttestationRecord.
-	pub fn to_log(&self) -> Result<AttestationCreatedFilter, &'static str> {
+	pub fn to_log(&self) -> Result<AttestationCreatedFilter, EigenError> {
 		// Use helper functions to simplify the conversion process
 		let about = Address::from_slice(&Self::decode_hex_to_bytes(&self.about)?);
 		let key = Self::parse_bytes32(&self.key)?;
@@ -229,18 +229,18 @@ impl AttestationRecord {
 		// Recover the signature
 		let attestation =
 			Attestation::new(about, H256::from(key), value, Some(H256::from(message)));
-		let att_fr = attestation.to_attestation_fr().unwrap();
+		let att_fr = attestation.to_attestation_fr()?;
 		let recoverable_sig = payload.get_signature();
 
 		let signed_att = SignedAttestation::new(att_fr, recoverable_sig);
-		let creator = address_from_signed_att(&signed_att).unwrap();
+		let creator = address_from_signed_att(&signed_att)?;
 
 		Ok(AttestationCreatedFilter { about, key, val, creator })
 	}
 
 	// Helper function for decoding hexadecimal string into a byte array
-	fn decode_hex_to_bytes(hex_str: &str) -> Result<Vec<u8>, &'static str> {
-		hex::decode(&hex_str[2..]).map_err(|_| "Failed to decode hexadecimal string")
+	fn decode_hex_to_bytes(hex_str: &str) -> Result<Vec<u8>, EigenError> {
+		hex::decode(&hex_str[2..]).map_err(|e| EigenError::ParsingError(e.to_string()))
 	}
 
 	// Helper function for encoding byte array into hexadecimal string
@@ -249,16 +249,17 @@ impl AttestationRecord {
 	}
 
 	// Helper function for parsing string into a byte array
-	fn parse_bytes32(hex_str: &str) -> Result<[u8; 32], &'static str> {
+	fn parse_bytes32(hex_str: &str) -> Result<[u8; 32], EigenError> {
 		let bytes = Self::decode_hex_to_bytes(hex_str)?;
-		let bytes_array: [u8; 32] =
-			bytes.try_into().map_err(|_| "Failed to convert into byte array")?;
+		let bytes_array: [u8; 32] = bytes.try_into().map_err(|_| {
+			EigenError::ConversionError("Failed to convert into byte array".to_string())
+		})?;
 		Ok(bytes_array)
 	}
 
 	// Helper function for parsing string into u8
-	fn parse_u8(value: &str) -> Result<u8, &'static str> {
-		value.parse::<u8>().map_err(|_| "Failed to parse into u8")
+	fn parse_u8(value: &str) -> Result<u8, EigenError> {
+		value.parse::<u8>().map_err(|e| EigenError::ParsingError(e.to_string()))
 	}
 }
 
