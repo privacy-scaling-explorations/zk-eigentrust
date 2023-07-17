@@ -1,8 +1,3 @@
-use halo2::{
-	circuit::{SimpleFloorPlanner, Value},
-	plonk::{Circuit, Selector},
-};
-
 use crate::{
 	gadgets::{
 		bits2num::Bits2NumChip,
@@ -11,6 +6,10 @@ use crate::{
 		set::{SelectItemChip, SetPositionChip},
 	},
 	Chip, Chipset, CommonConfig, FieldExt, RegionCtx, ADVICE,
+};
+use halo2::{
+	circuit::{Layouter, SimpleFloorPlanner, Value},
+	plonk::{Circuit, ConstraintSystem, Error, Selector},
 };
 
 /// Native version of checking score threshold
@@ -37,8 +36,8 @@ pub struct ThresholdCircuit<
 > {
 	sets: Vec<Value<F>>,
 	scores: Vec<Value<F>>,
-	target_score_num_decomposed: Vec<Value<F>>,
-	target_score_den_decomposed: Vec<Value<F>>,
+	num_decomposed: Vec<Value<F>>,
+	den_decomposed: Vec<Value<F>>,
 }
 
 impl<
@@ -53,11 +52,9 @@ impl<
 	pub fn new(sets: &[F], scores: &[F], num_decomposed: &[F], den_decomposed: &[F]) -> Self {
 		let sets = sets.iter().map(|s| Value::known(s.clone())).collect();
 		let scores = scores.iter().map(|s| Value::known(s.clone())).collect();
-		let target_score_num_decomposed =
-			(0..NUM_LIMBS).map(|i| Value::known(num_decomposed[i])).collect();
-		let target_score_den_decomposed =
-			(0..NUM_LIMBS).map(|i| Value::known(den_decomposed[i])).collect();
-		Self { sets, scores, target_score_den_decomposed, target_score_num_decomposed }
+		let num_decomposed = (0..NUM_LIMBS).map(|i| Value::known(num_decomposed[i])).collect();
+		let den_decomposed = (0..NUM_LIMBS).map(|i| Value::known(den_decomposed[i])).collect();
+		Self { sets, scores, den_decomposed, num_decomposed }
 	}
 }
 
@@ -75,12 +72,12 @@ impl<
 	fn without_witnesses(&self) -> Self {
 		let sets = (0..NUM_NEIGHBOURS).map(|_| Value::unknown()).collect();
 		let scores = (0..NUM_NEIGHBOURS).map(|_| Value::unknown()).collect();
-		let target_score_num_decomposed = (0..NUM_LIMBS).map(|_| Value::unknown()).collect();
-		let target_score_den_decomposed = (0..NUM_LIMBS).map(|_| Value::unknown()).collect();
-		Self { sets, scores, target_score_num_decomposed, target_score_den_decomposed }
+		let num_decomposed = (0..NUM_LIMBS).map(|_| Value::unknown()).collect();
+		let den_decomposed = (0..NUM_LIMBS).map(|_| Value::unknown()).collect();
+		Self { sets, scores, num_decomposed, den_decomposed }
 	}
 
-	fn configure(meta: &mut halo2::plonk::ConstraintSystem<F>) -> Self::Config {
+	fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
 		let common = CommonConfig::new(meta);
 		let main = MainConfig::new(MainChip::configure(&common, meta));
 
@@ -95,8 +92,8 @@ impl<
 	}
 
 	fn synthesize(
-		&self, config: Self::Config, mut layouter: impl halo2::circuit::Layouter<F>,
-	) -> Result<(), halo2::plonk::Error> {
+		&self, config: Self::Config, mut layouter: impl Layouter<F>,
+	) -> Result<(), Error> {
 		let (
 			num_neighbor,
 			init_score,
@@ -168,6 +165,47 @@ impl<
 			},
 		)?;
 
+		// check every element of "num_decomposed"
+		let num_decomposed_limbs = layouter.assign_region(
+			|| "num_decomposed",
+			|region| {
+				let mut limbs = vec![];
+
+				let mut ctx = RegionCtx::new(region, 0);
+				for i in 0..self.num_decomposed.len() {
+					let limb = ctx
+						.assign_advice(config.common.advice[i % ADVICE], self.num_decomposed[i])?;
+					limbs.push(limb);
+
+					if i % ADVICE == ADVICE - 1 {
+						ctx.next();
+					}
+				}
+
+				Ok(limbs)
+			},
+		)?;
+
+		// check every element of "den_decomposed"
+		let den_decomposed_limbs = layouter.assign_region(
+			|| "den_decomposed",
+			|region| {
+				let mut limbs = vec![];
+
+				let mut ctx = RegionCtx::new(region, 0);
+				for i in 0..self.den_decomposed.len() {
+					let limb = ctx
+						.assign_advice(config.common.advice[i % ADVICE], self.den_decomposed[i])?;
+					limbs.push(limb);
+
+					if i % ADVICE == ADVICE - 1 {
+						ctx.next();
+					}
+				}
+				Ok(limbs)
+			},
+		)?;
+
 		// TODO: verify if the "sets" & "scores" are valid, using aggregation verify
 
 		// obtain the score of "target_addr" from "scores", using SetPositionChip & SelectItemChip
@@ -211,29 +249,6 @@ impl<
 			},
 		)?;
 
-		// check every element of "num_decomposed"
-		let num_decomposed_limbs = layouter.assign_region(
-			|| "num_decomposed",
-			|region| {
-				let mut limbs = vec![];
-
-				let mut ctx = RegionCtx::new(region, 0);
-				for i in 0..self.target_score_num_decomposed.len() {
-					let limb = ctx.assign_advice(
-						config.common.advice[i % ADVICE],
-						self.target_score_num_decomposed[i],
-					)?;
-					limbs.push(limb);
-
-					if i % ADVICE == ADVICE - 1 {
-						ctx.next();
-					}
-				}
-
-				Ok(limbs)
-			},
-		)?;
-
 		for i in 0..num_decomposed_limbs.len() {
 			// assert!(limb < max_limb_value)
 			let lt_eq_chipset =
@@ -255,28 +270,6 @@ impl<
 				},
 			)?;
 		}
-
-		// check every element of "den_decomposed"
-		let den_decomposed_limbs = layouter.assign_region(
-			|| "den_decomposed",
-			|region| {
-				let mut limbs = vec![];
-
-				let mut ctx = RegionCtx::new(region, 0);
-				for i in 0..self.target_score_den_decomposed.len() {
-					let limb = ctx.assign_advice(
-						config.common.advice[i % ADVICE],
-						self.target_score_den_decomposed[i],
-					)?;
-					limbs.push(limb);
-
-					if i % ADVICE == ADVICE - 1 {
-						ctx.next();
-					}
-				}
-				Ok(limbs)
-			},
-		)?;
 
 		for i in 0..den_decomposed_limbs.len() {
 			// assert!(limb < max_limb_value)
