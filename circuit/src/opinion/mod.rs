@@ -5,7 +5,7 @@ use crate::{
 	ecc::generic::{AssignedAux, AssignedEcPoint},
 	ecdsa::{AssignedPublicKey, AssignedSignature, EcdsaChipset, EcdsaConfig},
 	gadgets::{
-		main::{IsEqualChipset, IsZeroChipset, MainConfig, SelectChipset},
+		main::{IsEqualChipset, IsZeroChipset, MainConfig, MulAddChipset, SelectChipset},
 		set::{SetChipset, SetConfig},
 	},
 	integer::AssignedInteger,
@@ -119,10 +119,10 @@ pub struct OpinionChipset<
 	P,
 	EC,
 > where
-	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::Scalar, N, NUM_LIMBS, NUM_BITS>,
 	EC: EccParams<C>,
 	C::Base: FieldExt,
-	C::ScalarExt: FieldExt,
+	C::Scalar: FieldExt,
 	H: HasherChipset<N, WIDTH>,
 	S: SpongeHasherChipset<N>,
 {
@@ -156,10 +156,10 @@ impl<
 		EC,
 	> OpinionChipset<C, N, NUM_LIMBS, NUM_BITS, NUM_NEIGHBOURS, H, S, P, EC>
 where
-	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::Scalar, N, NUM_LIMBS, NUM_BITS>,
 	EC: EccParams<C>,
 	C::Base: FieldExt,
-	C::ScalarExt: FieldExt,
+	C::Scalar: FieldExt,
 	H: HasherChipset<N, WIDTH>,
 	S: SpongeHasherChipset<N>,
 {
@@ -182,6 +182,26 @@ where
 			aux,
 			_hasher: PhantomData,
 		}
+	}
+
+	/// Create a new chip.
+	pub fn left_shifters(
+		common: &CommonConfig, mut layouter: impl Layouter<N>,
+	) -> [AssignedCell<N, N>; NUM_LIMBS] {
+		let left_shifters_native = P::left_shifters();
+		let mut left_shifters = [(); NUM_LIMBS].map(|_| None);
+		layouter.assign_region(
+			|| "assign_left_shifters",
+			|region: Region<'_, N>| {
+				let mut ctx = RegionCtx::new(region, 0);
+				for i in 0..NUM_LIMBS {
+					left_shifters[i] =
+						Some(ctx.assign_fixed(common.fixed[i], left_shifters_native[i])?);
+				}
+				Ok(())
+			},
+		);
+		left_shifters.map(|x| x.unwrap())
 	}
 }
 
@@ -216,12 +236,6 @@ where
 		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<N>,
 	) -> Result<Self::Output, Error> {
 		// TODO: Checks given set for the public key
-		//let set_chip = SetChipset::new(self.set, self.public_key);
-		//let is_public_key_in_set = set_chip.synthesize(
-		//	common,
-		//	&config.set,
-		//	layouter.namespace(|| "set_check_pub_key"),
-		//)?;
 
 		let (zero, one) = layouter.assign_region(
 			|| "assign_zero",
@@ -316,18 +330,31 @@ where
 
 			let signature = self.attestations[i].signature.clone();
 
+			let left_shifters = Self::left_shifters(common, layouter.namespace(|| "left_shifters"));
+			let mut compose_msg = zero.clone();
+			for i in 0..NUM_LIMBS {
+				let muladd_chipset =
+					MulAddChipset::new(self.msg_hash[i].limbs[i], left_shifters[i], compose_msg);
+				compose_msg = muladd_chipset.synthesize(
+					common,
+					&config.main,
+					layouter.namespace(|| "mul_add"),
+				)?;
+			}
+
 			//TODO: Constraint equality for the msg_hash from hasher and constructor
-			// layouter.assign_region(
-			// 	|| "constraint equality",
-			// 	|region: Region<'_, N>| {
-			// 		let mut ctx = RegionCtx::new(region, 0);
-			// 		let val = P::compose(self.msg_hash[i].integer.limbs);
-			// 		let msg_hash = ctx.assign_advice(common.advice[0], Value::known(val))?;
-			// 		ctx.constrain_equal(att_hash[0], msg_hash);
-			// 		ctx.constrain_equal(equality_check_set_about, one);
-			// 		Ok(())
-			// 	},
-			// )?;
+			// Constraint equality for the set and att.about
+			layouter.assign_region(
+				|| "constraint equality",
+				|region: Region<'_, N>| {
+					let mut ctx = RegionCtx::new(region, 0);
+					let val = P::compose(self.msg_hash[i].integer.limbs);
+					let msg_hash = ctx.assign_advice(common.advice[0], Value::known(val))?;
+					ctx.constrain_equal(att_hash[0], compose_msg);
+					ctx.constrain_equal(equality_check_set_about, one);
+					Ok(())
+				},
+			)?;
 
 			let chip = EcdsaChipset::new(
 				self.public_key.clone(),
