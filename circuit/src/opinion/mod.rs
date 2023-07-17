@@ -2,8 +2,9 @@
 pub mod native;
 
 use crate::{
+	dynamic_sets::ecdsa_native::AttestationFr,
 	ecc::generic::{AssignedAux, AssignedEcPoint},
-	ecdsa::{AssignedPublicKey, AssignedSignature, EcdsaChipset, EcdsaConfig},
+	ecdsa::{AssignedPublicKey, AssignedSignature, EcdsaChipset, EcdsaConfig, UnassignedSignature},
 	gadgets::{
 		main::{IsEqualChipset, IsZeroChipset, MainConfig, MulAddChipset, SelectChipset},
 		set::{SetChipset, SetConfig},
@@ -13,8 +14,8 @@ use crate::{
 	Chipset, CommonConfig, FieldExt, HasherChipset, RegionCtx, SpongeHasherChipset,
 };
 use halo2::{
-	circuit::{AssignedCell, Layouter, Region},
-	halo2curves::CurveAffine,
+	circuit::{AssignedCell, Layouter, Region, Value},
+	halo2curves::{bn256::Fr, CurveAffine},
 	plonk::Error,
 };
 use std::marker::PhantomData;
@@ -23,30 +24,61 @@ const WIDTH: usize = 5;
 
 /// Assigned Attestation structure.
 #[derive(Debug, Clone)]
-pub struct AssignedAttestation<F: FieldExt> {
+pub struct AssignedAttestation<N: FieldExt> {
 	/// Ethereum address of peer being rated
-	pub about: AssignedCell<F, F>,
+	pub about: AssignedCell<N, N>,
 	/// Unique identifier for the action being rated
-	pub domain: AssignedCell<F, F>,
+	pub domain: AssignedCell<N, N>,
 	/// Given rating for the action
-	pub value: AssignedCell<F, F>,
+	pub value: AssignedCell<N, N>,
 	/// Optional field for attaching additional information to the attestation
-	pub message: AssignedCell<F, F>,
+	pub message: AssignedCell<N, N>,
 }
 
-impl<F: FieldExt> AssignedAttestation<F> {
+impl<N: FieldExt> AssignedAttestation<N> {
 	/// Creates a new AssignedAttestation
 	pub fn new(
-		about: AssignedCell<F, F>, domain: AssignedCell<F, F>, value: AssignedCell<F, F>,
-		message: AssignedCell<F, F>,
+		about: AssignedCell<N, N>, domain: AssignedCell<N, N>, value: AssignedCell<N, N>,
+		message: AssignedCell<N, N>,
 	) -> Self {
 		Self { about, domain, value, message }
 	}
 }
 
-/// SignedAssignedAttestation structure.
+/// Unassigned Attestation structure.
 #[derive(Debug, Clone)]
-pub struct SignedAssignedAttestation<
+pub struct UnassignedAttestation<N: FieldExt> {
+	/// Ethereum address of peer being rated
+	pub about: Value<N>,
+	/// Unique identifier for the action being rated
+	pub domain: Value<N>,
+	/// Given rating for the action
+	pub value: Value<N>,
+	/// Optional field for attaching additional information to the attestation
+	pub message: Value<N>,
+}
+
+impl<N: FieldExt> UnassignedAttestation<N> {
+	/// Creates a new AssignedAttestation
+	pub fn new(about: Value<N>, domain: Value<N>, value: Value<N>, message: Value<N>) -> Self {
+		Self { about, domain, value, message }
+	}
+}
+
+impl From<AttestationFr> for UnassignedAttestation<Fr> {
+	fn from(att: AttestationFr) -> Self {
+		Self {
+			about: Value::known(att.about),
+			domain: Value::known(att.domain),
+			value: Value::known(att.value),
+			message: Value::known(att.message),
+		}
+	}
+}
+
+/// AssignedSignedAttestation structure.
+#[derive(Debug, Clone)]
+pub struct AssignedSignedAttestation<
 	C: CurveAffine,
 	N: FieldExt,
 	const NUM_LIMBS: usize,
@@ -64,13 +96,13 @@ pub struct SignedAssignedAttestation<
 }
 
 impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
-	SignedAssignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>
+	AssignedSignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>
 where
 	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
 	C::Base: FieldExt,
 	C::ScalarExt: FieldExt,
 {
-	/// Creates a new SignedAssignedAttestation
+	/// Creates a new AssignedSignedAttestation
 	pub fn new(
 		attestation: AssignedAttestation<N>,
 		signature: AssignedSignature<C, N, NUM_LIMBS, NUM_BITS, P>,
@@ -79,6 +111,58 @@ where
 	}
 }
 
+/// AssignedSignedAttestation structure.
+#[derive(Debug, Clone)]
+pub struct UnassignedSignedAttestation<
+	C: CurveAffine,
+	N: FieldExt,
+	const NUM_LIMBS: usize,
+	const NUM_BITS: usize,
+	P,
+> where
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	C::Base: FieldExt,
+	C::ScalarExt: FieldExt,
+{
+	// Attestation
+	attestation: UnassignedAttestation<N>,
+	// Signature
+	signature: UnassignedSignature<C, N, NUM_LIMBS, NUM_BITS, P>,
+}
+
+impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
+	UnassignedSignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>
+where
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	C::Base: FieldExt,
+	C::ScalarExt: FieldExt,
+{
+	/// Creates a new AssignedSignedAttestation
+	pub fn new(
+		attestation: UnassignedAttestation<N>,
+		signature: UnassignedSignature<C, N, NUM_LIMBS, NUM_BITS, P>,
+	) -> Self {
+		Self { attestation, signature }
+	}
+}
+
+// TODO: Use this when dynamic_set ecdsa stops using hardcoded values
+/*
+impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
+	From<SignedAttestation> for UnassignedSignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>
+where
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	C::Base: FieldExt,
+	C::ScalarExt: FieldExt,
+{
+	fn from(signed_att: SignedAttestation) -> Self {
+		Self {
+			attestation: UnassignedAttestation::from(signed_att.attestation),
+			signature: UnassignedSignature::from(signed_att.signature),
+		}
+	}
+}
+*/
 /// Configuration elements for the circuit are defined here.
 #[derive(Debug, Clone)]
 pub struct OpinionConfig<F: FieldExt, H, S>
@@ -127,7 +211,7 @@ pub struct OpinionChipset<
 	S: SpongeHasherChipset<N>,
 {
 	// Attestations
-	attestations: Vec<SignedAssignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>>,
+	attestations: Vec<AssignedSignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>>,
 	// Public key
 	public_key: AssignedPublicKey<C, N, NUM_LIMBS, NUM_BITS, P>,
 	// Set
@@ -137,7 +221,7 @@ pub struct OpinionChipset<
 	// Generator as EC point
 	g_as_ecpoint: AssignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P>,
 	// Signature Inverse
-	s_inv: AssignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>,
+	s_inv: Vec<AssignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>>,
 	// Aux for to_add and to_sub
 	aux: AssignedAux<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
 	/// Constructs a phantom data for the hasher.
@@ -165,11 +249,11 @@ where
 {
 	/// Create a new chip.
 	pub fn new(
-		attestations: Vec<SignedAssignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>>,
+		attestations: Vec<AssignedSignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>>,
 		public_key: AssignedPublicKey<C, N, NUM_LIMBS, NUM_BITS, P>, set: Vec<AssignedCell<N, N>>,
 		msg_hash: Vec<AssignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>>,
 		g_as_ecpoint: AssignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P>,
-		s_inv: AssignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>,
+		s_inv: Vec<AssignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>>,
 		aux: AssignedAux<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
 	) -> Self {
 		OpinionChipset {
@@ -363,7 +447,7 @@ where
 				self.g_as_ecpoint.clone(),
 				signature.clone(),
 				self.msg_hash[i].clone(),
-				self.s_inv.clone(),
+				self.s_inv[i].clone(),
 				self.aux.clone(),
 			);
 			chip.synthesize(common, &config.ecdsa, layouter.namespace(|| "ecdsa_verify"))?;
@@ -390,5 +474,356 @@ where
 		let op_hash = sponge.squeeze(common, &config.sponge, layouter.namespace(|| "squeeze!"))?;
 
 		Ok((self.public_key, scores, op_hash))
+	}
+}
+
+#[cfg(test)]
+mod test {
+
+	use super::native::Opinion;
+	use super::{
+		AssignedAttestation, AssignedSignedAttestation, OpinionChipset, OpinionConfig, WIDTH,
+	};
+	use crate::dynamic_sets::ecdsa_native::{AttestationFr, SignedAttestation};
+	use crate::ecc::generic::{AuxAssigner, PointAssigner, UnassignedEcPoint};
+	use crate::ecc::{
+		AuxConfig, EccAddConfig, EccDoubleConfig, EccMulConfig, EccTableSelectConfig,
+		EccUnreducedLadderConfig,
+	};
+	use crate::ecdsa::native::{EcdsaKeypair, PublicKey};
+	use crate::ecdsa::{EcdsaConfig, SignatureAssigner, UnassignedSignature};
+	use crate::ecdsa::{PublicKeyAssigner, UnassignedPublicKey};
+	use crate::gadgets::absorb::AbsorbChip;
+	use crate::gadgets::set::{SetChip, SetConfig};
+	use crate::integer::{
+		IntegerAddChip, IntegerAssigner, IntegerDivChip, IntegerMulChip, IntegerReduceChip,
+		IntegerSubChip, UnassignedInteger,
+	};
+	use crate::params::ecc::secp256k1::Secp256k1Params;
+	use crate::params::hasher::poseidon_bn254_5x5::Params;
+	use crate::params::rns::secp256k1::Secp256k1_4_68;
+	use crate::poseidon::sponge::{PoseidonSpongeConfig, StatefulSpongeChipset};
+	use crate::poseidon::{FullRoundChip, PartialRoundChip, PoseidonChipset, PoseidonConfig};
+	use crate::utils::big_to_fe;
+	use crate::UnassignedValue;
+	use crate::{
+		ecc::generic::native::EcPoint,
+		gadgets::{
+			bits2num::Bits2NumChip,
+			main::{MainChip, MainConfig},
+		},
+		integer::native::Integer,
+		Chip, CommonConfig,
+	};
+	use crate::{Chipset, RegionCtx};
+	use halo2::arithmetic::Field;
+	use halo2::circuit::{Region, Value};
+	use halo2::dev::MockProver;
+	use halo2::halo2curves::group::Curve;
+	use halo2::halo2curves::secp256k1::Secp256k1;
+	use halo2::{
+		circuit::{Layouter, SimpleFloorPlanner},
+		halo2curves::{
+			bn256::Fr,
+			secp256k1::{Fp, Fq, Secp256k1Affine},
+		},
+		plonk::{Circuit, ConstraintSystem, Error},
+	};
+	use itertools::Itertools;
+
+	type W = Fp;
+	type SecpScalar = Fq;
+	type N = Fr;
+	type C = Secp256k1Affine;
+	const NUM_LIMBS: usize = 4;
+	const NUM_BITS: usize = 68;
+	type P = Secp256k1_4_68;
+	type EC = Secp256k1Params;
+	type H = PoseidonChipset<N, WIDTH, Params>;
+	type S = StatefulSpongeChipset<N, WIDTH, Params>;
+
+	#[derive(Clone)]
+	struct TestConfig {
+		common: CommonConfig,
+		opinion: OpinionConfig<N, H, S>,
+		aux: AuxConfig,
+	}
+
+	impl TestConfig {
+		fn new(meta: &mut ConstraintSystem<N>) -> Self {
+			let common = CommonConfig::new(meta);
+			let main = MainConfig::new(MainChip::configure(&common, meta));
+			let bits2num_selector = Bits2NumChip::configure(&common, meta);
+			let set_selector = SetChip::configure(&common, meta);
+			let set = SetConfig::new(main.clone(), set_selector);
+
+			let integer_reduce_selector =
+				IntegerReduceChip::<W, N, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
+			let integer_add_selector =
+				IntegerAddChip::<W, N, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
+			let integer_sub_selector =
+				IntegerSubChip::<W, N, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
+			let integer_mul_selector =
+				IntegerMulChip::<W, N, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
+			let integer_div_selector =
+				IntegerDivChip::<W, N, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
+			let integer_mul_selector_secp_scalar =
+				IntegerMulChip::<SecpScalar, N, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
+			let ecc_add = EccAddConfig::new(
+				integer_reduce_selector, integer_sub_selector, integer_mul_selector,
+				integer_div_selector,
+			);
+
+			let ecc_double = EccDoubleConfig::new(
+				integer_reduce_selector, integer_add_selector, integer_sub_selector,
+				integer_mul_selector, integer_div_selector,
+			);
+
+			let ecc_ladder = EccUnreducedLadderConfig::new(
+				integer_add_selector, integer_sub_selector, integer_mul_selector,
+				integer_div_selector,
+			);
+
+			let ecc_table_select = EccTableSelectConfig::new(main.clone());
+
+			let ecc_mul_scalar = EccMulConfig::new(
+				ecc_ladder.clone(),
+				ecc_add.clone(),
+				ecc_double.clone(),
+				ecc_table_select,
+				bits2num_selector.clone(),
+			);
+
+			let ecdsa = EcdsaConfig::new(ecc_mul_scalar, integer_mul_selector_secp_scalar);
+
+			let aux = AuxConfig::new(ecc_double);
+
+			let fr_selector = FullRoundChip::<_, WIDTH, Params>::configure(&common, meta);
+			let pr_selector = PartialRoundChip::<_, WIDTH, Params>::configure(&common, meta);
+			let poseidon = PoseidonConfig::new(fr_selector, pr_selector);
+			let absorb_selector = AbsorbChip::<_, WIDTH>::configure(&common, meta);
+			let sponge = PoseidonSpongeConfig::new(poseidon.clone(), absorb_selector);
+
+			let opinion = OpinionConfig::new(ecdsa, main, set, poseidon, sponge);
+			TestConfig { common, opinion, aux }
+		}
+	}
+
+	struct TestOpinionCircuit {
+		attestations: Vec<SignedAttestation>,
+		set: Vec<N>,
+		public_key: UnassignedPublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
+		g_as_ecpoint: UnassignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
+		msg_hash: Vec<UnassignedInteger<SecpScalar, N, NUM_LIMBS, NUM_BITS, P>>,
+		s_inv: Vec<UnassignedInteger<SecpScalar, N, NUM_LIMBS, NUM_BITS, P>>,
+	}
+
+	impl TestOpinionCircuit {
+		fn new(
+			attestations: Vec<SignedAttestation>, set: Vec<N>,
+			public_key: PublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
+			g_as_ecpoint: EcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
+			msg_hash: Vec<Integer<SecpScalar, N, NUM_LIMBS, NUM_BITS, P>>,
+			s_inv: Vec<Integer<SecpScalar, N, NUM_LIMBS, NUM_BITS, P>>,
+		) -> Self {
+			Self {
+				attestations,
+				set,
+				public_key: UnassignedPublicKey::new(public_key),
+				g_as_ecpoint: UnassignedEcPoint::from(g_as_ecpoint),
+
+				msg_hash: msg_hash.iter().map(|x| UnassignedInteger::from(x.clone())).collect_vec(),
+				s_inv: s_inv.iter().map(|x| UnassignedInteger::from(x.clone())).collect_vec(),
+			}
+		}
+	}
+
+	impl Circuit<Fr> for TestOpinionCircuit {
+		type Config = TestConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			Self {
+				attestations: self.attestations.clone(),
+				set: self.set.iter().map(|_| N::default()).collect_vec(),
+				public_key: UnassignedPublicKey::without_witnesses(),
+				g_as_ecpoint: UnassignedEcPoint::without_witnesses(),
+				msg_hash: self
+					.msg_hash
+					.iter()
+					.map(|_| UnassignedInteger::without_witnesses())
+					.collect_vec(),
+				s_inv: self
+					.s_inv
+					.iter()
+					.map(|_| UnassignedInteger::without_witnesses())
+					.collect_vec(),
+			}
+		}
+
+		fn configure(meta: &mut ConstraintSystem<Fr>) -> TestConfig {
+			TestConfig::new(meta)
+		}
+
+		fn synthesize(
+			&self, config: TestConfig, mut layouter: impl Layouter<Fr>,
+		) -> Result<(), Error> {
+			let aux_assigner = AuxAssigner::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::new();
+			let auxes = aux_assigner.synthesize(
+				&config.common,
+				&config.aux,
+				layouter.namespace(|| "aux assigner"),
+			)?;
+
+			let public_key_assigner = PublicKeyAssigner::new(self.public_key.clone());
+			let public_key = public_key_assigner.synthesize(
+				&config.common,
+				&(),
+				layouter.namespace(|| "public_key assigner"),
+			)?;
+
+			let g_as_ecpoint_assigner = PointAssigner::new(self.g_as_ecpoint.clone());
+			let g_as_ecpoint = g_as_ecpoint_assigner.synthesize(
+				&config.common,
+				&(),
+				layouter.namespace(|| "g_as_ec_point assigner"),
+			)?;
+
+			let mut msg_hash = Vec::new();
+			let mut s_inv = Vec::new();
+
+			for i in 0..self.msg_hash.len() {
+				let msg_hash_assigner = IntegerAssigner::new(self.msg_hash[i].clone());
+				msg_hash.push(msg_hash_assigner.synthesize(
+					&config.common,
+					&(),
+					layouter.namespace(|| "msg_hash assigner"),
+				)?);
+
+				let s_inv_assigner = IntegerAssigner::new(self.s_inv[i].clone());
+				s_inv.push(s_inv_assigner.synthesize(
+					&config.common,
+					&(),
+					layouter.namespace(|| "s_inv assigner"),
+				)?);
+			}
+
+			let set = layouter.assign_region(
+				|| "assign_set",
+				|region: Region<'_, N>| {
+					let mut ctx = RegionCtx::new(region, 0);
+					let mut set = Vec::new();
+					for i in 0..self.set.len() {
+						set.push(
+							ctx.assign_advice(config.common.advice[0], Value::known(self.set[i]))?,
+						);
+					}
+					Ok(set)
+				},
+			)?;
+
+			let mut attestations = Vec::new();
+
+			for i in 0..self.attestations.len() {
+				let signature_assigner = SignatureAssigner::new(UnassignedSignature::from(
+					self.attestations[0].signature.clone(),
+				));
+				let signature = signature_assigner.synthesize(
+					&config.common,
+					&(),
+					layouter.namespace(|| "signature assigner"),
+				)?;
+
+				let (about, domain, value, message) = layouter.assign_region(
+					|| "assign_attestation",
+					|region: Region<'_, N>| {
+						let mut ctx = RegionCtx::new(region, 0);
+						let att = self.attestations[i].attestation.clone();
+						let about =
+							ctx.assign_advice(config.common.advice[0], Value::known(att.about))?;
+						let domain =
+							ctx.assign_advice(config.common.advice[1], Value::known(att.domain))?;
+						let value =
+							ctx.assign_advice(config.common.advice[2], Value::known(att.value))?;
+						let message =
+							ctx.assign_advice(config.common.advice[3], Value::known(att.message))?;
+						Ok((about, domain, value, message))
+					},
+				)?;
+				let attestation = AssignedAttestation::new(about, domain, value, message);
+
+				attestations.push(AssignedSignedAttestation::new(attestation, signature))
+			}
+
+			let opinion: OpinionChipset<
+				Secp256k1Affine,
+				Fr,
+				4,
+				68,
+				5,
+				H,
+				S,
+				Secp256k1_4_68,
+				Secp256k1Params,
+			> = OpinionChipset::new(
+				attestations, public_key, set, msg_hash, g_as_ecpoint, s_inv, auxes,
+			);
+			let result = opinion.synthesize(
+				&config.common,
+				&config.opinion,
+				layouter.namespace(|| "opinion"),
+			)?;
+			Ok(())
+		}
+	}
+
+	#[test]
+	fn test_opinion() {
+		// Test Opinion Chipset
+		let rng = &mut rand::thread_rng();
+		let keypair =
+			EcdsaKeypair::<Secp256k1Affine, Fr, 4, 68, Secp256k1_4_68, Secp256k1Params>::generate_keypair(rng);
+		let public_key = keypair.public_key.clone();
+
+		let g = Secp256k1::generator().to_affine();
+		let g_as_ecpoint = EcPoint::<Secp256k1Affine, N, NUM_LIMBS, NUM_BITS, P, EC>::new(
+			Integer::from_w(g.x),
+			Integer::from_w(g.y),
+		);
+
+		let mut set = Vec::new();
+		let mut msg_hash = Vec::new();
+		let mut signature = Vec::new();
+		let mut s_inv = Vec::new();
+		let mut attestations = Vec::new();
+
+		for i in 0..10 {
+			let random_set = Fr::random(rng.clone());
+			set.push(random_set);
+
+			let attestation = AttestationFr::new(
+				Fr::random(rng.clone()),
+				Fr::random(rng.clone()),
+				Fr::random(rng.clone()),
+				Fr::random(rng.clone()),
+			);
+
+			let random_msg = SecpScalar::random(rng.clone());
+			msg_hash.push(Integer::from_w(random_msg));
+
+			signature.push(keypair.sign(random_msg, rng));
+			let s_inv_fq = big_to_fe::<Fq>(signature[i].s.value()).invert().unwrap();
+			s_inv.push(Integer::from_w(s_inv_fq));
+
+			attestations.push(SignedAttestation::new(attestation, signature[i].clone()));
+		}
+
+		let opinion_native: Opinion<5> = Opinion::new(public_key.clone(), attestations.clone());
+
+		let circuit =
+			TestOpinionCircuit::new(attestations, set, public_key, g_as_ecpoint, msg_hash, s_inv);
+		let k = 18;
+		let prover = MockProver::run(k, &circuit, vec![vec![]]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
 	}
 }
