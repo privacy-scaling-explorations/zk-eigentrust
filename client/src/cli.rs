@@ -234,7 +234,7 @@ pub async fn handle_bandada(config: &ClientConfig, data: BandadaData) -> Result<
 					"Participant not found in score records.".to_string(),
 				))?;
 
-			let participant_score: u32 = participant_record.score_fr().parse().map_err(|e| {
+			let participant_score: u32 = participant_record.score_fr().parse().map_err(|_| {
 				EigenError::ParsingError("Failed to parse participant score.".to_string())
 			})?;
 
