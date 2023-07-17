@@ -13,7 +13,7 @@ use crate::{
 	Chipset, CommonConfig, FieldExt, HasherChipset, RegionCtx, SpongeHasherChipset,
 };
 use halo2::{
-	circuit::{AssignedCell, Layouter, Region, Value},
+	circuit::{AssignedCell, Layouter, Region},
 	halo2curves::CurveAffine,
 	plonk::Error,
 };
@@ -122,7 +122,7 @@ pub struct OpinionChipset<
 	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::Scalar, N, NUM_LIMBS, NUM_BITS>,
 	EC: EccParams<C>,
 	C::Base: FieldExt,
-	C::Scalar: FieldExt,
+	C::ScalarExt: FieldExt,
 	H: HasherChipset<N, WIDTH>,
 	S: SpongeHasherChipset<N>,
 {
@@ -159,7 +159,7 @@ where
 	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::Scalar, N, NUM_LIMBS, NUM_BITS>,
 	EC: EccParams<C>,
 	C::Base: FieldExt,
-	C::Scalar: FieldExt,
+	C::ScalarExt: FieldExt,
 	H: HasherChipset<N, WIDTH>,
 	S: SpongeHasherChipset<N>,
 {
@@ -188,9 +188,10 @@ where
 	pub fn left_shifters(
 		common: &CommonConfig, mut layouter: impl Layouter<N>,
 	) -> [AssignedCell<N, N>; NUM_LIMBS] {
-		let left_shifters_native = P::left_shifters();
+		let left_shifters_native =
+			<P as RnsParams<C::Scalar, N, NUM_LIMBS, NUM_BITS>>::left_shifters();
 		let mut left_shifters = [(); NUM_LIMBS].map(|_| None);
-		layouter.assign_region(
+		let _ = layouter.assign_region(
 			|| "assign_left_shifters",
 			|region: Region<'_, N>| {
 				let mut ctx = RegionCtx::new(region, 0);
@@ -333,8 +334,11 @@ where
 			let left_shifters = Self::left_shifters(common, layouter.namespace(|| "left_shifters"));
 			let mut compose_msg = zero.clone();
 			for i in 0..NUM_LIMBS {
-				let muladd_chipset =
-					MulAddChipset::new(self.msg_hash[i].limbs[i], left_shifters[i], compose_msg);
+				let muladd_chipset = MulAddChipset::new(
+					self.msg_hash[i].limbs[i].clone(),
+					left_shifters[i].clone(),
+					compose_msg,
+				);
 				compose_msg = muladd_chipset.synthesize(
 					common,
 					&config.main,
@@ -342,16 +346,14 @@ where
 				)?;
 			}
 
-			//TODO: Constraint equality for the msg_hash from hasher and constructor
+			// Constraint equality for the msg_hash from hasher and constructor
 			// Constraint equality for the set and att.about
 			layouter.assign_region(
 				|| "constraint equality",
 				|region: Region<'_, N>| {
 					let mut ctx = RegionCtx::new(region, 0);
-					let val = P::compose(self.msg_hash[i].integer.limbs);
-					let msg_hash = ctx.assign_advice(common.advice[0], Value::known(val))?;
-					ctx.constrain_equal(att_hash[0], compose_msg);
-					ctx.constrain_equal(equality_check_set_about, one);
+					ctx.constrain_equal(att_hash[0].clone(), compose_msg.clone())?;
+					ctx.constrain_equal(equality_check_set_about.clone(), one.clone())?;
 					Ok(())
 				},
 			)?;
