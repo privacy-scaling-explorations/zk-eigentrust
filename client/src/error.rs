@@ -43,6 +43,10 @@ pub enum EigenError {
 	#[error("RecoveryError: {0}")]
 	RecoveryError(String),
 
+	/// Request error
+	#[error("RequestError: {0}")]
+	RequestError(reqwest::Error),
+
 	/// Resource unavailable error
 	#[error("ResourceUnavailableError: {0}")]
 	ResourceUnavailableError(String),

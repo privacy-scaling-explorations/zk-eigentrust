@@ -8,6 +8,7 @@ use eigen_trust_circuit::utils::write_json_data;
 use eigen_trust_client::{
 	att_station::AttestationCreatedFilter,
 	attestation::{Attestation, DOMAIN_PREFIX, DOMAIN_PREFIX_LEN},
+	error::EigenError,
 	fs::{get_file_path, FileType},
 	storage::{AttestationRecord, CSVFileStorage, ScoreRecord, Storage},
 	Client,
@@ -119,34 +120,40 @@ pub enum AttestationsOrigin {
 
 impl AttestData {
 	/// Converts `AttestData` to `Attestation`.
-	pub fn to_attestation(&self, config: &ClientConfig) -> Result<Attestation, &'static str> {
+	pub fn to_attestation(&self, config: &ClientConfig) -> Result<Attestation, EigenError> {
 		// Parse Address
 		let parsed_address: Address = self
 			.address
 			.as_ref()
-			.ok_or("Missing address")?
+			.ok_or_else(|| EigenError::ParsingError("Missing address".to_string()))?
 			.parse()
-			.map_err(|_| "Failed to parse address.")?;
+			.map_err(|_| EigenError::ParsingError("Failed to parse address.".to_string()))?;
 
 		// Parse score
 		let parsed_score: u8 = self
 			.score
 			.as_ref()
-			.ok_or("Missing score")?
-			.parse()
-			.map_err(|_| "Failed to parse score. It must be a number between 0 and 255.")?;
+			.ok_or_else(|| EigenError::ParsingError("Missing score".to_string()))?
+			.parse::<u8>()
+			.map_err(|_| {
+				EigenError::ParsingError(
+					"Failed to parse score. It must be a number between 0 and 255.".to_string(),
+				)
+			})?;
 
 		// Parse message
 		let message = match &self.message {
 			Some(message_str) => {
-				let message = H256::from_str(message_str).map_err(|_| "Failed to parse message")?;
+				let message = H256::from_str(message_str)
+					.map_err(|_| EigenError::ParsingError("Failed to parse message".to_string()))?;
 				Some(message)
 			},
 			None => None,
 		};
 
 		// Key
-		let domain = H160::from_str(&config.domain).map_err(|_| "Failed to parse domain")?;
+		let domain = H160::from_str(&config.domain)
+			.map_err(|_| EigenError::ParsingError("Failed to parse domain".to_string()))?;
 		let mut key_bytes: [u8; 32] = [0; 32];
 		key_bytes[..DOMAIN_PREFIX_LEN].copy_from_slice(&DOMAIN_PREFIX);
 		key_bytes[DOMAIN_PREFIX_LEN..].copy_from_slice(domain.as_bytes());
@@ -157,38 +164,43 @@ impl AttestData {
 }
 
 impl FromStr for Action {
-	type Err = &'static str;
+	type Err = EigenError;
 
 	fn from_str(s: &str) -> Result<Self, Self::Err> {
 		match s {
 			"add" => Ok(Action::Add),
 			"remove" => Ok(Action::Remove),
-			_ => Err("Invalid action."),
+			_ => Err(EigenError::ParsingError("Invalid action.".to_string())),
 		}
 	}
 }
 
 /// Handle `attestations` command.
-pub async fn handle_attestations(config: ClientConfig) -> Result<(), &'static str> {
+pub async fn handle_attestations(config: ClientConfig) -> Result<(), EigenError> {
 	let client = Client::new(config);
 
-	let attestations =
-		client.get_attestations().await.map_err(|_| "Failed to get attestations.")?;
+	let attestations = client
+		.get_attestations()
+		.await
+		.map_err(|_| EigenError::AttestationError("Failed to get attestations.".to_string()))?;
 
 	if attestations.is_empty() {
-		return Err("No attestations found.");
+		return Err(EigenError::AttestationError(
+			"No attestations found.".to_string(),
+		));
 	}
 
 	let attestation_records =
 		attestations.into_iter().map(|log| AttestationRecord::from_log(&log)).collect::<Vec<_>>();
 
-	let filepath =
-		get_file_path("attestations", FileType::Csv).map_err(|_| "Failed to get file path.")?;
+	let filepath = get_file_path("attestations", FileType::Csv)?;
 
 	let mut storage = CSVFileStorage::<AttestationRecord>::new(filepath);
 	if let Err(e) = storage.save(attestation_records) {
 		error!("Failed to save attestation records: {:?}", e);
-		Err("Failed to save attestation records")
+		Err(EigenError::FileIOError(
+			"Failed to save attestation records".to_string(),
+		))
 	} else {
 		info!(
 			"Attestations saved at \"{}\".",
@@ -199,11 +211,19 @@ pub async fn handle_attestations(config: ClientConfig) -> Result<(), &'static st
 }
 
 /// Handles the bandada subcommand.
-pub async fn handle_bandada(config: &ClientConfig, data: BandadaData) -> Result<(), &'static str> {
-	let action: Action = data.action.as_deref().ok_or("Missing action.")?.parse()?;
-	let identity_commitment =
-		data.identity_commitment.as_deref().ok_or("Missing identity commitment.")?;
-	let address = data.address.as_deref().ok_or("Missing address.")?;
+pub async fn handle_bandada(config: &ClientConfig, data: BandadaData) -> Result<(), EigenError> {
+	let action: Action = data
+		.action
+		.as_deref()
+		.ok_or(EigenError::ValidationError("Missing action.".to_string()))?
+		.parse()?;
+	let identity_commitment = data.identity_commitment.as_deref().ok_or(
+		EigenError::ValidationError("Missing identity commitment.".to_string()),
+	)?;
+	let address = data
+		.address
+		.as_deref()
+		.ok_or(EigenError::ValidationError("Missing address.".to_string()))?;
 
 	let bandada_api = BandadaApi::new(&config.band_url)?;
 
@@ -213,35 +233,36 @@ pub async fn handle_bandada(config: &ClientConfig, data: BandadaData) -> Result<
 			let scores_storage = CSVFileStorage::<ScoreRecord>::new("scores.csv".into());
 
 			// Read scores from the CSV file using load method from the Storage trait
-			let scores = scores_storage.load().map_err(|_| "Failed to load scores.")?;
+			let scores = scores_storage
+				.load()
+				.map_err(|_| EigenError::FileIOError("Failed to load scores.".to_string()))?;
 
 			let participant_record = scores
 				.iter()
 				.find(|record| *record.peer_address().as_str() == *address)
-				.ok_or("Participant not found in score records.")?;
+				.ok_or(EigenError::ValidationError(
+					"Participant not found in score records.".to_string(),
+				))?;
 
-			let participant_score: u32 = participant_record
-				.score_fr()
+			let participant_score: u32 = participant_record.score_fr().parse().map_err(|_| {
+				EigenError::ParsingError("Failed to parse participant score.".to_string())
+			})?;
+
+			let threshold: u32 = config
+				.band_th
 				.parse()
-				.map_err(|_| "Failed to parse participant score.")?;
-
-			let threshold: u32 =
-				config.band_th.parse().map_err(|_| "Failed to parse threshold.")?;
+				.map_err(|_| EigenError::ParsingError("Failed to parse threshold.".to_string()))?;
 
 			if participant_score < threshold {
-				return Err("Participant score is below the group threshold.");
+				return Err(EigenError::ValidationError(
+					"Participant score is below the group threshold.".to_string(),
+				));
 			}
 
-			bandada_api
-				.add_member(&config.band_id, identity_commitment)
-				.await
-				.map_err(|_| "Failed to add member.")?;
+			bandada_api.add_member(&config.band_id, identity_commitment).await?;
 		},
 		Action::Remove => {
-			bandada_api
-				.remove_member(&config.band_id, identity_commitment)
-				.await
-				.map_err(|_| "Failed to remove member.")?;
+			bandada_api.remove_member(&config.band_id, identity_commitment).await?;
 		},
 	}
 
@@ -251,23 +272,25 @@ pub async fn handle_bandada(config: &ClientConfig, data: BandadaData) -> Result<
 /// Handle `scores` and `local_scores` commands.
 pub async fn handle_scores(
 	config: ClientConfig, origin: AttestationsOrigin,
-) -> Result<(), &'static str> {
+) -> Result<(), EigenError> {
 	let client = Client::new(config);
 
-	let att_fp = get_file_path("attestations", FileType::Csv)
-		.map_err(|_| "Failed to get file path.")
-		.unwrap();
+	let att_fp = get_file_path("attestations", FileType::Csv)?;
 
 	// Get or Fetch attestations
 	let attestations = match origin {
 		AttestationsOrigin::Local => {
 			let att_storage = CSVFileStorage::<AttestationRecord>::new(att_fp);
 
-			let records = att_storage.load().map_err(|_| "Failed to load attestations.").unwrap();
+			let records = att_storage
+				.load()
+				.map_err(|_| EigenError::FileIOError("Failed to load attestations.".to_string()))?;
 
 			// Verify there are attestations
 			if records.is_empty() {
-				return Err("No attestations found.");
+				return Err(EigenError::AttestationError(
+					"No attestations found.".to_string(),
+				));
 			}
 
 			let attestations: Vec<AttestationCreatedFilter> =
@@ -281,8 +304,7 @@ pub async fn handle_scores(
 			let att_storage = CSVFileStorage::<AttestationRecord>::new(att_fp);
 			let attestations: Vec<AttestationCreatedFilter> = att_storage
 				.load()
-				.map_err(|_| "Failed to load attestations.")
-				.unwrap()
+				.map_err(|_| EigenError::FileIOError("Failed to load attestations.".to_string()))?
 				.into_iter()
 				.map(|record| record.to_log().unwrap())
 				.collect();
@@ -294,22 +316,17 @@ pub async fn handle_scores(
 	// Calculate scores
 	let score_records: Vec<ScoreRecord> = client
 		.calculate_scores(attestations)
-		.await
-		.unwrap()
+		.await?
 		.into_iter()
 		.map(ScoreRecord::from_score)
 		.collect();
 
-	let scores_fp =
-		get_file_path("scores", FileType::Csv).map_err(|_| "Failed to get file path.").unwrap();
+	let scores_fp = get_file_path("scores", FileType::Csv)?;
 
 	// Save scores
 	let mut records_storage = CSVFileStorage::<ScoreRecord>::new(scores_fp);
 	match records_storage.save(score_records) {
-		Err(e) => {
-			error!("Failed to save score records: {:?}", e);
-			Err("Failed to save score records")
-		},
+		Err(e) => Err(EigenError::FileIOError(e.to_string())),
 		_ => {
 			info!(
 				"Scores saved at \"{}\".",
@@ -321,10 +338,11 @@ pub async fn handle_scores(
 }
 
 /// Handles the CLI project configuration update.
-pub fn handle_update(config: &mut ClientConfig, data: UpdateData) -> Result<(), &'static str> {
+pub fn handle_update(config: &mut ClientConfig, data: UpdateData) -> Result<(), EigenError> {
 	if let Some(as_address) = data.as_address {
-		config.as_address =
-			Address::from_str(&as_address).map_err(|_| "Failed to parse address.")?.to_string();
+		config.as_address = Address::from_str(&as_address)
+			.map_err(|_| EigenError::ParsingError("Failed to parse address.".to_string()))?
+			.to_string();
 	}
 
 	if let Some(band_id) = data.band_id {
@@ -333,26 +351,33 @@ pub fn handle_update(config: &mut ClientConfig, data: UpdateData) -> Result<(), 
 	}
 
 	if let Some(band_th) = data.band_th {
-		band_th.parse::<u32>().map_err(|_| "Failed to parse group threshold.")?;
+		band_th.parse::<u32>().map_err(|_| {
+			EigenError::ParsingError("Failed to parse group threshold.".to_string())
+		})?;
 		config.band_th = band_th;
 	}
 
 	if let Some(band_url) = data.band_url {
-		Http::from_str(&band_url).map_err(|_| "Failed to parse bandada API base url.")?;
+		Http::from_str(&band_url).map_err(|_| {
+			EigenError::ParsingError("Failed to parse bandada API base url.".to_string())
+		})?;
 		config.band_url = band_url;
 	}
 
 	if let Some(domain) = data.domain {
-		config.as_address =
-			H160::from_str(&domain).map_err(|_| "Failed to parse domain")?.to_string();
+		config.as_address = H160::from_str(&domain)
+			.map_err(|_| EigenError::ParsingError("Failed to parse domain".to_string()))?
+			.to_string();
 	}
 
 	if let Some(node_url) = data.node_url {
-		Http::from_str(&node_url).map_err(|_| "Failed to parse node url.")?;
+		Http::from_str(&node_url)
+			.map_err(|_| EigenError::ParsingError("Failed to parse node url.".to_string()))?;
 		config.node_url = node_url;
 	}
 
-	write_json_data(config, "client_config").map_err(|_| "Failed to write config data.")
+	write_json_data(config, "client_config")
+		.map_err(|_| EigenError::FileIOError("Failed to write config data.".to_string()))
 }
 
 #[cfg(test)]
