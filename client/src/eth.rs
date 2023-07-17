@@ -21,14 +21,18 @@ use std::sync::Arc;
 
 /// Compiles the AttestationStation contract.
 pub fn compile_as() -> Result<CompilerOutput, EigenError> {
-	let path =
-		get_assets_path().map_err(|_| EigenError::ParseError)?.join("AttestationStation.sol");
+	let path = get_assets_path()
+		.map_err(|e| EigenError::ParsingError(e.to_string()))?
+		.join("AttestationStation.sol");
 
-	let compiler_output =
-		Solc::default().compile_source(path).map_err(|_| EigenError::ContractCompilationError)?;
+	let compiler_output = Solc::default()
+		.compile_source(path)
+		.map_err(|e| EigenError::ContractCompilationError(e.to_string()))?;
 
 	if !compiler_output.errors.is_empty() {
-		return Err(EigenError::ContractCompilationError);
+		return Err(EigenError::ContractCompilationError(
+			"Compiler output contains errors".to_string(),
+		));
 	}
 
 	Ok(compiler_output)
@@ -39,17 +43,21 @@ pub fn gen_as_bindings() -> Result<(), EigenError> {
 	let contracts = compile_as()?;
 
 	for (name, contract) in contracts.contracts_iter() {
-		let abi = contract.clone().abi.ok_or(EigenError::ParseError)?;
-		let abi_json = serde_json::to_string(&abi).map_err(|_| EigenError::ParseError)?;
+		let abi = contract
+			.clone()
+			.abi
+			.ok_or_else(|| EigenError::ParsingError("Missing contract ABI".to_string()))?;
+		let abi_json =
+			serde_json::to_string(&abi).map_err(|e| EigenError::ParsingError(e.to_string()))?;
 
 		let bindings = Abigen::new(name, abi_json)
-			.map_err(|_| EigenError::ParseError)?
+			.map_err(|e| EigenError::ParsingError(e.to_string()))?
 			.generate()
-			.map_err(|_| EigenError::ParseError)?;
+			.map_err(|e| EigenError::ParsingError(e.to_string()))?;
 
 		bindings
 			.write_to_file(get_file_path("attestation_station", FileType::Rs).unwrap())
-			.map_err(|_| EigenError::ParseError)?;
+			.map_err(|e| EigenError::FileIOError(e.to_string()))?;
 	}
 
 	Ok(())
@@ -60,23 +68,31 @@ pub async fn deploy_as(signer: Arc<ClientSigner>) -> Result<Address, EigenError>
 	let contracts = compile_as()?;
 	let mut address: Option<Address> = None;
 
-	for (_, contract) in contracts.contracts_iter() {
+	if let Some((_, contract)) = contracts.contracts_iter().next() {
 		let (abi, bytecode, _) = contract.clone().into_parts();
-		let abi = abi.ok_or(EigenError::ParseError)?;
-		let bytecode = bytecode.ok_or(EigenError::ParseError)?;
+		let abi = abi.ok_or(EigenError::ParsingError("ABI parsing failed".to_string()))?;
+		let bytecode = bytecode.ok_or(EigenError::ParsingError(
+			"Bytecode parsing failed".to_string(),
+		))?;
 
 		let factory = ContractFactory::new(abi, bytecode, signer.clone());
 
-		match factory.deploy(()).unwrap().send().await {
+		match factory
+			.deploy(())
+			.map_err(|e| EigenError::ContractCompilationError(e.to_string()))?
+			.send()
+			.await
+		{
 			Ok(contract) => {
 				address = Some(contract.address());
-				break;
 			},
-			Err(_) => continue,
+			Err(e) => return Err(EigenError::TransactionError(e.to_string())),
 		}
 	}
 
-	address.ok_or(EigenError::ParseError)
+	address.ok_or(EigenError::ParsingError(
+		"Failed to deploy AttestationStation contract".to_string(),
+	))
 }
 
 /// Returns a vector of ECDSA private keys derived from the given mnemonic phrase.

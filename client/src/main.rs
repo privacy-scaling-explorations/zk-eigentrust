@@ -63,7 +63,6 @@ async fn main() {
 				Ok(as_address) => info!("AttestationStation deployed at {:?}", as_address),
 				Err(e) => {
 					error!("Failed to deploy AttestationStation: {:?}", e);
-					return;
 				},
 			};
 		},
