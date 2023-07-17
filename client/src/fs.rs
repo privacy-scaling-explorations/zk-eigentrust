@@ -53,7 +53,7 @@ pub fn get_file_path(file_name: &str, file_type: FileType) -> Result<PathBuf, Ei
 /// Reads a JSON file from the `assets` directory and returns its deserialized contents.
 pub fn read_json<T: DeserializeOwned>(file_name: &str) -> Result<T, EigenError> {
 	let json_path = get_file_path(file_name, FileType::Json)?;
-	let file = File::open(&json_path).map_err(EigenError::IOError)?;
+	let file = File::open(json_path).map_err(EigenError::IOError)?;
 	let reader = BufReader::new(file);
 	from_reader(reader).map_err(|e| EigenError::ParsingError(e.to_string()))
 }

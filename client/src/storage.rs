@@ -78,7 +78,7 @@ impl<T: Serialize + DeserializeOwned + Clone> Storage<Vec<T>> for CSVFileStorage
 	type Err = EigenError;
 
 	fn load(&self) -> Result<Vec<T>, EigenError> {
-		let file = File::open(&self.filepath).map_err(|e| EigenError::IOError(e))?;
+		let file = File::open(&self.filepath).map_err(EigenError::IOError)?;
 		let mut reader = ReaderBuilder::new().from_reader(BufReader::new(file));
 
 		reader

@@ -40,7 +40,7 @@ impl BandadaApi {
 			.headers(headers)
 			.send()
 			.await
-			.map_err(|e| EigenError::RequestError(e))
+			.map_err(EigenError::RequestError)
 	}
 
 	/// Removes Member.
@@ -58,6 +58,6 @@ impl BandadaApi {
 			.headers(headers)
 			.send()
 			.await
-			.map_err(|e| EigenError::RequestError(e))
+			.map_err(EigenError::RequestError)
 	}
 }
