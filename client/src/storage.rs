@@ -6,6 +6,7 @@ use crate::att_station::AttestationCreatedFilter;
 use crate::attestation::{
 	address_from_signed_att, Attestation, AttestationPayload, SignedAttestation,
 };
+use crate::error::EigenError;
 use crate::Score;
 use csv::{ReaderBuilder, WriterBuilder};
 use ethers::types::{Address, Bytes, H256};
@@ -19,10 +20,13 @@ use std::path::PathBuf;
 
 /// The main trait to be implemented by different storage types.
 pub trait Storage<T> {
+	/// The error type.
+	type Err;
+
 	/// Loads data from storage.
-	fn load(&self) -> Result<T, &'static str>;
+	fn load(&self) -> Result<T, Self::Err>;
 	/// Saves data to storage.
-	fn save(&mut self, data: T) -> Result<(), &'static str>;
+	fn save(&mut self, data: T) -> Result<(), Self::Err>;
 }
 
 /// The `CSVFileStorage` struct provides a mechanism for persisting
@@ -71,27 +75,30 @@ impl<T> CSVFileStorage<T> {
 }
 
 impl<T: Serialize + DeserializeOwned + Clone> Storage<Vec<T>> for CSVFileStorage<T> {
-	fn load(&self) -> Result<Vec<T>, &'static str> {
-		let file = File::open(&self.filepath).map_err(|_| "Failed to open file")?;
+	type Err = EigenError;
+
+	fn load(&self) -> Result<Vec<T>, EigenError> {
+		let file = File::open(&self.filepath).map_err(|e| EigenError::IOError(e))?;
 		let mut reader = ReaderBuilder::new().from_reader(BufReader::new(file));
 
 		reader
 			.deserialize()
-			.map(|result| result.map_err(|_| "Failed to deserialize data"))
-			.collect::<Result<Vec<T>, &'static str>>()
+			.map(|result| result.map_err(|e| EigenError::FileIOError(e.to_string())))
+			.collect()
 	}
 
-	fn save(&mut self, data: Vec<T>) -> Result<(), &'static str> {
-		let mut writer =
-			WriterBuilder::new().from_path(&self.filepath).map_err(|_| "Failed to open file")?;
+	fn save(&mut self, data: Vec<T>) -> Result<(), EigenError> {
+		let mut writer = WriterBuilder::new()
+			.from_path(&self.filepath)
+			.map_err(|e| EigenError::FileIOError(e.to_string()))?;
 
 		// Loop over content and write each item
 		for record in &data {
-			writer.serialize(record).map_err(|_| "Failed to write record")?;
+			writer.serialize(record).map_err(|e| EigenError::FileIOError(e.to_string()))?;
 		}
 
 		// Flush buffer
-		writer.flush().map_err(|_| "Failed to flush buffer")?;
+		writer.flush().map_err(|e| EigenError::FileIOError(e.to_string()))?;
 
 		Ok(())
 	}
