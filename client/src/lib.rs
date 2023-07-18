@@ -28,10 +28,13 @@
 	nonstandard_style, unreachable_code, unreachable_patterns
 )]
 #![forbid(unsafe_code)]
+// Clippy
+#![allow(clippy::tabs_in_doc_comments, clippy::needless_range_loop)]
 #![deny(
 	// Complexity
  	clippy::unnecessary_cast,
 	clippy::needless_question_mark,
+	clippy::clone_on_copy,
 	// Pedantic
  	clippy::cast_lossless,
  	clippy::cast_possible_wrap,

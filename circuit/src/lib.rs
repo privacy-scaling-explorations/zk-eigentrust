@@ -13,6 +13,7 @@
 	// Complexity
 	clippy::unnecessary_cast,
 	clippy::needless_question_mark,
+	clippy::clone_on_copy,
 	// Pedantic
 	clippy::cast_lossless,
 	clippy::cast_possible_wrap,
