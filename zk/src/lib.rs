@@ -44,8 +44,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::poseidon::{PoseidonNativeHasher, PoseidonNativeSponge};
 
-/// EigenTrustSet
-pub mod dynamic_sets;
+/// EigenTrust-related circuits
+pub mod circuits;
 /// Ecc arithemtic on wrong field
 pub mod ecc;
 /// ECDSA signature scheme gadgets + native version
@@ -62,8 +62,6 @@ pub mod gadgets;
 pub mod integer;
 /// MerkleTree
 pub mod merkle_tree;
-/// Opinion gadgets + native version
-pub mod opinion;
 /// A module for defining round parameters and MDS matrix for hash
 /// permutations
 pub mod params;
@@ -71,8 +69,7 @@ pub mod params;
 pub mod poseidon;
 /// Rescue Prime hash function gadgets + native version
 pub mod rescue_prime;
-/// Utility for checking the score threshold
-pub mod threshold;
+
 /// Utilities for proving and verifying
 pub mod utils;
 /// PLONK verifier

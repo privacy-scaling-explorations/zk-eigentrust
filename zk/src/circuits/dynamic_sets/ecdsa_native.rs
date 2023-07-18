@@ -1,6 +1,6 @@
 use crate::{
+	circuits::opinion::native::Opinion,
 	ecdsa::native::{PublicKey, Signature},
-	opinion::native::Opinion,
 	params::{ecc::secp256k1::Secp256k1Params, rns::secp256k1::Secp256k1_4_68},
 	poseidon::PoseidonNativeHasher,
 	utils::fe_to_big,
