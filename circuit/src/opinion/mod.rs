@@ -326,8 +326,8 @@ where
 			|| "assign_zero",
 			|region: Region<'_, N>| {
 				let mut ctx = RegionCtx::new(region, 0);
-				let zero = ctx.assign_from_constant(common.advice[0], N::ZERO)?;
-				let one = ctx.assign_from_constant(common.advice[1], N::ONE)?;
+				let zero = ctx.assign_fixed(common.fixed[0], N::ZERO)?;
+				let one = ctx.assign_fixed(common.fixed[1], N::ONE)?;
 
 				Ok((zero, one))
 			},
@@ -417,10 +417,10 @@ where
 
 			let left_shifters = Self::left_shifters(common, layouter.namespace(|| "left_shifters"));
 			let mut compose_msg = zero.clone();
-			for i in 0..NUM_LIMBS {
+			for j in 0..NUM_LIMBS {
 				let muladd_chipset = MulAddChipset::new(
-					self.msg_hash[i].limbs[i].clone(),
-					left_shifters[i].clone(),
+					self.msg_hash[i].limbs[j].clone(),
+					left_shifters[j].clone(),
 					compose_msg,
 				);
 				compose_msg = muladd_chipset.synthesize(
@@ -484,6 +484,7 @@ mod test {
 	use super::{
 		AssignedAttestation, AssignedSignedAttestation, OpinionChipset, OpinionConfig, WIDTH,
 	};
+	use crate::circuit::PoseidonNativeHasher;
 	use crate::dynamic_sets::ecdsa_native::{AttestationFr, SignedAttestation};
 	use crate::ecc::generic::{AuxAssigner, PointAssigner, UnassignedEcPoint};
 	use crate::ecc::{
@@ -500,6 +501,7 @@ mod test {
 		IntegerSubChip, UnassignedInteger,
 	};
 	use crate::params::ecc::secp256k1::Secp256k1Params;
+
 	use crate::params::hasher::poseidon_bn254_5x5::Params;
 	use crate::params::rns::secp256k1::Secp256k1_4_68;
 	use crate::poseidon::sponge::{PoseidonSpongeConfig, StatefulSpongeChipset};
@@ -717,6 +719,7 @@ mod test {
 						set.push(
 							ctx.assign_advice(config.common.advice[0], Value::known(self.set[i]))?,
 						);
+						ctx.next();
 					}
 					Ok(set)
 				},
@@ -726,7 +729,7 @@ mod test {
 
 			for i in 0..self.attestations.len() {
 				let signature_assigner = SignatureAssigner::new(UnassignedSignature::from(
-					self.attestations[0].signature.clone(),
+					self.attestations[i].signature.clone(),
 				));
 				let signature = signature_assigner.synthesize(
 					&config.common,
@@ -768,11 +771,15 @@ mod test {
 			> = OpinionChipset::new(
 				attestations, public_key, set, msg_hash, g_as_ecpoint, s_inv, auxes,
 			);
+			// TODO: Instance
 			let result = opinion.synthesize(
 				&config.common,
 				&config.opinion,
 				layouter.namespace(|| "opinion"),
 			)?;
+
+			layouter.constrain_instance(result.2.cell(), config.common.instance, 0)?;
+
 			Ok(())
 		}
 	}
@@ -798,32 +805,37 @@ mod test {
 		let mut attestations = Vec::new();
 
 		for i in 0..10 {
-			let random_set = Fr::random(rng.clone());
-			set.push(random_set);
-
 			let attestation = AttestationFr::new(
 				Fr::random(rng.clone()),
 				Fr::random(rng.clone()),
 				Fr::random(rng.clone()),
 				Fr::random(rng.clone()),
 			);
+			set.push(attestation.about.clone());
 
-			let random_msg = SecpScalar::random(rng.clone());
-			msg_hash.push(Integer::from_w(random_msg));
-
-			signature.push(keypair.sign(random_msg, rng));
+			let att_hasher = PoseidonNativeHasher::new([
+				attestation.about,
+				attestation.domain,
+				attestation.value,
+				attestation.message,
+				Fr::zero(),
+			]);
+			let att_hash_bytes = att_hasher.permute()[0].to_bytes();
+			let att_fq = Fq::from_bytes(&att_hash_bytes).unwrap();
+			msg_hash.push(Integer::from_w(att_fq));
+			signature.push(keypair.sign(att_fq.clone(), rng));
 			let s_inv_fq = big_to_fe::<Fq>(signature[i].s.value()).invert().unwrap();
 			s_inv.push(Integer::from_w(s_inv_fq));
-
 			attestations.push(SignedAttestation::new(attestation, signature[i].clone()));
 		}
-
+		// TODO: Make instances
 		let opinion_native: Opinion<5> = Opinion::new(public_key.clone(), attestations.clone());
 
+		let res = opinion_native.validate(set.clone());
 		let circuit =
 			TestOpinionCircuit::new(attestations, set, public_key, g_as_ecpoint, msg_hash, s_inv);
 		let k = 18;
-		let prover = MockProver::run(k, &circuit, vec![vec![]]).unwrap();
+		let prover = MockProver::run(k, &circuit, vec![vec![res.2]]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
 	}
 }
