@@ -4,15 +4,35 @@ pub mod native;
 pub mod sponge;
 
 use crate::{
-	gadgets::absorb::copy_state, params::hasher::RoundParams, Chip, Chipset, CommonConfig,
-	FieldExt, HasherChipset, RegionCtx,
+	gadgets::absorb::copy_state,
+	params::hasher::{poseidon_bn254_5x5::Params, RoundParams},
+	poseidon::{
+		native::{sponge::PoseidonSponge, Poseidon},
+		sponge::PoseidonSpongeChipset,
+	},
+	Chip, Chipset, CommonConfig, FieldExt, HasherChipset, RegionCtx,
 };
 use halo2::{
 	circuit::{AssignedCell, Layouter, Region, Value},
+	halo2curves::bn256::Fr as Scalar,
 	plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Selector},
 	poly::Rotation,
 };
 use std::marker::PhantomData;
+
+const HASHER_WIDTH: usize = 5;
+/// Type alias for the native poseidon hasher with a width of 5 and bn254 params
+pub type PoseidonNativeHasher = Poseidon<Scalar, HASHER_WIDTH, Params>;
+/// Type alias for native poseidon sponge with a width of 5 and bn254 params
+pub type PoseidonNativeSponge = PoseidonSponge<Scalar, HASHER_WIDTH, Params>;
+/// Type alias for the poseidon hasher chip with a width of 5 and bn254 params
+pub type PoseidonHasher = PoseidonChipset<Scalar, HASHER_WIDTH, Params>;
+/// Partial rounds of permulation chip
+pub type PartialRoundHasher = PartialRoundChip<Scalar, HASHER_WIDTH, Params>;
+/// Full rounds of permuation chip
+pub type FullRoundHasher = FullRoundChip<Scalar, HASHER_WIDTH, Params>;
+/// Type alias for the poseidon spong chip with a width of 5 and bn254 params
+pub type SpongeHasher = PoseidonSpongeChipset<Scalar, HASHER_WIDTH, Params>;
 
 /// Assign relevant constants to the circuit for the given round.
 fn load_round_constants<F: FieldExt, const WIDTH: usize>(

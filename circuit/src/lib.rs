@@ -26,7 +26,6 @@
 	clippy::needless_borrow
 )]
 
-use crate::circuit::{PoseidonNativeHasher, PoseidonNativeSponge};
 use eddsa::native::PublicKey;
 use halo2::halo2curves::bn256::Fr as Scalar;
 use halo2::plonk::TableColumn;
@@ -43,8 +42,8 @@ use halo2::{
 pub use halo2;
 use serde::{Deserialize, Serialize};
 
-/// Closed graph circuit
-pub mod circuit;
+use crate::poseidon::{PoseidonNativeHasher, PoseidonNativeSponge};
+
 /// EigenTrustSet
 pub mod dynamic_sets;
 /// Ecc arithemtic on wrong field

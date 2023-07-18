@@ -9,10 +9,9 @@ use crate::UnassignedValue;
 pub mod ecdsa_native;
 
 use crate::{
-	circuit::{Eddsa, FullRoundHasher, PartialRoundHasher, PoseidonHasher, SpongeHasher},
 	eddsa::{
 		native::{PublicKey, UnassignedPublicKey, UnassignedSignature},
-		EddsaConfig,
+		Eddsa, EddsaConfig,
 	},
 	edwards::{
 		params::BabyJubJub, IntoAffineChip, PointAddChip, ScalarMulChip, StrictScalarMulConfig,
@@ -26,7 +25,10 @@ use crate::{
 			MulChipset, OrChipset, SelectChipset, SubChipset,
 		},
 	},
-	poseidon::{sponge::PoseidonSpongeConfig, PoseidonConfig},
+	poseidon::{
+		sponge::PoseidonSpongeConfig, FullRoundHasher, PartialRoundHasher, PoseidonConfig,
+		PoseidonHasher, SpongeHasher,
+	},
 	Chip, Chipset, CommonConfig, RegionCtx, ADVICE,
 };
 use halo2::{
