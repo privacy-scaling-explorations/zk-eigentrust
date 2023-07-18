@@ -457,8 +457,8 @@ where
 			// Select chip for if case
 			let select_chip = SelectChipset::new(
 				is_default_values_zero,
-				default_hash[0].clone(),
 				att_hash[0].clone(),
+				default_hash[0].clone(),
 			);
 			let selected_value = select_chip.synthesize(
 				common,
@@ -485,7 +485,9 @@ mod test {
 		AssignedAttestation, AssignedSignedAttestation, OpinionChipset, OpinionConfig, WIDTH,
 	};
 	use crate::circuit::PoseidonNativeHasher;
-	use crate::dynamic_sets::ecdsa_native::{AttestationFr, SignedAttestation};
+	use crate::dynamic_sets::ecdsa_native::{
+		field_value_from_pub_key, AttestationFr, SignedAttestation,
+	};
 	use crate::ecc::generic::{AuxAssigner, PointAssigner, UnassignedEcPoint};
 	use crate::ecc::{
 		AuxConfig, EccAddConfig, EccDoubleConfig, EccMulConfig, EccTableSelectConfig,
@@ -771,14 +773,21 @@ mod test {
 			> = OpinionChipset::new(
 				attestations, public_key, set, msg_hash, g_as_ecpoint, s_inv, auxes,
 			);
-			// TODO: Instance
+			// TODO: Instance of the public key
 			let result = opinion.synthesize(
 				&config.common,
 				&config.opinion,
 				layouter.namespace(|| "opinion"),
 			)?;
 
-			layouter.constrain_instance(result.2.cell(), config.common.instance, 0)?;
+			for i in 0..result.1.len() {
+				layouter.constrain_instance(result.1[i].cell(), config.common.instance, i)?;
+			}
+			layouter.constrain_instance(
+				result.2.cell(),
+				config.common.instance,
+				0 + result.1.len(),
+			)?;
 
 			Ok(())
 		}
@@ -791,7 +800,7 @@ mod test {
 		let keypair =
 			EcdsaKeypair::<Secp256k1Affine, Fr, 4, 68, Secp256k1_4_68, Secp256k1Params>::generate_keypair(rng);
 		let public_key = keypair.public_key.clone();
-
+		let public_key_fr = field_value_from_pub_key(&public_key);
 		let g = Secp256k1::generator().to_affine();
 		let g_as_ecpoint = EcPoint::<Secp256k1Affine, N, NUM_LIMBS, NUM_BITS, P, EC>::new(
 			Integer::from_w(g.x),
@@ -828,14 +837,17 @@ mod test {
 			s_inv.push(Integer::from_w(s_inv_fq));
 			attestations.push(SignedAttestation::new(attestation, signature[i].clone()));
 		}
-		// TODO: Make instances
+		set.push(public_key_fr);
 		let opinion_native: Opinion<5> = Opinion::new(public_key.clone(), attestations.clone());
-
 		let res = opinion_native.validate(set.clone());
+
+		let mut p_ins = Vec::new();
+		p_ins.extend(res.1);
+		p_ins.push(res.2);
 		let circuit =
 			TestOpinionCircuit::new(attestations, set, public_key, g_as_ecpoint, msg_hash, s_inv);
 		let k = 18;
-		let prover = MockProver::run(k, &circuit, vec![vec![res.2]]).unwrap();
+		let prover = MockProver::run(k, &circuit, vec![p_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
 	}
 }
