@@ -4,11 +4,11 @@
 
 use crate::att_station::AttestationCreatedFilter;
 use crate::attestation::{
-	address_from_signed_att, Attestation, AttestationPayload, SignedAttestation,
+	address_from_signed_att, AttestationRaw, SignatureRaw, SignedAttestationEth,
+	SignedAttestationRaw,
 };
 use crate::Score;
 use csv::{ReaderBuilder, WriterBuilder};
-use ethers::types::{Address, Bytes, H256};
 use ethers::utils::hex;
 use serde::Deserialize;
 use serde::{de::DeserializeOwned, Serialize};
@@ -172,8 +172,8 @@ impl ScoreRecord {
 pub struct AttestationRecord {
 	/// Ethereum address of the peer being rated.
 	about: String,
-	/// Unique identifier for the action being rated.
-	key: String,
+	/// Unique identifier for the domain in which peers are being rated.
+	domain: String,
 	/// Given rating for the action.
 	value: String,
 	/// Optional field for attaching additional information to the attestation.
@@ -189,17 +189,16 @@ pub struct AttestationRecord {
 impl AttestationRecord {
 	/// Creates a new AttestationRecord from an Attestation log.
 	pub fn from_log(log: &AttestationCreatedFilter) -> Self {
-		let payload = AttestationPayload::from_log(log).unwrap();
-		let attestation = Attestation::from_log(log).unwrap();
-		let (sig_r, sig_s, rec_id) = payload.get_raw_signature();
+		let sign_att_eth = SignedAttestationEth::from_log(log).unwrap();
+		let (sig_s, sig_r, rec_id) = sign_att_eth.signature.get_raw_signature();
 
 		Self {
-			about: Self::encode_bytes_to_hex(attestation.about.as_fixed_bytes()),
-			key: Self::encode_bytes_to_hex(attestation.key.as_fixed_bytes()),
-			value: attestation.value.to_string(),
-			message: Self::encode_bytes_to_hex(attestation.message.as_fixed_bytes()),
-			sig_r: Self::encode_bytes_to_hex(&sig_r),
-			sig_s: Self::encode_bytes_to_hex(&sig_s),
+			about: Self::encode_bytes_to_hex(sign_att_eth.attestation.about.as_fixed_bytes()),
+			domain: Self::encode_bytes_to_hex(sign_att_eth.attestation.domain.as_fixed_bytes()),
+			value: u8::from(sign_att_eth.attestation.value).to_string(),
+			message: Self::encode_bytes_to_hex(sign_att_eth.attestation.message.as_fixed_bytes()),
+			sig_r: Self::encode_bytes_to_hex(&sig_s),
+			sig_s: Self::encode_bytes_to_hex(&sig_r),
 			rec_id: rec_id.to_string(),
 		}
 	}
@@ -207,26 +206,25 @@ impl AttestationRecord {
 	/// Returns a log from an AttestationRecord.
 	pub fn to_log(&self) -> Result<AttestationCreatedFilter, &'static str> {
 		// Use helper functions to simplify the conversion process
-		let about = Address::from_slice(&Self::decode_hex_to_bytes(&self.about)?);
-		let key = Self::parse_bytes32(&self.key)?;
 		let sig_r = Self::parse_bytes32(&self.sig_r)?;
 		let sig_s = Self::parse_bytes32(&self.sig_s)?;
 		let rec_id = Self::parse_u8(&self.rec_id)?;
+
+		let about = Self::parse_bytes20(&self.about)?;
+		let domain = Self::parse_bytes20(&self.domain)?;
 		let value = Self::parse_u8(&self.value)?;
 		let message = Self::parse_bytes32(&self.message)?;
 
 		// Construct AttestationPayload and serialize it
-		let payload = AttestationPayload::new(sig_r, sig_s, rec_id, value, message);
-		let val = Bytes::from(payload.to_bytes());
+		let att_raw = AttestationRaw::new(about, domain, value, message);
+		let sig_raw = SignatureRaw::new(sig_r, sig_s, rec_id);
+		let sign_att_raw = SignedAttestationRaw::new(att_raw, sig_raw);
+		let sign_att_eth: SignedAttestationEth = sign_att_raw.into();
 
-		// Recover the signature
-		let attestation =
-			Attestation::new(about, H256::from(key), value, Some(H256::from(message)));
-		let att_fr = attestation.to_attestation_fr().unwrap();
-		let recoverable_sig = payload.get_signature();
-
-		let signed_att = SignedAttestation::new(att_fr, recoverable_sig);
-		let creator = address_from_signed_att(&signed_att).unwrap();
+		let about = sign_att_eth.attestation.about;
+		let key = *sign_att_eth.attestation.get_key().as_fixed_bytes();
+		let val = sign_att_eth.to_payload();
+		let creator = address_from_signed_att(&sign_att_eth)?;
 
 		Ok(AttestationCreatedFilter { about, key, val, creator })
 	}
@@ -245,6 +243,14 @@ impl AttestationRecord {
 	fn parse_bytes32(hex_str: &str) -> Result<[u8; 32], &'static str> {
 		let bytes = Self::decode_hex_to_bytes(hex_str)?;
 		let bytes_array: [u8; 32] =
+			bytes.try_into().map_err(|_| "Failed to convert into byte array")?;
+		Ok(bytes_array)
+	}
+
+	// Helper function for parsing string into a byte array
+	fn parse_bytes20(hex_str: &str) -> Result<[u8; 20], &'static str> {
+		let bytes = Self::decode_hex_to_bytes(hex_str)?;
+		let bytes_array: [u8; 20] =
 			bytes.try_into().map_err(|_| "Failed to convert into byte array")?;
 		Ok(bytes_array)
 	}

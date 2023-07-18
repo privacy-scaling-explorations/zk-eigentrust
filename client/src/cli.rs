@@ -7,7 +7,7 @@ use clap::{Args, Parser, Subcommand};
 use eigen_trust_circuit::utils::write_json_data;
 use eigen_trust_client::{
 	att_station::AttestationCreatedFilter,
-	attestation::{Attestation, DOMAIN_PREFIX, DOMAIN_PREFIX_LEN},
+	attestation::AttestationEth,
 	fs::{get_file_path, FileType},
 	storage::{AttestationRecord, CSVFileStorage, ScoreRecord, Storage},
 	Client,
@@ -15,7 +15,7 @@ use eigen_trust_client::{
 use ethers::{
 	abi::Address,
 	providers::Http,
-	types::{H160, H256},
+	types::{Uint8, H160, H256},
 };
 use log::{error, info};
 use std::str::FromStr;
@@ -119,7 +119,7 @@ pub enum AttestationsOrigin {
 
 impl AttestData {
 	/// Converts `AttestData` to `Attestation`.
-	pub fn to_attestation(&self, config: &ClientConfig) -> Result<Attestation, &'static str> {
+	pub fn to_attestation(&self, config: &ClientConfig) -> Result<AttestationEth, &'static str> {
 		// Parse Address
 		let parsed_address: Address = self
 			.address
@@ -128,6 +128,9 @@ impl AttestData {
 			.parse()
 			.map_err(|_| "Failed to parse address.")?;
 
+		// Domain
+		let domain = H160::from_str(&config.domain).map_err(|_| "Failed to parse domain")?;
+
 		// Parse score
 		let parsed_score: u8 = self
 			.score
@@ -135,6 +138,7 @@ impl AttestData {
 			.ok_or("Missing score")?
 			.parse()
 			.map_err(|_| "Failed to parse score. It must be a number between 0 and 255.")?;
+		let score = Uint8::from(parsed_score);
 
 		// Parse message
 		let message = match &self.message {
@@ -145,14 +149,7 @@ impl AttestData {
 			None => None,
 		};
 
-		// Key
-		let domain = H160::from_str(&config.domain).map_err(|_| "Failed to parse domain")?;
-		let mut key_bytes: [u8; 32] = [0; 32];
-		key_bytes[..DOMAIN_PREFIX_LEN].copy_from_slice(&DOMAIN_PREFIX);
-		key_bytes[DOMAIN_PREFIX_LEN..].copy_from_slice(domain.as_bytes());
-		let key = H256::from(key_bytes);
-
-		Ok(Attestation::new(parsed_address, key, parsed_score, message))
+		Ok(AttestationEth::new(parsed_address, domain, score, message))
 	}
 }
 
@@ -359,8 +356,8 @@ pub fn handle_update(config: &mut ClientConfig, data: UpdateData) -> Result<(), 
 mod tests {
 	use crate::cli::{AttestData, Cli};
 	use clap::CommandFactory;
-	use eigen_trust_client::{attestation::DOMAIN_PREFIX, ClientConfig};
-	use ethers::types::H256;
+	use eigen_trust_client::ClientConfig;
+	use ethers::types::{H160, H256};
 	use std::str::FromStr;
 
 	#[test]
@@ -395,17 +392,13 @@ mod tests {
 		);
 		assert_eq!(attestation.value, 5);
 
-		let mut expected_key_bytes: [u8; 32] = [0; 32];
-		expected_key_bytes[..DOMAIN_PREFIX.len()].copy_from_slice(&DOMAIN_PREFIX);
-		let expected_key = H256::from(expected_key_bytes);
-
-		assert_eq!(attestation.key, expected_key);
+		let expected_key = H160::from([0; 20]);
+		assert_eq!(attestation.domain, expected_key);
 
 		let expected_message = H256::from_str(
 			&"473fe1d0de78c8f334d059013d902c13c8b53eb0f669caa9cad677ce1a601167".to_string(),
 		)
 		.unwrap();
-
 		assert_eq!(attestation.message, expected_message);
 	}
 }
