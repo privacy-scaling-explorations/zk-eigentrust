@@ -223,11 +223,13 @@ impl SignedAttestation {
 
 	/// Recover the public key from the attestation signature
 	pub fn recover_public_key(&self) -> Result<ECDSAPublicKey, EigenError> {
-		let message = self.attestation.hash().to_bytes();
+		let att_hash = self.attestation.hash().to_bytes();
+		let message = Message::from_slice(att_hash.as_slice())
+			.map_err(|e| EigenError::ConversionError(e.to_string()))?;
 
 		let public_key = self
 			.signature
-			.recover(&Message::from_slice(message.as_slice()).unwrap())
+			.recover(&message)
 			.map_err(|e| EigenError::RecoveryError(e.to_string()))?;
 
 		Ok(public_key)
