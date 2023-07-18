@@ -119,17 +119,17 @@ where
 	}
 }
 
-impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
-	From<(C::ScalarExt, C::ScalarExt)> for Signature<C, N, NUM_LIMBS, NUM_BITS, P>
-where
-	P: RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
-	C::ScalarExt: FieldExt,
-{
-	fn from(rs: (C::ScalarExt, C::ScalarExt)) -> Self {
-		let (r, s) = rs;
-		Self::new(Integer::from_w(r), Integer::from_w(s))
-	}
-}
+// impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
+// 	From<(C::ScalarExt, C::ScalarExt)> for Signature<C, N, NUM_LIMBS, NUM_BITS, P>
+// where
+// 	P: RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+// 	C::ScalarExt: FieldExt,
+// {
+// 	fn from(rs: (C::ScalarExt, C::ScalarExt)) -> Self {
+// 		let (r, s) = rs;
+// 		Self::new(Integer::from_w(r), Integer::from_w(s))
+// 	}
+// }
 
 impl<N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P> From<[u8; 64]>
 	for Signature<Secp256k1Affine, N, NUM_LIMBS, NUM_BITS, P>
@@ -141,6 +141,18 @@ where
 		let mut s_bytes: [u8; 32] = [0; 32];
 		r_bytes.copy_from_slice(&rs[..32]);
 		s_bytes.copy_from_slice(&rs[32..]);
+
+		Self::from((r_bytes, s_bytes))
+	}
+}
+
+impl<N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P> From<([u8; 32], [u8; 32])>
+	for Signature<Secp256k1Affine, N, NUM_LIMBS, NUM_BITS, P>
+where
+	P: RnsParams<Fq, N, NUM_LIMBS, NUM_BITS>,
+{
+	fn from(rs: ([u8; 32], [u8; 32])) -> Self {
+		let (r_bytes, s_bytes) = rs;
 
 		let r = Fq::from_bytes(&r_bytes).unwrap();
 		let s = Fq::from_bytes(&s_bytes).unwrap();
@@ -215,7 +227,7 @@ where
 		// Calculate `s`
 		let s = k_inv * (msg_hash + (r * private_key_fq));
 
-		Signature::from((r, s))
+		Signature::new(Integer::from_w(r), Integer::from_w(s))
 	}
 }
 
