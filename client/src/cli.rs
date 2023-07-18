@@ -313,7 +313,7 @@ pub async fn handle_scores(
 	records_storage.save(score_records)?;
 
 	info!(
-		"Attestations saved at \"{}\".",
+		"Scores saved at \"{}\".",
 		records_storage.filepath().display()
 	);
 

@@ -16,6 +16,7 @@ use ethers::{
 	solc::{Artifact, CompilerOutput, Solc},
 	utils::keccak256,
 };
+use log::info;
 use secp256k1::SecretKey;
 use std::sync::Arc;
 
@@ -39,6 +40,7 @@ pub fn compile_as() -> Result<CompilerOutput, EigenError> {
 /// Generates the bindings for the AttestationStation contract and save them into a file.
 pub fn gen_as_bindings() -> Result<(), EigenError> {
 	let contracts = compile_as()?;
+	let filepath = get_file_path("attestation_station", FileType::Rs)?;
 
 	for (name, contract) in contracts.contracts_iter() {
 		let abi = contract
@@ -54,8 +56,10 @@ pub fn gen_as_bindings() -> Result<(), EigenError> {
 			.map_err(|_| EigenError::ParsingError("Error generating bindings".to_string()))?;
 
 		bindings
-			.write_to_file(get_file_path("attestation_station", FileType::Rs).unwrap())
+			.write_to_file(filepath.clone())
 			.map_err(|e| EigenError::FileIOError(e.to_string()))?;
+
+		info!("Bindings generated at {:?}", filepath);
 	}
 
 	Ok(())
