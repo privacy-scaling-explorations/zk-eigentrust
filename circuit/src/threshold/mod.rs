@@ -50,8 +50,8 @@ impl<
 {
 	/// Constructs a new ThresholdCircuit
 	pub fn new(sets: &[F], scores: &[F], num_decomposed: &[F], den_decomposed: &[F]) -> Self {
-		let sets = sets.iter().map(|s| Value::known(s.clone())).collect();
-		let scores = scores.iter().map(|s| Value::known(s.clone())).collect();
+		let sets = sets.iter().map(|s| Value::known(*s)).collect();
+		let scores = scores.iter().map(|s| Value::known(*s)).collect();
 		let num_decomposed = (0..NUM_LIMBS).map(|i| Value::known(num_decomposed[i])).collect();
 		let den_decomposed = (0..NUM_LIMBS).map(|i| Value::known(den_decomposed[i])).collect();
 		Self { sets, scores, den_decomposed, num_decomposed }
@@ -138,7 +138,7 @@ impl<
 				let mut sets = vec![];
 				for i in 0..NUM_NEIGHBOURS {
 					let member =
-						ctx.assign_advice(config.common.advice[i % ADVICE], self.sets[i].clone())?;
+						ctx.assign_advice(config.common.advice[i % ADVICE], self.sets[i])?;
 					sets.push(member);
 
 					if i % ADVICE == ADVICE - 1 {
@@ -149,8 +149,8 @@ impl<
 
 				let mut scores = vec![];
 				for i in 0..NUM_NEIGHBOURS {
-					let score = ctx
-						.assign_advice(config.common.advice[i % ADVICE], self.scores[i].clone())?;
+					let score =
+						ctx.assign_advice(config.common.advice[i % ADVICE], self.scores[i])?;
 					scores.push(score);
 
 					if i % ADVICE == ADVICE - 1 {

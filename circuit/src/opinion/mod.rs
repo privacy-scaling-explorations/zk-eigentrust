@@ -20,7 +20,8 @@ use halo2::{
 };
 use std::marker::PhantomData;
 
-const WIDTH: usize = 5;
+/// Default with of the hasher used in OpinionChipset
+pub const WIDTH: usize = 5;
 
 /// Assigned Attestation structure.
 #[derive(Debug, Clone)]
@@ -147,22 +148,21 @@ where
 }
 
 // TODO: Use this when dynamic_set ecdsa stops using hardcoded values
-/*
-impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
-	From<SignedAttestation> for UnassignedSignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>
-where
-	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
-	C::Base: FieldExt,
-	C::ScalarExt: FieldExt,
-{
-	fn from(signed_att: SignedAttestation) -> Self {
-		Self {
-			attestation: UnassignedAttestation::from(signed_att.attestation),
-			signature: UnassignedSignature::from(signed_att.signature),
-		}
-	}
-}
-*/
+// impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
+// 	From<SignedAttestation> for UnassignedSignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>
+// where
+// 	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+// 	C::Base: FieldExt,
+// 	C::ScalarExt: FieldExt,
+// {
+// 	fn from(signed_att: SignedAttestation) -> Self {
+// 		Self {
+// 			attestation: UnassignedAttestation::from(signed_att.attestation),
+// 			signature: UnassignedSignature::from(signed_att.signature),
+// 		}
+// 	}
+// }
+
 /// Configuration elements for the circuit are defined here.
 #[derive(Debug, Clone)]
 pub struct OpinionConfig<F: FieldExt, H, S>
@@ -210,20 +210,22 @@ pub struct OpinionChipset<
 	H: HasherChipset<N, WIDTH>,
 	S: SpongeHasherChipset<N>,
 {
-	// Attestations
+	/// Attestations towards other peers
 	attestations: Vec<AssignedSignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>>,
-	// Public key
+	/// Public key of the attester
 	public_key: AssignedPublicKey<C, N, NUM_LIMBS, NUM_BITS, P>,
-	// Set
+	/// Set of peers
 	set: Vec<AssignedCell<N, N>>,
-	// msg_hash as AssignedInteger
+	/// Message hash as AssignedInteger
 	msg_hash: Vec<AssignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>>,
-	// Generator as EC point
+	/// Generator as EC point
 	g_as_ecpoint: AssignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P>,
-	// Signature Inverse
+	/// Signature s Inverse
 	s_inv: Vec<AssignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>>,
-	// Aux for to_add and to_sub
+	/// Aux for to_add and to_sub
 	aux: AssignedAux<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
+	/// Left shifters for composing integers
+	left_shifters: [AssignedCell<N, N>; NUM_LIMBS],
 	/// Constructs a phantom data for the hasher.
 	_hasher: PhantomData<(H, S, EC)>,
 }
@@ -255,8 +257,9 @@ where
 		g_as_ecpoint: AssignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P>,
 		s_inv: Vec<AssignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>>,
 		aux: AssignedAux<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
+		left_shifters: [AssignedCell<N, N>; NUM_LIMBS],
 	) -> Self {
-		OpinionChipset {
+		Self {
 			attestations,
 			public_key,
 			set,
@@ -264,29 +267,9 @@ where
 			g_as_ecpoint,
 			s_inv,
 			aux,
+			left_shifters,
 			_hasher: PhantomData,
 		}
-	}
-
-	/// Create a new chip.
-	pub fn left_shifters(
-		common: &CommonConfig, mut layouter: impl Layouter<N>,
-	) -> [AssignedCell<N, N>; NUM_LIMBS] {
-		let left_shifters_native =
-			<P as RnsParams<C::Scalar, N, NUM_LIMBS, NUM_BITS>>::left_shifters();
-		let mut left_shifters = [(); NUM_LIMBS].map(|_| None);
-		let _ = layouter.assign_region(
-			|| "assign_left_shifters",
-			|region: Region<'_, N>| {
-				let mut ctx = RegionCtx::new(region, 0);
-				for i in 0..NUM_LIMBS {
-					left_shifters[i] =
-						Some(ctx.assign_fixed(common.fixed[i], left_shifters_native[i])?);
-				}
-				Ok(())
-			},
-		);
-		left_shifters.map(|x| x.unwrap())
 	}
 }
 
@@ -310,11 +293,7 @@ where
 	S: SpongeHasherChipset<N>,
 {
 	type Config = OpinionConfig<N, H, S>;
-	type Output = (
-		AssignedPublicKey<C, N, NUM_LIMBS, NUM_BITS, P>,
-		Vec<AssignedCell<N, N>>,
-		AssignedCell<N, N>,
-	);
+	type Output = (Vec<AssignedCell<N, N>>, AssignedCell<N, N>);
 
 	/// Synthesize the circuit.
 	fn synthesize(
@@ -337,7 +316,7 @@ where
 		let mut hashes = Vec::new();
 
 		// Hashing default values for default attestation
-		let hash = H::new([zero.clone(), zero.clone(), zero.clone(), zero.clone(), zero.clone()]);
+		let hash = H::new([(); WIDTH].map(|_| zero.clone()));
 		let default_hash = hash.finalize(
 			common,
 			&config.hasher,
@@ -368,22 +347,7 @@ where
 				layouter.namespace(|| "att_domain"),
 			)?;
 
-			let is_zero_chip = IsZeroChipset::new(att.attestation.value.clone());
-			let att_value = is_zero_chip.synthesize(
-				common,
-				&config.main,
-				layouter.namespace(|| "att_value"),
-			)?;
-
-			let is_zero_chip = IsZeroChipset::new(att.attestation.message.clone());
-			let att_message = is_zero_chip.synthesize(
-				common,
-				&config.main,
-				layouter.namespace(|| "att_message"),
-			)?;
-
-			let multi_and_check =
-				vec![is_default_pubkey, att_about, att_domain, att_message, att_value];
+			let multi_and_check = vec![is_default_pubkey, att_about, att_domain];
 
 			// Checks if there is a zero value. If there is a zero value in the set that means one of the variable is not default.
 			// Basically, instead of doing 3 AND operation we did one set check
@@ -413,14 +377,11 @@ where
 			let att_hash =
 				hash.finalize(common, &config.hasher, layouter.namespace(|| "att_hash"))?;
 
-			let signature = self.attestations[i].signature.clone();
-
-			let left_shifters = Self::left_shifters(common, layouter.namespace(|| "left_shifters"));
 			let mut compose_msg = zero.clone();
 			for j in 0..NUM_LIMBS {
 				let muladd_chipset = MulAddChipset::new(
 					self.msg_hash[i].limbs[j].clone(),
-					left_shifters[j].clone(),
+					self.left_shifters[j].clone(),
 					compose_msg,
 				);
 				compose_msg = muladd_chipset.synthesize(
@@ -445,7 +406,7 @@ where
 			let chip = EcdsaChipset::new(
 				self.public_key.clone(),
 				self.g_as_ecpoint.clone(),
-				signature.clone(),
+				self.attestations[i].signature.clone(),
 				self.msg_hash[i].clone(),
 				self.s_inv[i].clone(),
 				self.aux.clone(),
@@ -473,7 +434,7 @@ where
 		sponge.update(&hashes);
 		let op_hash = sponge.squeeze(common, &config.sponge, layouter.namespace(|| "squeeze!"))?;
 
-		Ok((self.public_key, scores, op_hash))
+		Ok((scores, op_hash))
 	}
 }
 
@@ -500,7 +461,7 @@ mod test {
 	use crate::gadgets::set::{SetChip, SetConfig};
 	use crate::integer::{
 		IntegerAddChip, IntegerAssigner, IntegerDivChip, IntegerMulChip, IntegerReduceChip,
-		IntegerSubChip, UnassignedInteger,
+		IntegerSubChip, LeftShiftersAssigner, UnassignedInteger,
 	};
 	use crate::params::ecc::secp256k1::Secp256k1Params;
 
@@ -760,34 +721,30 @@ mod test {
 				attestations.push(AssignedSignedAttestation::new(attestation, signature))
 			}
 
-			let opinion: OpinionChipset<
-				Secp256k1Affine,
-				Fr,
-				4,
-				68,
-				5,
-				H,
-				S,
-				Secp256k1_4_68,
-				Secp256k1Params,
-			> = OpinionChipset::new(
-				attestations, public_key, set, msg_hash, g_as_ecpoint, s_inv, auxes,
-			);
-			// TODO: Instance of the public key
-			let result = opinion.synthesize(
+			let left_shifters_assigner =
+				LeftShiftersAssigner::<Fq, N, NUM_LIMBS, NUM_BITS, P>::default();
+			let left_shifters = left_shifters_assigner.synthesize(
+				&config.common,
+				&(),
+				layouter.namespace(|| "left_shifters"),
+			)?;
+
+			let opinion: OpinionChipset<C, N, NUM_LIMBS, NUM_BITS, WIDTH, H, S, P, EC> =
+				OpinionChipset::new(
+					attestations, public_key, set, msg_hash, g_as_ecpoint, s_inv, auxes,
+					left_shifters,
+				);
+
+			let (scores, op_hash) = opinion.synthesize(
 				&config.common,
 				&config.opinion,
 				layouter.namespace(|| "opinion"),
 			)?;
 
-			for i in 0..result.1.len() {
-				layouter.constrain_instance(result.1[i].cell(), config.common.instance, i)?;
+			for i in 0..scores.len() {
+				layouter.constrain_instance(scores[i].cell(), config.common.instance, i)?;
 			}
-			layouter.constrain_instance(
-				result.2.cell(),
-				config.common.instance,
-				0 + result.1.len(),
-			)?;
+			layouter.constrain_instance(op_hash.cell(), config.common.instance, scores.len())?;
 
 			Ok(())
 		}
@@ -797,23 +754,21 @@ mod test {
 	fn test_opinion() {
 		// Test Opinion Chipset
 		let rng = &mut rand::thread_rng();
-		let keypair =
-			EcdsaKeypair::<Secp256k1Affine, Fr, 4, 68, Secp256k1_4_68, Secp256k1Params>::generate_keypair(rng);
+		let keypair = EcdsaKeypair::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::generate_keypair(rng);
 		let public_key = keypair.public_key.clone();
 		let public_key_fr = field_value_from_pub_key(&public_key);
 		let g = Secp256k1::generator().to_affine();
-		let g_as_ecpoint = EcPoint::<Secp256k1Affine, N, NUM_LIMBS, NUM_BITS, P, EC>::new(
+		let g_as_ecpoint = EcPoint::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::new(
 			Integer::from_w(g.x),
 			Integer::from_w(g.y),
 		);
 
 		let mut set = Vec::new();
 		let mut msg_hash = Vec::new();
-		let mut signature = Vec::new();
 		let mut s_inv = Vec::new();
 		let mut attestations = Vec::new();
 
-		for i in 0..10 {
+		for _ in 0..10 {
 			let attestation = AttestationFr::new(
 				Fr::random(rng.clone()),
 				Fr::random(rng.clone()),
@@ -831,19 +786,20 @@ mod test {
 			]);
 			let att_hash_bytes = att_hasher.permute()[0].to_bytes();
 			let att_fq = Fq::from_bytes(&att_hash_bytes).unwrap();
+			let signature = keypair.sign(att_fq.clone(), rng);
+			let s_inv_fq = big_to_fe::<Fq>(signature.s.value()).invert().unwrap();
+
 			msg_hash.push(Integer::from_w(att_fq));
-			signature.push(keypair.sign(att_fq.clone(), rng));
-			let s_inv_fq = big_to_fe::<Fq>(signature[i].s.value()).invert().unwrap();
 			s_inv.push(Integer::from_w(s_inv_fq));
-			attestations.push(SignedAttestation::new(attestation, signature[i].clone()));
+			attestations.push(SignedAttestation::new(attestation, signature));
 		}
 		set.push(public_key_fr);
-		let opinion_native: Opinion<5> = Opinion::new(public_key.clone(), attestations.clone());
-		let res = opinion_native.validate(set.clone());
+		let opinion_native: Opinion<WIDTH> = Opinion::new(public_key.clone(), attestations.clone());
+		let (_, scores, op_hash) = opinion_native.validate(set.clone());
 
 		let mut p_ins = Vec::new();
-		p_ins.extend(res.1);
-		p_ins.push(res.2);
+		p_ins.extend(scores);
+		p_ins.push(op_hash);
 		let circuit =
 			TestOpinionCircuit::new(attestations, set, public_key, g_as_ecpoint, msg_hash, s_inv);
 		let k = 18;
