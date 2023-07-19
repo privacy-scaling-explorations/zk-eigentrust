@@ -201,8 +201,8 @@ where
 		let public_key_affine = (C::generator() * private_key_fq).to_affine();
 
 		let c = public_key_affine.coordinates().unwrap();
-		let public_key_x = Integer::from_w(c.x().clone());
-		let public_key_y = Integer::from_w(c.y().clone());
+		let public_key_x = Integer::from_w(*c.x());
+		let public_key_y = Integer::from_w(*c.y());
 		let public_key_p = EcPoint::new(public_key_x, public_key_y);
 		let public_key = PublicKey::new(public_key_p);
 		Self { private_key, public_key }
@@ -271,8 +271,8 @@ where
 
 		let g = C::generator().coordinates().unwrap();
 		let g_as_ecpoint = EcPoint::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::new(
-			Integer::from_w(g.x().clone()),
-			Integer::from_w(g.y().clone()),
+			Integer::from_w(*g.x()),
+			Integer::from_w(*g.y()),
 		);
 
 		Self { signature, msg_hash, public_key, s_inv, g_as_ecpoint }

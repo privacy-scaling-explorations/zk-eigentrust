@@ -507,6 +507,7 @@ impl<F: FieldExt> Chipset<F> for IsZeroChipset<F> {
 }
 
 /// Chip for select operation
+#[derive(Debug, Clone)]
 pub struct SelectChipset<F: FieldExt> {
 	bit: AssignedCell<F, F>,
 	x: AssignedCell<F, F>,
