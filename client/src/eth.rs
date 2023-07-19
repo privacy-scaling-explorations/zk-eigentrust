@@ -103,7 +103,8 @@ pub async fn deploy_as(signer: Arc<ClientSigner>) -> Result<Address, EigenError>
 pub fn ecdsa_secret_from_mnemonic(
 	mnemonic: &str, count: u32,
 ) -> Result<Vec<SecretKey>, EigenError> {
-	let mnemonic = Mnemonic::<English>::new_from_phrase(mnemonic).unwrap();
+	let mnemonic = Mnemonic::<English>::new_from_phrase(mnemonic)
+		.map_err(|e| EigenError::ParsingError(e.to_string()))?;
 	let mut keys = Vec::new();
 
 	// The hardened derivation flag.

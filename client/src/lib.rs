@@ -224,11 +224,11 @@ impl Client {
 
 		// Insert the attester and attested of each attestation into the set
 		for (signed_att, att) in &attestations {
-			let attester = address_from_signed_att(signed_att).unwrap();
+			let attester = address_from_signed_att(signed_att)?;
 			participants_set.insert(att.about);
 			participants_set.insert(attester);
 
-			let pk = signed_att.recover_public_key().unwrap();
+			let pk = signed_att.recover_public_key()?;
 			pks.insert(attester, pk);
 		}
 
@@ -253,7 +253,7 @@ impl Client {
 
 		// Populate the attestation matrix with the attestations data
 		for (signed_att, att) in &attestations {
-			let attester_address = address_from_signed_att(signed_att).unwrap();
+			let attester_address = address_from_signed_att(signed_att)?;
 			let attester_pos = participants.iter().position(|&r| r == attester_address).unwrap();
 			let attested_pos = participants.iter().position(|&r| r == att.about).unwrap();
 
@@ -271,7 +271,7 @@ impl Client {
 
 		// Add participants to set
 		for participant in &participants {
-			let participant_fr = scalar_from_address(participant).unwrap();
+			let participant_fr = scalar_from_address(participant)?;
 			eigen_trust_set.add_member(participant_fr);
 		}
 

@@ -281,8 +281,9 @@ pub async fn handle_scores(
 				));
 			}
 
-			let attestations: Vec<AttestationCreatedFilter> =
-				records.into_iter().map(|record| record.to_log().unwrap()).collect();
+			let results: Result<Vec<_>, _> =
+				records.into_iter().map(|record| record.to_log()).collect();
+			let attestations: Vec<AttestationCreatedFilter> = results?;
 
 			attestations
 		},
@@ -290,8 +291,9 @@ pub async fn handle_scores(
 			handle_attestations(client.get_config().clone()).await?;
 
 			let att_storage = CSVFileStorage::<AttestationRecord>::new(att_fp);
-			let attestations: Vec<AttestationCreatedFilter> =
-				att_storage.load()?.into_iter().map(|record| record.to_log().unwrap()).collect();
+			let results: Result<Vec<_>, _> =
+				att_storage.load()?.into_iter().map(|record| record.to_log()).collect();
+			let attestations: Vec<AttestationCreatedFilter> = results?;
 
 			attestations
 		},
