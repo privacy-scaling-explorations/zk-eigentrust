@@ -364,114 +364,116 @@ impl Client {
 	}
 }
 
-// #[cfg(test)]
-// mod lib_tests {
-// 	use crate::{
-// 		attestation::{AttestationEth, DOMAIN_PREFIX, DOMAIN_PREFIX_LEN},
-// 		eth::deploy_as,
-// 		Client, ClientConfig,
-// 	};
-// 	use ethers::{abi::Address, types::H256, utils::Anvil};
+#[cfg(test)]
+mod lib_tests {
+	use crate::{attestation::AttestationEth, eth::deploy_as, Client, ClientConfig};
+	use ethers::{
+		abi::Address,
+		types::{Uint8, H160, H256},
+		utils::Anvil,
+	};
 
-// 	#[tokio::test]
-// 	async fn test_attest() {
-// 		let anvil = Anvil::new().spawn();
-// 		let config = ClientConfig {
-// 			as_address: "0x5fbdb2315678afecb367f032d93f642f64180aa3".to_string(),
-// 			band_id: "38922764296632428858395574229367".to_string(),
-// 			band_th: "500".to_string(),
-// 			band_url: "http://localhost:3000".to_string(),
-// 			domain: "0x0000000000000000000000000000000000000000".to_string(),
-// 			node_url: anvil.endpoint().to_string(),
-// 		};
-// 		let client = Client::new(config);
+	#[tokio::test]
+	async fn test_attest() {
+		let anvil = Anvil::new().spawn();
+		let config = ClientConfig {
+			as_address: "0x5fbdb2315678afecb367f032d93f642f64180aa3".to_string(),
+			band_id: "38922764296632428858395574229367".to_string(),
+			band_th: "500".to_string(),
+			band_url: "http://localhost:3000".to_string(),
+			domain: "0x0000000000000000000000000000000000000000".to_string(),
+			node_url: anvil.endpoint().to_string(),
+		};
+		let client = Client::new(config);
 
-// 		// Deploy attestation station
-// 		let as_address = deploy_as(client.get_signer()).await.unwrap();
+		// Deploy attestation station
+		let as_address = deploy_as(client.get_signer()).await.unwrap();
 
-// 		// Update config with new addresses
-// 		let config = ClientConfig {
-// 			as_address: format!("{:?}", as_address),
-// 			band_id: "38922764296632428858395574229367".to_string(),
-// 			band_th: "500".to_string(),
-// 			band_url: "http://localhost:3000".to_string(),
-// 			domain: "0x0000000000000000000000000000000000000000".to_string(),
-// 			node_url: anvil.endpoint().to_string(),
-// 		};
+		// Update config with new addresses
+		let config = ClientConfig {
+			as_address: format!("{:?}", as_address),
+			band_id: "38922764296632428858395574229367".to_string(),
+			band_th: "500".to_string(),
+			band_url: "http://localhost:3000".to_string(),
+			domain: "0x0000000000000000000000000000000000000000".to_string(),
+			node_url: anvil.endpoint().to_string(),
+		};
 
-// 		// Attest
-// 		let attestation = AttestationEth::new(Address::default(), H256::default(), 1, None);
-// 		assert!(Client::new(config).attest(attestation).await.is_ok());
+		// Attest
+		let attestation =
+			AttestationEth::new(Address::default(), H160::default(), Uint8::default(), None);
+		assert!(Client::new(config).attest(attestation).await.is_ok());
 
-// 		drop(anvil);
-// 	}
+		drop(anvil);
+	}
 
-// 	#[tokio::test]
-// 	async fn test_get_attestations() {
-// 		let anvil = Anvil::new().spawn();
-// 		let config = ClientConfig {
-// 			as_address: "0x5fbdb2315678afecb367f032d93f642f64180aa3".to_string(),
-// 			band_id: "38922764296632428858395574229367".to_string(),
-// 			band_th: "500".to_string(),
-// 			band_url: "http://localhost:3000".to_string(),
-// 			domain: "0x0000000000000000000000000000000000000000".to_string(),
-// 			node_url: anvil.endpoint().to_string(),
-// 		};
-// 		let client = Client::new(config);
+	#[tokio::test]
+	async fn test_get_attestations() {
+		let anvil = Anvil::new().spawn();
+		let config = ClientConfig {
+			as_address: "0x5fbdb2315678afecb367f032d93f642f64180aa3".to_string(),
+			band_id: "38922764296632428858395574229367".to_string(),
+			band_th: "500".to_string(),
+			band_url: "http://localhost:3000".to_string(),
+			domain: "0x0000000000000000000000000000000000000000".to_string(),
+			node_url: anvil.endpoint().to_string(),
+		};
+		let client = Client::new(config);
 
-// 		// Deploy attestation station
-// 		let as_address = deploy_as(client.get_signer()).await.unwrap();
+		// Deploy attestation station
+		let as_address = deploy_as(client.get_signer()).await.unwrap();
 
-// 		// Update config with new addresses and instantiate client
-// 		let config = ClientConfig {
-// 			as_address: format!("{:?}", as_address),
-// 			band_id: "38922764296632428858395574229367".to_string(),
-// 			band_th: "500".to_string(),
-// 			band_url: "http://localhost:3000".to_string(),
-// 			domain: "0x0000000000000000000000000000000000000000".to_string(),
-// 			node_url: anvil.endpoint().to_string(),
-// 		};
-// 		let client = Client::new(config);
+		// Update config with new addresses and instantiate client
+		let config = ClientConfig {
+			as_address: format!("{:?}", as_address),
+			band_id: "38922764296632428858395574229367".to_string(),
+			band_th: "500".to_string(),
+			band_url: "http://localhost:3000".to_string(),
+			domain: "0x0000000000000000000000000000000000000000".to_string(),
+			node_url: anvil.endpoint().to_string(),
+		};
+		let client = Client::new(config);
 
-// 		// Build Attestation
-// 		let about_bytes = [
-// 			0xff, 0x61, 0x4a, 0x6d, 0x59, 0x56, 0x2a, 0x42, 0x37, 0x72, 0x37, 0x76, 0x32, 0x4d,
-// 			0x36, 0x53, 0x62, 0x6d, 0x35, 0xff,
-// 		];
+		// Build Attestation
+		let about_bytes = [
+			0xff, 0x61, 0x4a, 0x6d, 0x59, 0x56, 0x2a, 0x42, 0x37, 0x72, 0x37, 0x76, 0x32, 0x4d,
+			0x36, 0x53, 0x62, 0x6d, 0x35, 0xff,
+		];
 
-// 		// Build key
-// 		let mut key_bytes: [u8; 32] = [0; 32];
-// 		key_bytes[..DOMAIN_PREFIX_LEN].copy_from_slice(&DOMAIN_PREFIX);
+		let domain_input = [
+			0xff, 0x61, 0x4a, 0x6d, 0x59, 0x56, 0x2a, 0x42, 0x37, 0x72, 0x37, 0x76, 0x32, 0x4d,
+			0x36, 0x53, 0x62, 0x6d, 0x35, 0xff,
+		];
 
-// 		let message = [
-// 			0x00, 0x75, 0x32, 0x45, 0x75, 0x79, 0x32, 0x77, 0x7a, 0x34, 0x58, 0x6c, 0x34, 0x34,
-// 			0x4a, 0x74, 0x6a, 0x78, 0x68, 0x4c, 0x4a, 0x52, 0x67, 0x48, 0x45, 0x6c, 0x4e, 0x73,
-// 			0x65, 0x6e, 0x79, 0x00,
-// 		];
+		let message = [
+			0x00, 0x75, 0x32, 0x45, 0x75, 0x79, 0x32, 0x77, 0x7a, 0x34, 0x58, 0x6c, 0x34, 0x34,
+			0x4a, 0x74, 0x6a, 0x78, 0x68, 0x4c, 0x4a, 0x52, 0x67, 0x48, 0x45, 0x6c, 0x4e, 0x73,
+			0x65, 0x6e, 0x79, 0x00,
+		];
 
-// 		let attestation = AttestationEth::new(
-// 			Address::from(about_bytes),
-// 			H256::from(key_bytes),
-// 			10,
-// 			Some(H256::from(message)),
-// 		);
+		let attestation = AttestationEth::new(
+			Address::from(about_bytes),
+			H160::from(domain_input),
+			Uint8::from(10),
+			Some(H256::from(message)),
+		);
 
-// 		client.attest(attestation.clone()).await.unwrap();
+		client.attest(attestation.clone()).await.unwrap();
 
-// 		let attestations = client.get_attestations().await.unwrap();
+		let attestations = client.get_attestations().await.unwrap();
 
-// 		assert_eq!(attestations.len(), 1);
+		assert_eq!(attestations.len(), 1);
 
-// 		let att_logs = attestations[0].clone();
+		let att_logs = attestations[0].clone();
 
-// 		let returned_att = AttestationEth::from_log(&att_logs).unwrap();
+		let returned_att = AttestationEth::from_log(&att_logs).unwrap();
 
-// 		// Check that the attestations match
-// 		assert_eq!(returned_att.about, attestation.about);
-// 		assert_eq!(returned_att.key, attestation.key);
-// 		assert_eq!(returned_att.value, attestation.value);
-// 		assert_eq!(returned_att.message, attestation.message);
+		// Check that the attestations match
+		assert_eq!(returned_att.about, attestation.about);
+		assert_eq!(returned_att.domain, attestation.about);
+		assert_eq!(returned_att.value, attestation.value);
+		assert_eq!(returned_att.message, attestation.message);
 
-// 		drop(anvil);
-// 	}
-// }
+		drop(anvil);
+	}
+}
