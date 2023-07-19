@@ -427,265 +427,193 @@ pub fn att_data_from_signed_att(
 	Ok(ContractAttestationData(address, key, payload))
 }
 
-// #[cfg(test)]
-// mod tests {
-// 	use crate::attestation::*;
-// 	use ethers::{
-// 		prelude::k256::ecdsa::SigningKey,
-// 		signers::{Signer, Wallet},
-// 		types::Bytes,
-// 	};
-// 	use secp256k1::{ecdsa::RecoveryId, Message, Secp256k1, SecretKey};
+#[cfg(test)]
+mod tests {
+	use crate::attestation::*;
+	use ethers::{
+		prelude::k256::ecdsa::SigningKey,
+		signers::{Signer, Wallet},
+		types::Bytes,
+	};
+	use secp256k1::{Message, Secp256k1, SecretKey};
 
-// 	#[test]
-// 	fn test_attestation_to_scalar_att() {
-// 		// Build key
-// 		let domain_input = [
-// 			0xff, 0x61, 0x4a, 0x6d, 0x59, 0x56, 0x2a, 0x42, 0x37, 0x72, 0x37, 0x76, 0x32, 0x4d,
-// 			0x36, 0x53, 0x62, 0x6d, 0x35, 0xff,
-// 		];
+	#[test]
+	fn test_attestation_to_scalar_att() {
+		// Build key
+		let domain_input = [
+			0xff, 0x61, 0x4a, 0x6d, 0x59, 0x56, 0x2a, 0x42, 0x37, 0x72, 0x37, 0x76, 0x32, 0x4d,
+			0x36, 0x53, 0x62, 0x6d, 0x35, 0xff,
+		];
 
-// 		let mut key_bytes: [u8; 32] = [0; 32];
-// 		key_bytes[..DOMAIN_PREFIX_LEN].copy_from_slice(&DOMAIN_PREFIX);
-// 		key_bytes[DOMAIN_PREFIX_LEN..].copy_from_slice(&domain_input);
+		// Message input
+		let mut message = [
+			0xff, 0x75, 0x32, 0x45, 0x75, 0x79, 0x32, 0x77, 0x7a, 0x34, 0x58, 0x6c, 0x34, 0x34,
+			0x4a, 0x74, 0x6a, 0x78, 0x68, 0x4c, 0x4a, 0x52, 0x67, 0x48, 0x45, 0x6c, 0x4e, 0x73,
+			0x65, 0x6e, 0x79, 0xff,
+		];
 
-// 		// Message input
-// 		let mut message = [
-// 			0xff, 0x75, 0x32, 0x45, 0x75, 0x79, 0x32, 0x77, 0x7a, 0x34, 0x58, 0x6c, 0x34, 0x34,
-// 			0x4a, 0x74, 0x6a, 0x78, 0x68, 0x4c, 0x4a, 0x52, 0x67, 0x48, 0x45, 0x6c, 0x4e, 0x73,
-// 			0x65, 0x6e, 0x79, 0xff,
-// 		];
+		// Address Input
+		let mut address = [
+			0xff, 0x47, 0x73, 0x4b, 0x6b, 0x42, 0x6e, 0x59, 0x61, 0x4c, 0x71, 0x4a, 0x45, 0x76,
+			0x79, 0x4c, 0x6a, 0x73, 0x46, 0xff,
+		];
 
-// 		// Address Input
-// 		let mut address = [
-// 			0xff, 0x47, 0x73, 0x4b, 0x6b, 0x42, 0x6e, 0x59, 0x61, 0x4c, 0x71, 0x4a, 0x45, 0x76,
-// 			0x79, 0x4c, 0x6a, 0x73, 0x46, 0xff,
-// 		];
+		let attestation = AttestationEth::new(
+			Address::from(address),
+			H160::from(domain_input),
+			Uint8::from(10),
+			Some(H256::from(message)),
+		);
 
-// 		let attestation = AttestationEth::new(
-// 			Address::from(address),
-// 			Bytes::from(key_bytes),
-// 			Uint8::from(10),
-// 			Some(H256::from(message)),
-// 		);
+		let attestation_fr = attestation.to_attestation_fr().unwrap();
 
-// 		let attestation_fr = attestation.to_attestation_fr().unwrap();
+		// Expected about
+		let mut expected_about_input = [0u8; 32];
+		address.reverse();
+		expected_about_input[..20].copy_from_slice(&address);
+		let expected_about = Scalar::from_bytes(&expected_about_input).unwrap();
 
-// 		// Expected about
-// 		let mut expected_about_input = [0u8; 32];
-// 		address.reverse();
-// 		expected_about_input[..20].copy_from_slice(&address);
-// 		let expected_about = Scalar::from_bytes(&expected_about_input).unwrap();
+		// Expected domain
+		let mut expected_domain_input = [0u8; 32];
+		expected_domain_input[DOMAIN_PREFIX_LEN..].copy_from_slice(&domain_input);
+		expected_domain_input.reverse();
+		let expected_domain = Scalar::from_bytes(&expected_domain_input).unwrap();
 
-// 		// Expected domain
-// 		let mut expected_domain_input = [0u8; 32];
-// 		expected_domain_input[DOMAIN_PREFIX_LEN..].copy_from_slice(&domain_input);
-// 		expected_domain_input.reverse();
-// 		let expected_domain = Scalar::from_bytes(&expected_domain_input).unwrap();
+		// Expected value
+		let expected_value = Scalar::from(10u64);
 
-// 		// Expected value
-// 		let expected_value = Scalar::from(10u64);
+		// Expected message
+		let mut expected_message_input = [0u8; 64];
+		message.reverse();
 
-// 		// Expected message
-// 		let mut expected_message_input = [0u8; 64];
-// 		message.reverse();
+		expected_message_input[..32].copy_from_slice(&message);
+		let expected_message = Scalar::from_uniform_bytes(&expected_message_input);
 
-// 		expected_message_input[..32].copy_from_slice(&message);
-// 		let expected_message = Scalar::from_uniform_bytes(&expected_message_input);
+		assert_eq!(attestation_fr.about, expected_about);
+		assert_eq!(attestation_fr.domain, expected_domain);
+		assert_eq!(attestation_fr.value, expected_value);
+		assert_eq!(attestation_fr.message, expected_message);
+	}
 
-// 		assert_eq!(attestation_fr.about, expected_about);
-// 		assert_eq!(attestation_fr.domain, expected_domain);
-// 		assert_eq!(attestation_fr.value, expected_value);
-// 		assert_eq!(attestation_fr.message, expected_message);
-// 	}
+	#[test]
+	fn test_attestation_payload_from_signed_att() {
+		let secp = Secp256k1::new();
+		let secret_key_as_bytes = [0x40; 32];
+		let secret_key = SecretKey::from_slice(&secret_key_as_bytes).unwrap();
 
-// 	#[test]
-// 	fn test_attestation_payload_from_signed_att() {
-// 		let secp = Secp256k1::new();
-// 		let secret_key_as_bytes = [0x40; 32];
-// 		let secret_key = SecretKey::from_slice(&secret_key_as_bytes).unwrap();
+		let attestation_eth = AttestationEth::default();
+		let attestation_raw: AttestationRaw = attestation_eth.clone().into();
 
-// 		let attestation = AttestationFr {
-// 			about: Scalar::zero(),
-// 			domain: Scalar::zero(),
-// 			value: Scalar::zero(),
-// 			message: Scalar::zero(),
-// 		};
+		let attestation_fr = attestation_eth.to_attestation_fr().unwrap();
 
-// 		let message = attestation.hash().to_bytes();
+		let message = attestation_fr.hash().to_bytes();
 
-// 		let signature = secp.sign_ecdsa_recoverable(
-// 			&Message::from_slice(message.as_slice()).unwrap(),
-// 			&secret_key,
-// 		);
-// 		SignatureEth::from(signature);
+		let signature = secp.sign_ecdsa_recoverable(
+			&Message::from_slice(message.as_slice()).unwrap(),
+			&secret_key,
+		);
+		let sig_raw = SignatureRaw::from(signature);
+		let sig_eth: SignatureEth = sig_raw.clone().into();
 
-// 		let signed_attestation = SignedAttestationEth::new(attestation, signature);
+		let signed_attestation = SignedAttestationEth::new(attestation_eth, sig_eth);
 
-// 		// Convert the signed attestation to attestation payload
-// 		let attestation_payload = signed_attestation.to_payload();
+		// Convert the signed attestation to attestation payload
+		let attestation_payload = signed_attestation.to_payload();
 
-// 		// Check the attestation payload
-// 		let (recid, sig) = signed_attestation.signature.get_signature().serialize_compact();
-// 		let mut payload_bytes = sig.to_vec();
-// 		payload_bytes.push(recid.to_i32() as u8);
-// 		payload_bytes.push(sig)
-// 	}
+		// Check the attestation payload
+		let (recid, sig) = sig_raw.get_signature().serialize_compact();
+		let mut payload_bytes = sig.to_vec();
+		payload_bytes.push(recid.to_i32() as u8);
+		payload_bytes.push(attestation_raw.value);
+		payload_bytes.extend(attestation_raw.message);
 
-// 	#[test]
-// 	fn test_attestation_payload_to_signed_att() {
-// 		let secp = Secp256k1::new();
-// 		let secret_key = SecretKey::from_slice(&[0xcd; 32]).expect("32 bytes, within curve order");
-// 		let message = Message::from_slice(&[0xab; 32]).expect("32 bytes");
+		assert_eq!(attestation_payload.to_vec(), payload_bytes);
+	}
 
-// 		let signature = secp.sign_ecdsa_recoverable(&message, &secret_key);
+	#[test]
+	fn test_address_from_signed_att() {
+		let secp = Secp256k1::new();
 
-// 		let (recovery_id, serialized_sig) = signature.serialize_compact();
+		let secret_key_as_bytes = [0xcd; 32];
 
-// 		let mut sig_r = [0u8; 32];
-// 		let mut sig_s = [0u8; 32];
-// 		sig_r.copy_from_slice(&serialized_sig[0..32]);
-// 		sig_s.copy_from_slice(&serialized_sig[32..64]);
+		let secret_key =
+			SecretKey::from_slice(&secret_key_as_bytes).expect("32 bytes, within curve order");
 
-// 		let payload = AttestationRaw {
-// 			sig_r,
-// 			sig_s,
-// 			rec_id: recovery_id.to_i32() as u8,
-// 			value: 5,
-// 			message: [3u8; 32],
-// 		};
+		let attestation_eth = AttestationEth::default();
+		let attestation_fr = attestation_eth.to_attestation_fr().unwrap();
+		let message = attestation_fr.hash().to_bytes();
 
-// 		let sig = payload.get_signature();
+		let signature = secp.sign_ecdsa_recoverable(
+			&Message::from_slice(message.as_slice()).unwrap(),
+			&secret_key,
+		);
 
-// 		assert_eq!(
-// 			sig.serialize_compact().0,
-// 			RecoveryId::from_i32(payload.rec_id as i32).unwrap()
-// 		);
-// 		assert_eq!(
-// 			sig.serialize_compact().1.as_slice(),
-// 			[payload.sig_r, payload.sig_s].concat().as_slice()
-// 		);
-// 	}
+		let signature_raw = SignatureRaw::from(signature);
+		let signature_eth: SignatureEth = signature_raw.into();
+		let signed_attestation = SignedAttestationEth::new(attestation_eth, signature_eth);
 
-// 	#[test]
-// 	fn test_attestation_payload_bytes_to_struct_and_back() {
-// 		let payload = AttestationRaw {
-// 			sig_r: [0u8; 32],
-// 			sig_s: [0u8; 32],
-// 			rec_id: 0,
-// 			value: 10,
-// 			message: [0u8; 32],
-// 		};
+		// Replace with expected address
+		let expected_address =
+			Wallet::from(SigningKey::from_bytes(secret_key_as_bytes.as_ref()).unwrap()).address();
 
-// 		let bytes = payload.to_bytes();
+		assert_eq!(
+			address_from_signed_att(&signed_attestation).unwrap(),
+			expected_address
+		);
+	}
 
-// 		let result_payload = AttestationRaw::from_bytes(bytes).unwrap();
+	#[test]
+	fn test_contract_att_data_from_signed_att() {
+		let secp = Secp256k1::new();
+		let secret_key_as_bytes = [0x40; 32];
+		let secret_key =
+			SecretKey::from_slice(&secret_key_as_bytes).expect("32 bytes, within curve order");
+		let about_bytes = [
+			0xff, 0x61, 0x4a, 0x6d, 0x59, 0x56, 0x2a, 0x42, 0x37, 0x72, 0x37, 0x76, 0x32, 0x4d,
+			0x36, 0x53, 0x62, 0x6d, 0x35, 0xff,
+		];
+		// Build key
+		let domain_input = [
+			0xff, 0x61, 0x4a, 0x6d, 0x59, 0x56, 0x2a, 0x42, 0x37, 0x72, 0x37, 0x76, 0x32, 0x4d,
+			0x36, 0x53, 0x62, 0x6d, 0x35, 0xff,
+		];
 
-// 		assert_eq!(payload, result_payload);
-// 	}
+		// Message input
+		let message = [
+			0xff, 0x75, 0x32, 0x45, 0x75, 0x79, 0x32, 0x77, 0x7a, 0x34, 0x58, 0x6c, 0x34, 0x34,
+			0x4a, 0x74, 0x6a, 0x78, 0x68, 0x4c, 0x4a, 0x52, 0x67, 0x48, 0x45, 0x6c, 0x4e, 0x73,
+			0x65, 0x6e, 0x79, 0xff,
+		];
 
-// 	#[test]
-// 	fn test_attestation_payload_from_bytes_error_handling() {
-// 		let bytes = vec![0u8; 99];
-// 		let result = AttestationRaw::from_bytes(bytes);
-// 		assert!(result.is_err());
-// 	}
+		let attestation_eth = AttestationEth::new(
+			Address::from(about_bytes),
+			H160::from(domain_input),
+			Uint8::from(10),
+			Some(H256::from(message)),
+		);
 
-// 	#[test]
-// 	fn test_address_from_signed_att() {
-// 		let secp = Secp256k1::new();
+		let attestation_fr = attestation_eth.to_attestation_fr().unwrap();
 
-// 		let secret_key_as_bytes = [0xcd; 32];
+		let message = attestation_fr.hash().to_bytes();
+		let signature = secp.sign_ecdsa_recoverable(
+			&Message::from_slice(message.as_slice()).unwrap(),
+			&secret_key,
+		);
+		let signature_raw = SignatureRaw::from(signature);
+		let signature_eth: SignatureEth = signature_raw.into();
 
-// 		let secret_key =
-// 			SecretKey::from_slice(&secret_key_as_bytes).expect("32 bytes, within curve order");
+		let signed_attestation = SignedAttestationEth::new(attestation_eth.clone(), signature_eth);
 
-// 		let attestation = AttestationFr {
-// 			about: Scalar::zero(),
-// 			domain: Scalar::zero(),
-// 			value: Scalar::zero(),
-// 			message: Scalar::zero(),
-// 		};
+		let contract_att_data = att_data_from_signed_att(&signed_attestation).unwrap();
 
-// 		let message = attestation.hash().to_bytes();
+		let expected_address = Address::from(about_bytes);
+		assert_eq!(contract_att_data.0, expected_address);
 
-// 		let signature = secp.sign_ecdsa_recoverable(
-// 			&Message::from_slice(message.as_slice()).unwrap(),
-// 			&secret_key,
-// 		);
+		let expected_key = attestation_eth.get_key();
 
-// 		let signed_attestation = SignedAttestation { attestation, signature };
+		assert_eq!(contract_att_data.1, *expected_key.as_fixed_bytes());
 
-// 		// Replace with expected address
-// 		let expected_address =
-// 			Wallet::from(SigningKey::from_bytes(secret_key_as_bytes.as_ref()).unwrap()).address();
-
-// 		assert_eq!(
-// 			address_from_signed_att(&signed_attestation).unwrap(),
-// 			expected_address
-// 		);
-// 	}
-
-// 	#[test]
-// 	fn test_contract_att_data_from_signed_att() {
-// 		let secp = Secp256k1::new();
-// 		let secret_key_as_bytes = [0x40; 32];
-// 		let secret_key =
-// 			SecretKey::from_slice(&secret_key_as_bytes).expect("32 bytes, within curve order");
-// 		let about_bytes = [
-// 			0xff, 0x61, 0x4a, 0x6d, 0x59, 0x56, 0x2a, 0x42, 0x37, 0x72, 0x37, 0x76, 0x32, 0x4d,
-// 			0x36, 0x53, 0x62, 0x6d, 0x35, 0xff,
-// 		];
-// 		// Build key
-// 		let domain_input = [
-// 			0xff, 0x61, 0x4a, 0x6d, 0x59, 0x56, 0x2a, 0x42, 0x37, 0x72, 0x37, 0x76, 0x32, 0x4d,
-// 			0x36, 0x53, 0x62, 0x6d, 0x35, 0xff,
-// 		];
-
-// 		let mut key_bytes: [u8; 32] = [0; 32];
-// 		key_bytes[..DOMAIN_PREFIX_LEN].copy_from_slice(&DOMAIN_PREFIX);
-// 		key_bytes[DOMAIN_PREFIX_LEN..].copy_from_slice(&domain_input);
-
-// 		// Message input
-// 		let message = [
-// 			0xff, 0x75, 0x32, 0x45, 0x75, 0x79, 0x32, 0x77, 0x7a, 0x34, 0x58, 0x6c, 0x34, 0x34,
-// 			0x4a, 0x74, 0x6a, 0x78, 0x68, 0x4c, 0x4a, 0x52, 0x67, 0x48, 0x45, 0x6c, 0x4e, 0x73,
-// 			0x65, 0x6e, 0x79, 0xff,
-// 		];
-
-// 		let attestation = AttestationEth::new(
-// 			Address::from(about_bytes),
-// 			H256::from(key_bytes),
-// 			10,
-// 			Some(H256::from(message)),
-// 		);
-
-// 		let attestation_fr = attestation.to_attestation_fr().unwrap();
-
-// 		let message = attestation_fr.hash().to_bytes();
-
-// 		let signature = secp.sign_ecdsa_recoverable(
-// 			&Message::from_slice(message.as_slice()).unwrap(),
-// 			&secret_key,
-// 		);
-
-// 		let signed_attestation = SignedAttestation { attestation: attestation_fr, signature };
-
-// 		let contract_att_data = att_data_from_signed_att(&signed_attestation).unwrap();
-
-// 		let expected_address = Address::from(about_bytes);
-// 		assert_eq!(contract_att_data.0, expected_address);
-
-// 		let mut expected_key = signed_attestation.attestation.domain.to_bytes();
-
-// 		// Reverse and add domain
-// 		expected_key.reverse();
-// 		expected_key[..DOMAIN_PREFIX_LEN].copy_from_slice(&DOMAIN_PREFIX);
-
-// 		assert_eq!(contract_att_data.1, expected_key);
-
-// 		let expected_payload: Bytes =
-// 			AttestationRaw::from_signed_attestation(&signed_attestation).unwrap().to_bytes().into();
-// 		assert_eq!(contract_att_data.2, expected_payload);
-// 	}
-// }
+		let expected_payload: Bytes = signed_attestation.to_payload();
+		assert_eq!(contract_att_data.2, expected_payload);
+	}
+}
