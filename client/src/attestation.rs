@@ -475,7 +475,7 @@ pub fn att_data_from_signed_att(
 	let mut about_bytes = signed_attestation.attestation.about.as_bytes().to_vec();
 	about_bytes.reverse();
 
-	let address = Address::from_slice(&about_bytes[12..]);
+	let address = Address::from_slice(&about_bytes);
 
 	// Get the attestation key
 	let mut key = [0; 32];
