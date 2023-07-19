@@ -29,7 +29,7 @@
 )]
 #![forbid(unsafe_code)]
 // Clippy
-#![allow(clippy::tabs_in_doc_comments, clippy::needless_range_loop)]
+#![allow(clippy::tabs_in_doc_comments, clippy::needless_range_loop, clippy::new_without_default)]
 #![deny(
 	// Complexity
  	clippy::unnecessary_cast,

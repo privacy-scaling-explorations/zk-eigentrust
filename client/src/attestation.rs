@@ -90,7 +90,7 @@ impl AttestationEth {
 		};
 
 		// Value
-		let value = Scalar::from(u8::from(self.value.clone()) as u64);
+		let value = Scalar::from(u64::from(u8::from(self.value.clone())));
 
 		// Message
 		let mut message_fixed = *self.message.as_fixed_bytes();
@@ -329,7 +329,7 @@ impl SignatureRaw {
 	/// Gets the ECDSA recoverable signature.
 	pub fn get_signature(&self) -> RecoverableSignature {
 		let concat_sig = [self.sig_r, self.sig_s].concat();
-		let recovery_id = RecoveryId::from_i32(i32::from(u8::from(self.rec_id))).unwrap();
+		let recovery_id = RecoveryId::from_i32(i32::from(self.rec_id)).unwrap();
 
 		RecoverableSignature::from_compact(concat_sig.as_slice(), recovery_id).unwrap()
 	}
@@ -353,7 +353,7 @@ impl From<RecoverableSignature> for SignatureRaw {
 impl From<SignatureRaw> for RecoverableSignature {
 	fn from(sig: SignatureRaw) -> Self {
 		let concat_sig = [sig.sig_r, sig.sig_s].concat();
-		let recovery_id = RecoveryId::from_i32(i32::from(u8::from(sig.rec_id))).unwrap();
+		let recovery_id = RecoveryId::from_i32(i32::from(sig.rec_id)).unwrap();
 
 		RecoverableSignature::from_compact(concat_sig.as_slice(), recovery_id).unwrap()
 	}
