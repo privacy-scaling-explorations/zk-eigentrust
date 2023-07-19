@@ -190,16 +190,16 @@ impl AttestationRecord {
 	/// Creates a new AttestationRecord from an Attestation log.
 	pub fn from_log(log: &AttestationCreatedFilter) -> Self {
 		let sign_att_eth = SignedAttestationEth::from_log(log).unwrap();
-		let (sig_s, sig_r, rec_id) = sign_att_eth.signature.get_raw_signature();
+		let sign_att_raw: SignedAttestationRaw = sign_att_eth.into();
 
 		Self {
-			about: Self::encode_bytes_to_hex(sign_att_eth.attestation.about.as_fixed_bytes()),
-			domain: Self::encode_bytes_to_hex(sign_att_eth.attestation.domain.as_fixed_bytes()),
-			value: u8::from(sign_att_eth.attestation.value).to_string(),
-			message: Self::encode_bytes_to_hex(sign_att_eth.attestation.message.as_fixed_bytes()),
-			sig_r: Self::encode_bytes_to_hex(&sig_s),
-			sig_s: Self::encode_bytes_to_hex(&sig_r),
-			rec_id: rec_id.to_string(),
+			about: Self::encode_bytes_to_hex(&sign_att_raw.attestation.about),
+			domain: Self::encode_bytes_to_hex(&sign_att_raw.attestation.domain),
+			value: sign_att_raw.attestation.value.to_string(),
+			message: Self::encode_bytes_to_hex(&sign_att_raw.attestation.message),
+			sig_r: Self::encode_bytes_to_hex(&sign_att_raw.signature.sig_r),
+			sig_s: Self::encode_bytes_to_hex(&sign_att_raw.signature.sig_s),
+			rec_id: sign_att_raw.signature.rec_id.to_string(),
 		}
 	}
 

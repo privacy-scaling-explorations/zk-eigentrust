@@ -9,7 +9,9 @@ use crate::{
 	NUM_BITS, NUM_LIMBS,
 };
 use eigen_trust_circuit::{
-	dynamic_sets::ecdsa_native::AttestationFr,
+	dynamic_sets::ecdsa_native::{
+		Attestation as AttestationFr, SignedAttestation as SignedAttestationFr,
+	},
 	ecdsa::native::Signature,
 	halo2::halo2curves::{bn256::Fr as Scalar, ff::FromUniformBytes, secp256k1::Secp256k1Affine},
 	params::rns::secp256k1::Secp256k1_4_68,
@@ -32,16 +34,16 @@ pub type ECDSASignature = ecdsa::RecoverableSignature;
 pub type SignatureFr = Signature<Secp256k1Affine, Scalar, NUM_LIMBS, NUM_BITS, Secp256k1_4_68>;
 
 /// Attestation struct.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct AttestationEth {
 	/// Ethereum address of peer being rated
-	pub about: Address,
+	pub(crate) about: Address,
 	/// Unique identifier for the action being rated
-	pub domain: H160,
+	pub(crate) domain: H160,
 	/// Given rating for the action
-	pub value: Uint8,
+	pub(crate) value: Uint8,
 	/// Optional field for attaching additional information to the attestation
-	pub message: H256,
+	pub(crate) message: H256,
 }
 
 impl AttestationEth {
@@ -158,49 +160,11 @@ impl SignatureEth {
 		Ok(Self { sig_r: H256::from(r), sig_s: H256::from(s), rec_id: Uint8::from(rec_id) })
 	}
 
-	/// Converts a vector of bytes into the struct.
-	pub fn from_bytes(bytes: Vec<u8>) -> Result<Self, &'static str> {
-		if bytes.len() != 65 {
-			return Err("Input bytes vector should be of length 65");
-		}
-
-		let mut sig_r = [0u8; 32];
-		let mut sig_s = [0u8; 32];
-
-		sig_r.copy_from_slice(&bytes[..32]);
-		sig_s.copy_from_slice(&bytes[32..64]);
-		let rec_id = bytes[64];
-
-		Ok(
-			Self {
-				sig_r: H256::from(sig_r),
-				sig_s: H256::from(sig_s),
-				rec_id: Uint8::from(rec_id),
-			},
-		)
-	}
-
-	/// Converts the struct into a vector of bytes.
-	pub fn to_bytes(&self) -> Vec<u8> {
-		let mut bytes = Vec::with_capacity(65);
-
-		bytes.extend(self.sig_r.as_fixed_bytes());
-		bytes.extend(self.sig_s.as_fixed_bytes());
-		bytes.push(u8::from(self.rec_id.clone()));
-
-		bytes
-	}
-
-	/// Get raw bytes
-	pub fn get_raw_signature(&self) -> ([u8; 32], [u8; 32], u8) {
-		let mut r = [0; 32];
-		let mut s = [0; 32];
-		r.copy_from_slice(self.sig_r.as_fixed_bytes());
-		s.copy_from_slice(self.sig_s.as_fixed_bytes());
-
-		let rec_id = u8::from(self.rec_id.clone());
-
-		(r, s, rec_id)
+	/// Convert the struct into Fr version
+	pub fn to_signature_fr(&self) -> SignatureFr {
+		let sig_r = *self.sig_r.as_fixed_bytes();
+		let sig_s = *self.sig_s.as_fixed_bytes();
+		SignatureFr::from((sig_r, sig_s))
 	}
 }
 
@@ -218,23 +182,15 @@ impl From<SignatureRaw> for SignatureEth {
 #[derive(Clone, Debug, Default)]
 pub struct SignedAttestationEth {
 	/// Attestation
-	pub attestation: AttestationEth,
+	pub(crate) attestation: AttestationEth,
 	/// Signature
-	pub signature: SignatureEth,
+	pub(crate) signature: SignatureEth,
 }
 
 impl SignedAttestationEth {
 	/// Construct new signed attestations
 	pub fn new(attestation: AttestationEth, signature: SignatureEth) -> Self {
 		Self { attestation, signature }
-	}
-
-	/// Constructs a new signature struct from an attestation log.
-	pub fn from_log(log: &AttestationCreatedFilter) -> Result<Self, &'static str> {
-		let attestation = AttestationEth::from_log(log)?;
-		let signature = SignatureEth::from_log(log)?;
-
-		Ok(Self { attestation, signature })
 	}
 
 	/// Recover the public key from the attestation signature
@@ -253,7 +209,9 @@ impl SignedAttestationEth {
 
 	/// Convert to payload bytes
 	pub fn to_payload(&self) -> Bytes {
-		let sig_bytes = self.signature.to_bytes();
+		let sig_raw: SignatureRaw = self.signature.clone().into();
+		let sig_bytes = sig_raw.to_bytes();
+
 		let value = u8::from(self.attestation.value.clone());
 		let message = self.attestation.message.as_bytes();
 
@@ -266,6 +224,32 @@ impl SignedAttestationEth {
 		}
 
 		Bytes::from(bytes)
+	}
+
+	/// Constructs a new signature struct from an attestation log.
+	pub fn from_log(log: &AttestationCreatedFilter) -> Result<Self, &'static str> {
+		let attestation = AttestationEth::from_log(log)?;
+		let signature = SignatureEth::from_log(log)?;
+
+		Ok(Self { attestation, signature })
+	}
+
+	/// Converts the structure into data needed for AttestationStation
+	pub fn to_tx_data(&self) -> (Address, Address, H256, Bytes) {
+		let payload = self.to_payload();
+		let key = self.attestation.get_key();
+		let pk = self.recover_public_key().unwrap();
+		let attestor = address_from_public_key(&pk).unwrap();
+		let attested = self.attestation.about;
+
+		(attestor, attested, key, payload)
+	}
+
+	/// Convert to a struct with field values
+	pub fn to_signed_signature_fr(&self) -> SignedAttestationFr {
+		let attestation_fr = self.attestation.to_attestation_fr().unwrap();
+		let signature_fr = self.signature.to_signature_fr();
+		SignedAttestationFr::new(attestation_fr, signature_fr)
 	}
 }
 
@@ -282,19 +266,50 @@ impl From<SignedAttestationRaw> for SignedAttestationEth {
 #[derive(Clone, Debug, Default)]
 pub struct AttestationRaw {
 	/// Ethereum address of peer being rated
-	about: [u8; 20],
+	pub(crate) about: [u8; 20],
 	/// Unique identifier for the action being rated
-	domain: [u8; 20],
+	pub(crate) domain: [u8; 20],
 	/// Given rating for the action
-	value: u8,
+	pub(crate) value: u8,
 	/// Optional field for attaching additional information to the attestation
-	message: [u8; 32],
+	pub(crate) message: [u8; 32],
 }
 
 impl AttestationRaw {
 	/// Constructor for raw attestation
 	pub fn new(about: [u8; 20], domain: [u8; 20], value: u8, message: [u8; 32]) -> Self {
 		Self { about, domain, value, message }
+	}
+
+	/// Converts a vector of bytes into the struct.
+	pub fn from_bytes(bytes: Vec<u8>) -> Result<Self, &'static str> {
+		if bytes.len() != 73 {
+			return Err("Input bytes vector should be of length 73");
+		}
+
+		let mut about = [0u8; 20];
+		let mut domain = [0u8; 20];
+		let mut message = [0u8; 32];
+
+		about.copy_from_slice(&bytes[..20]);
+		domain.copy_from_slice(&bytes[20..40]);
+		message.copy_from_slice(&bytes[41..]);
+
+		let value = bytes[41];
+
+		Ok(Self { about, domain, value, message })
+	}
+
+	/// Converts the struct into a vector of bytes.
+	pub fn to_bytes(&self) -> Vec<u8> {
+		let mut bytes = Vec::with_capacity(73);
+
+		bytes.extend(self.about);
+		bytes.extend(self.domain);
+		bytes.push(self.value);
+		bytes.extend(self.message);
+
+		bytes
 	}
 }
 
@@ -313,11 +328,11 @@ impl From<AttestationEth> for AttestationRaw {
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct SignatureRaw {
 	/// The 'r' value of the ECDSA signature.
-	sig_r: [u8; 32],
+	pub(crate) sig_r: [u8; 32],
 	/// The 's' value of the ECDSA signature.
-	sig_s: [u8; 32],
+	pub(crate) sig_s: [u8; 32],
 	/// Recovery id of the ECDSA signature.
-	rec_id: u8,
+	pub(crate) rec_id: u8,
 }
 
 impl SignatureRaw {
@@ -332,6 +347,33 @@ impl SignatureRaw {
 		let recovery_id = RecoveryId::from_i32(i32::from(self.rec_id)).unwrap();
 
 		RecoverableSignature::from_compact(concat_sig.as_slice(), recovery_id).unwrap()
+	}
+
+	/// Converts a vector of bytes into the struct.
+	pub fn from_bytes(bytes: Vec<u8>) -> Result<Self, &'static str> {
+		if bytes.len() != 65 {
+			return Err("Input bytes vector should be of length 65");
+		}
+
+		let mut sig_r = [0u8; 32];
+		let mut sig_s = [0u8; 32];
+
+		sig_r.copy_from_slice(&bytes[..32]);
+		sig_s.copy_from_slice(&bytes[32..64]);
+		let rec_id = bytes[64];
+
+		Ok(Self { sig_r, sig_s, rec_id })
+	}
+
+	/// Converts the struct into a vector of bytes.
+	pub fn to_bytes(&self) -> Vec<u8> {
+		let mut bytes = Vec::with_capacity(65);
+
+		bytes.extend(self.sig_r);
+		bytes.extend(self.sig_s);
+		bytes.push(self.rec_id);
+
+		bytes
 	}
 }
 
@@ -373,15 +415,34 @@ impl From<SignatureEth> for SignatureRaw {
 #[derive(Clone, Debug, Default)]
 pub struct SignedAttestationRaw {
 	/// Attestation
-	attestation: AttestationRaw,
+	pub(crate) attestation: AttestationRaw,
 	/// Signature
-	signature: SignatureRaw,
+	pub(crate) signature: SignatureRaw,
 }
 
 impl SignedAttestationRaw {
 	/// Constructor for signed attestations
 	pub fn new(attestation: AttestationRaw, signature: SignatureRaw) -> Self {
 		Self { attestation, signature }
+	}
+
+	/// Converts a vector of bytes into the struct.
+	pub fn from_bytes(bytes: Vec<u8>) -> Result<Self, &'static str> {
+		let attestation = AttestationRaw::from_bytes(bytes[..73].to_vec())?;
+		let signature = SignatureRaw::from_bytes(bytes[73..].to_vec())?;
+
+		Ok(Self { attestation, signature })
+	}
+
+	/// Converts the struct into a vector of bytes.
+	pub fn to_bytes(&self) -> Vec<u8> {
+		let mut bytes = Vec::with_capacity(65 + 73);
+		let attestation_bytes = self.attestation.to_bytes();
+		let signature_bytes = self.signature.to_bytes();
+		bytes.extend(attestation_bytes);
+		bytes.extend(signature_bytes);
+
+		bytes
 	}
 }
 

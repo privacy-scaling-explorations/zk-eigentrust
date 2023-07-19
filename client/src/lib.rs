@@ -55,7 +55,7 @@ pub mod fs;
 pub mod storage;
 
 use crate::attestation::{
-	address_from_signed_att, SignatureEth, SignatureFr, SignatureRaw, SignedAttestationEth,
+	address_from_signed_att, SignatureEth, SignatureRaw, SignedAttestationEth,
 };
 use att_station::{AttestationCreatedFilter, AttestationStation};
 use attestation::{att_data_from_signed_att, AttestationEth};
@@ -257,11 +257,7 @@ impl Client {
 			let attested_pos =
 				participants.iter().position(|&r| r == signed_att.attestation.about).unwrap();
 
-			let (r, s, _) = signed_att.signature.get_raw_signature();
-			let sig_fr = SignatureFr::from((r, s));
-			let att_fr = signed_att.attestation.to_attestation_fr().unwrap();
-			let signed_attestation_fr = SignedAttestationFr::new(att_fr, sig_fr);
-
+			let signed_attestation_fr = signed_att.to_signed_signature_fr();
 			attestation_matrix[attester_pos][attested_pos] = Some(signed_attestation_fr);
 		}
 

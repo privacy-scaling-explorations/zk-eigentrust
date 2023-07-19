@@ -356,8 +356,8 @@ pub fn handle_update(config: &mut ClientConfig, data: UpdateData) -> Result<(), 
 mod tests {
 	use crate::cli::{AttestData, Cli};
 	use clap::CommandFactory;
-	use eigen_trust_client::ClientConfig;
-	use ethers::types::{H160, H256};
+	use eigen_trust_client::{attestation::AttestationEth, ClientConfig};
+	use ethers::types::{Uint8, H160, H256};
 	use std::str::FromStr;
 
 	#[test]
@@ -386,19 +386,19 @@ mod tests {
 
 		let attestation = data.to_attestation(&config).unwrap();
 
-		assert_eq!(
-			attestation.about,
-			"0x5fbdb2315678afecb367f032d93f642f64180aa3".parse().unwrap()
-		);
-		assert_eq!(attestation.value, 5);
-
-		let expected_key = H160::from([0; 20]);
-		assert_eq!(attestation.domain, expected_key);
-
+		let expected_about = "0x5fbdb2315678afecb367f032d93f642f64180aa3".parse().unwrap();
+		let expected_domain = H160::from([0; 20]);
+		let expected_value = Uint8::from(5);
 		let expected_message = H256::from_str(
 			&"473fe1d0de78c8f334d059013d902c13c8b53eb0f669caa9cad677ce1a601167".to_string(),
 		)
 		.unwrap();
-		assert_eq!(attestation.message, expected_message);
+		let expected_attestation = AttestationEth::new(
+			expected_about,
+			expected_domain,
+			expected_value,
+			Some(expected_message),
+		);
+		assert_eq!(attestation, expected_attestation);
 	}
 }
