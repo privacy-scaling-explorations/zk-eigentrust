@@ -54,6 +54,17 @@ where
 	}
 }
 
+impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
+	From<Signature<C, N, NUM_LIMBS, NUM_BITS, P>> for UnassignedSignature<C, N, NUM_LIMBS, NUM_BITS, P>
+where
+	P: RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	C::ScalarExt: FieldExt,
+{
+	fn from(sig: Signature<C, N, NUM_LIMBS, NUM_BITS, P>) -> Self {
+		Self { r: UnassignedInteger::from(sig.r), s: UnassignedInteger::from(sig.s) }
+	}
+}
+
 impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P> UnassignedValue
 	for UnassignedSignature<C, N, NUM_LIMBS, NUM_BITS, P>
 where
@@ -90,7 +101,8 @@ where
 	P: RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
 	C::ScalarExt: FieldExt,
 {
-	fn new(
+	/// Creates a new Assigned Signature object
+	pub fn new(
 		r: AssignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>,
 		s: AssignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>,
 	) -> Self {
@@ -154,8 +166,9 @@ where
 	}
 }
 
+/// Unassigned Public Key structure
 #[derive(Clone, Debug)]
-struct UnassignedPublicKey<
+pub struct UnassignedPublicKey<
 	C: CurveAffine,
 	N: FieldExt,
 	const NUM_LIMBS: usize,
@@ -176,7 +189,8 @@ where
 	C::ScalarExt: FieldExt,
 	EC: EccParams<C>,
 {
-	fn new(pk: PublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>) -> Self {
+	/// Creates a new Unassigned Public Key object
+	pub fn new(pk: PublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>) -> Self {
 		let x = UnassignedInteger::new(pk.0.x.clone(), pk.0.x.limbs.map(|x| Value::known(x)));
 		let y = UnassignedInteger::new(pk.0.y.clone(), pk.0.y.limbs.map(|x| Value::known(x)));
 		let p = UnassignedEcPoint::new(x, y);
@@ -222,7 +236,8 @@ where
 	}
 }
 
-struct PublicKeyAssigner<
+/// Public Key Assigner structure
+pub struct PublicKeyAssigner<
 	C: CurveAffine,
 	N: FieldExt,
 	const NUM_LIMBS: usize,
@@ -242,6 +257,7 @@ where
 	EC: EccParams<C>,
 	C::Base: FieldExt,
 {
+	/// Creates a new public key assigner object
 	pub fn new(p: UnassignedPublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>) -> Self {
 		Self(p)
 	}

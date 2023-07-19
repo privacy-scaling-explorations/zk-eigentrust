@@ -805,6 +805,49 @@ where
 	}
 }
 
+/// Assigner for left shifters from Rns
+#[derive(Clone, Debug, Default)]
+pub struct LeftShiftersAssigner<
+	W: FieldExt,
+	N: FieldExt,
+	const NUM_LIMBS: usize,
+	const NUM_BITS: usize,
+	P,
+> where
+	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
+{
+	_f: PhantomData<(W, N)>,
+	_p: PhantomData<P>,
+}
+
+impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P> Chipset<N>
+	for LeftShiftersAssigner<W, N, NUM_LIMBS, NUM_BITS, P>
+where
+	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
+{
+	type Config = ();
+	type Output = [AssignedCell<N, N>; NUM_LIMBS];
+
+	fn synthesize(
+		self, common: &CommonConfig, _: &Self::Config, mut layouter: impl Layouter<N>,
+	) -> Result<Self::Output, Error> {
+		let left_shifters_native = P::left_shifters();
+		layouter.assign_region(
+			|| "assign_left_shifters",
+			|region: Region<'_, N>| {
+				let mut ctx = RegionCtx::new(region, 0);
+
+				let mut left_shifters = [(); NUM_LIMBS].map(|_| None);
+				for i in 0..NUM_LIMBS {
+					left_shifters[i] =
+						Some(ctx.assign_fixed(common.fixed[i], left_shifters_native[i])?);
+				}
+				Ok(left_shifters.map(|x| x.unwrap()))
+			},
+		)
+	}
+}
+
 #[cfg(test)]
 mod test {
 	use super::{native::Integer, *};
