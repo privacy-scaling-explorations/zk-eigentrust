@@ -2,7 +2,7 @@
 pub mod native;
 
 use crate::{
-	dynamic_sets::ecdsa_native::AttestationFr,
+	dynamic_sets::ecdsa_native::Attestation,
 	ecc::generic::{AssignedAux, AssignedEcPoint},
 	ecdsa::{AssignedPublicKey, AssignedSignature, EcdsaChipset, EcdsaConfig, UnassignedSignature},
 	gadgets::{
@@ -66,8 +66,8 @@ impl<N: FieldExt> UnassignedAttestation<N> {
 	}
 }
 
-impl From<AttestationFr> for UnassignedAttestation<Fr> {
-	fn from(att: AttestationFr) -> Self {
+impl From<Attestation> for UnassignedAttestation<Fr> {
+	fn from(att: Attestation) -> Self {
 		Self {
 			about: Value::known(att.about),
 			domain: Value::known(att.domain),
@@ -447,7 +447,7 @@ mod test {
 	};
 	use crate::circuit::PoseidonNativeHasher;
 	use crate::dynamic_sets::ecdsa_native::{
-		field_value_from_pub_key, AttestationFr, SignedAttestation,
+		field_value_from_pub_key, Attestation, SignedAttestation,
 	};
 	use crate::ecc::generic::{AuxAssigner, PointAssigner, UnassignedEcPoint};
 	use crate::ecc::{
@@ -769,7 +769,7 @@ mod test {
 		let mut attestations = Vec::new();
 
 		for _ in 0..10 {
-			let attestation = AttestationFr::new(
+			let attestation = Attestation::new(
 				Fr::random(rng.clone()),
 				Fr::random(rng.clone()),
 				Fr::random(rng.clone()),

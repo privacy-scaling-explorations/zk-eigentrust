@@ -418,7 +418,7 @@ mod tests {
 
 	use crate::{
 		dynamic_sets::ecdsa_native::{
-			field_value_from_pub_key, AttestationFr, EigenTrustSet, SignedAttestation, NUM_BITS,
+			field_value_from_pub_key, Attestation, EigenTrustSet, SignedAttestation, NUM_BITS,
 			NUM_LIMBS,
 		},
 		ecdsa::native::{EcdsaKeypair, PublicKey},
@@ -463,7 +463,7 @@ mod tests {
 				res.push(None)
 			} else {
 				let (about, key, value, message) = (pks[i], Fr::zero(), scores[i], Fr::zero());
-				let attestation = AttestationFr::new(about, key, value, message);
+				let attestation = Attestation::new(about, key, value, message);
 				let msg = big_to_fe(fe_to_big(attestation.hash()));
 				let signature = keypair.sign(msg, rng);
 				let signed_attestation = SignedAttestation::new(attestation, signature);

@@ -60,7 +60,7 @@ pub fn field_value_from_pub_key(
 #[derive(Clone, Debug)]
 pub struct SignedAttestation {
 	/// Attestation
-	pub attestation: AttestationFr,
+	pub attestation: Attestation,
 	/// Signature
 	pub signature: Signature<Secp256k1Affine, Fr, NUM_LIMBS, NUM_BITS, Secp256k1_4_68>,
 }
@@ -68,7 +68,7 @@ pub struct SignedAttestation {
 impl SignedAttestation {
 	/// Constructs a new instance
 	pub fn new(
-		attestation: AttestationFr,
+		attestation: Attestation,
 		signature: Signature<Secp256k1Affine, Fr, NUM_LIMBS, NUM_BITS, Secp256k1_4_68>,
 	) -> Self {
 		Self { attestation, signature }
@@ -77,7 +77,7 @@ impl SignedAttestation {
 
 impl Default for SignedAttestation {
 	fn default() -> Self {
-		let attestation = AttestationFr::default();
+		let attestation = Attestation::default();
 		let signature = Signature::default();
 
 		Self { attestation, signature }
@@ -86,7 +86,7 @@ impl Default for SignedAttestation {
 
 /// Attestation struct
 #[derive(Clone, Default, Debug, PartialEq, PartialOrd)]
-pub struct AttestationFr {
+pub struct Attestation {
 	/// Ethereum address of peer being rated
 	pub about: Fr,
 	/// Unique identifier for the action being rated
@@ -97,7 +97,7 @@ pub struct AttestationFr {
 	pub message: Fr,
 }
 
-impl AttestationFr {
+impl Attestation {
 	/// Construct a new attestation struct
 	pub fn new(about: Fr, domain: Fr, value: Fr, message: Fr) -> Self {
 		Self { about, domain, value, message }
@@ -377,7 +377,7 @@ mod test {
 				res.push(None)
 			} else {
 				let (about, key, value, message) = (pks[i], Fr::zero(), scores[i], Fr::zero());
-				let attestation = AttestationFr::new(about, key, value, message);
+				let attestation = Attestation::new(about, key, value, message);
 				let msg = big_to_fe(fe_to_big(attestation.hash()));
 				let signature = keypair.sign(msg, rng);
 				let signed_attestation = SignedAttestation::new(attestation, signature);

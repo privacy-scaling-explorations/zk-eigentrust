@@ -2,7 +2,7 @@ use halo2::halo2curves::{bn256::Fr, secp256k1::Secp256k1Affine};
 
 use crate::{
 	circuit::{PoseidonNativeHasher, PoseidonNativeSponge},
-	dynamic_sets::ecdsa_native::{field_value_from_pub_key, AttestationFr, SignedAttestation},
+	dynamic_sets::ecdsa_native::{field_value_from_pub_key, Attestation, SignedAttestation},
 	ecdsa::native::{EcdsaVerifier, PublicKey},
 	integer::native::Integer,
 	params::{ecc::secp256k1::Secp256k1Params, rns::secp256k1::Secp256k1_4_68},
@@ -46,7 +46,7 @@ impl<const NUM_NEIGHBOURS: usize> Opinion<NUM_NEIGHBOURS> {
 			let is_default_pubkey = set[i] == Fr::zero();
 
 			let att = self.attestations[i].clone();
-			let is_default_sig = att.attestation == AttestationFr::default();
+			let is_default_sig = att.attestation == Attestation::default();
 
 			if is_default_pubkey || is_default_sig {
 				scores[i] = Fr::default();
