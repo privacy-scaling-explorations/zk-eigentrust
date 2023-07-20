@@ -58,8 +58,11 @@ impl AttestationEth {
 		assert!(attestation_val.len() == 66 || attestation_val.len() == 98);
 
 		let value = attestation_val[65];
+
 		let mut message = [0; 32];
-		message.copy_from_slice(&attestation_val[66..]);
+		if attestation_val.len() > 66 {
+			message.copy_from_slice(&attestation_val[66..]);
+		};
 
 		let mut domain = [0; 20];
 		domain.copy_from_slice(&log.key[DOMAIN_PREFIX_LEN..]);
@@ -219,7 +222,7 @@ impl SignedAttestationEth {
 		bytes.extend(&sig_bytes);
 		bytes.push(value);
 
-		if message == [0; 32] {
+		if message != [0; 32] {
 			bytes.extend(message);
 		}
 
@@ -472,8 +475,7 @@ pub fn att_data_from_signed_att(
 	signed_attestation: &SignedAttestationEth,
 ) -> Result<ContractAttestationData, &'static str> {
 	// Recover the about Ethereum address from the signed attestation
-	let mut about_bytes = signed_attestation.attestation.about.as_bytes().to_vec();
-	about_bytes.reverse();
+	let about_bytes = signed_attestation.attestation.about.as_bytes().to_vec();
 
 	let address = Address::from_slice(&about_bytes);
 
@@ -586,7 +588,6 @@ mod tests {
 		let mut payload_bytes = sig.to_vec();
 		payload_bytes.push(recid.to_i32() as u8);
 		payload_bytes.push(attestation_raw.value);
-		payload_bytes.extend(attestation_raw.message);
 
 		assert_eq!(attestation_payload.to_vec(), payload_bytes);
 	}
