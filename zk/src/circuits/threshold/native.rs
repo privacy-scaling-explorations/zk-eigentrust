@@ -109,7 +109,7 @@ mod tests {
 
 	use crate::{
 		calculate_message_hash,
-		dynamic_sets::native::{EigenTrustSet, Opinion},
+		circuits::dynamic_sets::native::{EigenTrustSet, Opinion},
 		eddsa::native::{sign, PublicKey, SecretKey},
 		params::rns::compose_big_decimal,
 	};

@@ -26,7 +26,6 @@
 	clippy::needless_borrow
 )]
 
-use crate::circuit::{PoseidonNativeHasher, PoseidonNativeSponge};
 use eddsa::native::PublicKey;
 use halo2::halo2curves::bn256::Fr as Scalar;
 use halo2::plonk::TableColumn;
@@ -43,10 +42,10 @@ use halo2::{
 pub use halo2;
 use serde::{Deserialize, Serialize};
 
-/// Closed graph circuit
-pub mod circuit;
-/// EigenTrustSet
-pub mod dynamic_sets;
+use crate::circuits::{PoseidonNativeHasher, PoseidonNativeSponge};
+
+/// EigenTrust-related circuits
+pub mod circuits;
 /// Ecc arithemtic on wrong field
 pub mod ecc;
 /// ECDSA signature scheme gadgets + native version
@@ -63,8 +62,6 @@ pub mod gadgets;
 pub mod integer;
 /// MerkleTree
 pub mod merkle_tree;
-/// Opinion gadgets + native version
-pub mod opinion;
 /// A module for defining round parameters and MDS matrix for hash
 /// permutations
 pub mod params;
@@ -72,8 +69,7 @@ pub mod params;
 pub mod poseidon;
 /// Rescue Prime hash function gadgets + native version
 pub mod rescue_prime;
-/// Utility for checking the score threshold
-pub mod threshold;
+
 /// Utilities for proving and verifying
 pub mod utils;
 /// PLONK verifier

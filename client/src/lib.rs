@@ -58,7 +58,7 @@ use att_station::{AttestationCreatedFilter, AttestationStation};
 use attestation::{att_data_from_signed_att, Attestation};
 use dotenv::{dotenv, var};
 use eigen_trust_circuit::{
-	dynamic_sets::ecdsa_native::{
+	circuits::dynamic_sets::ecdsa_native::{
 		EigenTrustSet, RationalScore, SignedAttestation as SignedAttestationFr, MIN_PEER_COUNT,
 		NUM_BITS, NUM_LIMBS,
 	},
