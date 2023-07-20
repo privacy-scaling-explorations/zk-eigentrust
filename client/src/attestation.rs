@@ -110,7 +110,6 @@ impl AttestationEth {
 	}
 
 	/// Construct the key from the attestation domain
-	/// TODO: change to fixed bytes type
 	pub fn get_key(&self) -> H256 {
 		let mut key = [0; 32];
 
@@ -475,19 +474,12 @@ pub fn att_data_from_signed_att(
 	signed_attestation: &SignedAttestationEth,
 ) -> Result<ContractAttestationData, &'static str> {
 	// Recover the about Ethereum address from the signed attestation
-	let about_bytes = signed_attestation.attestation.about.as_bytes().to_vec();
-
-	let address = Address::from_slice(&about_bytes);
-
-	// Get the attestation key
-	let mut key = [0; 32];
-	key[..DOMAIN_PREFIX_LEN].copy_from_slice(&DOMAIN_PREFIX);
-	key[DOMAIN_PREFIX_LEN..]
-		.copy_from_slice(signed_attestation.attestation.domain.as_fixed_bytes());
-
-	let payload = signed_attestation.to_payload();
-
-	Ok(ContractAttestationData(address, key, payload))
+	let (_, about, key, payload) = signed_attestation.to_tx_data();
+	Ok(ContractAttestationData(
+		about,
+		key.to_fixed_bytes(),
+		payload,
+	))
 }
 
 #[cfg(test)]
