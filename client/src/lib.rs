@@ -81,7 +81,7 @@ use ethers::{
 	signers::{coins_bip39::English, MnemonicBuilder},
 };
 use log::{info, warn};
-use secp256k1::{ecdsa::RecoverableSignature, Message, SecretKey, SECP256K1};
+use secp256k1::{ecdsa::RecoverableSignature, Message, SECP256K1};
 use serde::{Deserialize, Serialize};
 use std::{
 	collections::{BTreeSet, HashMap},
@@ -160,38 +160,42 @@ impl Client {
 	/// Submits an attestation to the attestation station.
 	pub async fn attest(&self, attestation: Attestation) -> Result<(), EigenError> {
 		let ctx = SECP256K1;
-		let secret_keys: Vec<SecretKey> = ecdsa_secret_from_mnemonic(&self.mnemonic, 1).unwrap();
+		let secret_keys = ecdsa_secret_from_mnemonic(&self.mnemonic, 1)?;
 
 		// Get AttestationFr
-		let attestation_fr = attestation.to_attestation_fr().unwrap();
+		let attestation_fr = attestation.to_attestation_fr()?;
 
 		// Format for signature
 		let att_hash = attestation_fr.hash();
 
 		// Sign attestation
 		let signature: RecoverableSignature = ctx.sign_ecdsa_recoverable(
-			&Message::from_slice(att_hash.to_bytes().as_slice()).unwrap(),
+			&Message::from_slice(att_hash.to_bytes().as_slice())
+				.map_err(|e| EigenError::RecoveryError(e.to_string()))?,
 			&secret_keys[0],
 		);
 
 		let signed_attestation = SignedAttestation::new(attestation_fr, signature);
 
 		let as_address_res = self.config.as_address.parse::<Address>();
-		let as_address = as_address_res.map_err(|_| EigenError::ParseError)?;
+		let as_address = as_address_res.map_err(|e| EigenError::ParsingError(e.to_string()))?;
 		let as_contract = AttestationStation::new(as_address, self.signer.clone());
 
 		// Verify signature is recoverable
-		let recovered_pubkey = signed_attestation.recover_public_key().unwrap();
-		let recovered_address = address_from_public_key(&recovered_pubkey).unwrap();
+		let recovered_pubkey = signed_attestation.recover_public_key()?;
+		let recovered_address = address_from_public_key(&recovered_pubkey);
 		assert!(recovered_address == self.signer.address());
 
 		// Stored contract data
-		let contract_data = att_data_from_signed_att(&signed_attestation).unwrap();
+		let contract_data = att_data_from_signed_att(&signed_attestation);
 
 		let tx_call = as_contract.attest(vec![contract_data]);
-		let tx_res = tx_call.send();
-		let tx = tx_res.await.map_err(|_| EigenError::TransactionError)?;
-		let res = tx.await.map_err(|_| EigenError::TransactionError)?;
+		let tx_res = tx_call.send().await;
+		let tx = tx_res
+			.map_err(|_| EigenError::TransactionError("Transaction send failed".to_string()))?;
+		let res = tx.await.map_err(|_| {
+			EigenError::TransactionError("Transaction resolution failed".to_string())
+		})?;
 
 		if let Some(receipt) = res {
 			info!("Transaction status: {:?}", receipt.status);
@@ -212,8 +216,7 @@ impl Client {
 				let att = Attestation::from_log(&attestation_filter)?;
 				Result::Ok((signed_att, att))
 			})
-			.collect::<Result<Vec<_>, &'static str>>()
-			.unwrap();
+			.collect::<Result<Vec<_>, EigenError>>()?;
 
 		// Construct a set to hold unique participant addresses
 		let mut participants_set = BTreeSet::<Address>::new();
@@ -221,11 +224,11 @@ impl Client {
 
 		// Insert the attester and attested of each attestation into the set
 		for (signed_att, att) in &attestations {
-			let attester = address_from_signed_att(signed_att).unwrap();
+			let attester = address_from_signed_att(signed_att)?;
 			participants_set.insert(att.about);
 			participants_set.insert(attester);
 
-			let pk = signed_att.recover_public_key().unwrap();
+			let pk = signed_att.recover_public_key()?;
 			pks.insert(attester, pk);
 		}
 
@@ -250,7 +253,7 @@ impl Client {
 
 		// Populate the attestation matrix with the attestations data
 		for (signed_att, att) in &attestations {
-			let attester_address = address_from_signed_att(signed_att).unwrap();
+			let attester_address = address_from_signed_att(signed_att)?;
 			let attester_pos = participants.iter().position(|&r| r == attester_address).unwrap();
 			let attested_pos = participants.iter().position(|&r| r == att.about).unwrap();
 
@@ -268,7 +271,7 @@ impl Client {
 
 		// Add participants to set
 		for participant in &participants {
-			let participant_fr = scalar_from_address(participant).unwrap();
+			let participant_fr = scalar_from_address(participant)?;
 			eigen_trust_set.add_member(participant_fr);
 		}
 
@@ -341,7 +344,7 @@ impl Client {
 			.topic2(Vec::<H256>::new())
 			.from_block(0);
 
-		self.signer.get_logs(&filter).await.map_err(|_| EigenError::Unknown)
+		self.signer.get_logs(&filter).await.map_err(|e| EigenError::ParsingError(e.to_string()))
 	}
 
 	/// Verifies last generated proof.
