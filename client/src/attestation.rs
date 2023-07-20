@@ -141,11 +141,11 @@ impl From<AttestationRaw> for AttestationEth {
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct SignatureEth {
 	/// The 'r' value of the ECDSA signature.
-	sig_r: H256,
+	pub(crate) sig_r: H256,
 	/// The 's' value of the ECDSA signature.
-	sig_s: H256,
+	pub(crate) sig_s: H256,
 	/// Recovery id of the ECDSA signature.
-	rec_id: Uint8,
+	pub(crate) rec_id: Uint8,
 }
 
 impl SignatureEth {
