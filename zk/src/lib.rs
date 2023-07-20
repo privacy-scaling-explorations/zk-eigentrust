@@ -42,7 +42,7 @@ use halo2::{
 pub use halo2;
 use serde::{Deserialize, Serialize};
 
-use crate::poseidon::{PoseidonNativeHasher, PoseidonNativeSponge};
+use crate::circuits::{PoseidonNativeHasher, PoseidonNativeSponge};
 
 /// EigenTrust-related circuits
 pub mod circuits;

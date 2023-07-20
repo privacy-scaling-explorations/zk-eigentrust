@@ -280,6 +280,7 @@ where
 mod test {
 	use super::{native::NativeTranscriptRead, LoaderConfig, TranscriptReadChipset};
 	use crate::{
+		circuits::{FullRoundHasher, PartialRoundHasher},
 		ecc::{
 			same_curve::{native::EcPoint, AssignedEcPoint, UnassignedEcPoint},
 			AuxConfig, EccAddConfig, EccDoubleConfig, EccMulConfig, EccTableSelectConfig,
@@ -300,7 +301,7 @@ mod test {
 		poseidon::{
 			native::sponge::PoseidonSponge,
 			sponge::{PoseidonSpongeConfig, StatefulSpongeChipset},
-			FullRoundHasher, PartialRoundHasher, PoseidonConfig,
+			PoseidonConfig,
 		},
 		verifier::{
 			loader::{

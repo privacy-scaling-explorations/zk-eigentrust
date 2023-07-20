@@ -245,6 +245,7 @@ mod test {
 		native::NativeAggregator, AggregatorChipset, AggregatorConfig, Snark, Svk, UnassignedSnark,
 	};
 	use crate::{
+		circuits::{FullRoundHasher, PartialRoundHasher},
 		ecc::{
 			AuxConfig, EccAddConfig, EccDoubleConfig, EccMulConfig, EccTableSelectConfig,
 			EccUnreducedLadderConfig,
@@ -258,9 +259,7 @@ mod test {
 			IntegerAddChip, IntegerDivChip, IntegerMulChip, IntegerReduceChip, IntegerSubChip,
 		},
 		params::rns::bn256::Bn256_4_68,
-		poseidon::{
-			sponge::PoseidonSpongeConfig, FullRoundHasher, PartialRoundHasher, PoseidonConfig,
-		},
+		poseidon::{sponge::PoseidonSpongeConfig, PoseidonConfig},
 		utils::generate_params,
 		verifier::{
 			loader::native::{NUM_BITS, NUM_LIMBS},

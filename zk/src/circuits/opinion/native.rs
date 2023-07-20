@@ -1,13 +1,13 @@
 use halo2::halo2curves::{bn256::Fr, secp256k1::Secp256k1Affine};
 
 use crate::{
-	circuits::dynamic_sets::ecdsa_native::{
-		field_value_from_pub_key, AttestationFr, SignedAttestation,
+	circuits::{
+		dynamic_sets::ecdsa_native::{field_value_from_pub_key, AttestationFr, SignedAttestation},
+		PoseidonNativeHasher, PoseidonNativeSponge,
 	},
 	ecdsa::native::{EcdsaVerifier, PublicKey},
 	integer::native::Integer,
 	params::{ecc::secp256k1::Secp256k1Params, rns::secp256k1::Secp256k1_4_68},
-	poseidon::{PoseidonNativeHasher, PoseidonNativeSponge},
 };
 
 /// Opinion info of peer

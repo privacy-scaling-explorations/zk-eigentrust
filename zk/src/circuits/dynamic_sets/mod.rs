@@ -1,17 +1,19 @@
-/// Native version of EigenTrustSet
-pub mod native;
-use crate::eddsa::native::Signature;
-use crate::UnassignedValue;
-
 /// Native version of EigenTrustSet(ECDSA)
 ///
 /// NOTE: This is temporary since Halo2 version of ECDSA is not ready
 pub mod ecdsa_native;
+/// Native version of EigenTrustSet
+pub mod native;
 
+use super::{
+	Eddsa, FullRoundHasher, PartialRoundHasher, PoseidonHasher, SpongeHasher, HASHER_WIDTH,
+};
+use crate::eddsa::native::Signature;
+use crate::UnassignedValue;
 use crate::{
 	eddsa::{
 		native::{PublicKey, UnassignedPublicKey, UnassignedSignature},
-		Eddsa, EddsaConfig,
+		EddsaConfig,
 	},
 	edwards::{
 		params::BabyJubJub, IntoAffineChip, PointAddChip, ScalarMulChip, StrictScalarMulConfig,
@@ -25,10 +27,7 @@ use crate::{
 			MulChipset, OrChipset, SelectChipset, SubChipset,
 		},
 	},
-	poseidon::{
-		sponge::PoseidonSpongeConfig, FullRoundHasher, PartialRoundHasher, PoseidonConfig,
-		PoseidonHasher, SpongeHasher,
-	},
+	poseidon::{sponge::PoseidonSpongeConfig, PoseidonConfig},
 	Chip, Chipset, CommonConfig, RegionCtx, ADVICE,
 };
 use halo2::{
@@ -37,8 +36,6 @@ use halo2::{
 	plonk::{Circuit, ConstraintSystem, Error},
 };
 use itertools::Itertools;
-
-const HASHER_WIDTH: usize = 5;
 
 #[derive(Clone, Debug)]
 /// The columns config for the EigenTrustSet circuit.

@@ -779,6 +779,7 @@ mod test {
 		Halo2LEcPoint, Halo2LScalar, LoaderConfig,
 	};
 	use crate::{
+		circuits::{FullRoundHasher, PartialRoundHasher},
 		ecc::{
 			same_curve::{native::EcPoint, AssignedEcPoint},
 			AuxConfig, EccAddConfig, EccDoubleConfig, EccMulConfig, EccTableSelectConfig,
@@ -797,7 +798,7 @@ mod test {
 		params::{ecc::bn254::Bn254Params, rns::bn256::Bn256_4_68},
 		poseidon::{
 			sponge::{PoseidonSpongeConfig, StatefulSpongeChipset},
-			FullRoundHasher, PartialRoundHasher, PoseidonConfig,
+			PoseidonConfig,
 		},
 		verifier::transcript::native::WIDTH,
 		Chip, CommonConfig, RegionCtx,

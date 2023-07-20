@@ -448,6 +448,7 @@ mod test {
 	use crate::circuits::dynamic_sets::ecdsa_native::{
 		field_value_from_pub_key, AttestationFr, SignedAttestation,
 	};
+	use crate::circuits::PoseidonNativeHasher;
 	use crate::ecc::generic::{AuxAssigner, PointAssigner, UnassignedEcPoint};
 	use crate::ecc::{
 		AuxConfig, EccAddConfig, EccDoubleConfig, EccMulConfig, EccTableSelectConfig,
@@ -467,9 +468,7 @@ mod test {
 	use crate::params::hasher::poseidon_bn254_5x5::Params;
 	use crate::params::rns::secp256k1::Secp256k1_4_68;
 	use crate::poseidon::sponge::{PoseidonSpongeConfig, StatefulSpongeChipset};
-	use crate::poseidon::{
-		FullRoundChip, PartialRoundChip, PoseidonChipset, PoseidonConfig, PoseidonNativeHasher,
-	};
+	use crate::poseidon::{FullRoundChip, PartialRoundChip, PoseidonChipset, PoseidonConfig};
 	use crate::utils::big_to_fe;
 	use crate::UnassignedValue;
 	use crate::{

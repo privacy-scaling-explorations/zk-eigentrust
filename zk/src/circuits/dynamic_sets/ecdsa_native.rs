@@ -1,8 +1,7 @@
 use crate::{
-	circuits::opinion::native::Opinion,
+	circuits::{opinion::native::Opinion, PoseidonNativeHasher},
 	ecdsa::native::{PublicKey, Signature},
 	params::{ecc::secp256k1::Secp256k1Params, rns::secp256k1::Secp256k1_4_68},
-	poseidon::PoseidonNativeHasher,
 	utils::fe_to_big,
 };
 use halo2::{

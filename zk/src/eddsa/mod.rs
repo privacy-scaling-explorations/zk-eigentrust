@@ -3,23 +3,19 @@ pub mod native;
 
 use crate::{
 	edwards::{
-		params::{BabyJubJub, EdwardsParams},
-		AssignedPoint, IntoAffineChip, PointAddChip, StrictScalarMulChipset, StrictScalarMulConfig,
+		params::EdwardsParams, AssignedPoint, IntoAffineChip, PointAddChip, StrictScalarMulChipset,
+		StrictScalarMulConfig,
 	},
 	gadgets::lt_eq::{LessEqualChipset, LessEqualConfig},
-	params::hasher::{poseidon_bn254_5x5::Params, RoundParams},
+	params::hasher::RoundParams,
 	poseidon::{PoseidonChipset, PoseidonConfig},
 	Chip, Chipset, CommonConfig, FieldExt, RegionCtx,
 };
 use halo2::{
 	circuit::{AssignedCell, Layouter, Region},
-	halo2curves::bn256::Fr as Scalar,
 	plonk::{Error, Selector},
 };
 use std::marker::PhantomData;
-
-/// Type alias for Eddsa chip on BabyJubJub elliptic curve
-pub type Eddsa = EddsaChipset<Scalar, BabyJubJub, Params>;
 
 #[derive(Clone, Debug)]
 /// Selector configuration for Eddsa
