@@ -183,6 +183,7 @@ mod tests {
 			band_id: "38922764296632428858395574229367".to_string(),
 			band_th: "500".to_string(),
 			band_url: "http://localhost:3000".to_string(),
+			chain_id: "31337".to_string(),
 			domain: "0x0000000000000000000000000000000000000000".to_string(),
 			node_url: anvil.endpoint().to_string(),
 		};

@@ -110,6 +110,8 @@ pub struct ClientConfig {
 	pub band_th: String,
 	/// Bandada API base URL.
 	pub band_url: String,
+	/// Network chain ID.
+	pub chain_id: String,
 	/// Attestation domain identifier.
 	pub domain: String,
 	/// Ethereum node URL.
@@ -149,7 +151,8 @@ impl Client {
 			.expect("Failed to build wallet with provided mnemonic");
 
 		// Setup signer
-		let signer: ClientSigner = SignerMiddleware::new(provider, wallet.with_chain_id(31337u64));
+		let chain_id: u64 = config.chain_id.parse().expect("Failed to parse chain id");
+		let signer: ClientSigner = SignerMiddleware::new(provider, wallet.with_chain_id(chain_id));
 
 		// Arc for thread-safe sharing of signer
 		let shared_signer = Arc::new(signer);
@@ -381,6 +384,7 @@ mod lib_tests {
 			band_id: "38922764296632428858395574229367".to_string(),
 			band_th: "500".to_string(),
 			band_url: "http://localhost:3000".to_string(),
+			chain_id: "31337".to_string(),
 			domain: "0x0000000000000000000000000000000000000000".to_string(),
 			node_url: anvil.endpoint().to_string(),
 		};
@@ -395,6 +399,7 @@ mod lib_tests {
 			band_id: "38922764296632428858395574229367".to_string(),
 			band_th: "500".to_string(),
 			band_url: "http://localhost:3000".to_string(),
+			chain_id: "31337".to_string(),
 			domain: "0x0000000000000000000000000000000000000000".to_string(),
 			node_url: anvil.endpoint().to_string(),
 		};
@@ -414,6 +419,7 @@ mod lib_tests {
 			band_id: "38922764296632428858395574229367".to_string(),
 			band_th: "500".to_string(),
 			band_url: "http://localhost:3000".to_string(),
+			chain_id: "31337".to_string(),
 			domain: "0x0000000000000000000000000000000000000000".to_string(),
 			node_url: anvil.endpoint().to_string(),
 		};
@@ -428,6 +434,7 @@ mod lib_tests {
 			band_id: "38922764296632428858395574229367".to_string(),
 			band_th: "500".to_string(),
 			band_url: "http://localhost:3000".to_string(),
+			chain_id: "31337".to_string(),
 			domain: "0x0000000000000000000000000000000000000000".to_string(),
 			node_url: anvil.endpoint().to_string(),
 		};
