@@ -2,85 +2,68 @@
 //!
 //! This module features the `EigenError` enum for error handling throughout the project.
 
-use serde::ser::StdError;
-use std::fmt::{Display, Formatter, Result as FmtResult};
+use thiserror::Error;
 
 /// The crate-wide error variants.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Error)]
 pub enum EigenError {
-	/// Invalid pubkey of the bootstrap peer
-	InvalidBootstrapPubkey,
-	/// Error while making proof
-	ProvingError,
-	/// Error while verifying the proof
-	VerificationError,
-	/// Client connection error
-	ConnectionError,
-	/// Failed to listen to requests
-	ListenError,
-	/// Attestation not found
-	AttestationNotFound,
-	/// Attestation verification not passed
-	InvalidAttestation,
-	/// Proof not found
-	ProofNotFound,
-	/// Parsing error
-	ParseError,
-	/// Transaction error
-	TransactionError,
+	/// Attestation error
+	#[error("AttestationError: {0}")]
+	AttestationError(String),
+
+	/// Configuration error
+	#[error("ConfigurationError: {0}")]
+	ConfigurationError(String),
+
+	/// Connection error
+	#[error("ConnectionError: {0}")]
+	ConnectionError(String),
+
 	/// Contract compilation error
-	ContractCompilationError,
-	/// Path error
-	PathError,
-	/// Unknown error.
-	Unknown,
-}
+	#[error("ContractCompilationError: {0}")]
+	ContractCompilationError(String),
 
-impl From<EigenError> for u8 {
-	fn from(e: EigenError) -> u8 {
-		match e {
-			EigenError::InvalidBootstrapPubkey => 0,
-			EigenError::ProvingError => 1,
-			EigenError::VerificationError => 2,
-			EigenError::ConnectionError => 3,
-			EigenError::ListenError => 4,
-			EigenError::AttestationNotFound => 5,
-			EigenError::ProofNotFound => 6,
-			EigenError::InvalidAttestation => 7,
-			EigenError::ParseError => 8,
-			EigenError::TransactionError => 9,
-			EigenError::ContractCompilationError => 10,
-			EigenError::PathError => 11,
-			EigenError::Unknown => 255,
-		}
-	}
-}
+	/// Conversion error
+	#[error("ConversionError: {0}")]
+	ConversionError(String),
 
-impl From<u8> for EigenError {
-	fn from(err: u8) -> Self {
-		match err {
-			0 => EigenError::InvalidBootstrapPubkey,
-			1 => EigenError::ProvingError,
-			2 => EigenError::VerificationError,
-			3 => EigenError::ConnectionError,
-			4 => EigenError::ListenError,
-			5 => EigenError::AttestationNotFound,
-			6 => EigenError::ProofNotFound,
-			7 => EigenError::InvalidAttestation,
-			8 => EigenError::ParseError,
-			9 => EigenError::TransactionError,
-			10 => EigenError::ContractCompilationError,
-			11 => EigenError::PathError,
-			_ => EigenError::Unknown,
-		}
-	}
-}
+	/// File read/write error
+	#[error("FileIOError: {0}")]
+	FileIOError(String),
 
-impl Display for EigenError {
-	fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-		write!(f, "{:?}", self)?;
-		Ok(())
-	}
-}
+	/// Input/output error
+	#[error("IOError: {0}")]
+	IOError(std::io::Error),
 
-impl StdError for EigenError {}
+	/// Network error
+	#[error("NetworkError: {0}")]
+	NetworkError(String),
+
+	/// Parsing error
+	#[error("ParsingError: {0}")]
+	ParsingError(String),
+
+	/// Recovery error
+	#[error("RecoveryError: {0}")]
+	RecoveryError(String),
+
+	/// Request error
+	#[error("RequestError: {0}")]
+	RequestError(reqwest::Error),
+
+	/// Resource unavailable error
+	#[error("ResourceUnavailableError: {0}")]
+	ResourceUnavailableError(String),
+
+	/// Transaction error
+	#[error("TransactionError: {0}")]
+	TransactionError(String),
+
+	/// Unknown error
+	#[error("UnknownError: {0}")]
+	UnknownError(String),
+
+	/// Validation error
+	#[error("ValidationError: {0}")]
+	ValidationError(String),
+}

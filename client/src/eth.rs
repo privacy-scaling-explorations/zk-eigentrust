@@ -16,19 +16,22 @@ use ethers::{
 	solc::{Artifact, CompilerOutput, Solc},
 	utils::keccak256,
 };
+use log::info;
 use secp256k1::SecretKey;
 use std::sync::Arc;
 
 /// Compiles the AttestationStation contract.
 pub fn compile_as() -> Result<CompilerOutput, EigenError> {
-	let path =
-		get_assets_path().map_err(|_| EigenError::ParseError)?.join("AttestationStation.sol");
+	let path = get_assets_path()?.join("AttestationStation.sol");
 
-	let compiler_output =
-		Solc::default().compile_source(path).map_err(|_| EigenError::ContractCompilationError)?;
+	let compiler_output = Solc::default()
+		.compile_source(path)
+		.map_err(|e| EigenError::ContractCompilationError(e.to_string()))?;
 
 	if !compiler_output.errors.is_empty() {
-		return Err(EigenError::ContractCompilationError);
+		return Err(EigenError::ContractCompilationError(
+			"Compiler output contains errors".to_string(),
+		));
 	}
 
 	Ok(compiler_output)
@@ -37,19 +40,26 @@ pub fn compile_as() -> Result<CompilerOutput, EigenError> {
 /// Generates the bindings for the AttestationStation contract and save them into a file.
 pub fn gen_as_bindings() -> Result<(), EigenError> {
 	let contracts = compile_as()?;
+	let filepath = get_file_path("attestation_station", FileType::Rs)?;
 
 	for (name, contract) in contracts.contracts_iter() {
-		let abi = contract.clone().abi.ok_or(EigenError::ParseError)?;
-		let abi_json = serde_json::to_string(&abi).map_err(|_| EigenError::ParseError)?;
+		let abi = contract
+			.clone()
+			.abi
+			.ok_or_else(|| EigenError::ParsingError("Missing contract ABI".to_string()))?;
+		let abi_json = serde_json::to_string(&abi)
+			.map_err(|_| EigenError::ParsingError("Error serializing ABI".to_string()))?;
 
 		let bindings = Abigen::new(name, abi_json)
-			.map_err(|_| EigenError::ParseError)?
+			.map_err(|_| EigenError::ParsingError("Error generating bindings".to_string()))?
 			.generate()
-			.map_err(|_| EigenError::ParseError)?;
+			.map_err(|_| EigenError::ParsingError("Error generating bindings".to_string()))?;
 
 		bindings
-			.write_to_file(get_file_path("attestation_station", FileType::Rs).unwrap())
-			.map_err(|_| EigenError::ParseError)?;
+			.write_to_file(filepath.clone())
+			.map_err(|e| EigenError::FileIOError(e.to_string()))?;
+
+		info!("Bindings generated at {:?}", filepath);
 	}
 
 	Ok(())
@@ -60,30 +70,41 @@ pub async fn deploy_as(signer: Arc<ClientSigner>) -> Result<Address, EigenError>
 	let contracts = compile_as()?;
 	let mut address: Option<Address> = None;
 
-	for (_, contract) in contracts.contracts_iter() {
+	if let Some((_, contract)) = contracts.contracts_iter().next() {
 		let (abi, bytecode, _) = contract.clone().into_parts();
-		let abi = abi.ok_or(EigenError::ParseError)?;
-		let bytecode = bytecode.ok_or(EigenError::ParseError)?;
+		let abi = abi.ok_or(EigenError::ParsingError("ABI parsing failed".to_string()))?;
+		let bytecode = bytecode.ok_or(EigenError::ParsingError(
+			"Bytecode parsing failed".to_string(),
+		))?;
 
 		let factory = ContractFactory::new(abi, bytecode, signer.clone());
 
-		match factory.deploy(()).unwrap().send().await {
+		match factory
+			.deploy(())
+			.map_err(|_| {
+				EigenError::ContractCompilationError("Error deploying contract".to_string())
+			})?
+			.send()
+			.await
+		{
 			Ok(contract) => {
 				address = Some(contract.address());
-				break;
 			},
-			Err(_) => continue,
+			Err(e) => return Err(EigenError::TransactionError(e.to_string())),
 		}
 	}
 
-	address.ok_or(EigenError::ParseError)
+	address.ok_or(EigenError::ParsingError(
+		"Failed to deploy AttestationStation contract".to_string(),
+	))
 }
 
 /// Returns a vector of ECDSA private keys derived from the given mnemonic phrase.
 pub fn ecdsa_secret_from_mnemonic(
 	mnemonic: &str, count: u32,
-) -> Result<Vec<SecretKey>, &'static str> {
-	let mnemonic = Mnemonic::<English>::new_from_phrase(mnemonic).unwrap();
+) -> Result<Vec<SecretKey>, EigenError> {
+	let mnemonic = Mnemonic::<English>::new_from_phrase(mnemonic)
+		.map_err(|e| EigenError::ParsingError(e.to_string()))?;
 	let mut keys = Vec::new();
 
 	// The hardened derivation flag.
@@ -109,7 +130,7 @@ pub fn ecdsa_secret_from_mnemonic(
 }
 
 /// Constructs an Ethereum address for the given ECDSA public key.
-pub fn address_from_public_key(pub_key: &ECDSAPublicKey) -> Result<Address, &'static str> {
+pub fn address_from_public_key(pub_key: &ECDSAPublicKey) -> Address {
 	let pub_key_bytes: [u8; 65] = pub_key.serialize_uncompressed();
 
 	// Hash with Keccak256
@@ -118,11 +139,11 @@ pub fn address_from_public_key(pub_key: &ECDSAPublicKey) -> Result<Address, &'st
 	// Get the last 20 bytes of the hash
 	let address_bytes = &hashed_public_key[hashed_public_key.len() - 20..];
 
-	Ok(Address::from_slice(address_bytes))
+	Address::from_slice(address_bytes)
 }
 
 /// Constructs a Scalar from the given Ethereum address.
-pub fn scalar_from_address(address: &Address) -> Result<Scalar, &'static str> {
+pub fn scalar_from_address(address: &Address) -> Result<Scalar, EigenError> {
 	let mut address_fixed = address.to_fixed_bytes();
 	address_fixed.reverse();
 
@@ -131,7 +152,11 @@ pub fn scalar_from_address(address: &Address) -> Result<Scalar, &'static str> {
 
 	let about = match Scalar::from_bytes(&address_bytes).is_some().into() {
 		true => Scalar::from_bytes(&address_bytes).unwrap(),
-		false => return Err("Failed to convert about address to scalar"),
+		false => {
+			return Err(EigenError::ParsingError(
+				"Failed to convert address to scalar".to_string(),
+			))
+		},
 	};
 
 	Ok(about)
@@ -181,7 +206,7 @@ mod tests {
 
 		let pub_key = PublicKey::from_secret_key(&secp, &secret_key);
 
-		let recovered_address = address_from_public_key(&pub_key).unwrap();
+		let recovered_address = address_from_public_key(&pub_key);
 
 		let expected_address =
 			Wallet::from(SigningKey::from_bytes(secret_key_as_bytes.as_ref()).unwrap()).address();
