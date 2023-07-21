@@ -779,7 +779,7 @@ mod test {
 		Halo2LEcPoint, Halo2LScalar, LoaderConfig,
 	};
 	use crate::{
-		circuit::{FullRoundHasher, PartialRoundHasher},
+		circuits::{FullRoundHasher, PartialRoundHasher},
 		ecc::{
 			same_curve::{native::EcPoint, AssignedEcPoint},
 			AuxConfig, EccAddConfig, EccDoubleConfig, EccMulConfig, EccTableSelectConfig,

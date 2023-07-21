@@ -1,6 +1,6 @@
 [workspace]
 members = [
-	"circuit",
+	"zk",
 	"client",
 ]
 default-members = ["client"]

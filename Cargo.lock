@@ -986,6 +986,7 @@ dependencies = [
  "secp256k1 0.27.0",
  "serde",
  "serde_json",
+ "thiserror",
  "tokio",
 ]
 

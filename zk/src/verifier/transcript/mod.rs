@@ -280,7 +280,7 @@ where
 mod test {
 	use super::{native::NativeTranscriptRead, LoaderConfig, TranscriptReadChipset};
 	use crate::{
-		circuit::{FullRoundHasher, PartialRoundHasher},
+		circuits::{FullRoundHasher, PartialRoundHasher},
 		ecc::{
 			same_curve::{native::EcPoint, AssignedEcPoint, UnassignedEcPoint},
 			AuxConfig, EccAddConfig, EccDoubleConfig, EccMulConfig, EccTableSelectConfig,

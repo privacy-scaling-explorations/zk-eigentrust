@@ -5,11 +5,12 @@
 
 use crate::{
 	att_station::AttestationCreatedFilter,
+	error::EigenError,
 	eth::{address_from_public_key, scalar_from_address},
 	NUM_BITS, NUM_LIMBS,
 };
 use eigen_trust_circuit::{
-	dynamic_sets::ecdsa_native::{
+	circuits::dynamic_sets::ecdsa_native::{
 		Attestation as AttestationFr, SignedAttestation as SignedAttestationFr,
 	},
 	ecdsa::native::Signature,
@@ -76,7 +77,7 @@ impl AttestationEth {
 	}
 
 	/// Converts the attestation to the scalar representation.
-	pub fn to_attestation_fr(&self) -> Result<AttestationFr, &'static str> {
+	pub fn to_attestation_fr(&self) -> Result<AttestationFr, EigenError> {
 		// About
 		let about = scalar_from_address(&self.about)?;
 
@@ -91,7 +92,9 @@ impl AttestationEth {
 		let domain = if domain_fr_opt.is_some().into() {
 			domain_fr_opt.unwrap()
 		} else {
-			return Err("Failed to convert key to scalar");
+			return Err(EigenError::ParsingError(
+				"Failed to convert key to scalar".to_string(),
+			));
 		};
 
 		// Value
@@ -196,7 +199,7 @@ impl SignedAttestationEth {
 	}
 
 	/// Recover the public key from the attestation signature
-	pub fn recover_public_key(&self) -> Result<ECDSAPublicKey, &'static str> {
+	pub fn recover_public_key(&self) -> Result<ECDSAPublicKey, EigenError> {
 		let attestation = self.attestation.to_attestation_fr()?;
 		let message_hash = attestation.hash().to_bytes();
 		let signature_raw: SignatureRaw = self.signature.clone().into();
@@ -204,7 +207,7 @@ impl SignedAttestationEth {
 
 		let public_key = signature
 			.recover(&Message::from_slice(message_hash.as_slice()).unwrap())
-			.map_err(|_| "Failed to recover public key")?;
+			.map_err(|_| EigenError::RecoveryError("Failed to recover public key".to_string()))?;
 
 		Ok(public_key)
 	}
@@ -241,7 +244,7 @@ impl SignedAttestationEth {
 		let payload = self.to_payload();
 		let key = self.attestation.get_key();
 		let pk = self.recover_public_key().unwrap();
-		let attestor = address_from_public_key(&pk).unwrap();
+		let attestor = address_from_public_key(&pk);
 		let attested = self.attestation.about;
 
 		(attestor, attested, key, payload)
@@ -457,31 +460,6 @@ impl From<SignedAttestationEth> for SignedAttestationRaw {
 	}
 }
 
-// /// Recovers the signing Ethereum address from a signed attestation.
-// pub fn address_from_signed_att(
-// 	signed_attestation: &SignedAttestationEth,
-// ) -> Result<Address, &'static str> {
-// 	// Get the signing key
-// 	let public_key = signed_attestation.recover_public_key()?;
-
-// 	// Get the address from the public key
-// 	address_from_public_key(&public_key)
-// }
-
-// /// Constructs the contract attestation data from a signed attestation.
-// /// The return of this function is the actual data stored on the contract.
-// pub fn att_data_from_signed_att(
-// 	signed_attestation: &SignedAttestationEth,
-// ) -> Result<ContractAttestationData, &'static str> {
-// 	// Recover the about Ethereum address from the signed attestation
-// 	let (_, about, key, payload) = signed_attestation.to_tx_data();
-// 	Ok(ContractAttestationData(
-// 		about,
-// 		key.to_fixed_bytes(),
-// 		payload,
-// 	))
-// }
-
 #[cfg(test)]
 mod tests {
 	use crate::att_station::AttestationData as ContractAttestationData;
@@ -612,7 +590,7 @@ mod tests {
 			Wallet::from(SigningKey::from_bytes(secret_key_as_bytes.as_ref()).unwrap()).address();
 
 		let public_key = signed_attestation.recover_public_key().unwrap();
-		let address = address_from_public_key(&public_key).unwrap();
+		let address = address_from_public_key(&public_key);
 
 		assert_eq!(address, expected_address);
 	}

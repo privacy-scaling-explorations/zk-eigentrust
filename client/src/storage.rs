@@ -6,23 +6,28 @@ use crate::att_station::AttestationCreatedFilter;
 use crate::attestation::{
 	AttestationRaw, SignatureRaw, SignedAttestationEth, SignedAttestationRaw,
 };
+use crate::error::EigenError;
 use crate::eth::address_from_public_key;
 use crate::Score;
 use csv::{ReaderBuilder, WriterBuilder};
 use ethers::utils::hex;
 use serde::Deserialize;
 use serde::{de::DeserializeOwned, Serialize};
+use serde_json::{from_reader, to_string};
 use std::fs::File;
-use std::io::BufReader;
+use std::io::{BufReader, Write};
 use std::marker::PhantomData;
 use std::path::PathBuf;
 
 /// The main trait to be implemented by different storage types.
 pub trait Storage<T> {
+	/// The error type.
+	type Err;
+
 	/// Loads data from storage.
-	fn load(&self) -> Result<T, &'static str>;
+	fn load(&self) -> Result<T, Self::Err>;
 	/// Saves data to storage.
-	fn save(&mut self, data: T) -> Result<(), &'static str>;
+	fn save(&mut self, data: T) -> Result<(), Self::Err>;
 }
 
 /// The `CSVFileStorage` struct provides a mechanism for persisting
@@ -71,27 +76,30 @@ impl<T> CSVFileStorage<T> {
 }
 
 impl<T: Serialize + DeserializeOwned + Clone> Storage<Vec<T>> for CSVFileStorage<T> {
-	fn load(&self) -> Result<Vec<T>, &'static str> {
-		let file = File::open(&self.filepath).map_err(|_| "Failed to open file")?;
+	type Err = EigenError;
+
+	fn load(&self) -> Result<Vec<T>, EigenError> {
+		let file = File::open(&self.filepath).map_err(EigenError::IOError)?;
 		let mut reader = ReaderBuilder::new().from_reader(BufReader::new(file));
 
 		reader
 			.deserialize()
-			.map(|result| result.map_err(|_| "Failed to deserialize data"))
-			.collect::<Result<Vec<T>, &'static str>>()
+			.map(|result| result.map_err(|e| EigenError::FileIOError(e.to_string())))
+			.collect()
 	}
 
-	fn save(&mut self, data: Vec<T>) -> Result<(), &'static str> {
-		let mut writer =
-			WriterBuilder::new().from_path(&self.filepath).map_err(|_| "Failed to open file")?;
+	fn save(&mut self, data: Vec<T>) -> Result<(), EigenError> {
+		let mut writer = WriterBuilder::new()
+			.from_path(&self.filepath)
+			.map_err(|e| EigenError::FileIOError(e.to_string()))?;
 
 		// Loop over content and write each item
 		for record in &data {
-			writer.serialize(record).map_err(|_| "Failed to write record")?;
+			writer.serialize(record).map_err(|e| EigenError::FileIOError(e.to_string()))?;
 		}
 
 		// Flush buffer
-		writer.flush().map_err(|_| "Failed to flush buffer")?;
+		writer.flush().map_err(|e| EigenError::FileIOError(e.to_string()))?;
 
 		Ok(())
 	}
@@ -204,7 +212,7 @@ impl AttestationRecord {
 	}
 
 	/// Returns a log from an AttestationRecord.
-	pub fn to_log(&self) -> Result<AttestationCreatedFilter, &'static str> {
+	pub fn to_log(&self) -> Result<AttestationCreatedFilter, EigenError> {
 		// Use helper functions to simplify the conversion process
 		let sig_r = Self::parse_bytes32(&self.sig_r)?;
 		let sig_s = Self::parse_bytes32(&self.sig_s)?;
@@ -225,14 +233,14 @@ impl AttestationRecord {
 		let key = *sign_att_eth.attestation.get_key().as_fixed_bytes();
 		let val = sign_att_eth.to_payload();
 		let public_key = sign_att_eth.recover_public_key().unwrap();
-		let creator = address_from_public_key(&public_key).unwrap();
+		let creator = address_from_public_key(&public_key);
 
 		Ok(AttestationCreatedFilter { about, key, val, creator })
 	}
 
 	// Helper function for decoding hexadecimal string into a byte array
-	fn decode_hex_to_bytes(hex_str: &str) -> Result<Vec<u8>, &'static str> {
-		hex::decode(&hex_str[2..]).map_err(|_| "Failed to decode hexadecimal string")
+	fn decode_hex_to_bytes(hex_str: &str) -> Result<Vec<u8>, EigenError> {
+		hex::decode(&hex_str[2..]).map_err(|e| EigenError::ParsingError(e.to_string()))
 	}
 
 	// Helper function for encoding byte array into hexadecimal string
@@ -241,24 +249,62 @@ impl AttestationRecord {
 	}
 
 	// Helper function for parsing string into a byte array
-	fn parse_bytes32(hex_str: &str) -> Result<[u8; 32], &'static str> {
+	fn parse_bytes32(hex_str: &str) -> Result<[u8; 32], EigenError> {
 		let bytes = Self::decode_hex_to_bytes(hex_str)?;
-		let bytes_array: [u8; 32] =
-			bytes.try_into().map_err(|_| "Failed to convert into byte array")?;
+		let bytes_array: [u8; 32] = bytes.try_into().map_err(|_| {
+			EigenError::ConversionError("Failed to convert into byte array".to_string())
+		})?;
 		Ok(bytes_array)
 	}
 
 	// Helper function for parsing string into a byte array
-	fn parse_bytes20(hex_str: &str) -> Result<[u8; 20], &'static str> {
+	fn parse_bytes20(hex_str: &str) -> Result<[u8; 20], EigenError> {
 		let bytes = Self::decode_hex_to_bytes(hex_str)?;
-		let bytes_array: [u8; 20] =
-			bytes.try_into().map_err(|_| "Failed to convert into byte array")?;
+		let bytes_array: [u8; 20] = bytes.try_into().map_err(|_| {
+			EigenError::ConversionError("Failed to convert into byte array".to_string())
+		})?;
 		Ok(bytes_array)
 	}
 
 	// Helper function for parsing string into u8
-	fn parse_u8(value: &str) -> Result<u8, &'static str> {
-		value.parse::<u8>().map_err(|_| "Failed to parse into u8")
+	fn parse_u8(value: &str) -> Result<u8, EigenError> {
+		value.parse::<u8>().map_err(|e| EigenError::ParsingError(e.to_string()))
+	}
+}
+
+/// The `JSONFileStorage` struct provides a mechanism for persisting
+/// and retrieving structured data to and from JSON files.
+pub struct JSONFileStorage<T> {
+	filepath: PathBuf,
+	phantom: PhantomData<T>,
+}
+
+impl<T> JSONFileStorage<T> {
+	/// Creates a new JSONFileStorage.
+	pub fn new(filepath: PathBuf) -> Self {
+		Self { filepath, phantom: PhantomData }
+	}
+
+	/// Returns the path to the file.
+	pub fn filepath(&self) -> &PathBuf {
+		&self.filepath
+	}
+}
+
+impl<T: Serialize + DeserializeOwned + Clone> Storage<T> for JSONFileStorage<T> {
+	type Err = EigenError;
+
+	fn load(&self) -> Result<T, Self::Err> {
+		let file = File::open(&self.filepath).map_err(EigenError::IOError)?;
+		let reader = BufReader::new(file);
+		from_reader(reader).map_err(|e| EigenError::ParsingError(e.to_string()))
+	}
+
+	fn save(&mut self, data: T) -> Result<(), Self::Err> {
+		let json_str = to_string(&data).map_err(|e| EigenError::ParsingError(e.to_string()))?;
+
+		let mut file = File::create(&self.filepath).map_err(EigenError::IOError)?;
+		file.write_all(json_str.as_bytes()).map_err(EigenError::IOError)
 	}
 }
 
@@ -298,6 +344,34 @@ mod tests {
 		let records: Vec<Record> = result.unwrap();
 		assert_eq!(records.len(), 1);
 		assert_eq!(records[0], content[0]);
+
+		// Clean up
+		fs::remove_file(filepath).unwrap();
+	}
+
+	#[test]
+	fn test_json_file_storage() {
+		// Create the JSON file
+		let filename = "test.json";
+		let filepath = get_assets_path().unwrap().join(filename);
+		let mut json_storage = JSONFileStorage::<Record>::new(filepath.clone());
+
+		let content = Record {
+			peer_address: "0x70997970c51812dc3a010c7d01b50e0d17dc7666".to_string(),
+			score: 1000,
+		};
+
+		// Save the content to the JSON file
+		assert!(json_storage.save(content.clone()).is_ok());
+
+		// Load the JSON file
+		let result = json_storage.load();
+
+		// Assert
+		assert!(result.is_ok());
+		let records: Record = result.unwrap();
+		assert_eq!(records.peer_address, content.peer_address);
+		assert_eq!(records.score, content.score);
 
 		// Clean up
 		fs::remove_file(filepath).unwrap();

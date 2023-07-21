@@ -417,16 +417,16 @@ mod tests {
 	use super::*;
 
 	use crate::{
-		dynamic_sets::ecdsa_native::{
+		circuits::dynamic_sets::ecdsa_native::{
 			field_value_from_pub_key, Attestation, EigenTrustSet, SignedAttestation, NUM_BITS,
 			NUM_LIMBS,
 		},
+		circuits::threshold::native::Threshold,
 		ecdsa::native::{EcdsaKeypair, PublicKey},
 		params::{
 			ecc::secp256k1::Secp256k1Params,
 			rns::{decompose_big_decimal, secp256k1::Secp256k1_4_68},
 		},
-		threshold::native::Threshold,
 		utils::{big_to_fe, fe_to_big},
 	};
 	use halo2::{

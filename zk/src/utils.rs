@@ -27,7 +27,6 @@ use halo2::{
 use num_bigint::BigUint;
 use num_traits::{Num, One};
 use rand::Rng;
-use serde::Serialize;
 use std::{
 	env::current_dir,
 	fmt::Debug,
@@ -66,28 +65,6 @@ pub fn write_bytes_data(bytes: Vec<u8>, file_name: &str) -> Result<(), IoError> 
 	let current_dir = current_dir().unwrap();
 	let bin_path = current_dir.join(format!("../data/{}.bin", file_name));
 	write(bin_path, bytes)
-}
-
-/// Writes yul to file
-pub fn write_yul_data(code: String, file_name: &str) -> Result<(), IoError> {
-	let current_dir = current_dir().unwrap();
-	let bin_path = current_dir.join(format!("../data/{}.yul", file_name));
-	write(bin_path, code)
-}
-
-/// Writes json to fule
-pub fn write_json_file<T: Serialize>(json: T, path: impl AsRef<Path>) -> Result<(), IoError> {
-	let bytes = serde_json::to_vec(&json)?;
-	write(path, bytes)?;
-	Ok(())
-}
-
-/// Reads the json file and deserialize it into the provided type
-pub fn write_json_data<T: Serialize>(json: T, file_name: &str) -> Result<(), IoError> {
-	let current_dir = current_dir()?;
-	let json_path = current_dir.join(format!("../data/{}.json", file_name));
-	write_json_file(json, json_path)?;
-	Ok(())
 }
 
 /// Returns boolean value from the assigned cell value
