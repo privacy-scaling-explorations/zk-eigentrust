@@ -54,11 +54,11 @@ pub mod eth;
 pub mod fs;
 pub mod storage;
 
-use crate::attestation::{
-	address_from_signed_att, SignatureEth, SignatureRaw, SignedAttestationEth,
+use crate::attestation::{SignatureEth, SignatureRaw, SignedAttestationEth};
+use att_station::{
+	AttestationCreatedFilter, AttestationData as ContractAttestationData, AttestationStation,
 };
-use att_station::{AttestationCreatedFilter, AttestationStation};
-use attestation::{att_data_from_signed_att, AttestationEth};
+use attestation::AttestationEth;
 use dotenv::{dotenv, var};
 use eigen_trust_circuit::{
 	dynamic_sets::ecdsa_native::{
@@ -192,7 +192,8 @@ impl Client {
 		assert!(recovered_address == self.signer.address());
 
 		// Stored contract data
-		let contract_data = att_data_from_signed_att(&signed_attestation).unwrap();
+		let (_, about, key, payload) = signed_attestation.to_tx_data();
+		let contract_data = ContractAttestationData(about, key.to_fixed_bytes(), payload);
 
 		let tx_call = as_contract.attest(vec![contract_data]);
 		let tx_res = tx_call.send();
@@ -223,7 +224,8 @@ impl Client {
 
 		// Insert the attester and attested of each attestation into the set
 		for signed_att in &attestations {
-			let attester = address_from_signed_att(signed_att).unwrap();
+			let public_key = signed_att.recover_public_key().unwrap();
+			let attester = address_from_public_key(&public_key).unwrap();
 			participants_set.insert(signed_att.attestation.about);
 			participants_set.insert(attester);
 
@@ -252,8 +254,9 @@ impl Client {
 
 		// Populate the attestation matrix with the attestations data
 		for signed_att in &attestations {
-			let attester_address = address_from_signed_att(signed_att).unwrap();
-			let attester_pos = participants.iter().position(|&r| r == attester_address).unwrap();
+			let public_key = signed_att.recover_public_key().unwrap();
+			let attester = address_from_public_key(&public_key).unwrap();
+			let attester_pos = participants.iter().position(|&r| r == attester).unwrap();
 			let attested_pos =
 				participants.iter().position(|&r| r == signed_att.attestation.about).unwrap();
 

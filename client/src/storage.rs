@@ -4,9 +4,9 @@
 
 use crate::att_station::AttestationCreatedFilter;
 use crate::attestation::{
-	address_from_signed_att, AttestationRaw, SignatureRaw, SignedAttestationEth,
-	SignedAttestationRaw,
+	AttestationRaw, SignatureRaw, SignedAttestationEth, SignedAttestationRaw,
 };
+use crate::eth::address_from_public_key;
 use crate::Score;
 use csv::{ReaderBuilder, WriterBuilder};
 use ethers::utils::hex;
@@ -224,7 +224,8 @@ impl AttestationRecord {
 		let about = sign_att_eth.attestation.about;
 		let key = *sign_att_eth.attestation.get_key().as_fixed_bytes();
 		let val = sign_att_eth.to_payload();
-		let creator = address_from_signed_att(&sign_att_eth)?;
+		let public_key = sign_att_eth.recover_public_key().unwrap();
+		let creator = address_from_public_key(&public_key).unwrap();
 
 		Ok(AttestationCreatedFilter { about, key, val, creator })
 	}

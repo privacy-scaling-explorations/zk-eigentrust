@@ -4,7 +4,7 @@
 //! data types and functionalities.
 
 use crate::{
-	att_station::{AttestationCreatedFilter, AttestationData as ContractAttestationData},
+	att_station::AttestationCreatedFilter,
 	eth::{address_from_public_key, scalar_from_address},
 	NUM_BITS, NUM_LIMBS,
 };
@@ -457,33 +457,34 @@ impl From<SignedAttestationEth> for SignedAttestationRaw {
 	}
 }
 
-/// Recovers the signing Ethereum address from a signed attestation.
-pub fn address_from_signed_att(
-	signed_attestation: &SignedAttestationEth,
-) -> Result<Address, &'static str> {
-	// Get the signing key
-	let public_key = signed_attestation.recover_public_key()?;
+// /// Recovers the signing Ethereum address from a signed attestation.
+// pub fn address_from_signed_att(
+// 	signed_attestation: &SignedAttestationEth,
+// ) -> Result<Address, &'static str> {
+// 	// Get the signing key
+// 	let public_key = signed_attestation.recover_public_key()?;
 
-	// Get the address from the public key
-	address_from_public_key(&public_key)
-}
+// 	// Get the address from the public key
+// 	address_from_public_key(&public_key)
+// }
 
-/// Constructs the contract attestation data from a signed attestation.
-/// The return of this function is the actual data stored on the contract.
-pub fn att_data_from_signed_att(
-	signed_attestation: &SignedAttestationEth,
-) -> Result<ContractAttestationData, &'static str> {
-	// Recover the about Ethereum address from the signed attestation
-	let (_, about, key, payload) = signed_attestation.to_tx_data();
-	Ok(ContractAttestationData(
-		about,
-		key.to_fixed_bytes(),
-		payload,
-	))
-}
+// /// Constructs the contract attestation data from a signed attestation.
+// /// The return of this function is the actual data stored on the contract.
+// pub fn att_data_from_signed_att(
+// 	signed_attestation: &SignedAttestationEth,
+// ) -> Result<ContractAttestationData, &'static str> {
+// 	// Recover the about Ethereum address from the signed attestation
+// 	let (_, about, key, payload) = signed_attestation.to_tx_data();
+// 	Ok(ContractAttestationData(
+// 		about,
+// 		key.to_fixed_bytes(),
+// 		payload,
+// 	))
+// }
 
 #[cfg(test)]
 mod tests {
+	use crate::att_station::AttestationData as ContractAttestationData;
 	use crate::attestation::*;
 	use ethers::{
 		prelude::k256::ecdsa::SigningKey,
@@ -610,10 +611,10 @@ mod tests {
 		let expected_address =
 			Wallet::from(SigningKey::from_bytes(secret_key_as_bytes.as_ref()).unwrap()).address();
 
-		assert_eq!(
-			address_from_signed_att(&signed_attestation).unwrap(),
-			expected_address
-		);
+		let public_key = signed_attestation.recover_public_key().unwrap();
+		let address = address_from_public_key(&public_key).unwrap();
+
+		assert_eq!(address, expected_address);
 	}
 
 	#[test]
@@ -658,7 +659,8 @@ mod tests {
 
 		let signed_attestation = SignedAttestationEth::new(attestation_eth.clone(), signature_eth);
 
-		let contract_att_data = att_data_from_signed_att(&signed_attestation).unwrap();
+		let (_, about, key, payload) = signed_attestation.to_tx_data();
+		let contract_att_data = ContractAttestationData(about, key.to_fixed_bytes(), payload);
 
 		let expected_address = Address::from(about_bytes);
 		assert_eq!(contract_att_data.0, expected_address);
