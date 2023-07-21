@@ -4,13 +4,12 @@
 
 use crate::{bandada::BandadaApi, ClientConfig};
 use clap::{Args, Parser, Subcommand};
-use eigen_trust_circuit::utils::write_json_data;
 use eigen_trust_client::{
 	att_station::AttestationCreatedFilter,
 	attestation::{Attestation, DOMAIN_PREFIX, DOMAIN_PREFIX_LEN},
 	error::EigenError,
 	fs::{get_file_path, FileType},
-	storage::{AttestationRecord, CSVFileStorage, ScoreRecord, Storage},
+	storage::{AttestationRecord, CSVFileStorage, JSONFileStorage, ScoreRecord, Storage},
 	Client,
 };
 use ethers::{
@@ -98,6 +97,9 @@ pub struct UpdateData {
 	/// Bandada API base URL.
 	#[clap(long = "band-url")]
 	band_url: Option<String>,
+	/// Network chain ID.
+	#[clap(long = "chain-id")]
+	chain_id: Option<String>,
 	/// Attestation domain identifier (20-byte hex string).
 	#[clap(long = "domain")]
 	domain: Option<String>,
@@ -345,6 +347,11 @@ pub fn handle_update(config: &mut ClientConfig, data: UpdateData) -> Result<(), 
 		config.band_url = band_url;
 	}
 
+	if let Some(chain_id) = data.chain_id {
+		chain_id.parse::<u64>().map_err(|e| EigenError::ParsingError(e.to_string()))?;
+		config.chain_id = chain_id;
+	}
+
 	if let Some(domain) = data.domain {
 		config.as_address = H160::from_str(&domain)
 			.map_err(|e| EigenError::ParsingError(e.to_string()))?
@@ -356,8 +363,10 @@ pub fn handle_update(config: &mut ClientConfig, data: UpdateData) -> Result<(), 
 		config.node_url = node_url;
 	}
 
-	write_json_data(config, "client_config")
-		.map_err(|_| EigenError::FileIOError("Failed to write config data.".to_string()))
+	let filepath = get_file_path("client_config", FileType::Json)?;
+	let mut json_storage = JSONFileStorage::<ClientConfig>::new(filepath);
+
+	json_storage.save(config.clone())
 }
 
 #[cfg(test)]
@@ -380,6 +389,7 @@ mod tests {
 			band_id: "38922764296632428858395574229367".to_string(),
 			band_th: "500".to_string(),
 			band_url: "http://localhost:3000".to_string(),
+			chain_id: "31337".to_string(),
 			domain: "0x0000000000000000000000000000000000000000".to_string(),
 			node_url: "http://localhost:8545".to_string(),
 		};

@@ -7,7 +7,7 @@ use dotenv::dotenv;
 use eigen_trust_client::{
 	error::EigenError,
 	eth::{deploy_as, gen_as_bindings},
-	fs::read_json,
+	fs::load_config,
 	Client, ClientConfig,
 };
 use env_logger::{init_from_env, Env};
@@ -17,8 +17,7 @@ use log::info;
 async fn main() -> Result<(), EigenError> {
 	dotenv().ok();
 	init_from_env(Env::default().filter_or("LOG_LEVEL", "info"));
-
-	let mut config = read_json("client_config")?;
+	let mut config: ClientConfig = load_config()?;
 
 	match Cli::parse().mode {
 		Mode::Attest(attest_data) => {
