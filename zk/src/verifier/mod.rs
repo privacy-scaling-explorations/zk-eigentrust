@@ -1,12 +1,12 @@
 use halo2::{
 	dev::MockProver,
 	halo2curves::{
-		bn256::{Bn256, Fq, Fr, G1Affine},
+		bn256::{Bn256, Fr, G1Affine},
 		group::ff::PrimeField,
 	},
-	plonk::{create_proof, keygen_pk, keygen_vk, Circuit, ProvingKey, VerifyingKey},
+	plonk::{create_proof, keygen_pk, keygen_vk, Circuit, ProvingKey},
 	poly::{
-		commitment::{Params, ParamsProver},
+		commitment::Params,
 		kzg::{
 			commitment::{KZGCommitmentScheme, ParamsKZG},
 			multiopen::ProverGWC,
@@ -17,13 +17,7 @@ use halo2::{
 use itertools::Itertools;
 use rand::rngs::OsRng;
 pub use snark_verifier::loader::evm::compile_yul;
-use snark_verifier::{
-	loader::evm::{self, Address, EvmLoader, ExecutorBuilder},
-	pcs::kzg::{Gwc19, KzgAs},
-	system::halo2::{compile, transcript::evm::EvmTranscript, Config},
-	verifier::{self, SnarkVerifier},
-};
-use std::rc::Rc;
+use snark_verifier::system::halo2::transcript::evm::EvmTranscript;
 
 /// PLONK proof aggregator
 pub mod aggregator;
@@ -31,8 +25,6 @@ pub mod aggregator;
 pub mod loader;
 /// Poseidon transcript
 pub mod transcript;
-
-type PlonkVerifier = verifier::plonk::PlonkVerifier<KzgAs<Bn256, Gwc19>>;
 
 /// Encode instances and proof into calldata.
 pub fn encode_calldata<F>(instances: &[Vec<F>], proof: &[u8]) -> Vec<u8>
@@ -82,65 +74,12 @@ pub fn gen_proof<C: Circuit<Fr>>(
 	proof
 }
 
-/// Generate solidity verifier
-pub fn gen_evm_verifier(
-	params: &ParamsKZG<Bn256>, vk: &VerifyingKey<G1Affine>, num_instance: Vec<usize>,
-) -> Vec<u8> {
-	let code = gen_evm_verifier_code(params, vk, num_instance);
-	evm::compile_yul(&code)
-}
-
-/// Generate solidity verifier
-pub fn gen_evm_verifier_code(
-	params: &ParamsKZG<Bn256>, vk: &VerifyingKey<G1Affine>, num_instance: Vec<usize>,
-) -> String {
-	let protocol = compile(
-		params,
-		vk,
-		Config::kzg().with_num_instance(num_instance.clone()),
-	);
-
-	let loader = EvmLoader::new::<Fq, Fr>();
-	let protocol = protocol.loaded(&loader);
-	let mut transcript = EvmTranscript::<_, Rc<EvmLoader>, _, _>::new(&loader);
-
-	let instances = transcript.load_instances(num_instance);
-	let vk = (params.get_g()[0], params.g2(), params.s_g2()).into();
-
-	let proof = PlonkVerifier::read_proof(&vk, &protocol, &instances, &mut transcript).unwrap();
-	PlonkVerifier::verify(&vk, &protocol, &instances, &proof).unwrap();
-
-	loader.yul_code()
-}
-
-/// Verify proof inside the smart contract
-pub fn evm_verify(deployment_code: Vec<u8>, instances: Vec<Vec<Fr>>, proof: Vec<u8>) {
-	let calldata = encode_calldata(&instances, &proof);
-	let mut evm = ExecutorBuilder::default().with_gas_limit(u64::MAX.into()).build();
-
-	let caller = Address::from_low_u64_be(0xfe);
-	let deployment_result = evm.deploy(caller, deployment_code.into(), 0.into());
-	dbg!(deployment_result.exit_reason);
-
-	let verifier_address = deployment_result.address.unwrap();
-	let result = evm.call_raw(caller, verifier_address, calldata.into(), 0.into());
-
-	dbg!(result.gas_used);
-	dbg!(result.reverted);
-	dbg!(result.exit_reason);
-
-	let success = !result.reverted;
-	assert!(success);
-}
-
 #[cfg(test)]
 mod test {
 	use std::usize;
 
-	use super::{gen_evm_verifier, gen_pk, gen_proof};
 	use crate::{
-		utils::{generate_params, prove_and_verify, read_params},
-		verifier::evm_verify,
+		utils::{generate_params, prove_and_verify},
 		FieldExt, RegionCtx,
 	};
 	use halo2::{
@@ -297,30 +236,5 @@ mod test {
 		let pub_ins = vec![sum; VERTICAL_SIZE];
 		let res = prove_and_verify::<Bn256, _, _>(params, circuit, &[&pub_ins], rng).unwrap();
 		assert!(res);
-	}
-
-	#[ignore = "Smart contract verifier is too big to run"]
-	#[test]
-	fn verify_dummy_pi_evm() {
-		let advice = [Fr::one(); NUM_ADVICE];
-		let fixed = [Fr::one(); NUM_FIXED];
-		let mut sum = Fr::zero();
-		for i in 0..advice.len() {
-			sum += advice[i];
-		}
-		for i in 0..fixed.len() {
-			sum += fixed[i];
-		}
-		let circuit = TestCircuitPi::<_, VERTICAL_SIZE>::new(advice, fixed);
-
-		let k = 4;
-		let params = read_params(k);
-		let pk = gen_pk(&params, &circuit);
-		let deployment_code = gen_evm_verifier(&params, pk.get_vk(), vec![VERTICAL_SIZE]);
-		dbg!(deployment_code.len());
-
-		let pub_ins = vec![sum; VERTICAL_SIZE];
-		let proof = gen_proof(&params, &pk, circuit, vec![pub_ins.clone()]);
-		evm_verify(deployment_code, vec![pub_ins], proof);
 	}
 }
