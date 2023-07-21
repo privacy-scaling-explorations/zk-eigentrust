@@ -730,8 +730,7 @@ mod test {
 	use crate::{
 		calculate_message_hash,
 		eddsa::native::{sign, SecretKey},
-		utils::{generate_params, prove_and_verify, read_params},
-		verifier::{evm_verify, gen_evm_verifier, gen_pk, gen_proof},
+		utils::{generate_params, prove_and_verify},
 	};
 	use halo2::{dev::MockProver, halo2curves::bn256::Bn256};
 	use rand::thread_rng;
@@ -855,66 +854,5 @@ mod test {
 		let params = generate_params(k);
 		let res = prove_and_verify::<Bn256, _, _>(params, et, &[&res], rng).unwrap();
 		assert!(res);
-	}
-
-	#[ignore = "Smart contract verifier is too big to run"]
-	#[test]
-	fn test_closed_graph_circut_evm() {
-		let ops: Vec<Vec<Scalar>> = vec![
-			vec![0, 200, 300, 500, 0],
-			vec![100, 0, 100, 100, 700],
-			vec![400, 100, 0, 200, 300],
-			vec![100, 100, 700, 0, 100],
-			vec![300, 100, 400, 200, 0],
-		]
-		.into_iter()
-		.map(|arr| arr.into_iter().map(|x| Scalar::from_u128(x)).collect())
-		.collect();
-		let rng = &mut thread_rng();
-		let secret_keys = [(); NUM_NEIGHBOURS].map(|_| SecretKey::random(rng));
-		let pub_keys = secret_keys.clone().map(|x| x.public());
-
-		let op_pub_keys: Vec<Vec<PublicKey>> =
-			(0..NUM_NEIGHBOURS).map(|_| pub_keys.to_vec()).collect();
-
-		let (res, signatures) = {
-			let mut signatures = vec![];
-
-			let mut et =
-				native::EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
-			for i in 0..NUM_NEIGHBOURS {
-				et.add_member(pub_keys[i].clone());
-
-				let (_, message_hashes) = calculate_message_hash::<NUM_NEIGHBOURS, 1>(
-					op_pub_keys[i].to_vec(),
-					vec![ops[i].clone()],
-				);
-				let sig = sign(&secret_keys[i], &pub_keys[i], message_hashes[0]);
-				signatures.push(sig.clone());
-
-				let scores = [0, 1, 2, 3, 4].map(|j| (op_pub_keys[i][j], ops[i][j]));
-				let op = native::Opinion::new(sig, message_hashes[0], scores.to_vec());
-				et.update_op(pub_keys[i].clone(), op);
-			}
-			let s = et.converge();
-
-			(s, signatures)
-		};
-
-		let et = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new(
-			pub_keys.to_vec(),
-			signatures,
-			op_pub_keys,
-			ops,
-		);
-
-		let k = 14;
-		let params = read_params(k);
-		let pk = gen_pk(&params, &et);
-		let deployment_code = gen_evm_verifier(&params, pk.get_vk(), vec![NUM_NEIGHBOURS]);
-		dbg!(deployment_code.len());
-
-		let proof = gen_proof(&params, &pk, et, vec![res.clone()]);
-		evm_verify(deployment_code, vec![res], proof);
 	}
 }

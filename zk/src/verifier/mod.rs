@@ -137,10 +137,8 @@ pub fn evm_verify(deployment_code: Vec<u8>, instances: Vec<Vec<Fr>>, proof: Vec<
 mod test {
 	use std::usize;
 
-	use super::{gen_evm_verifier, gen_pk, gen_proof};
 	use crate::{
-		utils::{generate_params, prove_and_verify, read_params},
-		verifier::evm_verify,
+		utils::{generate_params, prove_and_verify},
 		FieldExt, RegionCtx,
 	};
 	use halo2::{
@@ -297,30 +295,5 @@ mod test {
 		let pub_ins = vec![sum; VERTICAL_SIZE];
 		let res = prove_and_verify::<Bn256, _, _>(params, circuit, &[&pub_ins], rng).unwrap();
 		assert!(res);
-	}
-
-	#[ignore = "Smart contract verifier is too big to run"]
-	#[test]
-	fn verify_dummy_pi_evm() {
-		let advice = [Fr::one(); NUM_ADVICE];
-		let fixed = [Fr::one(); NUM_FIXED];
-		let mut sum = Fr::zero();
-		for i in 0..advice.len() {
-			sum += advice[i];
-		}
-		for i in 0..fixed.len() {
-			sum += fixed[i];
-		}
-		let circuit = TestCircuitPi::<_, VERTICAL_SIZE>::new(advice, fixed);
-
-		let k = 4;
-		let params = read_params(k);
-		let pk = gen_pk(&params, &circuit);
-		let deployment_code = gen_evm_verifier(&params, pk.get_vk(), vec![VERTICAL_SIZE]);
-		dbg!(deployment_code.len());
-
-		let pub_ins = vec![sum; VERTICAL_SIZE];
-		let proof = gen_proof(&params, &pk, circuit, vec![pub_ins.clone()]);
-		evm_verify(deployment_code, vec![pub_ins], proof);
 	}
 }
