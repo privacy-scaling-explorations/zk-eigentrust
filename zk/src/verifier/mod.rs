@@ -1,12 +1,12 @@
 use halo2::{
 	dev::MockProver,
 	halo2curves::{
-		bn256::{Bn256, Fr, G1Affine},
+		bn256::{Bn256, Fq, Fr, G1Affine},
 		group::ff::PrimeField,
 	},
-	plonk::{create_proof, keygen_pk, keygen_vk, Circuit, ProvingKey},
+	plonk::{create_proof, keygen_pk, keygen_vk, Circuit, ProvingKey, VerifyingKey},
 	poly::{
-		commitment::Params,
+		commitment::{Params, ParamsProver},
 		kzg::{
 			commitment::{KZGCommitmentScheme, ParamsKZG},
 			multiopen::ProverGWC,
@@ -17,7 +17,13 @@ use halo2::{
 use itertools::Itertools;
 use rand::rngs::OsRng;
 pub use snark_verifier::loader::evm::compile_yul;
-use snark_verifier::system::halo2::transcript::evm::EvmTranscript;
+use snark_verifier::{
+	loader::evm::{self, Address, EvmLoader, ExecutorBuilder},
+	pcs::kzg::{Gwc19, KzgAs},
+	system::halo2::{compile, transcript::evm::EvmTranscript, Config},
+	verifier::{self, SnarkVerifier},
+};
+use std::rc::Rc;
 
 /// PLONK proof aggregator
 pub mod aggregator;
@@ -25,6 +31,8 @@ pub mod aggregator;
 pub mod loader;
 /// Poseidon transcript
 pub mod transcript;
+
+type PlonkVerifier = verifier::plonk::PlonkVerifier<KzgAs<Bn256, Gwc19>>;
 
 /// Encode instances and proof into calldata.
 pub fn encode_calldata<F>(instances: &[Vec<F>], proof: &[u8]) -> Vec<u8>
@@ -72,6 +80,57 @@ pub fn gen_proof<C: Circuit<Fr>>(
 	};
 
 	proof
+}
+
+/// Generate solidity verifier
+pub fn gen_evm_verifier(
+	params: &ParamsKZG<Bn256>, vk: &VerifyingKey<G1Affine>, num_instance: Vec<usize>,
+) -> Vec<u8> {
+	let code = gen_evm_verifier_code(params, vk, num_instance);
+	evm::compile_yul(&code)
+}
+
+/// Generate solidity verifier
+pub fn gen_evm_verifier_code(
+	params: &ParamsKZG<Bn256>, vk: &VerifyingKey<G1Affine>, num_instance: Vec<usize>,
+) -> String {
+	let protocol = compile(
+		params,
+		vk,
+		Config::kzg().with_num_instance(num_instance.clone()),
+	);
+
+	let loader = EvmLoader::new::<Fq, Fr>();
+	let protocol = protocol.loaded(&loader);
+	let mut transcript = EvmTranscript::<_, Rc<EvmLoader>, _, _>::new(&loader);
+
+	let instances = transcript.load_instances(num_instance);
+	let vk = (params.get_g()[0], params.g2(), params.s_g2()).into();
+
+	let proof = PlonkVerifier::read_proof(&vk, &protocol, &instances, &mut transcript).unwrap();
+	PlonkVerifier::verify(&vk, &protocol, &instances, &proof).unwrap();
+
+	loader.yul_code()
+}
+
+/// Verify proof inside the smart contract
+pub fn evm_verify(deployment_code: Vec<u8>, instances: Vec<Vec<Fr>>, proof: Vec<u8>) {
+	let calldata = encode_calldata(&instances, &proof);
+	let mut evm = ExecutorBuilder::default().with_gas_limit(u64::MAX.into()).build();
+
+	let caller = Address::from_low_u64_be(0xfe);
+	let deployment_result = evm.deploy(caller, deployment_code.into(), 0.into());
+	dbg!(deployment_result.exit_reason);
+
+	let verifier_address = deployment_result.address.unwrap();
+	let result = evm.call_raw(caller, verifier_address, calldata.into(), 0.into());
+
+	dbg!(result.gas_used);
+	dbg!(result.reverted);
+	dbg!(result.exit_reason);
+
+	let success = !result.reverted;
+	assert!(success);
 }
 
 #[cfg(test)]
