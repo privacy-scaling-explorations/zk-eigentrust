@@ -13,8 +13,9 @@ use ethers::types::{Address, Bytes, H256};
 use ethers::utils::hex;
 use serde::Deserialize;
 use serde::{de::DeserializeOwned, Serialize};
+use serde_json::{from_reader, to_string};
 use std::fs::File;
-use std::io::BufReader;
+use std::io::{BufReader, Write};
 use std::marker::PhantomData;
 use std::path::PathBuf;
 
@@ -263,6 +264,42 @@ impl AttestationRecord {
 	}
 }
 
+/// The `JSONFileStorage` struct provides a mechanism for persisting
+/// and retrieving structured data to and from JSON files.
+pub struct JSONFileStorage<T> {
+	filepath: PathBuf,
+	phantom: PhantomData<T>,
+}
+
+impl<T> JSONFileStorage<T> {
+	/// Creates a new JSONFileStorage.
+	pub fn new(filepath: PathBuf) -> Self {
+		Self { filepath, phantom: PhantomData }
+	}
+
+	/// Returns the path to the file.
+	pub fn filepath(&self) -> &PathBuf {
+		&self.filepath
+	}
+}
+
+impl<T: Serialize + DeserializeOwned + Clone> Storage<T> for JSONFileStorage<T> {
+	type Err = EigenError;
+
+	fn load(&self) -> Result<T, Self::Err> {
+		let file = File::open(&self.filepath).map_err(EigenError::IOError)?;
+		let reader = BufReader::new(file);
+		from_reader(reader).map_err(|e| EigenError::ParsingError(e.to_string()))
+	}
+
+	fn save(&mut self, data: T) -> Result<(), Self::Err> {
+		let json_str = to_string(&data).map_err(|e| EigenError::ParsingError(e.to_string()))?;
+
+		let mut file = File::create(&self.filepath).map_err(EigenError::IOError)?;
+		file.write_all(json_str.as_bytes()).map_err(EigenError::IOError)
+	}
+}
+
 #[cfg(test)]
 mod tests {
 	use crate::fs::get_assets_path;
@@ -299,6 +336,34 @@ mod tests {
 		let records: Vec<Record> = result.unwrap();
 		assert_eq!(records.len(), 1);
 		assert_eq!(records[0], content[0]);
+
+		// Clean up
+		fs::remove_file(filepath).unwrap();
+	}
+
+	#[test]
+	fn test_json_file_storage() {
+		// Create the JSON file
+		let filename = "test.json";
+		let filepath = get_assets_path().unwrap().join(filename);
+		let mut json_storage = JSONFileStorage::<Record>::new(filepath.clone());
+
+		let content = Record {
+			peer_address: "0x70997970c51812dc3a010c7d01b50e0d17dc7666".to_string(),
+			score: 1000,
+		};
+
+		// Save the content to the JSON file
+		assert!(json_storage.save(content.clone()).is_ok());
+
+		// Load the JSON file
+		let result = json_storage.load();
+
+		// Assert
+		assert!(result.is_ok());
+		let records: Record = result.unwrap();
+		assert_eq!(records.peer_address, content.peer_address);
+		assert_eq!(records.score, content.score);
 
 		// Clean up
 		fs::remove_file(filepath).unwrap();
