@@ -196,7 +196,7 @@ impl Client {
 		assert!(recovered_address == self.signer.address());
 
 		// Stored contract data
-		let (_, about, key, payload) = signed_attestation.to_tx_data();
+		let (_, about, key, payload) = signed_attestation.to_tx_data()?;
 		let contract_data = ContractAttestationData(about, key.to_fixed_bytes(), payload);
 
 		let tx_call = as_contract.attest(vec![contract_data]);
@@ -222,8 +222,7 @@ impl Client {
 		let attestations: Vec<SignedAttestationEth> = att
 			.into_iter()
 			.map(|attestation_filter| SignedAttestationEth::from_log(&attestation_filter))
-			.collect::<Result<Vec<_>, &'static str>>()
-			.unwrap();
+			.collect::<Vec<_>>();
 
 		// Construct a set to hold unique participant addresses
 		let mut participants_set = BTreeSet::<Address>::new();
@@ -267,7 +266,7 @@ impl Client {
 			let attested_pos =
 				participants.iter().position(|&r| r == signed_att.attestation.about).unwrap();
 
-			let signed_attestation_fr = signed_att.to_signed_signature_fr();
+			let signed_attestation_fr = signed_att.to_signed_signature_fr()?;
 			attestation_matrix[attester_pos][attested_pos] = Some(signed_attestation_fr);
 		}
 
@@ -476,7 +475,7 @@ mod lib_tests {
 
 		let att_logs = attestations[0].clone();
 
-		let returned_att = AttestationEth::from_log(&att_logs).unwrap();
+		let returned_att = AttestationEth::from_log(&att_logs);
 
 		// Check that the attestations match
 		assert_eq!(returned_att.about, attestation.about);

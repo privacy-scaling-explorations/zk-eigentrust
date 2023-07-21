@@ -197,7 +197,7 @@ pub struct AttestationRecord {
 impl AttestationRecord {
 	/// Creates a new AttestationRecord from an Attestation log.
 	pub fn from_log(log: &AttestationCreatedFilter) -> Self {
-		let sign_att_eth = SignedAttestationEth::from_log(log).unwrap();
+		let sign_att_eth = SignedAttestationEth::from_log(log);
 		let sign_att_raw: SignedAttestationRaw = sign_att_eth.into();
 
 		Self {

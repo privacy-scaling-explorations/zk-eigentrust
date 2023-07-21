@@ -54,7 +54,7 @@ impl AttestationEth {
 	}
 
 	/// Constructs a new attestation struct from an attestation log.
-	pub fn from_log(log: &AttestationCreatedFilter) -> Result<Self, &'static str> {
+	pub fn from_log(log: &AttestationCreatedFilter) -> Self {
 		let attestation_val = log.val.to_vec();
 		assert!(attestation_val.len() == 66 || attestation_val.len() == 98);
 
@@ -68,12 +68,12 @@ impl AttestationEth {
 		let mut domain = [0; 20];
 		domain.copy_from_slice(&log.key[DOMAIN_PREFIX_LEN..]);
 
-		Ok(Self {
+		Self {
 			about: log.about,
 			domain: H160::from(domain),
 			value: Uint8::from(value),
 			message: H256::from(message),
-		})
+		}
 	}
 
 	/// Converts the attestation to the scalar representation.
@@ -152,7 +152,7 @@ pub struct SignatureEth {
 
 impl SignatureEth {
 	/// Constructs a new signature struct from an attestation log.
-	pub fn from_log(log: &AttestationCreatedFilter) -> Result<Self, &'static str> {
+	pub fn from_log(log: &AttestationCreatedFilter) -> Self {
 		let attestation_val = log.val.to_vec();
 		assert!(attestation_val.len() == 66 || attestation_val.len() == 98);
 
@@ -162,7 +162,7 @@ impl SignatureEth {
 		s.copy_from_slice(&attestation_val[32..64]);
 		let rec_id = attestation_val[64];
 
-		Ok(Self { sig_r: H256::from(r), sig_s: H256::from(s), rec_id: Uint8::from(rec_id) })
+		Self { sig_r: H256::from(r), sig_s: H256::from(s), rec_id: Uint8::from(rec_id) }
 	}
 
 	/// Convert the struct into Fr version
@@ -232,29 +232,29 @@ impl SignedAttestationEth {
 	}
 
 	/// Constructs a new signature struct from an attestation log.
-	pub fn from_log(log: &AttestationCreatedFilter) -> Result<Self, &'static str> {
-		let attestation = AttestationEth::from_log(log)?;
-		let signature = SignatureEth::from_log(log)?;
+	pub fn from_log(log: &AttestationCreatedFilter) -> Self {
+		let attestation = AttestationEth::from_log(log);
+		let signature = SignatureEth::from_log(log);
 
-		Ok(Self { attestation, signature })
+		Self { attestation, signature }
 	}
 
 	/// Converts the structure into data needed for AttestationStation
-	pub fn to_tx_data(&self) -> (Address, Address, H256, Bytes) {
+	pub fn to_tx_data(&self) -> Result<(Address, Address, H256, Bytes), EigenError> {
 		let payload = self.to_payload();
 		let key = self.attestation.get_key();
-		let pk = self.recover_public_key().unwrap();
+		let pk = self.recover_public_key()?;
 		let attestor = address_from_public_key(&pk);
 		let attested = self.attestation.about;
 
-		(attestor, attested, key, payload)
+		Ok((attestor, attested, key, payload))
 	}
 
 	/// Convert to a struct with field values
-	pub fn to_signed_signature_fr(&self) -> SignedAttestationFr {
-		let attestation_fr = self.attestation.to_attestation_fr().unwrap();
+	pub fn to_signed_signature_fr(&self) -> Result<SignedAttestationFr, EigenError> {
+		let attestation_fr = self.attestation.to_attestation_fr()?;
 		let signature_fr = self.signature.to_signature_fr();
-		SignedAttestationFr::new(attestation_fr, signature_fr)
+		Ok(SignedAttestationFr::new(attestation_fr, signature_fr))
 	}
 }
 
@@ -287,9 +287,11 @@ impl AttestationRaw {
 	}
 
 	/// Converts a vector of bytes into the struct.
-	pub fn from_bytes(bytes: Vec<u8>) -> Result<Self, &'static str> {
+	pub fn from_bytes(bytes: Vec<u8>) -> Result<Self, EigenError> {
 		if bytes.len() != 73 {
-			return Err("Input bytes vector should be of length 73");
+			return Err(EigenError::ConversionError(
+				"Input bytes vector should be of length 73".to_string(),
+			));
 		}
 
 		let mut about = [0u8; 20];
@@ -355,9 +357,11 @@ impl SignatureRaw {
 	}
 
 	/// Converts a vector of bytes into the struct.
-	pub fn from_bytes(bytes: Vec<u8>) -> Result<Self, &'static str> {
+	pub fn from_bytes(bytes: Vec<u8>) -> Result<Self, EigenError> {
 		if bytes.len() != 65 {
-			return Err("Input bytes vector should be of length 65");
+			return Err(EigenError::ConversionError(
+				"Input bytes vector should be of length 65".to_string(),
+			));
 		}
 
 		let mut sig_r = [0u8; 32];
@@ -432,7 +436,7 @@ impl SignedAttestationRaw {
 	}
 
 	/// Converts a vector of bytes into the struct.
-	pub fn from_bytes(bytes: Vec<u8>) -> Result<Self, &'static str> {
+	pub fn from_bytes(bytes: Vec<u8>) -> Result<Self, EigenError> {
 		let attestation = AttestationRaw::from_bytes(bytes[..73].to_vec())?;
 		let signature = SignatureRaw::from_bytes(bytes[73..].to_vec())?;
 
@@ -637,7 +641,7 @@ mod tests {
 
 		let signed_attestation = SignedAttestationEth::new(attestation_eth.clone(), signature_eth);
 
-		let (_, about, key, payload) = signed_attestation.to_tx_data();
+		let (_, about, key, payload) = signed_attestation.to_tx_data().unwrap();
 		let contract_att_data = ContractAttestationData(about, key.to_fixed_bytes(), payload);
 
 		let expected_address = Address::from(about_bytes);
