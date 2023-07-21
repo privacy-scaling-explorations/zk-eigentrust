@@ -27,7 +27,7 @@ pub const NUM_BITS: usize = 68;
 /// Construct an Ethereum address for the given ECDSA public key
 pub fn address_from_pub_key(
 	pub_key: &PublicKey<Secp256k1Affine, Fr, NUM_LIMBS, NUM_BITS, Secp256k1_4_68, Secp256k1Params>,
-) -> Result<[u8; 20], &'static str> {
+) -> [u8; 20] {
 	let pub_key_bytes = pub_key.to_bytes();
 
 	// Hash with Keccak256
@@ -39,14 +39,14 @@ pub fn address_from_pub_key(
 	let mut address = [0u8; 20];
 	address.copy_from_slice(&hashed_public_key[hashed_public_key.len() - 20..]);
 
-	Ok(address)
+	address
 }
 
 /// Calculate the address field value from a public key
 pub fn field_value_from_pub_key(
 	pub_key: &PublicKey<Secp256k1Affine, Fr, NUM_LIMBS, NUM_BITS, Secp256k1_4_68, Secp256k1Params>,
 ) -> Fr {
-	let mut address = address_from_pub_key(pub_key).unwrap();
+	let mut address = address_from_pub_key(pub_key);
 	address.reverse();
 
 	let mut address_bytes = [0u8; 32];

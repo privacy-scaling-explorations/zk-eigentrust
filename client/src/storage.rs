@@ -196,11 +196,11 @@ pub struct AttestationRecord {
 
 impl AttestationRecord {
 	/// Creates a new AttestationRecord from an Attestation log.
-	pub fn from_log(log: &AttestationCreatedFilter) -> Self {
-		let sign_att_eth = SignedAttestationEth::from_log(log);
+	pub fn from_log(log: &AttestationCreatedFilter) -> Result<Self, EigenError> {
+		let sign_att_eth = SignedAttestationEth::from_log(log)?;
 		let sign_att_raw: SignedAttestationRaw = sign_att_eth.into();
 
-		Self {
+		Ok(Self {
 			about: Self::encode_bytes_to_hex(&sign_att_raw.attestation.about),
 			domain: Self::encode_bytes_to_hex(&sign_att_raw.attestation.domain),
 			value: sign_att_raw.attestation.value.to_string(),
@@ -208,7 +208,7 @@ impl AttestationRecord {
 			sig_r: Self::encode_bytes_to_hex(&sign_att_raw.signature.sig_r),
 			sig_s: Self::encode_bytes_to_hex(&sign_att_raw.signature.sig_s),
 			rec_id: sign_att_raw.signature.rec_id.to_string(),
-		}
+		})
 	}
 
 	/// Returns a log from an AttestationRecord.
@@ -232,7 +232,7 @@ impl AttestationRecord {
 		let about = sign_att_eth.attestation.about;
 		let key = *sign_att_eth.attestation.get_key().as_fixed_bytes();
 		let val = sign_att_eth.to_payload();
-		let public_key = sign_att_eth.recover_public_key().unwrap();
+		let public_key = sign_att_eth.recover_public_key()?;
 		let creator = address_from_public_key(&public_key);
 
 		Ok(AttestationCreatedFilter { about, key, val, creator })

@@ -169,7 +169,7 @@ impl Client {
 		let secret_keys = ecdsa_secret_from_mnemonic(&self.mnemonic, 1)?;
 
 		// Get AttestationFr
-		let attestation_fr = attestation_eth.to_attestation_fr().unwrap();
+		let attestation_fr = attestation_eth.to_attestation_fr()?;
 
 		// Format for signature
 		let att_hash = attestation_fr.hash();
@@ -222,7 +222,7 @@ impl Client {
 		let attestations: Vec<SignedAttestationEth> = att
 			.into_iter()
 			.map(|attestation_filter| SignedAttestationEth::from_log(&attestation_filter))
-			.collect::<Vec<_>>();
+			.collect::<Result<Vec<_>, EigenError>>()?;
 
 		// Construct a set to hold unique participant addresses
 		let mut participants_set = BTreeSet::<Address>::new();
@@ -230,7 +230,7 @@ impl Client {
 
 		// Insert the attester and attested of each attestation into the set
 		for signed_att in &attestations {
-			let public_key = signed_att.recover_public_key().unwrap();
+			let public_key = signed_att.recover_public_key()?;
 			let attester = address_from_public_key(&public_key);
 			participants_set.insert(signed_att.attestation.about);
 			participants_set.insert(attester);
@@ -260,7 +260,7 @@ impl Client {
 
 		// Populate the attestation matrix with the attestations data
 		for signed_att in &attestations {
-			let public_key = signed_att.recover_public_key().unwrap();
+			let public_key = signed_att.recover_public_key()?;
 			let attester = address_from_public_key(&public_key);
 			let attester_pos = participants.iter().position(|&r| r == attester).unwrap();
 			let attested_pos =
@@ -475,7 +475,7 @@ mod lib_tests {
 
 		let att_logs = attestations[0].clone();
 
-		let returned_att = AttestationEth::from_log(&att_logs);
+		let returned_att = AttestationEth::from_log(&att_logs).unwrap();
 
 		// Check that the attestations match
 		assert_eq!(returned_att.about, attestation.about);

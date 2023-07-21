@@ -185,7 +185,7 @@ pub async fn handle_attestations(config: ClientConfig) -> Result<(), EigenError>
 	let attestation_records = attestations
 		.into_iter()
 		.map(|log| AttestationRecord::from_log(&log))
-		.collect::<Vec<AttestationRecord>>();
+		.collect::<Result<Vec<AttestationRecord>, EigenError>>()?;
 
 	let filepath = get_file_path("attestations", FileType::Csv)?;
 

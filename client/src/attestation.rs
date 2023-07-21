@@ -54,9 +54,13 @@ impl AttestationEth {
 	}
 
 	/// Constructs a new attestation struct from an attestation log.
-	pub fn from_log(log: &AttestationCreatedFilter) -> Self {
+	pub fn from_log(log: &AttestationCreatedFilter) -> Result<Self, EigenError> {
 		let attestation_val = log.val.to_vec();
-		assert!(attestation_val.len() == 66 || attestation_val.len() == 98);
+		if attestation_val.len() != 66 && attestation_val.len() != 98 {
+			return Err(EigenError::ConversionError(
+				"Input bytes vector 'val' should be of length 66 or 98".to_string(),
+			));
+		}
 
 		let value = attestation_val[65];
 
@@ -68,12 +72,12 @@ impl AttestationEth {
 		let mut domain = [0; 20];
 		domain.copy_from_slice(&log.key[DOMAIN_PREFIX_LEN..]);
 
-		Self {
+		Ok(Self {
 			about: log.about,
 			domain: H160::from(domain),
 			value: Uint8::from(value),
 			message: H256::from(message),
-		}
+		})
 	}
 
 	/// Converts the attestation to the scalar representation.
@@ -89,12 +93,13 @@ impl AttestationEth {
 		domain_extended_bytes[..20].copy_from_slice(&domain_fixed);
 
 		let domain_fr_opt = Scalar::from_bytes(&domain_extended_bytes);
-		let domain = if domain_fr_opt.is_some().into() {
-			domain_fr_opt.unwrap()
-		} else {
-			return Err(EigenError::ParsingError(
-				"Failed to convert key to scalar".to_string(),
-			));
+		let domain = match domain_fr_opt.is_some().into() {
+			true => domain_fr_opt.unwrap(),
+			false => {
+				return Err(EigenError::ParsingError(
+					"Failed to convert key to scalar".to_string(),
+				));
+			},
 		};
 
 		// Value
@@ -152,9 +157,13 @@ pub struct SignatureEth {
 
 impl SignatureEth {
 	/// Constructs a new signature struct from an attestation log.
-	pub fn from_log(log: &AttestationCreatedFilter) -> Self {
+	pub fn from_log(log: &AttestationCreatedFilter) -> Result<Self, EigenError> {
 		let attestation_val = log.val.to_vec();
-		assert!(attestation_val.len() == 66 || attestation_val.len() == 98);
+		if attestation_val.len() != 66 && attestation_val.len() != 98 {
+			return Err(EigenError::ConversionError(
+				"Input bytes vector 'val' should be of length 66 or 98".to_string(),
+			));
+		}
 
 		let mut r = [0; 32];
 		let mut s = [0; 32];
@@ -162,7 +171,7 @@ impl SignatureEth {
 		s.copy_from_slice(&attestation_val[32..64]);
 		let rec_id = attestation_val[64];
 
-		Self { sig_r: H256::from(r), sig_s: H256::from(s), rec_id: Uint8::from(rec_id) }
+		Ok(Self { sig_r: H256::from(r), sig_s: H256::from(s), rec_id: Uint8::from(rec_id) })
 	}
 
 	/// Convert the struct into Fr version
@@ -232,11 +241,11 @@ impl SignedAttestationEth {
 	}
 
 	/// Constructs a new signature struct from an attestation log.
-	pub fn from_log(log: &AttestationCreatedFilter) -> Self {
-		let attestation = AttestationEth::from_log(log);
-		let signature = SignatureEth::from_log(log);
+	pub fn from_log(log: &AttestationCreatedFilter) -> Result<Self, EigenError> {
+		let attestation = AttestationEth::from_log(log)?;
+		let signature = SignatureEth::from_log(log)?;
 
-		Self { attestation, signature }
+		Ok(Self { attestation, signature })
 	}
 
 	/// Converts the structure into data needed for AttestationStation
