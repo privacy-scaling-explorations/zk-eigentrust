@@ -811,7 +811,7 @@ mod test {
 		plonk::{Circuit, ConstraintSystem, Error},
 	};
 	use rand::thread_rng;
-	use snark_verifier::loader::EcPointLoader;
+	use snark_verifier::loader::{EcPointLoader, LoadedScalar};
 
 	type C = G1Affine;
 	type P = Bn256_4_68;
@@ -819,6 +819,117 @@ mod test {
 	type H = StatefulSpongeChipset<Fr, 5, Params>;
 	type Scalar = Fr;
 	type Base = Fq;
+
+	#[derive(Clone)]
+	struct TestLScalarInvertConfig {
+		common: CommonConfig,
+		main: MainConfig,
+		poseidon_sponge: PoseidonSpongeConfig,
+		ecc_mul_scalar: EccMulConfig,
+		aux: AuxConfig,
+	}
+
+	#[derive(Clone)]
+	struct TestLScalarInvertCircuit {
+		x: Value<Scalar>,
+	}
+
+	impl TestLScalarInvertCircuit {
+		fn new(x: Scalar) -> Self {
+			Self { x: Value::known(x) }
+		}
+	}
+
+	impl Circuit<Scalar> for TestLScalarInvertCircuit {
+		type Config = TestLScalarInvertConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			Self { x: Value::unknown() }
+		}
+
+		fn configure(meta: &mut ConstraintSystem<Scalar>) -> Self::Config {
+			let common = CommonConfig::new(meta);
+			let main_selector = MainChip::configure(&common, meta);
+			let main = MainConfig::new(main_selector);
+
+			let full_round_selector = FullRoundHasher::configure(&common, meta);
+			let partial_round_selector = PartialRoundHasher::configure(&common, meta);
+			let poseidon = PoseidonConfig::new(full_round_selector, partial_round_selector);
+
+			let absorb_selector = AbsorbChip::<Scalar, WIDTH>::configure(&common, meta);
+			let poseidon_sponge = PoseidonSpongeConfig::new(poseidon, absorb_selector);
+
+			let bits2num = Bits2NumChip::configure(&common, meta);
+
+			let int_red =
+				IntegerReduceChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
+			let int_add =
+				IntegerAddChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
+			let int_sub =
+				IntegerSubChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
+			let int_mul =
+				IntegerMulChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
+			let int_div =
+				IntegerDivChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
+
+			let ladder = EccUnreducedLadderConfig::new(int_add, int_sub, int_mul, int_div);
+			let add = EccAddConfig::new(int_red, int_sub, int_mul, int_div);
+			let double = EccDoubleConfig::new(int_red, int_add, int_sub, int_mul, int_div);
+			let table_select = EccTableSelectConfig::new(main.clone());
+			let ecc_mul_scalar =
+				EccMulConfig::new(ladder, add, double.clone(), table_select, bits2num);
+			let aux = AuxConfig::new(double);
+
+			TestLScalarInvertConfig { common, main, ecc_mul_scalar, poseidon_sponge, aux }
+		}
+
+		fn synthesize(
+			&self, config: Self::Config, mut layouter: impl Layouter<Scalar>,
+		) -> Result<(), Error> {
+			let assigned_x = layouter.assign_region(
+				|| "temp",
+				|region| {
+					let mut ctx = RegionCtx::new(region, 0);
+					let x = ctx.assign_advice(config.common.advice[0], self.x)?;
+					Ok(x)
+				},
+			)?;
+			let loader_config = LoaderConfig::<C, _, P, H, EC>::new(
+				layouter.namespace(|| "loader_config"),
+				config.common.clone(),
+				config.ecc_mul_scalar,
+				config.aux,
+				config.main,
+				config.poseidon_sponge,
+			);
+
+			let lscalar_x: Halo2LScalar<C, _, _, _, _> =
+				Halo2LScalar::new(assigned_x, loader_config.clone());
+			let inverted_lscalar_x = lscalar_x.invert().unwrap();
+
+			loader_config.layouter.borrow_mut().constrain_instance(
+				inverted_lscalar_x.inner.cell(),
+				config.common.instance,
+				0,
+			)?;
+
+			Ok(())
+		}
+	}
+
+	#[test]
+	fn test_halo2_lscalar_invert() {
+		let x = Scalar::one() + Scalar::one();
+		let inverted_x = LoadedScalar::invert(&x).unwrap();
+
+		let k = 5;
+		let circuit = TestLScalarInvertCircuit::new(x);
+		let pub_ins = vec![inverted_x];
+
+		let prover = MockProver::run(k, &circuit, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
 
 	#[derive(Clone)]
 	struct TestConfig {
