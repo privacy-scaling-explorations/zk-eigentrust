@@ -774,8 +774,6 @@ where
 
 #[cfg(test)]
 mod test {
-	use std::io;
-
 	use super::{
 		native::{LEcPoint, LScalar, NativeLoader, NUM_BITS, NUM_LIMBS},
 		Halo2LEcPoint, Halo2LScalar, LoaderConfig,
@@ -1574,6 +1572,73 @@ mod test {
 		let k = 5;
 		let circuit = TestLScalarAssertEqCircuit::new(x, y);
 		let pub_ins = vec![];
+		let prover = MockProver::run(k, &circuit, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[derive(Clone)]
+	struct TestEcPointLoadConstCircuit;
+
+	impl TestEcPointLoadConstCircuit {
+		pub fn new() -> Self {
+			Self
+		}
+	}
+
+	impl Circuit<Scalar> for TestEcPointLoadConstCircuit {
+		type Config = TestConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			Self {}
+		}
+
+		fn configure(meta: &mut ConstraintSystem<Scalar>) -> Self::Config {
+			TestConfig::new(meta)
+		}
+
+		fn synthesize(
+			&self, config: Self::Config, mut layouter: impl Layouter<Scalar>,
+		) -> Result<(), Error> {
+			let loader_config: LoaderConfig<C, _, P, H, EC> = LoaderConfig::new(
+				layouter.namespace(|| "loader_config"),
+				config.common.clone(),
+				config.ecc_mul_scalar,
+				config.aux,
+				config.main,
+				config.poseidon_sponge,
+			);
+
+			let gen_ec_point = loader_config.ec_point_load_const(&G1Affine::generator());
+
+			let mut limbs = vec![];
+			limbs.extend(gen_ec_point.inner.x.limbs);
+			limbs.extend(gen_ec_point.inner.y.limbs);
+
+			for (i, limb) in limbs.into_iter().enumerate() {
+				let _ = loader_config.layouter.borrow_mut().constrain_instance(
+					limb.cell(),
+					config.common.instance,
+					i,
+				)?;
+			}
+
+			Ok(())
+		}
+	}
+
+	#[test]
+	fn test_halo2_ec_point_load_const() {
+		let k = 5;
+		let circuit = TestEcPointLoadConstCircuit::new();
+
+		let gen_point = G1Affine::generator();
+		let mut pub_ins = vec![];
+		let x_limbs = Integer::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::from_w(gen_point.x).limbs;
+		let y_limbs = Integer::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::from_w(gen_point.y).limbs;
+		pub_ins.extend(x_limbs);
+		pub_ins.extend(y_limbs);
+
 		let prover = MockProver::run(k, &circuit, vec![pub_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
 	}
