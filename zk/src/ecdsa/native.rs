@@ -119,18 +119,6 @@ where
 	}
 }
 
-// impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
-// 	From<(C::ScalarExt, C::ScalarExt)> for Signature<C, N, NUM_LIMBS, NUM_BITS, P>
-// where
-// 	P: RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
-// 	C::ScalarExt: FieldExt,
-// {
-// 	fn from(rs: (C::ScalarExt, C::ScalarExt)) -> Self {
-// 		let (r, s) = rs;
-// 		Self::new(Integer::from_w(r), Integer::from_w(s))
-// 	}
-// }
-
 impl<N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P> From<[u8; 64]>
 	for Signature<Secp256k1Affine, N, NUM_LIMBS, NUM_BITS, P>
 where
