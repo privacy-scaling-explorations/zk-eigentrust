@@ -1382,6 +1382,76 @@ mod test {
 	}
 
 	#[derive(Clone)]
+	struct TestLScalarNegCircuit {
+		x: Value<Scalar>,
+	}
+
+	impl TestLScalarNegCircuit {
+		pub fn new(x: Scalar) -> Self {
+			Self { x: Value::known(x) }
+		}
+	}
+
+	impl Circuit<Scalar> for TestLScalarNegCircuit {
+		type Config = TestConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			Self { x: Value::unknown() }
+		}
+
+		fn configure(meta: &mut ConstraintSystem<Scalar>) -> Self::Config {
+			TestConfig::new(meta)
+		}
+
+		fn synthesize(
+			&self, config: Self::Config, mut layouter: impl Layouter<Scalar>,
+		) -> Result<(), Error> {
+			let assigned_x = layouter.assign_region(
+				|| "temp",
+				|region| {
+					let mut ctx = RegionCtx::new(region, 0);
+					let x = ctx.assign_advice(config.common.advice[0], self.x)?;
+
+					Ok(x)
+				},
+			)?;
+			let loader_config: LoaderConfig<C, _, P, H, EC> = LoaderConfig::new(
+				layouter.namespace(|| "loader_config"),
+				config.common.clone(),
+				config.ecc_mul_scalar,
+				config.aux,
+				config.main,
+				config.poseidon_sponge,
+			);
+
+			let lscalar_x = Halo2LScalar::new(assigned_x, loader_config.clone());
+			let neg_lscalar_x = -lscalar_x;
+
+			loader_config.layouter.borrow_mut().constrain_instance(
+				neg_lscalar_x.inner.cell(),
+				config.common.instance,
+				0,
+			)?;
+
+			Ok(())
+		}
+	}
+
+	#[test]
+	fn test_halo2_lscalar_neg() {
+		let x = Scalar::one();
+		let neg_x = -x;
+
+		let k = 5;
+		let circuit = TestLScalarNegCircuit::new(x);
+		let pub_ins = vec![neg_x];
+
+		let prover = MockProver::run(k, &circuit, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[derive(Clone)]
 	struct TestCircuit {
 		pairs: Vec<(LScalar<C, P, EC>, LEcPoint<C, P, EC>)>,
 	}
