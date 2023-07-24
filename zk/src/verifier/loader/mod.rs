@@ -811,7 +811,7 @@ mod test {
 		plonk::{Circuit, ConstraintSystem, Error},
 	};
 	use rand::thread_rng;
-	use snark_verifier::loader::{EcPointLoader, LoadedScalar};
+	use snark_verifier::loader::{EcPointLoader, LoadedScalar, ScalarLoader};
 
 	type C = G1Affine;
 	type P = Bn256_4_68;
@@ -1446,6 +1446,63 @@ mod test {
 		let k = 5;
 		let circuit = TestLScalarNegCircuit::new(x);
 		let pub_ins = vec![neg_x];
+
+		let prover = MockProver::run(k, &circuit, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[derive(Clone)]
+	struct TestLScalarLoadConstCircuit;
+
+	impl TestLScalarLoadConstCircuit {
+		pub fn new() -> Self {
+			Self
+		}
+	}
+
+	impl Circuit<Scalar> for TestLScalarLoadConstCircuit {
+		type Config = TestConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			Self {}
+		}
+
+		fn configure(meta: &mut ConstraintSystem<Scalar>) -> Self::Config {
+			TestConfig::new(meta)
+		}
+
+		fn synthesize(
+			&self, config: Self::Config, mut layouter: impl Layouter<Scalar>,
+		) -> Result<(), Error> {
+			let loader_config: LoaderConfig<C, _, P, H, EC> = LoaderConfig::new(
+				layouter.namespace(|| "loader_config"),
+				config.common.clone(),
+				config.ecc_mul_scalar,
+				config.aux,
+				config.main,
+				config.poseidon_sponge,
+			);
+
+			let lscalar_one = loader_config.load_const(&Scalar::one());
+
+			loader_config.layouter.borrow_mut().constrain_instance(
+				lscalar_one.inner.cell(),
+				config.common.instance,
+				0,
+			)?;
+
+			Ok(())
+		}
+	}
+
+	#[test]
+	fn test_halo2_lscalar_load_const() {
+		let x = Scalar::one();
+
+		let k = 5;
+		let circuit = TestLScalarLoadConstCircuit::new();
+		let pub_ins = vec![x];
 
 		let prover = MockProver::run(k, &circuit, vec![pub_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
