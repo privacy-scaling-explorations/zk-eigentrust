@@ -1822,17 +1822,17 @@ mod test {
 	}
 
 	#[derive(Clone)]
-	struct TestCircuit {
+	struct TestMSMCircuit {
 		pairs: Vec<(LScalar<C, P, EC>, LEcPoint<C, P, EC>)>,
 	}
 
-	impl TestCircuit {
+	impl TestMSMCircuit {
 		fn new(pairs: Vec<(LScalar<C, P, EC>, LEcPoint<C, P, EC>)>) -> Self {
 			Self { pairs }
 		}
 	}
 
-	impl Circuit<Scalar> for TestCircuit {
+	impl Circuit<Scalar> for TestMSMCircuit {
 		type Config = TestConfig;
 		type FloorPlanner = SimpleFloorPlanner;
 
@@ -1961,7 +1961,7 @@ mod test {
 		let mut p_ins = Vec::new();
 		p_ins.extend(res.inner.x.limbs);
 		p_ins.extend(res.inner.y.limbs);
-		let circuit = TestCircuit::new(pairs);
+		let circuit = TestMSMCircuit::new(pairs);
 		let k = 16;
 		let prover = MockProver::run(k, &circuit, vec![p_ins]).unwrap();
 
