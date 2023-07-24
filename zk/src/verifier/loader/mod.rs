@@ -938,6 +938,79 @@ mod test {
 	}
 
 	#[derive(Clone)]
+	struct TestLScalarAddCircuit {
+		x: Value<Scalar>,
+		y: Value<Scalar>,
+	}
+
+	impl TestLScalarAddCircuit {
+		pub fn new(x: Scalar, y: Scalar) -> Self {
+			Self { x: Value::known(x), y: Value::known(y) }
+		}
+	}
+
+	impl Circuit<Scalar> for TestLScalarAddCircuit {
+		type Config = TestConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			Self { x: Value::unknown(), y: Value::unknown() }
+		}
+
+		fn configure(meta: &mut ConstraintSystem<Scalar>) -> Self::Config {
+			TestConfig::new(meta)
+		}
+
+		fn synthesize(
+			&self, config: Self::Config, mut layouter: impl Layouter<Scalar>,
+		) -> Result<(), Error> {
+			let (assigned_x, assigned_y) = layouter.assign_region(
+				|| "temp",
+				|region| {
+					let mut ctx = RegionCtx::new(region, 0);
+					let x = ctx.assign_advice(config.common.advice[0], self.x)?;
+					let y = ctx.assign_advice(config.common.advice[1], self.y)?;
+					Ok((x, y))
+				},
+			)?;
+			let loader_config: LoaderConfig<C, _, P, H, EC> = LoaderConfig::new(
+				layouter.namespace(|| "loader_config"),
+				config.common.clone(),
+				config.ecc_mul_scalar,
+				config.aux,
+				config.main,
+				config.poseidon_sponge,
+			);
+
+			let lscalar_x = Halo2LScalar::new(assigned_x, loader_config.clone());
+			let lscalar_y = Halo2LScalar::new(assigned_y, loader_config.clone());
+
+			let lscalar_sum = lscalar_x + lscalar_y;
+
+			loader_config.layouter.borrow_mut().constrain_instance(
+				lscalar_sum.inner.cell(),
+				config.common.instance,
+				0,
+			)?;
+
+			Ok(())
+		}
+	}
+
+	#[test]
+	fn test_halo2_lscalar_add() {
+		let x = Scalar::zero();
+		let y = Scalar::one();
+		let z = x + y;
+
+		let k = 5;
+		let circuit = TestLScalarAddCircuit::new(x, y);
+		let pub_ins = vec![z];
+		let prover = MockProver::run(k, &circuit, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[derive(Clone)]
 	struct TestCircuit {
 		pairs: Vec<(LScalar<C, P, EC>, LEcPoint<C, P, EC>)>,
 	}
