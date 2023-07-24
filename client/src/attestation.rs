@@ -86,8 +86,7 @@ impl AttestationEth {
 		let about = scalar_from_address(&self.about)?;
 
 		// Domain
-		let mut domain_fixed = *self.domain.as_fixed_bytes();
-		domain_fixed.reverse();
+		let domain_fixed = *self.domain.as_fixed_bytes();
 
 		let mut domain_extended_bytes = [0u8; 32];
 		domain_extended_bytes[..20].copy_from_slice(&domain_fixed);
@@ -106,8 +105,7 @@ impl AttestationEth {
 		let value = Scalar::from(u64::from(u8::from(self.value.clone())));
 
 		// Message
-		let mut message_fixed = *self.message.as_fixed_bytes();
-		message_fixed.reverse();
+		let message_fixed = *self.message.as_fixed_bytes();
 
 		let mut message_bytes = [0u8; 64];
 		message_bytes[..32].copy_from_slice(&message_fixed);
@@ -311,7 +309,7 @@ impl AttestationRaw {
 		domain.copy_from_slice(&bytes[20..40]);
 		message.copy_from_slice(&bytes[41..]);
 
-		let value = bytes[41];
+		let value = bytes[40];
 
 		Ok(Self { about, domain, value, message })
 	}
