@@ -1644,6 +1644,116 @@ mod test {
 	}
 
 	#[derive(Clone)]
+	struct TestEcPointAssertEqCircuit {
+		p1: LEcPoint<C, P, EC>,
+		p2: LEcPoint<C, P, EC>,
+	}
+
+	impl TestEcPointAssertEqCircuit {
+		pub fn new(p1: LEcPoint<C, P, EC>, p2: LEcPoint<C, P, EC>) -> Self {
+			Self { p1, p2 }
+		}
+	}
+
+	impl Circuit<Scalar> for TestEcPointAssertEqCircuit {
+		type Config = TestConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			self.clone()
+		}
+
+		fn configure(meta: &mut ConstraintSystem<Scalar>) -> Self::Config {
+			TestConfig::new(meta)
+		}
+
+		fn synthesize(
+			&self, config: Self::Config, mut layouter: impl Layouter<Scalar>,
+		) -> Result<(), Error> {
+			let (p1_x_limbs, p1_y_limbs, p2_x_limbs, p2_y_limbs) = layouter.assign_region(
+				|| "temp",
+				|region| {
+					let mut ctx = RegionCtx::new(region, 0);
+
+					let mut p1_x_limbs: [Option<AssignedCell<Scalar, Scalar>>; NUM_LIMBS] =
+						[(); NUM_LIMBS].map(|_| None);
+					let mut p1_y_limbs: [Option<AssignedCell<Scalar, Scalar>>; NUM_LIMBS] =
+						[(); NUM_LIMBS].map(|_| None);
+					for i in 0..NUM_LIMBS {
+						p1_x_limbs[i] = Some(ctx.assign_advice(
+							config.common.advice[i],
+							Value::known(self.p1.inner.x.limbs[i]),
+						)?);
+						p1_y_limbs[i] = Some(ctx.assign_advice(
+							config.common.advice[i + NUM_LIMBS],
+							Value::known(self.p1.inner.y.limbs[i]),
+						)?);
+					}
+					let p1_x_limbs = p1_x_limbs.map(|x| x.unwrap());
+					let p1_y_limbs = p1_y_limbs.map(|y| y.unwrap());
+
+					let mut p2_x_limbs: [Option<AssignedCell<Scalar, Scalar>>; NUM_LIMBS] =
+						[(); NUM_LIMBS].map(|_| None);
+					let mut p2_y_limbs: [Option<AssignedCell<Scalar, Scalar>>; NUM_LIMBS] =
+						[(); NUM_LIMBS].map(|_| None);
+					for i in 0..NUM_LIMBS {
+						p2_x_limbs[i] = Some(ctx.assign_advice(
+							config.common.advice[i + 2 * NUM_LIMBS],
+							Value::known(self.p1.inner.x.limbs[i]),
+						)?);
+						p2_y_limbs[i] = Some(ctx.assign_advice(
+							config.common.advice[i + 3 * NUM_LIMBS],
+							Value::known(self.p1.inner.y.limbs[i]),
+						)?);
+					}
+					let p2_x_limbs = p2_x_limbs.map(|x| x.unwrap());
+					let p2_y_limbs = p2_y_limbs.map(|y| y.unwrap());
+
+					Ok((p1_x_limbs, p1_y_limbs, p2_x_limbs, p2_y_limbs))
+				},
+			)?;
+			let loader_config: LoaderConfig<C, _, P, H, EC> = LoaderConfig::new(
+				layouter.namespace(|| "loader_config"),
+				config.common.clone(),
+				config.ecc_mul_scalar,
+				config.aux,
+				config.main,
+				config.poseidon_sponge,
+			);
+
+			let p1_x = AssignedInteger::new(self.p1.inner.x.clone(), p1_x_limbs.clone());
+			let p1_y = AssignedInteger::new(self.p1.inner.y.clone(), p1_y_limbs.clone());
+			let p1_assigned_point = AssignedEcPoint::new(p1_x, p1_y);
+			let p1_halo2_point = Halo2LEcPoint::new(p1_assigned_point, loader_config.clone());
+
+			let p2_x = AssignedInteger::new(self.p2.inner.x.clone(), p2_x_limbs.clone());
+			let p2_y = AssignedInteger::new(self.p2.inner.y.clone(), p2_y_limbs.clone());
+			let p2_assigned_point = AssignedEcPoint::new(p2_x, p2_y);
+			let p2_halo2_point = Halo2LEcPoint::new(p2_assigned_point, loader_config.clone());
+
+			let res = loader_config
+				.ec_point_assert_eq("p1 == p2", &p1_halo2_point, &p2_halo2_point)
+				.map_err(|_| halo2::plonk::Error::Synthesis)?;
+
+			Ok(res)
+		}
+	}
+
+	#[test]
+	fn test_halo2_ec_point_assert_eq() {
+		let loader = NativeLoader::<C, P, EC>::new();
+
+		let p1 = LEcPoint::new(EcPoint::one(), loader.clone());
+		let p2 = LEcPoint::new(EcPoint::one(), loader);
+
+		let k = 5;
+		let circuit = TestEcPointAssertEqCircuit::new(p1, p2);
+		let pub_ins = vec![];
+		let prover = MockProver::run(k, &circuit, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[derive(Clone)]
 	struct TestCircuit {
 		pairs: Vec<(LScalar<C, P, EC>, LEcPoint<C, P, EC>)>,
 	}
