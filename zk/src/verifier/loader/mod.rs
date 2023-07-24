@@ -774,6 +774,8 @@ where
 
 #[cfg(test)]
 mod test {
+	use std::io;
+
 	use super::{
 		native::{LEcPoint, LScalar, NativeLoader, NUM_BITS, NUM_LIMBS},
 		Halo2LEcPoint, Halo2LScalar, LoaderConfig,
@@ -1504,6 +1506,74 @@ mod test {
 		let circuit = TestLScalarLoadConstCircuit::new();
 		let pub_ins = vec![x];
 
+		let prover = MockProver::run(k, &circuit, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[derive(Clone)]
+	struct TestLScalarAssertEqCircuit {
+		x: Value<Scalar>,
+		y: Value<Scalar>,
+	}
+
+	impl TestLScalarAssertEqCircuit {
+		pub fn new(x: Scalar, y: Scalar) -> Self {
+			Self { x: Value::known(x), y: Value::known(y) }
+		}
+	}
+
+	impl Circuit<Scalar> for TestLScalarAssertEqCircuit {
+		type Config = TestConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			Self { x: Value::unknown(), y: Value::unknown() }
+		}
+
+		fn configure(meta: &mut ConstraintSystem<Scalar>) -> Self::Config {
+			TestConfig::new(meta)
+		}
+
+		fn synthesize(
+			&self, config: Self::Config, mut layouter: impl Layouter<Scalar>,
+		) -> Result<(), Error> {
+			let (assigned_x, assigned_y) = layouter.assign_region(
+				|| "temp",
+				|region| {
+					let mut ctx = RegionCtx::new(region, 0);
+					let x = ctx.assign_advice(config.common.advice[0], self.x)?;
+					let y = ctx.assign_advice(config.common.advice[1], self.y)?;
+					Ok((x, y))
+				},
+			)?;
+			let loader_config: LoaderConfig<C, _, P, H, EC> = LoaderConfig::new(
+				layouter.namespace(|| "loader_config"),
+				config.common.clone(),
+				config.ecc_mul_scalar,
+				config.aux,
+				config.main,
+				config.poseidon_sponge,
+			);
+
+			let lscalar_x = Halo2LScalar::new(assigned_x, loader_config.clone());
+			let lscalar_y = Halo2LScalar::new(assigned_y, loader_config.clone());
+
+			let res = loader_config
+				.assert_eq("x == y", &lscalar_x, &lscalar_y)
+				.map_err(|_| halo2::plonk::Error::Synthesis)?;
+
+			Ok(res)
+		}
+	}
+
+	#[test]
+	fn test_halo2_lscalar_assert_eq() {
+		let x = Scalar::one();
+		let y = Scalar::one();
+
+		let k = 5;
+		let circuit = TestLScalarAssertEqCircuit::new(x, y);
+		let pub_ins = vec![];
 		let prover = MockProver::run(k, &circuit, vec![pub_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
 	}
