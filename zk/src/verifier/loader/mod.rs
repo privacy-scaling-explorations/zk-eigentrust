@@ -821,7 +821,7 @@ mod test {
 	type Base = Fq;
 
 	#[derive(Clone)]
-	struct TestLScalarInvertConfig {
+	struct TestConfig {
 		common: CommonConfig,
 		main: MainConfig,
 		poseidon_sponge: PoseidonSpongeConfig,
@@ -829,26 +829,8 @@ mod test {
 		aux: AuxConfig,
 	}
 
-	#[derive(Clone)]
-	struct TestLScalarInvertCircuit {
-		x: Value<Scalar>,
-	}
-
-	impl TestLScalarInvertCircuit {
-		fn new(x: Scalar) -> Self {
-			Self { x: Value::known(x) }
-		}
-	}
-
-	impl Circuit<Scalar> for TestLScalarInvertCircuit {
-		type Config = TestLScalarInvertConfig;
-		type FloorPlanner = SimpleFloorPlanner;
-
-		fn without_witnesses(&self) -> Self {
-			Self { x: Value::unknown() }
-		}
-
-		fn configure(meta: &mut ConstraintSystem<Scalar>) -> Self::Config {
+	impl TestConfig {
+		fn new(meta: &mut ConstraintSystem<Scalar>) -> Self {
 			let common = CommonConfig::new(meta);
 			let main_selector = MainChip::configure(&common, meta);
 			let main = MainConfig::new(main_selector);
@@ -881,7 +863,31 @@ mod test {
 				EccMulConfig::new(ladder, add, double.clone(), table_select, bits2num);
 			let aux = AuxConfig::new(double);
 
-			TestLScalarInvertConfig { common, main, ecc_mul_scalar, poseidon_sponge, aux }
+			TestConfig { common, main, ecc_mul_scalar, poseidon_sponge, aux }
+		}
+	}
+
+	#[derive(Clone)]
+	struct TestLScalarInvertCircuit {
+		x: Value<Scalar>,
+	}
+
+	impl TestLScalarInvertCircuit {
+		fn new(x: Scalar) -> Self {
+			Self { x: Value::known(x) }
+		}
+	}
+
+	impl Circuit<Scalar> for TestLScalarInvertCircuit {
+		type Config = TestConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			Self { x: Value::unknown() }
+		}
+
+		fn configure(meta: &mut ConstraintSystem<Scalar>) -> Self::Config {
+			TestConfig::new(meta)
 		}
 
 		fn synthesize(
@@ -932,15 +938,6 @@ mod test {
 	}
 
 	#[derive(Clone)]
-	struct TestConfig {
-		common: CommonConfig,
-		main: MainConfig,
-		poseidon_sponge: PoseidonSpongeConfig,
-		ecc_mul_scalar: EccMulConfig,
-		aux: AuxConfig,
-	}
-
-	#[derive(Clone)]
 	struct TestCircuit {
 		pairs: Vec<(LScalar<C, P, EC>, LEcPoint<C, P, EC>)>,
 	}
@@ -960,38 +957,7 @@ mod test {
 		}
 
 		fn configure(meta: &mut ConstraintSystem<Scalar>) -> TestConfig {
-			let common = CommonConfig::new(meta);
-			let main_selector = MainChip::configure(&common, meta);
-			let main = MainConfig::new(main_selector);
-
-			let full_round_selector = FullRoundHasher::configure(&common, meta);
-			let partial_round_selector = PartialRoundHasher::configure(&common, meta);
-			let poseidon = PoseidonConfig::new(full_round_selector, partial_round_selector);
-
-			let absorb_selector = AbsorbChip::<Scalar, WIDTH>::configure(&common, meta);
-			let poseidon_sponge = PoseidonSpongeConfig::new(poseidon, absorb_selector);
-
-			let bits2num = Bits2NumChip::configure(&common, meta);
-
-			let int_red =
-				IntegerReduceChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
-			let int_add =
-				IntegerAddChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
-			let int_sub =
-				IntegerSubChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
-			let int_mul =
-				IntegerMulChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
-			let int_div =
-				IntegerDivChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
-
-			let ladder = EccUnreducedLadderConfig::new(int_add, int_sub, int_mul, int_div);
-			let add = EccAddConfig::new(int_red, int_sub, int_mul, int_div);
-			let double = EccDoubleConfig::new(int_red, int_add, int_sub, int_mul, int_div);
-			let table_select = EccTableSelectConfig::new(main.clone());
-			let ecc_mul_scalar =
-				EccMulConfig::new(ladder, add, double.clone(), table_select, bits2num);
-			let aux = AuxConfig::new(double);
-			TestConfig { common, main, poseidon_sponge, ecc_mul_scalar, aux }
+			TestConfig::new(meta)
 		}
 
 		fn synthesize(
