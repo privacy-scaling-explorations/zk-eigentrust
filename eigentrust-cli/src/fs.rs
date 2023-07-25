@@ -59,6 +59,7 @@ pub fn load_config() -> Result<ClientConfig, EigenError> {
 	json_storage.load()
 }
 
+/// Loads the mnemonic from the environment file.
 pub fn load_mnemonic() -> String {
 	dotenv().ok();
 	var("MNEMONIC").unwrap_or_else(|_| {
