@@ -36,9 +36,9 @@ If you want to use a local EVM blockchain, the first step is to spin up Anvil by
 anvil
 ```
 
-Otherwise you should configure the `node_url` data field of the `client_config.json` file in the `assets` folder to point to the correct Ethereum node. There's more about this in the configuration section.
+Otherwise you should configure the `node_url` data field of the `config.json` file in the `assets` folder to point to the correct Ethereum node. There's more about this in the configuration section.
 
-Open a new terminal to start interacting with the client through the CLI. Let's build the release version of the client so we can run the program from the `target` directory:
+Open a new terminal to use the CLI. Let's build the release version of the crate so we can run it from the `target` directory:
 
 ```bash
 cargo build --release
@@ -47,19 +47,19 @@ cargo build --release
 Once the project is built, we need to deploy the AttestationStation smart contract to the blockchain. This is done by running the `deploy` command:
 
 ```bash
-./target/release/eigen-trust-client deploy
+./target/release/eigentrust-cli deploy
 ```
 
 The next step is submitting an attestation to a peer in the network. Attestations allow us to give a score to a peer and store that in the blockchain. This is done by running the `attest` command:
 
 ```bash
-./target/release/eigen-trust-client attest --to 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 --score 5
+./target/release/eigentrust-cli attest --to 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 --score 5
 ```
 
 It's now possible to fetch the peer-to-peer scores (from attestations) and calculate the global scores:
 
 ```bash
-./target/release/eigen-trust-client scores
+./target/release/eigentrust-cli scores
 ```
 
 ## CLI
@@ -70,7 +70,7 @@ The command-line interface was built using [clap.rs](http://clap.rs/). There is 
   - `--to`: Specify the attested address.
   - `--score`: Specify the given score (between 0 and 255).
   - `--message`: Specify an optional 32-byte message in hexadecimal format.
-- `bandada`: Used to manage Semaphore groups using the Bandada API. It is designed to either add participants to a group or remove them from it. Before executing this command, you should run the `scores` command to ensure having participants' scores, and to setup the `band-id` and `band-th` in the client configuration . Please note that when adding a participant, the command checks if their score is above the defined bandada group threshold, and only then proceeds with the addition. It requires the following options:
+- `bandada`: Used to manage Semaphore groups using the Bandada API. It is designed to either add participants to a group or remove them from it. Before executing this command, you should run the `scores` command to ensure having participants' scores, and to setup the `band-id` and `band-th` in the configuration . Please note that when adding a participant, the command checks if their score is above the defined bandada group threshold, and only then proceeds with the addition. It requires the following options:
   - `--action (add | remove)`: Defines the action to perform. You can choose to `add` a new member to a group or `remove` an existing member from it.
   - `--ic`: Provides the identity commitment of the participant you intend to add or remove from the group.
   - `--addr`: Specifies the participant's Ethereum address.
@@ -78,8 +78,8 @@ The command-line interface was built using [clap.rs](http://clap.rs/). There is 
 - `deploy`: Deploys all the contracts.
 - `proof`: Calculates the global scores, generates the zk proof and stores it in `et-proof.json` at the `assets` folder.
 - `scores`: Calculates the global scores and stores them in the `scores.csv` file within the `assets` folder.
-- `show`: Displays the `client_config.json` file.
-- `update`: Updates the specified field in `client_config.json`. Takes the following options:
+- `show`: Displays the `config.json` file.
+- `update`: Updates the specified field in `config.json`. Takes the following options:
   - `--as-address`: Updates the address of the AttestationStation contract.
   - `--domain`: Updates the domain identifier.
   - `--band-id`: Updates the bandada group id.
@@ -92,26 +92,26 @@ The command-line interface was built using [clap.rs](http://clap.rs/). There is 
 ### Example of `update` command
 
 ```bash
-./target/release/eigen-trust-client update --node http://localhost:8545
+./target/release/eigentrust-cli update --node http://localhost:8545
 ```
 
 ### Example of `attest` command
 
 ```bash
-./target/release/eigen-trust-client attest --to 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 --score 5 --message 0x473fe1d0de78c8f334d059013d902c13c8b53eb0f669caa9cad677ce1a601167
+./target/release/eigentrust-cli attest --to 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 --score 5 --message 0x473fe1d0de78c8f334d059013d902c13c8b53eb0f669caa9cad677ce1a601167
 ```
 
 ### Example of `bandada` command
 
 ```bash
-./target/release/eigen-trust-client scores # Can be skipped for testing, a scores.csv file is provided.
-./target/release/eigen-trust-client update --band-id 51629751621128677209874422363557 --band-th 500
-./target/release/eigen-trust-client bandada --action add --ic 82918723982 --addr 0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266
+./target/release/eigentrust-cli scores # Can be skipped for testing, a scores.csv file is provided.
+./target/release/eigentrust-cli update --band-id 51629751621128677209874422363557 --band-th 500
+./target/release/eigentrust-cli bandada --action add --ic 82918723982 --addr 0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266
 ```
 
 ## Configuration
 
-The configuration file is stored in `assets/client_config.json`. You may need to update these parameters if, for example, the smart contracts are redeployed to new addresses or if you want to connect to a different Ethereum node. You can modify the following parameters:
+The configuration file is stored in `eigentrust-cli/assets/config.json`. You may need to update these parameters if, for example, the smart contracts are redeployed to new addresses or if you want to connect to a different Ethereum node. You can modify the following parameters:
 
 - `as_address`: AttestationStation smart contract address. This is the contract that will receive the attestations.
 - `mnemonic`: Ethereum wallet mnemonic phrase.

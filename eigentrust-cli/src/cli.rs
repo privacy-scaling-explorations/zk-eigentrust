@@ -49,9 +49,9 @@ pub enum Mode {
 	Proof,
 	/// Retrieves and saves all attestations and calculates the global scores.
 	Scores,
-	/// Display the current client configuration.
+	/// Display the current configuration.
 	Show,
-	/// Update the client configuration. Requires 'UpdateData'.
+	/// Update the configuration. Requires 'UpdateData'.
 	Update(UpdateData),
 	/// Verify the proofs.
 	Verify,
@@ -365,7 +365,7 @@ pub fn handle_update(config: &mut ClientConfig, data: UpdateData) -> Result<(), 
 		config.node_url = node_url;
 	}
 
-	let filepath = get_file_path("client_config", FileType::Json)?;
+	let filepath = get_file_path("config", FileType::Json)?;
 	let mut json_storage = JSONFileStorage::<ClientConfig>::new(filepath);
 
 	json_storage.save(config.clone())

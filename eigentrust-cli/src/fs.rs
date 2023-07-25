@@ -40,7 +40,7 @@ pub fn get_assets_path() -> Result<PathBuf, EigenError> {
 
 		#[cfg(not(test))]
 		{
-			current_dir.join("client/assets")
+			current_dir.join("eigentrust-cli/assets")
 		}
 	})
 }
@@ -51,9 +51,9 @@ pub fn get_file_path(file_name: &str, file_type: FileType) -> Result<PathBuf, Ei
 	Ok(assets_path.join(format!("{}.{}", file_name, file_type.as_str())))
 }
 
-/// Loads the client configuration from a JSON file.
+/// Loads the configuration file.
 pub fn load_config() -> Result<ClientConfig, EigenError> {
-	let filepath = get_file_path("client_config", FileType::Json)?;
+	let filepath = get_file_path("config", FileType::Json)?;
 	let json_storage = JSONFileStorage::<ClientConfig>::new(filepath);
 
 	json_storage.load()
