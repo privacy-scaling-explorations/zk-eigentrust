@@ -287,7 +287,7 @@ impl Client {
 				let pk_x = pk.serialize_uncompressed();
 				let mut pk_bytes: [u8; 64] = [0; 64];
 				pk_bytes.copy_from_slice(&pk_x[1..]);
-				let pk_fr = PublicKey::from(pk_bytes);
+				let pk_fr = PublicKey::from_bytes(pk_bytes.to_vec());
 
 				let opinion = attestation_matrix[i].clone();
 				eigen_trust_set.update_op(pk_fr, opinion);

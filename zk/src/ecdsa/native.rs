@@ -8,12 +8,15 @@ use crate::{
 use halo2::{
 	arithmetic::Field,
 	halo2curves::{
+		ff::PrimeField,
 		group::Curve,
-		secp256k1::{Fp, Fq, Secp256k1Affine},
+		secp256k1::{Fq, Secp256k1Affine},
 		CurveAffine,
 	},
 };
 use rand::Rng;
+use sha3::{Digest, Keccak256};
+use std::io::Read;
 
 /// Helper function to convert Fp element to Fq element
 fn mod_n<C: CurveAffine>(x: C::Base) -> C::Scalar
@@ -54,41 +57,56 @@ where
 	pub fn new(p: EcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>) -> Self {
 		Self(p)
 	}
-}
 
-/// Implementation just for Secp256k1
-impl<N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P, EC>
-	PublicKey<Secp256k1Affine, N, NUM_LIMBS, NUM_BITS, P, EC>
-where
-	P: RnsParams<Fp, N, NUM_LIMBS, NUM_BITS> + RnsParams<Fq, N, NUM_LIMBS, NUM_BITS>,
-	EC: EccParams<Secp256k1Affine>,
-{
-	/// Convert pk to raw bytes form
-	pub fn to_bytes(&self) -> [u8; 64] {
-		let x = big_to_fe::<Fp>(self.0.x.value()).to_bytes();
-		let y = big_to_fe::<Fp>(self.0.y.value()).to_bytes();
-		let mut bytes: [u8; 64] = [0; 64];
-		bytes[..32].copy_from_slice(&x);
-		bytes[32..].copy_from_slice(&y);
-		bytes
+	/// Construct an Ethereum address for the given ECDSA public key
+	pub fn to_address(&self) -> N {
+		let pub_key_bytes = self.to_bytes();
+
+		// Hash with Keccak256
+		let mut hasher = Keccak256::new();
+		hasher.update(&pub_key_bytes[..]);
+		let hashed_public_key = hasher.finalize().to_vec();
+
+		// Get the last 20 bytes of the hash
+		let mut address = [0u8; 20];
+		address.copy_from_slice(&hashed_public_key[hashed_public_key.len() - 20..]);
+		address.reverse();
+
+		let mut address_bytes = <N as PrimeField>::Repr::default();
+		address.as_ref().read(address_bytes.as_mut()).unwrap();
+
+		N::from_repr(address_bytes).unwrap()
 	}
 }
 
 /// Implementation just for Secp256k1
-impl<N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P, EC> From<[u8; 64]>
-	for PublicKey<Secp256k1Affine, N, NUM_LIMBS, NUM_BITS, P, EC>
+impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P, EC>
+	PublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>
 where
-	P: RnsParams<Fp, N, NUM_LIMBS, NUM_BITS> + RnsParams<Fq, N, NUM_LIMBS, NUM_BITS>,
-	EC: EccParams<Secp256k1Affine>,
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
+	C::Base: FieldExt,
+	C::ScalarExt: FieldExt,
 {
-	fn from(xy: [u8; 64]) -> Self {
-		let mut x_bytes: [u8; 32] = [0; 32];
-		let mut y_bytes: [u8; 32] = [0; 32];
-		x_bytes.copy_from_slice(&xy[..32]);
-		y_bytes.copy_from_slice(&xy[32..]);
+	/// Convert pk to raw bytes form
+	pub fn to_bytes(&self) -> Vec<u8> {
+		let x = big_to_fe::<C::Base>(self.0.x.value()).to_repr();
+		let y = big_to_fe::<C::Base>(self.0.y.value()).to_repr();
+		let mut bytes = Vec::new();
+		bytes.extend(x.as_ref());
+		bytes.extend(y.as_ref());
+		bytes
+	}
 
-		let x = Fp::from_bytes(&x_bytes).unwrap();
-		let y = Fp::from_bytes(&y_bytes).unwrap();
+	/// Convert bytes into pk
+	pub fn from_bytes(xy: Vec<u8>) -> Self {
+		let mut xy_mut: &[u8] = xy.as_ref();
+		let mut x_repr = <C::Base as PrimeField>::Repr::default();
+		let mut y_repr = <C::Base as PrimeField>::Repr::default();
+		xy_mut.read_exact(x_repr.as_mut()).unwrap();
+		xy_mut.read_exact(y_repr.as_mut()).unwrap();
+		let x = <C::Base as PrimeField>::from_repr(x_repr).unwrap();
+		let y = <C::Base as PrimeField>::from_repr(x_repr).unwrap();
 		let p = EcPoint::new(Integer::from_w(x), Integer::from_w(y));
 		Self::new(p)
 	}

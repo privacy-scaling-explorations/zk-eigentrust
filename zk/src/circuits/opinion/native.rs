@@ -1,9 +1,7 @@
 use halo2::halo2curves::{bn256::Fr, secp256k1::Secp256k1Affine};
 
 use crate::{
-	circuits::dynamic_sets::ecdsa_native::{
-		field_value_from_pub_key, Attestation, SignedAttestation,
-	},
+	circuits::dynamic_sets::ecdsa_native::{Attestation, SignedAttestation},
 	circuits::{PoseidonNativeHasher, PoseidonNativeSponge},
 	ecdsa::native::{EcdsaVerifier, PublicKey},
 	integer::native::Integer,
@@ -27,7 +25,7 @@ impl<const NUM_NEIGHBOURS: usize> Opinion<NUM_NEIGHBOURS> {
 
 	/// Validate attestations & calculate the hash
 	pub fn validate(&self, set: Vec<Fr>) -> (Fr, Vec<Fr>, Fr) {
-		let from_pk = field_value_from_pub_key(&self.from);
+		let from_pk = self.from.to_address();
 
 		let pos_from = set.iter().position(|&x| x == from_pk);
 		assert!(pos_from.is_some());
