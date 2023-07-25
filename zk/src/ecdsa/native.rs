@@ -68,12 +68,12 @@ where
 		let hashed_public_key = hasher.finalize().to_vec();
 
 		// Get the last 20 bytes of the hash
-		let mut address = [0u8; 20];
-		address.copy_from_slice(&hashed_public_key[hashed_public_key.len() - 20..]);
+		let mut address = [0u8; 32];
+		address[12..].copy_from_slice(&hashed_public_key[hashed_public_key.len() - 20..]);
 		address.reverse();
 
 		let mut address_bytes = <N as PrimeField>::Repr::default();
-		address.as_ref().read(address_bytes.as_mut()).unwrap();
+		address.as_ref().read_exact(address_bytes.as_mut()).unwrap();
 
 		N::from_repr(address_bytes).unwrap()
 	}
