@@ -8,7 +8,7 @@ use crate::{
 	ClientConfig,
 };
 use clap::{Args, Parser, Subcommand};
-use eigen_trust_client::{
+use eigentrust::{
 	att_station::AttestationCreatedFilter,
 	attestation::AttestationEth,
 	error::EigenError,
@@ -375,7 +375,7 @@ pub fn handle_update(config: &mut ClientConfig, data: UpdateData) -> Result<(), 
 mod tests {
 	use crate::cli::{AttestData, Cli};
 	use clap::CommandFactory;
-	use eigen_trust_client::{attestation::AttestationEth, ClientConfig};
+	use eigentrust::{attestation::AttestationEth, ClientConfig};
 	use ethers::types::{Uint8, H160, H256};
 	use std::str::FromStr;
 

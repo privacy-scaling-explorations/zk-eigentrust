@@ -3,7 +3,7 @@
 //! This module provides types and functionalities for general ethereum interactions.
 
 use crate::{attestation::ECDSAPublicKey, error::EigenError, ClientSigner};
-use eigen_trust_circuit::halo2::halo2curves::bn256::Fr as Scalar;
+use eigentrust_zk::halo2::halo2curves::bn256::Fr as Scalar;
 use ethers::{
 	abi::Address,
 	prelude::{k256::ecdsa::SigningKey, Abigen, ContractFactory},

@@ -3,7 +3,7 @@
 //! Bandada API handling module.
 
 use dotenv::{dotenv, var};
-use eigen_trust_client::error::EigenError;
+use eigentrust::error::EigenError;
 use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
 use reqwest::{Client, Response};
 

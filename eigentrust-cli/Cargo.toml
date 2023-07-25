@@ -12,4 +12,5 @@ log = "0.4.19"
 reqwest = "0.11.18"
 tokio = "1.18"
 
-eigen-trust-client = { path = "../client" }
+# Path dependencies
+eigentrust = { path = "../eigentrust" }

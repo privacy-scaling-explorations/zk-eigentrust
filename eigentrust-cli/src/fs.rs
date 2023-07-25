@@ -3,7 +3,7 @@
 //! This module provides functionalities for filesystem actions.
 
 use dotenv::{dotenv, var};
-use eigen_trust_client::{
+use eigentrust::{
 	error::EigenError,
 	storage::{JSONFileStorage, Storage},
 	ClientConfig,
@@ -11,15 +11,12 @@ use eigen_trust_client::{
 use log::warn;
 use std::{env::current_dir, path::PathBuf};
 
-#[allow(dead_code)]
 /// Enum representing the possible file extensions.
 pub enum FileType {
 	/// CSV file.
 	Csv,
 	/// JSON file.
 	Json,
-	/// Rust file.
-	Rs,
 }
 
 impl FileType {
@@ -28,7 +25,6 @@ impl FileType {
 		match self {
 			FileType::Csv => "csv",
 			FileType::Json => "json",
-			FileType::Rs => "rs",
 		}
 	}
 }

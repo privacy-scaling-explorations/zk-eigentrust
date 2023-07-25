@@ -58,7 +58,7 @@ use att_station::{
 	AttestationCreatedFilter, AttestationData as ContractAttestationData, AttestationStation,
 };
 use attestation::AttestationEth;
-use eigen_trust_circuit::{
+use eigentrust_zk::{
 	circuits::dynamic_sets::ecdsa_native::{
 		EigenTrustSet, RationalScore, SignedAttestation as SignedAttestationFr, MIN_PEER_COUNT,
 		NUM_BITS, NUM_LIMBS,

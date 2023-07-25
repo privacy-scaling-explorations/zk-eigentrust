@@ -1,4 +1,4 @@
-//!	ZK Eigentrust CLI
+//! # ZK Eigentrust CLI
 //!
 //! This crate provides a CLI interface to use the `eigentrust` library.
 
@@ -31,7 +31,7 @@ mod fs;
 use clap::Parser;
 use cli::*;
 use dotenv::dotenv;
-use eigen_trust_client::{
+use eigentrust::{
 	error::EigenError,
 	eth::{deploy_as, gen_as_bindings},
 	Client, ClientConfig,

@@ -9,7 +9,7 @@ use crate::{
 	eth::{address_from_public_key, scalar_from_address},
 	NUM_BITS, NUM_LIMBS,
 };
-use eigen_trust_circuit::{
+use eigentrust_zk::{
 	circuits::dynamic_sets::ecdsa_native::{
 		Attestation as AttestationFr, SignedAttestation as SignedAttestationFr,
 	},

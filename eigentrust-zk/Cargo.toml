@@ -1,5 +1,5 @@
 [package]
-name = "eigen-trust-circuit"
+name = "eigentrust-zk"
 version = "0.1.0"
 edition = "2021"
 

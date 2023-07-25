@@ -1,5 +1,5 @@
 [package]
-name = "eigen-trust-client"
+name = "eigentrust"
 version = "0.1.0"
 edition = "2021"
 description = "A library for managing trust in a distributed network with zero-knowledge features."
@@ -17,4 +17,5 @@ serde_json = "1.0"
 thiserror = "1.0.43"
 tokio = { version = "1.18", features = ["time", "macros", "rt-multi-thread", "net"] }
 
-eigen-trust-circuit = { path = "../zk" }
+# Path dependencies
+eigentrust-zk = { path = "../eigentrust-zk" }
