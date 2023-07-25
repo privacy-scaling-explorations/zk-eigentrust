@@ -2,13 +2,16 @@
 //!
 //! This module contains all CLI related data handling and conversions.
 
-use crate::{bandada::BandadaApi, ClientConfig};
+use crate::{
+	bandada::BandadaApi,
+	fs::{get_file_path, load_mnemonic, FileType},
+	ClientConfig,
+};
 use clap::{Args, Parser, Subcommand};
 use eigen_trust_client::{
 	att_station::AttestationCreatedFilter,
 	attestation::AttestationEth,
 	error::EigenError,
-	fs::{get_file_path, FileType},
 	storage::{AttestationRecord, CSVFileStorage, JSONFileStorage, ScoreRecord, Storage},
 	Client,
 };
@@ -172,7 +175,8 @@ impl FromStr for Action {
 
 /// Handle `attestations` command.
 pub async fn handle_attestations(config: ClientConfig) -> Result<(), EigenError> {
-	let client = Client::new(config);
+	let mnemonic = load_mnemonic();
+	let client = Client::new(config, mnemonic);
 
 	let attestations = client.get_attestations().await?;
 
@@ -262,7 +266,8 @@ pub async fn handle_bandada(config: &ClientConfig, data: BandadaData) -> Result<
 pub async fn handle_scores(
 	config: ClientConfig, origin: AttestationsOrigin,
 ) -> Result<(), EigenError> {
-	let client = Client::new(config);
+	let mnemonic = load_mnemonic();
+	let client = Client::new(config, mnemonic);
 
 	let att_fp = get_file_path("attestations", FileType::Csv)?;
 

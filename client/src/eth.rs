@@ -2,12 +2,7 @@
 //!
 //! This module provides types and functionalities for general ethereum interactions.
 
-use crate::{
-	attestation::ECDSAPublicKey,
-	error::EigenError,
-	fs::{get_assets_path, get_file_path, FileType},
-	ClientSigner,
-};
+use crate::{attestation::ECDSAPublicKey, error::EigenError, ClientSigner};
 use eigen_trust_circuit::halo2::halo2curves::bn256::Fr as Scalar;
 use ethers::{
 	abi::Address,
@@ -18,14 +13,13 @@ use ethers::{
 };
 use log::info;
 use secp256k1::SecretKey;
-use std::sync::Arc;
+use std::{env::current_dir, sync::Arc};
 
 /// Compiles the AttestationStation contract.
 pub fn compile_as() -> Result<CompilerOutput, EigenError> {
-	let path = get_assets_path()?.join("AttestationStation.sol");
-
+	let filepath = current_dir().unwrap().join("assets/AttestationStation.sol");
 	let compiler_output = Solc::default()
-		.compile_source(path)
+		.compile_source(filepath)
 		.map_err(|e| EigenError::ContractCompilationError(e.to_string()))?;
 
 	if !compiler_output.errors.is_empty() {
@@ -40,7 +34,7 @@ pub fn compile_as() -> Result<CompilerOutput, EigenError> {
 /// Generates the bindings for the AttestationStation contract and save them into a file.
 pub fn gen_as_bindings() -> Result<(), EigenError> {
 	let contracts = compile_as()?;
-	let filepath = get_file_path("attestation_station", FileType::Rs)?;
+	let filepath = current_dir().unwrap().join("assets/attestation_station.rs");
 
 	for (name, contract) in contracts.contracts_iter() {
 		let abi = contract
@@ -176,6 +170,9 @@ mod tests {
 	};
 	use secp256k1::{PublicKey, Secp256k1, SecretKey};
 
+	const TEST_MNEMONIC: &'static str =
+		"test test test test test test test test test test test junk";
+
 	#[tokio::test]
 	async fn test_deploy_as() {
 		let anvil = Anvil::new().spawn();
@@ -188,7 +185,7 @@ mod tests {
 			domain: "0x0000000000000000000000000000000000000000".to_string(),
 			node_url: anvil.endpoint().to_string(),
 		};
-		let client = Client::new(config);
+		let client = Client::new(config, TEST_MNEMONIC.to_string());
 
 		// Deploy
 		let res = deploy_as(client.signer).await;

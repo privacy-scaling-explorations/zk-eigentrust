@@ -49,7 +49,7 @@ pub enum EigenError {
 
 	/// Request error
 	#[error("RequestError: {0}")]
-	RequestError(reqwest::Error),
+	RequestError(String),
 
 	/// Resource unavailable error
 	#[error("ResourceUnavailableError: {0}")]

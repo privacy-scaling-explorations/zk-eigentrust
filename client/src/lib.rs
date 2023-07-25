@@ -51,7 +51,6 @@ pub mod att_station;
 pub mod attestation;
 pub mod error;
 pub mod eth;
-pub mod fs;
 pub mod storage;
 
 use crate::attestation::{SignatureEth, SignatureRaw, SignedAttestationEth};
@@ -59,7 +58,6 @@ use att_station::{
 	AttestationCreatedFilter, AttestationData as ContractAttestationData, AttestationStation,
 };
 use attestation::AttestationEth;
-use dotenv::{dotenv, var};
 use eigen_trust_circuit::{
 	circuits::dynamic_sets::ecdsa_native::{
 		EigenTrustSet, RationalScore, SignedAttestation as SignedAttestationFr, MIN_PEER_COUNT,
@@ -135,14 +133,7 @@ pub struct Client {
 
 impl Client {
 	/// Creates a new Client instance.
-	pub fn new(config: ClientConfig) -> Self {
-		// Load environment config
-		dotenv().ok();
-		let mnemonic = var("MNEMONIC").unwrap_or_else(|_| {
-			warn!("MNEMONIC environment variable is not set. Using default.");
-			"test test test test test test test test test test test junk".to_string()
-		});
-
+	pub fn new(config: ClientConfig, mnemonic: String) -> Self {
 		// Setup provider
 		let provider = Provider::<Http>::try_from(&config.node_url)
 			.expect("Failed to create provider from config node url");
@@ -378,6 +369,9 @@ mod lib_tests {
 		utils::Anvil,
 	};
 
+	const TEST_MNEMONIC: &'static str =
+		"test test test test test test test test test test test junk";
+
 	#[tokio::test]
 	async fn test_attest() {
 		let anvil = Anvil::new().spawn();
@@ -390,13 +384,13 @@ mod lib_tests {
 			domain: "0x0000000000000000000000000000000000000000".to_string(),
 			node_url: anvil.endpoint().to_string(),
 		};
-		let client = Client::new(config);
+		let client = Client::new(config, TEST_MNEMONIC.to_string());
 
 		// Deploy attestation station
 		let as_address = deploy_as(client.get_signer()).await.unwrap();
 
 		// Update config with new addresses
-		let config = ClientConfig {
+		let updated_config = ClientConfig {
 			as_address: format!("{:?}", as_address),
 			band_id: "38922764296632428858395574229367".to_string(),
 			band_th: "500".to_string(),
@@ -406,10 +400,12 @@ mod lib_tests {
 			node_url: anvil.endpoint().to_string(),
 		};
 
+		let updated_client = Client::new(updated_config, TEST_MNEMONIC.to_string());
+
 		// Attest
 		let attestation =
 			AttestationEth::new(Address::default(), H160::default(), Uint8::default(), None);
-		assert!(Client::new(config).attest(attestation).await.is_ok());
+		assert!(updated_client.attest(attestation).await.is_ok());
 
 		drop(anvil);
 	}
@@ -426,7 +422,7 @@ mod lib_tests {
 			domain: "0x0000000000000000000000000000000000000000".to_string(),
 			node_url: anvil.endpoint().to_string(),
 		};
-		let client = Client::new(config);
+		let client = Client::new(config, TEST_MNEMONIC.to_string());
 
 		// Deploy attestation station
 		let as_address = deploy_as(client.get_signer()).await.unwrap();
@@ -441,7 +437,7 @@ mod lib_tests {
 			domain: "0x0000000000000000000000000000000000000000".to_string(),
 			node_url: anvil.endpoint().to_string(),
 		};
-		let client = Client::new(config);
+		let client = Client::new(config, TEST_MNEMONIC.to_string());
 
 		// Build Attestation
 		let about_bytes = [

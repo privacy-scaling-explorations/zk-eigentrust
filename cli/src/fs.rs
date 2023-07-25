@@ -2,12 +2,16 @@
 //!
 //! This module provides functionalities for filesystem actions.
 
-use crate::{
+use dotenv::{dotenv, var};
+use eigen_trust_client::{
+	error::EigenError,
 	storage::{JSONFileStorage, Storage},
-	ClientConfig, EigenError,
+	ClientConfig,
 };
+use log::warn;
 use std::{env::current_dir, path::PathBuf};
 
+#[allow(dead_code)]
 /// Enum representing the possible file extensions.
 pub enum FileType {
 	/// CSV file.
@@ -57,4 +61,12 @@ pub fn load_config() -> Result<ClientConfig, EigenError> {
 	let json_storage = JSONFileStorage::<ClientConfig>::new(filepath);
 
 	json_storage.load()
+}
+
+pub fn load_mnemonic() -> String {
+	dotenv().ok();
+	var("MNEMONIC").unwrap_or_else(|_| {
+		warn!("MNEMONIC environment variable is not set. Using default.");
+		"test test test test test test test test test test test junk".to_string()
+	})
 }

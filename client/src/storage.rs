@@ -2,13 +2,13 @@
 //!
 //! This module contains generic storage traits and implementations.
 
-use crate::att_station::AttestationCreatedFilter;
-use crate::attestation::{
-	AttestationRaw, SignatureRaw, SignedAttestationEth, SignedAttestationRaw,
+use crate::{
+	att_station::AttestationCreatedFilter,
+	attestation::{AttestationRaw, SignatureRaw, SignedAttestationEth, SignedAttestationRaw},
+	error::EigenError,
+	eth::address_from_public_key,
+	Score,
 };
-use crate::error::EigenError;
-use crate::eth::address_from_public_key;
-use crate::Score;
 use csv::{ReaderBuilder, WriterBuilder};
 use ethers::utils::hex;
 use serde::Deserialize;
@@ -310,10 +310,9 @@ impl<T: Serialize + DeserializeOwned + Clone> Storage<T> for JSONFileStorage<T> 
 
 #[cfg(test)]
 mod tests {
-	use crate::fs::get_assets_path;
 	use crate::storage::*;
 	use serde::{Deserialize, Serialize};
-	use std::fs;
+	use std::{env::current_dir, fs};
 
 	// Define the test struct
 	#[derive(Debug, Deserialize, PartialEq, Clone, Serialize)]
@@ -325,8 +324,7 @@ mod tests {
 	#[test]
 	fn test_csv_file_storage() {
 		// Create the CSV file
-		let filename = "test.csv";
-		let filepath = get_assets_path().unwrap().join(filename);
+		let filepath = current_dir().unwrap().join("assets/test.csv");
 		let mut csv_storage = CSVFileStorage::<Record>::new(filepath.clone());
 
 		let content = vec![Record {
@@ -352,8 +350,7 @@ mod tests {
 	#[test]
 	fn test_json_file_storage() {
 		// Create the JSON file
-		let filename = "test.json";
-		let filepath = get_assets_path().unwrap().join(filename);
+		let filepath = current_dir().unwrap().join("assets/test.json");
 		let mut json_storage = JSONFileStorage::<Record>::new(filepath.clone());
 
 		let content = Record {

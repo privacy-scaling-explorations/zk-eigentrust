@@ -2,5 +2,6 @@
 members = [
 	"zk",
 	"client",
+	"cli"
 ]
-default-members = ["client"]
+default-members = ["cli"]
