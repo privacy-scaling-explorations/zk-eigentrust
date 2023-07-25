@@ -158,7 +158,7 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITERATIONS: usize, const INITIAL_SCO
 			for j in 0..NUM_NEIGHBOURS {
 				let (pk_j, _) = self.set[j];
 
-				// Conditions fro nullifying the score
+				// Conditions for nullifying the score
 				// 1. pk_j == 0 (Default key)
 				// 2. pk_j == pk_i
 				let is_pk_j_default = pk_j == Fr::zero();
