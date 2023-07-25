@@ -26,8 +26,9 @@
 	clippy::needless_borrow
 )]
 
-use eddsa::native::PublicKey;
+use ecdsa::native::PublicKey;
 use halo2::halo2curves::bn256::Fr as Scalar;
+use halo2::halo2curves::secp256k1::Secp256k1Affine;
 use halo2::plonk::TableColumn;
 use halo2::{
 	circuit::{AssignedCell, Layouter, Region, Value},
@@ -40,6 +41,10 @@ use halo2::{
 };
 
 pub use halo2;
+use params::ecc::secp256k1::Secp256k1Params;
+use params::rns::bn256::Bn256_4_68;
+use params::rns::secp256k1::Secp256k1_4_68;
+use params::rns::RnsParams;
 use serde::{Deserialize, Serialize};
 
 use crate::circuits::{PoseidonNativeHasher, PoseidonNativeSponge};
@@ -305,7 +310,8 @@ pub trait Chipset<F: FieldExt> {
 
 /// Calculate message hashes from given public keys and scores
 pub fn calculate_message_hash<const N: usize, const S: usize>(
-	pks: Vec<PublicKey>, scores: Vec<Vec<Scalar>>,
+	pks: Vec<PublicKey<Secp256k1Affine, Scalar, 4, 68, Secp256k1_4_68, Secp256k1Params>>,
+	scores: Vec<Vec<Scalar>>,
 ) -> (Scalar, Vec<Scalar>) {
 	assert!(pks.len() == N);
 	assert!(scores.len() == S);
@@ -313,8 +319,8 @@ pub fn calculate_message_hash<const N: usize, const S: usize>(
 		assert!(score.len() == N);
 	}
 
-	let pks_x: Vec<Scalar> = pks.iter().map(|pk| pk.0.x).collect();
-	let pks_y: Vec<Scalar> = pks.iter().map(|pk| pk.0.y).collect();
+	let pks_x: Vec<Scalar> = pks.iter().map(|pk| Bn256_4_68::compose(pk.0.x.limbs)).collect();
+	let pks_y: Vec<Scalar> = pks.iter().map(|pk| Bn256_4_68::compose(pk.0.y.limbs)).collect();
 	let mut pk_sponge = PoseidonNativeSponge::new();
 	pk_sponge.update(&pks_x);
 	pk_sponge.update(&pks_y);

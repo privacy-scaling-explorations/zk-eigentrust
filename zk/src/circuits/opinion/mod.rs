@@ -2,7 +2,7 @@
 pub mod native;
 
 use crate::{
-	circuits::dynamic_sets::ecdsa_native::AttestationFr,
+	circuits::dynamic_sets::native::AttestationFr,
 	ecc::generic::{AssignedAux, AssignedEcPoint},
 	ecdsa::{AssignedPublicKey, AssignedSignature, EcdsaChipset, EcdsaConfig, UnassignedSignature},
 	gadgets::{
@@ -445,7 +445,8 @@ mod test {
 	use super::{
 		AssignedAttestation, AssignedSignedAttestation, OpinionChipset, OpinionConfig, WIDTH,
 	};
-	use crate::circuits::dynamic_sets::ecdsa_native::{
+
+	use crate::circuits::dynamic_sets::native::{
 		field_value_from_pub_key, AttestationFr, SignedAttestation,
 	};
 	use crate::circuits::PoseidonNativeHasher;

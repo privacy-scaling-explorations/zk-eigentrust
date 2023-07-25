@@ -98,10 +98,17 @@ impl<
 
 #[cfg(test)]
 mod tests {
+	use std::vec;
+
 	use halo2::{
 		arithmetic::Field,
-		halo2curves::{bn256::Fr, ff::PrimeField},
+		halo2curves::{
+			bn256::Fr,
+			ff::PrimeField,
+			secp256k1::{Fq, Secp256k1Affine},
+		},
 	};
+	use itertools::Itertools;
 	use num_bigint::{BigInt, ToBigInt};
 	use num_rational::BigRational;
 	use num_traits::FromPrimitive;
@@ -109,9 +116,18 @@ mod tests {
 
 	use crate::{
 		calculate_message_hash,
-		circuits::dynamic_sets::native::{EigenTrustSet, Opinion},
-		eddsa::native::{sign, PublicKey, SecretKey},
-		params::rns::compose_big_decimal,
+		circuits::{
+			dynamic_sets::native::{
+				field_value_from_pub_key, AttestationFr, EigenTrustSet, SignedAttestation,
+			},
+			opinion::native::Opinion,
+		},
+		ecdsa::native::{EcdsaKeypair, PublicKey},
+		integer::native::Integer,
+		params::{
+			ecc::secp256k1::Secp256k1Params,
+			rns::{bn256::Bn256_4_68, compose_big_decimal, secp256k1::Secp256k1_4_68, RnsParams},
+		},
 	};
 
 	use super::*;
@@ -214,22 +230,42 @@ mod tests {
 		const NUM_ITERATIONS: usize,
 		const INITIAL_SCORE: u128,
 	>(
-		sk: &SecretKey, pk: &PublicKey, pks: &[PublicKey], scores: &[Fr],
-	) -> Opinion<NUM_NEIGHBOURS> {
+		sk: &Integer<Fq, Fr, 4, 68, Secp256k1_4_68>,
+		pk: &PublicKey<Secp256k1Affine, Fr, 4, 68, Secp256k1_4_68, Secp256k1Params>,
+		pks: &[PublicKey<Secp256k1Affine, Fr, 4, 68, Secp256k1_4_68, Secp256k1Params>],
+		scores: &[Fr],
+	) -> Vec<Option<SignedAttestation>> {
 		assert!(pks.len() == NUM_NEIGHBOURS);
 		assert!(scores.len() == NUM_NEIGHBOURS);
 
 		let (_, message_hashes) =
 			calculate_message_hash::<NUM_NEIGHBOURS, 1>(pks.to_vec(), vec![scores.to_vec()]);
-		let sig = sign(sk, pk, message_hashes[0]);
-
+		let message_hashes =
+			message_hashes.iter().map(|x| Fq::from_bytes(&x.to_bytes()).unwrap()).collect_vec();
+		let rng = &mut rand::thread_rng();
+		let mut native_to_wrong = Bn256_4_68::compose(sk.limbs).to_bytes();
+		let wrong_f = Fq::from_bytes(&native_to_wrong).unwrap();
+		let ecdsa_keypair: EcdsaKeypair<
+			Secp256k1Affine,
+			Fr,
+			4,
+			68,
+			Secp256k1_4_68,
+			Secp256k1Params,
+		> = EcdsaKeypair::from_private_key(wrong_f);
+		let sig = ecdsa_keypair.sign(message_hashes[0], rng);
 		// let scores = pks.zip(*scores);
 		let mut op_scores = vec![];
 		for i in 0..NUM_NEIGHBOURS {
-			op_scores.push((pks[i], scores[i]));
+			// scores[i] deleted
+			op_scores.push(pks[i]);
 		}
-		let op = Opinion::new(sig, message_hashes[0], op_scores.to_vec());
-		op
+		// TODO: Attestation values are dummy values
+		let attestation = AttestationFr::new(Fr::ZERO, Fr::ZERO, Fr::ZERO, Fr::ZERO);
+		let signed_att = vec![Some(SignedAttestation::new(attestation, sig.clone()))];
+		signed_att
+		//let op = Opinion::new(pk.clone(), signed_att);
+		//op
 	}
 
 	fn eigen_trust_set_testing_helper<
@@ -248,13 +284,22 @@ mod tests {
 
 		let rng = &mut thread_rng();
 
-		let sks: Vec<SecretKey> =
-			(0..NUM_NEIGHBOURS).into_iter().map(|__| SecretKey::random(rng)).collect();
-		let pks: Vec<PublicKey> = sks.iter().map(|s| s.public()).collect();
+		let sks: Vec<Integer<Fq, Fr, 4, 68, Secp256k1_4_68>> = (0..NUM_NEIGHBOURS)
+			.into_iter()
+			.map(|__| Integer::<Fq, Fr, 4, 68, Secp256k1_4_68>::from_n(Fr::random(rng)))
+			.collect();
+		let pks = sks
+			.iter()
+			.map(|s| {
+				EcdsaKeypair::from_private_key(
+					Fq::from_bytes(&Bn256_4_68::compose(s.limbs).to_bytes()).unwrap(),
+				)
+				.public_key
+			})
+			.collect_vec();
 
 		// Add the publicKey to the set
-		pks.iter().for_each(|pk| set.add_member(*pk));
-
+		pks.iter().for_each(|pk| set.add_member(field_value_from_pub_key(&pk)));
 		// Update the opinions
 		for i in 0..NUM_NEIGHBOURS {
 			let scores = ops[i].to_vec();

@@ -2,7 +2,7 @@ use halo2::halo2curves::{bn256::Fr, secp256k1::Secp256k1Affine};
 
 use crate::{
 	circuits::{
-		dynamic_sets::ecdsa_native::{field_value_from_pub_key, AttestationFr, SignedAttestation},
+		dynamic_sets::native::{field_value_from_pub_key, AttestationFr, SignedAttestation},
 		PoseidonNativeHasher, PoseidonNativeSponge,
 	},
 	ecdsa::native::{EcdsaVerifier, PublicKey},

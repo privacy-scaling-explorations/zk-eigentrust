@@ -417,11 +417,13 @@ mod tests {
 	use super::*;
 
 	use crate::{
-		circuits::dynamic_sets::ecdsa_native::{
-			field_value_from_pub_key, AttestationFr, EigenTrustSet, SignedAttestation, NUM_BITS,
-			NUM_LIMBS,
+		circuits::{
+			dynamic_sets::native::{
+				field_value_from_pub_key, AttestationFr, EigenTrustSet, SignedAttestation,
+				NUM_BITS, NUM_LIMBS,
+			},
+			threshold::native::Threshold,
 		},
-		circuits::threshold::native::Threshold,
 		ecdsa::native::{EcdsaKeypair, PublicKey},
 		params::{
 			ecc::secp256k1::Secp256k1Params,
