@@ -106,7 +106,7 @@ where
 		xy_mut.read_exact(x_repr.as_mut()).unwrap();
 		xy_mut.read_exact(y_repr.as_mut()).unwrap();
 		let x = <C::Base as PrimeField>::from_repr(x_repr).unwrap();
-		let y = <C::Base as PrimeField>::from_repr(x_repr).unwrap();
+		let y = <C::Base as PrimeField>::from_repr(y_repr).unwrap();
 		let p = EcPoint::new(Integer::from_w(x), Integer::from_w(y));
 		Self::new(p)
 	}
