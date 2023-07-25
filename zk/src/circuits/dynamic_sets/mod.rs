@@ -1,8 +1,4 @@
 /// Native version of EigenTrustSet(ECDSA)
-///
-/// NOTE: This is temporary since Halo2 version of ECDSA is not ready
-pub mod ecdsa_native;
-/// Native version of EigenTrustSet
 pub mod native;
 
 use super::{
