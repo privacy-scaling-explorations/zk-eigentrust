@@ -38,7 +38,7 @@ pub trait Storage<T> {
 /// ```no_run
 /// use serde::{Serialize, Deserialize};
 /// use std::path::PathBuf;
-/// use eigen_trust_client::storage::{CSVFileStorage, Storage};
+/// use eigentrust::storage::{CSVFileStorage, Storage};
 ///
 /// #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 /// struct Record {
