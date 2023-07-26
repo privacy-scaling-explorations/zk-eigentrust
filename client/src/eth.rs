@@ -150,8 +150,9 @@ pub fn scalar_from_address(address: &Address) -> Result<Scalar, EigenError> {
 	let mut address_bytes = [0u8; 32];
 	address_bytes[..address_fixed.len()].copy_from_slice(&address_fixed);
 
-	let about = match Scalar::from_bytes(&address_bytes).is_some().into() {
-		true => Scalar::from_bytes(&address_bytes).unwrap(),
+	let about_opt = Scalar::from_bytes(&address_bytes);
+	let about = match about_opt.is_some().into() {
+		true => about_opt.unwrap(),
 		false => {
 			return Err(EigenError::ParsingError(
 				"Failed to convert address to scalar".to_string(),

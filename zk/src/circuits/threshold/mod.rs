@@ -418,8 +418,7 @@ mod tests {
 
 	use crate::{
 		circuits::dynamic_sets::ecdsa_native::{
-			field_value_from_pub_key, AttestationFr, EigenTrustSet, SignedAttestation, NUM_BITS,
-			NUM_LIMBS,
+			Attestation, EigenTrustSet, SignedAttestation, NUM_BITS, NUM_LIMBS,
 		},
 		circuits::threshold::native::Threshold,
 		ecdsa::native::{EcdsaKeypair, PublicKey},
@@ -463,7 +462,7 @@ mod tests {
 				res.push(None)
 			} else {
 				let (about, key, value, message) = (pks[i], Fr::zero(), scores[i], Fr::zero());
-				let attestation = AttestationFr::new(about, key, value, message);
+				let attestation = Attestation::new(about, key, value, message);
 				let msg = big_to_fe(fe_to_big(attestation.hash()));
 				let signature = keypair.sign(msg, rng);
 				let signed_attestation = SignedAttestation::new(attestation, signature);
@@ -496,8 +495,7 @@ mod tests {
 		let pks: Vec<PublicKey<Secp256k1Affine, _, NUM_LIMBS, NUM_BITS, _, _>> =
 			keypairs.iter().map(|kp| kp.public_key.clone()).collect();
 
-		let pks_fr: Vec<Fr> =
-			keypairs.iter().map(|kp| field_value_from_pub_key(&kp.public_key)).collect();
+		let pks_fr: Vec<Fr> = keypairs.iter().map(|kp| kp.public_key.to_address()).collect();
 
 		// Add the "address"(pk_fr) to the set
 		pks_fr.iter().for_each(|pk| set.add_member(*pk));
