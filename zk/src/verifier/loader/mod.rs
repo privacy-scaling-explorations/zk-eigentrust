@@ -811,7 +811,7 @@ mod test {
 		plonk::{Circuit, ConstraintSystem, Error},
 	};
 	use rand::thread_rng;
-	use snark_verifier::loader::EcPointLoader;
+	use snark_verifier::loader::{EcPointLoader, LoadedScalar, ScalarLoader};
 
 	type C = G1Affine;
 	type P = Bn256_4_68;
@@ -829,26 +829,8 @@ mod test {
 		aux: AuxConfig,
 	}
 
-	#[derive(Clone)]
-	struct TestCircuit {
-		pairs: Vec<(LScalar<C, P, EC>, LEcPoint<C, P, EC>)>,
-	}
-
-	impl TestCircuit {
-		fn new(pairs: Vec<(LScalar<C, P, EC>, LEcPoint<C, P, EC>)>) -> Self {
-			Self { pairs }
-		}
-	}
-
-	impl Circuit<Scalar> for TestCircuit {
-		type Config = TestConfig;
-		type FloorPlanner = SimpleFloorPlanner;
-
-		fn without_witnesses(&self) -> Self {
-			self.clone()
-		}
-
-		fn configure(meta: &mut ConstraintSystem<Scalar>) -> TestConfig {
+	impl TestConfig {
+		fn new(meta: &mut ConstraintSystem<Scalar>) -> Self {
 			let common = CommonConfig::new(meta);
 			let main_selector = MainChip::configure(&common, meta);
 			let main = MainConfig::new(main_selector);
@@ -880,7 +862,986 @@ mod test {
 			let ecc_mul_scalar =
 				EccMulConfig::new(ladder, add, double.clone(), table_select, bits2num);
 			let aux = AuxConfig::new(double);
-			TestConfig { common, main, poseidon_sponge, ecc_mul_scalar, aux }
+
+			TestConfig { common, main, ecc_mul_scalar, poseidon_sponge, aux }
+		}
+	}
+
+	#[derive(Clone)]
+	struct TestLScalarInvertCircuit {
+		x: LScalar<C, P, EC>,
+	}
+
+	impl TestLScalarInvertCircuit {
+		fn new(x: LScalar<C, P, EC>) -> Self {
+			Self { x }
+		}
+	}
+
+	impl Circuit<Scalar> for TestLScalarInvertCircuit {
+		type Config = TestConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			self.clone()
+		}
+
+		fn configure(meta: &mut ConstraintSystem<Scalar>) -> Self::Config {
+			TestConfig::new(meta)
+		}
+
+		fn synthesize(
+			&self, config: Self::Config, mut layouter: impl Layouter<Scalar>,
+		) -> Result<(), Error> {
+			let assigned_x = layouter.assign_region(
+				|| "temp",
+				|region| {
+					let mut ctx = RegionCtx::new(region, 0);
+					let x =
+						ctx.assign_advice(config.common.advice[0], Value::known(self.x.inner))?;
+					Ok(x)
+				},
+			)?;
+			let loader_config = LoaderConfig::<C, _, P, H, EC>::new(
+				layouter.namespace(|| "loader_config"),
+				config.common.clone(),
+				config.ecc_mul_scalar,
+				config.aux,
+				config.main,
+				config.poseidon_sponge,
+			);
+
+			let lscalar_x: Halo2LScalar<C, _, _, _, _> =
+				Halo2LScalar::new(assigned_x, loader_config.clone());
+			let inverted_lscalar_x = lscalar_x.invert().unwrap();
+
+			loader_config.layouter.borrow_mut().constrain_instance(
+				inverted_lscalar_x.inner.cell(),
+				config.common.instance,
+				0,
+			)?;
+
+			Ok(())
+		}
+	}
+
+	#[test]
+	fn test_halo2_lscalar_invert() {
+		let loader = NativeLoader::new();
+
+		let x = Scalar::one() + Scalar::one();
+		let inverted_x = LoadedScalar::invert(&x).unwrap();
+
+		let lscalar_x = LScalar::new(x, loader);
+
+		let k = 5;
+		let circuit = TestLScalarInvertCircuit::new(lscalar_x);
+		let pub_ins = vec![inverted_x];
+
+		let prover = MockProver::run(k, &circuit, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[derive(Clone)]
+	struct TestLScalarAddCircuit {
+		x: LScalar<C, P, EC>,
+		y: LScalar<C, P, EC>,
+	}
+
+	impl TestLScalarAddCircuit {
+		pub fn new(x: LScalar<C, P, EC>, y: LScalar<C, P, EC>) -> Self {
+			Self { x, y }
+		}
+	}
+
+	impl Circuit<Scalar> for TestLScalarAddCircuit {
+		type Config = TestConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			self.clone()
+		}
+
+		fn configure(meta: &mut ConstraintSystem<Scalar>) -> Self::Config {
+			TestConfig::new(meta)
+		}
+
+		fn synthesize(
+			&self, config: Self::Config, mut layouter: impl Layouter<Scalar>,
+		) -> Result<(), Error> {
+			let (assigned_x, assigned_y) = layouter.assign_region(
+				|| "temp",
+				|region| {
+					let mut ctx = RegionCtx::new(region, 0);
+					let x =
+						ctx.assign_advice(config.common.advice[0], Value::known(self.x.inner))?;
+					let y =
+						ctx.assign_advice(config.common.advice[1], Value::known(self.y.inner))?;
+					Ok((x, y))
+				},
+			)?;
+			let loader_config: LoaderConfig<C, _, P, H, EC> = LoaderConfig::new(
+				layouter.namespace(|| "loader_config"),
+				config.common.clone(),
+				config.ecc_mul_scalar,
+				config.aux,
+				config.main,
+				config.poseidon_sponge,
+			);
+
+			let lscalar_x = Halo2LScalar::new(assigned_x, loader_config.clone());
+			let lscalar_y = Halo2LScalar::new(assigned_y, loader_config.clone());
+
+			let lscalar_sum = lscalar_x + lscalar_y;
+
+			loader_config.layouter.borrow_mut().constrain_instance(
+				lscalar_sum.inner.cell(),
+				config.common.instance,
+				0,
+			)?;
+
+			Ok(())
+		}
+	}
+
+	#[test]
+	fn test_halo2_lscalar_add() {
+		let loader = NativeLoader::new();
+
+		let x = Scalar::zero();
+		let y = Scalar::one();
+		let z = x + y;
+
+		let lscalar_x = LScalar::new(x, loader.clone());
+		let lscalar_y = LScalar::new(y, loader);
+
+		let k = 5;
+		let circuit = TestLScalarAddCircuit::new(lscalar_x, lscalar_y);
+		let pub_ins = vec![z];
+		let prover = MockProver::run(k, &circuit, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[derive(Clone)]
+	struct TestLScalarAddAssignCircuit {
+		x: LScalar<C, P, EC>,
+		y: LScalar<C, P, EC>,
+	}
+
+	impl TestLScalarAddAssignCircuit {
+		pub fn new(x: LScalar<C, P, EC>, y: LScalar<C, P, EC>) -> Self {
+			Self { x, y }
+		}
+	}
+
+	impl Circuit<Scalar> for TestLScalarAddAssignCircuit {
+		type Config = TestConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			self.clone()
+		}
+
+		fn configure(meta: &mut ConstraintSystem<Scalar>) -> Self::Config {
+			TestConfig::new(meta)
+		}
+
+		fn synthesize(
+			&self, config: Self::Config, mut layouter: impl Layouter<Scalar>,
+		) -> Result<(), Error> {
+			let (assigned_x, assigned_y) = layouter.assign_region(
+				|| "temp",
+				|region| {
+					let mut ctx = RegionCtx::new(region, 0);
+					let x =
+						ctx.assign_advice(config.common.advice[0], Value::known(self.x.inner))?;
+					let y =
+						ctx.assign_advice(config.common.advice[1], Value::known(self.y.inner))?;
+					Ok((x, y))
+				},
+			)?;
+			let loader_config: LoaderConfig<C, _, P, H, EC> = LoaderConfig::new(
+				layouter.namespace(|| "loader_config"),
+				config.common.clone(),
+				config.ecc_mul_scalar,
+				config.aux,
+				config.main,
+				config.poseidon_sponge,
+			);
+
+			let mut lscalar_x = Halo2LScalar::new(assigned_x, loader_config.clone());
+			let lscalar_y = Halo2LScalar::new(assigned_y, loader_config.clone());
+
+			lscalar_x += lscalar_y;
+
+			loader_config.layouter.borrow_mut().constrain_instance(
+				lscalar_x.inner.cell(),
+				config.common.instance,
+				0,
+			)?;
+
+			Ok(())
+		}
+	}
+
+	#[test]
+	fn test_halo2_lscalar_add_assign() {
+		let loader = NativeLoader::new();
+
+		let mut x = Scalar::zero();
+		let y = Scalar::one();
+
+		let lscalar_x = LScalar::new(x, loader.clone());
+		let lscalar_y = LScalar::new(y, loader);
+
+		let k = 5;
+		let circuit = TestLScalarAddAssignCircuit::new(lscalar_x, lscalar_y);
+
+		x += y;
+		let pub_ins = vec![x];
+
+		let prover = MockProver::run(k, &circuit, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[derive(Clone)]
+	struct TestLScalarMulCircuit {
+		x: LScalar<C, P, EC>,
+		y: LScalar<C, P, EC>,
+	}
+
+	impl TestLScalarMulCircuit {
+		pub fn new(x: LScalar<C, P, EC>, y: LScalar<C, P, EC>) -> Self {
+			Self { x, y }
+		}
+	}
+
+	impl Circuit<Scalar> for TestLScalarMulCircuit {
+		type Config = TestConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			self.clone()
+		}
+
+		fn configure(meta: &mut ConstraintSystem<Scalar>) -> Self::Config {
+			TestConfig::new(meta)
+		}
+
+		fn synthesize(
+			&self, config: Self::Config, mut layouter: impl Layouter<Scalar>,
+		) -> Result<(), Error> {
+			let (assigned_x, assigned_y) = layouter.assign_region(
+				|| "temp",
+				|region| {
+					let mut ctx = RegionCtx::new(region, 0);
+					let x =
+						ctx.assign_advice(config.common.advice[0], Value::known(self.x.inner))?;
+					let y =
+						ctx.assign_advice(config.common.advice[1], Value::known(self.y.inner))?;
+					Ok((x, y))
+				},
+			)?;
+			let loader_config: LoaderConfig<C, _, P, H, EC> = LoaderConfig::new(
+				layouter.namespace(|| "loader_config"),
+				config.common.clone(),
+				config.ecc_mul_scalar,
+				config.aux,
+				config.main,
+				config.poseidon_sponge,
+			);
+
+			let lscalar_x = Halo2LScalar::new(assigned_x, loader_config.clone());
+			let lscalar_y = Halo2LScalar::new(assigned_y, loader_config.clone());
+
+			let lscalar_prod = lscalar_x * lscalar_y;
+
+			loader_config.layouter.borrow_mut().constrain_instance(
+				lscalar_prod.inner.cell(),
+				config.common.instance,
+				0,
+			)?;
+
+			Ok(())
+		}
+	}
+
+	#[test]
+	fn test_halo2_lscalar_mul() {
+		let loader = NativeLoader::new();
+
+		let x = Scalar::zero();
+		let y = Scalar::one();
+		let z = x * y;
+
+		let lscalar_x = LScalar::new(x, loader.clone());
+		let lscalar_y = LScalar::new(y, loader);
+
+		let k = 5;
+		let circuit = TestLScalarMulCircuit::new(lscalar_x, lscalar_y);
+		let pub_ins = vec![z];
+		let prover = MockProver::run(k, &circuit, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[derive(Clone)]
+	struct TestLScalarMulAssignCircuit {
+		x: LScalar<C, P, EC>,
+		y: LScalar<C, P, EC>,
+	}
+
+	impl TestLScalarMulAssignCircuit {
+		pub fn new(x: LScalar<C, P, EC>, y: LScalar<C, P, EC>) -> Self {
+			Self { x, y }
+		}
+	}
+
+	impl Circuit<Scalar> for TestLScalarMulAssignCircuit {
+		type Config = TestConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			self.clone()
+		}
+
+		fn configure(meta: &mut ConstraintSystem<Scalar>) -> Self::Config {
+			TestConfig::new(meta)
+		}
+
+		fn synthesize(
+			&self, config: Self::Config, mut layouter: impl Layouter<Scalar>,
+		) -> Result<(), Error> {
+			let (assigned_x, assigned_y) = layouter.assign_region(
+				|| "temp",
+				|region| {
+					let mut ctx = RegionCtx::new(region, 0);
+					let x =
+						ctx.assign_advice(config.common.advice[0], Value::known(self.x.inner))?;
+					let y =
+						ctx.assign_advice(config.common.advice[1], Value::known(self.y.inner))?;
+					Ok((x, y))
+				},
+			)?;
+			let loader_config: LoaderConfig<C, _, P, H, EC> = LoaderConfig::new(
+				layouter.namespace(|| "loader_config"),
+				config.common.clone(),
+				config.ecc_mul_scalar,
+				config.aux,
+				config.main,
+				config.poseidon_sponge,
+			);
+
+			let mut lscalar_x = Halo2LScalar::new(assigned_x, loader_config.clone());
+			let lscalar_y = Halo2LScalar::new(assigned_y, loader_config.clone());
+
+			lscalar_x *= lscalar_y;
+
+			loader_config.layouter.borrow_mut().constrain_instance(
+				lscalar_x.inner.cell(),
+				config.common.instance,
+				0,
+			)?;
+
+			Ok(())
+		}
+	}
+
+	#[test]
+	fn test_halo2_lscalar_mul_assign() {
+		let loader = NativeLoader::new();
+
+		let mut x = Scalar::zero();
+		let y = Scalar::one();
+
+		let lscalar_x = LScalar::new(x, loader.clone());
+		let lscalar_y = LScalar::new(y, loader);
+
+		let k = 5;
+		let circuit = TestLScalarMulAssignCircuit::new(lscalar_x, lscalar_y);
+
+		x *= y;
+		let pub_ins = vec![x];
+
+		let prover = MockProver::run(k, &circuit, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[derive(Clone)]
+	struct TestLScalarSubCircuit {
+		x: LScalar<C, P, EC>,
+		y: LScalar<C, P, EC>,
+	}
+
+	impl TestLScalarSubCircuit {
+		pub fn new(x: LScalar<C, P, EC>, y: LScalar<C, P, EC>) -> Self {
+			Self { x, y }
+		}
+	}
+
+	impl Circuit<Scalar> for TestLScalarSubCircuit {
+		type Config = TestConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			self.clone()
+		}
+
+		fn configure(meta: &mut ConstraintSystem<Scalar>) -> Self::Config {
+			TestConfig::new(meta)
+		}
+
+		fn synthesize(
+			&self, config: Self::Config, mut layouter: impl Layouter<Scalar>,
+		) -> Result<(), Error> {
+			let (assigned_x, assigned_y) = layouter.assign_region(
+				|| "temp",
+				|region| {
+					let mut ctx = RegionCtx::new(region, 0);
+					let x =
+						ctx.assign_advice(config.common.advice[0], Value::known(self.x.inner))?;
+					let y =
+						ctx.assign_advice(config.common.advice[1], Value::known(self.y.inner))?;
+					Ok((x, y))
+				},
+			)?;
+			let loader_config: LoaderConfig<C, _, P, H, EC> = LoaderConfig::new(
+				layouter.namespace(|| "loader_config"),
+				config.common.clone(),
+				config.ecc_mul_scalar,
+				config.aux,
+				config.main,
+				config.poseidon_sponge,
+			);
+
+			let lscalar_x = Halo2LScalar::new(assigned_x, loader_config.clone());
+			let lscalar_y = Halo2LScalar::new(assigned_y, loader_config.clone());
+
+			let lscalar_sum = lscalar_x - lscalar_y;
+
+			loader_config.layouter.borrow_mut().constrain_instance(
+				lscalar_sum.inner.cell(),
+				config.common.instance,
+				0,
+			)?;
+
+			Ok(())
+		}
+	}
+
+	#[test]
+	fn test_halo2_lscalar_sub() {
+		let loader = NativeLoader::new();
+
+		let x = Scalar::zero();
+		let y = Scalar::one();
+		let z = x - y;
+
+		let lscalar_x = LScalar::new(x, loader.clone());
+		let lscalar_y = LScalar::new(y, loader);
+
+		let k = 5;
+		let circuit = TestLScalarSubCircuit::new(lscalar_x, lscalar_y);
+		let pub_ins = vec![z];
+		let prover = MockProver::run(k, &circuit, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[derive(Clone)]
+	struct TestLScalarSubAssignCircuit {
+		x: LScalar<C, P, EC>,
+		y: LScalar<C, P, EC>,
+	}
+
+	impl TestLScalarSubAssignCircuit {
+		pub fn new(x: LScalar<C, P, EC>, y: LScalar<C, P, EC>) -> Self {
+			Self { x, y }
+		}
+	}
+
+	impl Circuit<Scalar> for TestLScalarSubAssignCircuit {
+		type Config = TestConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			self.clone()
+		}
+
+		fn configure(meta: &mut ConstraintSystem<Scalar>) -> Self::Config {
+			TestConfig::new(meta)
+		}
+
+		fn synthesize(
+			&self, config: Self::Config, mut layouter: impl Layouter<Scalar>,
+		) -> Result<(), Error> {
+			let (assigned_x, assigned_y) = layouter.assign_region(
+				|| "temp",
+				|region| {
+					let mut ctx = RegionCtx::new(region, 0);
+					let x =
+						ctx.assign_advice(config.common.advice[0], Value::known(self.x.inner))?;
+					let y =
+						ctx.assign_advice(config.common.advice[1], Value::known(self.y.inner))?;
+					Ok((x, y))
+				},
+			)?;
+			let loader_config: LoaderConfig<C, _, P, H, EC> = LoaderConfig::new(
+				layouter.namespace(|| "loader_config"),
+				config.common.clone(),
+				config.ecc_mul_scalar,
+				config.aux,
+				config.main,
+				config.poseidon_sponge,
+			);
+
+			let mut lscalar_x = Halo2LScalar::new(assigned_x, loader_config.clone());
+			let lscalar_y = Halo2LScalar::new(assigned_y, loader_config.clone());
+
+			lscalar_x -= lscalar_y;
+
+			loader_config.layouter.borrow_mut().constrain_instance(
+				lscalar_x.inner.cell(),
+				config.common.instance,
+				0,
+			)?;
+
+			Ok(())
+		}
+	}
+
+	#[test]
+	fn test_halo2_lscalar_sub_assign() {
+		let loader = NativeLoader::new();
+
+		let mut x = Scalar::zero();
+		let y = Scalar::one();
+
+		let lscalar_x = LScalar::new(x, loader.clone());
+		let lscalar_y = LScalar::new(y, loader);
+
+		let k = 5;
+		let circuit = TestLScalarSubAssignCircuit::new(lscalar_x, lscalar_y);
+
+		x -= y;
+		let pub_ins = vec![x];
+
+		let prover = MockProver::run(k, &circuit, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[derive(Clone)]
+	struct TestLScalarNegCircuit {
+		x: LScalar<C, P, EC>,
+	}
+
+	impl TestLScalarNegCircuit {
+		pub fn new(x: LScalar<C, P, EC>) -> Self {
+			Self { x }
+		}
+	}
+
+	impl Circuit<Scalar> for TestLScalarNegCircuit {
+		type Config = TestConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			self.clone()
+		}
+
+		fn configure(meta: &mut ConstraintSystem<Scalar>) -> Self::Config {
+			TestConfig::new(meta)
+		}
+
+		fn synthesize(
+			&self, config: Self::Config, mut layouter: impl Layouter<Scalar>,
+		) -> Result<(), Error> {
+			let assigned_x = layouter.assign_region(
+				|| "temp",
+				|region| {
+					let mut ctx = RegionCtx::new(region, 0);
+					let x =
+						ctx.assign_advice(config.common.advice[0], Value::known(self.x.inner))?;
+
+					Ok(x)
+				},
+			)?;
+			let loader_config: LoaderConfig<C, _, P, H, EC> = LoaderConfig::new(
+				layouter.namespace(|| "loader_config"),
+				config.common.clone(),
+				config.ecc_mul_scalar,
+				config.aux,
+				config.main,
+				config.poseidon_sponge,
+			);
+
+			let lscalar_x = Halo2LScalar::new(assigned_x, loader_config.clone());
+			let neg_lscalar_x = -lscalar_x;
+
+			loader_config.layouter.borrow_mut().constrain_instance(
+				neg_lscalar_x.inner.cell(),
+				config.common.instance,
+				0,
+			)?;
+
+			Ok(())
+		}
+	}
+
+	#[test]
+	fn test_halo2_lscalar_neg() {
+		let loader = NativeLoader::new();
+
+		let x = Scalar::one();
+		let neg_x = -x;
+
+		let lscalar_x = LScalar::new(x, loader);
+
+		let k = 5;
+		let circuit = TestLScalarNegCircuit::new(lscalar_x);
+		let pub_ins = vec![neg_x];
+
+		let prover = MockProver::run(k, &circuit, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[derive(Clone)]
+	struct TestLScalarLoadConstCircuit;
+
+	impl TestLScalarLoadConstCircuit {
+		pub fn new() -> Self {
+			Self
+		}
+	}
+
+	impl Circuit<Scalar> for TestLScalarLoadConstCircuit {
+		type Config = TestConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			Self {}
+		}
+
+		fn configure(meta: &mut ConstraintSystem<Scalar>) -> Self::Config {
+			TestConfig::new(meta)
+		}
+
+		fn synthesize(
+			&self, config: Self::Config, mut layouter: impl Layouter<Scalar>,
+		) -> Result<(), Error> {
+			let loader_config: LoaderConfig<C, _, P, H, EC> = LoaderConfig::new(
+				layouter.namespace(|| "loader_config"),
+				config.common.clone(),
+				config.ecc_mul_scalar,
+				config.aux,
+				config.main,
+				config.poseidon_sponge,
+			);
+
+			let lscalar_one = loader_config.load_const(&Scalar::one());
+
+			loader_config.layouter.borrow_mut().constrain_instance(
+				lscalar_one.inner.cell(),
+				config.common.instance,
+				0,
+			)?;
+
+			Ok(())
+		}
+	}
+
+	#[test]
+	fn test_halo2_lscalar_load_const() {
+		let x = Scalar::one();
+
+		let k = 5;
+		let circuit = TestLScalarLoadConstCircuit::new();
+		let pub_ins = vec![x];
+
+		let prover = MockProver::run(k, &circuit, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[derive(Clone)]
+	struct TestLScalarAssertEqCircuit {
+		x: LScalar<C, P, EC>,
+		y: LScalar<C, P, EC>,
+	}
+
+	impl TestLScalarAssertEqCircuit {
+		pub fn new(x: LScalar<C, P, EC>, y: LScalar<C, P, EC>) -> Self {
+			Self { x, y }
+		}
+	}
+
+	impl Circuit<Scalar> for TestLScalarAssertEqCircuit {
+		type Config = TestConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			self.clone()
+		}
+
+		fn configure(meta: &mut ConstraintSystem<Scalar>) -> Self::Config {
+			TestConfig::new(meta)
+		}
+
+		fn synthesize(
+			&self, config: Self::Config, mut layouter: impl Layouter<Scalar>,
+		) -> Result<(), Error> {
+			let (assigned_x, assigned_y) = layouter.assign_region(
+				|| "temp",
+				|region| {
+					let mut ctx = RegionCtx::new(region, 0);
+					let x =
+						ctx.assign_advice(config.common.advice[0], Value::known(self.x.inner))?;
+					let y =
+						ctx.assign_advice(config.common.advice[1], Value::known(self.y.inner))?;
+					Ok((x, y))
+				},
+			)?;
+			let loader_config: LoaderConfig<C, _, P, H, EC> = LoaderConfig::new(
+				layouter.namespace(|| "loader_config"),
+				config.common.clone(),
+				config.ecc_mul_scalar,
+				config.aux,
+				config.main,
+				config.poseidon_sponge,
+			);
+
+			let lscalar_x = Halo2LScalar::new(assigned_x, loader_config.clone());
+			let lscalar_y = Halo2LScalar::new(assigned_y, loader_config.clone());
+
+			let res = loader_config
+				.assert_eq("x == y", &lscalar_x, &lscalar_y)
+				.map_err(|_| halo2::plonk::Error::Synthesis)?;
+
+			Ok(res)
+		}
+	}
+
+	#[test]
+	fn test_halo2_lscalar_assert_eq() {
+		let loader = NativeLoader::new();
+
+		let x = Scalar::one();
+		let y = Scalar::one();
+
+		let lscalar_x = LScalar::new(x, loader.clone());
+		let lscalar_y = LScalar::new(y, loader);
+
+		let k = 5;
+		let circuit = TestLScalarAssertEqCircuit::new(lscalar_x, lscalar_y);
+		let pub_ins = vec![];
+
+		let prover = MockProver::run(k, &circuit, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[derive(Clone)]
+	struct TestEcPointLoadConstCircuit;
+
+	impl TestEcPointLoadConstCircuit {
+		pub fn new() -> Self {
+			Self
+		}
+	}
+
+	impl Circuit<Scalar> for TestEcPointLoadConstCircuit {
+		type Config = TestConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			Self {}
+		}
+
+		fn configure(meta: &mut ConstraintSystem<Scalar>) -> Self::Config {
+			TestConfig::new(meta)
+		}
+
+		fn synthesize(
+			&self, config: Self::Config, mut layouter: impl Layouter<Scalar>,
+		) -> Result<(), Error> {
+			let loader_config: LoaderConfig<C, _, P, H, EC> = LoaderConfig::new(
+				layouter.namespace(|| "loader_config"),
+				config.common.clone(),
+				config.ecc_mul_scalar,
+				config.aux,
+				config.main,
+				config.poseidon_sponge,
+			);
+
+			let gen_ec_point = loader_config.ec_point_load_const(&G1Affine::generator());
+
+			let mut limbs = vec![];
+			limbs.extend(gen_ec_point.inner.x.limbs);
+			limbs.extend(gen_ec_point.inner.y.limbs);
+
+			for (i, limb) in limbs.into_iter().enumerate() {
+				let _ = loader_config.layouter.borrow_mut().constrain_instance(
+					limb.cell(),
+					config.common.instance,
+					i,
+				)?;
+			}
+
+			Ok(())
+		}
+	}
+
+	#[test]
+	fn test_halo2_ec_point_load_const() {
+		let k = 5;
+		let circuit = TestEcPointLoadConstCircuit::new();
+
+		let mut pub_ins = vec![];
+
+		let loader = NativeLoader::<C, P, EC>::new();
+
+		let gen_point = G1Affine::generator();
+
+		let x = Integer::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::from_w(gen_point.x);
+		let y = Integer::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::from_w(gen_point.y);
+
+		let point = EcPoint::new(x, y);
+		let ec_point = LEcPoint::new(point, loader.clone());
+
+		pub_ins.extend(ec_point.inner.x.limbs);
+		pub_ins.extend(ec_point.inner.y.limbs);
+
+		let prover = MockProver::run(k, &circuit, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[derive(Clone)]
+	struct TestEcPointAssertEqCircuit {
+		p1: LEcPoint<C, P, EC>,
+		p2: LEcPoint<C, P, EC>,
+	}
+
+	impl TestEcPointAssertEqCircuit {
+		pub fn new(p1: LEcPoint<C, P, EC>, p2: LEcPoint<C, P, EC>) -> Self {
+			Self { p1, p2 }
+		}
+	}
+
+	impl Circuit<Scalar> for TestEcPointAssertEqCircuit {
+		type Config = TestConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			self.clone()
+		}
+
+		fn configure(meta: &mut ConstraintSystem<Scalar>) -> Self::Config {
+			TestConfig::new(meta)
+		}
+
+		fn synthesize(
+			&self, config: Self::Config, mut layouter: impl Layouter<Scalar>,
+		) -> Result<(), Error> {
+			let (p1_x_limbs, p1_y_limbs, p2_x_limbs, p2_y_limbs) = layouter.assign_region(
+				|| "temp",
+				|region| {
+					let mut ctx = RegionCtx::new(region, 0);
+
+					let mut p1_x_limbs: [Option<AssignedCell<Scalar, Scalar>>; NUM_LIMBS] =
+						[(); NUM_LIMBS].map(|_| None);
+					let mut p1_y_limbs: [Option<AssignedCell<Scalar, Scalar>>; NUM_LIMBS] =
+						[(); NUM_LIMBS].map(|_| None);
+					for i in 0..NUM_LIMBS {
+						p1_x_limbs[i] = Some(ctx.assign_advice(
+							config.common.advice[i],
+							Value::known(self.p1.inner.x.limbs[i]),
+						)?);
+						p1_y_limbs[i] = Some(ctx.assign_advice(
+							config.common.advice[i + NUM_LIMBS],
+							Value::known(self.p1.inner.y.limbs[i]),
+						)?);
+					}
+					let p1_x_limbs = p1_x_limbs.map(|x| x.unwrap());
+					let p1_y_limbs = p1_y_limbs.map(|y| y.unwrap());
+
+					let mut p2_x_limbs: [Option<AssignedCell<Scalar, Scalar>>; NUM_LIMBS] =
+						[(); NUM_LIMBS].map(|_| None);
+					let mut p2_y_limbs: [Option<AssignedCell<Scalar, Scalar>>; NUM_LIMBS] =
+						[(); NUM_LIMBS].map(|_| None);
+					for i in 0..NUM_LIMBS {
+						p2_x_limbs[i] = Some(ctx.assign_advice(
+							config.common.advice[i + 2 * NUM_LIMBS],
+							Value::known(self.p1.inner.x.limbs[i]),
+						)?);
+						p2_y_limbs[i] = Some(ctx.assign_advice(
+							config.common.advice[i + 3 * NUM_LIMBS],
+							Value::known(self.p1.inner.y.limbs[i]),
+						)?);
+					}
+					let p2_x_limbs = p2_x_limbs.map(|x| x.unwrap());
+					let p2_y_limbs = p2_y_limbs.map(|y| y.unwrap());
+
+					Ok((p1_x_limbs, p1_y_limbs, p2_x_limbs, p2_y_limbs))
+				},
+			)?;
+			let loader_config: LoaderConfig<C, _, P, H, EC> = LoaderConfig::new(
+				layouter.namespace(|| "loader_config"),
+				config.common.clone(),
+				config.ecc_mul_scalar,
+				config.aux,
+				config.main,
+				config.poseidon_sponge,
+			);
+
+			let p1_x = AssignedInteger::new(self.p1.inner.x.clone(), p1_x_limbs.clone());
+			let p1_y = AssignedInteger::new(self.p1.inner.y.clone(), p1_y_limbs.clone());
+			let p1_assigned_point = AssignedEcPoint::new(p1_x, p1_y);
+			let p1_halo2_point = Halo2LEcPoint::new(p1_assigned_point, loader_config.clone());
+
+			let p2_x = AssignedInteger::new(self.p2.inner.x.clone(), p2_x_limbs.clone());
+			let p2_y = AssignedInteger::new(self.p2.inner.y.clone(), p2_y_limbs.clone());
+			let p2_assigned_point = AssignedEcPoint::new(p2_x, p2_y);
+			let p2_halo2_point = Halo2LEcPoint::new(p2_assigned_point, loader_config.clone());
+
+			let res = loader_config
+				.ec_point_assert_eq("p1 == p2", &p1_halo2_point, &p2_halo2_point)
+				.map_err(|_| halo2::plonk::Error::Synthesis)?;
+
+			Ok(res)
+		}
+	}
+
+	#[test]
+	fn test_halo2_ec_point_assert_eq() {
+		let loader = NativeLoader::<C, P, EC>::new();
+
+		let p1 = LEcPoint::new(EcPoint::one(), loader.clone());
+		let p2 = LEcPoint::new(EcPoint::one(), loader);
+
+		let k = 5;
+		let circuit = TestEcPointAssertEqCircuit::new(p1, p2);
+		let pub_ins = vec![];
+		let prover = MockProver::run(k, &circuit, vec![pub_ins]).unwrap();
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[derive(Clone)]
+	struct TestMSMCircuit {
+		pairs: Vec<(LScalar<C, P, EC>, LEcPoint<C, P, EC>)>,
+	}
+
+	impl TestMSMCircuit {
+		fn new(pairs: Vec<(LScalar<C, P, EC>, LEcPoint<C, P, EC>)>) -> Self {
+			Self { pairs }
+		}
+	}
+
+	impl Circuit<Scalar> for TestMSMCircuit {
+		type Config = TestConfig;
+		type FloorPlanner = SimpleFloorPlanner;
+
+		fn without_witnesses(&self) -> Self {
+			self.clone()
+		}
+
+		fn configure(meta: &mut ConstraintSystem<Scalar>) -> TestConfig {
+			TestConfig::new(meta)
 		}
 
 		fn synthesize(
@@ -1000,7 +1961,7 @@ mod test {
 		let mut p_ins = Vec::new();
 		p_ins.extend(res.inner.x.limbs);
 		p_ins.extend(res.inner.y.limbs);
-		let circuit = TestCircuit::new(pairs);
+		let circuit = TestMSMCircuit::new(pairs);
 		let k = 16;
 		let prover = MockProver::run(k, &circuit, vec![p_ins]).unwrap();
 
