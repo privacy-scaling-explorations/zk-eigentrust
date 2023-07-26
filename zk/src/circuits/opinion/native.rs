@@ -1,10 +1,8 @@
 use halo2::halo2curves::{bn256::Fr, secp256k1::Secp256k1Affine};
 
 use crate::{
-	circuits::{
-		dynamic_sets::ecdsa_native::{field_value_from_pub_key, AttestationFr, SignedAttestation},
-		PoseidonNativeHasher, PoseidonNativeSponge,
-	},
+	circuits::dynamic_sets::ecdsa_native::{Attestation, SignedAttestation},
+	circuits::{PoseidonNativeHasher, PoseidonNativeSponge},
 	ecdsa::native::{EcdsaVerifier, PublicKey},
 	integer::native::Integer,
 	params::{ecc::secp256k1::Secp256k1Params, rns::secp256k1::Secp256k1_4_68},
@@ -27,7 +25,7 @@ impl<const NUM_NEIGHBOURS: usize> Opinion<NUM_NEIGHBOURS> {
 
 	/// Validate attestations & calculate the hash
 	pub fn validate(&self, set: Vec<Fr>) -> (Fr, Vec<Fr>, Fr) {
-		let from_pk = field_value_from_pub_key(&self.from);
+		let from_pk = self.from.to_address();
 
 		let pos_from = set.iter().position(|&x| x == from_pk);
 		assert!(pos_from.is_some());
@@ -48,7 +46,7 @@ impl<const NUM_NEIGHBOURS: usize> Opinion<NUM_NEIGHBOURS> {
 			let is_default_pubkey = set[i] == Fr::zero();
 
 			let att = self.attestations[i].clone();
-			let is_default_sig = att.attestation == AttestationFr::default();
+			let is_default_sig = att.attestation == Attestation::default();
 
 			if is_default_pubkey || is_default_sig {
 				scores[i] = Fr::default();

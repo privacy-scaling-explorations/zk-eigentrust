@@ -2,7 +2,7 @@
 pub mod native;
 
 use crate::{
-	circuits::dynamic_sets::ecdsa_native::AttestationFr,
+	circuits::dynamic_sets::ecdsa_native::Attestation,
 	ecc::generic::{AssignedAux, AssignedEcPoint},
 	ecdsa::{AssignedPublicKey, AssignedSignature, EcdsaChipset, EcdsaConfig, UnassignedSignature},
 	gadgets::{
@@ -66,8 +66,8 @@ impl<N: FieldExt> UnassignedAttestation<N> {
 	}
 }
 
-impl From<AttestationFr> for UnassignedAttestation<Fr> {
-	fn from(att: AttestationFr) -> Self {
+impl From<Attestation> for UnassignedAttestation<Fr> {
+	fn from(att: Attestation) -> Self {
 		Self {
 			about: Value::known(att.about),
 			domain: Value::known(att.domain),
@@ -445,9 +445,7 @@ mod test {
 	use super::{
 		AssignedAttestation, AssignedSignedAttestation, OpinionChipset, OpinionConfig, WIDTH,
 	};
-	use crate::circuits::dynamic_sets::ecdsa_native::{
-		field_value_from_pub_key, AttestationFr, SignedAttestation,
-	};
+	use crate::circuits::dynamic_sets::ecdsa_native::{Attestation, SignedAttestation};
 	use crate::circuits::PoseidonNativeHasher;
 	use crate::ecc::generic::{AuxAssigner, PointAssigner, UnassignedEcPoint};
 	use crate::ecc::{
@@ -756,7 +754,7 @@ mod test {
 		let rng = &mut rand::thread_rng();
 		let keypair = EcdsaKeypair::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::generate_keypair(rng);
 		let public_key = keypair.public_key.clone();
-		let public_key_fr = field_value_from_pub_key(&public_key);
+		let public_key_fr = keypair.public_key.to_address();
 		let g = Secp256k1::generator().to_affine();
 		let g_as_ecpoint = EcPoint::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::new(
 			Integer::from_w(g.x),
@@ -769,7 +767,7 @@ mod test {
 		let mut attestations = Vec::new();
 
 		for _ in 0..10 {
-			let attestation = AttestationFr::new(
+			let attestation = Attestation::new(
 				Fr::random(rng.clone()),
 				Fr::random(rng.clone()),
 				Fr::random(rng.clone()),

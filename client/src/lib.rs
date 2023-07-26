@@ -28,10 +28,13 @@
 	nonstandard_style, unreachable_code, unreachable_patterns
 )]
 #![forbid(unsafe_code)]
+// Clippy
+#![allow(clippy::tabs_in_doc_comments, clippy::needless_range_loop, clippy::new_without_default)]
 #![deny(
 	// Complexity
  	clippy::unnecessary_cast,
 	clippy::needless_question_mark,
+	clippy::clone_on_copy,
 	// Pedantic
  	clippy::cast_lossless,
  	clippy::cast_possible_wrap,
@@ -51,11 +54,11 @@ pub mod eth;
 pub mod fs;
 pub mod storage;
 
-use crate::attestation::{
-	address_from_signed_att, signed_att_from_log, SignatureFr, SignedAttestation,
+use crate::attestation::{SignatureEth, SignatureRaw, SignedAttestationEth};
+use att_station::{
+	AttestationCreatedFilter, AttestationData as ContractAttestationData, AttestationStation,
 };
-use att_station::{AttestationCreatedFilter, AttestationStation};
-use attestation::{att_data_from_signed_att, Attestation};
+use attestation::AttestationEth;
 use dotenv::{dotenv, var};
 use eigen_trust_circuit::{
 	circuits::dynamic_sets::ecdsa_native::{
@@ -161,12 +164,12 @@ impl Client {
 	}
 
 	/// Submits an attestation to the attestation station.
-	pub async fn attest(&self, attestation: Attestation) -> Result<(), EigenError> {
+	pub async fn attest(&self, attestation_eth: AttestationEth) -> Result<(), EigenError> {
 		let ctx = SECP256K1;
 		let secret_keys = ecdsa_secret_from_mnemonic(&self.mnemonic, 1)?;
 
 		// Get AttestationFr
-		let attestation_fr = attestation.to_attestation_fr()?;
+		let attestation_fr = attestation_eth.to_attestation_fr()?;
 
 		// Format for signature
 		let att_hash = attestation_fr.hash();
@@ -178,7 +181,10 @@ impl Client {
 			&secret_keys[0],
 		);
 
-		let signed_attestation = SignedAttestation::new(attestation_fr, signature);
+		let signature_raw = SignatureRaw::from(signature);
+		let signature_eth = SignatureEth::from(signature_raw);
+
+		let signed_attestation = SignedAttestationEth::new(attestation_eth, signature_eth);
 
 		let as_address_res = self.config.as_address.parse::<Address>();
 		let as_address = as_address_res.map_err(|e| EigenError::ParsingError(e.to_string()))?;
@@ -190,7 +196,8 @@ impl Client {
 		assert!(recovered_address == self.signer.address());
 
 		// Stored contract data
-		let contract_data = att_data_from_signed_att(&signed_attestation);
+		let (_, about, key, payload) = signed_attestation.to_tx_data()?;
+		let contract_data = ContractAttestationData(about, key.to_fixed_bytes(), payload);
 
 		let tx_call = as_contract.attest(vec![contract_data]);
 		let tx_res = tx_call.send().await;
@@ -212,13 +219,9 @@ impl Client {
 		&self, att: Vec<AttestationCreatedFilter>,
 	) -> Result<Vec<Score>, EigenError> {
 		// Parse attestation logs into signed attestation and attestation structs
-		let attestations: Vec<(SignedAttestation, Attestation)> = att
+		let attestations: Vec<SignedAttestationEth> = att
 			.into_iter()
-			.map(|attestation_filter| {
-				let signed_att = signed_att_from_log(&attestation_filter)?;
-				let att = Attestation::from_log(&attestation_filter)?;
-				Result::Ok((signed_att, att))
-			})
+			.map(|attestation_filter| SignedAttestationEth::from_log(&attestation_filter))
 			.collect::<Result<Vec<_>, EigenError>>()?;
 
 		// Construct a set to hold unique participant addresses
@@ -226,9 +229,10 @@ impl Client {
 		let mut pks = HashMap::new();
 
 		// Insert the attester and attested of each attestation into the set
-		for (signed_att, att) in &attestations {
-			let attester = address_from_signed_att(signed_att)?;
-			participants_set.insert(att.about);
+		for signed_att in &attestations {
+			let public_key = signed_att.recover_public_key()?;
+			let attester = address_from_public_key(&public_key);
+			participants_set.insert(signed_att.attestation.about);
 			participants_set.insert(attester);
 
 			let pk = signed_att.recover_public_key()?;
@@ -255,16 +259,14 @@ impl Client {
 			vec![vec![None; MAX_NEIGHBOURS]; MAX_NEIGHBOURS];
 
 		// Populate the attestation matrix with the attestations data
-		for (signed_att, att) in &attestations {
-			let attester_address = address_from_signed_att(signed_att)?;
-			let attester_pos = participants.iter().position(|&r| r == attester_address).unwrap();
-			let attested_pos = participants.iter().position(|&r| r == att.about).unwrap();
+		for signed_att in &attestations {
+			let public_key = signed_att.recover_public_key()?;
+			let attester = address_from_public_key(&public_key);
+			let attester_pos = participants.iter().position(|&r| r == attester).unwrap();
+			let attested_pos =
+				participants.iter().position(|&r| r == signed_att.attestation.about).unwrap();
 
-			let (_, sig_bytes) = signed_att.signature.serialize_compact();
-			let sig_fr = SignatureFr::from(sig_bytes);
-			let att_fr = signed_att.attestation.clone();
-			let signed_attestation_fr = SignedAttestationFr::new(att_fr, sig_fr);
-
+			let signed_attestation_fr = signed_att.to_signed_signature_fr()?;
 			attestation_matrix[attester_pos][attested_pos] = Some(signed_attestation_fr);
 		}
 
@@ -281,15 +283,15 @@ impl Client {
 		// Update the set with the opinions of each participant
 		for i in 0..participants.len() {
 			let addr = participants[i];
-			let pk = pks.get(&addr).unwrap();
+			if let Some(pk) = pks.get(&addr) {
+				let pk_x = pk.serialize_uncompressed();
+				let mut pk_bytes: [u8; 64] = [0; 64];
+				pk_bytes.copy_from_slice(&pk_x[1..]);
+				let pk_fr = PublicKey::from_bytes(pk_bytes.to_vec());
 
-			let pk_x = pk.serialize_uncompressed();
-			let mut pk_bytes: [u8; 64] = [0; 64];
-			pk_bytes.copy_from_slice(&pk_x[1..]);
-			let pk_fr = PublicKey::from(pk_bytes);
-
-			let opinion = attestation_matrix[i].clone();
-			eigen_trust_set.update_op(pk_fr, opinion);
+				let opinion = attestation_matrix[i].clone();
+				eigen_trust_set.update_op(pk_fr, opinion);
+			}
 		}
 
 		// Calculate scores
@@ -369,12 +371,12 @@ impl Client {
 
 #[cfg(test)]
 mod lib_tests {
-	use crate::{
-		attestation::{Attestation, DOMAIN_PREFIX, DOMAIN_PREFIX_LEN},
-		eth::deploy_as,
-		Client, ClientConfig,
+	use crate::{attestation::AttestationEth, eth::deploy_as, Client, ClientConfig};
+	use ethers::{
+		abi::Address,
+		types::{Uint8, H160, H256},
+		utils::Anvil,
 	};
-	use ethers::{abi::Address, types::H256, utils::Anvil};
 
 	#[tokio::test]
 	async fn test_attest() {
@@ -405,7 +407,8 @@ mod lib_tests {
 		};
 
 		// Attest
-		let attestation = Attestation::new(Address::default(), H256::default(), 1, None);
+		let attestation =
+			AttestationEth::new(Address::default(), H160::default(), Uint8::default(), None);
 		assert!(Client::new(config).attest(attestation).await.is_ok());
 
 		drop(anvil);
@@ -446,9 +449,10 @@ mod lib_tests {
 			0x36, 0x53, 0x62, 0x6d, 0x35, 0xff,
 		];
 
-		// Build key
-		let mut key_bytes: [u8; 32] = [0; 32];
-		key_bytes[..DOMAIN_PREFIX_LEN].copy_from_slice(&DOMAIN_PREFIX);
+		let domain_input = [
+			0xff, 0x61, 0x4a, 0x6d, 0x59, 0x56, 0x2a, 0x42, 0x37, 0x72, 0x37, 0x76, 0x32, 0x4d,
+			0x36, 0x53, 0x62, 0x6d, 0x35, 0xff,
+		];
 
 		let message = [
 			0x00, 0x75, 0x32, 0x45, 0x75, 0x79, 0x32, 0x77, 0x7a, 0x34, 0x58, 0x6c, 0x34, 0x34,
@@ -456,10 +460,10 @@ mod lib_tests {
 			0x65, 0x6e, 0x79, 0x00,
 		];
 
-		let attestation = Attestation::new(
+		let attestation = AttestationEth::new(
 			Address::from(about_bytes),
-			H256::from(key_bytes),
-			10,
+			H160::from(domain_input),
+			Uint8::from(10),
 			Some(H256::from(message)),
 		);
 
@@ -471,11 +475,11 @@ mod lib_tests {
 
 		let att_logs = attestations[0].clone();
 
-		let returned_att = Attestation::from_log(&att_logs).unwrap();
+		let returned_att = AttestationEth::from_log(&att_logs).unwrap();
 
 		// Check that the attestations match
 		assert_eq!(returned_att.about, attestation.about);
-		assert_eq!(returned_att.key, attestation.key);
+		assert_eq!(returned_att.domain, attestation.about);
 		assert_eq!(returned_att.value, attestation.value);
 		assert_eq!(returned_att.message, attestation.message);
 

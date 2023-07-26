@@ -12,7 +12,6 @@ use itertools::Itertools;
 use num_bigint::{BigInt, ToBigInt};
 use num_rational::BigRational;
 use num_traits::{FromPrimitive, One, Zero};
-use sha3::{Digest, Keccak256};
 use std::collections::HashMap;
 
 /// Rational score
@@ -24,42 +23,11 @@ pub const NUM_LIMBS: usize = 4;
 /// Number of bits for integer limbs
 pub const NUM_BITS: usize = 68;
 
-/// Construct an Ethereum address for the given ECDSA public key
-pub fn address_from_pub_key(
-	pub_key: &PublicKey<Secp256k1Affine, Fr, NUM_LIMBS, NUM_BITS, Secp256k1_4_68, Secp256k1Params>,
-) -> Result<[u8; 20], &'static str> {
-	let pub_key_bytes = pub_key.to_bytes();
-
-	// Hash with Keccak256
-	let mut hasher = Keccak256::new();
-	hasher.update(&pub_key_bytes[..]);
-	let hashed_public_key = hasher.finalize().to_vec();
-
-	// Get the last 20 bytes of the hash
-	let mut address = [0u8; 20];
-	address.copy_from_slice(&hashed_public_key[hashed_public_key.len() - 20..]);
-
-	Ok(address)
-}
-
-/// Calculate the address field value from a public key
-pub fn field_value_from_pub_key(
-	pub_key: &PublicKey<Secp256k1Affine, Fr, NUM_LIMBS, NUM_BITS, Secp256k1_4_68, Secp256k1Params>,
-) -> Fr {
-	let mut address = address_from_pub_key(pub_key).unwrap();
-	address.reverse();
-
-	let mut address_bytes = [0u8; 32];
-	address_bytes[..address.len()].copy_from_slice(&address);
-
-	Fr::from_bytes(&address_bytes).unwrap()
-}
-
 /// Attestation submission struct
 #[derive(Clone, Debug)]
 pub struct SignedAttestation {
 	/// Attestation
-	pub attestation: AttestationFr,
+	pub attestation: Attestation,
 	/// Signature
 	pub signature: Signature<Secp256k1Affine, Fr, NUM_LIMBS, NUM_BITS, Secp256k1_4_68>,
 }
@@ -67,7 +35,7 @@ pub struct SignedAttestation {
 impl SignedAttestation {
 	/// Constructs a new instance
 	pub fn new(
-		attestation: AttestationFr,
+		attestation: Attestation,
 		signature: Signature<Secp256k1Affine, Fr, NUM_LIMBS, NUM_BITS, Secp256k1_4_68>,
 	) -> Self {
 		Self { attestation, signature }
@@ -76,7 +44,7 @@ impl SignedAttestation {
 
 impl Default for SignedAttestation {
 	fn default() -> Self {
-		let attestation = AttestationFr::default();
+		let attestation = Attestation::default();
 		let signature = Signature::default();
 
 		Self { attestation, signature }
@@ -85,7 +53,7 @@ impl Default for SignedAttestation {
 
 /// Attestation struct
 #[derive(Clone, Default, Debug, PartialEq, PartialOrd)]
-pub struct AttestationFr {
+pub struct Attestation {
 	/// Ethereum address of peer being rated
 	pub about: Fr,
 	/// Unique identifier for the action being rated
@@ -96,7 +64,7 @@ pub struct AttestationFr {
 	pub message: Fr,
 }
 
-impl AttestationFr {
+impl Attestation {
 	/// Construct a new attestation struct
 	pub fn new(about: Fr, domain: Fr, value: Fr, message: Fr) -> Self {
 		Self { about, domain, value, message }
@@ -190,7 +158,7 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITERATIONS: usize, const INITIAL_SCO
 			for j in 0..NUM_NEIGHBOURS {
 				let (pk_j, _) = self.set[j];
 
-				// Conditions fro nullifying the score
+				// Conditions for nullifying the score
 				// 1. pk_j == 0 (Default key)
 				// 2. pk_j == pk_i
 				let is_pk_j_default = pk_j == Fr::zero();
@@ -376,7 +344,7 @@ mod test {
 				res.push(None)
 			} else {
 				let (about, key, value, message) = (pks[i], Fr::zero(), scores[i], Fr::zero());
-				let attestation = AttestationFr::new(about, key, value, message);
+				let attestation = Attestation::new(about, key, value, message);
 				let msg = big_to_fe(fe_to_big(attestation.hash()));
 				let signature = keypair.sign(msg, rng);
 				let signed_attestation = SignedAttestation::new(attestation, signature);
@@ -394,8 +362,15 @@ mod test {
 
 		let rng = &mut thread_rng();
 
-		let keypair = EcdsaKeypair::generate_keypair(rng);
-		let pk = field_value_from_pub_key(&keypair.public_key);
+		let keypair = EcdsaKeypair::<
+			Secp256k1Affine,
+			Fr,
+			NUM_LIMBS,
+			NUM_BITS,
+			Secp256k1_4_68,
+			Secp256k1Params,
+		>::generate_keypair(rng);
+		let pk = keypair.public_key.to_address();
 
 		set.add_member(pk);
 
@@ -410,10 +385,17 @@ mod test {
 
 		let rng = &mut thread_rng();
 
-		let keypair = EcdsaKeypair::generate_keypair(rng);
-		let pk_fr = field_value_from_pub_key(&keypair.public_key);
+		let keypair = EcdsaKeypair::<
+			Secp256k1Affine,
+			Fr,
+			NUM_LIMBS,
+			NUM_BITS,
+			Secp256k1_4_68,
+			Secp256k1Params,
+		>::generate_keypair(rng);
+		let pk = keypair.public_key.to_address();
 
-		set.add_member(pk_fr);
+		set.add_member(pk);
 
 		set.converge();
 	}
@@ -424,11 +406,25 @@ mod test {
 
 		let rng = &mut thread_rng();
 
-		let keypair1 = EcdsaKeypair::generate_keypair(rng);
-		let keypair2 = EcdsaKeypair::generate_keypair(rng);
+		let keypair1 = EcdsaKeypair::<
+			Secp256k1Affine,
+			Fr,
+			NUM_LIMBS,
+			NUM_BITS,
+			Secp256k1_4_68,
+			Secp256k1Params,
+		>::generate_keypair(rng);
+		let keypair2 = EcdsaKeypair::<
+			Secp256k1Affine,
+			Fr,
+			NUM_LIMBS,
+			NUM_BITS,
+			Secp256k1_4_68,
+			Secp256k1Params,
+		>::generate_keypair(rng);
 
-		let pk1 = field_value_from_pub_key(&keypair1.public_key);
-		let pk2 = field_value_from_pub_key(&keypair2.public_key);
+		let pk1 = keypair1.public_key.to_address();
+		let pk2 = keypair2.public_key.to_address();
 
 		set.add_member(pk1);
 		set.add_member(pk2);
@@ -442,19 +438,33 @@ mod test {
 
 		let rng = &mut thread_rng();
 
-		let keypair1 = EcdsaKeypair::generate_keypair(rng);
-		let keypair2 = EcdsaKeypair::generate_keypair(rng);
+		let keypair1 = EcdsaKeypair::<
+			Secp256k1Affine,
+			Fr,
+			NUM_LIMBS,
+			NUM_BITS,
+			Secp256k1_4_68,
+			Secp256k1Params,
+		>::generate_keypair(rng);
+		let keypair2 = EcdsaKeypair::<
+			Secp256k1Affine,
+			Fr,
+			NUM_LIMBS,
+			NUM_BITS,
+			Secp256k1_4_68,
+			Secp256k1Params,
+		>::generate_keypair(rng);
 
-		let pk1_fr = field_value_from_pub_key(&keypair1.public_key);
-		let pk2_fr = field_value_from_pub_key(&keypair2.public_key);
+		let pk1 = keypair1.public_key.to_address();
+		let pk2 = keypair2.public_key.to_address();
 
-		set.add_member(pk1_fr);
-		set.add_member(pk2_fr);
+		set.add_member(pk1);
+		set.add_member(pk2);
 
 		// Peer1(pk1) signs the opinion
 		let mut pks = [Fr::zero(); NUM_NEIGHBOURS];
-		pks[0] = pk1_fr;
-		pks[1] = pk2_fr;
+		pks[0] = pk1;
+		pks[1] = pk2;
 
 		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
 		scores[1] = Fr::from_u128(INITIAL_SCORE);
@@ -473,19 +483,33 @@ mod test {
 
 		let rng = &mut thread_rng();
 
-		let keypair1 = EcdsaKeypair::generate_keypair(rng);
-		let keypair2 = EcdsaKeypair::generate_keypair(rng);
+		let keypair1 = EcdsaKeypair::<
+			Secp256k1Affine,
+			Fr,
+			NUM_LIMBS,
+			NUM_BITS,
+			Secp256k1_4_68,
+			Secp256k1Params,
+		>::generate_keypair(rng);
+		let keypair2 = EcdsaKeypair::<
+			Secp256k1Affine,
+			Fr,
+			NUM_LIMBS,
+			NUM_BITS,
+			Secp256k1_4_68,
+			Secp256k1Params,
+		>::generate_keypair(rng);
 
-		let pk1_fr = field_value_from_pub_key(&keypair1.public_key);
-		let pk2_fr = field_value_from_pub_key(&keypair2.public_key);
+		let pk1 = keypair1.public_key.to_address();
+		let pk2 = keypair2.public_key.to_address();
 
-		set.add_member(pk1_fr);
-		set.add_member(pk2_fr);
+		set.add_member(pk1);
+		set.add_member(pk2);
 
 		// Peer1(pk1) signs the opinion
 		let mut pks = [Fr::zero(); NUM_NEIGHBOURS];
-		pks[0] = pk1_fr;
-		pks[1] = pk2_fr;
+		pks[0] = pk1;
+		pks[1] = pk2;
 
 		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
 		scores[1] = Fr::from_u128(INITIAL_SCORE);
@@ -497,8 +521,8 @@ mod test {
 
 		// Peer2(pk2) signs the opinion
 		let mut pks = [Fr::zero(); NUM_NEIGHBOURS];
-		pks[0] = pk1_fr;
-		pks[1] = pk2_fr;
+		pks[0] = pk1;
+		pks[1] = pk2;
 
 		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
 		scores[0] = Fr::from_u128(INITIAL_SCORE);
@@ -516,23 +540,44 @@ mod test {
 		let mut set = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
 
 		let rng = &mut thread_rng();
-		let keypair1 = EcdsaKeypair::generate_keypair(rng);
-		let keypair2 = EcdsaKeypair::generate_keypair(rng);
-		let keypair3 = EcdsaKeypair::generate_keypair(rng);
+		let keypair1 = EcdsaKeypair::<
+			Secp256k1Affine,
+			Fr,
+			NUM_LIMBS,
+			NUM_BITS,
+			Secp256k1_4_68,
+			Secp256k1Params,
+		>::generate_keypair(rng);
+		let keypair2 = EcdsaKeypair::<
+			Secp256k1Affine,
+			Fr,
+			NUM_LIMBS,
+			NUM_BITS,
+			Secp256k1_4_68,
+			Secp256k1Params,
+		>::generate_keypair(rng);
+		let keypair3 = EcdsaKeypair::<
+			Secp256k1Affine,
+			Fr,
+			NUM_LIMBS,
+			NUM_BITS,
+			Secp256k1_4_68,
+			Secp256k1Params,
+		>::generate_keypair(rng);
 
-		let pk1_fr = field_value_from_pub_key(&keypair1.public_key);
-		let pk2_fr = field_value_from_pub_key(&keypair2.public_key);
-		let pk3_fr = field_value_from_pub_key(&keypair3.public_key);
+		let pk1 = keypair1.public_key.to_address();
+		let pk2 = keypair2.public_key.to_address();
+		let pk3 = keypair3.public_key.to_address();
 
-		set.add_member(pk1_fr);
-		set.add_member(pk2_fr);
-		set.add_member(pk3_fr);
+		set.add_member(pk1);
+		set.add_member(pk2);
+		set.add_member(pk3);
 
 		// Peer1(pk1) signs the opinion
 		let mut pks = [Fr::zero(); NUM_NEIGHBOURS];
-		pks[0] = pk1_fr;
-		pks[1] = pk2_fr;
-		pks[2] = pk3_fr;
+		pks[0] = pk1;
+		pks[1] = pk2;
+		pks[2] = pk3;
 
 		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
 		scores[1] = Fr::from_u128(300);
@@ -545,9 +590,9 @@ mod test {
 
 		// Peer2(pk2) signs the opinion
 		let mut pks = [Fr::zero(); NUM_NEIGHBOURS];
-		pks[0] = pk1_fr;
-		pks[1] = pk2_fr;
-		pks[2] = pk3_fr;
+		pks[0] = pk1;
+		pks[1] = pk2;
+		pks[2] = pk3;
 
 		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
 		scores[0] = Fr::from_u128(600);
@@ -560,9 +605,9 @@ mod test {
 
 		// Peer3(pk3) signs the opinion
 		let mut pks = [Fr::zero(); NUM_NEIGHBOURS];
-		pks[0] = pk1_fr;
-		pks[1] = pk2_fr;
-		pks[2] = pk3_fr;
+		pks[0] = pk1;
+		pks[1] = pk2;
+		pks[2] = pk3;
 
 		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
 		scores[0] = Fr::from_u128(600);
@@ -582,23 +627,44 @@ mod test {
 
 		let rng = &mut thread_rng();
 
-		let keypair1 = EcdsaKeypair::generate_keypair(rng);
-		let keypair2 = EcdsaKeypair::generate_keypair(rng);
-		let keypair3 = EcdsaKeypair::generate_keypair(rng);
+		let keypair1 = EcdsaKeypair::<
+			Secp256k1Affine,
+			Fr,
+			NUM_LIMBS,
+			NUM_BITS,
+			Secp256k1_4_68,
+			Secp256k1Params,
+		>::generate_keypair(rng);
+		let keypair2 = EcdsaKeypair::<
+			Secp256k1Affine,
+			Fr,
+			NUM_LIMBS,
+			NUM_BITS,
+			Secp256k1_4_68,
+			Secp256k1Params,
+		>::generate_keypair(rng);
+		let keypair3 = EcdsaKeypair::<
+			Secp256k1Affine,
+			Fr,
+			NUM_LIMBS,
+			NUM_BITS,
+			Secp256k1_4_68,
+			Secp256k1Params,
+		>::generate_keypair(rng);
 
-		let pk1_fr = field_value_from_pub_key(&keypair1.public_key);
-		let pk2_fr = field_value_from_pub_key(&keypair2.public_key);
-		let pk3_fr = field_value_from_pub_key(&keypair3.public_key);
+		let pk1 = keypair1.public_key.to_address();
+		let pk2 = keypair2.public_key.to_address();
+		let pk3 = keypair3.public_key.to_address();
 
-		set.add_member(pk1_fr);
-		set.add_member(pk2_fr);
-		set.add_member(pk3_fr);
+		set.add_member(pk1);
+		set.add_member(pk2);
+		set.add_member(pk3);
 
 		// Peer1(pk1) signs the opinion
 		let mut pks = [Fr::zero(); NUM_NEIGHBOURS];
-		pks[0] = pk1_fr;
-		pks[1] = pk2_fr;
-		pks[2] = pk3_fr;
+		pks[0] = pk1;
+		pks[1] = pk2;
+		pks[2] = pk3;
 
 		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
 		scores[1] = Fr::from_u128(300);
@@ -611,9 +677,9 @@ mod test {
 
 		// Peer2(pk2) signs the opinion
 		let mut pks = [Fr::zero(); NUM_NEIGHBOURS];
-		pks[0] = pk1_fr;
-		pks[1] = pk2_fr;
-		pks[2] = pk3_fr;
+		pks[0] = pk1;
+		pks[1] = pk2;
+		pks[2] = pk3;
 
 		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
 		scores[0] = Fr::from_u128(600);
@@ -633,23 +699,44 @@ mod test {
 
 		let rng = &mut thread_rng();
 
-		let keypair1 = EcdsaKeypair::generate_keypair(rng);
-		let keypair2 = EcdsaKeypair::generate_keypair(rng);
-		let keypair3 = EcdsaKeypair::generate_keypair(rng);
+		let keypair1 = EcdsaKeypair::<
+			Secp256k1Affine,
+			Fr,
+			NUM_LIMBS,
+			NUM_BITS,
+			Secp256k1_4_68,
+			Secp256k1Params,
+		>::generate_keypair(rng);
+		let keypair2 = EcdsaKeypair::<
+			Secp256k1Affine,
+			Fr,
+			NUM_LIMBS,
+			NUM_BITS,
+			Secp256k1_4_68,
+			Secp256k1Params,
+		>::generate_keypair(rng);
+		let keypair3 = EcdsaKeypair::<
+			Secp256k1Affine,
+			Fr,
+			NUM_LIMBS,
+			NUM_BITS,
+			Secp256k1_4_68,
+			Secp256k1Params,
+		>::generate_keypair(rng);
 
-		let pk1_fr = field_value_from_pub_key(&keypair1.public_key);
-		let pk2_fr = field_value_from_pub_key(&keypair2.public_key);
-		let pk3_fr = field_value_from_pub_key(&keypair3.public_key);
+		let pk1 = keypair1.public_key.to_address();
+		let pk2 = keypair2.public_key.to_address();
+		let pk3 = keypair3.public_key.to_address();
 
-		set.add_member(pk1_fr);
-		set.add_member(pk2_fr);
-		set.add_member(pk3_fr);
+		set.add_member(pk1);
+		set.add_member(pk2);
+		set.add_member(pk3);
 
 		// Peer1(pk1) signs the opinion
 		let mut pks = [Fr::zero(); NUM_NEIGHBOURS];
-		pks[0] = pk1_fr;
-		pks[1] = pk2_fr;
-		pks[2] = pk3_fr;
+		pks[0] = pk1;
+		pks[1] = pk2;
+		pks[2] = pk3;
 
 		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
 		scores[1] = Fr::from_u128(300);
@@ -662,9 +749,9 @@ mod test {
 
 		// Peer2(pk2) signs the opinion
 		let mut pks = [Fr::zero(); NUM_NEIGHBOURS];
-		pks[0] = pk1_fr;
-		pks[1] = pk2_fr;
-		pks[2] = pk3_fr;
+		pks[0] = pk1;
+		pks[1] = pk2;
+		pks[2] = pk3;
 
 		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
 		scores[0] = Fr::from_u128(600);
@@ -677,9 +764,9 @@ mod test {
 
 		// Peer3(pk3) signs the opinion
 		let mut pks = [Fr::zero(); NUM_NEIGHBOURS];
-		pks[0] = pk1_fr;
-		pks[1] = pk2_fr;
-		pks[2] = pk3_fr;
+		pks[0] = pk1;
+		pks[1] = pk2;
+		pks[2] = pk3;
 
 		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
 		scores[0] = Fr::from_u128(600);
@@ -693,7 +780,7 @@ mod test {
 		set.converge();
 
 		// Peer2 quits
-		set.remove_member(pk2_fr);
+		set.remove_member(pk2);
 
 		set.converge();
 	}
@@ -704,23 +791,44 @@ mod test {
 
 		let rng = &mut thread_rng();
 
-		let keypair1 = EcdsaKeypair::generate_keypair(rng);
-		let keypair2 = EcdsaKeypair::generate_keypair(rng);
-		let keypair3 = EcdsaKeypair::generate_keypair(rng);
+		let keypair1 = EcdsaKeypair::<
+			Secp256k1Affine,
+			Fr,
+			NUM_LIMBS,
+			NUM_BITS,
+			Secp256k1_4_68,
+			Secp256k1Params,
+		>::generate_keypair(rng);
+		let keypair2 = EcdsaKeypair::<
+			Secp256k1Affine,
+			Fr,
+			NUM_LIMBS,
+			NUM_BITS,
+			Secp256k1_4_68,
+			Secp256k1Params,
+		>::generate_keypair(rng);
+		let keypair3 = EcdsaKeypair::<
+			Secp256k1Affine,
+			Fr,
+			NUM_LIMBS,
+			NUM_BITS,
+			Secp256k1_4_68,
+			Secp256k1Params,
+		>::generate_keypair(rng);
 
-		let pk1_fr = field_value_from_pub_key(&keypair1.public_key);
-		let pk2_fr = field_value_from_pub_key(&keypair2.public_key);
-		let pk3_fr = field_value_from_pub_key(&keypair3.public_key);
+		let pk1 = keypair1.public_key.to_address();
+		let pk2 = keypair2.public_key.to_address();
+		let pk3 = keypair3.public_key.to_address();
 
-		set.add_member(pk1_fr);
-		set.add_member(pk2_fr);
-		set.add_member(pk3_fr);
+		set.add_member(pk1);
+		set.add_member(pk2);
+		set.add_member(pk3);
 
 		// Peer1(pk1) signs the opinion
 		let mut pks = [Fr::zero(); NUM_NEIGHBOURS];
-		pks[0] = pk1_fr;
-		pks[1] = pk2_fr;
-		pks[2] = pk3_fr;
+		pks[0] = pk1;
+		pks[1] = pk2;
+		pks[2] = pk3;
 
 		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
 		scores[1] = Fr::from_u128(300);
@@ -733,9 +841,9 @@ mod test {
 
 		// Peer2(pk2) signs the opinion
 		let mut pks = [Fr::zero(); NUM_NEIGHBOURS];
-		pks[0] = pk1_fr;
-		pks[1] = pk2_fr;
-		pks[2] = pk3_fr;
+		pks[0] = pk1;
+		pks[1] = pk2;
+		pks[2] = pk3;
 
 		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
 		scores[0] = Fr::from_u128(600);
@@ -767,19 +875,40 @@ mod test {
 
 		let rng = &mut thread_rng();
 
-		let keypair1 = EcdsaKeypair::generate_keypair(rng);
-		let keypair2 = EcdsaKeypair::generate_keypair(rng);
-		let keypair3 = EcdsaKeypair::generate_keypair(rng);
+		let keypair1 = EcdsaKeypair::<
+			Secp256k1Affine,
+			Fr,
+			NUM_LIMBS,
+			NUM_BITS,
+			Secp256k1_4_68,
+			Secp256k1Params,
+		>::generate_keypair(rng);
+		let keypair2 = EcdsaKeypair::<
+			Secp256k1Affine,
+			Fr,
+			NUM_LIMBS,
+			NUM_BITS,
+			Secp256k1_4_68,
+			Secp256k1Params,
+		>::generate_keypair(rng);
+		let keypair3 = EcdsaKeypair::<
+			Secp256k1Affine,
+			Fr,
+			NUM_LIMBS,
+			NUM_BITS,
+			Secp256k1_4_68,
+			Secp256k1Params,
+		>::generate_keypair(rng);
 
-		let pk1_fr = field_value_from_pub_key(&keypair1.public_key);
-		let pk2_fr = field_value_from_pub_key(&keypair2.public_key);
-		let pk3_fr = field_value_from_pub_key(&keypair3.public_key);
+		let pk1 = keypair1.public_key.to_address();
+		let pk2 = keypair2.public_key.to_address();
+		let pk3 = keypair3.public_key.to_address();
 
 		// Peer1(pk1) signs the opinion
 		let mut pks = [Fr::zero(); NUM_NEIGHBOURS];
-		pks[0] = pk1_fr;
-		pks[1] = pk2_fr;
-		pks[2] = pk3_fr;
+		pks[0] = pk1;
+		pks[1] = pk2;
+		pks[2] = pk3;
 
 		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
 		scores[0] = Fr::from_u128(10);
@@ -790,9 +919,9 @@ mod test {
 
 		// Peer2(pk2) signs the opinion
 		let mut pks = [Fr::zero(); NUM_NEIGHBOURS];
-		pks[0] = pk1_fr;
-		pks[1] = pk2_fr;
-		pks[2] = pk3_fr;
+		pks[0] = pk1;
+		pks[1] = pk2;
+		pks[2] = pk3;
 
 		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
 		scores[2] = Fr::from_u128(30);
@@ -802,9 +931,9 @@ mod test {
 
 		// Peer3(pk3) signs the opinion
 		let mut pks = [Fr::zero(); NUM_NEIGHBOURS];
-		pks[0] = pk1_fr;
-		pks[1] = pk2_fr;
-		pks[2] = pk3_fr;
+		pks[0] = pk1;
+		pks[1] = pk2;
+		pks[2] = pk3;
 
 		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
 		scores[0] = Fr::from_u128(10);
@@ -816,9 +945,9 @@ mod test {
 		let mut eigen_trust_set =
 			EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
 
-		eigen_trust_set.add_member(pk1_fr);
-		eigen_trust_set.add_member(pk2_fr);
-		eigen_trust_set.add_member(pk3_fr);
+		eigen_trust_set.add_member(pk1);
+		eigen_trust_set.add_member(pk2);
+		eigen_trust_set.add_member(pk3);
 
 		eigen_trust_set.update_op(keypair1.public_key, op1);
 		eigen_trust_set.update_op(keypair2.public_key, op2);
@@ -852,8 +981,7 @@ mod test {
 			EcdsaKeypair<Secp256k1Affine, Fr, NUM_LIMBS, NUM_BITS, Secp256k1_4_68, Secp256k1Params>,
 		> = (0..NUM_NEIGHBOURS).into_iter().map(|_| EcdsaKeypair::generate_keypair(rng)).collect();
 
-		let pks_fr: Vec<Fr> =
-			keys.iter().map(|key| field_value_from_pub_key(&key.public_key.clone())).collect();
+		let pks_fr: Vec<Fr> = keys.iter().map(|key| key.public_key.to_address()).collect();
 
 		// Add the publicKey to the set
 		pks_fr.iter().for_each(|f| set.add_member(f.clone()));
