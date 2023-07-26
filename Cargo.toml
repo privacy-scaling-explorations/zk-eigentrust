@@ -4,4 +4,4 @@ members = [
 	"eigentrust-cli",
 	"eigentrust-zk",
 ]
-default-members = ["eigentrust-cli"]
+default-members = ["eigentrust"]

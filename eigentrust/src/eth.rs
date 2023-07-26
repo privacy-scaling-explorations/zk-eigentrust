@@ -2,7 +2,7 @@
 //!
 //! This module provides types and functionalities for general ethereum interactions.
 
-use crate::{attestation::ECDSAPublicKey, error::EigenError, ClientSigner};
+use crate::{attestation::ECDSAPublicKey, error::EigenError, fs::get_assets_path, ClientSigner};
 use eigentrust_zk::halo2::halo2curves::bn256::Fr as Scalar;
 use ethers::{
 	abi::Address,
@@ -13,11 +13,11 @@ use ethers::{
 };
 use log::info;
 use secp256k1::SecretKey;
-use std::{env::current_dir, sync::Arc};
+use std::sync::Arc;
 
 /// Compiles the AttestationStation contract.
 pub fn compile_as() -> Result<CompilerOutput, EigenError> {
-	let filepath = current_dir().unwrap().join("assets/AttestationStation.sol");
+	let filepath = get_assets_path()?.join("AttestationStation.sol");
 	let compiler_output = Solc::default()
 		.compile_source(filepath)
 		.map_err(|e| EigenError::ContractCompilationError(e.to_string()))?;
@@ -34,7 +34,7 @@ pub fn compile_as() -> Result<CompilerOutput, EigenError> {
 /// Generates the bindings for the AttestationStation contract and save them into a file.
 pub fn gen_as_bindings() -> Result<(), EigenError> {
 	let contracts = compile_as()?;
-	let filepath = current_dir().unwrap().join("assets/attestation_station.rs");
+	let filepath = get_assets_path()?.join("attestation_station.rs");
 
 	for (name, contract) in contracts.contracts_iter() {
 		let abi = contract
