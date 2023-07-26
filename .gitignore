@@ -6,5 +6,5 @@
 /target
 
 # Assets
-/client/assets/attestation_station.rs
-/client/assets/params-*.bin
+/eigentrust/assets/attestation_station.rs
+/eigentrust/assets/params-*.bin
