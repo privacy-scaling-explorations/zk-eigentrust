@@ -1,9 +1,0 @@
-{
-  "as_address": "0x5fbdb2315678afecb367f032d93f642f64180aa3",
-  "band_id": "51629751621128677209874422363557",
-  "band_th": "500",
-  "band_url": "http://localhost:3000",
-  "chain_id": "31337",
-  "domain": "0x0000000000000000000000000000000000000000",
-  "node_url": "http://localhost:8545"
-}

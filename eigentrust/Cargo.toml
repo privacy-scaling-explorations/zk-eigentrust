@@ -1,0 +1,21 @@
+[package]
+name = "eigentrust"
+version = "0.1.0"
+edition = "2021"
+description = "A library for managing trust in a distributed network with zero-knowledge features."
+repository = "https://github.com/eigen-trust/protocol"
+license = "MIT"
+
+[dependencies]
+csv = "1.1"
+ethers = { version = "=1.0.2", features = ["ethers-solc", "ws"] }
+log = "0.4.19"
+rand = "0.8"
+secp256k1 = { version = "0.27.0", features = ["global-context", "recovery"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0.43"
+tokio = { version = "1.18", features = ["time", "macros", "rt-multi-thread", "net"] }
+
+# Path dependencies
+eigentrust-zk = { path = "../eigentrust-zk" }
