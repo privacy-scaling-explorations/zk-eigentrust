@@ -137,32 +137,33 @@ where
 	}
 }
 
-impl<N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P> From<[u8; 64]>
-	for Signature<Secp256k1Affine, N, NUM_LIMBS, NUM_BITS, P>
+impl<N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
+	Signature<Secp256k1Affine, N, NUM_LIMBS, NUM_BITS, P>
 where
 	P: RnsParams<Fq, N, NUM_LIMBS, NUM_BITS>,
 {
-	fn from(rs: [u8; 64]) -> Self {
+	/// Construct from raw bytes
+	pub fn from_bytes(bytes: Vec<u8>) -> Self {
 		let mut r_bytes: [u8; 32] = [0; 32];
 		let mut s_bytes: [u8; 32] = [0; 32];
-		r_bytes.copy_from_slice(&rs[..32]);
-		s_bytes.copy_from_slice(&rs[32..]);
-
-		Self::from((r_bytes, s_bytes))
-	}
-}
-
-impl<N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P> From<([u8; 32], [u8; 32])>
-	for Signature<Secp256k1Affine, N, NUM_LIMBS, NUM_BITS, P>
-where
-	P: RnsParams<Fq, N, NUM_LIMBS, NUM_BITS>,
-{
-	fn from(rs: ([u8; 32], [u8; 32])) -> Self {
-		let (r_bytes, s_bytes) = rs;
+		r_bytes.copy_from_slice(&bytes[..32]);
+		s_bytes.copy_from_slice(&bytes[32..]);
 
 		let r = Fq::from_bytes(&r_bytes).unwrap();
 		let s = Fq::from_bytes(&s_bytes).unwrap();
+
 		Self::new(Integer::from_w(r), Integer::from_w(s))
+	}
+
+	/// Convert to raw bytes
+	pub fn to_bytes(&self) -> Vec<u8> {
+		let r_bytes = self.r.value().to_bytes_le();
+		let s_bytes = self.s.value().to_bytes_le();
+
+		let mut bytes = Vec::new();
+		bytes.extend(&r_bytes);
+		bytes.extend(&s_bytes);
+		bytes
 	}
 }
 

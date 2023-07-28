@@ -178,7 +178,12 @@ impl SignatureEth {
 	pub fn to_signature_fr(&self) -> SignatureFr {
 		let sig_r = *self.sig_r.as_fixed_bytes();
 		let sig_s = *self.sig_s.as_fixed_bytes();
-		SignatureFr::from((sig_r, sig_s))
+
+		let mut bytes = Vec::new();
+		bytes.extend(sig_r.to_vec());
+		bytes.extend(sig_s.to_vec());
+
+		SignatureFr::from_bytes(bytes)
 	}
 }
 
@@ -477,11 +482,19 @@ impl From<SignedAttestationEth> for SignedAttestationRaw {
 mod tests {
 	use crate::att_station::AttestationData as ContractAttestationData;
 	use crate::attestation::*;
+	use eigentrust_zk::{
+		ecdsa::native::{EcdsaKeypair, EcdsaVerifier, PublicKey},
+		halo2::halo2curves::{secp256k1::Fq, serde::SerdeObject},
+		integer::native::Integer,
+		params::ecc::secp256k1::Secp256k1Params,
+		utils::{big_to_fe, fe_to_big},
+	};
 	use ethers::{
 		prelude::k256::ecdsa::SigningKey,
 		signers::{Signer, Wallet},
 		types::Bytes,
 	};
+	use rand::thread_rng;
 	use secp256k1::{Message, Secp256k1, SecretKey};
 
 	#[test]
@@ -663,4 +676,87 @@ mod tests {
 		let expected_payload: Bytes = signed_attestation.to_payload();
 		assert_eq!(contract_att_data.2, expected_payload);
 	}
+
+	#[test]
+	fn test_ecdsa_compatibility() {
+		let rng = &mut thread_rng();
+
+		let secp = Secp256k1::new();
+		let secret_key_as_bytes = [0x40; 32];
+		let secret_key =
+			SecretKey::from_slice(&secret_key_as_bytes).expect("32 bytes, within curve order");
+		let about_bytes = [
+			0xff, 0x61, 0x4a, 0x6d, 0x59, 0x56, 0x2a, 0x42, 0x37, 0x72, 0x37, 0x76, 0x32, 0x4d,
+			0x36, 0x53, 0x62, 0x6d, 0x35, 0xff,
+		];
+		// Build key
+		let domain_input = [
+			0xff, 0x61, 0x4a, 0x6d, 0x59, 0x56, 0x2a, 0x42, 0x37, 0x72, 0x37, 0x76, 0x32, 0x4d,
+			0x36, 0x53, 0x62, 0x6d, 0x35, 0xff,
+		];
+
+		// Message input
+		let message = [
+			0xff, 0x75, 0x32, 0x45, 0x75, 0x79, 0x32, 0x77, 0x7a, 0x34, 0x58, 0x6c, 0x34, 0x34,
+			0x4a, 0x74, 0x6a, 0x78, 0x68, 0x4c, 0x4a, 0x52, 0x67, 0x48, 0x45, 0x6c, 0x4e, 0x73,
+			0x65, 0x6e, 0x79, 0xff,
+		];
+
+		let attestation_eth = AttestationEth::new(
+			Address::from(about_bytes),
+			H160::from(domain_input),
+			Uint8::from(10),
+			Some(H256::from(message)),
+		);
+
+		let attestation_fr = attestation_eth.to_attestation_fr().unwrap();
+
+		let message = attestation_fr.hash();
+		let message_secp = Message::from_slice(message.to_bytes().as_slice()).unwrap();
+		let signature = secp.sign_ecdsa_recoverable(&message_secp, &secret_key);
+		let signature_raw = SignatureRaw::from(signature);
+		let signature_eth: SignatureEth = signature_raw.clone().into();
+
+		let signed_attestation = SignedAttestationEth::new(attestation_eth.clone(), signature_eth);
+
+		let secret_key_fr = Fq::from_bytes(&secret_key_as_bytes).unwrap();
+		let keypair = EcdsaKeypair::<
+			Secp256k1Affine,
+			Scalar,
+			NUM_LIMBS,
+			NUM_BITS,
+			Secp256k1_4_68,
+			Secp256k1Params,
+		>::from_private_key(secret_key_fr);
+		let signed_attestation_fr = signed_attestation.to_signed_signature_fr().unwrap();
+
+		let pk = signed_attestation.recover_public_key().unwrap();
+		let pk_x = pk.serialize_uncompressed();
+		let mut pk_bytes: [u8; 64] = [0; 64];
+		pk_bytes.copy_from_slice(&pk_x[1..]);
+		let pk_fr = PublicKey::<
+			Secp256k1Affine,
+			Scalar,
+			NUM_LIMBS,
+			NUM_BITS,
+			Secp256k1_4_68,
+			Secp256k1Params,
+		>::from_bytes(pk_bytes.to_vec());
+		// assert!(keypair.public_key == pk_fr);
+
+		let msg_hash = Integer::<Fq, Scalar, NUM_LIMBS, NUM_BITS, Secp256k1_4_68>::from_n(message);
+		println!("{:?}", keypair.public_key.to_bytes());
+		// println!("{:?}", pk_fr.to_bytes());
+		println!("{:?}", pk.serialize_uncompressed());
+
+		let ecdsa = EcdsaVerifier::new(signed_attestation_fr.signature, msg_hash, pk_fr);
+		assert!(ecdsa.verify());
+	}
 }
+
+// [151, 203, 159, 3, 37, 130, 154, 252, 191, 118, 239, 227, 56, 156, 31, 225, 232, 91, 123, 223, 65, 129, 229, 43, 165, 80, 134, 22, 62, 32, 209, 80]
+// [74, 116, 39, 144, 8, 227, 10, 181, 95, 229, 153, 9, 188, 165, 128, 251, 149, 23, 204, 187, 161, 142, 113, 177, 253, 218, 237, 133, 47, 109, 169, 233]
+
+// [4]
+// [80, 209, 32, 62, 22, 134, 80, 165, 43, 229, 129, 65, 223, 123, 91, 232, 225, 31, 156, 56, 227, 239, 118, 191, 252, 154, 130, 37, 3, 159, 203, 151]
+// [233, 169, 109, 47, 133, 237, 218, 253, 177, 113, 142, 161, 187, 204, 23, 149, 251, 128, 165, 188, 9, 153, 229, 95, 181, 10, 227, 8, 144, 39, 116, 74]
