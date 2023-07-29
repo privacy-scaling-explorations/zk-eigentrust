@@ -26,6 +26,8 @@ pub struct UnassignedInteger<
 {
 	// Original value of the unassigned integer.
 	pub(crate) integer: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
+	/// UnassignedInteger value.
+	pub(crate) val: Value<N>,
 	/// UnassignedInteger value limbs.
 	pub(crate) limbs: [Value<N>; NUM_LIMBS],
 	/// Phantom data for the Wrong Field.
@@ -41,9 +43,9 @@ where
 {
 	/// Creates a new unassigned integer object
 	pub fn new(
-		integer: Integer<W, N, NUM_LIMBS, NUM_BITS, P>, limbs: [Value<N>; NUM_LIMBS],
+		integer: Integer<W, N, NUM_LIMBS, NUM_BITS, P>, val: Value<N>, limbs: [Value<N>; NUM_LIMBS],
 	) -> Self {
-		Self { integer, limbs, _wrong_field: PhantomData, _rns: PhantomData }
+		Self { integer, val, limbs, _wrong_field: PhantomData, _rns: PhantomData }
 	}
 }
 
@@ -55,6 +57,7 @@ where
 	fn from(int: Integer<W, N, NUM_LIMBS, NUM_BITS, P>) -> Self {
 		Self {
 			integer: Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::from_limbs(int.limbs),
+			val: Value::known(P::compose(int.limbs)),
 			limbs: int.limbs.map(|x| Value::known(x)),
 			_wrong_field: PhantomData,
 			_rns: PhantomData,
@@ -70,6 +73,7 @@ where
 	fn without_witnesses() -> Self {
 		Self {
 			integer: Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::default(),
+			val: Value::unknown(),
 			limbs: [Value::unknown(); NUM_LIMBS],
 			_wrong_field: PhantomData,
 			_rns: PhantomData,
