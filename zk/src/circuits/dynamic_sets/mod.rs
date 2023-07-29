@@ -2,19 +2,22 @@
 pub mod native;
 
 use super::opinion::{OpinionChipset, OpinionConfig, WIDTH};
+use crate::ecc::generic::PointAssigner;
 use crate::ecc::{
 	AuxConfig, EccAddConfig, EccDoubleConfig, EccMulConfig, EccTableSelectConfig,
 	EccUnreducedLadderConfig,
 };
 use crate::ecdsa::native::{PublicKey, Signature};
-use crate::ecdsa::{EcdsaConfig, UnassignedPublicKey, UnassignedSignature};
+use crate::ecdsa::{AssignedPublicKey, EcdsaConfig, UnassignedPublicKey, UnassignedSignature};
 use crate::gadgets::set::{SetChip, SetConfig};
 use crate::integer::{
 	IntegerAddChip, IntegerDivChip, IntegerMulChip, IntegerReduceChip, IntegerSubChip,
 };
 use crate::params::ecc::EccParams;
+use crate::params::hasher::poseidon_bn254_5x5::Params;
 use crate::params::rns::RnsParams;
-use crate::poseidon::{FullRoundChip, PartialRoundChip};
+use crate::poseidon::sponge::PoseidonSpongeConfig;
+use crate::poseidon::{FullRoundChip, PartialRoundChip, PoseidonConfig};
 use crate::UnassignedValue;
 use crate::{
 	gadgets::{
@@ -25,7 +28,6 @@ use crate::{
 			MulChipset, OrChipset, SelectChipset, SubChipset,
 		},
 	},
-	poseidon::{sponge::PoseidonSpongeConfig, PoseidonConfig},
 	Chip, Chipset, CommonConfig, RegionCtx, ADVICE,
 };
 use crate::{FieldExt, HasherChipset, SpongeHasherChipset};
@@ -74,8 +76,8 @@ pub struct EigenTrustSet<
 	S: SpongeHasherChipset<N>,
 {
 	// Public keys
-	pk_x: Vec<Value<N>>,
-	pk_y: Vec<Value<N>>,
+	pks: Vec<UnassignedPublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>>,
+	//pk_y: Vec<Value<N>>,
 	// Signature
 	r: Vec<Value<N>>,
 	s: Vec<Value<N>>,
@@ -83,7 +85,7 @@ pub struct EigenTrustSet<
 	op_pk_x: Vec<Vec<Value<N>>>,
 	op_pk_y: Vec<Vec<Value<N>>>,
 	ops: Vec<Vec<Value<N>>>,
-	_p: PhantomData<(C, N, H, S, P, EC)>,
+	_p: PhantomData<(H, S)>,
 }
 
 impl<
@@ -115,8 +117,8 @@ where
 	) -> Self {
 		// Pubkey values
 		let pks = pks.into_iter().map(|x| UnassignedPublicKey::new(x)).collect_vec();
-		let pk_x = pks.iter().map(|pk| pk.0.x.val).collect_vec();
-		let pk_y = pks.iter().map(|pk| pk.0.y.val).collect_vec();
+		//let pk_x = pks.iter().map(|pk| pk.0.x.val).collect_vec();
+		//let pk_y = pks.iter().map(|pk| pk.0.y.val).collect_vec();
 
 		// Signature values
 		let signatures = signatures.into_iter().map(UnassignedSignature::from).collect_vec();
@@ -132,7 +134,7 @@ where
 		let op_pk_y = op_pks.iter().map(|pks| pks.iter().map(|pk| pk.0.y.val).collect()).collect();
 		let ops = ops.iter().map(|vals| vals.iter().map(|x| Value::known(*x)).collect()).collect();
 
-		Self { pk_x, pk_y, r, s, op_pk_x, op_pk_y, ops, _p: PhantomData }
+		Self { pks, r, s, op_pk_x, op_pk_y, ops, _p: PhantomData }
 	}
 }
 
@@ -169,8 +171,7 @@ where
 		let op_pk: UnassignedPublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC> =
 			UnassignedPublicKey::without_witnesses();
 		Self {
-			pk_x: vec![pk.0.x.val; NUM_NEIGHBOURS],
-			pk_y: vec![pk.0.y.val; NUM_NEIGHBOURS],
+			pks: vec![pk; NUM_NEIGHBOURS],
 			r: vec![sig.r.val; NUM_NEIGHBOURS],
 			s: vec![sig.s.val; NUM_NEIGHBOURS],
 			op_pk_x: vec![vec![op_pk.0.x.val; NUM_NEIGHBOURS]; NUM_NEIGHBOURS],
@@ -227,10 +228,10 @@ where
 
 		let aux = AuxConfig::new(ecc_double);
 
-		let fr_selector = FullRoundChip::configure(&common, meta);
-		let pr_selector = PartialRoundChip::configure(&common, meta);
+		let fr_selector = FullRoundChip::<_, WIDTH, Params>::configure(&common, meta);
+		let pr_selector = PartialRoundChip::<_, WIDTH, Params>::configure(&common, meta);
 		let poseidon = PoseidonConfig::new(fr_selector, pr_selector);
-		let absorb_selector = AbsorbChip::configure(&common, meta);
+		let absorb_selector = AbsorbChip::<_, WIDTH>::configure(&common, meta);
 		let sponge = PoseidonSpongeConfig::new(poseidon.clone(), absorb_selector);
 
 		let opinion = OpinionConfig::new(ecdsa, main, set, poseidon, sponge);
@@ -274,8 +275,9 @@ where
 				// Move to the next row
 				ctx.next();
 
+				let unassigned_pk_x = self.pks.iter().map(|pk| pk.0.x.val).collect_vec();
 				let mut assigned_pk_x = Vec::new();
-				for chunk in self.pk_x.chunks(ADVICE) {
+				for chunk in unassigned_pk_x.chunks(ADVICE) {
 					for (i, chunk_i) in chunk.iter().enumerate() {
 						let pk_x = ctx.assign_advice(config.common.advice[i], *chunk_i)?;
 						assigned_pk_x.push(pk_x)
@@ -284,8 +286,9 @@ where
 					ctx.next();
 				}
 
+				let unassigned_pk_y = self.pks.iter().map(|pk| pk.0.x.val).collect_vec();
 				let mut assigned_pk_y = Vec::new();
-				for chunk in self.pk_y.chunks(ADVICE) {
+				for chunk in unassigned_pk_y.chunks(ADVICE) {
 					for (i, chunk_i) in chunk.iter().enumerate() {
 						let pk_y = ctx.assign_advice(config.common.advice[i], *chunk_i)?;
 						assigned_pk_y.push(pk_y)
@@ -417,14 +420,23 @@ where
 				zero.clone(),
 			];
 			let hasher = H::new(message_hash_input);
-			let res = hasher.synthesize(
+			let res = hasher.finalize(
 				&config.common,
 				&config.poseidon,
 				layouter.namespace(|| "message_hash"),
 			)?;
 
+			let assigned_public_key = PointAssigner::new(self.pks[i].0);
+			let assigned_public_key_ec = assigned_public_key.synthesize(
+				&config.common,
+				&(),
+				layouter.namespace(|| "public_key_assign_ec"),
+			)?;
+			let assigned_public_key = AssignedPublicKey::new(assigned_public_key_ec);
+
 			let opinion = OpinionChipset::new(
-				attestations, public_key, set, msg_hash, g_as_ecpoint, s_inv, aux, left_shifters,
+				attestations, assigned_public_key, set, msg_hash, g_as_ecpoint, s_inv, aux,
+				left_shifters,
 			);
 		}
 
