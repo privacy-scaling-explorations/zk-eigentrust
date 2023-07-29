@@ -6,8 +6,7 @@ use crate::ecc::generic::{
 	AssignedAux, AssignedEcPoint, AuxAssigner, EccAddChipset, PointAssigner, UnassignedEcPoint,
 };
 use crate::ecc::{AuxConfig, EccAddConfig};
-use crate::gadgets::main::{InverseChipset, MainConfig};
-use crate::integer::native::Integer;
+use crate::gadgets::main::MainConfig;
 use crate::integer::{IntegerAssigner, UnassignedInteger};
 use crate::params::ecc::EccParams;
 use crate::{
@@ -509,7 +508,7 @@ pub struct EcdsaAssigner<
 	g_as_ecpoint: UnassignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
 	signature: UnassignedSignature<C, N, NUM_LIMBS, NUM_BITS, P>,
 	msg_hash: UnassignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>,
-	s_inv_integer: Integer<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>,
+	s_inv: UnassignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>,
 }
 
 impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P, EC>
@@ -526,9 +525,9 @@ where
 		g_as_ecpoint: UnassignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
 		signature: UnassignedSignature<C, N, NUM_LIMBS, NUM_BITS, P>,
 		msg_hash: UnassignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>,
-		s_inv_integer: Integer<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>,
+		s_inv: UnassignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>,
 	) -> Self {
-		Self { public_key, g_as_ecpoint, signature, msg_hash, s_inv_integer }
+		Self { public_key, g_as_ecpoint, signature, msg_hash, s_inv }
 	}
 }
 
@@ -548,47 +547,39 @@ where
 	) -> Result<Self::Output, Error> {
 		let aux_assigner = AuxAssigner::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::new();
 		let auxes =
-			aux_assigner.synthesize(&common, &config.aux, layouter.namespace(|| "aux assigner"))?;
+			aux_assigner.synthesize(common, &config.aux, layouter.namespace(|| "aux assigner"))?;
 
 		let public_key_assigner = PublicKeyAssigner::new(self.public_key.clone());
 		let public_key = public_key_assigner.synthesize(
-			&common,
+			common,
 			&(),
 			layouter.namespace(|| "public_key assigner"),
 		)?;
 
 		let g_as_ecpoint_assigner = PointAssigner::new(self.g_as_ecpoint.clone());
 		let g_as_ecpoint = g_as_ecpoint_assigner.synthesize(
-			&common,
+			common,
 			&(),
 			layouter.namespace(|| "g_as_ec_point assigner"),
 		)?;
 
 		let signature_assigner = SignatureAssigner::new(self.signature.clone());
 		let signature = signature_assigner.synthesize(
-			&common,
+			common,
 			&(),
 			layouter.namespace(|| "signature assigner"),
 		)?;
 
 		let msg_hash_assigner = IntegerAssigner::new(self.msg_hash.clone());
 		let msg_hash = msg_hash_assigner.synthesize(
-			&common,
+			common,
 			&(),
 			layouter.namespace(|| "msg_hash assigner"),
 		)?;
 
-		let mut s_inv = [(); NUM_LIMBS].map(|_| None);
-		for i in 0..NUM_LIMBS {
-			let inverse_chip = InverseChipset::new(signature.s.limbs[i].clone());
-			s_inv[i] = Some(inverse_chip.synthesize(
-				common,
-				&config.main,
-				layouter.namespace(|| "s_inv limb assigner"),
-			)?);
-		}
-
-		let s_inv = AssignedInteger::new(self.s_inv_integer, s_inv.map(|x| x.unwrap()));
+		let s_inv_assigner = IntegerAssigner::new(self.s_inv);
+		let s_inv =
+			s_inv_assigner.synthesize(common, &(), layouter.namespace(|| "s_inv assigner"))?;
 
 		let ecdsa_assigned =
 			AssignedEcdsa::new(auxes, public_key, g_as_ecpoint, signature, msg_hash, s_inv);
@@ -714,7 +705,7 @@ mod test {
 		g_as_ecpoint: UnassignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
 		signature: UnassignedSignature<C, N, NUM_LIMBS, NUM_BITS, P>,
 		msg_hash: UnassignedInteger<SecpScalar, N, NUM_LIMBS, NUM_BITS, P>,
-		s_inv_integer: Integer<SecpScalar, N, NUM_LIMBS, NUM_BITS, P>,
+		s_inv: UnassignedInteger<SecpScalar, N, NUM_LIMBS, NUM_BITS, P>,
 	}
 
 	impl TestEcdsaCircuit {
@@ -723,14 +714,14 @@ mod test {
 			g_as_ecpoint: EcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
 			signature: Signature<C, N, NUM_LIMBS, NUM_BITS, P>,
 			msg_hash: Integer<SecpScalar, N, NUM_LIMBS, NUM_BITS, P>,
-			s_inv_integer: Integer<SecpScalar, N, NUM_LIMBS, NUM_BITS, P>,
+			s_inv: Integer<SecpScalar, N, NUM_LIMBS, NUM_BITS, P>,
 		) -> Self {
 			Self {
 				public_key: UnassignedPublicKey::new(public_key),
 				g_as_ecpoint: UnassignedEcPoint::from(g_as_ecpoint),
 				signature: UnassignedSignature::new(signature),
 				msg_hash: UnassignedInteger::from(msg_hash),
-				s_inv_integer,
+				s_inv: UnassignedInteger::from(s_inv),
 			}
 		}
 	}
@@ -745,7 +736,7 @@ mod test {
 				g_as_ecpoint: UnassignedEcPoint::without_witnesses(),
 				signature: UnassignedSignature::without_witnesses(),
 				msg_hash: UnassignedInteger::without_witnesses(),
-				s_inv_integer: Integer::zero(),
+				s_inv: UnassignedInteger::without_witnesses(),
 			}
 		}
 
@@ -761,7 +752,7 @@ mod test {
 				self.g_as_ecpoint.clone(),
 				self.signature.clone(),
 				self.msg_hash.clone(),
-				self.s_inv_integer.clone(),
+				self.s_inv.clone(),
 			);
 
 			let ecdsa_variables = ecdsa_assigner.synthesize(
