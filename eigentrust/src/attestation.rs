@@ -484,10 +484,9 @@ mod tests {
 	use crate::attestation::*;
 	use eigentrust_zk::{
 		ecdsa::native::{EcdsaKeypair, EcdsaVerifier, PublicKey},
-		halo2::halo2curves::{secp256k1::Fq, serde::SerdeObject},
+		halo2::halo2curves::secp256k1::Fq,
 		integer::native::Integer,
 		params::ecc::secp256k1::Secp256k1Params,
-		utils::{big_to_fe, fe_to_big},
 	};
 	use ethers::{
 		prelude::k256::ecdsa::SigningKey,

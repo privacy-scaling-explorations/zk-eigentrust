@@ -28,6 +28,30 @@ where
 	big_to_fe(x_big)
 }
 
+#[derive(Copy, Clone, Default, Debug, Eq, PartialEq, PartialOrd, Ord)]
+/// Recovery id struct
+pub struct RecoveryId(u8);
+
+impl RecoveryId {
+	/// Create a new [`RecoveryId`] from the following 1-bit arguments:
+	///
+	/// - `is_y_odd`: is the affine y-coordinate of 𝑘×𝑮 odd?
+	/// - `is_x_reduced`: did the affine x-coordinate of 𝑘×𝑮 overflow the curve order?
+	pub const fn new(is_y_odd: bool) -> Self {
+		Self(is_y_odd as u8)
+	}
+
+	/// Convert a `u8` into a [`RecoveryId`].
+	pub const fn from_byte(byte: u8) -> Self {
+		Self(byte)
+	}
+
+	/// Convert this [`RecoveryId`] into a `u8`.
+	pub const fn to_byte(self) -> u8 {
+		self.0
+	}
+}
+
 /// Ecdsa public key
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct PublicKey<
@@ -112,6 +136,23 @@ where
 	}
 }
 
+impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P, EC> From<C>
+	for PublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>
+where
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
+	C::Base: FieldExt,
+	C::ScalarExt: FieldExt,
+{
+	fn from(c_affine: C) -> Self {
+		let c = c_affine.coordinates().unwrap();
+		let public_key_x = Integer::from_w(*c.x());
+		let public_key_y = Integer::from_w(*c.y());
+		let public_key_p = EcPoint::new(public_key_x, public_key_y);
+		Self::new(public_key_p)
+	}
+}
+
 /// Ecdsa signature
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Signature<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
@@ -121,6 +162,7 @@ where
 {
 	pub(crate) r: Integer<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>,
 	pub(crate) s: Integer<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>,
+	pub(crate) rec_id: RecoveryId,
 }
 
 impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
@@ -131,9 +173,9 @@ where
 {
 	fn new(
 		r: Integer<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>,
-		s: Integer<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>,
+		s: Integer<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>, rec_id: RecoveryId,
 	) -> Self {
-		Self { r, s }
+		Self { r, s, rec_id }
 	}
 }
 
@@ -152,7 +194,9 @@ where
 		let r = Fq::from_bytes(&r_bytes).unwrap();
 		let s = Fq::from_bytes(&s_bytes).unwrap();
 
-		Self::new(Integer::from_w(r), Integer::from_w(s))
+		let rec_id = RecoveryId::from_byte(bytes[65]);
+
+		Self::new(Integer::from_w(r), Integer::from_w(s), rec_id)
 	}
 
 	/// Convert to raw bytes
@@ -206,12 +250,7 @@ where
 	pub fn from_private_key(private_key_fq: C::ScalarExt) -> Self {
 		let private_key = Integer::from_w(private_key_fq);
 		let public_key_affine = (C::generator() * private_key_fq).to_affine();
-
-		let c = public_key_affine.coordinates().unwrap();
-		let public_key_x = Integer::from_w(*c.x());
-		let public_key_y = Integer::from_w(*c.y());
-		let public_key_p = EcPoint::new(public_key_x, public_key_y);
-		let public_key = PublicKey::new(public_key_p);
+		let public_key = PublicKey::from(public_key_affine);
 		Self { private_key, public_key }
 	}
 
@@ -230,11 +269,39 @@ where
 		let r_point = (C::generator() * k).to_affine().coordinates().unwrap();
 		let x = r_point.x();
 		let r = mod_n::<C>(*x);
+
 		let private_key_fq = big_to_fe::<C::ScalarExt>(self.private_key.value());
 		// Calculate `s`
 		let s = k_inv * (msg_hash + (r * private_key_fq));
 
-		Signature::new(Integer::from_w(r), Integer::from_w(s))
+		let x_is_reduced = r.to_repr().as_ref() == x.to_repr().as_ref();
+		assert!(x_is_reduced);
+		let y_is_odd = bool::from(r_point.y().is_odd());
+		let rec_id = RecoveryId::new(y_is_odd);
+
+		Signature::new(Integer::from_w(r), Integer::from_w(s), rec_id)
+	}
+
+	/// Recover public key, given the signature and message hash
+	pub fn recover_public_key(
+		&self, sig: Signature<C, N, NUM_LIMBS, NUM_BITS, P>, msg_hash: C::ScalarExt,
+	) -> PublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC> {
+		let Signature { r, s, rec_id } = sig;
+
+		let r_fe = big_to_fe::<C::ScalarExt>(r.value());
+		let y_odd = rec_id.to_byte();
+		let mut big_r_repr = C::Repr::default();
+		big_r_repr.as_mut().copy_from_slice(r_fe.to_repr().as_ref());
+		big_r_repr.as_mut().copy_from_slice(&[y_odd]);
+		let big_r = C::from_bytes(&big_r_repr).unwrap();
+
+		let r_inv = r_fe.invert().unwrap();
+		let s = big_to_fe::<C::ScalarExt>(s.value());
+		let u1 = -(r_inv * msg_hash);
+		let u2 = r_inv * s;
+		let pk = C::generator() * u1 + big_r * u2;
+
+		PublicKey::from(pk.to_affine())
 	}
 }
 
