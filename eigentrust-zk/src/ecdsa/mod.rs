@@ -577,6 +577,26 @@ where
 			layouter.namespace(|| "msg_hash assigner"),
 		)?;
 
+		let constrain = self.s_inv.integer.mul(&self.signature.s.integer);
+		layouter.assign_region(
+			|| "constraint for the s_inv",
+			|region: Region<'_, N>| {
+				let mut ctx = RegionCtx::new(region, 0);
+				let assign_res = ctx.assign_advice(
+					common.advice[0],
+					Value::known(
+						<P as RnsParams<C::Scalar, N, NUM_LIMBS, NUM_BITS>>::compose(
+							constrain.result.limbs,
+						),
+					),
+				)?;
+				let one = ctx.assign_fixed(common.fixed[0], N::ONE)?;
+				ctx.constrain_equal(assign_res, one)?;
+
+				Ok(())
+			},
+		)?;
+
 		let s_inv_assigner = IntegerAssigner::new(self.s_inv);
 		let s_inv =
 			s_inv_assigner.synthesize(common, &(), layouter.namespace(|| "s_inv assigner"))?;
