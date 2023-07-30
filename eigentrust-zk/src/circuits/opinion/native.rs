@@ -27,7 +27,7 @@ impl<const NUM_NEIGHBOURS: usize> Opinion<NUM_NEIGHBOURS> {
 
 	/// Validate attestations & calculate the hash
 	pub fn validate(&self, set: Vec<Fr>) -> (Fr, Vec<Fr>, Fr) {
-		let from_pk = self.from.to_address();
+		let from_pk = field_value_from_pub_key(&self.from);
 
 		let pos_from = set.iter().position(|&x| x == from_pk);
 		assert!(pos_from.is_some());
@@ -48,7 +48,7 @@ impl<const NUM_NEIGHBOURS: usize> Opinion<NUM_NEIGHBOURS> {
 			let is_default_pubkey = set[i] == Fr::zero();
 
 			let att = self.attestations[i].clone();
-			let is_default_sig = att.attestation == Attestation::default();
+			let is_default_sig = att.attestation == AttestationFr::default();
 
 			if is_default_pubkey || is_default_sig {
 				scores[i] = Fr::default();
