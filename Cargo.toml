@@ -1,6 +1,7 @@
 [workspace]
 members = [
-	"zk",
-	"client",
+	"eigentrust",
+	"eigentrust-cli",
+	"eigentrust-zk",
 ]
-default-members = ["client"]
+default-members = ["eigentrust"]
