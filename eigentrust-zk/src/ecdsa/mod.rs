@@ -577,7 +577,7 @@ where
 			layouter.namespace(|| "msg_hash assigner"),
 		)?;
 
-		let constrain = self.s_inv.integer.mul(&self.signature.s.integer);
+		let is_one = self.s_inv.integer.mul(&self.signature.s.integer);
 		layouter.assign_region(
 			|| "constraint for the s_inv",
 			|region: Region<'_, N>| {
@@ -586,7 +586,7 @@ where
 					common.advice[0],
 					Value::known(
 						<P as RnsParams<C::Scalar, N, NUM_LIMBS, NUM_BITS>>::compose(
-							constrain.result.limbs,
+							is_one.result.limbs,
 						),
 					),
 				)?;
