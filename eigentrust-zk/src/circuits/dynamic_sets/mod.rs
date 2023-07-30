@@ -2,6 +2,8 @@
 pub mod native;
 
 use super::opinion::{OpinionChipset, OpinionConfig, WIDTH};
+use crate::ecc::generic::AssignedAux;
+use crate::ecc::generic::AssignedEcPoint;
 use crate::ecc::generic::PointAssigner;
 use crate::ecc::{
 	AuxConfig, EccAddConfig, EccDoubleConfig, EccMulConfig, EccTableSelectConfig,
@@ -31,6 +33,7 @@ use crate::{
 	Chip, Chipset, CommonConfig, RegionCtx, ADVICE,
 };
 use crate::{FieldExt, HasherChipset, SpongeHasherChipset};
+use halo2::circuit::AssignedCell;
 use halo2::halo2curves::CurveAffine;
 use halo2::{
 	circuit::{Layouter, Region, SimpleFloorPlanner, Value},
@@ -53,7 +56,7 @@ where
 	opinion: OpinionConfig<F, H, S>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 /// Structure of the EigenTrustSet circuit
 pub struct EigenTrustSet<
 	const NUM_NEIGHBOURS: usize,
@@ -77,7 +80,6 @@ pub struct EigenTrustSet<
 {
 	// Public keys
 	pks: Vec<UnassignedPublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>>,
-	//pk_y: Vec<Value<N>>,
 	// Signature
 	r: Vec<Value<N>>,
 	s: Vec<Value<N>>,
@@ -85,6 +87,13 @@ pub struct EigenTrustSet<
 	op_pk_x: Vec<Vec<Value<N>>>,
 	op_pk_y: Vec<Vec<Value<N>>>,
 	ops: Vec<Vec<Value<N>>>,
+	/// Generator as EC point
+	g_as_ecpoint: AssignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P>,
+	/// Aux for to_add and to_sub
+	aux: AssignedAux<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
+	/// Left shifters for composing integers
+	left_shifters: [AssignedCell<N, N>; NUM_LIMBS],
+	// Phantom Data
 	_p: PhantomData<(H, S)>,
 }
 
@@ -114,11 +123,12 @@ where
 		pks: Vec<PublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>>,
 		signatures: Vec<Signature<C, N, NUM_LIMBS, NUM_BITS, P>>,
 		op_pks: Vec<Vec<PublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>>>, ops: Vec<Vec<N>>,
+		g_as_ecpoint: AssignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P>,
+		aux: AssignedAux<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
+		left_shifters: [AssignedCell<N, N>; NUM_LIMBS],
 	) -> Self {
 		// Pubkey values
 		let pks = pks.into_iter().map(|x| UnassignedPublicKey::new(x)).collect_vec();
-		//let pk_x = pks.iter().map(|pk| pk.0.x.val).collect_vec();
-		//let pk_y = pks.iter().map(|pk| pk.0.y.val).collect_vec();
 
 		// Signature values
 		let signatures = signatures.into_iter().map(UnassignedSignature::from).collect_vec();
@@ -134,7 +144,18 @@ where
 		let op_pk_y = op_pks.iter().map(|pks| pks.iter().map(|pk| pk.0.y.val).collect()).collect();
 		let ops = ops.iter().map(|vals| vals.iter().map(|x| Value::known(*x)).collect()).collect();
 
-		Self { pks, r, s, op_pk_x, op_pk_y, ops, _p: PhantomData }
+		Self {
+			pks,
+			r,
+			s,
+			op_pk_x,
+			op_pk_y,
+			ops,
+			g_as_ecpoint,
+			aux,
+			left_shifters,
+			_p: PhantomData,
+		}
 	}
 }
 
@@ -177,6 +198,10 @@ where
 			op_pk_x: vec![vec![op_pk.0.x.val; NUM_NEIGHBOURS]; NUM_NEIGHBOURS],
 			op_pk_y: vec![vec![op_pk.0.y.val; NUM_NEIGHBOURS]; NUM_NEIGHBOURS],
 			ops: vec![vec![Value::unknown(); NUM_NEIGHBOURS]; NUM_NEIGHBOURS],
+			// TODO: Find better way for g_as_ec, aux and lshifters
+			g_as_ecpoint: self.g_as_ecpoint,
+			aux: self.aux,
+			left_shifters: self.left_shifters,
 			_p: PhantomData,
 		}
 	}
@@ -435,8 +460,8 @@ where
 			let assigned_public_key = AssignedPublicKey::new(assigned_public_key_ec);
 
 			let opinion = OpinionChipset::new(
-				attestations, assigned_public_key, set, msg_hash, g_as_ecpoint, s_inv, aux,
-				left_shifters,
+				attestations, assigned_public_key, set, msg_hash, self.g_as_ecpoint, s_inv,
+				self.aux, self.left_shifters,
 			);
 		}
 
