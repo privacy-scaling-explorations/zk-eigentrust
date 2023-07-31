@@ -1,6 +1,7 @@
 /// Native version of EigenTrustSet(ECDSA)
 pub mod native;
 
+use super::opinion::AssignedSignedAttestation;
 use super::opinion::{OpinionChipset, OpinionConfig, WIDTH};
 use crate::ecc::generic::AssignedAux;
 use crate::ecc::generic::AssignedEcPoint;
@@ -10,10 +11,13 @@ use crate::ecc::{
 	EccUnreducedLadderConfig,
 };
 use crate::ecdsa::native::{PublicKey, Signature};
-use crate::ecdsa::{AssignedPublicKey, EcdsaConfig, UnassignedPublicKey, UnassignedSignature};
+use crate::ecdsa::{
+	AssignedPublicKey, AssignedSignature, EcdsaConfig, UnassignedPublicKey, UnassignedSignature,
+};
 use crate::gadgets::set::{SetChip, SetConfig};
 use crate::integer::{
-	IntegerAddChip, IntegerDivChip, IntegerMulChip, IntegerReduceChip, IntegerSubChip,
+	AssignedInteger, IntegerAddChip, IntegerDivChip, IntegerMulChip, IntegerReduceChip,
+	IntegerSubChip,
 };
 use crate::params::ecc::EccParams;
 use crate::params::hasher::poseidon_bn254_5x5::Params;
@@ -81,8 +85,9 @@ pub struct EigenTrustSet<
 	// Public keys
 	pks: Vec<UnassignedPublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>>,
 	// Signature
-	r: Vec<Value<N>>,
-	s: Vec<Value<N>>,
+	signatures: Vec<UnassignedSignature<C, N, NUM_LIMBS, NUM_BITS, P>>,
+	//r: Vec<Value<N>>,
+	//s: Vec<Value<N>>,
 	// Opinions
 	op_pk_x: Vec<Vec<Value<N>>>,
 	op_pk_y: Vec<Vec<Value<N>>>,
@@ -132,8 +137,6 @@ where
 
 		// Signature values
 		let signatures = signatures.into_iter().map(UnassignedSignature::from).collect_vec();
-		let r = signatures.iter().map(|sig| sig.r.val).collect();
-		let s = signatures.iter().map(|sig| sig.s.val).collect();
 
 		// Opinions
 		let op_pks = op_pks
@@ -146,8 +149,7 @@ where
 
 		Self {
 			pks,
-			r,
-			s,
+			signatures,
 			op_pk_x,
 			op_pk_y,
 			ops,
@@ -193,8 +195,7 @@ where
 			UnassignedPublicKey::without_witnesses();
 		Self {
 			pks: vec![pk; NUM_NEIGHBOURS],
-			r: vec![sig.r.val; NUM_NEIGHBOURS],
-			s: vec![sig.s.val; NUM_NEIGHBOURS],
+			signatures: vec![sig; NUM_NEIGHBOURS],
 			op_pk_x: vec![vec![op_pk.0.x.val; NUM_NEIGHBOURS]; NUM_NEIGHBOURS],
 			op_pk_y: vec![vec![op_pk.0.y.val; NUM_NEIGHBOURS]; NUM_NEIGHBOURS],
 			ops: vec![vec![Value::unknown(); NUM_NEIGHBOURS]; NUM_NEIGHBOURS],
@@ -323,20 +324,30 @@ where
 				}
 
 				let mut assigned_r = Vec::new();
-				for chunk in self.r.chunks(ADVICE) {
+				for chunk in self.signatures.chunks(ADVICE) {
 					for (i, chunk_i) in chunk.iter().enumerate() {
-						let r = ctx.assign_advice(config.common.advice[i], *chunk_i)?;
-						assigned_r.push(r)
+						let mut assigned_limbs = [(); NUM_LIMBS].map(|_| None);
+						for j in 0..NUM_LIMBS {
+							let r =
+								ctx.assign_advice(config.common.advice[j], chunk_i.r.limbs[j])?;
+							assigned_limbs[j] = Some(r);
+						}
+						assigned_r.push(assigned_limbs.map(|x| x.unwrap()))
 					}
 					// Move to the next row
 					ctx.next();
 				}
 
 				let mut assigned_s = Vec::new();
-				for chunk in self.s.chunks(ADVICE) {
+				for chunk in self.signatures.chunks(ADVICE) {
 					for (i, chunk_i) in chunk.iter().enumerate() {
-						let s = ctx.assign_advice(config.common.advice[i], *chunk_i)?;
-						assigned_s.push(s)
+						let mut assigned_limbs = [(); NUM_LIMBS].map(|_| None);
+						for j in 0..NUM_LIMBS {
+							let s =
+								ctx.assign_advice(config.common.advice[j], chunk_i.s.limbs[j])?;
+							assigned_limbs[j] = Some(s);
+						}
+						assigned_s.push(assigned_limbs.map(|x| x.unwrap()))
 					}
 					// Move to the next row
 					ctx.next();
@@ -459,8 +470,14 @@ where
 			)?;
 			let assigned_public_key = AssignedPublicKey::new(assigned_public_key_ec);
 
+			let assigned_r_integer = AssignedInteger::new(self.signatures[i].r.integer, r[i]);
+			let assigned_s_integer = AssignedInteger::new(self.signatures[i].s.integer, s[i]);
+			let assigned_signature = AssignedSignature::new(assigned_r_integer, assigned_s_integer);
+			let assigned_signed_att =
+				AssignedSignedAttestation::new(attestation, assigned_signature);
+
 			let opinion = OpinionChipset::new(
-				attestations, assigned_public_key, set, msg_hash, self.g_as_ecpoint, s_inv,
+				assigned_signed_att, assigned_public_key, set, msg_hash, self.g_as_ecpoint, s_inv,
 				self.aux, self.left_shifters,
 			);
 		}
