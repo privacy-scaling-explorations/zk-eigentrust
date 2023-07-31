@@ -7,6 +7,7 @@ use crate::ecc::generic::{
 };
 use crate::ecc::{AuxConfig, EccAddConfig};
 use crate::gadgets::main::MainConfig;
+use crate::integer::native::Integer;
 use crate::integer::{IntegerAssigner, UnassignedInteger};
 use crate::params::ecc::EccParams;
 use crate::{
@@ -479,14 +480,14 @@ where
 #[derive(Clone, Debug)]
 /// Config for ecdsa assigner
 pub struct EcdsaAssignerConfig {
-	main: MainConfig,
 	aux: AuxConfig,
+	mul: Selector,
 }
 
 impl EcdsaAssignerConfig {
 	/// EcdsaAssignerConfig constructor
-	pub fn new(main: MainConfig, aux: AuxConfig) -> Self {
-		Self { main, aux }
+	pub fn new(aux: AuxConfig, mul: Selector) -> Self {
+		Self { aux, mul }
 	}
 }
 
@@ -577,29 +578,34 @@ where
 			layouter.namespace(|| "msg_hash assigner"),
 		)?;
 
-		let is_one = self.s_inv.integer.mul(&self.signature.s.integer);
+		let s_inv_assigner = IntegerAssigner::new(self.s_inv);
+		let s_inv =
+			s_inv_assigner.synthesize(common, &(), layouter.namespace(|| "s_inv assigner"))?;
+
+		// Constraint for the s_inv
+		let mul_chip = IntegerMulChip::new(signature.s.clone(), s_inv.clone());
+		let is_one =
+			mul_chip.synthesize(common, &config.mul, layouter.namespace(|| "s_inv * s"))?;
+
+		let one_as_unassigned: UnassignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P> =
+			UnassignedInteger::from(Integer::one());
+		let one_as_assigned = IntegerAssigner::new(one_as_unassigned);
+		let one_as_assigned = one_as_assigned.synthesize(
+			common,
+			&(),
+			layouter.namespace(|| "one as assigned integer"),
+		)?;
+
 		layouter.assign_region(
 			|| "constraint for the s_inv",
 			|region: Region<'_, N>| {
 				let mut ctx = RegionCtx::new(region, 0);
-				let assign_res = ctx.assign_advice(
-					common.advice[0],
-					Value::known(
-						<P as RnsParams<C::Scalar, N, NUM_LIMBS, NUM_BITS>>::compose(
-							is_one.result.limbs,
-						),
-					),
-				)?;
-				let one = ctx.assign_fixed(common.fixed[0], N::ONE)?;
-				ctx.constrain_equal(assign_res, one)?;
-
+				for i in 0..NUM_LIMBS {
+					ctx.constrain_equal(one_as_assigned.limbs[i].clone(), is_one.limbs[i].clone())?;
+				}
 				Ok(())
 			},
 		)?;
-
-		let s_inv_assigner = IntegerAssigner::new(self.s_inv);
-		let s_inv =
-			s_inv_assigner.synthesize(common, &(), layouter.namespace(|| "s_inv assigner"))?;
 
 		let ecdsa_assigned =
 			AssignedEcdsa::new(auxes, public_key, g_as_ecpoint, signature, msg_hash, s_inv);
@@ -711,7 +717,7 @@ mod test {
 			);
 
 			let aux = AuxConfig::new(ecc_double);
-			let ecdsa_assigner = EcdsaAssignerConfig::new(main, aux);
+			let ecdsa_assigner = EcdsaAssignerConfig::new(aux, integer_mul_selector_secp_scalar);
 
 			let ecdsa = EcdsaConfig::new(ecc_mul_scalar, integer_mul_selector_secp_scalar);
 
