@@ -39,8 +39,6 @@ pub enum Mode {
 	Attestations,
 	/// Create Bandada group.
 	Bandada(BandadaData),
-	/// Compile the contracts.
-	Compile,
 	/// Deploy the contracts.
 	Deploy,
 	/// Calculate the global scores from the saved attestations.

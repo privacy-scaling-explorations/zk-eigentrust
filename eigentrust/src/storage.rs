@@ -324,7 +324,7 @@ mod tests {
 	#[test]
 	fn test_csv_file_storage() {
 		// Create the CSV file
-		let filepath = current_dir().unwrap().join("assets/test.csv");
+		let filepath = current_dir().unwrap().join("test.csv");
 		let mut csv_storage = CSVFileStorage::<Record>::new(filepath.clone());
 
 		let content = vec![Record {
@@ -350,7 +350,7 @@ mod tests {
 	#[test]
 	fn test_json_file_storage() {
 		// Create the JSON file
-		let filepath = current_dir().unwrap().join("assets/test.json");
+		let filepath = current_dir().unwrap().join("test.json");
 		let mut json_storage = JSONFileStorage::<Record>::new(filepath.clone());
 
 		let content = Record {
