@@ -270,14 +270,15 @@ impl<const POWER_OF_TEN: usize, const NUM_NEIGHBOURS: usize, const INITIAL_SCORE
 		)?;
 
 		// verify if the "sets" & "scores" are valid, using aggregation verify
-		let aggregator =
-			AggregatorChipset::new(self.svk, self.snarks.clone(), self.as_proof.clone());
-		let agg_proof = aggregator.synthesize(
-			&config.common,
-			&config.aggregator,
-			layouter.namespace(|| "aggregator chipset"),
-		)?;
 		// TODO: Uncomment when the aggregator bug is fixed.
+		//
+		// let aggregator =
+		// 	AggregatorChipset::new(self.svk, self.snarks.clone(), self.as_proof.clone());
+		// let _agg_proof = aggregator.synthesize(
+		// 	&config.common,
+		// 	&config.aggregator,
+		// 	layouter.namespace(|| "aggregator chipset"),
+		// )?;
 		// for i in 0..16_usize {
 		// 	layouter.constrain_instance(
 		// 		agg_proof[i].cell(),
