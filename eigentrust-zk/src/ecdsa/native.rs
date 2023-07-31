@@ -33,17 +33,34 @@ where
 pub struct RecoveryId(u8);
 
 impl RecoveryId {
+	/// Maximum supported value for the recovery ID (inclusive).
+	pub const MAX: u8 = 3;
+
 	/// Create a new [`RecoveryId`] from the following 1-bit arguments:
 	///
 	/// - `is_y_odd`: is the affine y-coordinate of 𝑘×𝑮 odd?
 	/// - `is_x_reduced`: did the affine x-coordinate of 𝑘×𝑮 overflow the curve order?
-	pub const fn new(is_y_odd: bool) -> Self {
-		Self(is_y_odd as u8)
+	pub const fn new(is_y_odd: bool, is_x_reduced: bool) -> Self {
+		Self((is_x_reduced as u8) << 1 | (is_y_odd as u8))
+	}
+
+	/// Did the affine x-coordinate of 𝑘×𝑮 overflow the curve order?
+	pub const fn is_x_reduced(self) -> bool {
+		(self.0 & 0b10) != 0
+	}
+
+	/// Is the affine y-coordinate of 𝑘×𝑮 odd?
+	pub const fn is_y_odd(self) -> bool {
+		(self.0 & 1) != 0
 	}
 
 	/// Convert a `u8` into a [`RecoveryId`].
-	pub const fn from_byte(byte: u8) -> Self {
-		Self(byte)
+	pub const fn from_byte(byte: u8) -> Option<Self> {
+		if byte <= Self::MAX {
+			Some(Self(byte))
+		} else {
+			None
+		}
 	}
 
 	/// Convert this [`RecoveryId`] into a `u8`.
@@ -284,24 +301,41 @@ where
 
 	/// Recover public key, given the signature and message hash
 	pub fn recover_public_key(
-		&self, sig: Signature<C, N, NUM_LIMBS, NUM_BITS, P>, msg_hash: C::ScalarExt,
+		&self, sig: Signature<C, N, NUM_LIMBS, NUM_BITS, P>,
+		msg_hash: Integer<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>,
 	) -> PublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC> {
-		let Signature { r, s, rec_id } = sig;
+		let Signature { r, s, rec_id } = sig.clone();
+		let msg_hash_composed = big_to_fe::<C::ScalarExt>(msg_hash.value());
 
 		let r_fe = big_to_fe::<C::ScalarExt>(r.value());
 		let y_odd = rec_id.to_byte();
+		println!("y_odd: {}", y_odd);
+
+		let mut big_r_bytes = Vec::new();
+		big_r_bytes.extend(r_fe.to_repr().as_ref());
+		big_r_bytes.push(y_odd);
+
 		let mut big_r_repr = C::Repr::default();
-		big_r_repr.as_mut().copy_from_slice(r_fe.to_repr().as_ref());
-		big_r_repr.as_mut().copy_from_slice(&[y_odd]);
+		big_r_repr.as_mut().copy_from_slice(&big_r_bytes);
 		let big_r = C::from_bytes(&big_r_repr).unwrap();
 
 		let r_inv = r_fe.invert().unwrap();
 		let s = big_to_fe::<C::ScalarExt>(s.value());
-		let u1 = -(r_inv * msg_hash);
+		let u1 = -(r_inv * msg_hash_composed);
 		let u2 = r_inv * s;
 		let pk = C::generator() * u1 + big_r * u2;
 
-		PublicKey::from(pk.to_affine())
+		let pk_p = PublicKey::from(pk.to_affine());
+
+		// Verification - Sanity check
+		{
+			let verifier =
+				EcdsaVerifier::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::new(sig, msg_hash, pk_p.clone());
+
+			assert!(verifier.verify());
+		}
+
+		pk_p
 	}
 }
 
@@ -421,5 +455,18 @@ mod test {
 				wrong_pk,
 			);
 		assert!(!result.verify());
+	}
+
+	#[test]
+	fn should_recover_public_key() {
+		let rng = &mut rand::thread_rng();
+		let keypair =
+		EcdsaKeypair::<Secp256k1Affine, Fr, 4, 68, Secp256k1_4_68, Secp256k1Params>::generate_keypair(rng);
+		let msg_hash = Fq::from_u128(123456789);
+		let sig = keypair.sign(msg_hash.clone(), rng);
+
+		let public_key = keypair.public_key.clone();
+		let recovered_public_key = keypair.recover_public_key(sig, Integer::from_w(msg_hash));
+		assert_eq!(public_key, recovered_public_key);
 	}
 }
