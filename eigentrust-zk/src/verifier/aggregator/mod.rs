@@ -59,7 +59,8 @@ impl From<Snark> for UnassignedSnark {
 }
 
 impl UnassignedSnark {
-	fn without_witness(&self) -> Self {
+	/// Input instance without witness values
+	pub fn without_witness(&self) -> Self {
 		UnassignedSnark {
 			protocol: self.protocol.clone(),
 			instances: self
@@ -102,7 +103,7 @@ impl Clone for AggregatorChipset {
 }
 
 /// AggregatorConfig structure
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct AggregatorConfig {
 	// Configurations for the needed circuit configs.
 	pub(crate) main: MainConfig,
