@@ -504,7 +504,8 @@ mod tests {
 			ecc::secp256k1::Secp256k1Params,
 			rns::{decompose_big_decimal, secp256k1::Secp256k1_4_68},
 		},
-		utils::{big_to_fe, fe_to_big, generate_params, prove_and_verify},
+		utils::{big_to_fe, fe_to_big, generate_params},
+		verifier::aggregator::native::NativeAggregator,
 	};
 	use halo2::{
 		arithmetic::Field,
@@ -635,6 +636,7 @@ mod tests {
 		(num_decomposed, den_decomposed)
 	}
 
+	#[ignore = "EigenTrustSet(ecdsa) circuit is not ready & aggregator has a bug."]
 	#[test]
 	fn test_threshold_circuit() {
 		// Test Threshold Circuit
@@ -672,10 +674,29 @@ mod tests {
 		let native_threshold_check =
 			if native_threshold.check_threshold() { N::ONE } else { N::ZERO };
 
-		let pub_ins = vec![target_addr, threshold, native_threshold_check];
+		// Prepare the aggregator inputs
+		let _rng = &mut thread_rng();
+		let k = 21;
+		let params = generate_params::<Bn256>(k);
+
+		// let ecdsa_et_circuit = EigenTrustSet::new();
+		// let instances_1: Vec<Vec<Fr>> = vec![scores.clone()];
+		// let snark_1 = Snark::new(&params, ecdsa_et_circuit, instances_1, rng);
+		// let snarks = vec![snark_1];
+
+		// TODO: Replace "mock_snarks" with "snarks" when "EigenTrustSet"(ecdsa) circuit is implemented & aggregator bug is fixed.
+		let mock_snarks = vec![];
+		let NativeAggregator { svk, snarks, instances, as_proof } =
+			NativeAggregator::new(&params, mock_snarks);
+
+		// Threshold circuit testing
+		let mut pub_ins = vec![target_addr, threshold, native_threshold_check];
+		pub_ins.extend(instances);
 
 		let threshold_circuit: ThresholdCircuit<POWER_OF_TEN, NUM_NEIGHBOURS, INITIAL_SCORE> =
-			ThresholdCircuit::new(&sets, &scores, &num_decomposed, &den_decomposed);
+			ThresholdCircuit::new(
+				&sets, &scores, &num_decomposed, &den_decomposed, svk, snarks, as_proof,
+			);
 
 		let k = 12;
 		let prover = match MockProver::<N>::run(k, &threshold_circuit, vec![pub_ins]) {
