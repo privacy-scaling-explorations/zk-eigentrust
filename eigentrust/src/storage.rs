@@ -3,21 +3,22 @@
 //! This module contains generic storage traits and implementations.
 
 use crate::{
-	att_station::AttestationCreatedFilter,
-	attestation::{AttestationRaw, SignatureRaw, SignedAttestationEth, SignedAttestationRaw},
+	attestation::{AttestationRaw, SignatureRaw, SignedAttestationRaw},
 	error::EigenError,
-	eth::address_from_public_key,
 	Score,
 };
 use csv::{ReaderBuilder, WriterBuilder};
-use ethers::utils::hex;
+use ethers::{
+	types::{H160, H256},
+	utils::hex,
+};
 use serde::Deserialize;
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::{from_reader, to_string};
-use std::fs::File;
 use std::io::{BufReader, Write};
 use std::marker::PhantomData;
 use std::path::PathBuf;
+use std::{fs::File, str::FromStr};
 
 /// The main trait to be implemented by different storage types.
 pub trait Storage<T> {
@@ -131,22 +132,15 @@ impl ScoreRecord {
 
 	/// Creates a new score record from a score.
 	pub fn from_score(score: Score) -> Self {
-		let (participant, score_fr, score_rat) = score;
+		let peer_address = Self::to_hex_string(&score.address, true);
+		let score_fr_hex = Self::to_hex_string(&score.score_fr, true);
+		let numerator = Self::to_hex_string(&score.score_rat.0, false);
+		let denominator = Self::to_hex_string(&score.score_rat.1, false);
+		let score_hex = Self::to_hex_string(&score.score_hex, true);
 
-		let peer_address = format!("{:?}", participant);
-
-		let score_fr_hex = {
-			let mut score_fr_bytes = score_fr.to_bytes();
-			score_fr_bytes.reverse(); // Reverse bytes for big endian format
-			score_fr_bytes.iter().map(|byte| format!("{:02x}", byte)).collect::<String>()
-		};
-		let score_fr_hex = format!("0x{}", score_fr_hex);
-
-		let numerator = score_rat.numer().to_string();
-		let denominator = score_rat.denom().to_string();
-		let score = score_rat.to_integer().to_string();
-
-		Self::new(peer_address, score_fr_hex, numerator, denominator, score)
+		Self::new(
+			peer_address, score_fr_hex, numerator, denominator, score_hex,
+		)
 	}
 
 	/// Returns the peer's address.
@@ -173,6 +167,16 @@ impl ScoreRecord {
 	pub fn score(&self) -> &String {
 		&self.score
 	}
+
+	/// Converts bytes to a hexadecimal string.
+	fn to_hex_string(bytes: &[u8], prefix: bool) -> String {
+		let hex_string = bytes.iter().map(|byte| format!("{:02x}", byte)).collect::<String>();
+		if prefix {
+			format!("0x{}", hex_string)
+		} else {
+			hex_string
+		}
+	}
 }
 
 /// Attestation record.
@@ -194,82 +198,63 @@ pub struct AttestationRecord {
 	rec_id: String,
 }
 
-impl AttestationRecord {
-	/// Creates a new AttestationRecord from an Attestation log.
-	pub fn from_log(log: &AttestationCreatedFilter) -> Result<Self, EigenError> {
-		let sign_att_eth = SignedAttestationEth::from_log(log)?;
-		let sign_att_raw: SignedAttestationRaw = sign_att_eth.into();
+impl From<SignedAttestationRaw> for AttestationRecord {
+	fn from(raw: SignedAttestationRaw) -> Self {
+		let SignedAttestationRaw { attestation, signature } = raw;
+		let AttestationRaw { about, domain, value, message } = attestation;
+		let SignatureRaw { sig_r, sig_s, rec_id } = signature;
 
-		Ok(Self {
-			about: Self::encode_bytes_to_hex(&sign_att_raw.attestation.about),
-			domain: Self::encode_bytes_to_hex(&sign_att_raw.attestation.domain),
-			value: sign_att_raw.attestation.value.to_string(),
-			message: Self::encode_bytes_to_hex(&sign_att_raw.attestation.message),
-			sig_r: Self::encode_bytes_to_hex(&sign_att_raw.signature.sig_r),
-			sig_s: Self::encode_bytes_to_hex(&sign_att_raw.signature.sig_s),
-			rec_id: sign_att_raw.signature.rec_id.to_string(),
-		})
+		Self {
+			about: format!("0x{}", hex::encode(about)),
+			domain: format!("0x{}", hex::encode(domain)),
+			value: value.to_string(),
+			message: format!("0x{}", hex::encode(message)),
+			sig_r: format!("0x{}", hex::encode(sig_r)),
+			sig_s: format!("0x{}", hex::encode(sig_s)),
+			rec_id: rec_id.to_string(),
+		}
 	}
+}
 
-	/// Returns a log from an AttestationRecord.
-	pub fn to_log(&self) -> Result<AttestationCreatedFilter, EigenError> {
-		// Use helper functions to simplify the conversion process
-		let sig_r = Self::parse_bytes32(&self.sig_r)?;
-		let sig_s = Self::parse_bytes32(&self.sig_s)?;
-		let rec_id = Self::parse_u8(&self.rec_id)?;
+impl TryFrom<AttestationRecord> for SignedAttestationRaw {
+	type Error = EigenError;
 
-		let about = Self::parse_bytes20(&self.about)?;
-		let domain = Self::parse_bytes20(&self.domain)?;
-		let value = Self::parse_u8(&self.value)?;
-		let message = Self::parse_bytes32(&self.message)?;
+	fn try_from(record: AttestationRecord) -> Result<Self, Self::Error> {
+		let AttestationRecord { about, domain, value, message, sig_r, sig_s, rec_id } = record;
 
-		// Construct AttestationPayload and serialize it
-		let att_raw = AttestationRaw::new(about, domain, value, message);
-		let sig_raw = SignatureRaw::new(sig_r, sig_s, rec_id);
-		let sign_att_raw = SignedAttestationRaw::new(att_raw, sig_raw);
-		let sign_att_eth: SignedAttestationEth = sign_att_raw.into();
+		let attestation = AttestationRaw {
+			about: str_to_20_byte_array(&about)?,
+			domain: str_to_20_byte_array(&domain)?,
+			value: value
+				.parse::<u8>()
+				.map_err(|_| EigenError::ConversionError("Failed to parse 'value'".to_string()))?,
+			message: str_to_32_byte_array(&message)?,
+		};
 
-		let about = sign_att_eth.attestation.about;
-		let key = *sign_att_eth.attestation.get_key().as_fixed_bytes();
-		let val = sign_att_eth.to_payload();
-		let public_key = sign_att_eth.recover_public_key()?;
-		let creator = address_from_public_key(&public_key);
+		let signature = SignatureRaw {
+			sig_r: str_to_32_byte_array(&sig_r)?,
+			sig_s: str_to_32_byte_array(&sig_s)?,
+			rec_id: rec_id
+				.parse::<u8>()
+				.map_err(|_| EigenError::ConversionError("Failed to parse 'rec_id'".to_string()))?,
+		};
 
-		Ok(AttestationCreatedFilter { about, key, val, creator })
+		Ok(Self { attestation, signature })
 	}
+}
 
-	// Helper function for decoding hexadecimal string into a byte array
-	fn decode_hex_to_bytes(hex_str: &str) -> Result<Vec<u8>, EigenError> {
-		hex::decode(&hex_str[2..]).map_err(|e| EigenError::ParsingError(e.to_string()))
-	}
+/// Converts a hex string to a 20 byte array.
+pub fn str_to_20_byte_array(hex: &str) -> Result<[u8; 20], EigenError> {
+	H160::from_str(hex)
+		.map(|bytes| *bytes.as_fixed_bytes())
+		.map_err(|e| EigenError::ConversionError(e.to_string()))
+}
 
-	// Helper function for encoding byte array into hexadecimal string
-	fn encode_bytes_to_hex(bytes: &[u8]) -> String {
-		format!("0x{}", hex::encode(bytes))
-	}
-
-	// Helper function for parsing string into a byte array
-	fn parse_bytes32(hex_str: &str) -> Result<[u8; 32], EigenError> {
-		let bytes = Self::decode_hex_to_bytes(hex_str)?;
-		let bytes_array: [u8; 32] = bytes.try_into().map_err(|_| {
-			EigenError::ConversionError("Failed to convert into byte array".to_string())
-		})?;
-		Ok(bytes_array)
-	}
-
-	// Helper function for parsing string into a byte array
-	fn parse_bytes20(hex_str: &str) -> Result<[u8; 20], EigenError> {
-		let bytes = Self::decode_hex_to_bytes(hex_str)?;
-		let bytes_array: [u8; 20] = bytes.try_into().map_err(|_| {
-			EigenError::ConversionError("Failed to convert into byte array".to_string())
-		})?;
-		Ok(bytes_array)
-	}
-
-	// Helper function for parsing string into u8
-	fn parse_u8(value: &str) -> Result<u8, EigenError> {
-		value.parse::<u8>().map_err(|e| EigenError::ParsingError(e.to_string()))
-	}
+/// Converts a hex string to a 32 byte array.
+pub fn str_to_32_byte_array(hex: &str) -> Result<[u8; 32], EigenError> {
+	H256::from_str(hex)
+		.map(|bytes| *bytes.as_fixed_bytes())
+		.map_err(|e| EigenError::ConversionError(e.to_string()))
 }
 
 /// The `JSONFileStorage` struct provides a mechanism for persisting
@@ -324,7 +309,7 @@ mod tests {
 	#[test]
 	fn test_csv_file_storage() {
 		// Create the CSV file
-		let filepath = current_dir().unwrap().join("assets/test.csv");
+		let filepath = current_dir().unwrap().join("test.csv");
 		let mut csv_storage = CSVFileStorage::<Record>::new(filepath.clone());
 
 		let content = vec![Record {
@@ -350,7 +335,7 @@ mod tests {
 	#[test]
 	fn test_json_file_storage() {
 		// Create the JSON file
-		let filepath = current_dir().unwrap().join("assets/test.json");
+		let filepath = current_dir().unwrap().join("test.json");
 		let mut json_storage = JSONFileStorage::<Record>::new(filepath.clone());
 
 		let content = Record {

@@ -277,7 +277,7 @@ impl From<SignedAttestationRaw> for SignedAttestationEth {
 }
 
 /// Attestation struct.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct AttestationRaw {
 	/// Ethereum address of peer being rated
 	pub(crate) about: [u8; 20],
@@ -337,6 +337,33 @@ impl From<AttestationEth> for AttestationRaw {
 		let value = u8::from(att_eth.value);
 
 		Self { about, domain, value, message }
+	}
+}
+
+impl TryFrom<AttestationCreatedFilter> for AttestationRaw {
+	type Error = EigenError;
+
+	fn try_from(log: AttestationCreatedFilter) -> Result<Self, Self::Error> {
+		let about = log.about.to_fixed_bytes();
+
+		let mut domain: [u8; 20] = [0; 20];
+		domain.copy_from_slice(&log.key[DOMAIN_PREFIX_LEN..32]);
+
+		let (value, message): (u8, [u8; 32]) = match log.val.len() {
+			66 => (log.val[65], [0; 32]),
+			98 => {
+				let mut message = [0; 32];
+				message.copy_from_slice(&log.val[66..]);
+				(log.val[65], message)
+			},
+			_ => {
+				return Err(EigenError::ValidationError(
+					"Invalid attestation".to_string(),
+				))
+			},
+		};
+
+		Ok(AttestationRaw { about, domain, value, message })
 	}
 }
 
@@ -426,6 +453,30 @@ impl From<SignatureEth> for SignatureRaw {
 		let rec_id = u8::from(att_eth.rec_id);
 
 		Self { sig_r, sig_s, rec_id }
+	}
+}
+
+impl TryFrom<AttestationCreatedFilter> for SignatureRaw {
+	type Error = EigenError;
+
+	fn try_from(log: AttestationCreatedFilter) -> Result<Self, Self::Error> {
+		let len = log.val.len();
+		if len != 66 && len != 98 {
+			return Err(EigenError::ValidationError(
+				"Invalid length: expected 66 or 98, got".to_string(),
+			));
+		}
+
+		let sig_r: [u8; 32] = log.val[..32].try_into().map_err(|_| {
+			EigenError::ValidationError("'sig_r' conversion to 32-byte array failed".to_string())
+		})?;
+		let sig_s: [u8; 32] = log.val[32..64].try_into().map_err(|_| {
+			EigenError::ValidationError("'sig_s' conversion to 32-byte array failed".to_string())
+		})?;
+
+		let rec_id = log.val[64];
+
+		Ok(SignatureRaw { sig_r, sig_s, rec_id })
 	}
 }
 
@@ -600,7 +651,8 @@ mod tests {
 
 		// Replace with expected address
 		let expected_address =
-			Wallet::from(SigningKey::from_bytes(secret_key_as_bytes.as_ref()).unwrap()).address();
+			Wallet::from(SigningKey::from_bytes(secret_key_as_bytes.as_ref().into()).unwrap())
+				.address();
 
 		let public_key = signed_attestation.recover_public_key().unwrap();
 		let address = address_from_public_key(&public_key);
@@ -651,16 +703,17 @@ mod tests {
 		let signed_attestation = SignedAttestationEth::new(attestation_eth.clone(), signature_eth);
 
 		let (_, about, key, payload) = signed_attestation.to_tx_data().unwrap();
-		let contract_att_data = ContractAttestationData(about, key.to_fixed_bytes(), payload);
+		let contract_att_data =
+			ContractAttestationData { about, key: key.to_fixed_bytes(), val: payload };
 
 		let expected_address = Address::from(about_bytes);
-		assert_eq!(contract_att_data.0, expected_address);
+		assert_eq!(contract_att_data.about, expected_address);
 
 		let expected_key = attestation_eth.get_key();
 
-		assert_eq!(contract_att_data.1, *expected_key.as_fixed_bytes());
+		assert_eq!(contract_att_data.key, *expected_key.as_fixed_bytes());
 
 		let expected_payload: Bytes = signed_attestation.to_payload();
-		assert_eq!(contract_att_data.2, expected_payload);
+		assert_eq!(contract_att_data.val, expected_payload);
 	}
 }

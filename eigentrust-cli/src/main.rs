@@ -31,14 +31,10 @@ mod fs;
 use clap::Parser;
 use cli::*;
 use dotenv::dotenv;
-use eigentrust::{
-	error::EigenError,
-	eth::{deploy_as, gen_as_bindings},
-	Client, ClientConfig,
-};
+use eigentrust::{error::EigenError, eth::deploy_as, Client, ClientConfig};
 use env_logger::{init_from_env, Env};
 use fs::{load_config, load_mnemonic};
-use log::info;
+use log::{debug, info};
 
 #[tokio::main]
 async fn main() -> Result<(), EigenError> {
@@ -48,8 +44,8 @@ async fn main() -> Result<(), EigenError> {
 
 	match Cli::parse().mode {
 		Mode::Attest(attest_data) => {
-			let attestation = attest_data.to_attestation(&config)?;
-			info!("Attesting...\n{:#?}", attestation);
+			let attestation = attest_data.to_attestation_raw(&config)?;
+			debug!("Attesting:{:?}", attestation);
 
 			let mnemonic = load_mnemonic();
 			let client = Client::new(config, mnemonic);
@@ -57,7 +53,6 @@ async fn main() -> Result<(), EigenError> {
 		},
 		Mode::Attestations => handle_attestations(config).await?,
 		Mode::Bandada(bandada_data) => handle_bandada(&config, bandada_data).await?,
-		Mode::Compile => gen_as_bindings()?,
 		Mode::Deploy => {
 			let mnemonic = load_mnemonic();
 			let client = Client::new(config, mnemonic);

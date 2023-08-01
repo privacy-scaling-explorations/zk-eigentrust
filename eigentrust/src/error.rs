@@ -20,8 +20,8 @@ pub enum EigenError {
 	ConnectionError(String),
 
 	/// Contract compilation error
-	#[error("ContractCompilationError: {0}")]
-	ContractCompilationError(String),
+	#[error("ContractError: {0}")]
+	ContractError(String),
 
 	/// Conversion error
 	#[error("ConversionError: {0}")]
