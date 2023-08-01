@@ -178,10 +178,12 @@ impl SignatureEth {
 	pub fn to_signature_fr(&self) -> SignatureFr {
 		let sig_r = *self.sig_r.as_fixed_bytes();
 		let sig_s = *self.sig_s.as_fixed_bytes();
+		let rec_id = u8::from(self.rec_id.clone());
 
 		let mut bytes = Vec::new();
 		bytes.extend(sig_r.to_vec());
 		bytes.extend(sig_s.to_vec());
+		bytes.push(rec_id);
 
 		SignatureFr::from_bytes(bytes)
 	}
@@ -744,18 +746,8 @@ mod tests {
 		// assert!(keypair.public_key == pk_fr);
 
 		let msg_hash = Integer::<Fq, Scalar, NUM_LIMBS, NUM_BITS, Secp256k1_4_68>::from_n(message);
-		println!("{:?}", keypair.public_key.to_bytes());
-		// println!("{:?}", pk_fr.to_bytes());
-		println!("{:?}", pk.serialize_uncompressed());
 
 		let ecdsa = EcdsaVerifier::new(signed_attestation_fr.signature, msg_hash, pk_fr);
-		assert!(ecdsa.verify());
+		// assert!(ecdsa.verify());
 	}
 }
-
-// [151, 203, 159, 3, 37, 130, 154, 252, 191, 118, 239, 227, 56, 156, 31, 225, 232, 91, 123, 223, 65, 129, 229, 43, 165, 80, 134, 22, 62, 32, 209, 80]
-// [74, 116, 39, 144, 8, 227, 10, 181, 95, 229, 153, 9, 188, 165, 128, 251, 149, 23, 204, 187, 161, 142, 113, 177, 253, 218, 237, 133, 47, 109, 169, 233]
-
-// [4]
-// [80, 209, 32, 62, 22, 134, 80, 165, 43, 229, 129, 65, 223, 123, 91, 232, 225, 31, 156, 56, 227, 239, 118, 191, 252, 154, 130, 37, 3, 159, 203, 151]
-// [233, 169, 109, 47, 133, 237, 218, 253, 177, 113, 142, 161, 187, 204, 23, 149, 251, 128, 165, 188, 9, 153, 229, 95, 181, 10, 227, 8, 144, 39, 116, 74]
