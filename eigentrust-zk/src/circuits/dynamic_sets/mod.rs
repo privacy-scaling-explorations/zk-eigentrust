@@ -4,21 +4,21 @@ pub mod native;
 use super::opinion::{AssignedAttestation, AssignedSignedAttestation};
 use super::opinion::{OpinionChipset, OpinionConfig, WIDTH};
 use crate::circuits::opinion::UnassignedAttestation;
-use crate::ecc::generic::AssignedAux;
-use crate::ecc::generic::AssignedEcPoint;
-use crate::ecc::generic::PointAssigner;
+use crate::ecc::generic::native::EcPoint;
+use crate::ecc::generic::UnassignedEcPoint;
 use crate::ecc::{
 	AuxConfig, EccAddConfig, EccDoubleConfig, EccMulConfig, EccTableSelectConfig,
 	EccUnreducedLadderConfig,
 };
 use crate::ecdsa::native::{PublicKey, Signature};
 use crate::ecdsa::{
-	AssignedPublicKey, AssignedSignature, EcdsaConfig, UnassignedPublicKey, UnassignedSignature,
+	EcdsaAssigner, EcdsaAssignerConfig, EcdsaConfig, UnassignedPublicKey, UnassignedSignature,
 };
 use crate::gadgets::set::{SetChip, SetConfig};
+use crate::integer::native::Integer;
 use crate::integer::{
-	AssignedInteger, IntegerAddChip, IntegerDivChip, IntegerMulChip, IntegerReduceChip,
-	IntegerSubChip,
+	IntegerAddChip, IntegerAssigner, IntegerDivChip, IntegerMulChip, IntegerReduceChip,
+	IntegerSubChip, LeftShiftersAssigner, UnassignedInteger,
 };
 use crate::params::ecc::EccParams;
 use crate::params::hasher::poseidon_bn254_5x5::Params;
@@ -37,7 +37,6 @@ use crate::{
 	Chip, Chipset, CommonConfig, RegionCtx, ADVICE,
 };
 use crate::{FieldExt, HasherChipset, SpongeHasherChipset};
-use halo2::circuit::AssignedCell;
 use halo2::halo2curves::CurveAffine;
 use halo2::{
 	circuit::{Layouter, Region, SimpleFloorPlanner, Value},
@@ -57,6 +56,7 @@ where
 	main: MainConfig,
 	sponge: S::Config,
 	hasher: H::Config,
+	ecdsa_assigner: EcdsaAssignerConfig,
 	opinion: OpinionConfig<F, H, S>,
 }
 
@@ -92,14 +92,14 @@ pub struct EigenTrustSet<
 	op_pk_x: Vec<Vec<Value<N>>>,
 	op_pk_y: Vec<Vec<Value<N>>>,
 	ops: Vec<Vec<Value<N>>>,
+	// Message hash
+	msg_hash: Vec<Vec<UnassignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>>>,
 	// Set
 	set: Vec<Value<N>>,
+	// Signature s inverse
+	s_inv: Vec<UnassignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>>,
 	/// Generator as EC point
-	g_as_ecpoint: AssignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P>,
-	/// Aux for to_add and to_sub
-	aux: AssignedAux<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
-	/// Left shifters for composing integers
-	left_shifters: [AssignedCell<N, N>; NUM_LIMBS],
+	g_as_ecpoint: UnassignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
 	// Phantom Data
 	_p: PhantomData<(H, S)>,
 }
@@ -131,9 +131,9 @@ where
 		pks: Vec<PublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>>,
 		signatures: Vec<Signature<C, N, NUM_LIMBS, NUM_BITS, P>>,
 		op_pks: Vec<Vec<PublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>>>, ops: Vec<Vec<N>>,
-		set: Vec<N>, g_as_ecpoint: AssignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P>,
-		aux: AssignedAux<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
-		left_shifters: [AssignedCell<N, N>; NUM_LIMBS],
+		msg_hash: Vec<Vec<Integer<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>>>, set: Vec<N>,
+		s_inv: Vec<Integer<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>>,
+		g_as_ecpoint: EcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
 	) -> Self {
 		// Attestation values
 		// TODO: Uncomment when AttestationFr is not hardcoded
@@ -156,8 +156,16 @@ where
 		let op_pk_y = op_pks.iter().map(|pks| pks.iter().map(|pk| pk.0.y.val).collect()).collect();
 		let ops = ops.iter().map(|vals| vals.iter().map(|x| Value::known(*x)).collect()).collect();
 
+		let msg_hash = msg_hash
+			.iter()
+			.map(|ints| ints.iter().map(|int| UnassignedInteger::from(*int)).collect_vec())
+			.collect_vec();
+
 		let set = set.iter().map(|x| Value::known(*x)).collect();
 
+		let s_inv = s_inv.iter().map(|int| UnassignedInteger::from(*int)).collect_vec();
+
+		let g_as_ecpoint = UnassignedEcPoint::from(g_as_ecpoint);
 		Self {
 			attestation,
 			pks,
@@ -165,10 +173,10 @@ where
 			op_pk_x,
 			op_pk_y,
 			ops,
+			msg_hash,
 			set,
+			s_inv,
 			g_as_ecpoint,
-			aux,
-			left_shifters,
 			_p: PhantomData,
 		}
 	}
@@ -200,24 +208,25 @@ where
 	type FloorPlanner = SimpleFloorPlanner;
 
 	fn without_witnesses(&self) -> Self {
+		let att: UnassignedAttestation<N> = UnassignedAttestation::without_witnesses();
 		let pk: UnassignedPublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC> =
 			UnassignedPublicKey::without_witnesses();
 		let sig: UnassignedSignature<C, N, NUM_LIMBS, NUM_BITS, P> =
 			UnassignedSignature::without_witnesses();
 		let op_pk: UnassignedPublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC> =
 			UnassignedPublicKey::without_witnesses();
+
 		Self {
+			attestation: vec![vec![att; NUM_NEIGHBOURS]; NUM_NEIGHBOURS],
 			pks: vec![pk; NUM_NEIGHBOURS],
 			signatures: vec![sig; NUM_NEIGHBOURS],
 			op_pk_x: vec![vec![op_pk.0.x.val; NUM_NEIGHBOURS]; NUM_NEIGHBOURS],
 			op_pk_y: vec![vec![op_pk.0.y.val; NUM_NEIGHBOURS]; NUM_NEIGHBOURS],
 			ops: vec![vec![Value::unknown(); NUM_NEIGHBOURS]; NUM_NEIGHBOURS],
-			// TODO: Find better way for g_as_ec, aux and lshifters
-			attestation: vec![vec![UnassignedAttestation::without_witnesses()]],
-			set: self.set,
-			g_as_ecpoint: self.g_as_ecpoint,
-			aux: self.aux,
-			left_shifters: self.left_shifters,
+			msg_hash: vec![vec![UnassignedInteger::without_witnesses(); NUM_NEIGHBOURS]],
+			set: vec![Value::unknown(); NUM_NEIGHBOURS],
+			s_inv: vec![UnassignedInteger::without_witnesses(); NUM_NEIGHBOURS],
+			g_as_ecpoint: UnassignedEcPoint::without_witnesses(),
 			_p: PhantomData,
 		}
 	}
@@ -269,6 +278,8 @@ where
 
 		let aux = AuxConfig::new(ecc_double);
 
+		let ecdsa_assigner = EcdsaAssignerConfig::new(aux, integer_mul_selector_secp_scalar);
+
 		let fr_selector = FullRoundChip::<_, WIDTH, Params>::configure(&common, meta);
 		let pr_selector = PartialRoundChip::<_, WIDTH, Params>::configure(&common, meta);
 		let poseidon = PoseidonConfig::new(fr_selector, pr_selector);
@@ -278,7 +289,7 @@ where
 
 		let opinion = OpinionConfig::new(ecdsa, main, set, hasher, sponge);
 
-		EigenTrustSetConfig { common, main, sponge, hasher, opinion }
+		EigenTrustSetConfig { common, main, sponge, hasher, ecdsa_assigner, opinion }
 	}
 
 	fn synthesize(
@@ -289,8 +300,6 @@ where
 			attestation,
 			pk_x,
 			pk_y,
-			r,
-			s,
 			ops,
 			init_score,
 			total_score,
@@ -320,9 +329,9 @@ where
 				ctx.next();
 
 				let mut assigned_attestation = Vec::new();
-				for neighbour_ops in &self.attestation {
+				for atts in &self.attestation {
 					let mut assigned_attestation_i = Vec::new();
-					for chunk in neighbour_ops.chunks(ADVICE) {
+					for chunk in atts.chunks(ADVICE) {
 						for (i, chunk_i) in chunk.iter().enumerate() {
 							let about =
 								ctx.assign_advice(config.common.advice[i], chunk_i.about)?;
@@ -365,36 +374,6 @@ where
 					ctx.next();
 				}
 
-				let mut assigned_r = Vec::new();
-				for chunk in self.signatures.chunks(ADVICE) {
-					for (i, chunk_i) in chunk.iter().enumerate() {
-						let mut assigned_limbs = [(); NUM_LIMBS].map(|_| None);
-						for j in 0..NUM_LIMBS {
-							let r =
-								ctx.assign_advice(config.common.advice[j], chunk_i.r.limbs[j])?;
-							assigned_limbs[j] = Some(r);
-						}
-						assigned_r.push(assigned_limbs.map(|x| x.unwrap()))
-					}
-					// Move to the next row
-					ctx.next();
-				}
-
-				let mut assigned_s = Vec::new();
-				for chunk in self.signatures.chunks(ADVICE) {
-					for (i, chunk_i) in chunk.iter().enumerate() {
-						let mut assigned_limbs = [(); NUM_LIMBS].map(|_| None);
-						for j in 0..NUM_LIMBS {
-							let s =
-								ctx.assign_advice(config.common.advice[j], chunk_i.s.limbs[j])?;
-							assigned_limbs[j] = Some(s);
-						}
-						assigned_s.push(assigned_limbs.map(|x| x.unwrap()))
-					}
-					// Move to the next row
-					ctx.next();
-				}
-
 				let mut assigned_ops = Vec::new();
 				for neighbour_ops in &self.ops {
 					let mut assigned_neighbour_op = Vec::new();
@@ -426,7 +405,11 @@ where
 
 				let default_pk_x = ctx.assign_advice(
 					config.common.advice[1],
-					Value::known(P::compose(PublicKey::default().0.x.limbs)),
+					Value::known(
+						<P as RnsParams<C::Scalar, N, NUM_LIMBS, NUM_BITS>>::compose(
+							PublicKey::default().0.x.limbs,
+						),
+					),
 				)?;
 
 				let default_pk_y = ctx.assign_advice(
@@ -474,70 +457,73 @@ where
 				}
 
 				Ok((
-					zero, assigned_attestation, assigned_pk_x, assigned_pk_y, assigned_r,
-					assigned_s, assigned_ops, assigned_initial_score, assigned_total_score,
-					passed_s, one, default_pk_x, default_pk_y, assigned_op_pk_x, assigned_op_pk_y,
-					assigned_set,
+					zero, assigned_attestation, assigned_pk_x, assigned_pk_y, assigned_ops,
+					assigned_initial_score, assigned_total_score, passed_s, one, default_pk_x,
+					default_pk_y, assigned_op_pk_x, assigned_op_pk_y, assigned_set,
 				))
 			},
 		)?;
 
 		// signature verification
-		let zero_state = [zero.clone(), zero.clone(), zero.clone(), zero.clone(), zero.clone()];
-		let mut pk_sponge = S::init(&config.common, layouter.namespace(|| "sponge"))?;
-		pk_sponge.update(&pk_x);
-		pk_sponge.update(&pk_y);
-		let pks_hash = pk_sponge.squeeze(
-			&config.common,
-			&config.sponge,
-			layouter.namespace(|| "pks_sponge"),
-		)?;
-
 		for i in 0..NUM_NEIGHBOURS {
-			let mut scores_sponge = S::init(&config.common, layouter.namespace(|| "sponge"))?;
-			scores_sponge.update(&ops[i]);
-			let scores_message_hash = scores_sponge.squeeze(
+			let ecdsa_assigner_chip = EcdsaAssigner::new(
+				self.pks[i], self.g_as_ecpoint, self.signatures[i], self.msg_hash[i][0],
+				self.s_inv[i],
+			);
+			let ecdsa_assigner = ecdsa_assigner_chip.synthesize(
 				&config.common,
-				&config.sponge,
-				layouter.namespace(|| "scores_sponge"),
-			)?;
-			let message_hash_input = [
-				pks_hash.clone(),
-				scores_message_hash.clone(),
-				zero.clone(),
-				zero.clone(),
-				zero.clone(),
-			];
-			let hasher = H::new(message_hash_input);
-			let res = hasher.finalize(
-				&config.common,
-				&config.hasher,
-				layouter.namespace(|| "message_hash"),
+				&config.ecdsa_assigner,
+				layouter.namespace(|| "ecdsa assigner"),
 			)?;
 
-			let assigned_public_key = PointAssigner::new(self.pks[i].0);
-			let assigned_public_key_ec = assigned_public_key.synthesize(
+			let assigned_public_key = ecdsa_assigner.public_key;
+			let assigned_signature = ecdsa_assigner.signature;
+			let g_as_ecpoint = ecdsa_assigner.g_as_ecpoint;
+			let s_inv = ecdsa_assigner.s_inv;
+			let aux = ecdsa_assigner.auxes;
+
+			let lshift = LeftShiftersAssigner::default();
+			let left_shifters = lshift.synthesize(
 				&config.common,
 				&(),
-				layouter.namespace(|| "public_key_assign_ec"),
+				layouter.namespace(|| "lshift assigner"),
 			)?;
-			let assigned_public_key = AssignedPublicKey::new(assigned_public_key_ec);
 
-			let assigned_r_integer = AssignedInteger::new(self.signatures[i].r.integer, r[i]);
-			let assigned_s_integer = AssignedInteger::new(self.signatures[i].s.integer, s[i]);
-			let assigned_signature = AssignedSignature::new(assigned_r_integer, assigned_s_integer);
 			let mut assigned_signed_att = Vec::new();
+			let mut assigned_msg_hash = Vec::new();
+			let mut assigned_s_inv = Vec::new();
 
-			for j in 0..NUM_NEIGHBOURS {
+			// Assigning first iteration to catch s_inv and msg_hash
+			assigned_signed_att.push(AssignedSignedAttestation::new(
+				attestation[i][0], assigned_signature,
+			));
+			for j in 1..NUM_NEIGHBOURS {
 				assigned_signed_att.push(AssignedSignedAttestation::new(
 					attestation[i][j], assigned_signature,
 				));
+
+				let assign_msg_hash = IntegerAssigner::new(self.msg_hash[i][j]);
+				let msg_hash = assign_msg_hash.synthesize(
+					&config.common,
+					&(),
+					layouter.namespace(|| "assign msg_hash_i"),
+				)?;
+				assigned_msg_hash.push(msg_hash);
+
+				let assign_s_inv = IntegerAssigner::new(self.msg_hash[i][j]);
+				let s_inv = assign_msg_hash.synthesize(
+					&config.common,
+					&(),
+					layouter.namespace(|| "assign s_inv"),
+				)?;
+				assigned_s_inv.push(s_inv);
 			}
 
-			let opinion = OpinionChipset::new(
-				assigned_signed_att, assigned_public_key, set, msg_hash, self.g_as_ecpoint, s_inv,
-				self.aux, self.left_shifters,
-			);
+			let opinion: OpinionChipset<C, N, NUM_LIMBS, NUM_BITS, NUM_NEIGHBOURS, H, S, P, EC> =
+				OpinionChipset::new(
+					assigned_signed_att, assigned_public_key, set, assigned_msg_hash, g_as_ecpoint,
+					assigned_s_inv, aux, left_shifters,
+				);
 		}
 
 		// filter peers' ops

@@ -468,12 +468,12 @@ pub struct AssignedEcdsa<
 	C::Base: FieldExt,
 	C::ScalarExt: FieldExt,
 {
-	auxes: AssignedAux<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
-	public_key: AssignedPublicKey<C, N, NUM_LIMBS, NUM_BITS, P>,
-	g_as_ecpoint: AssignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P>,
-	signature: AssignedSignature<C, N, NUM_LIMBS, NUM_BITS, P>,
-	msg_hash: AssignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>,
-	s_inv: AssignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>,
+	pub(crate) auxes: AssignedAux<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
+	pub(crate) public_key: AssignedPublicKey<C, N, NUM_LIMBS, NUM_BITS, P>,
+	pub(crate) g_as_ecpoint: AssignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P>,
+	pub(crate) signature: AssignedSignature<C, N, NUM_LIMBS, NUM_BITS, P>,
+	pub(crate) msg_hash: AssignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>,
+	pub(crate) s_inv: AssignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>,
 }
 
 impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P, EC>
