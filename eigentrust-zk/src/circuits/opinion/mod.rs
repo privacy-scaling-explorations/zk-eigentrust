@@ -12,6 +12,7 @@ use crate::{
 	integer::AssignedInteger,
 	params::{ecc::EccParams, rns::RnsParams},
 	Chipset, CommonConfig, FieldExt, HasherChipset, RegionCtx, SpongeHasherChipset,
+	UnassignedValue,
 };
 use halo2::{
 	circuit::{AssignedCell, Layouter, Region, Value},
@@ -73,6 +74,17 @@ impl From<AttestationFr> for UnassignedAttestation<Fr> {
 			domain: Value::known(att.domain),
 			value: Value::known(att.value),
 			message: Value::known(att.message),
+		}
+	}
+}
+
+impl<N: FieldExt> UnassignedValue for UnassignedAttestation<N> {
+	fn without_witnesses() -> Self {
+		Self {
+			about: Value::unknown(),
+			domain: Value::unknown(),
+			value: Value::unknown(),
+			message: Value::unknown(),
 		}
 	}
 }

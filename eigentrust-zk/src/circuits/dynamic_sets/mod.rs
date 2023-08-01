@@ -1,8 +1,9 @@
 /// Native version of EigenTrustSet(ECDSA)
 pub mod native;
 
-use super::opinion::AssignedSignedAttestation;
+use super::opinion::{AssignedAttestation, AssignedSignedAttestation};
 use super::opinion::{OpinionChipset, OpinionConfig, WIDTH};
+use crate::circuits::opinion::UnassignedAttestation;
 use crate::ecc::generic::AssignedAux;
 use crate::ecc::generic::AssignedEcPoint;
 use crate::ecc::generic::PointAssigner;
@@ -22,7 +23,6 @@ use crate::integer::{
 use crate::params::ecc::EccParams;
 use crate::params::hasher::poseidon_bn254_5x5::Params;
 use crate::params::rns::RnsParams;
-use crate::poseidon::sponge::PoseidonSpongeConfig;
 use crate::poseidon::{FullRoundChip, PartialRoundChip, PoseidonConfig};
 use crate::UnassignedValue;
 use crate::{
@@ -82,6 +82,8 @@ pub struct EigenTrustSet<
 	H: HasherChipset<N, WIDTH>,
 	S: SpongeHasherChipset<N, WIDTH>,
 {
+	// Attestation
+	attestation: Vec<Vec<UnassignedAttestation<N>>>,
 	// Public keys
 	pks: Vec<UnassignedPublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>>,
 	// Signature
@@ -125,6 +127,7 @@ where
 {
 	/// Constructs a new EigenTrustSet circuit
 	pub fn new(
+		attestation: Vec<Vec<UnassignedAttestation<N>>>,
 		pks: Vec<PublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>>,
 		signatures: Vec<Signature<C, N, NUM_LIMBS, NUM_BITS, P>>,
 		op_pks: Vec<Vec<PublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>>>, ops: Vec<Vec<N>>,
@@ -132,6 +135,12 @@ where
 		aux: AssignedAux<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
 		left_shifters: [AssignedCell<N, N>; NUM_LIMBS],
 	) -> Self {
+		// Attestation values
+		// TODO: Uncomment when AttestationFr is not hardcoded
+		//let attestation = attestation
+		//	.into_iter()
+		//	.map(|att| att.into_iter().map(|x| UnassignedAttestation::from(x)).collect_vec())
+		//	.collect_vec();
 		// Pubkey values
 		let pks = pks.into_iter().map(|x| UnassignedPublicKey::new(x)).collect_vec();
 
@@ -150,6 +159,7 @@ where
 		let set = set.iter().map(|x| Value::known(*x)).collect();
 
 		Self {
+			attestation,
 			pks,
 			signatures,
 			op_pk_x,
@@ -203,6 +213,7 @@ where
 			op_pk_y: vec![vec![op_pk.0.y.val; NUM_NEIGHBOURS]; NUM_NEIGHBOURS],
 			ops: vec![vec![Value::unknown(); NUM_NEIGHBOURS]; NUM_NEIGHBOURS],
 			// TODO: Find better way for g_as_ec, aux and lshifters
+			attestation: vec![vec![UnassignedAttestation::without_witnesses()]],
 			set: self.set,
 			g_as_ecpoint: self.g_as_ecpoint,
 			aux: self.aux,
@@ -275,6 +286,7 @@ where
 	) -> Result<(), Error> {
 		let (
 			zero,
+			attestation,
 			pk_x,
 			pk_y,
 			r,
@@ -306,6 +318,30 @@ where
 
 				// Move to the next row
 				ctx.next();
+
+				let mut assigned_attestation = Vec::new();
+				for neighbour_ops in &self.attestation {
+					let mut assigned_attestation_i = Vec::new();
+					for chunk in neighbour_ops.chunks(ADVICE) {
+						for (i, chunk_i) in chunk.iter().enumerate() {
+							let about =
+								ctx.assign_advice(config.common.advice[i], chunk_i.about)?;
+							let domain =
+								ctx.assign_advice(config.common.advice[i], chunk_i.domain)?;
+							let value =
+								ctx.assign_advice(config.common.advice[i], chunk_i.value)?;
+							let message =
+								ctx.assign_advice(config.common.advice[i], chunk_i.about)?;
+
+							let s = AssignedAttestation::new(about, domain, value, message);
+
+							assigned_attestation_i.push(s)
+						}
+						// Move to the next row
+						ctx.next();
+					}
+					assigned_attestation.push(assigned_attestation_i);
+				}
 
 				let unassigned_pk_x = self.pks.iter().map(|pk| pk.0.x.val).collect_vec();
 				let mut assigned_pk_x = Vec::new();
@@ -438,9 +474,10 @@ where
 				}
 
 				Ok((
-					zero, assigned_pk_x, assigned_pk_y, assigned_r, assigned_s, assigned_ops,
-					assigned_initial_score, assigned_total_score, passed_s, one, default_pk_x,
-					default_pk_y, assigned_op_pk_x, assigned_op_pk_y, assigned_set,
+					zero, assigned_attestation, assigned_pk_x, assigned_pk_y, assigned_r,
+					assigned_s, assigned_ops, assigned_initial_score, assigned_total_score,
+					passed_s, one, default_pk_x, default_pk_y, assigned_op_pk_x, assigned_op_pk_y,
+					assigned_set,
 				))
 			},
 		)?;
@@ -489,8 +526,13 @@ where
 			let assigned_r_integer = AssignedInteger::new(self.signatures[i].r.integer, r[i]);
 			let assigned_s_integer = AssignedInteger::new(self.signatures[i].s.integer, s[i]);
 			let assigned_signature = AssignedSignature::new(assigned_r_integer, assigned_s_integer);
-			let assigned_signed_att =
-				AssignedSignedAttestation::new(attestation, assigned_signature);
+			let mut assigned_signed_att = Vec::new();
+
+			for j in 0..NUM_NEIGHBOURS {
+				assigned_signed_att.push(AssignedSignedAttestation::new(
+					attestation[i][j], assigned_signature,
+				));
+			}
 
 			let opinion = OpinionChipset::new(
 				assigned_signed_att, assigned_public_key, set, msg_hash, self.g_as_ecpoint, s_inv,
