@@ -31,10 +31,10 @@ use std::{
 pub mod native;
 
 /// LoaderConfig structure
-pub struct LoaderConfig<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, H, EC>
+pub struct LoaderConfig<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, const WIDTH: usize, S, EC>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
-	H: SpongeHasherChipset<C::Scalar>,
+	S: SpongeHasherChipset<C::Scalar, WIDTH>,
 	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
@@ -45,7 +45,7 @@ where
 	pub(crate) common: CommonConfig,
 	pub(crate) ecc_mul_scalar: EccMulConfig,
 	pub(crate) main: MainConfig,
-	pub(crate) sponge: H::Config,
+	pub(crate) sponge: S::Config,
 	// Aux_init and Aux_fin for the ecc_mul operation
 	pub(crate) aux: AssignedAux<C, NUM_LIMBS, NUM_BITS, P, EC>,
 	// PhantomData
@@ -53,10 +53,11 @@ where
 	_p: PhantomData<P>,
 }
 
-impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, H, EC> LoaderConfig<'a, C, L, P, H, EC>
+impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, const WIDTH: usize, S, EC>
+	LoaderConfig<'a, C, L, P, WIDTH, S, EC>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
-	H: SpongeHasherChipset<C::Scalar>,
+	S: SpongeHasherChipset<C::Scalar, WIDTH>,
 	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
@@ -64,7 +65,7 @@ where
 	/// Construct a new LoaderConfig
 	pub fn new(
 		mut layouter: NamespacedLayouter<'a, C::Scalar, L>, common: CommonConfig,
-		ecc_mul_scalar: EccMulConfig, aux_config: AuxConfig, main: MainConfig, sponge: H::Config,
+		ecc_mul_scalar: EccMulConfig, aux_config: AuxConfig, main: MainConfig, sponge: S::Config,
 	) -> Self {
 		let aux_assigner = AuxAssigner::new();
 		let aux = aux_assigner
@@ -85,11 +86,11 @@ where
 	}
 }
 
-impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, H, EC> Clone
-	for LoaderConfig<'a, C, L, P, H, EC>
+impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, const WIDTH: usize, S, EC> Clone
+	for LoaderConfig<'a, C, L, P, WIDTH, S, EC>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
-	H: SpongeHasherChipset<C::Scalar>,
+	S: SpongeHasherChipset<C::Scalar, WIDTH>,
 	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
@@ -109,11 +110,11 @@ where
 	}
 }
 
-impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, H, EC> Debug
-	for LoaderConfig<'a, C, L, P, H, EC>
+impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, const WIDTH: usize, S, EC> Debug
+	for LoaderConfig<'a, C, L, P, WIDTH, S, EC>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
-	H: SpongeHasherChipset<C::Scalar>,
+	S: SpongeHasherChipset<C::Scalar, WIDTH>,
 	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
@@ -125,10 +126,10 @@ where
 }
 
 /// Halo2LScalar structure
-pub struct Halo2LScalar<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, H, EC>
+pub struct Halo2LScalar<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, const WIDTH: usize, S, EC>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
-	H: SpongeHasherChipset<C::Scalar>,
+	S: SpongeHasherChipset<C::Scalar, WIDTH>,
 	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
@@ -136,31 +137,32 @@ where
 	// Inner value for the halo2 loaded scalar
 	pub(crate) inner: AssignedCell<C::Scalar, C::Scalar>,
 	// Loader
-	pub(crate) loader: LoaderConfig<'a, C, L, P, H, EC>,
-	_h: PhantomData<H>,
+	pub(crate) loader: LoaderConfig<'a, C, L, P, WIDTH, S, EC>,
+	_h: PhantomData<S>,
 }
 
-impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, H, EC> Halo2LScalar<'a, C, L, P, H, EC>
+impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, const WIDTH: usize, S, EC>
+	Halo2LScalar<'a, C, L, P, WIDTH, S, EC>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
-	H: SpongeHasherChipset<C::Scalar>,
+	S: SpongeHasherChipset<C::Scalar, WIDTH>,
 	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
 {
 	/// Creates a new Halo2LScalar
 	pub fn new(
-		value: AssignedCell<C::Scalar, C::Scalar>, loader: LoaderConfig<'a, C, L, P, H, EC>,
+		value: AssignedCell<C::Scalar, C::Scalar>, loader: LoaderConfig<'a, C, L, P, WIDTH, S, EC>,
 	) -> Self {
 		Self { inner: value, loader, _h: PhantomData }
 	}
 }
 
-impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, H, EC> Clone
-	for Halo2LScalar<'a, C, L, P, H, EC>
+impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, const WIDTH: usize, S, EC> Clone
+	for Halo2LScalar<'a, C, L, P, WIDTH, S, EC>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
-	H: SpongeHasherChipset<C::Scalar>,
+	S: SpongeHasherChipset<C::Scalar, WIDTH>,
 	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
@@ -171,11 +173,11 @@ where
 	}
 }
 
-impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, H, EC> Debug
-	for Halo2LScalar<'a, C, L, P, H, EC>
+impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, const WIDTH: usize, S, EC> Debug
+	for Halo2LScalar<'a, C, L, P, WIDTH, S, EC>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
-	H: SpongeHasherChipset<C::Scalar>,
+	S: SpongeHasherChipset<C::Scalar, WIDTH>,
 	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
@@ -186,11 +188,11 @@ where
 	}
 }
 
-impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, H, EC> PartialEq
-	for Halo2LScalar<'a, C, L, P, H, EC>
+impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, const WIDTH: usize, S, EC> PartialEq
+	for Halo2LScalar<'a, C, L, P, WIDTH, S, EC>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
-	H: SpongeHasherChipset<C::Scalar>,
+	S: SpongeHasherChipset<C::Scalar, WIDTH>,
 	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
@@ -205,11 +207,11 @@ where
 	}
 }
 
-impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, H, EC> FieldOps
-	for Halo2LScalar<'a, C, L, P, H, EC>
+impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, const WIDTH: usize, S, EC> FieldOps
+	for Halo2LScalar<'a, C, L, P, WIDTH, S, EC>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
-	H: SpongeHasherChipset<C::Scalar>,
+	S: SpongeHasherChipset<C::Scalar, WIDTH>,
 	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
@@ -229,11 +231,11 @@ where
 
 // ---- ADD ----
 
-impl<'a, 'b, C: CurveAffine, L: Layouter<C::Scalar>, P, H, EC> Add<&'a Self>
-	for Halo2LScalar<'b, C, L, P, H, EC>
+impl<'a, 'b, C: CurveAffine, L: Layouter<C::Scalar>, P, const WIDTH: usize, S, EC> Add<&'a Self>
+	for Halo2LScalar<'b, C, L, P, WIDTH, S, EC>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
-	H: SpongeHasherChipset<C::Scalar>,
+	S: SpongeHasherChipset<C::Scalar, WIDTH>,
 	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
@@ -255,11 +257,11 @@ where
 	}
 }
 
-impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, H, EC> Add<Self>
-	for Halo2LScalar<'a, C, L, P, H, EC>
+impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, const WIDTH: usize, S, EC> Add<Self>
+	for Halo2LScalar<'a, C, L, P, WIDTH, S, EC>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
-	H: SpongeHasherChipset<C::Scalar>,
+	S: SpongeHasherChipset<C::Scalar, WIDTH>,
 	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
@@ -272,11 +274,11 @@ where
 	}
 }
 
-impl<'a, 'b, C: CurveAffine, L: Layouter<C::Scalar>, P, H, EC> AddAssign<&'a Self>
-	for Halo2LScalar<'b, C, L, P, H, EC>
+impl<'a, 'b, C: CurveAffine, L: Layouter<C::Scalar>, P, const WIDTH: usize, S, EC>
+	AddAssign<&'a Self> for Halo2LScalar<'b, C, L, P, WIDTH, S, EC>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
-	H: SpongeHasherChipset<C::Scalar>,
+	S: SpongeHasherChipset<C::Scalar, WIDTH>,
 	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
@@ -287,11 +289,11 @@ where
 	}
 }
 
-impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, H, EC> AddAssign<Self>
-	for Halo2LScalar<'a, C, L, P, H, EC>
+impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, const WIDTH: usize, S, EC> AddAssign<Self>
+	for Halo2LScalar<'a, C, L, P, WIDTH, S, EC>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
-	H: SpongeHasherChipset<C::Scalar>,
+	S: SpongeHasherChipset<C::Scalar, WIDTH>,
 	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
@@ -304,11 +306,11 @@ where
 
 // ---- MUL ----
 
-impl<'a, 'b, C: CurveAffine, L: Layouter<C::Scalar>, P, H, EC> Mul<&'a Self>
-	for Halo2LScalar<'b, C, L, P, H, EC>
+impl<'a, 'b, C: CurveAffine, L: Layouter<C::Scalar>, P, const WIDTH: usize, S, EC> Mul<&'a Self>
+	for Halo2LScalar<'b, C, L, P, WIDTH, S, EC>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
-	H: SpongeHasherChipset<C::Scalar>,
+	S: SpongeHasherChipset<C::Scalar, WIDTH>,
 	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
@@ -330,11 +332,11 @@ where
 	}
 }
 
-impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, H, EC> Mul<Self>
-	for Halo2LScalar<'a, C, L, P, H, EC>
+impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, const WIDTH: usize, S, EC> Mul<Self>
+	for Halo2LScalar<'a, C, L, P, WIDTH, S, EC>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
-	H: SpongeHasherChipset<C::Scalar>,
+	S: SpongeHasherChipset<C::Scalar, WIDTH>,
 	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
@@ -347,11 +349,11 @@ where
 	}
 }
 
-impl<'a, 'b, C: CurveAffine, L: Layouter<C::Scalar>, P, H, EC> MulAssign<&'a Self>
-	for Halo2LScalar<'b, C, L, P, H, EC>
+impl<'a, 'b, C: CurveAffine, L: Layouter<C::Scalar>, P, const WIDTH: usize, S, EC>
+	MulAssign<&'a Self> for Halo2LScalar<'b, C, L, P, WIDTH, S, EC>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
-	H: SpongeHasherChipset<C::Scalar>,
+	S: SpongeHasherChipset<C::Scalar, WIDTH>,
 	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
@@ -362,11 +364,11 @@ where
 	}
 }
 
-impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, H, EC> MulAssign<Self>
-	for Halo2LScalar<'a, C, L, P, H, EC>
+impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, const WIDTH: usize, S, EC> MulAssign<Self>
+	for Halo2LScalar<'a, C, L, P, WIDTH, S, EC>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
-	H: SpongeHasherChipset<C::Scalar>,
+	S: SpongeHasherChipset<C::Scalar, WIDTH>,
 	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
@@ -379,11 +381,11 @@ where
 
 // ---- SUB ----
 
-impl<'a, 'b, C: CurveAffine, L: Layouter<C::Scalar>, P, H, EC> Sub<&'a Self>
-	for Halo2LScalar<'b, C, L, P, H, EC>
+impl<'a, 'b, C: CurveAffine, L: Layouter<C::Scalar>, P, const WIDTH: usize, S, EC> Sub<&'a Self>
+	for Halo2LScalar<'b, C, L, P, WIDTH, S, EC>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
-	H: SpongeHasherChipset<C::Scalar>,
+	S: SpongeHasherChipset<C::Scalar, WIDTH>,
 	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
@@ -405,11 +407,11 @@ where
 	}
 }
 
-impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, H, EC> Sub<Self>
-	for Halo2LScalar<'a, C, L, P, H, EC>
+impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, const WIDTH: usize, S, EC> Sub<Self>
+	for Halo2LScalar<'a, C, L, P, WIDTH, S, EC>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
-	H: SpongeHasherChipset<C::Scalar>,
+	S: SpongeHasherChipset<C::Scalar, WIDTH>,
 	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
@@ -422,11 +424,11 @@ where
 	}
 }
 
-impl<'a, 'b, C: CurveAffine, L: Layouter<C::Scalar>, P, H, EC> SubAssign<&'a Self>
-	for Halo2LScalar<'b, C, L, P, H, EC>
+impl<'a, 'b, C: CurveAffine, L: Layouter<C::Scalar>, P, const WIDTH: usize, S, EC>
+	SubAssign<&'a Self> for Halo2LScalar<'b, C, L, P, WIDTH, S, EC>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
-	H: SpongeHasherChipset<C::Scalar>,
+	S: SpongeHasherChipset<C::Scalar, WIDTH>,
 	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
@@ -437,11 +439,11 @@ where
 	}
 }
 
-impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, H, EC> SubAssign<Self>
-	for Halo2LScalar<'a, C, L, P, H, EC>
+impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, const WIDTH: usize, S, EC> SubAssign<Self>
+	for Halo2LScalar<'a, C, L, P, WIDTH, S, EC>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
-	H: SpongeHasherChipset<C::Scalar>,
+	S: SpongeHasherChipset<C::Scalar, WIDTH>,
 	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
@@ -454,10 +456,11 @@ where
 
 // ---- NEG ----
 
-impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, H, EC> Neg for Halo2LScalar<'a, C, L, P, H, EC>
+impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, const WIDTH: usize, S, EC> Neg
+	for Halo2LScalar<'a, C, L, P, WIDTH, S, EC>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
-	H: SpongeHasherChipset<C::Scalar>,
+	S: SpongeHasherChipset<C::Scalar, WIDTH>,
 	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
@@ -487,16 +490,16 @@ where
 	}
 }
 
-impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, H, EC> LoadedScalar<C::Scalar>
-	for Halo2LScalar<'a, C, L, P, H, EC>
+impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, const WIDTH: usize, S, EC>
+	LoadedScalar<C::Scalar> for Halo2LScalar<'a, C, L, P, WIDTH, S, EC>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
-	H: SpongeHasherChipset<C::Scalar>,
+	S: SpongeHasherChipset<C::Scalar, WIDTH>,
 	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
 {
-	type Loader = LoaderConfig<'a, C, L, P, H, EC>;
+	type Loader = LoaderConfig<'a, C, L, P, WIDTH, S, EC>;
 
 	/// Returns [`Loader`].
 	fn loader(&self) -> &Self::Loader {
@@ -504,16 +507,16 @@ where
 	}
 }
 
-impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, H, EC> ScalarLoader<C::Scalar>
-	for LoaderConfig<'a, C, L, P, H, EC>
+impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, const WIDTH: usize, S, EC>
+	ScalarLoader<C::Scalar> for LoaderConfig<'a, C, L, P, WIDTH, S, EC>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
-	H: SpongeHasherChipset<C::Scalar>,
+	S: SpongeHasherChipset<C::Scalar, WIDTH>,
 	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
 {
-	type LoadedScalar = Halo2LScalar<'a, C, L, P, H, EC>;
+	type LoadedScalar = Halo2LScalar<'a, C, L, P, WIDTH, S, EC>;
 
 	/// Load a constant field element.
 	fn load_const(&self, value: &C::Scalar) -> Self::LoadedScalar {
@@ -551,10 +554,10 @@ where
 }
 
 /// Halo2LEcPoint structure
-pub struct Halo2LEcPoint<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, H, EC>
+pub struct Halo2LEcPoint<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, const WIDTH: usize, S, EC>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
-	H: SpongeHasherChipset<C::Scalar>,
+	S: SpongeHasherChipset<C::Scalar, WIDTH>,
 	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
@@ -562,31 +565,33 @@ where
 	// Inner value for the halo2 loaded point
 	pub(crate) inner: AssignedEcPoint<C, NUM_LIMBS, NUM_BITS, P>,
 	// Loader
-	pub(crate) loader: LoaderConfig<'a, C, L, P, H, EC>,
-	_h: PhantomData<H>,
+	pub(crate) loader: LoaderConfig<'a, C, L, P, WIDTH, S, EC>,
+	_h: PhantomData<S>,
 }
 
-impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, H, EC> Halo2LEcPoint<'a, C, L, P, H, EC>
+impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, const WIDTH: usize, S, EC>
+	Halo2LEcPoint<'a, C, L, P, WIDTH, S, EC>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
-	H: SpongeHasherChipset<C::Scalar>,
+	S: SpongeHasherChipset<C::Scalar, WIDTH>,
 	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
 {
 	/// Creates a new Halo2LScalar
 	pub fn new(
-		value: AssignedEcPoint<C, NUM_LIMBS, NUM_BITS, P>, loader: LoaderConfig<'a, C, L, P, H, EC>,
+		value: AssignedEcPoint<C, NUM_LIMBS, NUM_BITS, P>,
+		loader: LoaderConfig<'a, C, L, P, WIDTH, S, EC>,
 	) -> Self {
 		Self { inner: value, loader, _h: PhantomData }
 	}
 }
 
-impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, H, EC> Clone
-	for Halo2LEcPoint<'a, C, L, P, H, EC>
+impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, const WIDTH: usize, S, EC> Clone
+	for Halo2LEcPoint<'a, C, L, P, WIDTH, S, EC>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
-	H: SpongeHasherChipset<C::Scalar>,
+	S: SpongeHasherChipset<C::Scalar, WIDTH>,
 	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
@@ -597,11 +602,11 @@ where
 	}
 }
 
-impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, H, EC> Debug
-	for Halo2LEcPoint<'a, C, L, P, H, EC>
+impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, const WIDTH: usize, S, EC> Debug
+	for Halo2LEcPoint<'a, C, L, P, WIDTH, S, EC>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
-	H: SpongeHasherChipset<C::Scalar>,
+	S: SpongeHasherChipset<C::Scalar, WIDTH>,
 	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
@@ -612,11 +617,11 @@ where
 	}
 }
 
-impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, H, EC> PartialEq
-	for Halo2LEcPoint<'a, C, L, P, H, EC>
+impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, const WIDTH: usize, S, EC> PartialEq
+	for Halo2LEcPoint<'a, C, L, P, WIDTH, S, EC>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
-	H: SpongeHasherChipset<C::Scalar>,
+	S: SpongeHasherChipset<C::Scalar, WIDTH>,
 	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
@@ -629,16 +634,16 @@ where
 	}
 }
 
-impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, H, EC> LoadedEcPoint<C>
-	for Halo2LEcPoint<'a, C, L, P, H, EC>
+impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, const WIDTH: usize, S, EC> LoadedEcPoint<C>
+	for Halo2LEcPoint<'a, C, L, P, WIDTH, S, EC>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
-	H: SpongeHasherChipset<C::Scalar>,
+	S: SpongeHasherChipset<C::Scalar, WIDTH>,
 	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
 {
-	type Loader = LoaderConfig<'a, C, L, P, H, EC>;
+	type Loader = LoaderConfig<'a, C, L, P, WIDTH, S, EC>;
 
 	/// Returns [`Loader`].
 	fn loader(&self) -> &Self::Loader {
@@ -646,16 +651,16 @@ where
 	}
 }
 
-impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, H, EC> EcPointLoader<C>
-	for LoaderConfig<'a, C, L, P, H, EC>
+impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, const WIDTH: usize, S, EC> EcPointLoader<C>
+	for LoaderConfig<'a, C, L, P, WIDTH, S, EC>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
-	H: SpongeHasherChipset<C::Scalar>,
+	S: SpongeHasherChipset<C::Scalar, WIDTH>,
 	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
 {
-	type LoadedEcPoint = Halo2LEcPoint<'a, C, L, P, H, EC>;
+	type LoadedEcPoint = Halo2LEcPoint<'a, C, L, P, WIDTH, S, EC>;
 
 	/// Load a constant elliptic curve point.
 	fn ec_point_load_const(&self, value: &C) -> Self::LoadedEcPoint {
@@ -761,11 +766,11 @@ where
 	}
 }
 
-impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, H, EC> Loader<C>
-	for LoaderConfig<'a, C, L, P, H, EC>
+impl<'a, C: CurveAffine, L: Layouter<C::Scalar>, P, const WIDTH: usize, S, EC> Loader<C>
+	for LoaderConfig<'a, C, L, P, WIDTH, S, EC>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
-	H: SpongeHasherChipset<C::Scalar>,
+	S: SpongeHasherChipset<C::Scalar, WIDTH>,
 	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
@@ -798,7 +803,7 @@ mod test {
 		params::{ecc::bn254::Bn254Params, rns::bn256::Bn256_4_68},
 		poseidon::{
 			sponge::{PoseidonSpongeConfig, StatefulSpongeChipset},
-			PoseidonConfig,
+			PoseidonChipset, PoseidonConfig,
 		},
 		verifier::transcript::native::WIDTH,
 		Chip, CommonConfig, RegionCtx,
@@ -816,7 +821,8 @@ mod test {
 	type C = G1Affine;
 	type P = Bn256_4_68;
 	type EC = Bn254Params;
-	type H = StatefulSpongeChipset<Fr, 5, Params>;
+	type H = PoseidonChipset<Fr, 5, Params>;
+	type S = StatefulSpongeChipset<Fr, 5, Params>;
 	type Scalar = Fr;
 	type Base = Fq;
 
@@ -902,7 +908,7 @@ mod test {
 					Ok(x)
 				},
 			)?;
-			let loader_config = LoaderConfig::<C, _, P, H, EC>::new(
+			let loader_config = LoaderConfig::<C, _, P, WIDTH, S, EC>::new(
 				layouter.namespace(|| "loader_config"),
 				config.common.clone(),
 				config.ecc_mul_scalar,
@@ -911,7 +917,7 @@ mod test {
 				config.poseidon_sponge,
 			);
 
-			let lscalar_x: Halo2LScalar<C, _, _, _, _> =
+			let lscalar_x: Halo2LScalar<C, _, _, WIDTH, _, _> =
 				Halo2LScalar::new(assigned_x, loader_config.clone());
 			let inverted_lscalar_x = lscalar_x.invert().unwrap();
 
@@ -980,7 +986,7 @@ mod test {
 					Ok((x, y))
 				},
 			)?;
-			let loader_config: LoaderConfig<C, _, P, H, EC> = LoaderConfig::new(
+			let loader_config: LoaderConfig<C, _, P, WIDTH, S, EC> = LoaderConfig::new(
 				layouter.namespace(|| "loader_config"),
 				config.common.clone(),
 				config.ecc_mul_scalar,
@@ -1060,7 +1066,7 @@ mod test {
 					Ok((x, y))
 				},
 			)?;
-			let loader_config: LoaderConfig<C, _, P, H, EC> = LoaderConfig::new(
+			let loader_config: LoaderConfig<C, _, P, WIDTH, S, EC> = LoaderConfig::new(
 				layouter.namespace(|| "loader_config"),
 				config.common.clone(),
 				config.ecc_mul_scalar,
@@ -1142,7 +1148,7 @@ mod test {
 					Ok((x, y))
 				},
 			)?;
-			let loader_config: LoaderConfig<C, _, P, H, EC> = LoaderConfig::new(
+			let loader_config: LoaderConfig<C, _, P, WIDTH, S, EC> = LoaderConfig::new(
 				layouter.namespace(|| "loader_config"),
 				config.common.clone(),
 				config.ecc_mul_scalar,
@@ -1222,7 +1228,7 @@ mod test {
 					Ok((x, y))
 				},
 			)?;
-			let loader_config: LoaderConfig<C, _, P, H, EC> = LoaderConfig::new(
+			let loader_config: LoaderConfig<C, _, P, WIDTH, S, EC> = LoaderConfig::new(
 				layouter.namespace(|| "loader_config"),
 				config.common.clone(),
 				config.ecc_mul_scalar,
@@ -1304,7 +1310,7 @@ mod test {
 					Ok((x, y))
 				},
 			)?;
-			let loader_config: LoaderConfig<C, _, P, H, EC> = LoaderConfig::new(
+			let loader_config: LoaderConfig<C, _, P, WIDTH, S, EC> = LoaderConfig::new(
 				layouter.namespace(|| "loader_config"),
 				config.common.clone(),
 				config.ecc_mul_scalar,
@@ -1384,7 +1390,7 @@ mod test {
 					Ok((x, y))
 				},
 			)?;
-			let loader_config: LoaderConfig<C, _, P, H, EC> = LoaderConfig::new(
+			let loader_config: LoaderConfig<C, _, P, WIDTH, S, EC> = LoaderConfig::new(
 				layouter.namespace(|| "loader_config"),
 				config.common.clone(),
 				config.ecc_mul_scalar,
@@ -1464,7 +1470,7 @@ mod test {
 					Ok(x)
 				},
 			)?;
-			let loader_config: LoaderConfig<C, _, P, H, EC> = LoaderConfig::new(
+			let loader_config: LoaderConfig<C, _, P, WIDTH, S, EC> = LoaderConfig::new(
 				layouter.namespace(|| "loader_config"),
 				config.common.clone(),
 				config.ecc_mul_scalar,
@@ -1527,7 +1533,7 @@ mod test {
 		fn synthesize(
 			&self, config: Self::Config, mut layouter: impl Layouter<Scalar>,
 		) -> Result<(), Error> {
-			let loader_config: LoaderConfig<C, _, P, H, EC> = LoaderConfig::new(
+			let loader_config: LoaderConfig<C, _, P, WIDTH, S, EC> = LoaderConfig::new(
 				layouter.namespace(|| "loader_config"),
 				config.common.clone(),
 				config.ecc_mul_scalar,
@@ -1598,7 +1604,7 @@ mod test {
 					Ok((x, y))
 				},
 			)?;
-			let loader_config: LoaderConfig<C, _, P, H, EC> = LoaderConfig::new(
+			let loader_config: LoaderConfig<C, _, P, WIDTH, S, EC> = LoaderConfig::new(
 				layouter.namespace(|| "loader_config"),
 				config.common.clone(),
 				config.ecc_mul_scalar,
@@ -1660,7 +1666,7 @@ mod test {
 		fn synthesize(
 			&self, config: Self::Config, mut layouter: impl Layouter<Scalar>,
 		) -> Result<(), Error> {
-			let loader_config: LoaderConfig<C, _, P, H, EC> = LoaderConfig::new(
+			let loader_config: LoaderConfig<C, _, P, WIDTH, S, EC> = LoaderConfig::new(
 				layouter.namespace(|| "loader_config"),
 				config.common.clone(),
 				config.ecc_mul_scalar,
@@ -1780,7 +1786,7 @@ mod test {
 					Ok((p1_x_limbs, p1_y_limbs, p2_x_limbs, p2_y_limbs))
 				},
 			)?;
-			let loader_config: LoaderConfig<C, _, P, H, EC> = LoaderConfig::new(
+			let loader_config: LoaderConfig<C, _, P, WIDTH, S, EC> = LoaderConfig::new(
 				layouter.namespace(|| "loader_config"),
 				config.common.clone(),
 				config.ecc_mul_scalar,
@@ -1885,7 +1891,7 @@ mod test {
 			)?;
 
 			let (x_limbs, y_limbs) = {
-				let loader_config = LoaderConfig::<C, _, P, H, EC>::new(
+				let loader_config = LoaderConfig::<C, _, P, WIDTH, S, EC>::new(
 					layouter.namespace(|| "loader"),
 					config.common.clone(),
 					config.ecc_mul_scalar,
@@ -1910,8 +1916,8 @@ mod test {
 				}
 
 				let borrowed_pairs: Vec<(
-					&Halo2LScalar<C, _, P, H, EC>,
-					&Halo2LEcPoint<C, _, P, H, EC>,
+					&Halo2LScalar<C, _, P, WIDTH, S, EC>,
+					&Halo2LEcPoint<C, _, P, WIDTH, S, EC>,
 				)> = halo2_pairs.iter().map(|x| (&x.0, &x.1)).collect();
 
 				let res = LoaderConfig::multi_scalar_multiplication(borrowed_pairs.as_slice());

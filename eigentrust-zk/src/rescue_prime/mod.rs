@@ -197,8 +197,7 @@ where
 	P: RoundParams<F, WIDTH>,
 {
 	selector: Selector,
-	_f: PhantomData<F>,
-	_p: PhantomData<P>,
+	_p: PhantomData<(P, F)>,
 }
 
 #[derive(Clone)]
@@ -243,6 +242,10 @@ impl<F: FieldExt, const WIDTH: usize, P> HasherChipset<F, WIDTH> for RescuePrime
 where
 	P: RoundParams<F, WIDTH>,
 {
+	fn configure(fr_selector: Selector, pr_selector: Selector) -> Self::Config {
+		RescuePrimeConfig { selector: fr_selector, _p: PhantomData }
+	}
+
 	fn new(inputs: [AssignedCell<F, F>; WIDTH]) -> Self {
 		Self::new(inputs)
 	}

@@ -163,6 +163,7 @@ impl Chipset<Fr> for AggregatorChipset {
 				G1Affine,
 				_,
 				Bn256_4_68,
+				5,
 				StatefulSpongeChipset<Fr, WIDTH, Params>,
 				Bn254Params,
 			>::new(
@@ -194,6 +195,7 @@ impl Chipset<Fr> for AggregatorChipset {
 					G1Affine,
 					_,
 					Bn256_4_68,
+					5,
 					StatefulSpongeChipset<Fr, WIDTH, Params>,
 					Bn254Params,
 				> = TranscriptReadChipset::new(snark.proof(), loader_config.clone());
@@ -213,6 +215,7 @@ impl Chipset<Fr> for AggregatorChipset {
 				G1Affine,
 				_,
 				Bn256_4_68,
+				5,
 				StatefulSpongeChipset<Fr, WIDTH, Params>,
 				Bn254Params,
 			> = TranscriptReadChipset::new(as_proof, loader_config);

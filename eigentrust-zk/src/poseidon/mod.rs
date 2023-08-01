@@ -331,6 +331,10 @@ impl<F: FieldExt, const WIDTH: usize, P> HasherChipset<F, WIDTH> for PoseidonChi
 where
 	P: RoundParams<F, WIDTH>,
 {
+	fn configure(fr_selector: Selector, pr_selector: Selector) -> Self::Config {
+		PoseidonConfig::new(fr_selector, pr_selector)
+	}
+
 	fn new(inputs: [AssignedCell<F, F>; WIDTH]) -> Self {
 		Self::new(inputs)
 	}

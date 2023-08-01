@@ -51,12 +51,12 @@ use std::marker::PhantomData;
 pub struct EigenTrustSetConfig<F: FieldExt, H, S>
 where
 	H: HasherChipset<F, WIDTH>,
-	S: SpongeHasherChipset<F>,
+	S: SpongeHasherChipset<F, WIDTH>,
 {
 	common: CommonConfig,
 	main: MainConfig,
 	sponge: S::Config,
-	poseidon: H::Config,
+	hasher: H::Config,
 	opinion: OpinionConfig<F, H, S>,
 }
 
@@ -80,18 +80,18 @@ pub struct EigenTrustSet<
 	C::Base: FieldExt,
 	C::ScalarExt: FieldExt,
 	H: HasherChipset<N, WIDTH>,
-	S: SpongeHasherChipset<N>,
+	S: SpongeHasherChipset<N, WIDTH>,
 {
 	// Public keys
 	pks: Vec<UnassignedPublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>>,
 	// Signature
 	signatures: Vec<UnassignedSignature<C, N, NUM_LIMBS, NUM_BITS, P>>,
-	//r: Vec<Value<N>>,
-	//s: Vec<Value<N>>,
 	// Opinions
 	op_pk_x: Vec<Vec<Value<N>>>,
 	op_pk_y: Vec<Vec<Value<N>>>,
 	ops: Vec<Vec<Value<N>>>,
+	// Set
+	set: Vec<Value<N>>,
 	/// Generator as EC point
 	g_as_ecpoint: AssignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P>,
 	/// Aux for to_add and to_sub
@@ -121,14 +121,14 @@ where
 	C::Base: FieldExt,
 	C::ScalarExt: FieldExt,
 	H: HasherChipset<N, WIDTH>,
-	S: SpongeHasherChipset<N>,
+	S: SpongeHasherChipset<N, WIDTH>,
 {
 	/// Constructs a new EigenTrustSet circuit
 	pub fn new(
 		pks: Vec<PublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>>,
 		signatures: Vec<Signature<C, N, NUM_LIMBS, NUM_BITS, P>>,
 		op_pks: Vec<Vec<PublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>>>, ops: Vec<Vec<N>>,
-		g_as_ecpoint: AssignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P>,
+		set: Vec<N>, g_as_ecpoint: AssignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P>,
 		aux: AssignedAux<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
 		left_shifters: [AssignedCell<N, N>; NUM_LIMBS],
 	) -> Self {
@@ -147,12 +147,15 @@ where
 		let op_pk_y = op_pks.iter().map(|pks| pks.iter().map(|pk| pk.0.y.val).collect()).collect();
 		let ops = ops.iter().map(|vals| vals.iter().map(|x| Value::known(*x)).collect()).collect();
 
+		let set = set.iter().map(|x| Value::known(*x)).collect();
+
 		Self {
 			pks,
 			signatures,
 			op_pk_x,
 			op_pk_y,
 			ops,
+			set,
 			g_as_ecpoint,
 			aux,
 			left_shifters,
@@ -181,7 +184,7 @@ where
 	C::Base: FieldExt,
 	C::ScalarExt: FieldExt,
 	H: HasherChipset<N, WIDTH>,
-	S: SpongeHasherChipset<N>,
+	S: SpongeHasherChipset<N, WIDTH>,
 {
 	type Config = EigenTrustSetConfig<N, H, S>;
 	type FloorPlanner = SimpleFloorPlanner;
@@ -200,6 +203,7 @@ where
 			op_pk_y: vec![vec![op_pk.0.y.val; NUM_NEIGHBOURS]; NUM_NEIGHBOURS],
 			ops: vec![vec![Value::unknown(); NUM_NEIGHBOURS]; NUM_NEIGHBOURS],
 			// TODO: Find better way for g_as_ec, aux and lshifters
+			set: self.set,
 			g_as_ecpoint: self.g_as_ecpoint,
 			aux: self.aux,
 			left_shifters: self.left_shifters,
@@ -257,12 +261,13 @@ where
 		let fr_selector = FullRoundChip::<_, WIDTH, Params>::configure(&common, meta);
 		let pr_selector = PartialRoundChip::<_, WIDTH, Params>::configure(&common, meta);
 		let poseidon = PoseidonConfig::new(fr_selector, pr_selector);
+		let hasher = H::configure(fr_selector, pr_selector);
 		let absorb_selector = AbsorbChip::<_, WIDTH>::configure(&common, meta);
-		let sponge = PoseidonSpongeConfig::new(poseidon.clone(), absorb_selector);
+		let sponge = S::configure(poseidon.clone(), absorb_selector);
 
-		let opinion = OpinionConfig::new(ecdsa, main, set, poseidon, sponge);
+		let opinion = OpinionConfig::new(ecdsa, main, set, hasher, sponge);
 
-		EigenTrustSetConfig { common, main, sponge, poseidon, opinion }
+		EigenTrustSetConfig { common, main, sponge, hasher, opinion }
 	}
 
 	fn synthesize(
@@ -283,6 +288,7 @@ where
 			default_pk_y,
 			op_pk_x,
 			op_pk_y,
+			set,
 		) = layouter.assign_region(
 			|| "temp",
 			|region: Region<'_, N>| {
@@ -421,10 +427,20 @@ where
 					assigned_op_pk_y.push(assigned_neighbour_pk_y);
 				}
 
+				let mut assigned_set = Vec::new();
+				for chunk in self.set.chunks(ADVICE) {
+					for (i, chunk_i) in chunk.iter().enumerate() {
+						let s = ctx.assign_advice(config.common.advice[i], *chunk_i)?;
+						assigned_set.push(s)
+					}
+					// Move to the next row
+					ctx.next();
+				}
+
 				Ok((
 					zero, assigned_pk_x, assigned_pk_y, assigned_r, assigned_s, assigned_ops,
 					assigned_initial_score, assigned_total_score, passed_s, one, default_pk_x,
-					default_pk_y, assigned_op_pk_x, assigned_op_pk_y,
+					default_pk_y, assigned_op_pk_x, assigned_op_pk_y, assigned_set,
 				))
 			},
 		)?;
@@ -458,7 +474,7 @@ where
 			let hasher = H::new(message_hash_input);
 			let res = hasher.finalize(
 				&config.common,
-				&config.poseidon,
+				&config.hasher,
 				layouter.namespace(|| "message_hash"),
 			)?;
 

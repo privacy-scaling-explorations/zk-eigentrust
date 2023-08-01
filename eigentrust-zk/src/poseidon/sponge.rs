@@ -106,12 +106,17 @@ where
 	default: AssignedCell<F, F>,
 }
 
-impl<F: FieldExt, const WIDTH: usize, P> SpongeHasherChipset<F>
+impl<F: FieldExt, const WIDTH: usize, P> SpongeHasherChipset<F, WIDTH>
 	for StatefulSpongeChipset<F, WIDTH, P>
 where
 	P: RoundParams<F, WIDTH>,
 {
 	type Config = PoseidonSpongeConfig;
+
+	fn configure(hasher: PoseidonConfig, absorb_selector: Selector) -> Self::Config {
+		PoseidonSpongeConfig::new(hasher, absorb_selector)
+	}
+
 	/// Initialise the sponge
 	fn init(common: &CommonConfig, mut layouter: impl Layouter<F>) -> Result<Self, Error> {
 		let zero = layouter.assign_region(

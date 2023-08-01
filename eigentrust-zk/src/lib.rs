@@ -45,6 +45,7 @@ use params::ecc::secp256k1::Secp256k1Params;
 use params::rns::bn256::Bn256_4_68;
 use params::rns::secp256k1::Secp256k1_4_68;
 use params::rns::RnsParams;
+use poseidon::PoseidonConfig;
 use serde::{Deserialize, Serialize};
 
 use crate::circuits::{PoseidonNativeHasher, PoseidonNativeSponge};
@@ -107,6 +108,8 @@ pub trait SpongeHasher<F: FieldExt>: Clone {
 
 /// Hasher chipset trait
 pub trait HasherChipset<F: FieldExt, const WIDTH: usize>: Chipset<F> + Clone {
+	// Configuration for the hasher
+	fn configure(fr_selector: Selector, pr_selector: Selector) -> Self::Config;
 	/// Creates a new hasher chipset
 	fn new(inputs: [AssignedCell<F, F>; WIDTH]) -> Self;
 	/// Finalize the hasher
@@ -116,9 +119,12 @@ pub trait HasherChipset<F: FieldExt, const WIDTH: usize>: Chipset<F> + Clone {
 }
 
 /// Sponge Hasher chipset trait
-pub trait SpongeHasherChipset<F: FieldExt>: Clone {
+pub trait SpongeHasherChipset<F: FieldExt, const WIDTH: usize>: Clone {
 	/// Config selectors for the sponge
 	type Config: Clone;
+	// Configuration for the sponge hasher
+	// TODO: posedionconfig hardcoded, change it to H::config.
+	fn configure(hasher: PoseidonConfig, absorb_selector: Selector) -> Self::Config;
 	/// Creates a new sponge hasher chipset
 	fn init(common: &CommonConfig, layouter: impl Layouter<F>) -> Result<Self, Error>;
 	/// Update current sponge chipset state
