@@ -535,18 +535,11 @@ impl From<SignedAttestationEth> for SignedAttestationRaw {
 mod tests {
 	use crate::att_station::AttestationData as ContractAttestationData;
 	use crate::attestation::*;
-	use eigentrust_zk::{
-		ecdsa::native::{EcdsaKeypair, EcdsaVerifier, PublicKey},
-		halo2::halo2curves::secp256k1::Fq,
-		integer::native::Integer,
-		params::ecc::secp256k1::Secp256k1Params,
-	};
 	use ethers::{
 		prelude::k256::ecdsa::SigningKey,
 		signers::{Signer, Wallet},
 		types::Bytes,
 	};
-	use rand::thread_rng;
 	use secp256k1::{Message, Secp256k1, SecretKey};
 
 	#[test]
