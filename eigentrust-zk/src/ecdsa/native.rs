@@ -36,13 +36,13 @@ impl RecoveryId {
 	/// Create a new [`RecoveryId`] from the following 1-bit argument:
 	///
 	/// - `is_y_odd`: is the affine y-coordinate of 𝑘×𝑮 odd?
-	pub const fn new(is_y_odd: bool) -> Self {
-		Self(is_y_odd as u8)
+	pub fn new(is_y_odd: bool) -> Self {
+		Self(u8::from(is_y_odd))
 	}
 
 	/// Is the affine y-coordinate of 𝑘×𝑮 odd?
 	pub const fn is_y_odd(self) -> bool {
-		(self.0 & 1) != 0
+		self.0 != 0
 	}
 
 	/// Convert a `u8` into a [`RecoveryId`].
@@ -270,15 +270,16 @@ where
 		let k_inv = k.invert().unwrap();
 
 		// Calculate `r`
-		let r_point = (C::generator() * k).to_affine().coordinates().unwrap();
-		let x = r_point.x();
+		let r_point = (C::generator() * k).to_affine();
+		let r_point_coord = r_point.coordinates().unwrap();
+		let x = r_point_coord.x();
 		let r = mod_n::<C>(*x);
 
 		let private_key_fq = big_to_fe::<C::ScalarExt>(self.private_key.value());
 		// Calculate `s`
 		let s = k_inv * (msg_hash + (r * private_key_fq));
 
-		let y_is_odd = bool::from(r_point.y().is_odd());
+		let y_is_odd = bool::from(r_point_coord.y().is_odd());
 		let rec_id = RecoveryId::new(y_is_odd);
 
 		Signature::new(Integer::from_w(r), Integer::from_w(s), rec_id)
@@ -293,21 +294,20 @@ where
 		let msg_hash_fe = big_to_fe::<C::ScalarExt>(msg_hash.value());
 		let r_fe = big_to_fe::<C::ScalarExt>(r.value());
 		let s_fe = big_to_fe::<C::ScalarExt>(s.value());
-		let y_odd = rec_id.to_byte();
 
 		let mut big_r_bytes = Vec::new();
 		big_r_bytes.extend(r_fe.to_repr().as_ref());
-		big_r_bytes.push(y_odd);
+		let y_odd_repr = if rec_id.is_y_odd() { 64 } else { 0 };
+		big_r_bytes.push(y_odd_repr);
 
-		let mut big_r_repr = C::Repr::default();
-		big_r_repr.as_mut().copy_from_slice(&big_r_bytes);
-		let big_r = C::from_bytes(&big_r_repr).unwrap();
+		let mut r_point_repr = C::Repr::default();
+		r_point_repr.as_mut().copy_from_slice(&big_r_bytes);
+		let r_point = C::from_bytes(&r_point_repr).unwrap();
 
 		let r_inv = r_fe.invert().unwrap();
 		let u1 = -(r_inv * msg_hash_fe);
 		let u2 = r_inv * s_fe;
-		let pk = C::generator() * u1 + big_r * u2;
-
+		let pk = C::generator() * u1 + r_point * u2;
 		let pk_p = PublicKey::from(pk.to_affine());
 
 		// Verification - Sanity check
@@ -425,10 +425,13 @@ mod test {
 		params::ecc::secp256k1::Secp256k1Params,
 		params::rns::secp256k1::Secp256k1_4_68,
 	};
-	use halo2::halo2curves::{
-		bn256::Fr,
-		ff::PrimeField,
-		secp256k1::{Fq, Secp256k1Affine},
+	use halo2::{
+		arithmetic::Field,
+		halo2curves::{
+			bn256::Fr,
+			ff::PrimeField,
+			secp256k1::{Fq, Secp256k1Affine},
+		},
 	};
 
 	#[test]
@@ -473,7 +476,7 @@ mod test {
 		let rng = &mut rand::thread_rng();
 		let keypair =
 		EcdsaKeypair::<Secp256k1Affine, Fr, 4, 68, Secp256k1_4_68, Secp256k1Params>::generate_keypair(rng);
-		let msg_hash = Fq::from_u128(123456789);
+		let msg_hash = Fq::random(rng.clone());
 		let sig = keypair.sign(msg_hash.clone(), rng);
 
 		let public_key = keypair.public_key.clone();
