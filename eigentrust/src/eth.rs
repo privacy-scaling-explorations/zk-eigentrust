@@ -2,95 +2,27 @@
 //!
 //! This module provides types and functionalities for general ethereum interactions.
 
-use crate::{attestation::ECDSAPublicKey, error::EigenError, fs::get_assets_path, ClientSigner};
+use crate::{
+	att_station::AttestationStation, attestation::ECDSAPublicKey, error::EigenError, ClientSigner,
+};
 use eigentrust_zk::halo2::halo2curves::bn256::Fr as Scalar;
 use ethers::{
 	abi::Address,
-	prelude::{k256::ecdsa::SigningKey, Abigen, ContractFactory},
+	prelude::k256::ecdsa::SigningKey,
 	signers::coins_bip39::{English, Mnemonic},
-	solc::{Artifact, CompilerOutput, Solc},
 	utils::keccak256,
 };
-use log::info;
 use secp256k1::SecretKey;
 use std::sync::Arc;
 
-/// Compiles the AttestationStation contract.
-pub fn compile_as() -> Result<CompilerOutput, EigenError> {
-	let filepath = get_assets_path()?.join("AttestationStation.sol");
-	let compiler_output = Solc::default()
-		.compile_source(filepath)
-		.map_err(|e| EigenError::ContractCompilationError(e.to_string()))?;
-
-	if !compiler_output.errors.is_empty() {
-		return Err(EigenError::ContractCompilationError(
-			"Compiler output contains errors".to_string(),
-		));
-	}
-
-	Ok(compiler_output)
-}
-
-/// Generates the bindings for the AttestationStation contract and save them into a file.
-pub fn gen_as_bindings() -> Result<(), EigenError> {
-	let contracts = compile_as()?;
-	let filepath = get_assets_path()?.join("attestation_station.rs");
-
-	for (name, contract) in contracts.contracts_iter() {
-		let abi = contract
-			.clone()
-			.abi
-			.ok_or_else(|| EigenError::ParsingError("Missing contract ABI".to_string()))?;
-		let abi_json = serde_json::to_string(&abi)
-			.map_err(|_| EigenError::ParsingError("Error serializing ABI".to_string()))?;
-
-		let bindings = Abigen::new(name, abi_json)
-			.map_err(|_| EigenError::ParsingError("Error generating bindings".to_string()))?
-			.generate()
-			.map_err(|_| EigenError::ParsingError("Error generating bindings".to_string()))?;
-
-		bindings
-			.write_to_file(filepath.clone())
-			.map_err(|e| EigenError::FileIOError(e.to_string()))?;
-
-		info!("Bindings generated at {:?}", filepath);
-	}
-
-	Ok(())
-}
-
 /// Deploys the AttestationStation contract.
 pub async fn deploy_as(signer: Arc<ClientSigner>) -> Result<Address, EigenError> {
-	let contracts = compile_as()?;
-	let mut address: Option<Address> = None;
+	let res = AttestationStation::deploy(signer, ())
+		.map_err(|e| EigenError::ContractError(e.to_string()))?;
 
-	if let Some((_, contract)) = contracts.contracts_iter().next() {
-		let (abi, bytecode, _) = contract.clone().into_parts();
-		let abi = abi.ok_or(EigenError::ParsingError("ABI parsing failed".to_string()))?;
-		let bytecode = bytecode.ok_or(EigenError::ParsingError(
-			"Bytecode parsing failed".to_string(),
-		))?;
+	let transaction = res.send().await.map_err(|e| EigenError::TransactionError(e.to_string()))?;
 
-		let factory = ContractFactory::new(abi, bytecode, signer.clone());
-
-		match factory
-			.deploy(())
-			.map_err(|_| {
-				EigenError::ContractCompilationError("Error deploying contract".to_string())
-			})?
-			.send()
-			.await
-		{
-			Ok(contract) => {
-				address = Some(contract.address());
-			},
-			Err(e) => return Err(EigenError::TransactionError(e.to_string())),
-		}
-	}
-
-	address.ok_or(EigenError::ParsingError(
-		"Failed to deploy AttestationStation contract".to_string(),
-	))
+	Ok(transaction.address())
 }
 
 /// Returns a vector of ECDSA private keys derived from the given mnemonic phrase.
@@ -208,7 +140,8 @@ mod tests {
 		let recovered_address = address_from_public_key(&pub_key);
 
 		let expected_address =
-			Wallet::from(SigningKey::from_bytes(secret_key_as_bytes.as_ref()).unwrap()).address();
+			Wallet::from(SigningKey::from_bytes(secret_key_as_bytes.as_ref().into()).unwrap())
+				.address();
 
 		assert_eq!(recovered_address, expected_address);
 	}

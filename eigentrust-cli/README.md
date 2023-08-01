@@ -74,8 +74,7 @@ The command-line interface was built using [clap.rs](http://clap.rs/). There is 
   - `--action (add | remove)`: Defines the action to perform. You can choose to `add` a new member to a group or `remove` an existing member from it.
   - `--ic`: Provides the identity commitment of the participant you intend to add or remove from the group.
   - `--addr`: Specifies the participant's Ethereum address.
-- `compile`: Compiles the AttestationStation and stores the generated bindings.
-- `deploy`: Deploys all the contracts.
+- `deploy`: Deploys the AttestationStation contract.
 - `proof`: Calculates the global scores, generates the zk proof and stores it in `et-proof.json` at the `assets` folder.
 - `scores`: Calculates the global scores and stores them in the `scores.csv` file within the `assets` folder.
 - `show`: Displays the `config.json` file.
