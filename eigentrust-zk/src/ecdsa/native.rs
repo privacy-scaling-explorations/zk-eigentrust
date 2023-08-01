@@ -193,12 +193,12 @@ where
 		let mut r_bytes: [u8; 32] = [0; 32];
 		let mut s_bytes: [u8; 32] = [0; 32];
 		r_bytes.copy_from_slice(&bytes[..32]);
-		s_bytes.copy_from_slice(&bytes[32..]);
+		s_bytes.copy_from_slice(&bytes[32..64]);
 
 		let r = Fq::from_bytes(&r_bytes).unwrap();
 		let s = Fq::from_bytes(&s_bytes).unwrap();
 
-		let rec_id = RecoveryId::from_byte(bytes[65]);
+		let rec_id = RecoveryId::from_byte(bytes[64]);
 
 		Self::new(Integer::from_w(r), Integer::from_w(s), rec_id)
 	}
@@ -413,9 +413,7 @@ where
 		let s_low = if is_high { -s_fe } else { s_fe };
 		let new_s = Integer::from_w(s_low);
 
-		let new_sig = Signature::new(r, new_s, new_rec_id);
-
-		new_sig
+		Signature::new(r, new_s, new_rec_id)
 	}
 }
 
