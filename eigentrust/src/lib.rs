@@ -51,21 +51,19 @@ pub mod att_station;
 pub mod attestation;
 pub mod error;
 pub mod eth;
-pub mod fs;
 pub mod storage;
 
 use crate::attestation::{SignatureEth, SignatureRaw, SignedAttestationEth};
 use att_station::{
 	AttestationCreatedFilter, AttestationData as ContractAttestationData, AttestationStation,
 };
-use attestation::AttestationEth;
+use attestation::{AttestationEth, AttestationRaw, SignedAttestationRaw};
 use eigentrust_zk::{
 	circuits::dynamic_sets::ecdsa_native::{
-		EigenTrustSet, RationalScore, SignedAttestation as SignedAttestationFr, MIN_PEER_COUNT,
-		NUM_BITS, NUM_LIMBS,
+		EigenTrustSet, SignedAttestation as SignedAttestationFr, MIN_PEER_COUNT, NUM_BITS,
+		NUM_LIMBS,
 	},
 	ecdsa::native::PublicKey,
-	halo2::halo2curves::bn256::Fr as Scalar,
 };
 use error::EigenError;
 use eth::{address_from_public_key, ecdsa_secret_from_mnemonic, scalar_from_address};
@@ -100,6 +98,8 @@ const INITIAL_SCORE: u128 = 1000;
 const _NUM_DECIMAL_LIMBS: usize = 2;
 /// Number of digits of each limbs for threshold checking.
 const _POWER_OF_TEN: usize = 72;
+/// Signer type alias.
+pub type ClientSigner = SignerMiddleware<Provider<Http>, LocalWallet>;
 
 /// Client configuration settings.
 #[derive(Serialize, Deserialize, Debug, EthDisplay, Clone)]
@@ -120,10 +120,17 @@ pub struct ClientConfig {
 	pub node_url: String,
 }
 
-/// Signer type alias.
-pub type ClientSigner = SignerMiddleware<Provider<Http>, LocalWallet>;
-/// Scores type alias.
-pub type Score = (Address, Scalar, RationalScore);
+/// Score struct.
+pub struct Score {
+	/// Participant address.
+	pub address: [u8; 20],
+	/// Scalar score.
+	pub score_fr: [u8; 32],
+	/// Rational score (numerator, denominator).
+	pub score_rat: ([u8; 32], [u8; 32]),
+	/// Hexadecimal score.
+	pub score_hex: [u8; 32],
+}
 
 /// Client struct.
 pub struct Client {
@@ -156,11 +163,11 @@ impl Client {
 	}
 
 	/// Submits an attestation to the attestation station.
-	pub async fn attest(&self, attestation_eth: AttestationEth) -> Result<(), EigenError> {
+	pub async fn attest(&self, attestation: AttestationRaw) -> Result<(), EigenError> {
 		let ctx = SECP256K1;
 		let secret_keys = ecdsa_secret_from_mnemonic(&self.mnemonic, 1)?;
 
-		// Get AttestationFr
+		let attestation_eth = AttestationEth::from(attestation);
 		let attestation_fr = attestation_eth.to_attestation_fr()?;
 
 		// Format for signature
@@ -189,7 +196,8 @@ impl Client {
 
 		// Stored contract data
 		let (_, about, key, payload) = signed_attestation.to_tx_data()?;
-		let contract_data = ContractAttestationData(about, key.to_fixed_bytes(), payload);
+		let contract_data =
+			ContractAttestationData { about, key: key.to_fixed_bytes(), val: payload };
 
 		let tx_call = as_contract.attest(vec![contract_data]);
 		let tx_res = tx_call.send().await;
@@ -208,13 +216,11 @@ impl Client {
 
 	/// Calculates the EigenTrust global scores.
 	pub async fn calculate_scores(
-		&self, att: Vec<AttestationCreatedFilter>,
+		&self, att: Vec<SignedAttestationRaw>,
 	) -> Result<Vec<Score>, EigenError> {
 		// Parse attestation logs into signed attestation and attestation structs
-		let attestations: Vec<SignedAttestationEth> = att
-			.into_iter()
-			.map(|attestation_filter| SignedAttestationEth::from_log(&attestation_filter))
-			.collect::<Result<Vec<_>, EigenError>>()?;
+		let attestations: Vec<SignedAttestationEth> =
+			att.into_iter().map(|signed_raw| signed_raw.into()).collect();
 
 		// Construct a set to hold unique participant addresses
 		let mut participants_set = BTreeSet::<Address>::new();
@@ -309,7 +315,21 @@ impl Client {
 			.zip(scores_fr.iter())
 			.zip(scores_rat.iter())
 			.map(|((&participant, &score_fr), score_rat)| {
-				(participant, score_fr, score_rat.clone())
+				let address = participant.to_fixed_bytes();
+
+				let mut scalar = score_fr.to_bytes();
+				scalar.reverse();
+
+				let mut numerator: [u8; 32] = [0; 32];
+				numerator.copy_from_slice(score_rat.numer().to_bytes_be().1.as_slice());
+
+				let mut denominator: [u8; 32] = [0; 32];
+				denominator.copy_from_slice(score_rat.denom().to_bytes_be().1.as_slice());
+
+				let mut score_hex: [u8; 32] = [0; 32];
+				score_hex.copy_from_slice(score_rat.to_integer().to_bytes_be().1.as_slice());
+
+				Score { address, score_fr: scalar, score_rat: (numerator, denominator), score_hex }
 			})
 			.collect();
 
@@ -317,19 +337,29 @@ impl Client {
 	}
 
 	/// Fetches attestations from the contract.
-	pub async fn get_attestations(&self) -> Result<Vec<AttestationCreatedFilter>, EigenError> {
-		// Get the logs from the contract
-		let logs = self.get_logs().await?;
+	pub async fn get_attestations(&self) -> Result<Vec<SignedAttestationRaw>, EigenError> {
+		let att_logs: Result<Vec<AttestationCreatedFilter>, EigenError> = self
+			.get_logs()
+			.await?
+			.iter()
+			.map(|log| {
+				let raw_log = RawLog::from((log.topics.clone(), log.data.to_vec()));
+				AttestationCreatedFilter::decode_log(&raw_log)
+					.map_err(|e| EigenError::ParsingError(e.to_string()))
+			})
+			.collect();
 
-		// Decode the logs into attestations
-		let mut attestations: Vec<AttestationCreatedFilter> = Vec::new();
-		for log in logs.iter() {
-			let raw_log = RawLog::from((log.topics.clone(), log.data.to_vec()));
-			let att = AttestationCreatedFilter::decode_log(&raw_log).unwrap();
-			attestations.push(att);
-		}
+		// Convert logs into signed attestations
+		let signed_attestations: Result<Vec<SignedAttestationRaw>, _> = att_logs?
+			.into_iter()
+			.map(|log| {
+				let att_raw: AttestationRaw = log.clone().try_into()?;
+				let sig_raw: SignatureRaw = log.try_into()?;
+				Ok(SignedAttestationRaw::new(att_raw, sig_raw))
+			})
+			.collect();
 
-		Ok(attestations)
+		signed_attestations
 	}
 
 	/// Fetches logs from the contract.
@@ -363,12 +393,8 @@ impl Client {
 
 #[cfg(test)]
 mod lib_tests {
-	use crate::{attestation::AttestationEth, eth::deploy_as, Client, ClientConfig};
-	use ethers::{
-		abi::Address,
-		types::{Uint8, H160, H256},
-		utils::Anvil,
-	};
+	use crate::{attestation::AttestationRaw, eth::deploy_as, Client, ClientConfig};
+	use ethers::utils::Anvil;
 
 	const TEST_MNEMONIC: &'static str =
 		"test test test test test test test test test test test junk";
@@ -404,8 +430,7 @@ mod lib_tests {
 		let updated_client = Client::new(updated_config, TEST_MNEMONIC.to_string());
 
 		// Attest
-		let attestation =
-			AttestationEth::new(Address::default(), H160::default(), Uint8::default(), None);
+		let attestation = AttestationRaw::new([0; 20], [0; 20], 5, [0; 32]);
 		assert!(updated_client.attest(attestation).await.is_ok());
 
 		drop(anvil);
@@ -451,18 +476,15 @@ mod lib_tests {
 			0x36, 0x53, 0x62, 0x6d, 0x35, 0xff,
 		];
 
+		let value: u8 = 10;
+
 		let message = [
 			0x00, 0x75, 0x32, 0x45, 0x75, 0x79, 0x32, 0x77, 0x7a, 0x34, 0x58, 0x6c, 0x34, 0x34,
 			0x4a, 0x74, 0x6a, 0x78, 0x68, 0x4c, 0x4a, 0x52, 0x67, 0x48, 0x45, 0x6c, 0x4e, 0x73,
 			0x65, 0x6e, 0x79, 0x00,
 		];
 
-		let attestation = AttestationEth::new(
-			Address::from(about_bytes),
-			H160::from(domain_input),
-			Uint8::from(10),
-			Some(H256::from(message)),
-		);
+		let attestation = AttestationRaw::new(about_bytes, domain_input, value, message);
 
 		client.attest(attestation.clone()).await.unwrap();
 
@@ -470,15 +492,13 @@ mod lib_tests {
 
 		assert_eq!(attestations.len(), 1);
 
-		let att_logs = attestations[0].clone();
-
-		let returned_att = AttestationEth::from_log(&att_logs).unwrap();
+		let fetched_att = attestations[0].clone().attestation;
 
 		// Check that the attestations match
-		assert_eq!(returned_att.about, attestation.about);
-		assert_eq!(returned_att.domain, attestation.about);
-		assert_eq!(returned_att.value, attestation.value);
-		assert_eq!(returned_att.message, attestation.message);
+		assert_eq!(fetched_att.about, about_bytes);
+		assert_eq!(fetched_att.domain, domain_input);
+		assert_eq!(fetched_att.value, value);
+		assert_eq!(fetched_att.message, message);
 
 		drop(anvil);
 	}

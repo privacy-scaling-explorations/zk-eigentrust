@@ -314,7 +314,7 @@ where
 		// TODO: Checks given set for the public key
 
 		let (zero, one) = layouter.assign_region(
-			|| "assign_zero",
+			|| "assign_zero_and_one",
 			|region: Region<'_, N>| {
 				let mut ctx = RegionCtx::new(region, 0);
 				let zero = ctx.assign_fixed(common.fixed[0], N::ZERO)?;
