@@ -9,17 +9,15 @@ use crate::{
 };
 use clap::{Args, Parser, Subcommand};
 use eigentrust::{
-	att_station::AttestationCreatedFilter,
-	attestation::AttestationEth,
+	attestation::{AttestationRaw, SignedAttestationRaw},
 	error::EigenError,
-	storage::{AttestationRecord, CSVFileStorage, JSONFileStorage, ScoreRecord, Storage},
+	storage::{
+		str_to_20_byte_array, str_to_32_byte_array, AttestationRecord, CSVFileStorage,
+		JSONFileStorage, ScoreRecord, Storage,
+	},
 	Client,
 };
-use ethers::{
-	abi::Address,
-	providers::Http,
-	types::{Uint8, H160, H256},
-};
+use ethers::{abi::Address, providers::Http, types::H160};
 use log::info;
 use std::str::FromStr;
 
@@ -122,40 +120,31 @@ pub enum AttestationsOrigin {
 }
 
 impl AttestData {
-	/// Converts `AttestData` to `Attestation`.
-	pub fn to_attestation(&self, config: &ClientConfig) -> Result<AttestationEth, EigenError> {
+	pub fn to_attestation_raw(&self, config: &ClientConfig) -> Result<AttestationRaw, EigenError> {
 		// Parse Address
-		let parsed_address: Address = self
+		let about = self
 			.address
 			.as_ref()
-			.ok_or_else(|| EigenError::ParsingError("Missing address".to_string()))?
-			.parse()
-			.map_err(|_| EigenError::ParsingError("Failed to parse address.".to_string()))?;
+			.ok_or_else(|| EigenError::ValidationError("Missing address".to_string()))
+			.and_then(|address| str_to_20_byte_array(address))?;
 
-		// Domain
-		let domain = H160::from_str(&config.domain)
-			.map_err(|_| EigenError::ParsingError("Failed to parse domain".to_string()))?;
+		// Use the `ClientConfig` instance to get domain
+		let domain = str_to_20_byte_array(&config.domain)?;
 
 		// Parse score
-		let parsed_score: u8 = self
+		let value = self
 			.score
 			.as_ref()
-			.ok_or_else(|| EigenError::ParsingError("Missing score".to_string()))?
-			.parse::<u8>()
-			.map_err(|e| EigenError::ParsingError(e.to_string()))?;
-		let score = Uint8::from(parsed_score);
+			.ok_or_else(|| EigenError::ValidationError("Missing score".to_string()))
+			.and_then(|score| {
+				score.parse::<u8>().map_err(|e| EigenError::ParsingError(e.to_string()))
+			})?;
 
 		// Parse message
-		let message = match &self.message {
-			Some(message_str) => {
-				let message = H256::from_str(message_str)
-					.map_err(|e| EigenError::ParsingError(e.to_string()))?;
-				Some(message)
-			},
-			None => None,
-		};
+		let message =
+			self.message.as_ref().map_or(Ok([0u8; 32]), |message| str_to_32_byte_array(message))?;
 
-		Ok(AttestationEth::new(parsed_address, domain, score, message))
+		Ok(AttestationRaw::new(about, domain, value, message))
 	}
 }
 
@@ -184,10 +173,8 @@ pub async fn handle_attestations(config: ClientConfig) -> Result<(), EigenError>
 		));
 	}
 
-	let attestation_records = attestations
-		.into_iter()
-		.map(|log| AttestationRecord::from_log(&log))
-		.collect::<Result<Vec<AttestationRecord>, EigenError>>()?;
+	let attestation_records: Vec<AttestationRecord> =
+		attestations.into_iter().map(|attestation| attestation.into()).collect();
 
 	let filepath = get_file_path("attestations", FileType::Csv)?;
 
@@ -270,7 +257,7 @@ pub async fn handle_scores(
 	let att_fp = get_file_path("attestations", FileType::Csv)?;
 
 	// Get or Fetch attestations
-	let attestations = match origin {
+	let attestations: Vec<SignedAttestationRaw> = match origin {
 		AttestationsOrigin::Local => {
 			let att_storage = CSVFileStorage::<AttestationRecord>::new(att_fp);
 
@@ -283,21 +270,19 @@ pub async fn handle_scores(
 				));
 			}
 
-			let results: Result<Vec<_>, _> =
-				records.into_iter().map(|record| record.to_log()).collect();
-			let attestations: Vec<AttestationCreatedFilter> = results?;
+			let attestations: Result<Vec<SignedAttestationRaw>, EigenError> =
+				records.into_iter().map(|record| record.try_into()).collect();
 
-			attestations
+			attestations?
 		},
 		AttestationsOrigin::Fetch => {
 			handle_attestations(client.get_config().clone()).await?;
 
 			let att_storage = CSVFileStorage::<AttestationRecord>::new(att_fp);
-			let results: Result<Vec<_>, _> =
-				att_storage.load()?.into_iter().map(|record| record.to_log()).collect();
-			let attestations: Vec<AttestationCreatedFilter> = results?;
+			let attestations: Result<Vec<SignedAttestationRaw>, EigenError> =
+				att_storage.load()?.into_iter().map(|record| record.try_into()).collect();
 
-			attestations
+			attestations?
 		},
 	};
 
@@ -373,9 +358,11 @@ pub fn handle_update(config: &mut ClientConfig, data: UpdateData) -> Result<(), 
 mod tests {
 	use crate::cli::{AttestData, Cli};
 	use clap::CommandFactory;
-	use eigentrust::{attestation::AttestationEth, ClientConfig};
-	use ethers::types::{Uint8, H160, H256};
-	use std::str::FromStr;
+	use eigentrust::{
+		attestation::AttestationRaw,
+		storage::{str_to_20_byte_array, str_to_32_byte_array},
+		ClientConfig,
+	};
 
 	#[test]
 	fn test_cli() {
@@ -383,7 +370,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_attest_data_to_attestation() {
+	fn test_attest_data_to_attestation_raw() {
 		let config = ClientConfig {
 			as_address: "test".to_string(),
 			band_id: "38922764296632428858395574229367".to_string(),
@@ -394,29 +381,28 @@ mod tests {
 			node_url: "http://localhost:8545".to_string(),
 		};
 
+		let address = "0x5fbdb2315678afecb367f032d93f642f64180aa3".to_string();
+		let score = "5".to_string();
+		let message =
+			"473fe1d0de78c8f334d059013d902c13c8b53eb0f669caa9cad677ce1a601167".to_string();
+
 		let data = AttestData {
-			address: Some("0x5fbdb2315678afecb367f032d93f642f64180aa3".to_string()),
-			score: Some("5".to_string()),
-			message: Some(
-				"473fe1d0de78c8f334d059013d902c13c8b53eb0f669caa9cad677ce1a601167".to_string(),
-			),
+			address: Some(address.clone()),
+			score: Some(score),
+			message: Some(message.clone()),
 		};
 
-		let attestation = data.to_attestation(&config).unwrap();
+		let attestation = data.to_attestation_raw(&config).unwrap();
 
-		let expected_about = "0x5fbdb2315678afecb367f032d93f642f64180aa3".parse().unwrap();
-		let expected_domain = H160::from([0; 20]);
-		let expected_value = Uint8::from(5);
-		let expected_message = H256::from_str(
-			&"473fe1d0de78c8f334d059013d902c13c8b53eb0f669caa9cad677ce1a601167".to_string(),
-		)
-		.unwrap();
-		let expected_attestation = AttestationEth::new(
-			expected_about,
-			expected_domain,
-			expected_value,
-			Some(expected_message),
+		let expected_about = str_to_20_byte_array(&address).unwrap();
+		let expected_domain = str_to_20_byte_array(&config.domain).unwrap();
+		let expected_value = 5u8;
+		let expected_message = str_to_32_byte_array(&message).unwrap();
+
+		let expected_attestation = AttestationRaw::new(
+			expected_about, expected_domain, expected_value, expected_message,
 		);
+
 		assert_eq!(attestation, expected_attestation);
 	}
 }
