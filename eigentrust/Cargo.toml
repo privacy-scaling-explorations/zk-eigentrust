@@ -18,6 +18,3 @@ tokio = { version = "1.18", features = ["time", "macros", "rt-multi-thread", "ne
 
 # Path dependencies
 eigentrust-zk = { path = "../eigentrust-zk" }
-
-[dev-dependencies]
-rand = "0.8"
