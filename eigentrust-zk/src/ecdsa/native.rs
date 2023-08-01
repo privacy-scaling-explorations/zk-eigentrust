@@ -10,7 +10,7 @@ use halo2::{
 	halo2curves::{
 		ff::PrimeField,
 		group::Curve,
-		secp256k1::{Fq, Secp256k1Affine},
+		secp256k1::{Fp, Fq, Secp256k1Affine},
 		CurveAffine,
 	},
 };
@@ -33,20 +33,11 @@ where
 pub struct RecoveryId(u8);
 
 impl RecoveryId {
-	/// Maximum supported value for the recovery ID (inclusive).
-	pub const MAX: u8 = 3;
-
-	/// Create a new [`RecoveryId`] from the following 1-bit arguments:
+	/// Create a new [`RecoveryId`] from the following 1-bit argument:
 	///
 	/// - `is_y_odd`: is the affine y-coordinate of 𝑘×𝑮 odd?
-	/// - `is_x_reduced`: did the affine x-coordinate of 𝑘×𝑮 overflow the curve order?
-	pub const fn new(is_y_odd: bool, is_x_reduced: bool) -> Self {
-		Self((is_x_reduced as u8) << 1 | (is_y_odd as u8))
-	}
-
-	/// Did the affine x-coordinate of 𝑘×𝑮 overflow the curve order?
-	pub const fn is_x_reduced(self) -> bool {
-		(self.0 & 0b10) != 0
+	pub const fn new(is_y_odd: bool) -> Self {
+		Self(is_y_odd as u8)
 	}
 
 	/// Is the affine y-coordinate of 𝑘×𝑮 odd?
@@ -55,12 +46,8 @@ impl RecoveryId {
 	}
 
 	/// Convert a `u8` into a [`RecoveryId`].
-	pub const fn from_byte(byte: u8) -> Option<Self> {
-		if byte <= Self::MAX {
-			Some(Self(byte))
-		} else {
-			None
-		}
+	pub const fn from_byte(byte: u8) -> Self {
+		Self(byte)
 	}
 
 	/// Convert this [`RecoveryId`] into a `u8`.
@@ -275,7 +262,7 @@ where
 	/// Note: it does not make sense to do this in wrong field arithmetic
 	/// because the signature requires fresh randomness (k) for security reasons so it cannot be
 	/// done in a ZK circuit.
-	pub fn sign<R: Rng>(
+	pub fn sign_inner<R: Rng>(
 		&self, msg_hash: C::ScalarExt, rng: &mut R,
 	) -> Signature<C, N, NUM_LIMBS, NUM_BITS, P> {
 		// Draw randomness
@@ -291,8 +278,6 @@ where
 		// Calculate `s`
 		let s = k_inv * (msg_hash + (r * private_key_fq));
 
-		let x_is_reduced = r.to_repr().as_ref() == x.to_repr().as_ref();
-		assert!(x_is_reduced);
 		let y_is_odd = bool::from(r_point.y().is_odd());
 		let rec_id = RecoveryId::new(y_is_odd);
 
@@ -305,11 +290,10 @@ where
 		msg_hash: Integer<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>,
 	) -> PublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC> {
 		let Signature { r, s, rec_id } = sig.clone();
-		let msg_hash_composed = big_to_fe::<C::ScalarExt>(msg_hash.value());
-
+		let msg_hash_fe = big_to_fe::<C::ScalarExt>(msg_hash.value());
 		let r_fe = big_to_fe::<C::ScalarExt>(r.value());
+		let s_fe = big_to_fe::<C::ScalarExt>(s.value());
 		let y_odd = rec_id.to_byte();
-		println!("y_odd: {}", y_odd);
 
 		let mut big_r_bytes = Vec::new();
 		big_r_bytes.extend(r_fe.to_repr().as_ref());
@@ -320,9 +304,8 @@ where
 		let big_r = C::from_bytes(&big_r_repr).unwrap();
 
 		let r_inv = r_fe.invert().unwrap();
-		let s = big_to_fe::<C::ScalarExt>(s.value());
-		let u1 = -(r_inv * msg_hash_composed);
-		let u2 = r_inv * s;
+		let u1 = -(r_inv * msg_hash_fe);
+		let u2 = r_inv * s_fe;
 		let pk = C::generator() * u1 + big_r * u2;
 
 		let pk_p = PublicKey::from(pk.to_affine());
@@ -403,6 +386,36 @@ where
 			}
 		}
 		true
+	}
+}
+
+impl<N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P, EC>
+	EcdsaKeypair<Secp256k1Affine, N, NUM_LIMBS, NUM_BITS, P, EC>
+where
+	P: RnsParams<Fp, N, NUM_LIMBS, NUM_BITS> + RnsParams<Fq, N, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<Secp256k1Affine>,
+{
+	/// Signing algorithm just for secp256k1
+	pub fn sign<R: Rng>(
+		&self, msg_hash: Fq, rng: &mut R,
+	) -> Signature<Secp256k1Affine, N, NUM_LIMBS, NUM_BITS, P> {
+		let sig = self.sign_inner(msg_hash, rng);
+		let Signature { r, s, rec_id } = sig;
+		let s_fe = big_to_fe::<Fq>(s.value());
+
+		// Find n / 2 for scalar field
+		let border = (Fq::zero() - Fq::one()) * Fq::from(2).invert().unwrap();
+		let is_high = s_fe >= border;
+		let is_y_odd = rec_id.is_y_odd() ^ is_high;
+		let new_rec_id = RecoveryId::new(is_y_odd);
+
+		// Normalise s, if is_high, rotate it below the n / 2
+		let s_low = if is_high { -s_fe } else { s_fe };
+		let new_s = Integer::from_w(s_low);
+
+		let new_sig = Signature::new(r, new_s, new_rec_id);
+
+		new_sig
 	}
 }
 
