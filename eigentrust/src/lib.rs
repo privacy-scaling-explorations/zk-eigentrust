@@ -51,7 +51,6 @@ pub mod att_station;
 pub mod attestation;
 pub mod error;
 pub mod eth;
-pub mod fs;
 pub mod storage;
 
 use crate::attestation::{SignatureEth, SignatureRaw, SignedAttestationEth};
@@ -197,7 +196,8 @@ impl Client {
 
 		// Stored contract data
 		let (_, about, key, payload) = signed_attestation.to_tx_data()?;
-		let contract_data = ContractAttestationData(about, key.to_fixed_bytes(), payload);
+		let contract_data =
+			ContractAttestationData { about, key: key.to_fixed_bytes(), val: payload };
 
 		let tx_call = as_contract.attest(vec![contract_data]);
 		let tx_res = tx_call.send().await;

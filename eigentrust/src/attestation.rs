@@ -651,7 +651,8 @@ mod tests {
 
 		// Replace with expected address
 		let expected_address =
-			Wallet::from(SigningKey::from_bytes(secret_key_as_bytes.as_ref()).unwrap()).address();
+			Wallet::from(SigningKey::from_bytes(secret_key_as_bytes.as_ref().into()).unwrap())
+				.address();
 
 		let public_key = signed_attestation.recover_public_key().unwrap();
 		let address = address_from_public_key(&public_key);
@@ -702,16 +703,17 @@ mod tests {
 		let signed_attestation = SignedAttestationEth::new(attestation_eth.clone(), signature_eth);
 
 		let (_, about, key, payload) = signed_attestation.to_tx_data().unwrap();
-		let contract_att_data = ContractAttestationData(about, key.to_fixed_bytes(), payload);
+		let contract_att_data =
+			ContractAttestationData { about, key: key.to_fixed_bytes(), val: payload };
 
 		let expected_address = Address::from(about_bytes);
-		assert_eq!(contract_att_data.0, expected_address);
+		assert_eq!(contract_att_data.about, expected_address);
 
 		let expected_key = attestation_eth.get_key();
 
-		assert_eq!(contract_att_data.1, *expected_key.as_fixed_bytes());
+		assert_eq!(contract_att_data.key, *expected_key.as_fixed_bytes());
 
 		let expected_payload: Bytes = signed_attestation.to_payload();
-		assert_eq!(contract_att_data.2, expected_payload);
+		assert_eq!(contract_att_data.val, expected_payload);
 	}
 }
