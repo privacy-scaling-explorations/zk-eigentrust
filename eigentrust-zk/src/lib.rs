@@ -123,7 +123,7 @@ pub trait SpongeHasherChipset<F: FieldExt, const WIDTH: usize>: Clone {
 	/// Config selectors for the sponge
 	type Config: Clone;
 	// Configuration for the sponge hasher
-	// TODO: posedionconfig hardcoded, change it to H::config.
+	// TODO: poseidonconfig hardcoded.
 	fn configure(hasher: PoseidonConfig, absorb_selector: Selector) -> Self::Config;
 	/// Creates a new sponge hasher chipset
 	fn init(common: &CommonConfig, layouter: impl Layouter<F>) -> Result<Self, Error>;

@@ -116,11 +116,8 @@ mod tests {
 
 	use crate::{
 		calculate_message_hash,
-		circuits::{
-			dynamic_sets::native::{
-				field_value_from_pub_key, AttestationFr, EigenTrustSet, SignedAttestation,
-			},
-			opinion::native::Opinion,
+		circuits::dynamic_sets::native::{
+			field_value_from_pub_key, AttestationFr, EigenTrustSet, SignedAttestation,
 		},
 		ecdsa::native::{EcdsaKeypair, PublicKey},
 		integer::native::Integer,

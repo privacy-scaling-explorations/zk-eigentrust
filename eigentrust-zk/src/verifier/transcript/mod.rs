@@ -6,7 +6,7 @@ use crate::{
 	ecc::same_curve::AssignedEcPoint,
 	integer::{native::Integer, AssignedInteger},
 	params::{ecc::EccParams, rns::RnsParams},
-	FieldExt, HasherChipset, RegionCtx, SpongeHasherChipset,
+	FieldExt, RegionCtx, SpongeHasherChipset,
 };
 use halo2::{
 	circuit::{Layouter, Region, Value},

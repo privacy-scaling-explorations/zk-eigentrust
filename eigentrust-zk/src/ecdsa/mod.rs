@@ -6,7 +6,6 @@ use crate::ecc::generic::{
 	AssignedAux, AssignedEcPoint, AuxAssigner, EccAddChipset, PointAssigner, UnassignedEcPoint,
 };
 use crate::ecc::{AuxConfig, EccAddConfig};
-use crate::gadgets::main::MainConfig;
 use crate::integer::native::Integer;
 use crate::integer::{IntegerAssigner, UnassignedInteger};
 use crate::params::ecc::EccParams;

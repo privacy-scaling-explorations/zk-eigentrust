@@ -5,7 +5,7 @@ use halo2::halo2curves::{
 
 use super::EccParams;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 /// Params for Bn254 curve
 pub struct Bn254Params;
 

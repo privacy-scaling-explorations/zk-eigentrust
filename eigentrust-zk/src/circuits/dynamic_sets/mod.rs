@@ -407,14 +407,18 @@ where
 					config.common.advice[1],
 					Value::known(
 						<P as RnsParams<C::Scalar, N, NUM_LIMBS, NUM_BITS>>::compose(
-							PublicKey::default().0.x.limbs,
+							PublicKey::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::default().0.x.limbs,
 						),
 					),
 				)?;
 
 				let default_pk_y = ctx.assign_advice(
 					config.common.advice[2],
-					Value::known(P::compose(PublicKey::default().0.y.limbs)),
+					Value::known(
+						<P as RnsParams<C::Scalar, N, NUM_LIMBS, NUM_BITS>>::compose(
+							PublicKey::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::default().0.y.limbs,
+						),
+					),
 				)?;
 				ctx.next();
 
@@ -482,7 +486,8 @@ where
 			let s_inv = ecdsa_assigner.s_inv;
 			let aux = ecdsa_assigner.auxes;
 
-			let lshift = LeftShiftersAssigner::default();
+			let lshift: LeftShiftersAssigner<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P> =
+				LeftShiftersAssigner::default();
 			let left_shifters = lshift.synthesize(
 				&config.common,
 				&(),
@@ -492,6 +497,9 @@ where
 			let mut assigned_signed_att = Vec::new();
 			let mut assigned_msg_hash = Vec::new();
 			let mut assigned_s_inv = Vec::new();
+
+			assigned_msg_hash.push(ecdsa_assigner.msg_hash);
+			assigned_s_inv.push(ecdsa_assigner.s_inv);
 
 			// Assigning first iteration to catch s_inv and msg_hash
 			assigned_signed_att.push(AssignedSignedAttestation::new(
