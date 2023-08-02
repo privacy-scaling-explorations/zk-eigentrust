@@ -285,11 +285,11 @@ impl<
 		let ecc_table_select = EccTableSelectConfig::new(main.clone());
 
 		let ecc_mul_scalar = EccMulConfig::new(
-			ecc_ladder.clone(),
-			ecc_add.clone(),
+			ecc_ladder,
+			ecc_add,
 			ecc_double.clone(),
 			ecc_table_select,
-			bits2num_selector.clone(),
+			bits2num_selector,
 		);
 
 		let ecdsa = EcdsaConfig::new(ecc_mul_scalar, integer_mul_selector_secp_scalar);
@@ -303,15 +303,9 @@ impl<
 		let poseidon = PoseidonConfig::new(fr_selector, pr_selector);
 		let hasher = H::configure(fr_selector, pr_selector);
 		let absorb_selector = AbsorbChip::<_, WIDTH>::configure(&common, meta);
-		let sponge = S::configure(poseidon.clone(), absorb_selector);
+		let sponge = S::configure(poseidon, absorb_selector);
 
-		let opinion = OpinionConfig::new(
-			ecdsa,
-			main.clone(),
-			set.clone(),
-			hasher.clone(),
-			sponge.clone(),
-		);
+		let opinion = OpinionConfig::new(ecdsa, main.clone(), set, hasher.clone(), sponge.clone());
 
 		EigenTrustSetConfig { common, main, sponge, hasher, ecdsa_assigner, opinion }
 	}
