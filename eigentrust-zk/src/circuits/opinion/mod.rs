@@ -458,9 +458,7 @@ mod test {
 		AssignedAttestation, AssignedSignedAttestation, OpinionChipset, OpinionConfig, WIDTH,
 	};
 
-	use crate::circuits::dynamic_sets::native::{
-		field_value_from_pub_key, AttestationFr, SignedAttestation,
-	};
+	use crate::circuits::dynamic_sets::native::{AttestationFr, SignedAttestation};
 	use crate::circuits::PoseidonNativeHasher;
 	use crate::ecc::generic::{AuxAssigner, PointAssigner, UnassignedEcPoint};
 	use crate::ecc::{
@@ -769,7 +767,7 @@ mod test {
 		let rng = &mut rand::thread_rng();
 		let keypair = EcdsaKeypair::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::generate_keypair(rng);
 		let public_key = keypair.public_key.clone();
-		let public_key_fr = field_value_from_pub_key(&public_key);
+		let public_key_fr = public_key.to_address();
 		let g = Secp256k1::generator().to_affine();
 		let g_as_ecpoint = EcPoint::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::new(
 			Integer::from_w(g.x),

@@ -116,9 +116,7 @@ mod tests {
 
 	use crate::{
 		calculate_message_hash,
-		circuits::dynamic_sets::native::{
-			field_value_from_pub_key, AttestationFr, EigenTrustSet, SignedAttestation,
-		},
+		circuits::dynamic_sets::native::{AttestationFr, EigenTrustSet, SignedAttestation},
 		ecdsa::native::{EcdsaKeypair, PublicKey},
 		integer::native::Integer,
 		params::{
@@ -296,7 +294,7 @@ mod tests {
 			.collect_vec();
 
 		// Add the publicKey to the set
-		pks.iter().for_each(|pk| set.add_member(field_value_from_pub_key(&pk)));
+		pks.iter().for_each(|pk| set.add_member(pk.to_address()));
 		// Update the opinions
 		for i in 0..NUM_NEIGHBOURS {
 			let scores = ops[i].to_vec();
