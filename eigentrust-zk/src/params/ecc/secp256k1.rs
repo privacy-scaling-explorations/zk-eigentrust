@@ -2,7 +2,7 @@ use super::EccParams;
 use halo2::halo2curves::secp256k1::{Fp, Secp256k1Affine};
 use halo2::halo2curves::CurveAffine;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 /// Params for Secp256k1 curve
 pub struct Secp256k1Params;
 

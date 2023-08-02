@@ -178,7 +178,14 @@ impl SignatureEth {
 	pub fn to_signature_fr(&self) -> SignatureFr {
 		let sig_r = *self.sig_r.as_fixed_bytes();
 		let sig_s = *self.sig_s.as_fixed_bytes();
-		SignatureFr::from((sig_r, sig_s))
+		let rec_id = u8::from(self.rec_id.clone());
+
+		let mut bytes = Vec::new();
+		bytes.extend(sig_r.to_vec());
+		bytes.extend(sig_s.to_vec());
+		bytes.push(rec_id);
+
+		SignatureFr::from_bytes(bytes)
 	}
 }
 
