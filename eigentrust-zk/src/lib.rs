@@ -108,7 +108,7 @@ pub trait SpongeHasher<F: FieldExt>: Clone {
 
 /// Hasher chipset trait
 pub trait HasherChipset<F: FieldExt, const WIDTH: usize>: Chipset<F> + Clone {
-	// Configuration for the hasher
+	/// Configuration for the hasher
 	fn configure(fr_selector: Selector, pr_selector: Selector) -> Self::Config;
 	/// Creates a new hasher chipset
 	fn new(inputs: [AssignedCell<F, F>; WIDTH]) -> Self;
@@ -122,7 +122,7 @@ pub trait HasherChipset<F: FieldExt, const WIDTH: usize>: Chipset<F> + Clone {
 pub trait SpongeHasherChipset<F: FieldExt, const WIDTH: usize>: Clone {
 	/// Config selectors for the sponge
 	type Config: Clone;
-	// Configuration for the sponge hasher
+	/// Configuration for the sponge hasher
 	// TODO: poseidonconfig hardcoded.
 	fn configure(hasher: PoseidonConfig, absorb_selector: Selector) -> Self::Config;
 	/// Creates a new sponge hasher chipset

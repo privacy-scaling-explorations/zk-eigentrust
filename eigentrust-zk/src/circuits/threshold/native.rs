@@ -255,7 +255,7 @@ mod tests {
 		let mut op_scores = vec![];
 		for i in 0..NUM_NEIGHBOURS {
 			// scores[i] deleted
-			op_scores.push(pks[i]);
+			op_scores.push(pks[i].clone());
 		}
 		// TODO: Attestation values are dummy values
 		let attestation = AttestationFr::new(Fr::ZERO, Fr::ZERO, Fr::ZERO, Fr::ZERO);
@@ -283,7 +283,7 @@ mod tests {
 
 		let sks: Vec<Integer<Fq, Fr, 4, 68, Secp256k1_4_68>> = (0..NUM_NEIGHBOURS)
 			.into_iter()
-			.map(|__| Integer::<Fq, Fr, 4, 68, Secp256k1_4_68>::from_n(Fr::random(rng)))
+			.map(|__| Integer::<Fq, Fr, 4, 68, Secp256k1_4_68>::from_n(Fr::random(rng.clone())))
 			.collect();
 		let pks = sks
 			.iter()
@@ -305,7 +305,7 @@ mod tests {
 				&sks[i], &pks[i], &pks, &scores,
 			);
 
-			set.update_op(pks[i], op_i);
+			set.update_op(pks[i].clone(), op_i);
 		}
 
 		let s = set.converge();

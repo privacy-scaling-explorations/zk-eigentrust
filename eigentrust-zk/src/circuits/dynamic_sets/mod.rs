@@ -21,7 +21,7 @@ use crate::integer::{
 	IntegerSubChip, LeftShiftersAssigner, UnassignedInteger,
 };
 use crate::params::ecc::EccParams;
-use crate::params::hasher::poseidon_bn254_5x5::Params;
+use crate::params::hasher::RoundParams;
 use crate::params::rns::RnsParams;
 use crate::poseidon::{FullRoundChip, PartialRoundChip, PoseidonConfig};
 use crate::UnassignedValue;
@@ -74,6 +74,7 @@ pub struct EigenTrustSet<
 	S,
 	P,
 	EC,
+	R,
 > where
 	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::Scalar, N, NUM_LIMBS, NUM_BITS>,
 	EC: EccParams<C>,
@@ -81,6 +82,7 @@ pub struct EigenTrustSet<
 	C::ScalarExt: FieldExt,
 	H: HasherChipset<N, WIDTH>,
 	S: SpongeHasherChipset<N, WIDTH>,
+	R: RoundParams<N, WIDTH>,
 {
 	// Attestation
 	attestation: Vec<Vec<UnassignedAttestation<N>>>,
@@ -101,7 +103,7 @@ pub struct EigenTrustSet<
 	/// Generator as EC point
 	g_as_ecpoint: UnassignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
 	// Phantom Data
-	_p: PhantomData<(H, S)>,
+	_p: PhantomData<(H, S, R)>,
 }
 
 impl<
@@ -116,7 +118,8 @@ impl<
 		S,
 		P,
 		EC,
-	> EigenTrustSet<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, C, N, NUM_LIMBS, NUM_BITS, H, S, P, EC>
+		R,
+	> EigenTrustSet<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, C, N, NUM_LIMBS, NUM_BITS, H, S, P, EC, R>
 where
 	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::Scalar, N, NUM_LIMBS, NUM_BITS>,
 	EC: EccParams<C>,
@@ -124,6 +127,7 @@ where
 	C::ScalarExt: FieldExt,
 	H: HasherChipset<N, WIDTH>,
 	S: SpongeHasherChipset<N, WIDTH>,
+	R: RoundParams<N, WIDTH>,
 {
 	/// Constructs a new EigenTrustSet circuit
 	pub fn new(
@@ -158,12 +162,12 @@ where
 
 		let msg_hash = msg_hash
 			.iter()
-			.map(|ints| ints.iter().map(|int| UnassignedInteger::from(*int)).collect_vec())
+			.map(|ints| ints.iter().map(|int| UnassignedInteger::from(int.clone())).collect_vec())
 			.collect_vec();
 
 		let set = set.iter().map(|x| Value::known(*x)).collect();
 
-		let s_inv = s_inv.iter().map(|int| UnassignedInteger::from(*int)).collect_vec();
+		let s_inv = s_inv.iter().map(|int| UnassignedInteger::from(int.clone())).collect_vec();
 
 		let g_as_ecpoint = UnassignedEcPoint::from(g_as_ecpoint);
 		Self {
@@ -194,15 +198,29 @@ impl<
 		S,
 		P,
 		EC,
+		R,
 	> Circuit<N>
-	for EigenTrustSet<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, C, N, NUM_LIMBS, NUM_BITS, H, S, P, EC>
-where
+	for EigenTrustSet<
+		NUM_NEIGHBOURS,
+		NUM_ITER,
+		INITIAL_SCORE,
+		C,
+		N,
+		NUM_LIMBS,
+		NUM_BITS,
+		H,
+		S,
+		P,
+		EC,
+		R,
+	> where
 	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::Scalar, N, NUM_LIMBS, NUM_BITS>,
 	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::ScalarExt: FieldExt,
 	H: HasherChipset<N, WIDTH>,
 	S: SpongeHasherChipset<N, WIDTH>,
+	R: RoundParams<N, WIDTH>,
 {
 	type Config = EigenTrustSetConfig<N, H, S>;
 	type FloorPlanner = SimpleFloorPlanner;
@@ -280,14 +298,20 @@ where
 
 		let ecdsa_assigner = EcdsaAssignerConfig::new(aux, integer_mul_selector_secp_scalar);
 
-		let fr_selector = FullRoundChip::<_, WIDTH, Params>::configure(&common, meta);
-		let pr_selector = PartialRoundChip::<_, WIDTH, Params>::configure(&common, meta);
+		let fr_selector = FullRoundChip::<N, WIDTH, R>::configure(&common, meta);
+		let pr_selector = PartialRoundChip::<N, WIDTH, R>::configure(&common, meta);
 		let poseidon = PoseidonConfig::new(fr_selector, pr_selector);
 		let hasher = H::configure(fr_selector, pr_selector);
 		let absorb_selector = AbsorbChip::<_, WIDTH>::configure(&common, meta);
 		let sponge = S::configure(poseidon.clone(), absorb_selector);
 
-		let opinion = OpinionConfig::new(ecdsa, main, set, hasher, sponge);
+		let opinion = OpinionConfig::new(
+			ecdsa,
+			main.clone(),
+			set.clone(),
+			hasher.clone(),
+			sponge.clone(),
+		);
 
 		EigenTrustSetConfig { common, main, sponge, hasher, ecdsa_assigner, opinion }
 	}
@@ -471,8 +495,11 @@ where
 		// signature verification
 		for i in 0..NUM_NEIGHBOURS {
 			let ecdsa_assigner_chip = EcdsaAssigner::new(
-				self.pks[i], self.g_as_ecpoint, self.signatures[i], self.msg_hash[i][0],
-				self.s_inv[i],
+				self.pks[i].clone(),
+				self.g_as_ecpoint.clone(),
+				self.signatures[i].clone(),
+				self.msg_hash[i][0].clone(),
+				self.s_inv[i].clone(),
 			);
 			let ecdsa_assigner = ecdsa_assigner_chip.synthesize(
 				&config.common,
@@ -483,7 +510,6 @@ where
 			let assigned_public_key = ecdsa_assigner.public_key;
 			let assigned_signature = ecdsa_assigner.signature;
 			let g_as_ecpoint = ecdsa_assigner.g_as_ecpoint;
-			let s_inv = ecdsa_assigner.s_inv;
 			let aux = ecdsa_assigner.auxes;
 
 			let lshift: LeftShiftersAssigner<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P> =
@@ -503,14 +529,16 @@ where
 
 			// Assigning first iteration to catch s_inv and msg_hash
 			assigned_signed_att.push(AssignedSignedAttestation::new(
-				attestation[i][0], assigned_signature,
+				attestation[i][0].clone(),
+				assigned_signature.clone(),
 			));
 			for j in 1..NUM_NEIGHBOURS {
 				assigned_signed_att.push(AssignedSignedAttestation::new(
-					attestation[i][j], assigned_signature,
+					attestation[i][j].clone(),
+					assigned_signature.clone(),
 				));
 
-				let assign_msg_hash = IntegerAssigner::new(self.msg_hash[i][j]);
+				let assign_msg_hash = IntegerAssigner::new(self.msg_hash[i][j].clone());
 				let msg_hash = assign_msg_hash.synthesize(
 					&config.common,
 					&(),
@@ -518,8 +546,8 @@ where
 				)?;
 				assigned_msg_hash.push(msg_hash);
 
-				let assign_s_inv = IntegerAssigner::new(self.msg_hash[i][j]);
-				let s_inv = assign_msg_hash.synthesize(
+				let assign_s_inv = IntegerAssigner::new(self.msg_hash[i][j].clone());
+				let s_inv = assign_s_inv.synthesize(
 					&config.common,
 					&(),
 					layouter.namespace(|| "assign s_inv"),
@@ -529,9 +557,21 @@ where
 
 			let opinion: OpinionChipset<C, N, NUM_LIMBS, NUM_BITS, NUM_NEIGHBOURS, H, S, P, EC> =
 				OpinionChipset::new(
-					assigned_signed_att, assigned_public_key, set, assigned_msg_hash, g_as_ecpoint,
-					assigned_s_inv, aux, left_shifters,
+					assigned_signed_att,
+					assigned_public_key,
+					set.clone(),
+					assigned_msg_hash,
+					g_as_ecpoint,
+					assigned_s_inv,
+					aux,
+					left_shifters,
 				);
+
+			let res = opinion.synthesize(
+				&config.common,
+				&config.opinion,
+				layouter.namespace(|| "opinion"),
+			)?;
 		}
 
 		// filter peers' ops
