@@ -222,31 +222,6 @@ mod tests {
 		assert!(is_bigger);
 	}
 
-	/*
-	fn sign_opinion<
-		const NUM_NEIGHBOURS: usize,
-		const NUM_ITERATIONS: usize,
-		const INITIAL_SCORE: u128,
-	>(
-		sk: &SecretKey, pk: &PublicKey, pks: &[PublicKey], scores: &[Fr],
-	) -> Opinion<NUM_NEIGHBOURS> {
-		assert!(pks.len() == NUM_NEIGHBOURS);
-		assert!(scores.len() == NUM_NEIGHBOURS);
-
-		let (_, message_hashes) =
-			calculate_message_hash::<NUM_NEIGHBOURS, 1>(pks.to_vec(), vec![scores.to_vec()]);
-		let sig = sign(sk, pk, message_hashes[0]);
-
-		// let scores = pks.zip(*scores);
-		let mut op_scores = vec![];
-		for i in 0..NUM_NEIGHBOURS {
-			op_scores.push((pks[i], scores[i]));
-		}
-		let op = Opinion::new(sig, message_hashes[0], op_scores.to_vec());
-		op
-	}
-	 */
-
 	fn sign_opinion<
 		const NUM_NEIGHBOURS: usize,
 		const NUM_ITERATIONS: usize,
