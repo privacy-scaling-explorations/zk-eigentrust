@@ -59,7 +59,7 @@ use att_station::{
 };
 use attestation::{AttestationEth, AttestationRaw, SignedAttestationRaw};
 use eigentrust_zk::{
-	circuits::dynamic_sets::ecdsa_native::{
+	circuits::dynamic_sets::native::{
 		EigenTrustSet, SignedAttestation as SignedAttestationFr, MIN_PEER_COUNT, NUM_BITS,
 		NUM_LIMBS,
 	},

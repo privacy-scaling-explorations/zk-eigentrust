@@ -10,9 +10,7 @@ use crate::{
 	NUM_BITS, NUM_LIMBS,
 };
 use eigentrust_zk::{
-	circuits::dynamic_sets::ecdsa_native::{
-		Attestation as AttestationFr, SignedAttestation as SignedAttestationFr,
-	},
+	circuits::dynamic_sets::native::{AttestationFr, SignedAttestation as SignedAttestationFr},
 	ecdsa::native::Signature,
 	halo2::halo2curves::{bn256::Fr as Scalar, ff::FromUniformBytes, secp256k1::Secp256k1Affine},
 	params::rns::secp256k1::Secp256k1_4_68,

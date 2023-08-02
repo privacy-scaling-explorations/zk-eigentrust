@@ -311,7 +311,7 @@ where
 	fn synthesize(
 		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<N>,
 	) -> Result<Self::Output, Error> {
-		// TODO: Checks given set for the public key
+		// TODO: Do the check for the public key from the given set
 
 		let (zero, one) = layouter.assign_region(
 			|| "assign_zero_and_one",
