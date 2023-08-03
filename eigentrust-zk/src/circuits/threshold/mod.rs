@@ -415,7 +415,6 @@ impl<
 #[cfg(test)]
 mod tests {
 	use super::*;
-
 	use crate::{
 		circuits::{
 			dynamic_sets::native::{Attestation, EigenTrustSet, SignedAttestation},
@@ -438,6 +437,7 @@ mod tests {
 	use num_rational::BigRational;
 	use rand::thread_rng;
 
+	const DOMAIN: u128 = 42;
 	type C = Secp256k1Affine;
 	type N = Fr;
 	const NUM_LIMBS: usize = 4;
@@ -463,7 +463,8 @@ mod tests {
 			if pks[i] == N::zero() {
 				res.push(None)
 			} else {
-				let (about, key, value, message) = (pks[i], N::zero(), scores[i], N::zero());
+				let (about, key, value, message) =
+					(pks[i], N::from_u128(DOMAIN), scores[i], N::zero());
 				let attestation = Attestation::new(about, key, value, message);
 				let msg = big_to_fe(fe_to_big(
 					attestation.hash::<HASHER_WIDTH, PoseidonNativeHasher>(),
@@ -489,6 +490,7 @@ mod tests {
 			assert!(op.len() == NUM_NEIGHBOURS);
 		}
 
+		let domain = N::from_u128(DOMAIN);
 		let mut set = EigenTrustSet::<
 			NUM_NEIGHBOURS,
 			NUM_ITERATIONS,
@@ -501,7 +503,7 @@ mod tests {
 			EC,
 			H,
 			SH,
-		>::new();
+		>::new(domain);
 
 		let rng = &mut thread_rng();
 

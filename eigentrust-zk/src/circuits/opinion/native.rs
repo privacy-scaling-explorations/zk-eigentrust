@@ -30,6 +30,7 @@ pub struct Opinion<
 {
 	from: PublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
 	attestations: Vec<SignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>>,
+	domain: N,
 	_h: PhantomData<(H, SH)>,
 }
 
@@ -53,9 +54,9 @@ where
 	/// Construct new instance
 	pub fn new(
 		from: PublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
-		attestations: Vec<SignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>>,
+		attestations: Vec<SignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>>, domain: N,
 	) -> Self {
-		Self { from, attestations, _h: PhantomData }
+		Self { from, attestations, domain, _h: PhantomData }
 	}
 
 	/// Validate attestations & calculate the hash
@@ -88,6 +89,7 @@ where
 				hashes.push(default_hash);
 			} else {
 				assert!(att.attestation.about == set[i]);
+				assert!(att.attestation.domain == self.domain);
 
 				let att_hasher = H::new([
 					att.attestation.about,

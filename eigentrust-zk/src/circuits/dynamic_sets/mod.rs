@@ -2,7 +2,6 @@
 pub mod native;
 
 use self::native::Attestation;
-
 use super::opinion::{AssignedAttestation, AssignedSignedAttestation};
 use super::opinion::{OpinionChipset, OpinionConfig};
 use crate::circuits::opinion::UnassignedAttestation;

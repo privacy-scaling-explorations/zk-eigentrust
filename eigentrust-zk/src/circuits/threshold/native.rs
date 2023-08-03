@@ -98,7 +98,18 @@ impl<
 
 #[cfg(test)]
 mod tests {
-
+	use crate::{
+		circuits::{
+			dynamic_sets::native::{Attestation, EigenTrustSet, SignedAttestation},
+			PoseidonNativeHasher, PoseidonNativeSponge, HASHER_WIDTH,
+		},
+		ecdsa::native::EcdsaKeypair,
+		params::{
+			ecc::secp256k1::Secp256k1Params,
+			rns::{compose_big_decimal, secp256k1::Secp256k1_4_68},
+		},
+		utils::big_to_fe,
+	};
 	use halo2::{
 		arithmetic::Field,
 		halo2curves::{
@@ -113,21 +124,9 @@ mod tests {
 	use num_traits::FromPrimitive;
 	use rand::{thread_rng, Rng};
 
-	use crate::{
-		circuits::{
-			dynamic_sets::native::{Attestation, EigenTrustSet, SignedAttestation},
-			PoseidonNativeHasher, PoseidonNativeSponge, HASHER_WIDTH,
-		},
-		ecdsa::native::EcdsaKeypair,
-		params::{
-			ecc::secp256k1::Secp256k1Params,
-			rns::{compose_big_decimal, secp256k1::Secp256k1_4_68, RnsParams},
-		},
-		utils::big_to_fe,
-	};
-
 	use super::*;
 
+	const DOMAIN: u128 = 42;
 	type C = Secp256k1Affine;
 	type WN = Fq;
 	type N = Fr;
@@ -273,6 +272,7 @@ mod tests {
 			assert!(op.len() == NUM_NEIGHBOURS);
 		}
 
+		let domain = N::from_u128(DOMAIN);
 		let mut set = EigenTrustSet::<
 			NUM_NEIGHBOURS,
 			NUM_ITERATIONS,
@@ -285,7 +285,7 @@ mod tests {
 			EC,
 			H,
 			SH,
-		>::new();
+		>::new(domain);
 
 		let rng = &mut thread_rng();
 
