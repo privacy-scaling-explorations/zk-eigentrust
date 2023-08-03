@@ -98,7 +98,6 @@ impl<
 
 #[cfg(test)]
 mod tests {
-	use std::vec;
 
 	use halo2::{
 		arithmetic::Field,
@@ -115,17 +114,29 @@ mod tests {
 	use rand::{thread_rng, Rng};
 
 	use crate::{
-		calculate_message_hash,
-		circuits::dynamic_sets::native::{AttestationFr, EigenTrustSet, SignedAttestation},
-		ecdsa::native::{EcdsaKeypair, PublicKey},
-		integer::native::Integer,
+		circuits::{
+			dynamic_sets::native::{Attestation, EigenTrustSet, SignedAttestation},
+			PoseidonNativeHasher, PoseidonNativeSponge, HASHER_WIDTH,
+		},
+		ecdsa::native::EcdsaKeypair,
 		params::{
 			ecc::secp256k1::Secp256k1Params,
-			rns::{bn256::Bn256_4_68, compose_big_decimal, secp256k1::Secp256k1_4_68, RnsParams},
+			rns::{compose_big_decimal, secp256k1::Secp256k1_4_68, RnsParams},
 		},
+		utils::big_to_fe,
 	};
 
 	use super::*;
+
+	type C = Secp256k1Affine;
+	type WN = Fq;
+	type N = Fr;
+	const NUM_LIMBS: usize = 4;
+	const NUM_BITS: usize = 68;
+	type P = Secp256k1_4_68;
+	type EC = Secp256k1Params;
+	type H = PoseidonNativeHasher;
+	type SH = PoseidonNativeSponge;
 
 	#[test]
 	fn test_check_threshold_1() {
@@ -144,14 +155,14 @@ mod tests {
 		let num_bn = BigInt::from_u128(num).unwrap();
 		let den_bn = BigInt::from_u128(den).unwrap();
 
-		let threshold_fr = Fr::from_u128(threshold);
-		let num_fr = Fr::from_u128(num);
-		let den_fr = Fr::from_u128(den);
+		let threshold_fr = N::from_u128(threshold);
+		let num_fr = N::from_u128(num);
+		let den_fr = N::from_u128(den);
 
 		let score = num_fr * den_fr.invert().unwrap();
 
 		let ratio = BigRational::new(num_bn, den_bn);
-		let t: Threshold<Fr, NUM_LIMBS, POWER_OF_TEN, NUM_NEIGHBOURS, INITIAL_SCORE> =
+		let t: Threshold<N, NUM_LIMBS, POWER_OF_TEN, NUM_NEIGHBOURS, INITIAL_SCORE> =
 			Threshold::new(score, ratio, threshold_fr);
 		let is_bigger = t.check_threshold();
 
@@ -175,14 +186,14 @@ mod tests {
 		let num_bn = BigInt::from_u128(num).unwrap();
 		let den_bn = BigInt::from_u128(den).unwrap();
 
-		let threshold_fr = Fr::from_u128(threshold);
-		let num_fr = Fr::from_u128(num);
-		let den_fr = Fr::from_u128(den);
+		let threshold_fr = N::from_u128(threshold);
+		let num_fr = N::from_u128(num);
+		let den_fr = N::from_u128(den);
 
 		let score = num_fr * den_fr.invert().unwrap();
 
 		let ratio = BigRational::new(num_bn, den_bn);
-		let t: Threshold<Fr, NUM_LIMBS, POWER_OF_TEN, NUM_NEIGHBOURS, INITIAL_SCORE> =
+		let t: Threshold<N, NUM_LIMBS, POWER_OF_TEN, NUM_NEIGHBOURS, INITIAL_SCORE> =
 			Threshold::new(score, ratio, threshold_fr);
 		let is_bigger = t.check_threshold();
 
@@ -206,14 +217,14 @@ mod tests {
 		let num_bn = BigInt::from_u128(num).unwrap();
 		let den_bn = BigInt::from_u128(den).unwrap();
 
-		let threshold_fr = Fr::from_u128(threshold);
-		let num_fr = Fr::from_u128(num);
-		let den_fr = Fr::from_u128(den);
+		let threshold_fr = N::from_u128(threshold);
+		let num_fr = N::from_u128(num);
+		let den_fr = N::from_u128(den);
 
 		let score = num_fr * den_fr.invert().unwrap();
 
 		let ratio = BigRational::new(num_bn, den_bn);
-		let t: Threshold<Fr, NUM_LIMBS, POWER_OF_TEN, NUM_NEIGHBOURS, INITIAL_SCORE> =
+		let t: Threshold<N, NUM_LIMBS, POWER_OF_TEN, NUM_NEIGHBOURS, INITIAL_SCORE> =
 			Threshold::new(score, ratio, threshold_fr);
 		let is_bigger = t.check_threshold();
 
@@ -225,42 +236,29 @@ mod tests {
 		const NUM_ITERATIONS: usize,
 		const INITIAL_SCORE: u128,
 	>(
-		sk: &Integer<Fq, Fr, 4, 68, Secp256k1_4_68>,
-		pk: &PublicKey<Secp256k1Affine, Fr, 4, 68, Secp256k1_4_68, Secp256k1Params>,
-		pks: &[PublicKey<Secp256k1Affine, Fr, 4, 68, Secp256k1_4_68, Secp256k1Params>],
-		scores: &[Fr],
-	) -> Vec<Option<SignedAttestation>> {
-		assert!(pks.len() == NUM_NEIGHBOURS);
+		keypair: &EcdsaKeypair<C, N, NUM_LIMBS, NUM_BITS, P, EC>, addrs: &[N], scores: &[N],
+	) -> Vec<Option<SignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>>> {
+		assert!(addrs.len() == NUM_NEIGHBOURS);
 		assert!(scores.len() == NUM_NEIGHBOURS);
+		let rng = &mut thread_rng();
 
-		let (_, message_hashes) =
-			calculate_message_hash::<NUM_NEIGHBOURS, 1>(pks.to_vec(), vec![scores.to_vec()]);
-		let message_hashes =
-			message_hashes.iter().map(|x| Fq::from_bytes(&x.to_bytes()).unwrap()).collect_vec();
-		let rng = &mut rand::thread_rng();
-		let mut native_to_wrong = Bn256_4_68::compose(sk.limbs).to_bytes();
-		let wrong_f = Fq::from_bytes(&native_to_wrong).unwrap();
-		let ecdsa_keypair: EcdsaKeypair<
-			Secp256k1Affine,
-			Fr,
-			4,
-			68,
-			Secp256k1_4_68,
-			Secp256k1Params,
-		> = EcdsaKeypair::from_private_key(wrong_f);
-		let sig = ecdsa_keypair.sign(message_hashes[0], rng);
-		// let scores = pks.zip(*scores);
-		let mut op_scores = vec![];
+		let mut res = Vec::new();
 		for i in 0..NUM_NEIGHBOURS {
-			// scores[i] deleted
-			op_scores.push(pks[i].clone());
+			if addrs[i] == Fr::zero() {
+				res.push(None)
+			} else {
+				let (about, key, value, message) = (addrs[i], Fr::zero(), scores[i], Fr::zero());
+				let attestation = Attestation::new(about, key, value, message);
+				let msg = big_to_fe(fe_to_big(
+					attestation.hash::<HASHER_WIDTH, PoseidonNativeHasher>(),
+				));
+				let signature = keypair.sign(msg, rng);
+				let signed_attestation = SignedAttestation::new(attestation, signature);
+
+				res.push(Some(signed_attestation));
+			}
 		}
-		// TODO: Attestation values are dummy values
-		let attestation = AttestationFr::new(Fr::ZERO, Fr::ZERO, Fr::ZERO, Fr::ZERO);
-		let signed_att = vec![Some(SignedAttestation::new(attestation, sig.clone()))];
-		signed_att
-		//let op = Opinion::new(pk.clone(), signed_att);
-		//op
+		res
 	}
 
 	fn eigen_trust_set_testing_helper<
@@ -268,39 +266,42 @@ mod tests {
 		const NUM_ITERATIONS: usize,
 		const INITIAL_SCORE: u128,
 	>(
-		ops: Vec<Vec<Fr>>,
-	) -> (Vec<Fr>, Vec<BigRational>) {
+		ops: Vec<Vec<N>>,
+	) -> (Vec<N>, Vec<BigRational>) {
 		assert!(ops.len() == NUM_NEIGHBOURS);
 		for op in &ops {
 			assert!(op.len() == NUM_NEIGHBOURS);
 		}
 
-		let mut set = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
+		let mut set = EigenTrustSet::<
+			NUM_NEIGHBOURS,
+			NUM_ITERATIONS,
+			INITIAL_SCORE,
+			C,
+			N,
+			NUM_LIMBS,
+			NUM_BITS,
+			P,
+			EC,
+			H,
+			SH,
+		>::new();
 
 		let rng = &mut thread_rng();
 
-		let sks: Vec<Integer<Fq, Fr, 4, 68, Secp256k1_4_68>> = (0..NUM_NEIGHBOURS)
-			.into_iter()
-			.map(|__| Integer::<Fq, Fr, 4, 68, Secp256k1_4_68>::from_n(Fr::random(rng.clone())))
-			.collect();
-		let pks = sks
-			.iter()
-			.map(|s| {
-				EcdsaKeypair::from_private_key(
-					Fq::from_bytes(&Bn256_4_68::compose(s.limbs).to_bytes()).unwrap(),
-				)
-				.public_key
-			})
-			.collect_vec();
+		let keypairs: Vec<EcdsaKeypair<C, N, NUM_LIMBS, NUM_BITS, P, EC>> =
+			(0..NUM_NEIGHBOURS).into_iter().map(|_| EcdsaKeypair::generate_keypair(rng)).collect();
 
+		let pks = keypairs.iter().map(|kp| kp.public_key.clone()).collect_vec();
+		let addresses = pks.iter().map(|pk| pk.to_address()).collect_vec();
 		// Add the publicKey to the set
-		pks.iter().for_each(|pk| set.add_member(pk.to_address()));
+		addresses.iter().for_each(|&addr| set.add_member(addr));
 		// Update the opinions
 		for i in 0..NUM_NEIGHBOURS {
 			let scores = ops[i].to_vec();
 
 			let op_i = sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
-				&sks[i], &pks[i], &pks, &scores,
+				&keypairs[i], &addresses, &scores,
 			);
 
 			set.update_op(pks[i].clone(), op_i);
@@ -329,7 +330,7 @@ mod tests {
 				}
 			}
 
-			let ops = ops_raw.map(|arr| arr.map(|x| Fr::from_u128(x as u128)).to_vec()).to_vec();
+			let ops = ops_raw.map(|arr| arr.map(|x| N::from_u128(x as u128)).to_vec()).to_vec();
 
 			let (_, s_ratios) =
 				eigen_trust_set_testing_helper::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
@@ -359,7 +360,7 @@ mod tests {
 
 		// Printing out the optimal value for POWER_OF_TEN
 		let max_score_bn = BigUint::from(NUM_NEIGHBOURS * INITIAL_SCORE as usize);
-		let max_f_bn = fe_to_big(Fr::zero() - Fr::one());
+		let max_f_bn = fe_to_big(N::zero() - N::one());
 		let optimal_power_of_10 = max_f_bn.to_string().len() - max_score_bn.to_string().len() - 1;
 		println!("{:?}", optimal_power_of_10);
 
@@ -377,21 +378,21 @@ mod tests {
 				}
 			}
 
-			let ops = ops_raw.map(|arr| arr.map(|x| Fr::from_u128(x as u128)).to_vec()).to_vec();
+			let ops = ops_raw.map(|arr| arr.map(|x| N::from_u128(x as u128)).to_vec()).to_vec();
 
 			let (s, s_ratios) =
 				eigen_trust_set_testing_helper::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
 					ops,
 				);
 
-			let threshold = Fr::from_u128(THRESHOLD);
+			let threshold = N::from_u128(THRESHOLD);
 			for (&score, ratio) in s.iter().zip(s_ratios.clone()) {
-				let t: Threshold<Fr, NUM_LIMBS, POWER_OF_TEN, NUM_NEIGHBOURS, INITIAL_SCORE> =
+				let t: Threshold<N, NUM_LIMBS, POWER_OF_TEN, NUM_NEIGHBOURS, INITIAL_SCORE> =
 					Threshold::new(score, ratio, threshold);
 				let is_bigger_org = t.check_threshold();
 
-				let num = compose_big_decimal::<Fr, NUM_LIMBS, POWER_OF_TEN>(t.num_decomposed);
-				let den = compose_big_decimal::<Fr, NUM_LIMBS, POWER_OF_TEN>(t.den_decomposed);
+				let num = compose_big_decimal::<N, NUM_LIMBS, POWER_OF_TEN>(t.num_decomposed);
+				let den = compose_big_decimal::<N, NUM_LIMBS, POWER_OF_TEN>(t.den_decomposed);
 				let ratio = BigRational::new(num.to_bigint().unwrap(), den.to_bigint().unwrap());
 				let ratio_prime = ratio.to_integer().to_str_radix(10).parse::<u128>().unwrap();
 				let is_bigger = ratio_prime >= THRESHOLD;
@@ -425,7 +426,7 @@ mod tests {
 				}
 			}
 
-			let ops = ops_raw.map(|arr| arr.map(|x| Fr::from_u128(x as u128)).to_vec()).to_vec();
+			let ops = ops_raw.map(|arr| arr.map(|x| N::from_u128(x as u128)).to_vec()).to_vec();
 
 			let (_, s_ratios) =
 				eigen_trust_set_testing_helper::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
@@ -455,7 +456,7 @@ mod tests {
 
 		// Printing out the optimal value for POWER_OF_TEN
 		let max_score_bn = BigUint::from(NUM_NEIGHBOURS * INITIAL_SCORE as usize);
-		let max_f_bn = fe_to_big(Fr::zero() - Fr::one());
+		let max_f_bn = fe_to_big(N::zero() - N::one());
 		let optimal_power_of_10 = max_f_bn.to_string().len() - max_score_bn.to_string().len() - 1;
 		println!("{:?}", optimal_power_of_10);
 
@@ -473,21 +474,21 @@ mod tests {
 				}
 			}
 
-			let ops = ops_raw.map(|arr| arr.map(|x| Fr::from_u128(x as u128)).to_vec()).to_vec();
+			let ops = ops_raw.map(|arr| arr.map(|x| N::from_u128(x as u128)).to_vec()).to_vec();
 
 			let (s, s_ratios) =
 				eigen_trust_set_testing_helper::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
 					ops,
 				);
 
-			let threshold = Fr::from_u128(THRESHOLD);
+			let threshold = N::from_u128(THRESHOLD);
 			for (&score, ratio) in s.iter().zip(s_ratios.clone()) {
-				let t: Threshold<Fr, NUM_LIMBS, POWER_OF_TEN, NUM_NEIGHBOURS, INITIAL_SCORE> =
+				let t: Threshold<N, NUM_LIMBS, POWER_OF_TEN, NUM_NEIGHBOURS, INITIAL_SCORE> =
 					Threshold::new(score, ratio, threshold);
 				let is_bigger_org = t.check_threshold();
 
-				let num = compose_big_decimal::<Fr, NUM_LIMBS, POWER_OF_TEN>(t.num_decomposed);
-				let den = compose_big_decimal::<Fr, NUM_LIMBS, POWER_OF_TEN>(t.den_decomposed);
+				let num = compose_big_decimal::<N, NUM_LIMBS, POWER_OF_TEN>(t.num_decomposed);
+				let den = compose_big_decimal::<N, NUM_LIMBS, POWER_OF_TEN>(t.den_decomposed);
 				let ratio = BigRational::new(num.to_bigint().unwrap(), den.to_bigint().unwrap());
 				let ratio_prime = ratio.to_integer().to_str_radix(10).parse::<u128>().unwrap();
 				let is_bigger = ratio_prime >= THRESHOLD;

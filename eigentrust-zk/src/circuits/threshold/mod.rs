@@ -418,10 +418,9 @@ mod tests {
 
 	use crate::{
 		circuits::{
-			dynamic_sets::native::{
-				AttestationFr, EigenTrustSet, SignedAttestation, NUM_BITS, NUM_LIMBS,
-			},
+			dynamic_sets::native::{Attestation, EigenTrustSet, SignedAttestation},
 			threshold::native::Threshold,
+			PoseidonNativeHasher, PoseidonNativeSponge, HASHER_WIDTH,
 		},
 		ecdsa::native::{EcdsaKeypair, PublicKey},
 		params::{
@@ -439,33 +438,36 @@ mod tests {
 	use num_rational::BigRational;
 	use rand::thread_rng;
 
+	type C = Secp256k1Affine;
+	type N = Fr;
+	const NUM_LIMBS: usize = 4;
+	const NUM_BITS: usize = 68;
+	type P = Secp256k1_4_68;
+	type EC = Secp256k1Params;
+	type H = PoseidonNativeHasher;
+	type SH = PoseidonNativeSponge;
+
 	fn sign_opinion<
 		const NUM_NEIGHBOURS: usize,
 		const NUM_ITERATIONS: usize,
 		const INITIAL_SCORE: u128,
 	>(
-		keypair: &EcdsaKeypair<
-			Secp256k1Affine,
-			Fr,
-			NUM_LIMBS,
-			NUM_BITS,
-			Secp256k1_4_68,
-			Secp256k1Params,
-		>,
-		pks: &[Fr], scores: &[Fr],
-	) -> Vec<Option<SignedAttestation>> {
+		keypair: &EcdsaKeypair<C, N, NUM_LIMBS, NUM_BITS, P, EC>, pks: &[N], scores: &[N],
+	) -> Vec<Option<SignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>>> {
 		assert!(pks.len() == NUM_NEIGHBOURS);
 		assert!(scores.len() == NUM_NEIGHBOURS);
 		let rng = &mut thread_rng();
 
 		let mut res = Vec::new();
 		for i in 0..NUM_NEIGHBOURS {
-			if pks[i] == Fr::zero() {
+			if pks[i] == N::zero() {
 				res.push(None)
 			} else {
-				let (about, key, value, message) = (pks[i], Fr::zero(), scores[i], Fr::zero());
-				let attestation = AttestationFr::new(about, key, value, message);
-				let msg = big_to_fe(fe_to_big(attestation.hash()));
+				let (about, key, value, message) = (pks[i], N::zero(), scores[i], N::zero());
+				let attestation = Attestation::new(about, key, value, message);
+				let msg = big_to_fe(fe_to_big(
+					attestation.hash::<HASHER_WIDTH, PoseidonNativeHasher>(),
+				));
 				let signature = keypair.sign(msg, rng);
 				let signed_attestation = SignedAttestation::new(attestation, signature);
 
@@ -480,24 +482,36 @@ mod tests {
 		const NUM_ITERATIONS: usize,
 		const INITIAL_SCORE: u128,
 	>(
-		ops: Vec<Vec<Fr>>,
-	) -> (Vec<Fr>, Vec<Fr>, Vec<BigRational>) {
+		ops: Vec<Vec<N>>,
+	) -> (Vec<N>, Vec<N>, Vec<BigRational>) {
 		assert!(ops.len() == NUM_NEIGHBOURS);
 		for op in &ops {
 			assert!(op.len() == NUM_NEIGHBOURS);
 		}
 
-		let mut set = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
+		let mut set = EigenTrustSet::<
+			NUM_NEIGHBOURS,
+			NUM_ITERATIONS,
+			INITIAL_SCORE,
+			C,
+			N,
+			NUM_LIMBS,
+			NUM_BITS,
+			P,
+			EC,
+			H,
+			SH,
+		>::new();
 
 		let rng = &mut thread_rng();
 
-		let keypairs: Vec<EcdsaKeypair<Secp256k1Affine, _, NUM_LIMBS, NUM_BITS, _, _>> =
+		let keypairs: Vec<EcdsaKeypair<C, _, NUM_LIMBS, NUM_BITS, _, _>> =
 			(0..NUM_NEIGHBOURS).into_iter().map(|_| EcdsaKeypair::generate_keypair(rng)).collect();
 
-		let pks: Vec<PublicKey<Secp256k1Affine, _, NUM_LIMBS, NUM_BITS, _, _>> =
+		let pks: Vec<PublicKey<C, _, NUM_LIMBS, NUM_BITS, _, _>> =
 			keypairs.iter().map(|kp| kp.public_key.clone()).collect();
 
-		let pks_fr: Vec<Fr> = keypairs.iter().map(|kp| kp.public_key.to_address()).collect();
+		let pks_fr: Vec<N> = keypairs.iter().map(|kp| kp.public_key.to_address()).collect();
 
 		// Add the "address"(pk_fr) to the set
 		pks_fr.iter().for_each(|pk| set.add_member(*pk));
@@ -552,14 +566,14 @@ mod tests {
 		const NUM_LIMBS: usize = 2;
 		const POWER_OF_TEN: usize = 72;
 
-		let ops: Vec<Vec<Fr>> = vec![
+		let ops: Vec<Vec<N>> = vec![
 			vec![0, 200, 300, 500],
 			vec![100, 0, 600, 300],
 			vec![400, 100, 0, 500],
 			vec![100, 200, 700, 0],
 		]
 		.into_iter()
-		.map(|arr| arr.into_iter().map(|x| Fr::from_u128(x)).collect())
+		.map(|arr| arr.into_iter().map(|x| N::from_u128(x)).collect())
 		.collect();
 
 		let (sets, scores, score_ratios) =
@@ -571,23 +585,18 @@ mod tests {
 		let score = scores[target_idx].clone();
 		let score_ratio = score_ratios[target_idx].clone();
 		let (num_decomposed, den_decomposed) =
-			ratio_to_decomposed_helper::<Fr, NUM_LIMBS, POWER_OF_TEN>(score_ratio.clone());
-		let threshold = Fr::from_u128(1000_u128);
+			ratio_to_decomposed_helper::<N, NUM_LIMBS, POWER_OF_TEN>(score_ratio.clone());
+		let threshold = N::from_u128(1000_u128);
 
-		let native_threshold: Threshold<
-			Fr,
-			NUM_LIMBS,
-			POWER_OF_TEN,
-			NUM_NEIGHBOURS,
-			INITIAL_SCORE,
-		> = Threshold::new(score, score_ratio, threshold);
+		let native_threshold: Threshold<N, NUM_LIMBS, POWER_OF_TEN, NUM_NEIGHBOURS, INITIAL_SCORE> =
+			Threshold::new(score, score_ratio, threshold);
 		let native_threshold_check =
-			if native_threshold.check_threshold() { Fr::ONE } else { Fr::ZERO };
+			if native_threshold.check_threshold() { N::ONE } else { N::ZERO };
 
 		let pub_ins = vec![target_addr, threshold, native_threshold_check];
 
 		let threshold_circuit: ThresholdCircuit<
-			Fr,
+			N,
 			NUM_LIMBS,
 			POWER_OF_TEN,
 			NUM_NEIGHBOURS,
@@ -595,7 +604,7 @@ mod tests {
 		> = ThresholdCircuit::new(&sets, &scores, &num_decomposed, &den_decomposed);
 
 		let k = 12;
-		let prover = match MockProver::<Fr>::run(k, &threshold_circuit, vec![pub_ins]) {
+		let prover = match MockProver::<N>::run(k, &threshold_circuit, vec![pub_ins]) {
 			Ok(prover) => prover,
 			Err(e) => panic!("{}", e),
 		};

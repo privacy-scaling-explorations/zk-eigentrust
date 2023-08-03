@@ -2,7 +2,8 @@
 pub mod native;
 
 use crate::{
-	circuits::dynamic_sets::native::AttestationFr,
+	circuits::dynamic_sets::native::Attestation,
+	circuits::HASHER_WIDTH,
 	ecc::generic::{AssignedAux, AssignedEcPoint},
 	ecdsa::{AssignedPublicKey, AssignedSignature, EcdsaChipset, EcdsaConfig, UnassignedSignature},
 	gadgets::{
@@ -16,13 +17,10 @@ use crate::{
 };
 use halo2::{
 	circuit::{AssignedCell, Layouter, Region, Value},
-	halo2curves::{bn256::Fr, CurveAffine},
+	halo2curves::CurveAffine,
 	plonk::Error,
 };
 use std::marker::PhantomData;
-
-/// Default with of the hasher used in OpinionChipset
-pub const WIDTH: usize = 5;
 
 /// Assigned Attestation structure.
 #[derive(Debug, Clone)]
@@ -67,8 +65,8 @@ impl<N: FieldExt> UnassignedAttestation<N> {
 	}
 }
 
-impl From<AttestationFr> for UnassignedAttestation<Fr> {
-	fn from(att: AttestationFr) -> Self {
+impl<N: FieldExt> From<Attestation<N>> for UnassignedAttestation<N> {
+	fn from(att: Attestation<N>) -> Self {
 		Self {
 			about: Value::known(att.about),
 			domain: Value::known(att.domain),
@@ -179,8 +177,8 @@ where
 #[derive(Debug, Clone)]
 pub struct OpinionConfig<F: FieldExt, H, S>
 where
-	H: HasherChipset<F, WIDTH>,
-	S: SpongeHasherChipset<F, WIDTH>,
+	H: HasherChipset<F, HASHER_WIDTH>,
+	S: SpongeHasherChipset<F, HASHER_WIDTH>,
 {
 	ecdsa: EcdsaConfig,
 	main: MainConfig,
@@ -191,8 +189,8 @@ where
 
 impl<F: FieldExt, H, S> OpinionConfig<F, H, S>
 where
-	H: HasherChipset<F, WIDTH>,
-	S: SpongeHasherChipset<F, WIDTH>,
+	H: HasherChipset<F, HASHER_WIDTH>,
+	S: SpongeHasherChipset<F, HASHER_WIDTH>,
 {
 	/// Construct a new config
 	pub fn new(
@@ -205,22 +203,22 @@ where
 /// Constructs a chip for the circuit.
 #[derive(Clone)]
 pub struct OpinionChipset<
+	const NUM_NEIGHBOURS: usize,
 	C: CurveAffine,
 	N: FieldExt,
 	const NUM_LIMBS: usize,
 	const NUM_BITS: usize,
-	const NUM_NEIGHBOURS: usize,
-	H,
-	S,
 	P,
 	EC,
+	H,
+	SH,
 > where
 	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::Scalar, N, NUM_LIMBS, NUM_BITS>,
 	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::ScalarExt: FieldExt,
-	H: HasherChipset<N, WIDTH>,
-	S: SpongeHasherChipset<N, WIDTH>,
+	H: HasherChipset<N, HASHER_WIDTH>,
+	SH: SpongeHasherChipset<N, HASHER_WIDTH>,
 {
 	/// Attestations towards other peers
 	attestations: Vec<AssignedSignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>>,
@@ -239,27 +237,27 @@ pub struct OpinionChipset<
 	/// Left shifters for composing integers
 	left_shifters: [AssignedCell<N, N>; NUM_LIMBS],
 	/// Constructs a phantom data for the hasher.
-	_hasher: PhantomData<(H, S, EC)>,
+	_hasher: PhantomData<(H, SH, EC)>,
 }
 
 impl<
+		const NUM_NEIGHBOURS: usize,
 		C: CurveAffine,
 		N: FieldExt,
 		const NUM_LIMBS: usize,
 		const NUM_BITS: usize,
-		const NUM_NEIGHBOURS: usize,
-		H,
-		S,
 		P,
 		EC,
-	> OpinionChipset<C, N, NUM_LIMBS, NUM_BITS, NUM_NEIGHBOURS, H, S, P, EC>
+		H,
+		SH,
+	> OpinionChipset<NUM_NEIGHBOURS, C, N, NUM_LIMBS, NUM_BITS, P, EC, H, SH>
 where
 	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::Scalar, N, NUM_LIMBS, NUM_BITS>,
 	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::ScalarExt: FieldExt,
-	H: HasherChipset<N, WIDTH>,
-	S: SpongeHasherChipset<N, WIDTH>,
+	H: HasherChipset<N, HASHER_WIDTH>,
+	SH: SpongeHasherChipset<N, HASHER_WIDTH>,
 {
 	/// Create a new chip.
 	pub fn new(
@@ -286,25 +284,25 @@ where
 }
 
 impl<
+		const NUM_NEIGHBOURS: usize,
 		C: CurveAffine,
 		N: FieldExt,
 		const NUM_LIMBS: usize,
 		const NUM_BITS: usize,
-		const NUM_NEIGHBOURS: usize,
-		H,
-		S,
 		P,
 		EC,
-	> Chipset<N> for OpinionChipset<C, N, NUM_LIMBS, NUM_BITS, NUM_NEIGHBOURS, H, S, P, EC>
+		H,
+		SH,
+	> Chipset<N> for OpinionChipset<NUM_NEIGHBOURS, C, N, NUM_LIMBS, NUM_BITS, P, EC, H, SH>
 where
 	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
 	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::ScalarExt: FieldExt,
-	H: HasherChipset<N, WIDTH>,
-	S: SpongeHasherChipset<N, WIDTH>,
+	H: HasherChipset<N, HASHER_WIDTH>,
+	SH: SpongeHasherChipset<N, HASHER_WIDTH>,
 {
-	type Config = OpinionConfig<N, H, S>;
+	type Config = OpinionConfig<N, H, SH>;
 	type Output = (Vec<AssignedCell<N, N>>, AssignedCell<N, N>);
 
 	/// Synthesize the circuit.
@@ -328,7 +326,7 @@ where
 		let mut hashes = Vec::new();
 
 		// Hashing default values for default attestation
-		let hash = H::new([(); WIDTH].map(|_| zero.clone()));
+		let hash = H::new([(); HASHER_WIDTH].map(|_| zero.clone()));
 		let default_hash = hash.finalize(
 			common,
 			&config.hasher,
@@ -442,7 +440,7 @@ where
 			hashes.push(selected_value);
 		}
 
-		let mut sponge = S::init(common, layouter.namespace(|| "sponge"))?;
+		let mut sponge = SH::init(common, layouter.namespace(|| "sponge"))?;
 		sponge.update(&hashes);
 		let op_hash = sponge.squeeze(common, &config.sponge, layouter.namespace(|| "squeeze!"))?;
 
@@ -454,12 +452,10 @@ where
 mod test {
 
 	use super::native::Opinion;
-	use super::{
-		AssignedAttestation, AssignedSignedAttestation, OpinionChipset, OpinionConfig, WIDTH,
-	};
+	use super::{AssignedAttestation, AssignedSignedAttestation, OpinionChipset, OpinionConfig};
 
-	use crate::circuits::dynamic_sets::native::{AttestationFr, SignedAttestation};
-	use crate::circuits::PoseidonNativeHasher;
+	use crate::circuits::dynamic_sets::native::{Attestation, SignedAttestation};
+	use crate::circuits::{PoseidonNativeHasher, PoseidonNativeSponge, HASHER_WIDTH};
 	use crate::ecc::generic::{AuxAssigner, PointAssigner, UnassignedEcPoint};
 	use crate::ecc::{
 		AuxConfig, EccAddConfig, EccDoubleConfig, EccMulConfig, EccTableSelectConfig,
@@ -507,6 +503,7 @@ mod test {
 	};
 	use itertools::Itertools;
 
+	const NUM_NEIGHBOURS: usize = 4;
 	type W = Fp;
 	type SecpScalar = Fq;
 	type N = Fr;
@@ -515,13 +512,15 @@ mod test {
 	const NUM_BITS: usize = 68;
 	type P = Secp256k1_4_68;
 	type EC = Secp256k1Params;
-	type H = PoseidonChipset<N, WIDTH, Params>;
-	type S = StatefulSpongeChipset<N, WIDTH, Params>;
+	type H = PoseidonNativeHasher;
+	type SH = PoseidonNativeSponge;
+	type HC = PoseidonChipset<N, HASHER_WIDTH, Params>;
+	type SHC = StatefulSpongeChipset<N, HASHER_WIDTH, Params>;
 
 	#[derive(Clone)]
 	struct TestConfig {
 		common: CommonConfig,
-		opinion: OpinionConfig<N, H, S>,
+		opinion: OpinionConfig<N, HC, SHC>,
 		aux: AuxConfig,
 	}
 
@@ -574,10 +573,10 @@ mod test {
 
 			let aux = AuxConfig::new(ecc_double);
 
-			let fr_selector = FullRoundChip::<_, WIDTH, Params>::configure(&common, meta);
-			let pr_selector = PartialRoundChip::<_, WIDTH, Params>::configure(&common, meta);
+			let fr_selector = FullRoundChip::<_, HASHER_WIDTH, Params>::configure(&common, meta);
+			let pr_selector = PartialRoundChip::<_, HASHER_WIDTH, Params>::configure(&common, meta);
 			let poseidon = PoseidonConfig::new(fr_selector, pr_selector);
-			let absorb_selector = AbsorbChip::<_, WIDTH>::configure(&common, meta);
+			let absorb_selector = AbsorbChip::<_, HASHER_WIDTH>::configure(&common, meta);
 			let sponge = PoseidonSpongeConfig::new(poseidon.clone(), absorb_selector);
 
 			let opinion = OpinionConfig::new(ecdsa, main, set, poseidon, sponge);
@@ -586,7 +585,7 @@ mod test {
 	}
 
 	struct TestOpinionCircuit {
-		attestations: Vec<SignedAttestation>,
+		attestations: Vec<SignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>>,
 		set: Vec<N>,
 		public_key: UnassignedPublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
 		g_as_ecpoint: UnassignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
@@ -596,7 +595,7 @@ mod test {
 
 	impl TestOpinionCircuit {
 		fn new(
-			attestations: Vec<SignedAttestation>, set: Vec<N>,
+			attestations: Vec<SignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>>, set: Vec<N>,
 			public_key: PublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
 			g_as_ecpoint: EcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
 			msg_hash: Vec<Integer<SecpScalar, N, NUM_LIMBS, NUM_BITS, P>>,
@@ -740,7 +739,7 @@ mod test {
 				layouter.namespace(|| "left_shifters"),
 			)?;
 
-			let opinion: OpinionChipset<C, N, NUM_LIMBS, NUM_BITS, WIDTH, H, S, P, EC> =
+			let opinion: OpinionChipset<NUM_NEIGHBOURS, C, N, NUM_LIMBS, NUM_BITS, P, EC, HC, SHC> =
 				OpinionChipset::new(
 					attestations, public_key, set, msg_hash, g_as_ecpoint, s_inv, auxes,
 					left_shifters,
@@ -780,7 +779,7 @@ mod test {
 		let mut attestations = Vec::new();
 
 		for _ in 0..10 {
-			let attestation = AttestationFr::new(
+			let attestation = Attestation::new(
 				Fr::random(rng.clone()),
 				Fr::random(rng.clone()),
 				Fr::random(rng.clone()),
@@ -788,7 +787,7 @@ mod test {
 			);
 			set.push(attestation.about.clone());
 
-			let att_hasher = PoseidonNativeHasher::new([
+			let att_hasher = H::new([
 				attestation.about,
 				attestation.domain,
 				attestation.value,
@@ -805,7 +804,8 @@ mod test {
 			attestations.push(SignedAttestation::new(attestation, signature));
 		}
 		set.push(public_key_fr);
-		let opinion_native: Opinion<WIDTH> = Opinion::new(public_key.clone(), attestations.clone());
+		let opinion_native: Opinion<NUM_NEIGHBOURS, C, N, NUM_LIMBS, NUM_BITS, P, EC, H, SH> =
+			Opinion::new(public_key.clone(), attestations.clone());
 		let (_, scores, op_hash) = opinion_native.validate(set.clone());
 
 		let mut p_ins = Vec::new();

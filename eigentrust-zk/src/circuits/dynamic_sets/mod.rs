@@ -2,8 +2,9 @@
 pub mod native;
 
 use super::opinion::{AssignedAttestation, AssignedSignedAttestation};
-use super::opinion::{OpinionChipset, OpinionConfig, WIDTH};
+use super::opinion::{OpinionChipset, OpinionConfig};
 use crate::circuits::opinion::UnassignedAttestation;
+use crate::circuits::HASHER_WIDTH;
 use crate::ecc::generic::native::EcPoint;
 use crate::ecc::generic::UnassignedEcPoint;
 use crate::ecc::{
@@ -21,13 +22,10 @@ use crate::integer::{
 	IntegerSubChip, LeftShiftersAssigner, UnassignedInteger,
 };
 use crate::params::ecc::EccParams;
-use crate::params::hasher::RoundParams;
 use crate::params::rns::RnsParams;
-use crate::poseidon::{FullRoundChip, PartialRoundChip, PoseidonConfig};
 use crate::UnassignedValue;
 use crate::{
 	gadgets::{
-		absorb::AbsorbChip,
 		bits2num::Bits2NumChip,
 		main::{
 			AddChipset, AndChipset, InverseChipset, IsEqualChipset, MainChip, MainConfig,
@@ -49,13 +47,13 @@ use std::marker::PhantomData;
 /// The columns config for the EigenTrustSet circuit.
 pub struct EigenTrustSetConfig<F: FieldExt, H, S>
 where
-	H: HasherChipset<F, WIDTH>,
-	S: SpongeHasherChipset<F, WIDTH>,
+	H: HasherChipset<F, HASHER_WIDTH>,
+	S: SpongeHasherChipset<F, HASHER_WIDTH>,
 {
 	common: CommonConfig,
 	main: MainConfig,
-	sponge: S::Config,
 	hasher: H::Config,
+	sponge: S::Config,
 	ecdsa_assigner: EcdsaAssignerConfig,
 	opinion: OpinionConfig<F, H, S>,
 }
@@ -70,19 +68,17 @@ pub struct EigenTrustSet<
 	N: FieldExt,
 	const NUM_LIMBS: usize,
 	const NUM_BITS: usize,
-	H,
-	S,
 	P,
 	EC,
-	R,
+	H,
+	SH,
 > where
 	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::Scalar, N, NUM_LIMBS, NUM_BITS>,
 	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::ScalarExt: FieldExt,
-	H: HasherChipset<N, WIDTH>,
-	S: SpongeHasherChipset<N, WIDTH>,
-	R: RoundParams<N, WIDTH>,
+	H: HasherChipset<N, HASHER_WIDTH>,
+	SH: SpongeHasherChipset<N, HASHER_WIDTH>,
 {
 	// Attestation
 	attestation: Vec<Vec<UnassignedAttestation<N>>>,
@@ -103,7 +99,7 @@ pub struct EigenTrustSet<
 	/// Generator as EC point
 	g_as_ecpoint: UnassignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
 	// Phantom Data
-	_p: PhantomData<(H, S, R)>,
+	_p: PhantomData<(H, SH)>,
 }
 
 impl<
@@ -114,20 +110,18 @@ impl<
 		N: FieldExt,
 		const NUM_LIMBS: usize,
 		const NUM_BITS: usize,
-		H,
-		S,
 		P,
 		EC,
-		R,
-	> EigenTrustSet<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, C, N, NUM_LIMBS, NUM_BITS, H, S, P, EC, R>
+		H,
+		SH,
+	> EigenTrustSet<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, C, N, NUM_LIMBS, NUM_BITS, P, EC, H, SH>
 where
 	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::Scalar, N, NUM_LIMBS, NUM_BITS>,
 	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::ScalarExt: FieldExt,
-	H: HasherChipset<N, WIDTH>,
-	S: SpongeHasherChipset<N, WIDTH>,
-	R: RoundParams<N, WIDTH>,
+	H: HasherChipset<N, HASHER_WIDTH>,
+	SH: SpongeHasherChipset<N, HASHER_WIDTH>,
 {
 	/// Constructs a new EigenTrustSet circuit
 	pub fn new(
@@ -194,35 +188,21 @@ impl<
 		N: FieldExt,
 		const NUM_LIMBS: usize,
 		const NUM_BITS: usize,
-		H,
-		S,
 		P,
 		EC,
-		R,
+		H,
+		SH,
 	> Circuit<N>
-	for EigenTrustSet<
-		NUM_NEIGHBOURS,
-		NUM_ITER,
-		INITIAL_SCORE,
-		C,
-		N,
-		NUM_LIMBS,
-		NUM_BITS,
-		H,
-		S,
-		P,
-		EC,
-		R,
-	> where
+	for EigenTrustSet<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, C, N, NUM_LIMBS, NUM_BITS, P, EC, H, SH>
+where
 	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::Scalar, N, NUM_LIMBS, NUM_BITS>,
 	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::ScalarExt: FieldExt,
-	H: HasherChipset<N, WIDTH>,
-	S: SpongeHasherChipset<N, WIDTH>,
-	R: RoundParams<N, WIDTH>,
+	H: HasherChipset<N, HASHER_WIDTH>,
+	SH: SpongeHasherChipset<N, HASHER_WIDTH>,
 {
-	type Config = EigenTrustSetConfig<N, H, S>;
+	type Config = EigenTrustSetConfig<N, H, SH>;
 	type FloorPlanner = SimpleFloorPlanner;
 
 	fn without_witnesses(&self) -> Self {
@@ -293,21 +273,13 @@ impl<
 		);
 
 		let ecdsa = EcdsaConfig::new(ecc_mul_scalar, integer_mul_selector_secp_scalar);
-
 		let aux = AuxConfig::new(ecc_double);
-
 		let ecdsa_assigner = EcdsaAssignerConfig::new(aux, integer_mul_selector_secp_scalar);
-
-		let fr_selector = FullRoundChip::<N, WIDTH, R>::configure(&common, meta);
-		let pr_selector = PartialRoundChip::<N, WIDTH, R>::configure(&common, meta);
-		let poseidon = PoseidonConfig::new(fr_selector, pr_selector);
-		let hasher = H::configure(fr_selector, pr_selector);
-		let absorb_selector = AbsorbChip::<_, WIDTH>::configure(&common, meta);
-		let sponge = S::configure(poseidon, absorb_selector);
-
+		let hasher = H::configure(&common, meta);
+		let sponge = SH::configure(&common, meta);
 		let opinion = OpinionConfig::new(ecdsa, main.clone(), set, hasher.clone(), sponge.clone());
 
-		EigenTrustSetConfig { common, main, sponge, hasher, ecdsa_assigner, opinion }
+		EigenTrustSetConfig { common, main, hasher, sponge, ecdsa_assigner, opinion }
 	}
 
 	fn synthesize(
@@ -549,7 +521,7 @@ impl<
 				assigned_s_inv.push(s_inv);
 			}
 
-			let opinion: OpinionChipset<C, N, NUM_LIMBS, NUM_BITS, NUM_NEIGHBOURS, H, S, P, EC> =
+			let opinion: OpinionChipset<NUM_NEIGHBOURS, C, N, NUM_LIMBS, NUM_BITS, P, EC, H, SH> =
 				OpinionChipset::new(
 					assigned_signed_att,
 					assigned_public_key,

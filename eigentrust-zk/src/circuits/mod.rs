@@ -9,6 +9,7 @@ use crate::{
 	},
 };
 use halo2::halo2curves::bn256::Fr as Scalar;
+use num_rational::BigRational;
 
 /// EigenTrustSet
 pub mod dynamic_sets;
@@ -17,6 +18,14 @@ pub mod opinion;
 /// Utility for checking the score threshold
 pub mod threshold;
 
+/// Rational score
+pub type RationalScore = BigRational;
+/// Minimum peers for scores calculation
+pub const MIN_PEER_COUNT: usize = 2;
+/// Number of limbs for integers
+pub const NUM_LIMBS: usize = 4;
+/// Number of bits for integer limbs
+pub const NUM_BITS: usize = 68;
 /// Default width for the hasher used
 pub const HASHER_WIDTH: usize = 5;
 /// Type alias for the native poseidon hasher with a width of 5 and bn254 params

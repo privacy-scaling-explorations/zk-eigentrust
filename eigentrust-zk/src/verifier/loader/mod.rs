@@ -45,7 +45,7 @@ where
 	pub(crate) common: CommonConfig,
 	pub(crate) ecc_mul_scalar: EccMulConfig,
 	pub(crate) main: MainConfig,
-	pub(crate) sponge: S::Config,
+	pub(crate) sponge: <S as SpongeHasherChipset<C::ScalarExt, WIDTH>>::Config,
 	// Aux_init and Aux_fin for the ecc_mul operation
 	pub(crate) aux: AssignedAux<C, NUM_LIMBS, NUM_BITS, P, EC>,
 	// PhantomData
@@ -65,7 +65,8 @@ where
 	/// Construct a new LoaderConfig
 	pub fn new(
 		mut layouter: NamespacedLayouter<'a, C::Scalar, L>, common: CommonConfig,
-		ecc_mul_scalar: EccMulConfig, aux_config: AuxConfig, main: MainConfig, sponge: S::Config,
+		ecc_mul_scalar: EccMulConfig, aux_config: AuxConfig, main: MainConfig,
+		sponge: <S as SpongeHasherChipset<C::ScalarExt, WIDTH>>::Config,
 	) -> Self {
 		let aux_assigner = AuxAssigner::new();
 		let aux = aux_assigner
