@@ -156,8 +156,8 @@ impl<
 	}
 
 	/// Add new set member and initial score
-	pub fn add_member(&mut self, pk: N) {
-		let pos = self.set.iter().position(|&(x, _)| x == pk);
+	pub fn add_member(&mut self, addr: N) {
+		let pos = self.set.iter().position(|&(x, _)| x == addr);
 		// Make sure not already in the set
 		assert!(pos.is_none());
 
@@ -166,19 +166,19 @@ impl<
 
 		// Give the initial score.
 		let initial_score = N::from_u128(INITIAL_SCORE);
-		self.set[index] = (pk, initial_score);
+		self.set[index] = (addr, initial_score);
 	}
 
 	/// Remove the member and its opinion
-	pub fn remove_member(&mut self, pk: N) {
-		let pos = self.set.iter().position(|&(x, _)| x == pk);
+	pub fn remove_member(&mut self, addr: N) {
+		let pos = self.set.iter().position(|&(x, _)| x == addr);
 		// Make sure already in the set
 		assert!(pos.is_some());
 
 		let index = pos.unwrap();
 		self.set[index] = (N::ZERO, N::ZERO);
 
-		self.ops.remove(&pk);
+		self.ops.remove(&addr);
 	}
 
 	/// Update the opinion of the member
@@ -192,10 +192,10 @@ impl<
 		let op = Opinion::<NUM_NEIGHBOURS, C, N, NUM_LIMBS, NUM_BITS, P, EC, H, SH>::new(
 			from, op_unwrapped, self.domain,
 		);
-		let set = self.set.iter().map(|&(pk, _)| pk).collect();
-		let (from_pk, scores, op_hash) = op.validate(set);
+		let set = self.set.iter().map(|&(addr, _)| addr).collect();
+		let (addr, scores, op_hash) = op.validate(set);
 
-		self.ops.insert(from_pk, scores);
+		self.ops.insert(addr, scores);
 
 		op_hash
 	}
@@ -206,25 +206,25 @@ impl<
 
 		// Distribute the scores to valid peers
 		for i in 0..NUM_NEIGHBOURS {
-			let (pk_i, _) = self.set[i];
-			if pk_i == N::ZERO {
+			let (addr_i, _) = self.set[i];
+			if addr_i == N::ZERO {
 				continue;
 			}
 
 			let default_ops = vec![N::default(); NUM_NEIGHBOURS];
-			let mut ops_i = self.ops.get(&pk_i).unwrap_or(&default_ops).clone();
+			let mut ops_i = self.ops.get(&addr_i).unwrap_or(&default_ops).clone();
 
 			// Update the opinion array - pairs of (key, score)
 			for j in 0..NUM_NEIGHBOURS {
-				let (pk_j, _) = self.set[j];
+				let (addr_j, _) = self.set[j];
 
 				// Conditions fro nullifying the score
-				// 1. pk_j == 0 (Default key)
-				// 2. pk_j == pk_i
-				let is_pk_j_default = pk_j == N::ZERO;
-				let is_pk_i = pk_j == pk_i;
+				// 1. addr_j == 0 (Default key)
+				// 2. addr_j == addr_i
+				let is_addr_j_default = addr_j == N::ZERO;
+				let is_addr_i = addr_j == addr_i;
 
-				if is_pk_j_default || is_pk_i {
+				if is_addr_j_default || is_addr_i {
 					ops_i[j] = N::ZERO;
 				}
 			}
@@ -233,20 +233,20 @@ impl<
 			let op_score_sum = ops_i.iter().fold(N::ZERO, |acc, &score| acc + score);
 			if op_score_sum == N::ZERO {
 				for j in 0..NUM_NEIGHBOURS {
-					let (pk_j, _) = self.set[j];
+					let (addr_j, _) = self.set[j];
 
 					// Conditions for distributing the score
-					// 1. pk_j != pk_i
-					// 2. pk_j != 0 (Default key)
-					let is_diff_pk = pk_j != pk_i;
-					let is_not_default = pk_j != N::ZERO;
+					// 1. addr_j != addr_i
+					// 2. addr_j != 0 (Default key)
+					let is_diff_addr = addr_j != addr_i;
+					let is_not_default = addr_j != N::ZERO;
 
-					if is_diff_pk && is_not_default {
+					if is_diff_addr && is_not_default {
 						ops_i[j] = N::from(1);
 					}
 				}
 			}
-			filtered_ops.insert(pk_i, ops_i);
+			filtered_ops.insert(addr_i, ops_i);
 		}
 
 		filtered_ops
@@ -255,18 +255,18 @@ impl<
 	/// Compute the EigenTrust score
 	pub fn converge(&self) -> Vec<N> {
 		// There should be at least 2 valid peers(valid opinions) for calculation
-		let valid_peers = self.set.iter().filter(|(pk, _)| *pk != N::ZERO).count();
+		let valid_peers = self.set.iter().filter(|(addr, _)| *addr != N::ZERO).count();
 		assert!(valid_peers >= 2, "Insufficient peers for calculation!");
 
 		// Prepare the opinion scores
 		let mut ops = Vec::new();
 		let filtered_ops: HashMap<N, Vec<N>> = self.filter_peers_ops();
 		for i in 0..NUM_NEIGHBOURS {
-			let (pk, _) = self.set[i];
-			if pk == N::ZERO {
+			let (addr, _) = self.set[i];
+			if addr == N::ZERO {
 				ops.push(vec![N::ZERO; NUM_NEIGHBOURS]);
 			} else {
-				let scores = filtered_ops.get(&pk).unwrap();
+				let scores = filtered_ops.get(&addr).unwrap();
 				ops.push(scores.clone());
 			}
 		}
@@ -312,11 +312,11 @@ impl<
 
 		let mut ops = Vec::new();
 		for i in 0..NUM_NEIGHBOURS {
-			let (pk, _) = self.set[i];
-			if pk == N::ZERO {
+			let (addr, _) = self.set[i];
+			if addr == N::ZERO {
 				ops.push(vec![BigInt::zero(); NUM_NEIGHBOURS]);
 			} else {
-				let ops_i = filtered_ops.get_mut(&pk).unwrap();
+				let ops_i = filtered_ops.get_mut(&addr).unwrap();
 				let scores =
 					ops_i.iter().map(|&score| fe_to_big(score).to_bigint().unwrap()).collect();
 				ops.push(scores);
@@ -396,19 +396,19 @@ mod test {
 		const NUM_ITERATIONS: usize,
 		const INITIAL_SCORE: u128,
 	>(
-		keypair: &EcdsaKeypair<C, N, NUM_LIMBS, NUM_BITS, P, EC>, pks: &[N], scores: &[N],
+		keypair: &EcdsaKeypair<C, N, NUM_LIMBS, NUM_BITS, P, EC>, addrs: &[N], scores: &[N],
 	) -> Vec<Option<SignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>>> {
-		assert!(pks.len() == NUM_NEIGHBOURS);
+		assert!(addrs.len() == NUM_NEIGHBOURS);
 		assert!(scores.len() == NUM_NEIGHBOURS);
 		let rng = &mut thread_rng();
 
 		let mut res = Vec::new();
 		for i in 0..NUM_NEIGHBOURS {
-			if pks[i] == N::zero() {
+			if addrs[i] == N::zero() {
 				res.push(None)
 			} else {
 				let (about, key, value, message) =
-					(pks[i], N::from_u128(DOMAIN), scores[i], N::zero());
+					(addrs[i], N::from_u128(DOMAIN), scores[i], N::zero());
 				let attestation = Attestation::new(about, key, value, message);
 				let msg = big_to_fe(fe_to_big(
 					attestation.hash::<HASHER_WIDTH, PoseidonNativeHasher>(),
@@ -443,12 +443,12 @@ mod test {
 		let rng = &mut thread_rng();
 
 		let keypair = EcdsaKeypair::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::generate_keypair(rng);
-		let pk = keypair.public_key.to_address();
+		let addr = keypair.public_key.to_address();
 
-		set.add_member(pk);
+		set.add_member(addr);
 
 		// Re-adding the member should panic
-		set.add_member(pk);
+		set.add_member(addr);
 	}
 
 	#[test]
@@ -472,9 +472,9 @@ mod test {
 		let rng = &mut thread_rng();
 
 		let keypair = EcdsaKeypair::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::generate_keypair(rng);
-		let pk_fr = keypair.public_key.to_address();
+		let addr = keypair.public_key.to_address();
 
-		set.add_member(pk_fr);
+		set.add_member(addr);
 
 		set.converge();
 	}
@@ -501,11 +501,11 @@ mod test {
 		let keypair1 = EcdsaKeypair::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::generate_keypair(rng);
 		let keypair2 = EcdsaKeypair::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::generate_keypair(rng);
 
-		let pk1 = keypair1.public_key.to_address();
-		let pk2 = keypair2.public_key.to_address();
+		let addr1 = keypair1.public_key.to_address();
+		let addr2 = keypair2.public_key.to_address();
 
-		set.add_member(pk1);
-		set.add_member(pk2);
+		set.add_member(addr1);
+		set.add_member(addr2);
 
 		set.converge();
 	}
@@ -532,22 +532,23 @@ mod test {
 		let keypair1 = EcdsaKeypair::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::generate_keypair(rng);
 		let keypair2 = EcdsaKeypair::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::generate_keypair(rng);
 
-		let pk1_fr = keypair1.public_key.to_address();
-		let pk2_fr = keypair2.public_key.to_address();
+		let addr1 = keypair1.public_key.to_address();
+		let addr2 = keypair2.public_key.to_address();
 
-		set.add_member(pk1_fr);
-		set.add_member(pk2_fr);
+		set.add_member(addr1);
+		set.add_member(addr2);
 
-		// Peer1(pk1) signs the opinion
-		let mut pks = [Fr::zero(); NUM_NEIGHBOURS];
-		pks[0] = pk1_fr;
-		pks[1] = pk2_fr;
+		// Peer1(addr1) signs the opinion
+		let mut addrs = [N::zero(); NUM_NEIGHBOURS];
+		addrs[0] = addr1;
+		addrs[1] = addr2;
 
-		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
-		scores[1] = Fr::from_u128(INITIAL_SCORE);
+		let mut scores = [N::zero(); NUM_NEIGHBOURS];
+		scores[1] = N::from_u128(INITIAL_SCORE);
 
-		let op1 =
-			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&keypair1, &pks, &scores);
+		let op1 = sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
+			&keypair1, &addrs, &scores,
+		);
 
 		set.update_op(keypair1.public_key, op1);
 
@@ -576,35 +577,37 @@ mod test {
 		let keypair1 = EcdsaKeypair::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::generate_keypair(rng);
 		let keypair2 = EcdsaKeypair::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::generate_keypair(rng);
 
-		let pk1_fr = keypair1.public_key.to_address();
-		let pk2_fr = keypair2.public_key.to_address();
+		let addr1 = keypair1.public_key.to_address();
+		let addr2 = keypair2.public_key.to_address();
 
-		set.add_member(pk1_fr);
-		set.add_member(pk2_fr);
+		set.add_member(addr1);
+		set.add_member(addr2);
 
-		// Peer1(pk1) signs the opinion
-		let mut pks = [Fr::zero(); NUM_NEIGHBOURS];
-		pks[0] = pk1_fr;
-		pks[1] = pk2_fr;
+		// Peer1(addr1) signs the opinion
+		let mut addrs = [N::zero(); NUM_NEIGHBOURS];
+		addrs[0] = addr1;
+		addrs[1] = addr2;
 
-		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
-		scores[1] = Fr::from_u128(INITIAL_SCORE);
+		let mut scores = [N::zero(); NUM_NEIGHBOURS];
+		scores[1] = N::from_u128(INITIAL_SCORE);
 
-		let op1 =
-			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&keypair1, &pks, &scores);
+		let op1 = sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
+			&keypair1, &addrs, &scores,
+		);
 
 		set.update_op(keypair1.public_key, op1);
 
-		// Peer2(pk2) signs the opinion
-		let mut pks = [Fr::zero(); NUM_NEIGHBOURS];
-		pks[0] = pk1_fr;
-		pks[1] = pk2_fr;
+		// Peer2(addr2) signs the opinion
+		let mut addrs = [N::zero(); NUM_NEIGHBOURS];
+		addrs[0] = addr1;
+		addrs[1] = addr2;
 
-		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
-		scores[0] = Fr::from_u128(INITIAL_SCORE);
+		let mut scores = [N::zero(); NUM_NEIGHBOURS];
+		scores[0] = N::from_u128(INITIAL_SCORE);
 
-		let op2 =
-			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&keypair2, &pks, &scores);
+		let op2 = sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
+			&keypair2, &addrs, &scores,
+		);
 
 		set.update_op(keypair2.public_key, op2);
 
@@ -633,56 +636,59 @@ mod test {
 		let keypair2 = EcdsaKeypair::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::generate_keypair(rng);
 		let keypair3 = EcdsaKeypair::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::generate_keypair(rng);
 
-		let pk1_fr = keypair1.public_key.to_address();
-		let pk2_fr = keypair2.public_key.to_address();
-		let pk3_fr = keypair3.public_key.to_address();
+		let addr1 = keypair1.public_key.to_address();
+		let addr2 = keypair2.public_key.to_address();
+		let addr3 = keypair3.public_key.to_address();
 
-		set.add_member(pk1_fr);
-		set.add_member(pk2_fr);
-		set.add_member(pk3_fr);
+		set.add_member(addr1);
+		set.add_member(addr2);
+		set.add_member(addr3);
 
-		// Peer1(pk1) signs the opinion
-		let mut pks = [Fr::zero(); NUM_NEIGHBOURS];
-		pks[0] = pk1_fr;
-		pks[1] = pk2_fr;
-		pks[2] = pk3_fr;
+		// Peer1(addr1) signs the opinion
+		let mut addrs = [N::zero(); NUM_NEIGHBOURS];
+		addrs[0] = addr1;
+		addrs[1] = addr2;
+		addrs[2] = addr3;
 
-		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
-		scores[1] = Fr::from_u128(300);
-		scores[2] = Fr::from_u128(700);
+		let mut scores = [N::zero(); NUM_NEIGHBOURS];
+		scores[1] = N::from_u128(300);
+		scores[2] = N::from_u128(700);
 
-		let op1 =
-			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&keypair1, &pks, &scores);
+		let op1 = sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
+			&keypair1, &addrs, &scores,
+		);
 
 		set.update_op(keypair1.public_key, op1);
 
-		// Peer2(pk2) signs the opinion
-		let mut pks = [Fr::zero(); NUM_NEIGHBOURS];
-		pks[0] = pk1_fr;
-		pks[1] = pk2_fr;
-		pks[2] = pk3_fr;
+		// Peer2(addr2) signs the opinion
+		let mut addrs = [N::zero(); NUM_NEIGHBOURS];
+		addrs[0] = addr1;
+		addrs[1] = addr2;
+		addrs[2] = addr3;
 
-		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
-		scores[0] = Fr::from_u128(600);
-		scores[2] = Fr::from_u128(400);
+		let mut scores = [N::zero(); NUM_NEIGHBOURS];
+		scores[0] = N::from_u128(600);
+		scores[2] = N::from_u128(400);
 
-		let op2 =
-			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&keypair2, &pks, &scores);
+		let op2 = sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
+			&keypair2, &addrs, &scores,
+		);
 
 		set.update_op(keypair2.public_key, op2);
 
-		// Peer3(pk3) signs the opinion
-		let mut pks = [Fr::zero(); NUM_NEIGHBOURS];
-		pks[0] = pk1_fr;
-		pks[1] = pk2_fr;
-		pks[2] = pk3_fr;
+		// Peer3(addr3) signs the opinion
+		let mut addrs = [N::zero(); NUM_NEIGHBOURS];
+		addrs[0] = addr1;
+		addrs[1] = addr2;
+		addrs[2] = addr3;
 
-		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
-		scores[0] = Fr::from_u128(600);
-		scores[1] = Fr::from_u128(400);
+		let mut scores = [N::zero(); NUM_NEIGHBOURS];
+		scores[0] = N::from_u128(600);
+		scores[1] = N::from_u128(400);
 
-		let op3 =
-			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&keypair3, &pks, &scores);
+		let op3 = sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
+			&keypair3, &addrs, &scores,
+		);
 
 		set.update_op(keypair3.public_key, op3);
 
@@ -712,41 +718,43 @@ mod test {
 		let keypair2 = EcdsaKeypair::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::generate_keypair(rng);
 		let keypair3 = EcdsaKeypair::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::generate_keypair(rng);
 
-		let pk1_fr = keypair1.public_key.to_address();
-		let pk2_fr = keypair2.public_key.to_address();
-		let pk3_fr = keypair3.public_key.to_address();
+		let addr1 = keypair1.public_key.to_address();
+		let addr2 = keypair2.public_key.to_address();
+		let addr3 = keypair3.public_key.to_address();
 
-		set.add_member(pk1_fr);
-		set.add_member(pk2_fr);
-		set.add_member(pk3_fr);
+		set.add_member(addr1);
+		set.add_member(addr2);
+		set.add_member(addr3);
 
-		// Peer1(pk1) signs the opinion
-		let mut pks = [Fr::zero(); NUM_NEIGHBOURS];
-		pks[0] = pk1_fr;
-		pks[1] = pk2_fr;
-		pks[2] = pk3_fr;
+		// Peer1(addr1) signs the opinion
+		let mut addrs = [N::zero(); NUM_NEIGHBOURS];
+		addrs[0] = addr1;
+		addrs[1] = addr2;
+		addrs[2] = addr3;
 
-		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
-		scores[1] = Fr::from_u128(300);
-		scores[2] = Fr::from_u128(700);
+		let mut scores = [N::zero(); NUM_NEIGHBOURS];
+		scores[1] = N::from_u128(300);
+		scores[2] = N::from_u128(700);
 
-		let op1 =
-			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&keypair1, &pks, &scores);
+		let op1 = sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
+			&keypair1, &addrs, &scores,
+		);
 
 		set.update_op(keypair1.public_key, op1);
 
-		// Peer2(pk2) signs the opinion
-		let mut pks = [Fr::zero(); NUM_NEIGHBOURS];
-		pks[0] = pk1_fr;
-		pks[1] = pk2_fr;
-		pks[2] = pk3_fr;
+		// Peer2(addr2) signs the opinion
+		let mut addrs = [N::zero(); NUM_NEIGHBOURS];
+		addrs[0] = addr1;
+		addrs[1] = addr2;
+		addrs[2] = addr3;
 
-		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
-		scores[0] = Fr::from_u128(600);
-		scores[2] = Fr::from_u128(400);
+		let mut scores = [N::zero(); NUM_NEIGHBOURS];
+		scores[0] = N::from_u128(600);
+		scores[2] = N::from_u128(400);
 
-		let op2 =
-			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&keypair2, &pks, &scores);
+		let op2 = sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
+			&keypair2, &addrs, &scores,
+		);
 
 		set.update_op(keypair2.public_key, op2);
 
@@ -776,63 +784,66 @@ mod test {
 		let keypair2 = EcdsaKeypair::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::generate_keypair(rng);
 		let keypair3 = EcdsaKeypair::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::generate_keypair(rng);
 
-		let pk1_fr = keypair1.public_key.to_address();
-		let pk2_fr = keypair2.public_key.to_address();
-		let pk3_fr = keypair3.public_key.to_address();
+		let addr1 = keypair1.public_key.to_address();
+		let addr2 = keypair2.public_key.to_address();
+		let addr3 = keypair3.public_key.to_address();
 
-		set.add_member(pk1_fr);
-		set.add_member(pk2_fr);
-		set.add_member(pk3_fr);
+		set.add_member(addr1);
+		set.add_member(addr2);
+		set.add_member(addr3);
 
-		// Peer1(pk1) signs the opinion
-		let mut pks = [Fr::zero(); NUM_NEIGHBOURS];
-		pks[0] = pk1_fr;
-		pks[1] = pk2_fr;
-		pks[2] = pk3_fr;
+		// Peer1(addr1) signs the opinion
+		let mut addrs = [N::zero(); NUM_NEIGHBOURS];
+		addrs[0] = addr1;
+		addrs[1] = addr2;
+		addrs[2] = addr3;
 
-		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
-		scores[1] = Fr::from_u128(300);
-		scores[2] = Fr::from_u128(700);
+		let mut scores = [N::zero(); NUM_NEIGHBOURS];
+		scores[1] = N::from_u128(300);
+		scores[2] = N::from_u128(700);
 
-		let op1 =
-			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&keypair1, &pks, &scores);
+		let op1 = sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
+			&keypair1, &addrs, &scores,
+		);
 
 		set.update_op(keypair1.public_key, op1);
 
-		// Peer2(pk2) signs the opinion
-		let mut pks = [Fr::zero(); NUM_NEIGHBOURS];
-		pks[0] = pk1_fr;
-		pks[1] = pk2_fr;
-		pks[2] = pk3_fr;
+		// Peer2(addr2) signs the opinion
+		let mut addrs = [N::zero(); NUM_NEIGHBOURS];
+		addrs[0] = addr1;
+		addrs[1] = addr2;
+		addrs[2] = addr3;
 
-		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
-		scores[0] = Fr::from_u128(600);
-		scores[2] = Fr::from_u128(400);
+		let mut scores = [N::zero(); NUM_NEIGHBOURS];
+		scores[0] = N::from_u128(600);
+		scores[2] = N::from_u128(400);
 
-		let op2 =
-			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&keypair2, &pks, &scores);
+		let op2 = sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
+			&keypair2, &addrs, &scores,
+		);
 
 		set.update_op(keypair2.public_key, op2);
 
-		// Peer3(pk3) signs the opinion
-		let mut pks = [Fr::zero(); NUM_NEIGHBOURS];
-		pks[0] = pk1_fr;
-		pks[1] = pk2_fr;
-		pks[2] = pk3_fr;
+		// Peer3(addr3) signs the opinion
+		let mut addrs = [N::zero(); NUM_NEIGHBOURS];
+		addrs[0] = addr1;
+		addrs[1] = addr2;
+		addrs[2] = addr3;
 
-		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
-		scores[0] = Fr::from_u128(600);
-		scores[1] = Fr::from_u128(400);
+		let mut scores = [N::zero(); NUM_NEIGHBOURS];
+		scores[0] = N::from_u128(600);
+		scores[1] = N::from_u128(400);
 
-		let op3 =
-			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&keypair3, &pks, &scores);
+		let op3 = sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
+			&keypair3, &addrs, &scores,
+		);
 
 		set.update_op(keypair3.public_key, op3);
 
 		set.converge();
 
 		// Peer2 quits
-		set.remove_member(pk2_fr);
+		set.remove_member(addr2);
 
 		set.converge();
 	}
@@ -860,50 +871,47 @@ mod test {
 		let keypair2 = EcdsaKeypair::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::generate_keypair(rng);
 		let keypair3 = EcdsaKeypair::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::generate_keypair(rng);
 
-		let pk1_fr = keypair1.public_key.to_address();
-		let pk2_fr = keypair2.public_key.to_address();
-		let pk3_fr = keypair3.public_key.to_address();
+		let addr1 = keypair1.public_key.to_address();
+		let addr2 = keypair2.public_key.to_address();
+		let addr3 = keypair3.public_key.to_address();
 
-		set.add_member(pk1_fr);
-		set.add_member(pk2_fr);
-		set.add_member(pk3_fr);
+		set.add_member(addr1);
+		set.add_member(addr2);
+		set.add_member(addr3);
 
-		// Peer1(pk1) signs the opinion
-		let mut pks = [Fr::zero(); NUM_NEIGHBOURS];
-		pks[0] = pk1_fr;
-		pks[1] = pk2_fr;
-		pks[2] = pk3_fr;
+		// Peer1(addr1) signs the opinion
+		let mut addrs = [N::zero(); NUM_NEIGHBOURS];
+		addrs[0] = addr1;
+		addrs[1] = addr2;
+		addrs[2] = addr3;
 
-		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
-		scores[1] = Fr::from_u128(300);
-		scores[2] = Fr::from_u128(700);
+		let mut scores = [N::zero(); NUM_NEIGHBOURS];
+		scores[1] = N::from_u128(300);
+		scores[2] = N::from_u128(700);
 
-		let op1 =
-			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&keypair1, &pks, &scores);
+		let op1 = sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
+			&keypair1, &addrs, &scores,
+		);
 
 		set.update_op(keypair1.public_key, op1);
 
-		// Peer2(pk2) signs the opinion
-		let mut pks = [Fr::zero(); NUM_NEIGHBOURS];
-		pks[0] = pk1_fr;
-		pks[1] = pk2_fr;
-		pks[2] = pk3_fr;
+		let mut addrs = [N::zero(); NUM_NEIGHBOURS];
+		addrs[0] = addr1;
+		addrs[1] = addr2;
+		addrs[2] = addr3;
 
-		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
-		scores[0] = Fr::from_u128(600);
-		scores[2] = Fr::from_u128(400);
+		let mut scores = [N::zero(); NUM_NEIGHBOURS];
+		scores[0] = N::from_u128(600);
+		scores[2] = N::from_u128(400);
 
-		let op2 =
-			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&keypair2, &pks, &scores);
+		let op2 = sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
+			&keypair2, &addrs, &scores,
+		);
 
+		// Peer2(addr2) signs the opinion
 		set.update_op(keypair2.public_key, op2);
 
 		set.converge();
-
-		// // Peer1 quits
-		// set.remove_member(pk1);
-
-		// set.converge();
 	}
 
 	#[test]
@@ -923,46 +931,49 @@ mod test {
 		let keypair2 = EcdsaKeypair::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::generate_keypair(rng);
 		let keypair3 = EcdsaKeypair::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::generate_keypair(rng);
 
-		let pk1_fr = keypair1.public_key.to_address();
-		let pk2_fr = keypair2.public_key.to_address();
-		let pk3_fr = keypair3.public_key.to_address();
+		let addr1 = keypair1.public_key.to_address();
+		let addr2 = keypair2.public_key.to_address();
+		let addr3 = keypair3.public_key.to_address();
 
-		// Peer1(pk1) signs the opinion
-		let mut pks = [Fr::zero(); NUM_NEIGHBOURS];
-		pks[0] = pk1_fr;
-		pks[1] = pk2_fr;
-		pks[2] = pk3_fr;
+		// Peer1(addr1) signs the opinion
+		let mut addrs = [N::zero(); NUM_NEIGHBOURS];
+		addrs[0] = addr1;
+		addrs[1] = addr2;
+		addrs[2] = addr3;
 
-		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
-		scores[0] = Fr::from_u128(10);
-		scores[1] = Fr::from_u128(10);
+		let mut scores = [N::zero(); NUM_NEIGHBOURS];
+		scores[0] = N::from_u128(10);
+		scores[1] = N::from_u128(10);
 
-		let op1 =
-			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&keypair1, &pks, &scores);
+		let op1 = sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
+			&keypair1, &addrs, &scores,
+		);
 
-		// Peer2(pk2) signs the opinion
-		let mut pks = [Fr::zero(); NUM_NEIGHBOURS];
-		pks[0] = pk1_fr;
-		pks[1] = pk2_fr;
-		pks[2] = pk3_fr;
+		// Peer2(addr2) signs the opinion
+		let mut addrs = [N::zero(); NUM_NEIGHBOURS];
+		addrs[0] = addr1;
+		addrs[1] = addr2;
+		addrs[2] = addr3;
 
-		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
-		scores[2] = Fr::from_u128(30);
+		let mut scores = [N::zero(); NUM_NEIGHBOURS];
+		scores[2] = N::from_u128(30);
 
-		let op2 =
-			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&keypair2, &pks, &scores);
+		let op2 = sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
+			&keypair2, &addrs, &scores,
+		);
 
-		// Peer3(pk3) signs the opinion
-		let mut pks = [Fr::zero(); NUM_NEIGHBOURS];
-		pks[0] = pk1_fr;
-		pks[1] = pk2_fr;
-		pks[2] = pk3_fr;
+		// Peer3(addr3) signs the opinion
+		let mut addrs = [N::zero(); NUM_NEIGHBOURS];
+		addrs[0] = addr1;
+		addrs[1] = addr2;
+		addrs[2] = addr3;
 
-		let mut scores = [Fr::zero(); NUM_NEIGHBOURS];
-		scores[0] = Fr::from_u128(10);
+		let mut scores = [N::zero(); NUM_NEIGHBOURS];
+		scores[0] = N::from_u128(10);
 
-		let op3 =
-			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&keypair3, &pks, &scores);
+		let op3 = sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
+			&keypair3, &addrs, &scores,
+		);
 
 		let domain = N::from_u128(DOMAIN);
 		// Setup EigenTrustSet
@@ -980,9 +991,9 @@ mod test {
 			SH,
 		>::new(domain);
 
-		eigen_trust_set.add_member(pk1_fr);
-		eigen_trust_set.add_member(pk2_fr);
-		eigen_trust_set.add_member(pk3_fr);
+		eigen_trust_set.add_member(addr1);
+		eigen_trust_set.add_member(addr2);
+		eigen_trust_set.add_member(addr3);
 
 		eigen_trust_set.update_op(keypair1.public_key, op1);
 		eigen_trust_set.update_op(keypair2.public_key, op2);
@@ -991,7 +1002,7 @@ mod test {
 		let filtered_ops = eigen_trust_set.filter_peers_ops();
 
 		let final_peers_count =
-			eigen_trust_set.set.iter().filter(|&&(pk, _)| pk != Fr::zero()).count();
+			eigen_trust_set.set.iter().filter(|&&(addr, _)| addr != N::zero()).count();
 		let final_ops_count = filtered_ops.keys().count();
 		assert!(final_peers_count == final_ops_count);
 	}
@@ -1001,8 +1012,8 @@ mod test {
 		const NUM_ITERATIONS: usize,
 		const INITIAL_SCORE: u128,
 	>(
-		ops: Vec<Vec<Fr>>,
-	) -> (Vec<Fr>, Vec<BigRational>) {
+		ops: Vec<Vec<N>>,
+	) -> (Vec<N>, Vec<BigRational>) {
 		assert!(ops.len() == NUM_NEIGHBOURS);
 		for op in &ops {
 			assert!(op.len() == NUM_NEIGHBOURS);
@@ -1025,21 +1036,20 @@ mod test {
 
 		let rng = &mut thread_rng();
 
-		let keys: Vec<
-			EcdsaKeypair<Secp256k1Affine, Fr, NUM_LIMBS, NUM_BITS, Secp256k1_4_68, Secp256k1Params>,
-		> = (0..NUM_NEIGHBOURS).into_iter().map(|_| EcdsaKeypair::generate_keypair(rng)).collect();
+		let keys: Vec<EcdsaKeypair<C, N, NUM_LIMBS, NUM_BITS, P, EC>> =
+			(0..NUM_NEIGHBOURS).into_iter().map(|_| EcdsaKeypair::generate_keypair(rng)).collect();
 
-		let pks_fr: Vec<Fr> = keys.iter().map(|key| key.public_key.to_address()).collect();
+		let addrs: Vec<N> = keys.iter().map(|key| key.public_key.to_address()).collect();
 
 		// Add the publicKey to the set
-		pks_fr.iter().for_each(|f| set.add_member(f.clone()));
+		addrs.iter().for_each(|f| set.add_member(f.clone()));
 
 		// Update the opinions
 		for i in 0..NUM_NEIGHBOURS {
 			let scores = ops[i].to_vec();
 
 			let op_i = sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(
-				&keys[i], &pks_fr, &scores,
+				&keys[i], &addrs, &scores,
 			);
 
 			let pk_i = keys[i].public_key.clone();
@@ -1076,7 +1086,7 @@ mod test {
 			[30, 130, 44, 210, 55, 12, 445, 62, 12, 0], // = Peer 9 opinions
 		];
 
-		let ops = ops_raw.map(|arr| arr.map(|x| Fr::from_u128(x)).to_vec()).to_vec();
+		let ops = ops_raw.map(|arr| arr.map(|x| N::from_u128(x)).to_vec()).to_vec();
 
 		let start = Instant::now();
 
