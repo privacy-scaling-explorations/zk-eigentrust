@@ -130,8 +130,8 @@ where
 
 	/// Configure selectors for sponge hasher
 	fn configure(common: &CommonConfig, meta: &mut ConstraintSystem<F>) -> Self::Config {
-		let poseidon = PoseidonChipset::<F, WIDTH, P>::configure(&common, meta);
-		let absorb_selector = AbsorbChip::<F, WIDTH>::configure(&common, meta);
+		let poseidon = PoseidonChipset::<F, WIDTH, P>::configure(common, meta);
+		let absorb_selector = AbsorbChip::<F, WIDTH>::configure(common, meta);
 		PoseidonSpongeConfig::new(poseidon, absorb_selector)
 	}
 

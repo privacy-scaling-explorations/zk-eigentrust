@@ -336,8 +336,8 @@ where
 	}
 
 	fn configure(common: &CommonConfig, meta: &mut ConstraintSystem<F>) -> PoseidonConfig {
-		let fr_selector = FullRoundChip::<F, WIDTH, P>::configure(&common, meta);
-		let pr_selector = PartialRoundChip::<F, WIDTH, P>::configure(&common, meta);
+		let fr_selector = FullRoundChip::<F, WIDTH, P>::configure(common, meta);
+		let pr_selector = PartialRoundChip::<F, WIDTH, P>::configure(common, meta);
 		PoseidonConfig::new(fr_selector, pr_selector)
 	}
 

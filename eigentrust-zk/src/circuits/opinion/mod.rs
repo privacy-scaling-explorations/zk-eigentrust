@@ -802,9 +802,9 @@ mod test {
 		let mut s_inv = Vec::new();
 		let mut attestations = Vec::new();
 
-		for _ in 0..10 {
+		for _ in 0..9 {
 			let attestation = Attestation::new(
-				public_key_fr.clone(),
+				Fr::random(rng.clone()),
 				Fr::random(rng.clone()),
 				Fr::random(rng.clone()),
 				Fr::random(rng.clone()),
@@ -827,6 +827,8 @@ mod test {
 			s_inv.push(Integer::from_w(s_inv_fq));
 			attestations.push(SignedAttestation::new(attestation, signature));
 		}
+		set.push(public_key_fr);
+
 		let opinion_native: Opinion<NUM_NEIGHBOURS, C, N, NUM_LIMBS, NUM_BITS, P, EC, H, SH> =
 			Opinion::new(public_key.clone(), attestations.clone());
 		let (_, scores, op_hash) = opinion_native.validate(set.clone());
