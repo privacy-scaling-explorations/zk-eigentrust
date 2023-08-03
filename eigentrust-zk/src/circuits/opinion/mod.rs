@@ -755,7 +755,7 @@ mod test {
 			}
 
 			let left_shifters_assigner =
-				LeftShiftersAssigner::<Fq, N, NUM_LIMBS, NUM_BITS, P>::default();
+				LeftShiftersAssigner::<WS, N, NUM_LIMBS, NUM_BITS, P>::default();
 			let left_shifters = left_shifters_assigner.synthesize(
 				&config.common,
 				&(),
@@ -805,32 +805,32 @@ mod test {
 		// Attestation to the other peers
 		for _ in 0..9 {
 			let attestation = Attestation::new(
-				Fr::random(rng.clone()),
-				Fr::ZERO,
-				Fr::random(rng.clone()),
-				Fr::ZERO,
+				N::random(rng.clone()),
+				domain,
+				N::random(rng.clone()),
+				N::ZERO,
 			);
 			set.push(attestation.about.clone());
 
-			let att_hasher: Fq = big_to_fe(fe_to_big(
+			let att_hasher: WS = big_to_fe(fe_to_big(
 				attestation.hash::<HASHER_WIDTH, PoseidonNativeHasher>(),
 			));
 			let signature = keypair.sign(att_hasher.clone(), rng);
-			let s_inv_fq = big_to_fe::<Fq>(signature.s.value()).invert().unwrap();
+			let s_inv_fq = big_to_fe::<WS>(signature.s.value()).invert().unwrap();
 
 			msg_hash.push(Integer::from_w(att_hasher));
 			s_inv.push(Integer::from_w(s_inv_fq));
 			attestations.push(SignedAttestation::new(attestation, signature));
 		}
 		// Attestation to the self
-		let attestation_self = Attestation::new(public_key_fr, Fr::ZERO, Fr::ZERO, Fr::ZERO);
+		let attestation_self = Attestation::new(public_key_fr, domain, N::ZERO, N::ZERO);
 		set.push(public_key_fr);
 
-		let att_hasher: Fq = big_to_fe(fe_to_big(
+		let att_hasher: WS = big_to_fe(fe_to_big(
 			attestation_self.hash::<HASHER_WIDTH, PoseidonNativeHasher>(),
 		));
 		let signature_self = keypair.sign(att_hasher.clone(), rng);
-		let s_inv_fq = big_to_fe::<Fq>(signature_self.s.value()).invert().unwrap();
+		let s_inv_fq = big_to_fe::<WS>(signature_self.s.value()).invert().unwrap();
 
 		msg_hash.push(Integer::from_w(att_hasher));
 		s_inv.push(Integer::from_w(s_inv_fq));

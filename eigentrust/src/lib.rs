@@ -62,6 +62,7 @@ use eigentrust_zk::circuits::{
 	PoseidonNativeHasher, PoseidonNativeSponge, HASHER_WIDTH, MIN_PEER_COUNT, NUM_BITS, NUM_LIMBS,
 };
 use eigentrust_zk::halo2::halo2curves::bn256::Fr as Scalar;
+use eigentrust_zk::halo2::halo2curves::ff::PrimeField;
 use eigentrust_zk::halo2::halo2curves::secp256k1::Secp256k1Affine;
 use eigentrust_zk::params::ecc::secp256k1::Secp256k1Params;
 use eigentrust_zk::params::hasher::poseidon_bn254_5x5::Params;
@@ -101,6 +102,8 @@ const INITIAL_SCORE: u128 = 1000;
 const _NUM_DECIMAL_LIMBS: usize = 2;
 /// Number of digits of each limbs for threshold checking.
 const _POWER_OF_TEN: usize = 72;
+/// Attestation domain value
+const DOMAIN: u128 = 42;
 /// Signer type alias.
 pub type ClientSigner = SignerMiddleware<Provider<Http>, LocalWallet>;
 
@@ -272,6 +275,7 @@ impl Client {
 			attestation_matrix[attester_pos][attested_pos] = Some(signed_attestation_fr);
 		}
 
+		let domain = Scalar::from_u128(DOMAIN);
 		// Initialize EigenTrustSet
 		let mut eigen_trust_set = EigenTrustSet::<
 			MAX_NEIGHBOURS,
@@ -285,7 +289,7 @@ impl Client {
 			Secp256k1Params,
 			PoseidonNativeHasher,
 			PoseidonNativeSponge,
-		>::new();
+		>::new(domain);
 
 		// Add participants to set
 		for participant in &participants {

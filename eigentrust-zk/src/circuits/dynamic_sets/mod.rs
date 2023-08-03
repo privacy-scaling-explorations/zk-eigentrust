@@ -912,6 +912,7 @@ mod test {
 	const NUM_NEIGHBOURS: usize = 5;
 	const NUM_ITERATIONS: usize = 20;
 	const INITIAL_SCORE: u128 = 1000;
+	const DOMAIN: u128 = 42;
 
 	type C = Secp256k1Affine;
 	type WN = Fq;
@@ -948,6 +949,7 @@ mod test {
 		let sks = [(); NUM_NEIGHBOURS].map(|_| WN::random(rng.clone()));
 		let keypairs = sks.clone().map(|x| EcdsaKeypair::from_private_key(x));
 		let pub_keys = keypairs.clone().map(|kp| kp.public_key);
+		let domain = N::from_u128(DOMAIN);
 
 		let op_pub_keys: Vec<Vec<PublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>>> =
 			(0..NUM_NEIGHBOURS).map(|_| pub_keys.to_vec()).collect();
@@ -965,7 +967,7 @@ mod test {
 				EC,
 				HN,
 				SHN,
-			>::new();
+			>::new(domain);
 
 			let mut signatures = Vec::new();
 			let mut attestations = Vec::new();
@@ -1008,7 +1010,7 @@ mod test {
 				);
 
 				let op: Opinion<NUM_NEIGHBOURS, C, N, NUM_LIMBS, NUM_BITS, P, EC, HN, SHN> =
-					Opinion::new(pub_keys[i].clone(), attestations_unwrapped.clone());
+					Opinion::new(pub_keys[i].clone(), attestations_unwrapped.clone(), domain);
 				let _ = op.validate(set.clone());
 
 				et.update_op(pub_keys[i].clone(), attestations_option);
@@ -1073,6 +1075,7 @@ mod test {
 		let sks = [(); NUM_NEIGHBOURS].map(|_| WN::random(rng.clone()));
 		let keypairs = sks.clone().map(|x| EcdsaKeypair::from_private_key(x));
 		let pub_keys = keypairs.clone().map(|kp| kp.public_key);
+		let domain = N::from_u128(DOMAIN);
 
 		let op_pub_keys: Vec<Vec<PublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>>> =
 			(0..NUM_NEIGHBOURS).map(|_| pub_keys.to_vec()).collect();
@@ -1090,7 +1093,7 @@ mod test {
 				EC,
 				HN,
 				SHN,
-			>::new();
+			>::new(domain);
 
 			let mut signatures = Vec::new();
 			let mut attestations = Vec::new();
@@ -1133,7 +1136,7 @@ mod test {
 				);
 
 				let op: Opinion<NUM_NEIGHBOURS, C, N, NUM_LIMBS, NUM_BITS, P, EC, HN, SHN> =
-					Opinion::new(pub_keys[i].clone(), attestations_unwrapped.clone());
+					Opinion::new(pub_keys[i].clone(), attestations_unwrapped.clone(), domain);
 				let _ = op.validate(set.clone());
 
 				et.update_op(pub_keys[i].clone(), attestations_option);
