@@ -498,7 +498,7 @@ mod test {
 	use crate::params::rns::secp256k1::Secp256k1_4_68;
 	use crate::poseidon::sponge::{PoseidonSpongeConfig, StatefulSpongeChipset};
 	use crate::poseidon::{FullRoundChip, PartialRoundChip, PoseidonChipset, PoseidonConfig};
-	use crate::utils::big_to_fe;
+	use crate::utils::{big_to_fe, fe_to_big};
 	use crate::UnassignedValue;
 	use crate::{
 		ecc::generic::native::EcPoint,
@@ -802,32 +802,39 @@ mod test {
 		let mut s_inv = Vec::new();
 		let mut attestations = Vec::new();
 
+		// Attestation to the other peers
 		for _ in 0..9 {
 			let attestation = Attestation::new(
 				Fr::random(rng.clone()),
+				Fr::ZERO,
 				Fr::random(rng.clone()),
-				Fr::random(rng.clone()),
-				Fr::random(rng.clone()),
+				Fr::ZERO,
 			);
 			set.push(attestation.about.clone());
 
-			let att_hasher = H::new([
-				attestation.about,
-				attestation.domain,
-				attestation.value,
-				attestation.message,
-				Fr::zero(),
-			]);
-			let att_hash_bytes = att_hasher.permute()[0].to_bytes();
-			let att_fq = Fq::from_bytes(&att_hash_bytes).unwrap();
-			let signature = keypair.sign(att_fq.clone(), rng);
+			let att_hasher: Fq = big_to_fe(fe_to_big(
+				attestation.hash::<HASHER_WIDTH, PoseidonNativeHasher>(),
+			));
+			let signature = keypair.sign(att_hasher.clone(), rng);
 			let s_inv_fq = big_to_fe::<Fq>(signature.s.value()).invert().unwrap();
 
-			msg_hash.push(Integer::from_w(att_fq));
+			msg_hash.push(Integer::from_w(att_hasher));
 			s_inv.push(Integer::from_w(s_inv_fq));
 			attestations.push(SignedAttestation::new(attestation, signature));
 		}
+		// Attestation to the self
+		let attestation_self = Attestation::new(public_key_fr, Fr::ZERO, Fr::ZERO, Fr::ZERO);
 		set.push(public_key_fr);
+
+		let att_hasher: Fq = big_to_fe(fe_to_big(
+			attestation_self.hash::<HASHER_WIDTH, PoseidonNativeHasher>(),
+		));
+		let signature_self = keypair.sign(att_hasher.clone(), rng);
+		let s_inv_fq = big_to_fe::<Fq>(signature_self.s.value()).invert().unwrap();
+
+		msg_hash.push(Integer::from_w(att_hasher));
+		s_inv.push(Integer::from_w(s_inv_fq));
+		attestations.push(SignedAttestation::new(attestation_self, signature_self));
 
 		let opinion_native: Opinion<NUM_NEIGHBOURS, C, N, NUM_LIMBS, NUM_BITS, P, EC, H, SH> =
 			Opinion::new(public_key.clone(), attestations.clone());
