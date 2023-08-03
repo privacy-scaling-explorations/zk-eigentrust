@@ -110,6 +110,7 @@ pub struct EigenTrustSet<
 {
 	set: Vec<(N, N)>,
 	ops: HashMap<N, Vec<N>>,
+	domain: N,
 	_p: PhantomData<(C, P, EC, H, SH)>,
 }
 
@@ -145,10 +146,11 @@ impl<
 	C::Base: FieldExt,
 {
 	/// Constructs new instance
-	pub fn new() -> Self {
+	pub fn new(domain: N) -> Self {
 		Self {
 			set: vec![(N::ZERO, N::ZERO); NUM_NEIGHBOURS],
 			ops: HashMap::new(),
+			domain,
 			_p: PhantomData,
 		}
 	}
@@ -188,7 +190,7 @@ impl<
 		let op_unwrapped =
 			op.iter().map(|x| x.clone().unwrap_or(default_att.clone())).collect_vec();
 		let op = Opinion::<NUM_NEIGHBOURS, C, N, NUM_LIMBS, NUM_BITS, P, EC, H, SH>::new(
-			from, op_unwrapped,
+			from, op_unwrapped, self.domain,
 		);
 		let set = self.set.iter().map(|&(pk, _)| pk).collect();
 		let (from_pk, scores, op_hash) = op.validate(set);
@@ -375,6 +377,7 @@ mod test {
 	use rand::thread_rng;
 	use std::time::Instant;
 
+	const DOMAIN: u128 = 42;
 	const NUM_NEIGHBOURS: usize = 12;
 	const NUM_ITERATIONS: usize = 10;
 	const INITIAL_SCORE: u128 = 1000;
@@ -404,7 +407,8 @@ mod test {
 			if pks[i] == N::zero() {
 				res.push(None)
 			} else {
-				let (about, key, value, message) = (pks[i], N::zero(), scores[i], N::zero());
+				let (about, key, value, message) =
+					(pks[i], N::from_u128(DOMAIN), scores[i], N::zero());
 				let attestation = Attestation::new(about, key, value, message);
 				let msg = big_to_fe(fe_to_big(
 					attestation.hash::<HASHER_WIDTH, PoseidonNativeHasher>(),
@@ -421,6 +425,7 @@ mod test {
 	#[test]
 	#[should_panic]
 	fn test_add_member_in_initial_set() {
+		let domain = N::from_u128(DOMAIN);
 		let mut set = EigenTrustSet::<
 			NUM_NEIGHBOURS,
 			NUM_ITERATIONS,
@@ -433,7 +438,7 @@ mod test {
 			EC,
 			H,
 			SH,
-		>::new();
+		>::new(domain);
 
 		let rng = &mut thread_rng();
 
@@ -449,6 +454,7 @@ mod test {
 	#[test]
 	#[should_panic]
 	fn test_one_member_converge() {
+		let domain = N::from_u128(DOMAIN);
 		let mut set = EigenTrustSet::<
 			NUM_NEIGHBOURS,
 			NUM_ITERATIONS,
@@ -461,7 +467,7 @@ mod test {
 			EC,
 			H,
 			SH,
-		>::new();
+		>::new(domain);
 
 		let rng = &mut thread_rng();
 
@@ -475,6 +481,7 @@ mod test {
 
 	#[test]
 	fn test_add_two_members_without_opinions() {
+		let domain = N::from_u128(DOMAIN);
 		let mut set = EigenTrustSet::<
 			NUM_NEIGHBOURS,
 			NUM_ITERATIONS,
@@ -487,7 +494,7 @@ mod test {
 			EC,
 			H,
 			SH,
-		>::new();
+		>::new(domain);
 
 		let rng = &mut thread_rng();
 
@@ -505,6 +512,7 @@ mod test {
 
 	#[test]
 	fn test_add_two_members_with_one_opinion() {
+		let domain = N::from_u128(DOMAIN);
 		let mut set = EigenTrustSet::<
 			NUM_NEIGHBOURS,
 			NUM_ITERATIONS,
@@ -517,7 +525,7 @@ mod test {
 			EC,
 			H,
 			SH,
-		>::new();
+		>::new(domain);
 
 		let rng = &mut thread_rng();
 
@@ -548,6 +556,7 @@ mod test {
 
 	#[test]
 	fn test_add_two_members_with_opinions() {
+		let domain = N::from_u128(DOMAIN);
 		let mut set = EigenTrustSet::<
 			NUM_NEIGHBOURS,
 			NUM_ITERATIONS,
@@ -560,7 +569,7 @@ mod test {
 			EC,
 			H,
 			SH,
-		>::new();
+		>::new(domain);
 
 		let rng = &mut thread_rng();
 
@@ -604,6 +613,7 @@ mod test {
 
 	#[test]
 	fn test_add_three_members_with_opinions() {
+		let domain = N::from_u128(DOMAIN);
 		let mut set = EigenTrustSet::<
 			NUM_NEIGHBOURS,
 			NUM_ITERATIONS,
@@ -616,7 +626,7 @@ mod test {
 			EC,
 			H,
 			SH,
-		>::new();
+		>::new(domain);
 
 		let rng = &mut thread_rng();
 		let keypair1 = EcdsaKeypair::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::generate_keypair(rng);
@@ -681,6 +691,7 @@ mod test {
 
 	#[test]
 	fn test_add_three_members_with_two_opinions() {
+		let domain = N::from_u128(DOMAIN);
 		let mut set = EigenTrustSet::<
 			NUM_NEIGHBOURS,
 			NUM_ITERATIONS,
@@ -693,7 +704,7 @@ mod test {
 			EC,
 			H,
 			SH,
-		>::new();
+		>::new(domain);
 
 		let rng = &mut thread_rng();
 
@@ -744,6 +755,7 @@ mod test {
 
 	#[test]
 	fn test_add_3_members_with_3_ops_quit_1_member() {
+		let domain = N::from_u128(DOMAIN);
 		let mut set = EigenTrustSet::<
 			NUM_NEIGHBOURS,
 			NUM_ITERATIONS,
@@ -756,7 +768,7 @@ mod test {
 			EC,
 			H,
 			SH,
-		>::new();
+		>::new(domain);
 
 		let rng = &mut thread_rng();
 
@@ -827,6 +839,7 @@ mod test {
 
 	#[test]
 	fn test_add_3_members_with_2_ops_quit_1_member_1_op() {
+		let domain = N::from_u128(DOMAIN);
 		let mut set = EigenTrustSet::<
 			NUM_NEIGHBOURS,
 			NUM_ITERATIONS,
@@ -839,7 +852,7 @@ mod test {
 			EC,
 			H,
 			SH,
-		>::new();
+		>::new(domain);
 
 		let rng = &mut thread_rng();
 
@@ -951,6 +964,7 @@ mod test {
 		let op3 =
 			sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(&keypair3, &pks, &scores);
 
+		let domain = N::from_u128(DOMAIN);
 		// Setup EigenTrustSet
 		let mut eigen_trust_set = EigenTrustSet::<
 			NUM_NEIGHBOURS,
@@ -964,7 +978,7 @@ mod test {
 			EC,
 			H,
 			SH,
-		>::new();
+		>::new(domain);
 
 		eigen_trust_set.add_member(pk1_fr);
 		eigen_trust_set.add_member(pk2_fr);
@@ -994,6 +1008,7 @@ mod test {
 			assert!(op.len() == NUM_NEIGHBOURS);
 		}
 
+		let domain = N::from_u128(DOMAIN);
 		let mut set = EigenTrustSet::<
 			NUM_NEIGHBOURS,
 			NUM_ITERATIONS,
@@ -1006,7 +1021,7 @@ mod test {
 			EC,
 			H,
 			SH,
-		>::new();
+		>::new(domain);
 
 		let rng = &mut thread_rng();
 

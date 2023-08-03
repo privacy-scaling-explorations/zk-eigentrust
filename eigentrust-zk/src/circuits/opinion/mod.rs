@@ -467,13 +467,11 @@ where
 
 #[cfg(test)]
 mod test {
-
 	use super::native::Opinion;
 	use super::{
 		AssignedAttestation, AssignedSignedAttestation, OpinionChipset, OpinionConfig,
 		UnassignedSignedAttestation,
 	};
-
 	use crate::circuits::dynamic_sets::native::{Attestation, SignedAttestation};
 	use crate::circuits::{PoseidonNativeHasher, PoseidonNativeSponge, HASHER_WIDTH};
 	use crate::ecc::generic::UnassignedEcPoint;
@@ -493,7 +491,6 @@ mod test {
 		IntegerSubChip, LeftShiftersAssigner, UnassignedInteger,
 	};
 	use crate::params::ecc::secp256k1::Secp256k1Params;
-
 	use crate::params::hasher::poseidon_bn254_5x5::Params;
 	use crate::params::rns::secp256k1::Secp256k1_4_68;
 	use crate::poseidon::sponge::{PoseidonSpongeConfig, StatefulSpongeChipset};
@@ -513,6 +510,7 @@ mod test {
 	use halo2::arithmetic::Field;
 	use halo2::circuit::{Region, Value};
 	use halo2::dev::MockProver;
+	use halo2::halo2curves::ff::PrimeField;
 	use halo2::halo2curves::group::Curve;
 	use halo2::halo2curves::secp256k1::Secp256k1;
 	use halo2::{
@@ -525,9 +523,10 @@ mod test {
 	};
 	use itertools::Itertools;
 
+	const DOMAIN: u128 = 42;
 	const NUM_NEIGHBOURS: usize = 4;
-	type W = Fp;
-	type SecpScalar = Fq;
+	type WB = Fp;
+	type WS = Fq;
 	type N = Fr;
 	type C = Secp256k1Affine;
 	const NUM_LIMBS: usize = 4;
@@ -555,17 +554,17 @@ mod test {
 			let set = SetConfig::new(main.clone(), set_selector);
 
 			let integer_reduce_selector =
-				IntegerReduceChip::<W, N, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
+				IntegerReduceChip::<WB, N, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
 			let integer_add_selector =
-				IntegerAddChip::<W, N, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
+				IntegerAddChip::<WB, N, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
 			let integer_sub_selector =
-				IntegerSubChip::<W, N, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
+				IntegerSubChip::<WB, N, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
 			let integer_mul_selector =
-				IntegerMulChip::<W, N, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
+				IntegerMulChip::<WB, N, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
 			let integer_div_selector =
-				IntegerDivChip::<W, N, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
+				IntegerDivChip::<WB, N, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
 			let integer_mul_selector_secp_scalar =
-				IntegerMulChip::<SecpScalar, N, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
+				IntegerMulChip::<WS, N, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
 			let ecc_add = EccAddConfig::new(
 				integer_reduce_selector, integer_sub_selector, integer_mul_selector,
 				integer_div_selector,
@@ -612,8 +611,8 @@ mod test {
 		set: Vec<N>,
 		public_key: UnassignedPublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
 		g_as_ecpoint: UnassignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
-		msg_hash: Vec<UnassignedInteger<SecpScalar, N, NUM_LIMBS, NUM_BITS, P>>,
-		s_inv: Vec<UnassignedInteger<SecpScalar, N, NUM_LIMBS, NUM_BITS, P>>,
+		msg_hash: Vec<UnassignedInteger<WS, N, NUM_LIMBS, NUM_BITS, P>>,
+		s_inv: Vec<UnassignedInteger<WS, N, NUM_LIMBS, NUM_BITS, P>>,
 	}
 
 	impl TestOpinionCircuit {
@@ -621,8 +620,8 @@ mod test {
 			attestations: Vec<SignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>>, set: Vec<N>,
 			public_key: PublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
 			g_as_ecpoint: EcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
-			msg_hash: Vec<Integer<SecpScalar, N, NUM_LIMBS, NUM_BITS, P>>,
-			s_inv: Vec<Integer<SecpScalar, N, NUM_LIMBS, NUM_BITS, P>>,
+			msg_hash: Vec<Integer<WS, N, NUM_LIMBS, NUM_BITS, P>>,
+			s_inv: Vec<Integer<WS, N, NUM_LIMBS, NUM_BITS, P>>,
 		) -> Self {
 			Self {
 				attestations: attestations
@@ -639,7 +638,7 @@ mod test {
 		}
 	}
 
-	impl Circuit<Fr> for TestOpinionCircuit {
+	impl Circuit<N> for TestOpinionCircuit {
 		type Config = TestConfig;
 		type FloorPlanner = SimpleFloorPlanner;
 
@@ -666,12 +665,12 @@ mod test {
 			}
 		}
 
-		fn configure(meta: &mut ConstraintSystem<Fr>) -> TestConfig {
+		fn configure(meta: &mut ConstraintSystem<N>) -> TestConfig {
 			TestConfig::new(meta)
 		}
 
 		fn synthesize(
-			&self, config: TestConfig, mut layouter: impl Layouter<Fr>,
+			&self, config: TestConfig, mut layouter: impl Layouter<N>,
 		) -> Result<(), Error> {
 			let ecdsa_assigner = EcdsaAssigner::new(
 				self.public_key.clone(),
@@ -796,6 +795,7 @@ mod test {
 			Integer::from_w(g.x),
 			Integer::from_w(g.y),
 		);
+		let domain = N::from_u128(DOMAIN);
 
 		let mut set = Vec::new();
 		let mut msg_hash = Vec::new();
@@ -804,10 +804,10 @@ mod test {
 
 		for _ in 0..9 {
 			let attestation = Attestation::new(
-				Fr::random(rng.clone()),
-				Fr::random(rng.clone()),
-				Fr::random(rng.clone()),
-				Fr::random(rng.clone()),
+				N::random(rng.clone()),
+				domain,
+				N::random(rng.clone()),
+				N::random(rng.clone()),
 			);
 			set.push(attestation.about.clone());
 
@@ -816,7 +816,7 @@ mod test {
 				attestation.domain,
 				attestation.value,
 				attestation.message,
-				Fr::zero(),
+				N::zero(),
 			]);
 			let att_hash_bytes = att_hasher.permute()[0].to_bytes();
 			let att_fq = Fq::from_bytes(&att_hash_bytes).unwrap();
@@ -830,7 +830,7 @@ mod test {
 		set.push(public_key_fr);
 
 		let opinion_native: Opinion<NUM_NEIGHBOURS, C, N, NUM_LIMBS, NUM_BITS, P, EC, H, SH> =
-			Opinion::new(public_key.clone(), attestations.clone());
+			Opinion::new(public_key.clone(), attestations.clone(), domain);
 		let (_, scores, op_hash) = opinion_native.validate(set.clone());
 
 		let mut p_ins = Vec::new();
