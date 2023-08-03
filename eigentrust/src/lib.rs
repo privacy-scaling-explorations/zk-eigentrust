@@ -53,18 +53,21 @@ pub mod error;
 pub mod eth;
 pub mod storage;
 
-use crate::attestation::{SignatureEth, SignatureRaw, SignedAttestationEth};
+use crate::attestation::{SignatureEth, SignatureRaw, SignedAttestationEth, SignedAttestationFr};
 use att_station::{
 	AttestationCreatedFilter, AttestationData as ContractAttestationData, AttestationStation,
 };
 use attestation::{AttestationEth, AttestationRaw, SignedAttestationRaw};
-use eigentrust_zk::{
-	circuits::dynamic_sets::native::{
-		EigenTrustSet, SignedAttestation as SignedAttestationFr, MIN_PEER_COUNT, NUM_BITS,
-		NUM_LIMBS,
-	},
-	ecdsa::native::PublicKey,
+use eigentrust_zk::circuits::{
+	PoseidonNativeHasher, PoseidonNativeSponge, HASHER_WIDTH, MIN_PEER_COUNT, NUM_BITS, NUM_LIMBS,
 };
+use eigentrust_zk::halo2::halo2curves::bn256::Fr as Scalar;
+use eigentrust_zk::halo2::halo2curves::secp256k1::Secp256k1Affine;
+use eigentrust_zk::params::ecc::secp256k1::Secp256k1Params;
+use eigentrust_zk::params::hasher::poseidon_bn254_5x5::Params;
+use eigentrust_zk::params::rns::secp256k1::Secp256k1_4_68;
+use eigentrust_zk::poseidon::native::Poseidon;
+use eigentrust_zk::{circuits::dynamic_sets::native::EigenTrustSet, ecdsa::native::PublicKey};
 use error::EigenError;
 use eth::{address_from_public_key, ecdsa_secret_from_mnemonic, scalar_from_address};
 use ethers::{
@@ -171,7 +174,8 @@ impl Client {
 		let attestation_fr = attestation_eth.to_attestation_fr()?;
 
 		// Format for signature
-		let att_hash = attestation_fr.hash();
+		let att_hash =
+			attestation_fr.hash::<HASHER_WIDTH, Poseidon<Scalar, HASHER_WIDTH, Params>>();
 
 		// Sign attestation
 		let signature: RecoverableSignature = ctx.sign_ecdsa_recoverable(
@@ -269,8 +273,19 @@ impl Client {
 		}
 
 		// Initialize EigenTrustSet
-		let mut eigen_trust_set =
-			EigenTrustSet::<MAX_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
+		let mut eigen_trust_set = EigenTrustSet::<
+			MAX_NEIGHBOURS,
+			NUM_ITERATIONS,
+			INITIAL_SCORE,
+			Secp256k1Affine,
+			Scalar,
+			NUM_LIMBS,
+			NUM_BITS,
+			Secp256k1_4_68,
+			Secp256k1Params,
+			PoseidonNativeHasher,
+			PoseidonNativeSponge,
+		>::new();
 
 		// Add participants to set
 		for participant in &participants {

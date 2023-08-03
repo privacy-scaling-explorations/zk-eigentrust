@@ -1,6 +1,8 @@
 /// Native version of EigenTrustSet(ECDSA)
 pub mod native;
 
+use self::native::Attestation;
+
 use super::opinion::{AssignedAttestation, AssignedSignedAttestation};
 use super::opinion::{OpinionChipset, OpinionConfig};
 use crate::circuits::opinion::UnassignedAttestation;
@@ -125,7 +127,7 @@ where
 {
 	/// Constructs a new EigenTrustSet circuit
 	pub fn new(
-		attestation: Vec<Vec<UnassignedAttestation<N>>>,
+		attestation: Vec<Vec<Attestation<N>>>,
 		pks: Vec<PublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>>,
 		signatures: Vec<Signature<C, N, NUM_LIMBS, NUM_BITS, P>>,
 		op_pks: Vec<Vec<PublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>>>, ops: Vec<Vec<N>>,
@@ -133,12 +135,11 @@ where
 		s_inv: Vec<Integer<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>>,
 		g_as_ecpoint: EcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
 	) -> Self {
-		// Attestation values
-		// TODO: Uncomment when AttestationFr is not hardcoded
-		//let attestation = attestation
-		//	.into_iter()
-		//	.map(|att| att.into_iter().map(|x| UnassignedAttestation::from(x)).collect_vec())
-		//	.collect_vec();
+		//Attestation values
+		let attestation = attestation
+			.into_iter()
+			.map(|att| att.into_iter().map(|x| UnassignedAttestation::from(x)).collect_vec())
+			.collect_vec();
 		// Pubkey values
 		let pks = pks.into_iter().map(|x| UnassignedPublicKey::new(x)).collect_vec();
 

@@ -511,6 +511,7 @@ impl EcdsaAssignerConfig {
 }
 
 /// Ecdsa assigner struct
+#[derive(Clone)]
 pub struct EcdsaAssigner<
 	C: CurveAffine,
 	N: FieldExt,
