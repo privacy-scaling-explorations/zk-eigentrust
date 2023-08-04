@@ -239,6 +239,8 @@ pub struct OpinionChipset<
 {
 	/// Attestations towards other peers
 	attestations: Vec<AssignedSignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>>,
+	/// Domain of the attestations
+	domain: AssignedCell<N, N>,
 	/// Public key of the attester
 	public_key: AssignedPublicKey<C, N, NUM_LIMBS, NUM_BITS, P>,
 	/// Set of peers
@@ -279,7 +281,8 @@ where
 	/// Create a new chip.
 	pub fn new(
 		attestations: Vec<AssignedSignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>>,
-		public_key: AssignedPublicKey<C, N, NUM_LIMBS, NUM_BITS, P>, set: Vec<AssignedCell<N, N>>,
+		domain: AssignedCell<N, N>, public_key: AssignedPublicKey<C, N, NUM_LIMBS, NUM_BITS, P>,
+		set: Vec<AssignedCell<N, N>>,
 		msg_hash: Vec<AssignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>>,
 		g_as_ecpoint: AssignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P>,
 		s_inv: Vec<AssignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>>,
@@ -288,6 +291,7 @@ where
 	) -> Self {
 		Self {
 			attestations,
+			domain,
 			public_key,
 			set,
 			msg_hash,
@@ -394,6 +398,15 @@ where
 				layouter.namespace(|| "is_equal_chipset_set"),
 			)?;
 
+			// Checks equality of the attestation about and set index
+			let is_equal_chip =
+				IsEqualChipset::new(att.attestation.domain.clone(), self.domain.clone());
+			let equality_check_domain = is_equal_chip.synthesize(
+				common,
+				&config.main,
+				layouter.namespace(|| "is_att_domain_equal_domain"),
+			)?;
+
 			let hash = H::new([
 				att.attestation.about,
 				att.attestation.domain,
@@ -420,12 +433,15 @@ where
 
 			// Constraint equality for the msg_hash from hasher and constructor
 			// Constraint equality for the set and att.about
+			// Constraint equality for the domain and att.domain
 			layouter.assign_region(
 				|| "constraint equality",
 				|region: Region<'_, N>| {
 					let mut ctx = RegionCtx::new(region, 0);
 					ctx.constrain_equal(att_hash[0].clone(), compose_msg.clone())?;
 					ctx.constrain_equal(equality_check_set_about.clone(), one.clone())?;
+					ctx.constrain_equal(equality_check_domain.clone(), one.clone())?;
+
 					Ok(())
 				},
 			)?;
@@ -608,6 +624,7 @@ mod test {
 
 	struct TestOpinionCircuit {
 		attestations: Vec<UnassignedSignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>>,
+		domain: N,
 		set: Vec<N>,
 		public_key: UnassignedPublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
 		g_as_ecpoint: UnassignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
@@ -617,8 +634,8 @@ mod test {
 
 	impl TestOpinionCircuit {
 		fn new(
-			attestations: Vec<SignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>>, set: Vec<N>,
-			public_key: PublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
+			attestations: Vec<SignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>>, domain: N,
+			set: Vec<N>, public_key: PublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
 			g_as_ecpoint: EcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
 			msg_hash: Vec<Integer<WS, N, NUM_LIMBS, NUM_BITS, P>>,
 			s_inv: Vec<Integer<WS, N, NUM_LIMBS, NUM_BITS, P>>,
@@ -628,6 +645,7 @@ mod test {
 					.iter()
 					.map(|x| UnassignedSignedAttestation::from(x.clone()))
 					.collect_vec(),
+				domain,
 				set,
 				public_key: UnassignedPublicKey::new(public_key),
 				g_as_ecpoint: UnassignedEcPoint::from(g_as_ecpoint),
@@ -649,6 +667,7 @@ mod test {
 					.iter()
 					.map(|_| UnassignedSignedAttestation::without_witnesses())
 					.collect_vec(),
+				domain: N::default(),
 				set: self.set.iter().map(|_| N::default()).collect_vec(),
 				public_key: UnassignedPublicKey::without_witnesses(),
 				g_as_ecpoint: UnassignedEcPoint::without_witnesses(),
@@ -716,7 +735,7 @@ mod test {
 				)?);
 			}
 
-			let set = layouter.assign_region(
+			let (set, domain) = layouter.assign_region(
 				|| "assign_set",
 				|region: Region<'_, N>| {
 					let mut ctx = RegionCtx::new(region, 0);
@@ -727,7 +746,9 @@ mod test {
 						);
 						ctx.next();
 					}
-					Ok(set)
+					let domain =
+						ctx.assign_advice(config.common.advice[0], Value::known(self.domain))?;
+					Ok((set, domain))
 				},
 			)?;
 
@@ -764,7 +785,7 @@ mod test {
 
 			let opinion: OpinionChipset<NUM_NEIGHBOURS, C, N, NUM_LIMBS, NUM_BITS, P, EC, HC, SHC> =
 				OpinionChipset::new(
-					attestations, ecdsa_assigner.public_key, set, msg_hash,
+					attestations, domain, ecdsa_assigner.public_key, set, msg_hash,
 					ecdsa_assigner.g_as_ecpoint, s_inv, ecdsa_assigner.auxes, left_shifters,
 				);
 
@@ -843,8 +864,9 @@ mod test {
 		let mut p_ins = Vec::new();
 		p_ins.extend(scores);
 		p_ins.push(op_hash);
-		let circuit =
-			TestOpinionCircuit::new(attestations, set, public_key, g_as_ecpoint, msg_hash, s_inv);
+		let circuit = TestOpinionCircuit::new(
+			attestations, domain, set, public_key, g_as_ecpoint, msg_hash, s_inv,
+		);
 		let k = 18;
 		let prover = MockProver::run(k, &circuit, vec![p_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));

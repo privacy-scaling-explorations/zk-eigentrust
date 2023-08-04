@@ -263,7 +263,7 @@ where
 	fn synthesize(
 		&self, config: Self::Config, mut layouter: impl Layouter<N>,
 	) -> Result<(), Error> {
-		let (zero, attestation, init_score, total_score, passed_s, one, set) = layouter
+		let (zero, attestation, domain, init_score, total_score, passed_s, one, set) = layouter
 			.assign_region(
 				|| "temp",
 				|region: Region<'_, N>| {
@@ -343,6 +343,14 @@ where
 					}
 					ctx.next();
 
+					let domain = ctx.assign_from_instance(
+						config.common.advice[0],
+						config.common.instance,
+						NUM_NEIGHBOURS + 1,
+					)?;
+
+					ctx.next();
+
 					let one = ctx.assign_from_constant(config.common.advice[0], N::ONE)?;
 					ctx.next();
 
@@ -357,8 +365,8 @@ where
 					}
 
 					Ok((
-						zero, assigned_attestation, assigned_initial_score, assigned_total_score,
-						passed_s, one, assigned_set,
+						zero, assigned_attestation, domain, assigned_initial_score,
+						assigned_total_score, passed_s, one, assigned_set,
 					))
 				},
 			)?;
@@ -430,6 +438,7 @@ where
 			let opinion: OpinionChipset<NUM_NEIGHBOURS, C, N, NUM_LIMBS, NUM_BITS, P, EC, H, SH> =
 				OpinionChipset::new(
 					assigned_signed_att,
+					domain.clone(),
 					assigned_public_key,
 					set.clone(),
 					assigned_msg_hash,
