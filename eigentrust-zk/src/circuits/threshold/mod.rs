@@ -300,8 +300,8 @@ impl<
 			let scale = max_limb_value.clone();
 
 			let mut val = limbs[0].clone();
-			for limb in limbs.iter().take(NUM_LIMBS).skip(1) {
-				let mul_add_chipset = MulAddChipset::new(val, scale.clone(), limb.clone());
+			for i in 1..NUM_LIMBS {
+				let mul_add_chipset = MulAddChipset::new(val, scale.clone(), limbs[i].clone());
 				val = mul_add_chipset.synthesize(
 					&config.common,
 					&config.main,
@@ -318,8 +318,8 @@ impl<
 			let scale = max_limb_value;
 
 			let mut val = limbs[0].clone();
-			for limb in limbs.iter().take(NUM_LIMBS).skip(1) {
-				let mul_add_chipset = MulAddChipset::new(val, scale.clone(), limb.clone());
+			for i in 1..NUM_LIMBS {
+				let mul_add_chipset = MulAddChipset::new(val, scale.clone(), limbs[i].clone());
 				val = mul_add_chipset.synthesize(
 					&config.common,
 					&config.main,

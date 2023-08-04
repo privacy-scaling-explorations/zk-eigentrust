@@ -622,13 +622,13 @@ where
 		// "Normalization"
 		let ops = {
 			let mut normalized_ops = Vec::new();
-			for ops in ops.iter().take(NUM_NEIGHBOURS) {
+			for i in 0..NUM_NEIGHBOURS {
 				let mut ops_i = Vec::new();
 
 				// Compute the sum of scores
 				let mut op_score_sum = zero.clone();
-				for op in ops.iter().take(NUM_NEIGHBOURS) {
-					let add_chip = AddChipset::new(op_score_sum.clone(), op.clone());
+				for j in 0..NUM_NEIGHBOURS {
+					let add_chip = AddChipset::new(op_score_sum.clone(), ops[i][j].clone());
 					op_score_sum = add_chip.synthesize(
 						&config.common,
 						&config.main,
@@ -648,8 +648,8 @@ where
 					layouter.namespace(|| "invert_sum"),
 				)?;
 
-				for op in ops.iter().take(NUM_NEIGHBOURS) {
-					let mul_chip = MulChipset::new(op.clone(), inverted_sum.clone());
+				for j in 0..NUM_NEIGHBOURS {
+					let mul_chip = MulChipset::new(ops[i][j].clone(), inverted_sum.clone());
 					let normalized_op = mul_chip.synthesize(
 						&config.common,
 						&config.main,
@@ -670,10 +670,9 @@ where
 		for _ in 0..NUM_ITER {
 			let mut sop = Vec::new();
 			for i in 0..NUM_NEIGHBOURS {
-				let op_i = ops[i].clone();
 				let mut sop_i = Vec::new();
-				for op in op_i.iter().take(NUM_NEIGHBOURS) {
-					let mul_chip = MulChipset::new(op.clone(), s[i].clone());
+				for j in 0..NUM_NEIGHBOURS {
+					let mul_chip = MulChipset::new(ops[i][j].clone(), s[i].clone());
 					let res = mul_chip.synthesize(
 						&config.common,
 						&config.main,
@@ -686,8 +685,8 @@ where
 
 			let mut new_s = vec![zero.clone(); NUM_NEIGHBOURS];
 			for i in 0..NUM_NEIGHBOURS {
-				for sop in sop.iter().take(NUM_NEIGHBOURS) {
-					let add_chip = AddChipset::new(new_s[i].clone(), sop[i].clone());
+				for j in 0..NUM_NEIGHBOURS {
+					let add_chip = AddChipset::new(new_s[i].clone(), ops[i][j].clone());
 					new_s[i] = add_chip.synthesize(
 						&config.common,
 						&config.main,
@@ -716,8 +715,8 @@ where
 
 		// Constrain the total reputation in the set
 		let mut sum = zero;
-		for passed_s in passed_s.iter().take(NUM_NEIGHBOURS) {
-			let add_chipset = AddChipset::new(sum.clone(), passed_s.clone());
+		for i in 0..NUM_NEIGHBOURS {
+			let add_chipset = AddChipset::new(sum.clone(), passed_s[i].clone());
 			sum = add_chipset.synthesize(
 				&config.common,
 				&config.main,
