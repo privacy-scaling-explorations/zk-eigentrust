@@ -89,6 +89,41 @@ impl<N: FieldExt> UnassignedValue for UnassignedAttestation<N> {
 	}
 }
 
+/// Attestation assigner chipset
+pub struct AttestationAssigner<N: FieldExt> {
+	att: UnassignedAttestation<N>,
+}
+
+impl<N: FieldExt> AttestationAssigner<N> {
+	/// Construct new attestation assigner
+	pub fn new(att: UnassignedAttestation<N>) -> Self {
+		Self { att }
+	}
+}
+
+impl<N: FieldExt> Chipset<N> for AttestationAssigner<N> {
+	type Config = ();
+	type Output = AssignedAttestation<N>;
+
+	fn synthesize(
+		self, common: &CommonConfig, _: &Self::Config, mut layouter: impl Layouter<N>,
+	) -> Result<Self::Output, Error> {
+		layouter.assign_region(
+			|| "assigner",
+			|region: Region<'_, N>| {
+				let mut ctx = RegionCtx::new(region, 0);
+
+				let about = ctx.assign_advice(common.advice[0], self.att.about)?;
+				let domain = ctx.assign_advice(common.advice[1], self.att.domain)?;
+				let value = ctx.assign_advice(common.advice[2], self.att.value)?;
+				let message = ctx.assign_advice(common.advice[3], self.att.about)?;
+
+				Ok(AssignedAttestation::new(about, domain, value, message))
+			},
+		)
+	}
+}
+
 /// AssignedSignedAttestation structure.
 #[derive(Debug, Clone)]
 pub struct AssignedSignedAttestation<
