@@ -2,7 +2,7 @@
 pub mod native;
 
 use self::native::Attestation;
-use super::opinion::{AssignedAttestation, AssignedSignedAttestation};
+use super::opinion::{AssignedSignedAttestation, AttestationAssigner};
 use super::opinion::{OpinionChipset, OpinionConfig};
 use crate::circuits::opinion::UnassignedAttestation;
 use crate::circuits::HASHER_WIDTH;
@@ -82,7 +82,7 @@ pub struct EigenTrustSet<
 	SH: SpongeHasherChipset<N, HASHER_WIDTH>,
 {
 	// Attestation
-	attestation: Vec<Vec<UnassignedAttestation<N>>>,
+	attestations: Vec<Vec<UnassignedAttestation<N>>>,
 	// Signature
 	signatures: Vec<UnassignedSignature<C, N, NUM_LIMBS, NUM_BITS, P>>,
 	// Public keys
@@ -122,7 +122,7 @@ where
 {
 	/// Constructs a new EigenTrustSet circuit
 	pub fn new(
-		attestation: Vec<Vec<Attestation<N>>>,
+		attestations: Vec<Vec<Attestation<N>>>,
 		signatures: Vec<Signature<C, N, NUM_LIMBS, NUM_BITS, P>>,
 		pks: Vec<PublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>>,
 		msg_hash: Vec<Vec<Integer<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>>>, set: Vec<N>,
@@ -130,7 +130,7 @@ where
 		g_as_ecpoint: EcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
 	) -> Self {
 		//Attestation values
-		let attestation = attestation
+		let attestations = attestations
 			.into_iter()
 			.map(|att| att.into_iter().map(|x| UnassignedAttestation::from(x)).collect_vec())
 			.collect_vec();
@@ -149,7 +149,7 @@ where
 		let g_as_ecpoint = UnassignedEcPoint::from(g_as_ecpoint);
 
 		Self {
-			attestation,
+			attestations,
 			signatures,
 			pks,
 			msg_hash,
@@ -192,7 +192,7 @@ where
 		let sig = UnassignedSignature::without_witnesses();
 
 		Self {
-			attestation: vec![vec![att; NUM_NEIGHBOURS]; NUM_NEIGHBOURS],
+			attestations: vec![vec![att; NUM_NEIGHBOURS]; NUM_NEIGHBOURS],
 			signatures: vec![sig; NUM_NEIGHBOURS],
 			pks: vec![pk; NUM_NEIGHBOURS],
 			msg_hash: vec![vec![UnassignedInteger::without_witnesses(); NUM_NEIGHBOURS]],
@@ -259,105 +259,68 @@ where
 	fn synthesize(
 		&self, config: Self::Config, mut layouter: impl Layouter<N>,
 	) -> Result<(), Error> {
-		let (zero, attestation, init_score, total_score, passed_s, one, set) = layouter
-			.assign_region(
-				|| "temp",
-				|region: Region<'_, N>| {
-					let mut ctx = RegionCtx::new(region, 0);
+		let (zero, init_score, total_score, passed_s, one, set) = layouter.assign_region(
+			|| "assigner",
+			|region: Region<'_, N>| {
+				let mut ctx = RegionCtx::new(region, 0);
 
-					let zero = ctx.assign_from_constant(config.common.advice[0], N::ZERO)?;
+				let zero = ctx.assign_from_constant(config.common.advice[0], N::ZERO)?;
+				let one = ctx.assign_from_constant(config.common.advice[1], N::ONE)?;
 
-					let assigned_initial_score = ctx.assign_from_constant(
-						config.common.advice[2],
-						N::from_u128(INITIAL_SCORE),
+				let assigned_initial_score =
+					ctx.assign_from_constant(config.common.advice[3], N::from_u128(INITIAL_SCORE))?;
+
+				let assigned_total_score = ctx.assign_from_constant(
+					config.common.advice[4],
+					N::from_u128(INITIAL_SCORE * NUM_NEIGHBOURS as u128),
+				)?;
+
+				// Move to the next row
+				ctx.next();
+
+				let mut passed_s = Vec::new();
+				for i in 0..NUM_NEIGHBOURS {
+					let index = i % ADVICE;
+					let ps = ctx.assign_from_instance(
+						config.common.advice[index], config.common.instance, i,
 					)?;
+					passed_s.push(ps);
+					if i == ADVICE - 1 {
+						ctx.next();
+					}
+				}
+				ctx.next();
 
-					let assigned_total_score = ctx.assign_from_constant(
-						config.common.advice[3],
-						N::from_u128(INITIAL_SCORE * NUM_NEIGHBOURS as u128),
-					)?;
-
+				let mut assigned_set = Vec::new();
+				for chunk in self.set.chunks(ADVICE) {
+					for (i, chunk_i) in chunk.iter().enumerate() {
+						let s = ctx.assign_advice(config.common.advice[i], *chunk_i)?;
+						assigned_set.push(s)
+					}
 					// Move to the next row
 					ctx.next();
+				}
 
-					let mut assigned_attestation = Vec::new();
-					for atts in &self.attestation {
-						let mut assigned_attestation_i = Vec::new();
-						for chunk in atts.chunks(ADVICE) {
-							for (i, chunk_i) in chunk.iter().enumerate() {
-								let about =
-									ctx.assign_advice(config.common.advice[i], chunk_i.about)?;
-								let domain =
-									ctx.assign_advice(config.common.advice[i], chunk_i.domain)?;
-								let value =
-									ctx.assign_advice(config.common.advice[i], chunk_i.value)?;
-								let message =
-									ctx.assign_advice(config.common.advice[i], chunk_i.about)?;
+				Ok((
+					zero, assigned_initial_score, assigned_total_score, passed_s, one, assigned_set,
+				))
+			},
+		)?;
 
-								let s = AssignedAttestation::new(about, domain, value, message);
-
-								assigned_attestation_i.push(s)
-							}
-							// Move to the next row
-							ctx.next();
-						}
-						assigned_attestation.push(assigned_attestation_i);
-					}
-
-					let unassigned_pk_x = self.pks.iter().map(|pk| pk.0.x.val).collect_vec();
-					let mut assigned_pk_x = Vec::new();
-					for chunk in unassigned_pk_x.chunks(ADVICE) {
-						for (i, chunk_i) in chunk.iter().enumerate() {
-							let pk_x = ctx.assign_advice(config.common.advice[i], *chunk_i)?;
-							assigned_pk_x.push(pk_x)
-						}
-						// Move to the next row
-						ctx.next();
-					}
-
-					let unassigned_pk_y = self.pks.iter().map(|pk| pk.0.x.val).collect_vec();
-					let mut assigned_pk_y = Vec::new();
-					for chunk in unassigned_pk_y.chunks(ADVICE) {
-						for (i, chunk_i) in chunk.iter().enumerate() {
-							let pk_y = ctx.assign_advice(config.common.advice[i], *chunk_i)?;
-							assigned_pk_y.push(pk_y)
-						}
-						// Move to the next row
-						ctx.next();
-					}
-
-					let mut passed_s = Vec::new();
-					for i in 0..NUM_NEIGHBOURS {
-						let index = i % ADVICE;
-						let ps = ctx.assign_from_instance(
-							config.common.advice[index], config.common.instance, i,
-						)?;
-						passed_s.push(ps);
-						if i == ADVICE - 1 {
-							ctx.next();
-						}
-					}
-					ctx.next();
-
-					let one = ctx.assign_from_constant(config.common.advice[0], N::ONE)?;
-					ctx.next();
-
-					let mut assigned_set = Vec::new();
-					for chunk in self.set.chunks(ADVICE) {
-						for (i, chunk_i) in chunk.iter().enumerate() {
-							let s = ctx.assign_advice(config.common.advice[i], *chunk_i)?;
-							assigned_set.push(s)
-						}
-						// Move to the next row
-						ctx.next();
-					}
-
-					Ok((
-						zero, assigned_attestation, assigned_initial_score, assigned_total_score,
-						passed_s, one, assigned_set,
-					))
-				},
-			)?;
+		let mut assigned_attestation = Vec::new();
+		for atts in &self.attestations {
+			let mut att_vec = Vec::new();
+			for att in atts {
+				let att_assigner = AttestationAssigner::new(att.clone());
+				let assigned_att = att_assigner.synthesize(
+					&config.common,
+					&(),
+					layouter.namespace(|| "att_assigner"),
+				)?;
+				att_vec.push(assigned_att);
+			}
+			assigned_attestation.push(att_vec);
+		}
 
 		let mut ops = Vec::new();
 		// signature verification
@@ -397,12 +360,12 @@ where
 
 			// Assigning first iteration to catch s_inv and msg_hash
 			assigned_signed_att.push(AssignedSignedAttestation::new(
-				attestation[i][0].clone(),
+				assigned_attestation[i][0].clone(),
 				assigned_signature.clone(),
 			));
 			for j in 1..NUM_NEIGHBOURS {
 				assigned_signed_att.push(AssignedSignedAttestation::new(
-					attestation[i][j].clone(),
+					assigned_attestation[i][j].clone(),
 					assigned_signature.clone(),
 				));
 
