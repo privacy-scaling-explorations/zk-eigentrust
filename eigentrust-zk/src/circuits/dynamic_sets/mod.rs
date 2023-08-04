@@ -1,10 +1,9 @@
 /// Native version of EigenTrustSet(ECDSA)
 pub mod native;
 
-use self::native::Attestation;
-use super::opinion::{AssignedSignedAttestation, AttestationAssigner};
+use self::native::SignedAttestation;
 use super::opinion::{OpinionChipset, OpinionConfig};
-use crate::circuits::opinion::UnassignedAttestation;
+use super::opinion::{SignedAttestationAssigner, UnassignedSignedAttestation};
 use crate::circuits::HASHER_WIDTH;
 use crate::ecc::generic::native::EcPoint;
 use crate::ecc::generic::UnassignedEcPoint;
@@ -12,15 +11,13 @@ use crate::ecc::{
 	AuxConfig, EccAddConfig, EccDoubleConfig, EccMulConfig, EccTableSelectConfig,
 	EccUnreducedLadderConfig,
 };
-use crate::ecdsa::native::{PublicKey, Signature};
-use crate::ecdsa::{
-	EcdsaAssigner, EcdsaAssignerConfig, EcdsaConfig, UnassignedPublicKey, UnassignedSignature,
-};
+use crate::ecdsa::native::PublicKey;
+use crate::ecdsa::{EcdsaAssigner, EcdsaAssignerConfig, EcdsaConfig, UnassignedPublicKey};
 use crate::gadgets::set::{SetChip, SetConfig};
 use crate::integer::native::Integer;
 use crate::integer::{
-	IntegerAddChip, IntegerAssigner, IntegerDivChip, IntegerMulChip, IntegerReduceChip,
-	IntegerSubChip, LeftShiftersAssigner, UnassignedInteger,
+	IntegerAddChip, IntegerDivChip, IntegerMulChip, IntegerReduceChip, IntegerSubChip,
+	LeftShiftersAssigner, UnassignedInteger,
 };
 use crate::params::ecc::EccParams;
 use crate::params::rns::RnsParams;
@@ -82,13 +79,11 @@ pub struct EigenTrustSet<
 	SH: SpongeHasherChipset<N, HASHER_WIDTH>,
 {
 	// Attestation
-	attestations: Vec<Vec<UnassignedAttestation<N>>>,
-	// Signature
-	signatures: Vec<UnassignedSignature<C, N, NUM_LIMBS, NUM_BITS, P>>,
+	attestations: Vec<Vec<UnassignedSignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>>>,
 	// Public keys
 	pks: Vec<UnassignedPublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>>,
-	// Message hash
-	msg_hash: Vec<Vec<UnassignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>>>,
+	// Message hashes
+	msg_hashes: Vec<Vec<UnassignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>>>,
 	// Set
 	set: Vec<Value<N>>,
 	// Signature s inverse
@@ -122,24 +117,21 @@ where
 {
 	/// Constructs a new EigenTrustSet circuit
 	pub fn new(
-		attestations: Vec<Vec<Attestation<N>>>,
-		signatures: Vec<Signature<C, N, NUM_LIMBS, NUM_BITS, P>>,
+		attestations: Vec<Vec<SignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>>>,
 		pks: Vec<PublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>>,
-		msg_hash: Vec<Vec<Integer<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>>>, set: Vec<N>,
+		msg_hashes: Vec<Vec<Integer<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>>>, set: Vec<N>,
 		s_inv: Vec<Integer<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>>,
 		g_as_ecpoint: EcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
 	) -> Self {
 		//Attestation values
 		let attestations = attestations
 			.into_iter()
-			.map(|att| att.into_iter().map(|x| UnassignedAttestation::from(x)).collect_vec())
+			.map(|att| att.into_iter().map(|x| UnassignedSignedAttestation::from(x)).collect_vec())
 			.collect_vec();
-		// Signature values
-		let signatures = signatures.into_iter().map(UnassignedSignature::from).collect_vec();
 		// Pubkey values
 		let pks = pks.into_iter().map(|x| UnassignedPublicKey::new(x)).collect_vec();
 
-		let msg_hash = msg_hash
+		let msg_hashes = msg_hashes
 			.iter()
 			.map(|ints| ints.iter().map(|int| UnassignedInteger::from(int.clone())).collect_vec())
 			.collect_vec();
@@ -148,16 +140,7 @@ where
 		let s_inv = s_inv.iter().map(|int| UnassignedInteger::from(int.clone())).collect_vec();
 		let g_as_ecpoint = UnassignedEcPoint::from(g_as_ecpoint);
 
-		Self {
-			attestations,
-			signatures,
-			pks,
-			msg_hash,
-			set,
-			s_inv,
-			g_as_ecpoint,
-			_p: PhantomData,
-		}
+		Self { attestations, pks, msg_hashes, set, s_inv, g_as_ecpoint, _p: PhantomData }
 	}
 }
 
@@ -187,15 +170,13 @@ where
 	type FloorPlanner = SimpleFloorPlanner;
 
 	fn without_witnesses(&self) -> Self {
-		let att = UnassignedAttestation::without_witnesses();
+		let att = UnassignedSignedAttestation::without_witnesses();
 		let pk = UnassignedPublicKey::without_witnesses();
-		let sig = UnassignedSignature::without_witnesses();
 
 		Self {
 			attestations: vec![vec![att; NUM_NEIGHBOURS]; NUM_NEIGHBOURS],
-			signatures: vec![sig; NUM_NEIGHBOURS],
 			pks: vec![pk; NUM_NEIGHBOURS],
-			msg_hash: vec![vec![UnassignedInteger::without_witnesses(); NUM_NEIGHBOURS]],
+			msg_hashes: vec![vec![UnassignedInteger::without_witnesses(); NUM_NEIGHBOURS]],
 			set: vec![Value::unknown(); NUM_NEIGHBOURS],
 			s_inv: vec![UnassignedInteger::without_witnesses(); NUM_NEIGHBOURS],
 			g_as_ecpoint: UnassignedEcPoint::without_witnesses(),
@@ -316,11 +297,11 @@ where
 			},
 		)?;
 
-		let mut assigned_attestation = Vec::new();
+		let mut assigned_attestations = Vec::new();
 		for atts in &self.attestations {
 			let mut att_vec = Vec::new();
 			for att in atts {
-				let att_assigner = AttestationAssigner::new(att.clone());
+				let att_assigner = SignedAttestationAssigner::new(att.clone());
 				let assigned_att = att_assigner.synthesize(
 					&config.common,
 					&(),
@@ -328,7 +309,7 @@ where
 				)?;
 				att_vec.push(assigned_att);
 			}
-			assigned_attestation.push(att_vec);
+			assigned_attestations.push(att_vec);
 		}
 
 		let lshift: LeftShiftersAssigner<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P> =
@@ -339,67 +320,32 @@ where
 			layouter.namespace(|| "lshift assigner"),
 		)?;
 
+		// TODO: Prevent self-attestations
 		let mut ops = Vec::new();
 		// signature verification
 		for i in 0..NUM_NEIGHBOURS {
-			let ecdsa_assigner_chip = EcdsaAssigner::new(
-				self.pks[i].clone(),
-				self.g_as_ecpoint.clone(),
-				self.signatures[i].clone(),
-				self.msg_hash[i][0].clone(),
-				self.s_inv[i].clone(),
-			);
-			let ecdsa_assigner = ecdsa_assigner_chip.synthesize(
-				&config.common,
-				&config.ecdsa_assigner,
-				layouter.namespace(|| "ecdsa assigner"),
-			)?;
-
-			let assigned_public_key = ecdsa_assigner.public_key;
-			let assigned_signature = ecdsa_assigner.signature;
-			let g_as_ecpoint = ecdsa_assigner.g_as_ecpoint;
-			let aux = ecdsa_assigner.auxes;
-
-			let mut assigned_signed_att = Vec::new();
-			let mut assigned_msg_hash = Vec::new();
-			let mut assigned_s_inv = Vec::new();
-
-			assigned_msg_hash.push(ecdsa_assigner.msg_hash);
-			assigned_s_inv.push(ecdsa_assigner.s_inv);
-
+			let mut assigned_sig_data = Vec::new();
 			for j in 0..NUM_NEIGHBOURS {
-				assigned_signed_att.push(AssignedSignedAttestation::new(
-					assigned_attestation[i][j].clone(),
-					assigned_signature.clone(),
-				));
-
-				let assign_msg_hash = IntegerAssigner::new(self.msg_hash[i][j].clone());
-				let msg_hash = assign_msg_hash.synthesize(
+				let ecdsa_assigner = EcdsaAssigner::new(
+					self.pks[i].clone(),
+					self.g_as_ecpoint.clone(),
+					self.msg_hashes[i][j].clone(),
+					self.s_inv[i].clone(),
+				);
+				let assigned_ecdsa = ecdsa_assigner.synthesize(
 					&config.common,
-					&(),
-					layouter.namespace(|| "assign msg_hash_i"),
+					&config.ecdsa_assigner,
+					layouter.namespace(|| "ecdsa assigner"),
 				)?;
-				assigned_msg_hash.push(msg_hash);
-
-				let assign_s_inv = IntegerAssigner::new(self.msg_hash[i][j].clone());
-				let s_inv = assign_s_inv.synthesize(
-					&config.common,
-					&(),
-					layouter.namespace(|| "assign s_inv"),
-				)?;
-				assigned_s_inv.push(s_inv);
+				assigned_sig_data.push(assigned_ecdsa);
 			}
 
-			let opinion: OpinionChipset<NUM_NEIGHBOURS, C, N, NUM_LIMBS, NUM_BITS, P, EC, H, SH> =
-				OpinionChipset::new(
-					assigned_signed_att,
+			let opinion =
+				OpinionChipset::<NUM_NEIGHBOURS, C, N, NUM_LIMBS, NUM_BITS, P, EC, H, SH>::new(
 					domain.clone(),
-					assigned_public_key,
 					set.clone(),
-					assigned_msg_hash,
-					g_as_ecpoint,
-					assigned_s_inv,
-					aux,
+					assigned_attestations[i].clone(),
+					assigned_sig_data,
 					left_shifters.clone(),
 				);
 
@@ -661,7 +607,7 @@ mod test {
 	use super::*;
 	use crate::{
 		circuits::{
-			dynamic_sets::native::SignedAttestation, opinion::native::Opinion,
+			dynamic_sets::native::{Attestation, SignedAttestation},
 			PoseidonNativeHasher, PoseidonNativeSponge,
 		},
 		ecdsa::native::EcdsaKeypair,
@@ -720,13 +666,53 @@ mod test {
 			Integer::from_w(g.x),
 			Integer::from_w(g.y),
 		);
+
 		let rng = &mut thread_rng();
-		let sks = [(); NUM_NEIGHBOURS].map(|_| WN::random(rng.clone()));
-		let keypairs = sks.clone().map(|x| EcdsaKeypair::from_private_key(x));
-		let pub_keys = keypairs.clone().map(|kp| kp.public_key);
+		let keypairs = [(); NUM_NEIGHBOURS].map(|_| EcdsaKeypair::generate_keypair(rng));
+		let pub_keys = keypairs.clone().map(|kp| kp.public_key).to_vec();
 		let domain = N::from_u128(DOMAIN);
 
-		let (res, attestations, signatures, s_inv, set, msg_hash) = {
+		let (attestations, s_inv, set, msg_hashes) = {
+			let mut attestations = Vec::new();
+			let mut set = Vec::new();
+			let mut msg_hashes = Vec::new();
+			let mut s_inv = Vec::new();
+
+			for i in 0..NUM_NEIGHBOURS {
+				let addr = pub_keys[i].to_address();
+				set.push(addr);
+			}
+
+			for i in 0..NUM_NEIGHBOURS {
+				let mut attestations_i = Vec::new();
+				let mut msg_hash_i = Vec::new();
+				// Attestation to the other peers
+				for j in 0..NUM_NEIGHBOURS {
+					let attestation =
+						Attestation::new(pub_keys[j].to_address(), Fr::ZERO, ops[i][j], Fr::ZERO);
+
+					let att_hash = attestation.hash::<HASHER_WIDTH, PoseidonNativeHasher>();
+					let att_hash: Fq = big_to_fe(fe_to_big(att_hash));
+
+					let signature = keypairs[i].sign(att_hash, rng);
+					let s_inv_fq = big_to_fe::<Fq>(signature.s.value()).invert().unwrap();
+
+					let msg_hash_int = Integer::from_w(att_hash);
+					let s_inv_int = Integer::from_w(s_inv_fq);
+					let signed_att = SignedAttestation::new(attestation, signature);
+
+					msg_hash_i.push(msg_hash_int);
+					s_inv.push(s_inv_int);
+					attestations_i.push(signed_att);
+				}
+				msg_hashes.push(msg_hash_i);
+				attestations.push(attestations_i);
+			}
+
+			(attestations, s_inv, set, msg_hashes)
+		};
+
+		let res = {
 			let mut et = native::EigenTrustSet::<
 				NUM_NEIGHBOURS,
 				NUM_ITERATIONS,
@@ -741,55 +727,17 @@ mod test {
 				SHN,
 			>::new(domain);
 
-			let mut signatures = Vec::new();
-			let mut attestations = Vec::new();
-			let mut set = Vec::new();
-			let mut msg_hash = Vec::new();
-			let mut s_inv = Vec::new();
+			for i in 0..NUM_NEIGHBOURS {
+				et.add_member(set[i]);
+			}
 
 			for i in 0..NUM_NEIGHBOURS {
-				et.add_member(pub_keys[i].clone().to_address());
-
-				let mut attestations_option = Vec::new();
-				let mut msg_hash_i = Vec::new();
-				// Attestation to the other peers
-				for j in 0..NUM_NEIGHBOURS {
-					let attestation =
-						Attestation::new(pub_keys[j].to_address(), Fr::ZERO, ops[i][j], Fr::ZERO);
-					set.push(attestation.about.clone());
-
-					let att_hasher: Fq = big_to_fe(fe_to_big(
-						attestation.hash::<HASHER_WIDTH, PoseidonNativeHasher>(),
-					));
-
-					let signature = keypairs[i].sign(att_hasher.clone(), rng);
-					let s_inv_fq = big_to_fe::<Fq>(signature.s.value()).invert().unwrap();
-
-					msg_hash_i.push(Integer::from_w(att_hasher));
-					s_inv.push(Integer::from_w(s_inv_fq));
-					signatures.push(signature.clone());
-					attestations_option.push(Some(SignedAttestation::new(attestation, signature)));
-				}
-				msg_hash.push(msg_hash_i);
-
-				let default_att = SignedAttestation::default();
-				let attestations_unwrapped = attestations_option
-					.iter()
-					.map(|x| x.clone().unwrap_or(default_att.clone()))
-					.collect_vec();
-				attestations.push(
-					attestations_unwrapped.iter().map(|x| x.attestation.clone()).collect_vec(),
-				);
-
-				let op: Opinion<NUM_NEIGHBOURS, C, N, NUM_LIMBS, NUM_BITS, P, EC, HN, SHN> =
-					Opinion::new(pub_keys[i].clone(), attestations_unwrapped.clone(), domain);
-				let _ = op.validate(set.clone());
-
-				et.update_op(pub_keys[i].clone(), attestations_option);
+				let attestations_opt =
+					attestations[i].iter().map(|x| Some(x.clone())).collect_vec();
+				et.update_op(pub_keys[i].clone(), attestations_opt);
 			}
-			let s = et.converge();
 
-			(s, attestations, signatures, s_inv, set, msg_hash)
+			et.converge()
 		};
 
 		let et = EigenTrustSet::<
@@ -804,15 +752,7 @@ mod test {
 			EC,
 			H,
 			SH,
-		>::new(
-			attestations,
-			signatures,
-			pub_keys.to_vec(),
-			msg_hash,
-			set,
-			s_inv,
-			g_as_ecpoint,
-		);
+		>::new(attestations, pub_keys, msg_hashes, set, s_inv, g_as_ecpoint);
 
 		let k = 20;
 		let prover = match MockProver::<N>::run(k, &et, vec![res.to_vec()]) {
@@ -842,13 +782,53 @@ mod test {
 			Integer::from_w(g.x),
 			Integer::from_w(g.y),
 		);
+
 		let rng = &mut thread_rng();
-		let sks = [(); NUM_NEIGHBOURS].map(|_| WN::random(rng.clone()));
-		let keypairs = sks.clone().map(|x| EcdsaKeypair::from_private_key(x));
+		let keypairs = [(); NUM_NEIGHBOURS].map(|_| EcdsaKeypair::generate_keypair(rng));
 		let pub_keys = keypairs.clone().map(|kp| kp.public_key).to_vec();
 		let domain = N::from_u128(DOMAIN);
 
-		let (res, attestations, signatures, s_inv, set, msg_hash) = {
+		let (attestations, s_inv, set, msg_hashes) = {
+			let mut attestations = Vec::new();
+			let mut set = Vec::new();
+			let mut msg_hashes = Vec::new();
+			let mut s_inv = Vec::new();
+
+			for i in 0..NUM_NEIGHBOURS {
+				let addr = pub_keys[i].to_address();
+				set.push(addr);
+			}
+
+			for i in 0..NUM_NEIGHBOURS {
+				let mut attestations_i = Vec::new();
+				let mut msg_hash_i = Vec::new();
+				// Attestation to the other peers
+				for j in 0..NUM_NEIGHBOURS {
+					let attestation =
+						Attestation::new(pub_keys[j].to_address(), Fr::ZERO, ops[i][j], Fr::ZERO);
+
+					let att_hash = attestation.hash::<HASHER_WIDTH, PoseidonNativeHasher>();
+					let att_hash: Fq = big_to_fe(fe_to_big(att_hash));
+
+					let signature = keypairs[i].sign(att_hash, rng);
+					let s_inv_fq = big_to_fe::<Fq>(signature.s.value()).invert().unwrap();
+
+					let msg_hash_int = Integer::from_w(att_hash);
+					let s_inv_int = Integer::from_w(s_inv_fq);
+					let signed_att = SignedAttestation::new(attestation, signature);
+
+					msg_hash_i.push(msg_hash_int);
+					s_inv.push(s_inv_int);
+					attestations_i.push(signed_att);
+				}
+				msg_hashes.push(msg_hash_i);
+				attestations.push(attestations_i);
+			}
+
+			(attestations, s_inv, set, msg_hashes)
+		};
+
+		let res = {
 			let mut et = native::EigenTrustSet::<
 				NUM_NEIGHBOURS,
 				NUM_ITERATIONS,
@@ -863,55 +843,17 @@ mod test {
 				SHN,
 			>::new(domain);
 
-			let mut signatures = Vec::new();
-			let mut attestations = Vec::new();
-			let mut set = Vec::new();
-			let mut msg_hash = Vec::new();
-			let mut s_inv = Vec::new();
+			for i in 0..NUM_NEIGHBOURS {
+				et.add_member(set[i]);
+			}
 
 			for i in 0..NUM_NEIGHBOURS {
-				et.add_member(pub_keys[i].clone().to_address());
-
-				let mut attestations_option = Vec::new();
-				let mut msg_hash_i = Vec::new();
-				// Attestation to the other peers
-				for j in 0..NUM_NEIGHBOURS {
-					let attestation =
-						Attestation::new(pub_keys[j].to_address(), Fr::ZERO, ops[i][j], Fr::ZERO);
-					set.push(attestation.about.clone());
-
-					let att_hasher: Fq = big_to_fe(fe_to_big(
-						attestation.hash::<HASHER_WIDTH, PoseidonNativeHasher>(),
-					));
-
-					let signature = keypairs[i].sign(att_hasher.clone(), rng);
-					let s_inv_fq = big_to_fe::<Fq>(signature.s.value()).invert().unwrap();
-
-					msg_hash_i.push(Integer::from_w(att_hasher));
-					s_inv.push(Integer::from_w(s_inv_fq));
-					signatures.push(signature.clone());
-					attestations_option.push(Some(SignedAttestation::new(attestation, signature)));
-				}
-				msg_hash.push(msg_hash_i);
-
-				let default_att = SignedAttestation::default();
-				let attestations_unwrapped = attestations_option
-					.iter()
-					.map(|x| x.clone().unwrap_or(default_att.clone()))
-					.collect_vec();
-				attestations.push(
-					attestations_unwrapped.iter().map(|x| x.attestation.clone()).collect_vec(),
-				);
-
-				let op: Opinion<NUM_NEIGHBOURS, C, N, NUM_LIMBS, NUM_BITS, P, EC, HN, SHN> =
-					Opinion::new(pub_keys[i].clone(), attestations_unwrapped.clone(), domain);
-				let _ = op.validate(set.clone());
-
-				et.update_op(pub_keys[i].clone(), attestations_option);
+				let attestations_opt =
+					attestations[i].iter().map(|x| Some(x.clone())).collect_vec();
+				et.update_op(pub_keys[i].clone(), attestations_opt);
 			}
-			let s = et.converge();
 
-			(s, attestations, signatures, s_inv, set, msg_hash)
+			et.converge()
 		};
 
 		let et = EigenTrustSet::<
@@ -927,7 +869,12 @@ mod test {
 			H,
 			SH,
 		>::new(
-			attestations, signatures, pub_keys, msg_hash, set, s_inv, g_as_ecpoint,
+			attestations,
+			pub_keys.to_vec(),
+			msg_hashes,
+			set,
+			s_inv,
+			g_as_ecpoint,
 		);
 
 		let k = 14;

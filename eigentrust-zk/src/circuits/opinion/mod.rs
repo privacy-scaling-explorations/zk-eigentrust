@@ -4,16 +4,14 @@ pub mod native;
 use crate::{
 	circuits::dynamic_sets::native::Attestation,
 	circuits::HASHER_WIDTH,
-	ecc::generic::{AssignedAux, AssignedEcPoint},
 	ecdsa::{
-		AssignedPublicKey, AssignedSignature, EcdsaChipset, EcdsaConfig, SignatureAssigner,
+		AssignedEcdsa, AssignedSignature, EcdsaChipset, EcdsaConfig, SignatureAssigner,
 		UnassignedSignature,
 	},
 	gadgets::{
 		main::{IsEqualChipset, IsZeroChipset, MainConfig, MulAddChipset, SelectChipset},
 		set::{SetChipset, SetConfig},
 	},
-	integer::AssignedInteger,
 	params::{ecc::EccParams, rns::RnsParams},
 	Chipset, CommonConfig, FieldExt, HasherChipset, RegionCtx, SpongeHasherChipset,
 	UnassignedValue,
@@ -119,7 +117,7 @@ impl<N: FieldExt> Chipset<N> for AttestationAssigner<N> {
 				let about = ctx.assign_advice(common.advice[0], self.att.about)?;
 				let domain = ctx.assign_advice(common.advice[1], self.att.domain)?;
 				let value = ctx.assign_advice(common.advice[2], self.att.value)?;
-				let message = ctx.assign_advice(common.advice[3], self.att.about)?;
+				let message = ctx.assign_advice(common.advice[3], self.att.message)?;
 
 				Ok(AssignedAttestation::new(about, domain, value, message))
 			},
@@ -176,9 +174,9 @@ pub struct UnassignedSignedAttestation<
 	C::ScalarExt: FieldExt,
 {
 	// Attestation
-	attestation: UnassignedAttestation<N>,
+	pub(crate) attestation: UnassignedAttestation<N>,
 	// Signature
-	signature: UnassignedSignature<C, N, NUM_LIMBS, NUM_BITS, P>,
+	pub(crate) signature: UnassignedSignature<C, N, NUM_LIMBS, NUM_BITS, P>,
 }
 
 impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
@@ -228,7 +226,8 @@ where
 	}
 }
 
-struct SignedAttestationAssigner<
+/// Assigner for SignedAttestation
+pub struct SignedAttestationAssigner<
 	C: CurveAffine,
 	N: FieldExt,
 	const NUM_LIMBS: usize,
@@ -328,22 +327,14 @@ pub struct OpinionChipset<
 	H: HasherChipset<N, HASHER_WIDTH>,
 	SH: SpongeHasherChipset<N, HASHER_WIDTH>,
 {
-	/// Attestations towards other peers
-	attestations: Vec<AssignedSignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>>,
 	/// Domain of the attestations
 	domain: AssignedCell<N, N>,
-	/// Public key of the attester
-	public_key: AssignedPublicKey<C, N, NUM_LIMBS, NUM_BITS, P>,
 	/// Set of peers
 	set: Vec<AssignedCell<N, N>>,
-	/// Message hash as AssignedInteger
-	msg_hash: Vec<AssignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>>,
-	/// Generator as EC point
-	g_as_ecpoint: AssignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P>,
-	/// Signature s Inverse
-	s_inv: Vec<AssignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>>,
-	/// Aux for to_add and to_sub
-	aux: AssignedAux<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
+	/// Attestations to verify,
+	attestations: Vec<AssignedSignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>>,
+	/// Assigned ecdsa signature data
+	sig_data: Vec<AssignedEcdsa<C, N, NUM_LIMBS, NUM_BITS, P, EC>>,
 	/// Left shifters for composing integers
 	left_shifters: [AssignedCell<N, N>; NUM_LIMBS],
 	/// Constructs a phantom data for the hasher.
@@ -371,27 +362,12 @@ where
 {
 	/// Create a new chip.
 	pub fn new(
+		domain: AssignedCell<N, N>, set: Vec<AssignedCell<N, N>>,
 		attestations: Vec<AssignedSignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>>,
-		domain: AssignedCell<N, N>, public_key: AssignedPublicKey<C, N, NUM_LIMBS, NUM_BITS, P>,
-		set: Vec<AssignedCell<N, N>>,
-		msg_hash: Vec<AssignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>>,
-		g_as_ecpoint: AssignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P>,
-		s_inv: Vec<AssignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>>,
-		aux: AssignedAux<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
+		sig_data: Vec<AssignedEcdsa<C, N, NUM_LIMBS, NUM_BITS, P, EC>>,
 		left_shifters: [AssignedCell<N, N>; NUM_LIMBS],
 	) -> Self {
-		Self {
-			attestations,
-			domain,
-			public_key,
-			set,
-			msg_hash,
-			g_as_ecpoint,
-			s_inv,
-			aux,
-			left_shifters,
-			_hasher: PhantomData,
-		}
+		Self { domain, set, attestations, sig_data, left_shifters, _hasher: PhantomData }
 	}
 }
 
@@ -511,7 +487,7 @@ where
 			let mut compose_msg = zero.clone();
 			for j in 0..NUM_LIMBS {
 				let muladd_chipset = MulAddChipset::new(
-					self.msg_hash[i].limbs[j].clone(),
+					self.sig_data[i].msg_hash.limbs[j].clone(),
 					self.left_shifters[j].clone(),
 					compose_msg,
 				);
@@ -538,12 +514,8 @@ where
 			)?;
 
 			let chip = EcdsaChipset::new(
-				self.public_key.clone(),
-				self.g_as_ecpoint.clone(),
 				self.attestations[i].signature.clone(),
-				self.msg_hash[i].clone(),
-				self.s_inv[i].clone(),
-				self.aux.clone(),
+				self.sig_data[i].clone(),
 			);
 			chip.synthesize(common, &config.ecdsa, layouter.namespace(|| "ecdsa_verify"))?;
 
@@ -576,8 +548,7 @@ where
 mod test {
 	use super::native::Opinion;
 	use super::{
-		AssignedAttestation, AssignedSignedAttestation, OpinionChipset, OpinionConfig,
-		UnassignedSignedAttestation,
+		OpinionChipset, OpinionConfig, SignedAttestationAssigner, UnassignedSignedAttestation,
 	};
 	use crate::circuits::dynamic_sets::native::{Attestation, SignedAttestation};
 	use crate::circuits::{PoseidonNativeHasher, PoseidonNativeSponge, HASHER_WIDTH};
@@ -588,18 +559,17 @@ mod test {
 	};
 	use crate::ecdsa::native::{EcdsaKeypair, PublicKey};
 	use crate::ecdsa::UnassignedPublicKey;
-	use crate::ecdsa::{
-		EcdsaAssigner, EcdsaAssignerConfig, EcdsaConfig, SignatureAssigner, UnassignedSignature,
-	};
+	use crate::ecdsa::{EcdsaAssigner, EcdsaAssignerConfig, EcdsaConfig};
 	use crate::gadgets::absorb::AbsorbChip;
 	use crate::gadgets::set::{SetChip, SetConfig};
 	use crate::integer::{
-		IntegerAddChip, IntegerAssigner, IntegerDivChip, IntegerMulChip, IntegerReduceChip,
-		IntegerSubChip, LeftShiftersAssigner, UnassignedInteger,
+		IntegerAddChip, IntegerDivChip, IntegerMulChip, IntegerReduceChip, IntegerSubChip,
+		LeftShiftersAssigner, UnassignedInteger,
 	};
 	use crate::params::ecc::secp256k1::Secp256k1Params;
 	use crate::params::hasher::poseidon_bn254_5x5::Params;
 	use crate::params::rns::secp256k1::Secp256k1_4_68;
+	use crate::params::rns::RnsParams;
 	use crate::poseidon::sponge::{PoseidonSpongeConfig, StatefulSpongeChipset};
 	use crate::poseidon::{FullRoundChip, PartialRoundChip, PoseidonChipset, PoseidonConfig};
 	use crate::utils::{big_to_fe, fe_to_big};
@@ -715,8 +685,8 @@ mod test {
 
 	struct TestOpinionCircuit {
 		attestations: Vec<UnassignedSignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>>,
-		domain: N,
-		set: Vec<N>,
+		domain: Value<N>,
+		set: Vec<Value<N>>,
 		public_key: UnassignedPublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
 		g_as_ecpoint: UnassignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
 		msg_hash: Vec<UnassignedInteger<WS, N, NUM_LIMBS, NUM_BITS, P>>,
@@ -736,11 +706,10 @@ mod test {
 					.iter()
 					.map(|x| UnassignedSignedAttestation::from(x.clone()))
 					.collect_vec(),
-				domain,
-				set,
+				domain: Value::known(domain),
+				set: set.iter().map(|&x| Value::known(x)).collect_vec(),
 				public_key: UnassignedPublicKey::new(public_key),
 				g_as_ecpoint: UnassignedEcPoint::from(g_as_ecpoint),
-
 				msg_hash: msg_hash.iter().map(|x| UnassignedInteger::from(x.clone())).collect_vec(),
 				s_inv: s_inv.iter().map(|x| UnassignedInteger::from(x.clone())).collect_vec(),
 			}
@@ -758,8 +727,8 @@ mod test {
 					.iter()
 					.map(|_| UnassignedSignedAttestation::without_witnesses())
 					.collect_vec(),
-				domain: N::default(),
-				set: self.set.iter().map(|_| N::default()).collect_vec(),
+				domain: Value::unknown(),
+				set: self.set.iter().map(|_| Value::unknown()).collect_vec(),
 				public_key: UnassignedPublicKey::without_witnesses(),
 				g_as_ecpoint: UnassignedEcPoint::without_witnesses(),
 				msg_hash: self
@@ -782,48 +751,22 @@ mod test {
 		fn synthesize(
 			&self, config: TestConfig, mut layouter: impl Layouter<N>,
 		) -> Result<(), Error> {
-			let ecdsa_assigner = EcdsaAssigner::new(
-				self.public_key.clone(),
-				self.g_as_ecpoint.clone(),
-				self.attestations[0].signature.clone(),
-				self.msg_hash[0].clone(),
-				self.s_inv[0].clone(),
-			);
+			let mut sig_datas = Vec::new();
+			for i in 0..self.attestations.len() {
+				let ecdsa_assigner = EcdsaAssigner::new(
+					self.public_key.clone(),
+					self.g_as_ecpoint.clone(),
+					self.msg_hash[i].clone(),
+					self.s_inv[i].clone(),
+				);
 
-			let ecdsa_assigner = ecdsa_assigner.synthesize(
-				&config.common,
-				&config.ecdsa_assigner,
-				layouter.namespace(|| "ecdsa assigner"),
-			)?;
-
-			let mut signatures = vec![ecdsa_assigner.signature];
-			let mut msg_hash = vec![ecdsa_assigner.msg_hash];
-			let mut s_inv = vec![ecdsa_assigner.s_inv];
-
-			// Starting from 1 because we already assigned first values via ecdsa_assigner
-			for i in 1..self.msg_hash.len() {
-				let signature_assigner = SignatureAssigner::new(UnassignedSignature::from(
-					self.attestations[i].signature.clone(),
-				));
-				signatures.push(signature_assigner.synthesize(
+				let ecdsa_assigner = ecdsa_assigner.synthesize(
 					&config.common,
-					&(),
-					layouter.namespace(|| "signature assigner"),
-				)?);
+					&config.ecdsa_assigner,
+					layouter.namespace(|| "ecdsa assigner"),
+				)?;
 
-				let msg_hash_assigner = IntegerAssigner::new(self.msg_hash[i].clone());
-				msg_hash.push(msg_hash_assigner.synthesize(
-					&config.common,
-					&(),
-					layouter.namespace(|| "msg_hash assigner"),
-				)?);
-
-				let s_inv_assigner = IntegerAssigner::new(self.s_inv[i].clone());
-				s_inv.push(s_inv_assigner.synthesize(
-					&config.common,
-					&(),
-					layouter.namespace(|| "s_inv assigner"),
-				)?);
+				sig_datas.push(ecdsa_assigner);
 			}
 
 			let (set, domain) = layouter.assign_region(
@@ -832,38 +775,25 @@ mod test {
 					let mut ctx = RegionCtx::new(region, 0);
 					let mut set = Vec::new();
 					for i in 0..self.set.len() {
-						set.push(
-							ctx.assign_advice(config.common.advice[0], Value::known(self.set[i]))?,
-						);
+						let assigned_addr =
+							ctx.assign_advice(config.common.advice[0], self.set[i])?;
+						set.push(assigned_addr);
 						ctx.next();
 					}
-					let domain =
-						ctx.assign_advice(config.common.advice[0], Value::known(self.domain))?;
+					let domain = ctx.assign_advice(config.common.advice[0], self.domain)?;
 					Ok((set, domain))
 				},
 			)?;
 
 			let mut attestations = Vec::new();
-
 			for i in 0..self.attestations.len() {
-				let (about, domain, value, message) = layouter.assign_region(
-					|| "assign_attestation",
-					|region: Region<'_, N>| {
-						let mut ctx = RegionCtx::new(region, 0);
-						let att = self.attestations[i].attestation.clone();
-						let about = ctx.assign_advice(config.common.advice[0], att.about)?;
-						let domain = ctx.assign_advice(config.common.advice[1], att.domain)?;
-						let value = ctx.assign_advice(config.common.advice[2], att.value)?;
-						let message = ctx.assign_advice(config.common.advice[3], att.message)?;
-						Ok((about, domain, value, message))
-					},
+				let att_assigner = SignedAttestationAssigner::new(self.attestations[i].clone());
+				let assigned_att = att_assigner.synthesize(
+					&config.common,
+					&(),
+					layouter.namespace(|| "sig_att assigner"),
 				)?;
-				let attestation = AssignedAttestation::new(about, domain, value, message);
-
-				attestations.push(AssignedSignedAttestation::new(
-					attestation,
-					signatures[i].clone(),
-				))
+				attestations.push(assigned_att);
 			}
 
 			let left_shifters_assigner =
@@ -875,11 +805,7 @@ mod test {
 			)?;
 
 			let opinion: OpinionChipset<NUM_NEIGHBOURS, C, N, NUM_LIMBS, NUM_BITS, P, EC, HC, SHC> =
-				OpinionChipset::new(
-					attestations, domain, ecdsa_assigner.public_key, set, msg_hash,
-					ecdsa_assigner.g_as_ecpoint, s_inv, ecdsa_assigner.auxes, left_shifters,
-				);
-
+				OpinionChipset::new(domain, set, attestations, sig_datas, left_shifters);
 			let (scores, op_hash) = opinion.synthesize(
 				&config.common,
 				&config.opinion,
@@ -899,9 +825,12 @@ mod test {
 	fn test_opinion() {
 		// Test Opinion Chipset
 		let rng = &mut rand::thread_rng();
-		let keypair = EcdsaKeypair::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::generate_keypair(rng);
-		let public_key = keypair.public_key.clone();
-		let public_key_fr = public_key.to_address();
+		let keypairs = [(); NUM_NEIGHBOURS]
+			.map(|_| EcdsaKeypair::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::generate_keypair(rng));
+		let attester = keypairs[0].clone();
+		let pks = keypairs.map(|kp| kp.public_key);
+		let set = pks.map(|pk| pk.to_address());
+
 		let g = Secp256k1::generator().to_affine();
 		let g_as_ecpoint = EcPoint::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::new(
 			Integer::from_w(g.x),
@@ -909,54 +838,46 @@ mod test {
 		);
 		let domain = N::from_u128(DOMAIN);
 
-		let mut set = Vec::new();
-		let mut msg_hash = Vec::new();
+		let mut msg_hashes = Vec::new();
 		let mut s_inv = Vec::new();
 		let mut attestations = Vec::new();
 
 		// Attestation to the other peers
-		for _ in 0..9 {
-			let attestation = Attestation::new(
-				N::random(rng.clone()),
-				domain,
-				N::random(rng.clone()),
-				N::ZERO,
-			);
-			set.push(attestation.about.clone());
+		for i in 0..NUM_NEIGHBOURS {
+			let about = set[i];
+			let value = N::random(rng.clone());
+			let message = N::ZERO;
+			let attestation = Attestation::new(about, domain, value, message);
 
-			let att_hasher: WS = big_to_fe(fe_to_big(
-				attestation.hash::<HASHER_WIDTH, PoseidonNativeHasher>(),
-			));
-			let signature = keypair.sign(att_hasher.clone(), rng);
+			let att_hash_n = attestation.hash::<HASHER_WIDTH, PoseidonNativeHasher>();
+			let att_hash: WS = big_to_fe(fe_to_big(att_hash_n));
+			let signature = attester.sign(att_hash.clone(), rng);
 			let s_inv_fq = big_to_fe::<WS>(signature.s.value()).invert().unwrap();
 
-			msg_hash.push(Integer::from_w(att_hasher));
-			s_inv.push(Integer::from_w(s_inv_fq));
-			attestations.push(SignedAttestation::new(attestation, signature));
+			let msg_hash_int = Integer::from_w(att_hash);
+			let s_inv_int = Integer::from_w(s_inv_fq);
+			let signed_att = SignedAttestation::new(attestation, signature);
+
+			msg_hashes.push(msg_hash_int);
+			s_inv.push(s_inv_int);
+			attestations.push(signed_att);
 		}
-		// Attestation to the self
-		let attestation_self = Attestation::new(public_key_fr, domain, N::ZERO, N::ZERO);
-		set.push(public_key_fr);
-
-		let att_hasher: WS = big_to_fe(fe_to_big(
-			attestation_self.hash::<HASHER_WIDTH, PoseidonNativeHasher>(),
-		));
-		let signature_self = keypair.sign(att_hasher.clone(), rng);
-		let s_inv_fq = big_to_fe::<WS>(signature_self.s.value()).invert().unwrap();
-
-		msg_hash.push(Integer::from_w(att_hasher));
-		s_inv.push(Integer::from_w(s_inv_fq));
-		attestations.push(SignedAttestation::new(attestation_self, signature_self));
 
 		let opinion_native: Opinion<NUM_NEIGHBOURS, C, N, NUM_LIMBS, NUM_BITS, P, EC, H, SH> =
-			Opinion::new(public_key.clone(), attestations.clone(), domain);
-		let (_, scores, op_hash) = opinion_native.validate(set.clone());
+			Opinion::new(attester.public_key.clone(), attestations.clone(), domain);
+		let (_, scores, op_hash) = opinion_native.validate(set.to_vec());
 
 		let mut p_ins = Vec::new();
 		p_ins.extend(scores);
 		p_ins.push(op_hash);
 		let circuit = TestOpinionCircuit::new(
-			attestations, domain, set, public_key, g_as_ecpoint, msg_hash, s_inv,
+			attestations,
+			domain,
+			set.to_vec(),
+			attester.public_key,
+			g_as_ecpoint,
+			msg_hashes,
+			s_inv,
 		);
 		let k = 18;
 		let prover = MockProver::run(k, &circuit, vec![p_ins]).unwrap();

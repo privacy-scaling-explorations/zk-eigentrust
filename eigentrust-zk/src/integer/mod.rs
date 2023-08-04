@@ -835,12 +835,12 @@ where
 	fn synthesize(
 		self, common: &CommonConfig, _: &Self::Config, mut layouter: impl Layouter<N>,
 	) -> Result<Self::Output, Error> {
-		let left_shifters_native = P::left_shifters();
 		layouter.assign_region(
 			|| "assign_left_shifters",
 			|region: Region<'_, N>| {
 				let mut ctx = RegionCtx::new(region, 0);
 
+				let left_shifters_native = P::left_shifters();
 				let mut left_shifters = [(); NUM_LIMBS].map(|_| None);
 				for i in 0..NUM_LIMBS {
 					left_shifters[i] =

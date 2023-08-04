@@ -79,9 +79,9 @@ where
 		]);
 		let default_hash = default_hasher.finalize()[0];
 		for i in 0..NUM_NEIGHBOURS {
-			let is_default_pubkey = set[i] == N::ZERO;
-
 			let att = self.attestations[i].clone();
+
+			let is_default_pubkey = set[i] == N::ZERO;
 			let is_default_sig = att.attestation == Attestation::default();
 
 			if is_default_pubkey || is_default_sig {
