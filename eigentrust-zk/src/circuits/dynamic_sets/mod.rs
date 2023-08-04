@@ -331,6 +331,14 @@ where
 			assigned_attestation.push(att_vec);
 		}
 
+		let lshift: LeftShiftersAssigner<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P> =
+			LeftShiftersAssigner::default();
+		let left_shifters = lshift.synthesize(
+			&config.common,
+			&(),
+			layouter.namespace(|| "lshift assigner"),
+		)?;
+
 		let mut ops = Vec::new();
 		// signature verification
 		for i in 0..NUM_NEIGHBOURS {
@@ -352,14 +360,6 @@ where
 			let g_as_ecpoint = ecdsa_assigner.g_as_ecpoint;
 			let aux = ecdsa_assigner.auxes;
 
-			let lshift: LeftShiftersAssigner<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P> =
-				LeftShiftersAssigner::default();
-			let left_shifters = lshift.synthesize(
-				&config.common,
-				&(),
-				layouter.namespace(|| "lshift assigner"),
-			)?;
-
 			let mut assigned_signed_att = Vec::new();
 			let mut assigned_msg_hash = Vec::new();
 			let mut assigned_s_inv = Vec::new();
@@ -367,12 +367,7 @@ where
 			assigned_msg_hash.push(ecdsa_assigner.msg_hash);
 			assigned_s_inv.push(ecdsa_assigner.s_inv);
 
-			// Assigning first iteration to catch s_inv and msg_hash
-			assigned_signed_att.push(AssignedSignedAttestation::new(
-				assigned_attestation[i][0].clone(),
-				assigned_signature.clone(),
-			));
-			for j in 1..NUM_NEIGHBOURS {
+			for j in 0..NUM_NEIGHBOURS {
 				assigned_signed_att.push(AssignedSignedAttestation::new(
 					assigned_attestation[i][j].clone(),
 					assigned_signature.clone(),
@@ -405,7 +400,7 @@ where
 					g_as_ecpoint,
 					assigned_s_inv,
 					aux,
-					left_shifters,
+					left_shifters.clone(),
 				);
 
 			let (opinions, _) = opinion.synthesize(

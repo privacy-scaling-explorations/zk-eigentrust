@@ -5,7 +5,10 @@ use crate::{
 	circuits::dynamic_sets::native::Attestation,
 	circuits::HASHER_WIDTH,
 	ecc::generic::{AssignedAux, AssignedEcPoint},
-	ecdsa::{AssignedPublicKey, AssignedSignature, EcdsaChipset, EcdsaConfig, UnassignedSignature},
+	ecdsa::{
+		AssignedPublicKey, AssignedSignature, EcdsaChipset, EcdsaConfig, SignatureAssigner,
+		UnassignedSignature,
+	},
 	gadgets::{
 		main::{IsEqualChipset, IsZeroChipset, MainConfig, MulAddChipset, SelectChipset},
 		set::{SetChipset, SetConfig},
@@ -222,6 +225,59 @@ where
 			attestation: UnassignedAttestation::without_witnesses(),
 			signature: UnassignedSignature::without_witnesses(),
 		}
+	}
+}
+
+struct SignedAttestationAssigner<
+	C: CurveAffine,
+	N: FieldExt,
+	const NUM_LIMBS: usize,
+	const NUM_BITS: usize,
+	P,
+> where
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	C::Base: FieldExt,
+	C::ScalarExt: FieldExt,
+{
+	sig_att: UnassignedSignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>,
+}
+
+impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
+	SignedAttestationAssigner<C, N, NUM_LIMBS, NUM_BITS, P>
+where
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	C::Base: FieldExt,
+	C::ScalarExt: FieldExt,
+{
+	/// SignedAttestation Assigner constructor
+	pub fn new(sig_att: UnassignedSignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>) -> Self {
+		Self { sig_att }
+	}
+}
+
+impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P> Chipset<N>
+	for SignedAttestationAssigner<C, N, NUM_LIMBS, NUM_BITS, P>
+where
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	C::Base: FieldExt,
+	C::ScalarExt: FieldExt,
+{
+	type Config = ();
+	type Output = AssignedSignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>;
+
+	fn synthesize(
+		self, common: &CommonConfig, _: &Self::Config, mut layouter: impl Layouter<N>,
+	) -> Result<Self::Output, Error> {
+		let att_assigner = AttestationAssigner::new(self.sig_att.attestation);
+		let assigned_att =
+			att_assigner.synthesize(common, &(), layouter.namespace(|| "att_assigner"))?;
+
+		let sig_assigner = SignatureAssigner::new(self.sig_att.signature);
+		let assigned_sig =
+			sig_assigner.synthesize(common, &(), layouter.namespace(|| "att_assigner"))?;
+
+		let assigned_sig_att = AssignedSignedAttestation::new(assigned_att, assigned_sig);
+		Ok(assigned_sig_att)
 	}
 }
 
