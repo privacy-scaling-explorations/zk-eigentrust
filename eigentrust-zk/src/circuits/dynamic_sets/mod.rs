@@ -87,9 +87,6 @@ pub struct EigenTrustSet<
 	pks: Vec<UnassignedPublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>>,
 	// Signature
 	signatures: Vec<UnassignedSignature<C, N, NUM_LIMBS, NUM_BITS, P>>,
-	// Opinions
-	op_pk_x: Vec<Vec<Value<N>>>,
-	op_pk_y: Vec<Vec<Value<N>>>,
 	// Message hash
 	msg_hash: Vec<Vec<UnassignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>>>,
 	// Set
@@ -128,7 +125,6 @@ where
 		attestation: Vec<Vec<Attestation<N>>>,
 		pks: Vec<PublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>>,
 		signatures: Vec<Signature<C, N, NUM_LIMBS, NUM_BITS, P>>,
-		op_pks: Vec<Vec<PublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>>>,
 		msg_hash: Vec<Vec<Integer<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>>>, set: Vec<N>,
 		s_inv: Vec<Integer<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>>,
 		g_as_ecpoint: EcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
@@ -144,14 +140,6 @@ where
 		// Signature values
 		let signatures = signatures.into_iter().map(UnassignedSignature::from).collect_vec();
 
-		// Opinion pks
-		let op_pks = op_pks
-			.into_iter()
-			.map(|pks| pks.into_iter().map(|x| UnassignedPublicKey::new(x)).collect_vec())
-			.collect_vec();
-		let op_pk_x = op_pks.iter().map(|pks| pks.iter().map(|pk| pk.0.x.val).collect()).collect();
-		let op_pk_y = op_pks.iter().map(|pks| pks.iter().map(|pk| pk.0.y.val).collect()).collect();
-
 		let msg_hash = msg_hash
 			.iter()
 			.map(|ints| ints.iter().map(|int| UnassignedInteger::from(int.clone())).collect_vec())
@@ -166,8 +154,6 @@ where
 			attestation,
 			pks,
 			signatures,
-			op_pk_x,
-			op_pk_y,
 			msg_hash,
 			set,
 			s_inv,
@@ -215,8 +201,6 @@ where
 			attestation: vec![vec![att; NUM_NEIGHBOURS]; NUM_NEIGHBOURS],
 			pks: vec![pk; NUM_NEIGHBOURS],
 			signatures: vec![sig; NUM_NEIGHBOURS],
-			op_pk_x: vec![vec![op_pk.0.x.val; NUM_NEIGHBOURS]; NUM_NEIGHBOURS],
-			op_pk_y: vec![vec![op_pk.0.y.val; NUM_NEIGHBOURS]; NUM_NEIGHBOURS],
 			msg_hash: vec![vec![UnassignedInteger::without_witnesses(); NUM_NEIGHBOURS]],
 			set: vec![Value::unknown(); NUM_NEIGHBOURS],
 			s_inv: vec![UnassignedInteger::without_witnesses(); NUM_NEIGHBOURS],
@@ -363,34 +347,6 @@ where
 
 					let one = ctx.assign_from_constant(config.common.advice[0], N::ONE)?;
 					ctx.next();
-
-					let mut assigned_op_pk_x = Vec::new();
-					for neighbour_pk_x in &self.op_pk_x {
-						let mut assigned_neighbour_pk_x = Vec::new();
-						for chunk in neighbour_pk_x.chunks(ADVICE) {
-							for (i, chunk_i) in chunk.iter().enumerate() {
-								let x = ctx.assign_advice(config.common.advice[i], *chunk_i)?;
-								assigned_neighbour_pk_x.push(x);
-							}
-							// Move to the next row
-							ctx.next();
-						}
-						assigned_op_pk_x.push(assigned_neighbour_pk_x);
-					}
-
-					let mut assigned_op_pk_y = Vec::new();
-					for neighbour_pk_y in &self.op_pk_y {
-						let mut assigned_neighbour_pk_y = Vec::new();
-						for chunk in neighbour_pk_y.chunks(ADVICE) {
-							for (i, chunk_i) in chunk.iter().enumerate() {
-								let y = ctx.assign_advice(config.common.advice[i], *chunk_i)?;
-								assigned_neighbour_pk_y.push(y);
-							}
-							// Move to the next row
-							ctx.next();
-						}
-						assigned_op_pk_y.push(assigned_neighbour_pk_y);
-					}
 
 					let mut assigned_set = Vec::new();
 					for chunk in self.set.chunks(ADVICE) {
@@ -808,9 +764,6 @@ mod test {
 		let pub_keys = keypairs.clone().map(|kp| kp.public_key);
 		let domain = N::from_u128(DOMAIN);
 
-		let op_pub_keys: Vec<Vec<PublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>>> =
-			(0..NUM_NEIGHBOURS).map(|_| pub_keys.to_vec()).collect();
-
 		let (res, attestations, signatures, s_inv, set, msg_hash) = {
 			let mut et = native::EigenTrustSet::<
 				NUM_NEIGHBOURS,
@@ -893,7 +846,6 @@ mod test {
 			attestations,
 			pub_keys.to_vec(),
 			signatures,
-			op_pub_keys,
 			msg_hash,
 			set,
 			s_inv,
@@ -934,9 +886,6 @@ mod test {
 		let pub_keys = keypairs.clone().map(|kp| kp.public_key);
 		let domain = N::from_u128(DOMAIN);
 
-		let op_pub_keys: Vec<Vec<PublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>>> =
-			(0..NUM_NEIGHBOURS).map(|_| pub_keys.to_vec()).collect();
-
 		let (res, attestations, signatures, s_inv, set, msg_hash) = {
 			let mut et = native::EigenTrustSet::<
 				NUM_NEIGHBOURS,
@@ -1019,7 +968,6 @@ mod test {
 			attestations,
 			pub_keys.to_vec(),
 			signatures,
-			op_pub_keys,
 			msg_hash,
 			set,
 			s_inv,
