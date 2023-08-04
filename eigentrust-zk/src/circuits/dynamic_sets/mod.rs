@@ -281,163 +281,133 @@ where
 	fn synthesize(
 		&self, config: Self::Config, mut layouter: impl Layouter<N>,
 	) -> Result<(), Error> {
-		let (
-			zero,
-			attestation,
-			pk_x,
-			pk_y,
-			init_score,
-			total_score,
-			passed_s,
-			one,
-			default_pk_x,
-			default_pk_y,
-			op_pk_x,
-			op_pk_y,
-			set,
-		) = layouter.assign_region(
-			|| "temp",
-			|region: Region<'_, N>| {
-				let mut ctx = RegionCtx::new(region, 0);
+		let (zero, attestation, init_score, total_score, passed_s, one, set) = layouter
+			.assign_region(
+				|| "temp",
+				|region: Region<'_, N>| {
+					let mut ctx = RegionCtx::new(region, 0);
 
-				let zero = ctx.assign_from_constant(config.common.advice[0], N::ZERO)?;
+					let zero = ctx.assign_from_constant(config.common.advice[0], N::ZERO)?;
 
-				let assigned_initial_score =
-					ctx.assign_from_constant(config.common.advice[2], N::from_u128(INITIAL_SCORE))?;
-
-				let assigned_total_score = ctx.assign_from_constant(
-					config.common.advice[3],
-					N::from_u128(INITIAL_SCORE * NUM_NEIGHBOURS as u128),
-				)?;
-
-				// Move to the next row
-				ctx.next();
-
-				let mut assigned_attestation = Vec::new();
-				for atts in &self.attestation {
-					let mut assigned_attestation_i = Vec::new();
-					for chunk in atts.chunks(ADVICE) {
-						for (i, chunk_i) in chunk.iter().enumerate() {
-							let about =
-								ctx.assign_advice(config.common.advice[i], chunk_i.about)?;
-							let domain =
-								ctx.assign_advice(config.common.advice[i], chunk_i.domain)?;
-							let value =
-								ctx.assign_advice(config.common.advice[i], chunk_i.value)?;
-							let message =
-								ctx.assign_advice(config.common.advice[i], chunk_i.about)?;
-
-							let s = AssignedAttestation::new(about, domain, value, message);
-
-							assigned_attestation_i.push(s)
-						}
-						// Move to the next row
-						ctx.next();
-					}
-					assigned_attestation.push(assigned_attestation_i);
-				}
-
-				let unassigned_pk_x = self.pks.iter().map(|pk| pk.0.x.val).collect_vec();
-				let mut assigned_pk_x = Vec::new();
-				for chunk in unassigned_pk_x.chunks(ADVICE) {
-					for (i, chunk_i) in chunk.iter().enumerate() {
-						let pk_x = ctx.assign_advice(config.common.advice[i], *chunk_i)?;
-						assigned_pk_x.push(pk_x)
-					}
-					// Move to the next row
-					ctx.next();
-				}
-
-				let unassigned_pk_y = self.pks.iter().map(|pk| pk.0.x.val).collect_vec();
-				let mut assigned_pk_y = Vec::new();
-				for chunk in unassigned_pk_y.chunks(ADVICE) {
-					for (i, chunk_i) in chunk.iter().enumerate() {
-						let pk_y = ctx.assign_advice(config.common.advice[i], *chunk_i)?;
-						assigned_pk_y.push(pk_y)
-					}
-					// Move to the next row
-					ctx.next();
-				}
-
-				let mut passed_s = Vec::new();
-				for i in 0..NUM_NEIGHBOURS {
-					let index = i % ADVICE;
-					let ps = ctx.assign_from_instance(
-						config.common.advice[index], config.common.instance, i,
+					let assigned_initial_score = ctx.assign_from_constant(
+						config.common.advice[2],
+						N::from_u128(INITIAL_SCORE),
 					)?;
-					passed_s.push(ps);
-					if i == ADVICE - 1 {
-						ctx.next();
-					}
-				}
-				ctx.next();
 
-				let one = ctx.assign_from_constant(config.common.advice[0], N::ONE)?;
+					let assigned_total_score = ctx.assign_from_constant(
+						config.common.advice[3],
+						N::from_u128(INITIAL_SCORE * NUM_NEIGHBOURS as u128),
+					)?;
 
-				let default_pk_x = ctx.assign_advice(
-					config.common.advice[1],
-					Value::known(
-						<P as RnsParams<C::Scalar, N, NUM_LIMBS, NUM_BITS>>::compose(
-							PublicKey::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::default().0.x.limbs,
-						),
-					),
-				)?;
-
-				let default_pk_y = ctx.assign_advice(
-					config.common.advice[2],
-					Value::known(
-						<P as RnsParams<C::Scalar, N, NUM_LIMBS, NUM_BITS>>::compose(
-							PublicKey::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::default().0.y.limbs,
-						),
-					),
-				)?;
-				ctx.next();
-
-				let mut assigned_op_pk_x = Vec::new();
-				for neighbour_pk_x in &self.op_pk_x {
-					let mut assigned_neighbour_pk_x = Vec::new();
-					for chunk in neighbour_pk_x.chunks(ADVICE) {
-						for (i, chunk_i) in chunk.iter().enumerate() {
-							let x = ctx.assign_advice(config.common.advice[i], *chunk_i)?;
-							assigned_neighbour_pk_x.push(x);
-						}
-						// Move to the next row
-						ctx.next();
-					}
-					assigned_op_pk_x.push(assigned_neighbour_pk_x);
-				}
-
-				let mut assigned_op_pk_y = Vec::new();
-				for neighbour_pk_y in &self.op_pk_y {
-					let mut assigned_neighbour_pk_y = Vec::new();
-					for chunk in neighbour_pk_y.chunks(ADVICE) {
-						for (i, chunk_i) in chunk.iter().enumerate() {
-							let y = ctx.assign_advice(config.common.advice[i], *chunk_i)?;
-							assigned_neighbour_pk_y.push(y);
-						}
-						// Move to the next row
-						ctx.next();
-					}
-					assigned_op_pk_y.push(assigned_neighbour_pk_y);
-				}
-
-				let mut assigned_set = Vec::new();
-				for chunk in self.set.chunks(ADVICE) {
-					for (i, chunk_i) in chunk.iter().enumerate() {
-						let s = ctx.assign_advice(config.common.advice[i], *chunk_i)?;
-						assigned_set.push(s)
-					}
 					// Move to the next row
 					ctx.next();
-				}
 
-				Ok((
-					zero, assigned_attestation, assigned_pk_x, assigned_pk_y,
-					assigned_initial_score, assigned_total_score, passed_s, one, default_pk_x,
-					default_pk_y, assigned_op_pk_x, assigned_op_pk_y, assigned_set,
-				))
-			},
-		)?;
+					let mut assigned_attestation = Vec::new();
+					for atts in &self.attestation {
+						let mut assigned_attestation_i = Vec::new();
+						for chunk in atts.chunks(ADVICE) {
+							for (i, chunk_i) in chunk.iter().enumerate() {
+								let about =
+									ctx.assign_advice(config.common.advice[i], chunk_i.about)?;
+								let domain =
+									ctx.assign_advice(config.common.advice[i], chunk_i.domain)?;
+								let value =
+									ctx.assign_advice(config.common.advice[i], chunk_i.value)?;
+								let message =
+									ctx.assign_advice(config.common.advice[i], chunk_i.about)?;
+
+								let s = AssignedAttestation::new(about, domain, value, message);
+
+								assigned_attestation_i.push(s)
+							}
+							// Move to the next row
+							ctx.next();
+						}
+						assigned_attestation.push(assigned_attestation_i);
+					}
+
+					let unassigned_pk_x = self.pks.iter().map(|pk| pk.0.x.val).collect_vec();
+					let mut assigned_pk_x = Vec::new();
+					for chunk in unassigned_pk_x.chunks(ADVICE) {
+						for (i, chunk_i) in chunk.iter().enumerate() {
+							let pk_x = ctx.assign_advice(config.common.advice[i], *chunk_i)?;
+							assigned_pk_x.push(pk_x)
+						}
+						// Move to the next row
+						ctx.next();
+					}
+
+					let unassigned_pk_y = self.pks.iter().map(|pk| pk.0.x.val).collect_vec();
+					let mut assigned_pk_y = Vec::new();
+					for chunk in unassigned_pk_y.chunks(ADVICE) {
+						for (i, chunk_i) in chunk.iter().enumerate() {
+							let pk_y = ctx.assign_advice(config.common.advice[i], *chunk_i)?;
+							assigned_pk_y.push(pk_y)
+						}
+						// Move to the next row
+						ctx.next();
+					}
+
+					let mut passed_s = Vec::new();
+					for i in 0..NUM_NEIGHBOURS {
+						let index = i % ADVICE;
+						let ps = ctx.assign_from_instance(
+							config.common.advice[index], config.common.instance, i,
+						)?;
+						passed_s.push(ps);
+						if i == ADVICE - 1 {
+							ctx.next();
+						}
+					}
+					ctx.next();
+
+					let one = ctx.assign_from_constant(config.common.advice[0], N::ONE)?;
+					ctx.next();
+
+					let mut assigned_op_pk_x = Vec::new();
+					for neighbour_pk_x in &self.op_pk_x {
+						let mut assigned_neighbour_pk_x = Vec::new();
+						for chunk in neighbour_pk_x.chunks(ADVICE) {
+							for (i, chunk_i) in chunk.iter().enumerate() {
+								let x = ctx.assign_advice(config.common.advice[i], *chunk_i)?;
+								assigned_neighbour_pk_x.push(x);
+							}
+							// Move to the next row
+							ctx.next();
+						}
+						assigned_op_pk_x.push(assigned_neighbour_pk_x);
+					}
+
+					let mut assigned_op_pk_y = Vec::new();
+					for neighbour_pk_y in &self.op_pk_y {
+						let mut assigned_neighbour_pk_y = Vec::new();
+						for chunk in neighbour_pk_y.chunks(ADVICE) {
+							for (i, chunk_i) in chunk.iter().enumerate() {
+								let y = ctx.assign_advice(config.common.advice[i], *chunk_i)?;
+								assigned_neighbour_pk_y.push(y);
+							}
+							// Move to the next row
+							ctx.next();
+						}
+						assigned_op_pk_y.push(assigned_neighbour_pk_y);
+					}
+
+					let mut assigned_set = Vec::new();
+					for chunk in self.set.chunks(ADVICE) {
+						for (i, chunk_i) in chunk.iter().enumerate() {
+							let s = ctx.assign_advice(config.common.advice[i], *chunk_i)?;
+							assigned_set.push(s)
+						}
+						// Move to the next row
+						ctx.next();
+					}
+
+					Ok((
+						zero, assigned_attestation, assigned_initial_score, assigned_total_score,
+						passed_s, one, assigned_set,
+					))
+				},
+			)?;
 
 		let mut ops = Vec::new();
 		// signature verification
@@ -528,102 +498,37 @@ where
 			let mut filtered_ops = Vec::new();
 
 			for i in 0..NUM_NEIGHBOURS {
-				let pk_i_x = pk_x[i].clone();
-				let pk_i_y = pk_y[i].clone();
-
+				let addr_i = set[i].clone();
 				let mut ops_i = Vec::new();
-
-				let mut op_pk_x_i = Vec::new();
-				let mut op_pk_y_i = Vec::new();
 
 				// Update the opinion array - pairs of (key, score)
 				for j in 0..NUM_NEIGHBOURS {
-					let set_pk_j_x = pk_x[j].clone();
-					let set_pk_j_y = pk_y[j].clone();
-					let op_pk_j_x = op_pk_x[i][j].clone();
-					let op_pk_j_y = op_pk_y[i][j].clone();
+					let addr_j = set[j].clone();
 
-					// Condition: set_pk_j != op_pk_j
-					let equal_chip = IsEqualChipset::new(set_pk_j_x.clone(), op_pk_j_x.clone());
-					let is_same_pk_j_x = equal_chip.synthesize(
+					// Condition: addr_j != Address::zero()
+					let equal_chip = IsEqualChipset::new(addr_j.clone(), zero.clone());
+					let is_default_addr = equal_chip.synthesize(
 						&config.common,
 						&config.main,
-						layouter.namespace(|| "set_pk_j_x == op_pk_j_x"),
-					)?;
-					let equal_chip = IsEqualChipset::new(set_pk_j_y.clone(), op_pk_j_y.clone());
-					let is_same_pk_j_y = equal_chip.synthesize(
-						&config.common,
-						&config.main,
-						layouter.namespace(|| "set_pk_j_y == op_pk_j_y"),
-					)?;
-					let and_chip = AndChipset::new(is_same_pk_j_x, is_same_pk_j_y);
-					let is_same_pk_j = and_chip.synthesize(
-						&config.common,
-						&config.main,
-						layouter.namespace(|| "set_pk_j == op_pk_j"),
-					)?;
-					let sub_chip = SubChipset::new(one.clone(), is_same_pk_j);
-					let is_diff_pk_j = sub_chip.synthesize(
-						&config.common,
-						&config.main,
-						layouter.namespace(|| "set_pk_j != op_pk_j"),
+						layouter.namespace(|| "op_addr_j == default_addr"),
 					)?;
 
-					// Condition: op_pk_j != PublicKey::default()
-					let equal_chip = IsEqualChipset::new(set_pk_j_x.clone(), default_pk_x.clone());
-					let is_default_pk_x = equal_chip.synthesize(
+					// Condition: set_addr_j == addr_i
+					let equal_chip = IsEqualChipset::new(addr_j.clone(), addr_i.clone());
+					let is_addr_i = equal_chip.synthesize(
 						&config.common,
 						&config.main,
-						layouter.namespace(|| "set_pk_j_x == default_pk_x"),
-					)?;
-					let equal_chip = IsEqualChipset::new(set_pk_j_y.clone(), default_pk_y.clone());
-					let is_default_pk_y = equal_chip.synthesize(
-						&config.common,
-						&config.main,
-						layouter.namespace(|| "set_pk_j_y == default_pk_y"),
-					)?;
-					let and_chip = AndChipset::new(is_default_pk_x, is_default_pk_y);
-					let is_pk_j_null = and_chip.synthesize(
-						&config.common,
-						&config.main,
-						layouter.namespace(|| "set_pk_j == default_pk"),
-					)?;
-
-					// Condition: set_pk_j == pk_i
-					let equal_chip = IsEqualChipset::new(set_pk_j_x.clone(), pk_i_x.clone());
-					let is_pk_i_x = equal_chip.synthesize(
-						&config.common,
-						&config.main,
-						layouter.namespace(|| "set_pk_j_x == pk_i_x"),
-					)?;
-					let equal_chip = IsEqualChipset::new(set_pk_j_y.clone(), pk_i_y.clone());
-					let is_pk_i_y = equal_chip.synthesize(
-						&config.common,
-						&config.main,
-						layouter.namespace(|| "set_pk_j_y == pk_i_y"),
-					)?;
-					let and_chip = AndChipset::new(is_pk_i_x, is_pk_i_y);
-					let is_pk_i = and_chip.synthesize(
-						&config.common,
-						&config.main,
-						layouter.namespace(|| "set_pk_j == pk_i"),
+						layouter.namespace(|| "addr_j == addr_i"),
 					)?;
 
 					// Conditions for nullifying the score
-					// 1. set_pk_j != op_pk_j
-					// 2. set_pk_j == 0 (null or default)
-					// 3. set_pk_j == pk_i
-					let or_chip = OrChipset::new(is_diff_pk_j.clone(), is_pk_j_null);
+					// 1. set_addr_j == 0 (null or default)
+					// 2. set_addr_j == addr_i
+					let or_chip = OrChipset::new(is_addr_i.clone(), is_default_addr);
 					let cond = or_chip.synthesize(
 						&config.common,
 						&config.main,
-						layouter.namespace(|| "is_diff_pk_j || is_pk_j_null"),
-					)?;
-					let or_chip = OrChipset::new(cond, is_pk_i);
-					let cond = or_chip.synthesize(
-						&config.common,
-						&config.main,
-						layouter.namespace(|| "is_diff_pk_j || is_pk_j_null || is_pk_i"),
+						layouter.namespace(|| "is_addr_i || is_addr_j_null"),
 					)?;
 
 					let select_chip = SelectChipset::new(cond, zero.clone(), ops[i][j].clone());
@@ -633,31 +538,12 @@ where
 						layouter.namespace(|| "filtered op score"),
 					)?;
 					ops_i.push(new_ops_i_j);
-
-					// Condition for correcting the pk
-					// 1. set_pk_j != op_pk_j
-					let select_chip =
-						SelectChipset::new(is_diff_pk_j.clone(), set_pk_j_x, op_pk_j_x);
-					let new_op_pk_j_x = select_chip.synthesize(
-						&config.common,
-						&config.main,
-						layouter.namespace(|| "update op_pk_x"),
-					)?;
-					op_pk_x_i.push(new_op_pk_j_x);
-
-					let select_chip = SelectChipset::new(is_diff_pk_j, set_pk_j_y, op_pk_j_y);
-					let new_op_pk_j_y = select_chip.synthesize(
-						&config.common,
-						&config.main,
-						layouter.namespace(|| "update op_pk_y"),
-					)?;
-					op_pk_y_i.push(new_op_pk_j_y);
 				}
 
 				// Distribute the scores
 				let mut op_score_sum = zero.clone();
-				for ops_ij in ops_i.iter().take(NUM_NEIGHBOURS) {
-					let add_chip = AddChipset::new(op_score_sum.clone(), ops_ij.clone());
+				for j in 0..NUM_NEIGHBOURS {
+					let add_chip = AddChipset::new(op_score_sum.clone(), ops_i[j].clone());
 					op_score_sum = add_chip.synthesize(
 						&config.common,
 						&config.main,
@@ -671,80 +557,52 @@ where
 					&config.main,
 					layouter.namespace(|| "op_score_sum == 0"),
 				)?;
-				for j in 0..NUM_NEIGHBOURS {
-					let op_pk_j_x = op_pk_x_i[j].clone();
-					let op_pk_j_y = op_pk_y_i[j].clone();
 
-					// Condition 1. op_pk_j != pk_i
-					let equal_chip = IsEqualChipset::new(op_pk_j_x.clone(), pk_i_x.clone());
-					let is_pk_i_x = equal_chip.synthesize(
+				for j in 0..NUM_NEIGHBOURS {
+					let addr_j = set[j].clone();
+					// Condition 1. addr_j != addr_i
+					let equal_chip = IsEqualChipset::new(addr_j.clone(), addr_i.clone());
+					let is_add_i = equal_chip.synthesize(
 						&config.common,
 						&config.main,
 						layouter.namespace(|| "op_pk_j_x == pk_i_x"),
 					)?;
-					let equal_chip = IsEqualChipset::new(op_pk_j_y.clone(), pk_i_y.clone());
-					let is_pk_i_y = equal_chip.synthesize(
+					let sub = SubChipset::new(one.clone(), is_add_i);
+					let is_not_add_i = sub.synthesize(
 						&config.common,
 						&config.main,
-						layouter.namespace(|| "op_pk_j_y == pk_i_y"),
-					)?;
-					let and_chip = AndChipset::new(is_pk_i_x, is_pk_i_y);
-					let is_pk_i = and_chip.synthesize(
-						&config.common,
-						&config.main,
-						layouter.namespace(|| "op_pk_j == pk_i"),
-					)?;
-					let sub_chip = SubChipset::new(one.clone(), is_pk_i);
-					let is_diff_pk = sub_chip.synthesize(
-						&config.common,
-						&config.main,
-						layouter.namespace(|| "op_pk_j != pk_i"),
+						layouter.namespace(|| " 1 - is_add_i"),
 					)?;
 
-					// Condition 2. op_pk_j != PublicKey::default()
-					let pk_x_equal_chip =
-						IsEqualChipset::new(pk_x[j].clone(), default_pk_x.clone());
-					let is_default_pk_x = pk_x_equal_chip.synthesize(
+					// Condition 2. addr_j != Address::zero()
+					let equal_chip = IsEqualChipset::new(addr_j.clone(), zero.clone());
+					let is_default_addr = equal_chip.synthesize(
 						&config.common,
 						&config.main,
-						layouter.namespace(|| "pk_j_x == default_pk_x"),
+						layouter.namespace(|| "op_addr_j == default_addr"),
 					)?;
-
-					let pk_y_equal_chip =
-						IsEqualChipset::new(pk_y[j].clone(), default_pk_y.clone());
-					let is_default_pk_y = pk_y_equal_chip.synthesize(
+					let sub = SubChipset::new(one.clone(), is_default_addr);
+					let is_not_default_addr = sub.synthesize(
 						&config.common,
 						&config.main,
-						layouter.namespace(|| "pk_j_y == default_pk_y"),
-					)?;
-					let and_chip = AndChipset::new(is_default_pk_x, is_default_pk_y);
-					let is_null = and_chip.synthesize(
-						&config.common,
-						&config.main,
-						layouter.namespace(|| "pk_j == default"),
-					)?;
-					let sub_chip = SubChipset::new(one.clone(), is_null);
-					let is_not_null = sub_chip.synthesize(
-						&config.common,
-						&config.main,
-						layouter.namespace(|| "pk_j != default"),
+						layouter.namespace(|| " 1 - is_add_i"),
 					)?;
 
 					// Conditions for distributing the score
 					// 1. pk_j != pk_i
 					// 2. pk_j != PublicKey::default()
 					// 3. op_score_sum == 0
-					let and_chip = AndChipset::new(is_diff_pk, is_not_null);
+					let and_chip = AndChipset::new(is_not_add_i, is_not_default_addr);
 					let cond = and_chip.synthesize(
 						&config.common,
 						&config.main,
-						layouter.namespace(|| "is_diff_pk && is_not_null"),
+						layouter.namespace(|| "is_not_add_i && is_not_null"),
 					)?;
 					let and_chip = AndChipset::new(cond, is_sum_zero.clone());
 					let cond = and_chip.synthesize(
 						&config.common,
 						&config.main,
-						layouter.namespace(|| "is_diff_pk && is_not_null && is_sum_zero"),
+						layouter.namespace(|| "is_not_add_i && is_not_null"),
 					)?;
 					let select_chip = SelectChipset::new(cond, one.clone(), ops_i[j].clone());
 					ops_i[j] = select_chip.synthesize(
