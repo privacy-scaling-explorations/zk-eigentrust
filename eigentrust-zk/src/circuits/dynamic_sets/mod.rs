@@ -83,10 +83,10 @@ pub struct EigenTrustSet<
 {
 	// Attestation
 	attestation: Vec<Vec<UnassignedAttestation<N>>>,
-	// Public keys
-	pks: Vec<UnassignedPublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>>,
 	// Signature
 	signatures: Vec<UnassignedSignature<C, N, NUM_LIMBS, NUM_BITS, P>>,
+	// Public keys
+	pks: Vec<UnassignedPublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>>,
 	// Message hash
 	msg_hash: Vec<Vec<UnassignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>>>,
 	// Set
@@ -123,8 +123,8 @@ where
 	/// Constructs a new EigenTrustSet circuit
 	pub fn new(
 		attestation: Vec<Vec<Attestation<N>>>,
-		pks: Vec<PublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>>,
 		signatures: Vec<Signature<C, N, NUM_LIMBS, NUM_BITS, P>>,
+		pks: Vec<PublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>>,
 		msg_hash: Vec<Vec<Integer<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>>>, set: Vec<N>,
 		s_inv: Vec<Integer<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>>,
 		g_as_ecpoint: EcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
@@ -134,11 +134,10 @@ where
 			.into_iter()
 			.map(|att| att.into_iter().map(|x| UnassignedAttestation::from(x)).collect_vec())
 			.collect_vec();
-		// Pubkey values
-		let pks = pks.into_iter().map(|x| UnassignedPublicKey::new(x)).collect_vec();
-
 		// Signature values
 		let signatures = signatures.into_iter().map(UnassignedSignature::from).collect_vec();
+		// Pubkey values
+		let pks = pks.into_iter().map(|x| UnassignedPublicKey::new(x)).collect_vec();
 
 		let msg_hash = msg_hash
 			.iter()
@@ -146,14 +145,13 @@ where
 			.collect_vec();
 
 		let set = set.iter().map(|x| Value::known(*x)).collect();
-
 		let s_inv = s_inv.iter().map(|int| UnassignedInteger::from(int.clone())).collect_vec();
-
 		let g_as_ecpoint = UnassignedEcPoint::from(g_as_ecpoint);
+
 		Self {
 			attestation,
-			pks,
 			signatures,
+			pks,
 			msg_hash,
 			set,
 			s_inv,
@@ -189,16 +187,14 @@ where
 	type FloorPlanner = SimpleFloorPlanner;
 
 	fn without_witnesses(&self) -> Self {
-		let att: UnassignedAttestation<N> = UnassignedAttestation::without_witnesses();
-		let pk: UnassignedPublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC> =
-			UnassignedPublicKey::without_witnesses();
-		let sig: UnassignedSignature<C, N, NUM_LIMBS, NUM_BITS, P> =
-			UnassignedSignature::without_witnesses();
+		let att = UnassignedAttestation::without_witnesses();
+		let pk = UnassignedPublicKey::without_witnesses();
+		let sig = UnassignedSignature::without_witnesses();
 
 		Self {
 			attestation: vec![vec![att; NUM_NEIGHBOURS]; NUM_NEIGHBOURS],
-			pks: vec![pk; NUM_NEIGHBOURS],
 			signatures: vec![sig; NUM_NEIGHBOURS],
+			pks: vec![pk; NUM_NEIGHBOURS],
 			msg_hash: vec![vec![UnassignedInteger::without_witnesses(); NUM_NEIGHBOURS]],
 			set: vec![Value::unknown(); NUM_NEIGHBOURS],
 			s_inv: vec![UnassignedInteger::without_witnesses(); NUM_NEIGHBOURS],
@@ -842,8 +838,8 @@ mod test {
 			SH,
 		>::new(
 			attestations,
-			pub_keys.to_vec(),
 			signatures,
+			pub_keys.to_vec(),
 			msg_hash,
 			set,
 			s_inv,
@@ -881,7 +877,7 @@ mod test {
 		let rng = &mut thread_rng();
 		let sks = [(); NUM_NEIGHBOURS].map(|_| WN::random(rng.clone()));
 		let keypairs = sks.clone().map(|x| EcdsaKeypair::from_private_key(x));
-		let pub_keys = keypairs.clone().map(|kp| kp.public_key);
+		let pub_keys = keypairs.clone().map(|kp| kp.public_key).to_vec();
 		let domain = N::from_u128(DOMAIN);
 
 		let (res, attestations, signatures, s_inv, set, msg_hash) = {
@@ -963,13 +959,7 @@ mod test {
 			H,
 			SH,
 		>::new(
-			attestations,
-			pub_keys.to_vec(),
-			signatures,
-			msg_hash,
-			set,
-			s_inv,
-			g_as_ecpoint,
+			attestations, signatures, pub_keys, msg_hash, set, s_inv, g_as_ecpoint,
 		);
 
 		let k = 14;
