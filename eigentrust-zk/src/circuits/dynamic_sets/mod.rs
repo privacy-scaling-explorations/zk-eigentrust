@@ -194,8 +194,6 @@ where
 			UnassignedPublicKey::without_witnesses();
 		let sig: UnassignedSignature<C, N, NUM_LIMBS, NUM_BITS, P> =
 			UnassignedSignature::without_witnesses();
-		let op_pk: UnassignedPublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC> =
-			UnassignedPublicKey::without_witnesses();
 
 		Self {
 			attestation: vec![vec![att; NUM_NEIGHBOURS]; NUM_NEIGHBOURS],
