@@ -5,6 +5,7 @@ use crate::{params::hasher::RoundParams, FieldExt, Hasher};
 use std::marker::PhantomData;
 
 /// Constructs objects.
+#[derive(Clone)]
 pub struct Poseidon<F: FieldExt, const WIDTH: usize, P>
 where
 	P: RoundParams<F, WIDTH>,

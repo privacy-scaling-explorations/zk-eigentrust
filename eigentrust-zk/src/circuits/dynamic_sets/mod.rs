@@ -21,7 +21,7 @@ use crate::integer::{
 };
 use crate::params::ecc::EccParams;
 use crate::params::rns::RnsParams;
-use crate::UnassignedValue;
+use crate::utils::big_to_fe;
 use crate::{
 	gadgets::{
 		bits2num::Bits2NumChip,
@@ -33,6 +33,8 @@ use crate::{
 	Chip, Chipset, CommonConfig, RegionCtx, ADVICE,
 };
 use crate::{FieldExt, HasherChipset, SpongeHasherChipset};
+use crate::{Hasher, UnassignedValue};
+use halo2::arithmetic::Field;
 use halo2::halo2curves::CurveAffine;
 use halo2::{
 	circuit::{Layouter, Region, SimpleFloorPlanner},
@@ -69,6 +71,7 @@ pub struct EigenTrustSet<
 	P,
 	EC,
 	H,
+	HN,
 	SH,
 > where
 	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::Scalar, N, NUM_LIMBS, NUM_BITS>,
@@ -76,6 +79,7 @@ pub struct EigenTrustSet<
 	C::Base: FieldExt,
 	C::ScalarExt: FieldExt,
 	H: HasherChipset<N, HASHER_WIDTH>,
+	HN: Hasher<N, HASHER_WIDTH>,
 	SH: SpongeHasherChipset<N, HASHER_WIDTH>,
 {
 	// Attestation
@@ -85,11 +89,11 @@ pub struct EigenTrustSet<
 	// Message hashes
 	msg_hashes: Vec<Vec<UnassignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>>>,
 	// Signature s inverse
-	s_inv: Vec<UnassignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>>,
+	s_inv: Vec<Vec<UnassignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>>>,
 	/// Generator as EC point
 	g_as_ecpoint: UnassignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
 	// Phantom Data
-	_p: PhantomData<(H, SH)>,
+	_p: PhantomData<(H, HN, SH)>,
 }
 
 impl<
@@ -103,41 +107,80 @@ impl<
 		P,
 		EC,
 		H,
+		HN,
 		SH,
-	> EigenTrustSet<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, C, N, NUM_LIMBS, NUM_BITS, P, EC, H, SH>
+	>
+	EigenTrustSet<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, C, N, NUM_LIMBS, NUM_BITS, P, EC, H, HN, SH>
 where
 	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::Scalar, N, NUM_LIMBS, NUM_BITS>,
 	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::ScalarExt: FieldExt,
 	H: HasherChipset<N, HASHER_WIDTH>,
+	HN: Hasher<N, HASHER_WIDTH>,
 	SH: SpongeHasherChipset<N, HASHER_WIDTH>,
 {
 	/// Constructs a new EigenTrustSet circuit
 	pub fn new(
 		attestations: Vec<Vec<SignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>>>,
 		pks: Vec<PublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>>,
-		msg_hashes: Vec<Vec<Integer<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>>>,
-		s_inv: Vec<Integer<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>>,
-		g_as_ecpoint: EcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
 	) -> Self {
 		//Attestation values
-		let attestations = attestations
+		let attestations_converted = attestations
+			.clone()
 			.into_iter()
 			.map(|att| att.into_iter().map(|x| UnassignedSignedAttestation::from(x)).collect_vec())
 			.collect_vec();
 		// Pubkey values
 		let pks = pks.into_iter().map(|x| UnassignedPublicKey::new(x)).collect_vec();
 
-		let msg_hashes = msg_hashes
-			.iter()
-			.map(|ints| ints.iter().map(|int| UnassignedInteger::from(int.clone())).collect_vec())
+		// Calculate msg_hashes
+		let msg_hashes = attestations
+			.clone()
+			.into_iter()
+			.map(|att| {
+				att.into_iter()
+					.map(|x: SignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>| {
+						let att_hash = x.attestation.hash::<HASHER_WIDTH, HN>();
+						let msg_hash_int = Integer::from_n(att_hash);
+						UnassignedInteger::from(msg_hash_int)
+					})
+					.collect_vec()
+			})
 			.collect_vec();
 
-		let s_inv = s_inv.iter().map(|int| UnassignedInteger::from(int.clone())).collect_vec();
+		// Calculate s inverses
+		let s_inv = attestations
+			.iter()
+			.map(|att| {
+				att.iter()
+					.map(|sigatt| {
+						let s_inv_w =
+							big_to_fe::<C::ScalarExt>(sigatt.signature.s.value()).invert().unwrap();
+						let s_inv_int = Integer::from_w(s_inv_w);
+						UnassignedInteger::from(s_inv_int)
+					})
+					.collect_vec()
+			})
+			.collect_vec();
+
+		// Calculate generator as ecpoint
+		let g = C::generator();
+		let coordinates_g = g.coordinates().unwrap();
+		let g_as_ecpoint = EcPoint::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::new(
+			Integer::from_w(*coordinates_g.x()),
+			Integer::from_w(*coordinates_g.y()),
+		);
 		let g_as_ecpoint = UnassignedEcPoint::from(g_as_ecpoint);
 
-		Self { attestations, pks, msg_hashes, s_inv, g_as_ecpoint, _p: PhantomData }
+		Self {
+			attestations: attestations_converted,
+			pks,
+			msg_hashes,
+			s_inv,
+			g_as_ecpoint,
+			_p: PhantomData,
+		}
 	}
 }
 
@@ -152,15 +195,29 @@ impl<
 		P,
 		EC,
 		H,
+		HN,
 		SH,
 	> Circuit<N>
-	for EigenTrustSet<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, C, N, NUM_LIMBS, NUM_BITS, P, EC, H, SH>
-where
+	for EigenTrustSet<
+		NUM_NEIGHBOURS,
+		NUM_ITER,
+		INITIAL_SCORE,
+		C,
+		N,
+		NUM_LIMBS,
+		NUM_BITS,
+		P,
+		EC,
+		H,
+		HN,
+		SH,
+	> where
 	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::Scalar, N, NUM_LIMBS, NUM_BITS>,
 	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::ScalarExt: FieldExt,
 	H: HasherChipset<N, HASHER_WIDTH>,
+	HN: Hasher<N, HASHER_WIDTH>,
 	SH: SpongeHasherChipset<N, HASHER_WIDTH>,
 {
 	type Config = EigenTrustSetConfig<N, H, SH>;
@@ -174,7 +231,10 @@ where
 			attestations: vec![vec![att; NUM_NEIGHBOURS]; NUM_NEIGHBOURS],
 			pks: vec![pk; NUM_NEIGHBOURS],
 			msg_hashes: vec![vec![UnassignedInteger::without_witnesses(); NUM_NEIGHBOURS]],
-			s_inv: vec![UnassignedInteger::without_witnesses(); NUM_NEIGHBOURS],
+			s_inv: vec![
+				vec![UnassignedInteger::without_witnesses(); NUM_NEIGHBOURS];
+				NUM_NEIGHBOURS
+			],
 			g_as_ecpoint: UnassignedEcPoint::without_witnesses(),
 			_p: PhantomData,
 		}
@@ -344,7 +404,7 @@ where
 					self.pks[i].clone(),
 					self.g_as_ecpoint.clone(),
 					self.msg_hashes[i][j].clone(),
-					self.s_inv[i].clone(),
+					self.s_inv[i][j].clone(),
 				);
 				let assigned_ecdsa = ecdsa_assigner.synthesize(
 					&config.common,
@@ -658,8 +718,7 @@ mod test {
 		halo2curves::{
 			bn256::{Bn256, Fr},
 			ff::PrimeField,
-			group::Curve,
-			secp256k1::{Fq, Secp256k1, Secp256k1Affine},
+			secp256k1::{Fq, Secp256k1Affine},
 		},
 	};
 	use rand::thread_rng;
@@ -695,22 +754,14 @@ mod test {
 		.map(|arr| arr.into_iter().map(|x| N::from_u128(x)).collect())
 		.collect();
 
-		let g = Secp256k1::generator().to_affine();
-		let g_as_ecpoint = EcPoint::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::new(
-			Integer::from_w(g.x),
-			Integer::from_w(g.y),
-		);
-
 		let rng = &mut thread_rng();
 		let keypairs = [(); NUM_NEIGHBOURS].map(|_| EcdsaKeypair::generate_keypair(rng));
 		let pub_keys = keypairs.clone().map(|kp| kp.public_key).to_vec();
 		let domain = N::from_u128(DOMAIN);
 
-		let (attestations, s_inv, set, msg_hashes) = {
+		let (attestations, set) = {
 			let mut attestations = Vec::new();
 			let mut set = Vec::new();
-			let mut msg_hashes = Vec::new();
-			let mut s_inv = Vec::new();
 
 			for i in 0..NUM_NEIGHBOURS {
 				let addr = pub_keys[i].to_address();
@@ -719,7 +770,7 @@ mod test {
 
 			for i in 0..NUM_NEIGHBOURS {
 				let mut attestations_i = Vec::new();
-				let mut msg_hash_i = Vec::new();
+
 				// Attestation to the other peers
 				for j in 0..NUM_NEIGHBOURS {
 					let attestation =
@@ -729,21 +780,14 @@ mod test {
 					let att_hash: Fq = big_to_fe(fe_to_big(att_hash));
 
 					let signature = keypairs[i].sign(att_hash, rng);
-					let s_inv_fq = big_to_fe::<Fq>(signature.s.value()).invert().unwrap();
-
-					let msg_hash_int = Integer::from_w(att_hash);
-					let s_inv_int = Integer::from_w(s_inv_fq);
 					let signed_att = SignedAttestation::new(attestation, signature);
 
-					msg_hash_i.push(msg_hash_int);
-					s_inv.push(s_inv_int);
 					attestations_i.push(signed_att);
 				}
-				msg_hashes.push(msg_hash_i);
 				attestations.push(attestations_i);
 			}
 
-			(attestations, s_inv, set, msg_hashes)
+			(attestations, set)
 		};
 
 		let res = {
@@ -785,8 +829,9 @@ mod test {
 			P,
 			EC,
 			H,
+			HN,
 			SH,
-		>::new(attestations, pub_keys, msg_hashes, s_inv, g_as_ecpoint);
+		>::new(attestations, pub_keys);
 
 		let k = 20;
 		let prover = match MockProver::<N>::run(k, &et, vec![res.to_vec()]) {
@@ -811,22 +856,14 @@ mod test {
 		.map(|arr| arr.into_iter().map(|x| N::from_u128(x)).collect())
 		.collect();
 
-		let g = Secp256k1::generator().to_affine();
-		let g_as_ecpoint = EcPoint::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::new(
-			Integer::from_w(g.x),
-			Integer::from_w(g.y),
-		);
-
 		let rng = &mut thread_rng();
 		let keypairs = [(); NUM_NEIGHBOURS].map(|_| EcdsaKeypair::generate_keypair(rng));
 		let pub_keys = keypairs.clone().map(|kp| kp.public_key).to_vec();
 		let domain = N::from_u128(DOMAIN);
 
-		let (attestations, s_inv, set, msg_hashes) = {
+		let (attestations, set) = {
 			let mut attestations = Vec::new();
 			let mut set = Vec::new();
-			let mut msg_hashes = Vec::new();
-			let mut s_inv = Vec::new();
 
 			for i in 0..NUM_NEIGHBOURS {
 				let addr = pub_keys[i].to_address();
@@ -835,7 +872,6 @@ mod test {
 
 			for i in 0..NUM_NEIGHBOURS {
 				let mut attestations_i = Vec::new();
-				let mut msg_hash_i = Vec::new();
 				// Attestation to the other peers
 				for j in 0..NUM_NEIGHBOURS {
 					let attestation =
@@ -845,21 +881,14 @@ mod test {
 					let att_hash: Fq = big_to_fe(fe_to_big(att_hash));
 
 					let signature = keypairs[i].sign(att_hash, rng);
-					let s_inv_fq = big_to_fe::<Fq>(signature.s.value()).invert().unwrap();
-
-					let msg_hash_int = Integer::from_w(att_hash);
-					let s_inv_int = Integer::from_w(s_inv_fq);
 					let signed_att = SignedAttestation::new(attestation, signature);
 
-					msg_hash_i.push(msg_hash_int);
-					s_inv.push(s_inv_int);
 					attestations_i.push(signed_att);
 				}
-				msg_hashes.push(msg_hash_i);
 				attestations.push(attestations_i);
 			}
 
-			(attestations, s_inv, set, msg_hashes)
+			(attestations, set)
 		};
 
 		let res = {
@@ -901,14 +930,9 @@ mod test {
 			P,
 			EC,
 			H,
+			HN,
 			SH,
-		>::new(
-			attestations,
-			pub_keys.to_vec(),
-			msg_hashes,
-			s_inv,
-			g_as_ecpoint,
-		);
+		>::new(attestations, pub_keys.to_vec());
 
 		let k = 14;
 		let rng = &mut rand::thread_rng();
