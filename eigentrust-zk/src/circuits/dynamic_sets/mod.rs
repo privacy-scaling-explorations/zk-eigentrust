@@ -236,70 +236,79 @@ where
 	fn synthesize(
 		&self, config: Self::Config, mut layouter: impl Layouter<N>,
 	) -> Result<(), Error> {
-		let (zero, one, init_score, total_score, set, passed_s, domain) = layouter.assign_region(
-			|| "assigner",
-			|region: Region<'_, N>| {
-				let mut ctx = RegionCtx::new(region, 0);
+		let (zero, one, init_score, total_score, set, passed_s, domain, ops_hash) = layouter
+			.assign_region(
+				|| "assigner",
+				|region: Region<'_, N>| {
+					let mut ctx = RegionCtx::new(region, 0);
 
-				let zero = ctx.assign_from_constant(config.common.advice[0], N::ZERO)?;
-				let one = ctx.assign_from_constant(config.common.advice[1], N::ONE)?;
+					let zero = ctx.assign_from_constant(config.common.advice[0], N::ZERO)?;
+					let one = ctx.assign_from_constant(config.common.advice[1], N::ONE)?;
 
-				let assigned_initial_score =
-					ctx.assign_from_constant(config.common.advice[3], N::from_u128(INITIAL_SCORE))?;
-
-				let assigned_total_score = ctx.assign_from_constant(
-					config.common.advice[4],
-					N::from_u128(INITIAL_SCORE * NUM_NEIGHBOURS as u128),
-				)?;
-
-				// Move to the next row
-				ctx.next();
-
-				let mut instance_count = 0;
-
-				let mut assigned_set = Vec::new();
-				for i in 0..self.pks.len() {
-					let index = i % ADVICE;
-
-					let addr = ctx.assign_from_instance(
-						config.common.advice[index], config.common.instance, instance_count,
+					let assigned_initial_score = ctx.assign_from_constant(
+						config.common.advice[3],
+						N::from_u128(INITIAL_SCORE),
 					)?;
 
-					if i == ADVICE - 1 {
-						ctx.next();
-					}
-
-					assigned_set.push(addr);
-					instance_count += 1;
-				}
-
-				let mut assigned_s = Vec::new();
-				for i in 0..NUM_NEIGHBOURS {
-					let index = i % ADVICE;
-
-					let ps = ctx.assign_from_instance(
-						config.common.advice[index], config.common.instance, instance_count,
+					let assigned_total_score = ctx.assign_from_constant(
+						config.common.advice[4],
+						N::from_u128(INITIAL_SCORE * NUM_NEIGHBOURS as u128),
 					)?;
 
-					assigned_s.push(ps);
+					// Move to the next row
+					ctx.next();
+
+					let mut instance_count = 0;
+
+					let mut assigned_set = Vec::new();
+					for i in 0..self.pks.len() {
+						let index = i % ADVICE;
+
+						let addr = ctx.assign_from_instance(
+							config.common.advice[index], config.common.instance, instance_count,
+						)?;
+
+						if i == ADVICE - 1 {
+							ctx.next();
+						}
+
+						assigned_set.push(addr);
+						instance_count += 1;
+					}
+
+					let mut assigned_s = Vec::new();
+					for i in 0..NUM_NEIGHBOURS {
+						let index = i % ADVICE;
+
+						let ps = ctx.assign_from_instance(
+							config.common.advice[index], config.common.instance, instance_count,
+						)?;
+
+						assigned_s.push(ps);
+						instance_count += 1;
+
+						if i == ADVICE - 1 {
+							ctx.next();
+						}
+					}
+					ctx.next();
+
+					let domain = ctx.assign_from_instance(
+						config.common.advice[0], config.common.instance, instance_count,
+					)?;
+
 					instance_count += 1;
 
-					if i == ADVICE - 1 {
-						ctx.next();
-					}
-				}
-				ctx.next();
+					let ops_hash = ctx.assign_from_instance(
+						config.common.advice[1], config.common.instance, instance_count,
+					)?;
 
-				let domain = ctx.assign_from_instance(
-					config.common.advice[0], config.common.instance, instance_count,
-				)?;
-
-				Ok((
-					zero, one, assigned_initial_score, assigned_total_score, assigned_set,
-					assigned_s, domain,
-				))
-			},
-		)?;
+					Ok((
+						zero, one, assigned_initial_score, assigned_total_score, assigned_set,
+						assigned_s, domain, ops_hash,
+					))
+				},
+			)?;
 
 		let mut assigned_attestations = Vec::new();
 		for atts in &self.attestations {
@@ -326,6 +335,7 @@ where
 
 		// TODO: Prevent self-attestations
 		let mut ops = Vec::new();
+		let mut op_hashes = Vec::new();
 		// signature verification
 		for i in 0..NUM_NEIGHBOURS {
 			let mut assigned_sig_data = Vec::new();
@@ -353,13 +363,33 @@ where
 					left_shifters.clone(),
 				);
 
-			let (opinions, _) = opinion.synthesize(
+			let (opinions, op_hash) = opinion.synthesize(
 				&config.common,
 				&config.opinion,
 				layouter.namespace(|| "opinion"),
 			)?;
 			ops.push(opinions);
+			op_hashes.push(op_hash);
 		}
+
+		let mut sponge = SH::init(&config.common, layouter.namespace(|| "op_hasher"))?;
+		sponge.update(&op_hashes);
+		let op_hash_res = sponge.squeeze(
+			&config.common,
+			&config.sponge,
+			layouter.namespace(|| "op_hash"),
+		)?;
+
+		layouter.assign_region(
+			|| "passed_op_hash == op_hash",
+			|region: Region<'_, N>| {
+				let ctx = &mut RegionCtx::new(region, 0);
+				let op_hash = ctx.copy_assign(config.common.advice[0], ops_hash.clone())?;
+				let op_hash_res = ctx.copy_assign(config.common.advice[1], op_hash_res.clone())?;
+				ctx.constrain_equal(op_hash, op_hash_res)?;
+				Ok(())
+			},
+		)?;
 
 		// filter peers' ops
 		let ops = {
