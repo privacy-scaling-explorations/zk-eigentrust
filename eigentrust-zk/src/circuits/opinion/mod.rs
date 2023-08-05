@@ -569,7 +569,6 @@ mod test {
 	use crate::params::ecc::secp256k1::Secp256k1Params;
 	use crate::params::hasher::poseidon_bn254_5x5::Params;
 	use crate::params::rns::secp256k1::Secp256k1_4_68;
-	use crate::params::rns::RnsParams;
 	use crate::poseidon::sponge::{PoseidonSpongeConfig, StatefulSpongeChipset};
 	use crate::poseidon::{FullRoundChip, PartialRoundChip, PoseidonChipset, PoseidonConfig};
 	use crate::utils::{big_to_fe, fe_to_big};

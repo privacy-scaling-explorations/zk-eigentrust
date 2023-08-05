@@ -35,7 +35,7 @@ use crate::{
 use crate::{FieldExt, HasherChipset, SpongeHasherChipset};
 use halo2::halo2curves::CurveAffine;
 use halo2::{
-	circuit::{Layouter, Region, SimpleFloorPlanner, Value},
+	circuit::{Layouter, Region, SimpleFloorPlanner},
 	plonk::{Circuit, ConstraintSystem, Error},
 };
 use itertools::Itertools;
@@ -84,8 +84,6 @@ pub struct EigenTrustSet<
 	pks: Vec<UnassignedPublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>>,
 	// Message hashes
 	msg_hashes: Vec<Vec<UnassignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>>>,
-	// Set
-	set: Vec<Value<N>>,
 	// Signature s inverse
 	s_inv: Vec<UnassignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>>,
 	/// Generator as EC point
@@ -119,7 +117,7 @@ where
 	pub fn new(
 		attestations: Vec<Vec<SignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>>>,
 		pks: Vec<PublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>>,
-		msg_hashes: Vec<Vec<Integer<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>>>, set: Vec<N>,
+		msg_hashes: Vec<Vec<Integer<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>>>,
 		s_inv: Vec<Integer<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>>,
 		g_as_ecpoint: EcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
 	) -> Self {
@@ -136,11 +134,10 @@ where
 			.map(|ints| ints.iter().map(|int| UnassignedInteger::from(int.clone())).collect_vec())
 			.collect_vec();
 
-		let set = set.iter().map(|x| Value::known(*x)).collect();
 		let s_inv = s_inv.iter().map(|int| UnassignedInteger::from(int.clone())).collect_vec();
 		let g_as_ecpoint = UnassignedEcPoint::from(g_as_ecpoint);
 
-		Self { attestations, pks, msg_hashes, set, s_inv, g_as_ecpoint, _p: PhantomData }
+		Self { attestations, pks, msg_hashes, s_inv, g_as_ecpoint, _p: PhantomData }
 	}
 }
 
@@ -177,7 +174,6 @@ where
 			attestations: vec![vec![att; NUM_NEIGHBOURS]; NUM_NEIGHBOURS],
 			pks: vec![pk; NUM_NEIGHBOURS],
 			msg_hashes: vec![vec![UnassignedInteger::without_witnesses(); NUM_NEIGHBOURS]],
-			set: vec![Value::unknown(); NUM_NEIGHBOURS],
 			s_inv: vec![UnassignedInteger::without_witnesses(); NUM_NEIGHBOURS],
 			g_as_ecpoint: UnassignedEcPoint::without_witnesses(),
 			_p: PhantomData,
@@ -240,7 +236,7 @@ where
 	fn synthesize(
 		&self, config: Self::Config, mut layouter: impl Layouter<N>,
 	) -> Result<(), Error> {
-		let (zero, init_score, total_score, passed_s, domain, one, set) = layouter.assign_region(
+		let (zero, one, init_score, total_score, set, passed_s, domain) = layouter.assign_region(
 			|| "assigner",
 			|region: Region<'_, N>| {
 				let mut ctx = RegionCtx::new(region, 0);
@@ -259,13 +255,35 @@ where
 				// Move to the next row
 				ctx.next();
 
-				let mut passed_s = Vec::new();
+				let mut instance_count = 0;
+
+				let mut assigned_set = Vec::new();
+				for i in 0..self.pks.len() {
+					let index = i % ADVICE;
+
+					let addr = ctx.assign_from_instance(
+						config.common.advice[index], config.common.instance, instance_count,
+					)?;
+
+					if i == ADVICE - 1 {
+						ctx.next();
+					}
+
+					assigned_set.push(addr);
+					instance_count += 1;
+				}
+
+				let mut assigned_s = Vec::new();
 				for i in 0..NUM_NEIGHBOURS {
 					let index = i % ADVICE;
+
 					let ps = ctx.assign_from_instance(
-						config.common.advice[index], config.common.instance, i,
+						config.common.advice[index], config.common.instance, instance_count,
 					)?;
-					passed_s.push(ps);
+
+					assigned_s.push(ps);
+					instance_count += 1;
+
 					if i == ADVICE - 1 {
 						ctx.next();
 					}
@@ -273,26 +291,12 @@ where
 				ctx.next();
 
 				let domain = ctx.assign_from_instance(
-					config.common.advice[0],
-					config.common.instance,
-					NUM_NEIGHBOURS + 1,
+					config.common.advice[0], config.common.instance, instance_count,
 				)?;
 
-				ctx.next();
-
-				let mut assigned_set = Vec::new();
-				for chunk in self.set.chunks(ADVICE) {
-					for (i, chunk_i) in chunk.iter().enumerate() {
-						let s = ctx.assign_advice(config.common.advice[i], *chunk_i)?;
-						assigned_set.push(s)
-					}
-					// Move to the next row
-					ctx.next();
-				}
-
 				Ok((
-					zero, assigned_initial_score, assigned_total_score, passed_s, domain, one,
-					assigned_set,
+					zero, one, assigned_initial_score, assigned_total_score, assigned_set,
+					assigned_s, domain,
 				))
 			},
 		)?;
@@ -752,7 +756,7 @@ mod test {
 			EC,
 			H,
 			SH,
-		>::new(attestations, pub_keys, msg_hashes, set, s_inv, g_as_ecpoint);
+		>::new(attestations, pub_keys, msg_hashes, s_inv, g_as_ecpoint);
 
 		let k = 20;
 		let prover = match MockProver::<N>::run(k, &et, vec![res.to_vec()]) {
@@ -872,7 +876,6 @@ mod test {
 			attestations,
 			pub_keys.to_vec(),
 			msg_hashes,
-			set,
 			s_inv,
 			g_as_ecpoint,
 		);
