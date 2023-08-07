@@ -426,12 +426,16 @@ mod tests {
 			ecc::secp256k1::Secp256k1Params,
 			rns::{decompose_big_decimal, secp256k1::Secp256k1_4_68},
 		},
-		utils::{big_to_fe, fe_to_big},
+		utils::{big_to_fe, fe_to_big, generate_params, prove_and_verify},
 	};
 	use halo2::{
 		arithmetic::Field,
 		dev::MockProver,
-		halo2curves::{bn256::Fr, ff::PrimeField, secp256k1::Secp256k1Affine},
+		halo2curves::{
+			bn256::{Bn256, Fr},
+			ff::PrimeField,
+			secp256k1::Secp256k1Affine,
+		},
 	};
 	use num_bigint::BigInt;
 	use num_rational::BigRational;
@@ -561,6 +565,7 @@ mod tests {
 
 	#[test]
 	fn test_threshold_circuit() {
+		// Test Threshold Circuit
 		const NUM_NEIGHBOURS: usize = 4;
 		const NUM_ITERATIONS: usize = 20;
 		const INITIAL_SCORE: u128 = 1000;
@@ -612,5 +617,60 @@ mod tests {
 		};
 
 		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[test]
+	fn test_threshold_circuit_prod() {
+		// Test Threshold Circuit production
+		const NUM_NEIGHBOURS: usize = 4;
+		const NUM_ITERATIONS: usize = 20;
+		const INITIAL_SCORE: u128 = 1000;
+
+		const NUM_LIMBS: usize = 2;
+		const POWER_OF_TEN: usize = 72;
+
+		let ops: Vec<Vec<N>> = vec![
+			vec![0, 200, 300, 500],
+			vec![100, 0, 600, 300],
+			vec![400, 100, 0, 500],
+			vec![100, 200, 700, 0],
+		]
+		.into_iter()
+		.map(|arr| arr.into_iter().map(|x| N::from_u128(x)).collect())
+		.collect();
+
+		let (sets, scores, score_ratios) =
+			eigen_trust_set_testing_helper::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(ops);
+
+		let target_idx = 2;
+
+		let target_addr = sets[target_idx].clone();
+		let score = scores[target_idx].clone();
+		let score_ratio = score_ratios[target_idx].clone();
+		let (num_decomposed, den_decomposed) =
+			ratio_to_decomposed_helper::<N, NUM_LIMBS, POWER_OF_TEN>(score_ratio.clone());
+		let threshold = N::from_u128(1000_u128);
+
+		let native_threshold: Threshold<N, NUM_LIMBS, POWER_OF_TEN, NUM_NEIGHBOURS, INITIAL_SCORE> =
+			Threshold::new(score, score_ratio, threshold);
+		let native_threshold_check =
+			if native_threshold.check_threshold() { N::ONE } else { N::ZERO };
+
+		let pub_ins = vec![target_addr, threshold, native_threshold_check];
+
+		let threshold_circuit: ThresholdCircuit<
+			N,
+			NUM_LIMBS,
+			POWER_OF_TEN,
+			NUM_NEIGHBOURS,
+			INITIAL_SCORE,
+		> = ThresholdCircuit::new(&sets, &scores, &num_decomposed, &den_decomposed);
+
+		let k = 12;
+		let rng = &mut rand::thread_rng();
+		let params = generate_params(k);
+		let res =
+			prove_and_verify::<Bn256, _, _>(params, threshold_circuit, &[&pub_ins], rng).unwrap();
+		assert!(res);
 	}
 }

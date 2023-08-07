@@ -571,7 +571,7 @@ mod test {
 	use crate::params::rns::secp256k1::Secp256k1_4_68;
 	use crate::poseidon::sponge::{PoseidonSpongeConfig, StatefulSpongeChipset};
 	use crate::poseidon::{FullRoundChip, PartialRoundChip, PoseidonChipset, PoseidonConfig};
-	use crate::utils::{big_to_fe, fe_to_big};
+	use crate::utils::{big_to_fe, fe_to_big, generate_params, prove_and_verify};
 	use crate::UnassignedValue;
 	use crate::{
 		ecc::generic::native::EcPoint,
@@ -586,6 +586,7 @@ mod test {
 	use halo2::arithmetic::Field;
 	use halo2::circuit::{Region, Value};
 	use halo2::dev::MockProver;
+	use halo2::halo2curves::bn256::Bn256;
 	use halo2::halo2curves::ff::PrimeField;
 	use halo2::halo2curves::group::Curve;
 	use halo2::halo2curves::secp256k1::Secp256k1;
@@ -682,6 +683,7 @@ mod test {
 		}
 	}
 
+	#[derive(Clone)]
 	struct TestOpinionCircuit {
 		attestations: Vec<UnassignedSignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>>,
 		domain: Value<N>,
@@ -881,5 +883,71 @@ mod test {
 		let k = 18;
 		let prover = MockProver::run(k, &circuit, vec![p_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[ignore = "Currently not working"]
+	#[test]
+	fn test_opinion_prod() {
+		// Test Opinion Chipset production
+		let rng = &mut rand::thread_rng();
+		let keypairs = [(); NUM_NEIGHBOURS]
+			.map(|_| EcdsaKeypair::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::generate_keypair(rng));
+		let attester = keypairs[0].clone();
+		let pks = keypairs.map(|kp| kp.public_key);
+		let set = pks.map(|pk| pk.to_address());
+
+		let g = Secp256k1::generator().to_affine();
+		let g_as_ecpoint = EcPoint::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::new(
+			Integer::from_w(g.x),
+			Integer::from_w(g.y),
+		);
+		let domain = N::from_u128(DOMAIN);
+
+		let mut msg_hashes = Vec::new();
+		let mut s_inv = Vec::new();
+		let mut attestations = Vec::new();
+
+		// Attestation to the other peers
+		for i in 0..NUM_NEIGHBOURS {
+			let about = set[i];
+			let value = N::random(rng.clone());
+			let message = N::ZERO;
+			let attestation = Attestation::new(about, domain, value, message);
+
+			let att_hash_n = attestation.hash::<HASHER_WIDTH, PoseidonNativeHasher>();
+			let att_hash: WS = big_to_fe(fe_to_big(att_hash_n));
+			let signature = attester.sign(att_hash.clone(), rng);
+			let s_inv_fq = big_to_fe::<WS>(signature.s.value()).invert().unwrap();
+
+			let msg_hash_int = Integer::from_w(att_hash);
+			let s_inv_int = Integer::from_w(s_inv_fq);
+			let signed_att = SignedAttestation::new(attestation, signature);
+
+			msg_hashes.push(msg_hash_int);
+			s_inv.push(s_inv_int);
+			attestations.push(signed_att);
+		}
+
+		let opinion_native: Opinion<NUM_NEIGHBOURS, C, N, NUM_LIMBS, NUM_BITS, P, EC, H, SH> =
+			Opinion::new(attester.public_key.clone(), attestations.clone(), domain);
+		let (_, scores, op_hash) = opinion_native.validate(set.to_vec());
+
+		let mut p_ins = Vec::new();
+		p_ins.extend(scores);
+		p_ins.push(op_hash);
+		let circuit = TestOpinionCircuit::new(
+			attestations,
+			domain,
+			set.to_vec(),
+			attester.public_key,
+			g_as_ecpoint,
+			msg_hashes,
+			s_inv,
+		);
+		let k = 18;
+		let rng = &mut rand::thread_rng();
+		let params = generate_params(k);
+		let res = prove_and_verify::<Bn256, _, _>(params, circuit, &[&p_ins], rng).unwrap();
+		assert!(res);
 	}
 }

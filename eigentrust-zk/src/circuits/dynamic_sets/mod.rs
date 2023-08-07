@@ -13,6 +13,7 @@ use crate::ecc::{
 };
 use crate::ecdsa::native::PublicKey;
 use crate::ecdsa::{EcdsaAssigner, EcdsaAssignerConfig, EcdsaConfig, UnassignedPublicKey};
+use crate::gadgets::main::MulAddChipset;
 use crate::gadgets::set::{SetChip, SetConfig};
 use crate::integer::native::Integer;
 use crate::integer::{
@@ -335,6 +336,7 @@ impl<
 						assigned_set.push(addr);
 						instance_count += 1;
 					}
+					ctx.next();
 
 					let mut assigned_s = Vec::new();
 					for i in 0..NUM_NEIGHBOURS {
@@ -626,33 +628,18 @@ impl<
 		// Compute the EigenTrust scores
 		let mut s = vec![init_score; NUM_NEIGHBOURS];
 		for _ in 0..NUM_ITER {
-			let mut sop = Vec::new();
-			for i in 0..NUM_NEIGHBOURS {
-				let mut sop_i = Vec::new();
-				for j in 0..NUM_NEIGHBOURS {
-					let mul_chip = MulChipset::new(ops[i][j].clone(), s[i].clone());
-					let res = mul_chip.synthesize(
-						&config.common,
-						&config.main,
-						layouter.namespace(|| "op_mul"),
-					)?;
-					sop_i.push(res);
-				}
-				sop.push(sop_i);
-			}
-
 			let mut new_s = vec![zero.clone(); NUM_NEIGHBOURS];
 			for i in 0..NUM_NEIGHBOURS {
 				for j in 0..NUM_NEIGHBOURS {
-					let add_chip = AddChipset::new(new_s[i].clone(), ops[i][j].clone());
-					new_s[i] = add_chip.synthesize(
+					let mul_add_chip =
+						MulAddChipset::new(ops[j][i].clone(), s[j].clone(), new_s[i].clone());
+					new_s[i] = mul_add_chip.synthesize(
 						&config.common,
 						&config.main,
-						layouter.namespace(|| "op_add"),
+						layouter.namespace(|| "op_mul_add"),
 					)?;
 				}
 			}
-
 			s = new_s;
 		}
 
@@ -702,6 +689,7 @@ mod test {
 	use crate::{
 		circuits::{
 			dynamic_sets::native::{Attestation, SignedAttestation},
+			opinion::native::Opinion,
 			PoseidonNativeHasher, PoseidonNativeSponge,
 		},
 		ecdsa::native::EcdsaKeypair,
@@ -729,7 +717,6 @@ mod test {
 	const DOMAIN: u128 = 42;
 
 	type C = Secp256k1Affine;
-	type WN = Fq;
 	type N = Fr;
 	const NUM_LIMBS: usize = 4;
 	const NUM_BITS: usize = 68;
@@ -740,9 +727,9 @@ mod test {
 	type HN = PoseidonNativeHasher;
 	type SHN = PoseidonNativeSponge;
 
-	#[ignore = "Currently not working"]
 	#[test]
 	fn test_closed_graph_circuit() {
+		// Test Dynamic Sets Circuit
 		let ops: Vec<Vec<N>> = vec![
 			vec![0, 200, 300, 500, 0],
 			vec![100, 0, 100, 100, 700],
@@ -759,7 +746,7 @@ mod test {
 		let pub_keys = keypairs.clone().map(|kp| kp.public_key).to_vec();
 		let domain = N::from_u128(DOMAIN);
 
-		let (attestations, set) = {
+		let (attestations, set, op_hashes) = {
 			let mut attestations = Vec::new();
 			let mut set = Vec::new();
 
@@ -768,13 +755,14 @@ mod test {
 				set.push(addr);
 			}
 
+			let mut op_hashes = Vec::new();
 			for i in 0..NUM_NEIGHBOURS {
 				let mut attestations_i = Vec::new();
 
 				// Attestation to the other peers
 				for j in 0..NUM_NEIGHBOURS {
 					let attestation =
-						Attestation::new(pub_keys[j].to_address(), Fr::ZERO, ops[i][j], Fr::ZERO);
+						Attestation::new(pub_keys[j].to_address(), domain, ops[i][j], Fr::ZERO);
 
 					let att_hash = attestation.hash::<HASHER_WIDTH, PoseidonNativeHasher>();
 					let att_hash: Fq = big_to_fe(fe_to_big(att_hash));
@@ -785,12 +773,31 @@ mod test {
 					attestations_i.push(signed_att);
 				}
 				attestations.push(attestations_i);
-			}
 
-			(attestations, set)
+				let op: Opinion<
+					NUM_NEIGHBOURS,
+					Secp256k1Affine,
+					Fr,
+					4,
+					68,
+					Secp256k1_4_68,
+					Secp256k1Params,
+					HN,
+					SHN,
+				> = Opinion::new(pub_keys[i].clone(), attestations[i].clone(), domain);
+				let (_, _, op_hash) = op.validate(set.clone());
+				op_hashes.push(op_hash);
+			}
+			let mut sponge = SHN::new();
+			sponge.update(&op_hashes);
+			let op_hashes = sponge.squeeze();
+
+			(attestations, set, op_hashes)
 		};
 
-		let res = {
+		// Constructing public inputs for the circuit
+		let mut res = set.clone();
+		res.extend({
 			let mut et = native::EigenTrustSet::<
 				NUM_NEIGHBOURS,
 				NUM_ITERATIONS,
@@ -816,7 +823,9 @@ mod test {
 			}
 
 			et.converge()
-		};
+		});
+		res.push(domain);
+		res.push(op_hashes);
 
 		let et = EigenTrustSet::<
 			NUM_NEIGHBOURS,
@@ -845,6 +854,7 @@ mod test {
 	#[ignore = "Currently not working"]
 	#[test]
 	fn test_closed_graph_circut_prod() {
+		// Test Dynamic Sets Circuit production
 		let ops: Vec<Vec<N>> = vec![
 			vec![0, 200, 300, 500, 0],
 			vec![100, 0, 100, 100, 700],
@@ -861,7 +871,7 @@ mod test {
 		let pub_keys = keypairs.clone().map(|kp| kp.public_key).to_vec();
 		let domain = N::from_u128(DOMAIN);
 
-		let (attestations, set) = {
+		let (attestations, set, op_hashes) = {
 			let mut attestations = Vec::new();
 			let mut set = Vec::new();
 
@@ -870,12 +880,14 @@ mod test {
 				set.push(addr);
 			}
 
+			let mut op_hashes = Vec::new();
 			for i in 0..NUM_NEIGHBOURS {
 				let mut attestations_i = Vec::new();
+
 				// Attestation to the other peers
 				for j in 0..NUM_NEIGHBOURS {
 					let attestation =
-						Attestation::new(pub_keys[j].to_address(), Fr::ZERO, ops[i][j], Fr::ZERO);
+						Attestation::new(pub_keys[j].to_address(), domain, ops[i][j], Fr::ZERO);
 
 					let att_hash = attestation.hash::<HASHER_WIDTH, PoseidonNativeHasher>();
 					let att_hash: Fq = big_to_fe(fe_to_big(att_hash));
@@ -886,12 +898,31 @@ mod test {
 					attestations_i.push(signed_att);
 				}
 				attestations.push(attestations_i);
-			}
 
-			(attestations, set)
+				let op: Opinion<
+					NUM_NEIGHBOURS,
+					Secp256k1Affine,
+					Fr,
+					4,
+					68,
+					Secp256k1_4_68,
+					Secp256k1Params,
+					HN,
+					SHN,
+				> = Opinion::new(pub_keys[i].clone(), attestations[i].clone(), domain);
+				let (_, _, op_hash) = op.validate(set.clone());
+				op_hashes.push(op_hash);
+			}
+			let mut sponge = SHN::new();
+			sponge.update(&op_hashes);
+			let op_hashes = sponge.squeeze();
+
+			(attestations, set, op_hashes)
 		};
 
-		let res = {
+		// Constructing public inputs for the circuit
+		let mut res = set.clone();
+		res.extend({
 			let mut et = native::EigenTrustSet::<
 				NUM_NEIGHBOURS,
 				NUM_ITERATIONS,
@@ -917,7 +948,9 @@ mod test {
 			}
 
 			et.converge()
-		};
+		});
+		res.push(domain);
+		res.push(op_hashes);
 
 		let et = EigenTrustSet::<
 			NUM_NEIGHBOURS,
@@ -932,9 +965,9 @@ mod test {
 			H,
 			HN,
 			SH,
-		>::new(attestations, pub_keys.to_vec());
+		>::new(attestations, pub_keys);
 
-		let k = 14;
+		let k = 20;
 		let rng = &mut rand::thread_rng();
 		let params = generate_params(k);
 		let res = prove_and_verify::<Bn256, _, _>(params, et, &[&res], rng).unwrap();
