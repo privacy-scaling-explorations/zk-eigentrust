@@ -1,7 +1,7 @@
 use crate::{
 	ecc::{
 		same_curve::{AssignedAux, AssignedEcPoint, AuxAssigner, EccAddChipset, EccMulChipset},
-		AuxConfig, EccMulConfig,
+		AuxConfig, EccAddConfig, EccMulConfig,
 	},
 	gadgets::main::{AddChipset, InverseChipset, MainConfig, MulChipset, SubChipset},
 	integer::{native::Integer, AssignedInteger},
@@ -44,6 +44,7 @@ where
 	// Configurations for the needed circuit configs.
 	pub(crate) common: CommonConfig,
 	pub(crate) ecc_mul_scalar: EccMulConfig,
+	pub(crate) ecc_add: EccAddConfig,
 	pub(crate) main: MainConfig,
 	pub(crate) sponge: <S as SpongeHasherChipset<C::ScalarExt, WIDTH>>::Config,
 	// Aux_init and Aux_fin for the ecc_mul operation
@@ -65,8 +66,8 @@ where
 	/// Construct a new LoaderConfig
 	pub fn new(
 		mut layouter: NamespacedLayouter<'a, C::Scalar, L>, common: CommonConfig,
-		ecc_mul_scalar: EccMulConfig, aux_config: AuxConfig, main: MainConfig,
-		sponge: <S as SpongeHasherChipset<C::ScalarExt, WIDTH>>::Config,
+		ecc_mul_scalar: EccMulConfig, ecc_add: EccAddConfig, aux_config: AuxConfig,
+		main: MainConfig, sponge: <S as SpongeHasherChipset<C::ScalarExt, WIDTH>>::Config,
 	) -> Self {
 		let aux_assigner = AuxAssigner::new();
 		let aux = aux_assigner
@@ -78,6 +79,7 @@ where
 			layouter: layouter_rc,
 			common,
 			ecc_mul_scalar,
+			ecc_add,
 			main,
 			sponge,
 			aux,
@@ -102,6 +104,7 @@ where
 			layouter: self.layouter.clone(),
 			common: self.common.clone(),
 			ecc_mul_scalar: self.ecc_mul_scalar.clone(),
+			ecc_add: self.ecc_add.clone(),
 			main: self.main.clone(),
 			sponge: self.sponge.clone(),
 			aux: self.aux.clone(),
@@ -756,7 +759,7 @@ where
 				let add = chip
 					.synthesize(
 						&config.common,
-						&config.ecc_mul_scalar.add,
+						&config.ecc_add,
 						layouter.namespace(|| "ecc_add"),
 					)
 					.unwrap();
@@ -833,6 +836,7 @@ mod test {
 		main: MainConfig,
 		poseidon_sponge: PoseidonSpongeConfig,
 		ecc_mul_scalar: EccMulConfig,
+		ecc_add: EccAddConfig,
 		aux: AuxConfig,
 	}
 
@@ -862,15 +866,20 @@ mod test {
 			let int_div =
 				IntegerDivChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
 
-			let ladder = EccUnreducedLadderConfig::new(int_add, int_sub, int_mul, int_div);
-			let add = EccAddConfig::new(int_red, int_sub, int_mul, int_div);
-			let double = EccDoubleConfig::new(int_red, int_add, int_sub, int_mul, int_div);
-			let table_select = EccTableSelectConfig::new(main.clone());
-			let ecc_mul_scalar =
-				EccMulConfig::new(ladder, add, double.clone(), table_select, bits2num);
-			let aux = AuxConfig::new(double);
+			let ecc_ladder = EccUnreducedLadderConfig::new(int_add, int_sub, int_mul, int_div);
+			let ecc_add = EccAddConfig::new(int_red, int_sub, int_mul, int_div);
+			let ecc_double = EccDoubleConfig::new(int_red, int_add, int_sub, int_mul, int_div);
+			let ecc_table_select = EccTableSelectConfig::new(main.clone());
+			let ecc_mul_scalar = EccMulConfig::new(
+				ecc_ladder,
+				ecc_add.clone(),
+				ecc_double.clone(),
+				ecc_table_select,
+				bits2num,
+			);
+			let aux = AuxConfig::new(ecc_double);
 
-			TestConfig { common, main, ecc_mul_scalar, poseidon_sponge, aux }
+			TestConfig { common, main, ecc_mul_scalar, ecc_add, poseidon_sponge, aux }
 		}
 	}
 
@@ -913,6 +922,7 @@ mod test {
 				layouter.namespace(|| "loader_config"),
 				config.common.clone(),
 				config.ecc_mul_scalar,
+				config.ecc_add,
 				config.aux,
 				config.main,
 				config.poseidon_sponge,
@@ -991,6 +1001,7 @@ mod test {
 				layouter.namespace(|| "loader_config"),
 				config.common.clone(),
 				config.ecc_mul_scalar,
+				config.ecc_add,
 				config.aux,
 				config.main,
 				config.poseidon_sponge,
@@ -1071,6 +1082,7 @@ mod test {
 				layouter.namespace(|| "loader_config"),
 				config.common.clone(),
 				config.ecc_mul_scalar,
+				config.ecc_add,
 				config.aux,
 				config.main,
 				config.poseidon_sponge,
@@ -1153,6 +1165,7 @@ mod test {
 				layouter.namespace(|| "loader_config"),
 				config.common.clone(),
 				config.ecc_mul_scalar,
+				config.ecc_add,
 				config.aux,
 				config.main,
 				config.poseidon_sponge,
@@ -1233,6 +1246,7 @@ mod test {
 				layouter.namespace(|| "loader_config"),
 				config.common.clone(),
 				config.ecc_mul_scalar,
+				config.ecc_add,
 				config.aux,
 				config.main,
 				config.poseidon_sponge,
@@ -1315,6 +1329,7 @@ mod test {
 				layouter.namespace(|| "loader_config"),
 				config.common.clone(),
 				config.ecc_mul_scalar,
+				config.ecc_add,
 				config.aux,
 				config.main,
 				config.poseidon_sponge,
@@ -1395,6 +1410,7 @@ mod test {
 				layouter.namespace(|| "loader_config"),
 				config.common.clone(),
 				config.ecc_mul_scalar,
+				config.ecc_add,
 				config.aux,
 				config.main,
 				config.poseidon_sponge,
@@ -1475,6 +1491,7 @@ mod test {
 				layouter.namespace(|| "loader_config"),
 				config.common.clone(),
 				config.ecc_mul_scalar,
+				config.ecc_add,
 				config.aux,
 				config.main,
 				config.poseidon_sponge,
@@ -1538,6 +1555,7 @@ mod test {
 				layouter.namespace(|| "loader_config"),
 				config.common.clone(),
 				config.ecc_mul_scalar,
+				config.ecc_add,
 				config.aux,
 				config.main,
 				config.poseidon_sponge,
@@ -1609,6 +1627,7 @@ mod test {
 				layouter.namespace(|| "loader_config"),
 				config.common.clone(),
 				config.ecc_mul_scalar,
+				config.ecc_add,
 				config.aux,
 				config.main,
 				config.poseidon_sponge,
@@ -1671,6 +1690,7 @@ mod test {
 				layouter.namespace(|| "loader_config"),
 				config.common.clone(),
 				config.ecc_mul_scalar,
+				config.ecc_add,
 				config.aux,
 				config.main,
 				config.poseidon_sponge,
@@ -1791,6 +1811,7 @@ mod test {
 				layouter.namespace(|| "loader_config"),
 				config.common.clone(),
 				config.ecc_mul_scalar,
+				config.ecc_add,
 				config.aux,
 				config.main,
 				config.poseidon_sponge,
@@ -1896,6 +1917,7 @@ mod test {
 					layouter.namespace(|| "loader"),
 					config.common.clone(),
 					config.ecc_mul_scalar,
+					config.ecc_add,
 					config.aux,
 					config.main,
 					config.poseidon_sponge,

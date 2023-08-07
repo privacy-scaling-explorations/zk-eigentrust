@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use halo2::halo2curves::CurveAffine;
 
 use crate::{
-	circuits::dynamic_sets::native::{Attestation, SignedAttestation},
+	circuits::dynamic_sets::native::SignedAttestation,
 	circuits::HASHER_WIDTH,
 	ecdsa::native::{EcdsaVerifier, PublicKey},
 	integer::native::Integer,
@@ -66,49 +66,38 @@ where
 		let pos_from = set.iter().position(|&x| x == from_pk);
 		assert!(pos_from.is_some());
 
-		let mut scores = vec![N::ZERO; set.len()];
+		let mut scores = Vec::new();
 		let mut hashes = Vec::new();
-
-		let default_att = SignedAttestation::<C, N, NUM_LIMBS, NUM_BITS, P>::default();
-		let default_hasher = H::new([
-			default_att.attestation.about,
-			default_att.attestation.domain,
-			default_att.attestation.value,
-			default_att.attestation.message,
-			N::ZERO,
-		]);
-		let default_hash = default_hasher.finalize()[0];
 		for i in 0..NUM_NEIGHBOURS {
 			let att = self.attestations[i].clone();
+			assert!(att.attestation.about == set[i]);
+			assert!(att.attestation.domain == self.domain);
 
-			let is_default_pubkey = set[i] == N::ZERO;
-			let is_default_sig = att.attestation == Attestation::default();
+			let att_hasher = H::new([
+				att.attestation.about,
+				att.attestation.domain,
+				att.attestation.value,
+				att.attestation.message,
+				N::ZERO,
+			]);
+			let att_hash = att_hasher.finalize()[0];
 
-			if is_default_pubkey || is_default_sig {
-				scores[i] = N::ZERO;
-				hashes.push(default_hash);
+			let sig = self.attestations[i].signature.clone();
+			let msg_hash = Integer::from_n(att_hash);
+			let ecdsa_verifier = EcdsaVerifier::new(sig, msg_hash, self.from.clone());
+			let is_valid = ecdsa_verifier.verify();
+
+			let is_default_addr = set[i] == N::ZERO;
+			let is_default_pk = self.from == PublicKey::default();
+			let invalid_condition = !is_valid || is_default_addr || is_default_pk;
+			let (final_score, final_hash) = if invalid_condition {
+				(N::ZERO, N::ZERO)
 			} else {
-				assert!(att.attestation.about == set[i]);
-				assert!(att.attestation.domain == self.domain);
+				(att.attestation.value, att_hash)
+			};
 
-				let att_hasher = H::new([
-					att.attestation.about,
-					att.attestation.domain,
-					att.attestation.value,
-					att.attestation.message,
-					N::ZERO,
-				]);
-				let att_hash = att_hasher.finalize()[0];
-
-				let sig = self.attestations[i].signature.clone();
-				let msg_hash = Integer::from_n(att_hash);
-				let ecdsa_verifier = EcdsaVerifier::new(sig, msg_hash, self.from.clone());
-				assert!(ecdsa_verifier.verify());
-
-				scores[i] = att.attestation.value;
-
-				hashes.push(att_hash);
-			}
+			scores.push(final_score);
+			hashes.push(final_hash);
 		}
 
 		let mut sponge_hasher = SH::new();

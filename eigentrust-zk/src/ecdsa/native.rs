@@ -380,12 +380,11 @@ where
 		let r_point = v_1.add(&v_2);
 
 		let x_candidate = r_point.x;
-		for i in 0..NUM_LIMBS {
-			if x_candidate.limbs[i] != r.limbs[i] {
-				return false;
-			}
-		}
-		true
+		let x_int =
+			Integer::<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>::from_limbs(x_candidate.limbs);
+		let x_reduced = x_int.reduce().result;
+
+		x_reduced.limbs == r.limbs
 	}
 }
 

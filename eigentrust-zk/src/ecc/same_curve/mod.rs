@@ -16,7 +16,7 @@ use crate::{
 	utils::{assigned_as_bool, be_assigned_bits_to_usize},
 	Chip, Chipset, CommonConfig, FieldExt, UnassignedValue,
 };
-use halo2::halo2curves::ff::PrimeField;
+use halo2::{arithmetic::Field, halo2curves::ff::PrimeField};
 use halo2::{
 	circuit::{AssignedCell, Layouter},
 	halo2curves::CurveAffine,

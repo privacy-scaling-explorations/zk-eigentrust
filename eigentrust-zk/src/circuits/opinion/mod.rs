@@ -5,8 +5,8 @@ use crate::{
 	circuits::dynamic_sets::native::Attestation,
 	circuits::HASHER_WIDTH,
 	ecdsa::{
-		AssignedEcdsa, AssignedSignature, EcdsaChipset, EcdsaConfig, SignatureAssigner,
-		UnassignedSignature,
+		AssignedEcdsa, AssignedPublicKey, AssignedSignature, EcdsaChipset, EcdsaConfig,
+		SignatureAssigner, UnassignedSignature,
 	},
 	gadgets::{
 		main::{IsEqualChipset, IsZeroChipset, MainConfig, MulAddChipset, SelectChipset},
@@ -333,6 +333,8 @@ pub struct OpinionChipset<
 	set: Vec<AssignedCell<N, N>>,
 	/// Attestations to verify,
 	attestations: Vec<AssignedSignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>>,
+	/// Public key of the attester
+	public_key: AssignedPublicKey<C, N, NUM_LIMBS, NUM_BITS, P>,
 	/// Assigned ecdsa signature data
 	sig_data: Vec<AssignedEcdsa<C, N, NUM_LIMBS, NUM_BITS, P, EC>>,
 	/// Left shifters for composing integers
@@ -364,10 +366,19 @@ where
 	pub fn new(
 		domain: AssignedCell<N, N>, set: Vec<AssignedCell<N, N>>,
 		attestations: Vec<AssignedSignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>>,
+		public_key: AssignedPublicKey<C, N, NUM_LIMBS, NUM_BITS, P>,
 		sig_data: Vec<AssignedEcdsa<C, N, NUM_LIMBS, NUM_BITS, P, EC>>,
 		left_shifters: [AssignedCell<N, N>; NUM_LIMBS],
 	) -> Self {
-		Self { domain, set, attestations, sig_data, left_shifters, _hasher: PhantomData }
+		Self {
+			domain,
+			set,
+			attestations,
+			public_key,
+			sig_data,
+			left_shifters,
+			_hasher: PhantomData,
+		}
 	}
 }
 
@@ -410,18 +421,76 @@ where
 			},
 		)?;
 
-		let mut scores = vec![zero.clone(); self.set.len()];
+		let mut scores = Vec::new();
 		let mut hashes = Vec::new();
-
-		// Hashing default values for default attestation
-		let hash = H::new([(); HASHER_WIDTH].map(|_| zero.clone()));
-		let default_hash = hash.finalize(
-			common,
-			&config.hasher,
-			layouter.namespace(|| "default_hash"),
-		)?;
-
 		for i in 0..NUM_NEIGHBOURS {
+			let att = self.attestations[i].clone();
+
+			// Checks equality of the attestation about and set index
+			let is_equal_chip =
+				IsEqualChipset::new(att.attestation.about.clone(), self.set[i].clone());
+			let equality_check_set_about = is_equal_chip.synthesize(
+				common,
+				&config.main,
+				layouter.namespace(|| "is_equal_chipset_set"),
+			)?;
+
+			// Checks equality of the attestation about and set index
+			let is_equal_chip =
+				IsEqualChipset::new(att.attestation.domain.clone(), self.domain.clone());
+			let equality_check_domain = is_equal_chip.synthesize(
+				common,
+				&config.main,
+				layouter.namespace(|| "is_att_domain_equal_domain"),
+			)?;
+
+			let hash = H::new([
+				att.attestation.about.clone(),
+				att.attestation.domain.clone(),
+				att.attestation.value.clone(),
+				att.attestation.message.clone(),
+				zero.clone(),
+			]);
+			let att_hash =
+				hash.finalize(common, &config.hasher, layouter.namespace(|| "att_hash"))?;
+
+			let mut compose_msg = zero.clone();
+			for j in 0..NUM_LIMBS {
+				let mul_add_chipset = MulAddChipset::new(
+					self.sig_data[i].msg_hash.limbs[j].clone(),
+					self.left_shifters[j].clone(),
+					compose_msg,
+				);
+				compose_msg = mul_add_chipset.synthesize(
+					common,
+					&config.main,
+					layouter.namespace(|| "mul_add"),
+				)?;
+			}
+
+			// Constraint equality for the msg_hash from hasher and constructor
+			// Constraint equality for the set and att.about
+			// Constraint equality for the domain and att.domain
+			layouter.assign_region(
+				|| "constraint equality",
+				|region: Region<'_, N>| {
+					let mut ctx = RegionCtx::new(region, 0);
+					ctx.constrain_equal(att_hash[0].clone(), compose_msg.clone())?;
+					ctx.constrain_equal(equality_check_set_about.clone(), one.clone())?;
+					ctx.constrain_equal(equality_check_domain.clone(), one.clone())?;
+
+					Ok(())
+				},
+			)?;
+
+			let chip = EcdsaChipset::new(
+				self.attestations[i].signature.clone(),
+				self.public_key.clone(),
+				self.sig_data[i].clone(),
+			);
+			let is_valid =
+				chip.synthesize(common, &config.ecdsa, layouter.namespace(|| "ecdsa_verify"))?;
+
 			// Checking pubkey and attestation values if they are default or not (default is zero)
 			let is_zero_chip = IsZeroChipset::new(self.set[i].clone());
 			let is_default_pubkey = is_zero_chip.synthesize(
@@ -430,7 +499,6 @@ where
 				layouter.namespace(|| "is_default_pubkey"),
 			)?;
 
-			let att = self.attestations[i].clone();
 			let is_zero_chip = IsZeroChipset::new(att.attestation.about.clone());
 			let att_about = is_zero_chip.synthesize(
 				common,
@@ -456,84 +524,16 @@ where
 				layouter.namespace(|| "set_check_zero"),
 			)?;
 
-			// Checks equality of the attestation about and set index
-			let is_equal_chip =
-				IsEqualChipset::new(att.attestation.about.clone(), self.set[i].clone());
-			let equality_check_set_about = is_equal_chip.synthesize(
-				common,
-				&config.main,
-				layouter.namespace(|| "is_equal_chipset_set"),
-			)?;
-
-			// Checks equality of the attestation about and set index
-			let is_equal_chip =
-				IsEqualChipset::new(att.attestation.domain.clone(), self.domain.clone());
-			let equality_check_domain = is_equal_chip.synthesize(
-				common,
-				&config.main,
-				layouter.namespace(|| "is_att_domain_equal_domain"),
-			)?;
-
-			let hash = H::new([
-				att.attestation.about,
-				att.attestation.domain,
-				att.attestation.value.clone(),
-				att.attestation.message.clone(),
-				zero.clone(),
-			]);
-			let att_hash =
-				hash.finalize(common, &config.hasher, layouter.namespace(|| "att_hash"))?;
-
-			let mut compose_msg = zero.clone();
-			for j in 0..NUM_LIMBS {
-				let muladd_chipset = MulAddChipset::new(
-					self.sig_data[i].msg_hash.limbs[j].clone(),
-					self.left_shifters[j].clone(),
-					compose_msg,
-				);
-				compose_msg = muladd_chipset.synthesize(
-					common,
-					&config.main,
-					layouter.namespace(|| "mul_add"),
-				)?;
-			}
-
-			// Constraint equality for the msg_hash from hasher and constructor
-			// Constraint equality for the set and att.about
-			// Constraint equality for the domain and att.domain
-			layouter.assign_region(
-				|| "constraint equality",
-				|region: Region<'_, N>| {
-					let mut ctx = RegionCtx::new(region, 0);
-					ctx.constrain_equal(att_hash[0].clone(), compose_msg.clone())?;
-					ctx.constrain_equal(equality_check_set_about.clone(), one.clone())?;
-					ctx.constrain_equal(equality_check_domain.clone(), one.clone())?;
-
-					Ok(())
-				},
-			)?;
-
-			let chip = EcdsaChipset::new(
-				self.attestations[i].signature.clone(),
-				self.sig_data[i].clone(),
-			);
-			chip.synthesize(common, &config.ecdsa, layouter.namespace(|| "ecdsa_verify"))?;
-
-			scores[i] = att.attestation.value;
-
 			// Select chip for if case
-			let select_chip = SelectChipset::new(
-				is_default_values_zero,
-				att_hash[0].clone(),
-				default_hash[0].clone(),
-			);
-			let selected_value = select_chip.synthesize(
+			let hash_select =
+				SelectChipset::new(is_default_values_zero, att_hash[0].clone(), zero.clone());
+			let final_hash = hash_select.synthesize(
 				common,
 				&config.main,
 				layouter.namespace(|| "select chipset"),
 			)?;
 
-			hashes.push(selected_value);
+			hashes.push(final_hash);
 		}
 
 		let mut sponge = SH::init(common, layouter.namespace(|| "sponge"))?;
@@ -558,13 +558,13 @@ mod test {
 		EccUnreducedLadderConfig,
 	};
 	use crate::ecdsa::native::{EcdsaKeypair, PublicKey};
-	use crate::ecdsa::UnassignedPublicKey;
 	use crate::ecdsa::{EcdsaAssigner, EcdsaAssignerConfig, EcdsaConfig};
+	use crate::ecdsa::{PublicKeyAssigner, UnassignedPublicKey};
 	use crate::gadgets::absorb::AbsorbChip;
 	use crate::gadgets::set::{SetChip, SetConfig};
 	use crate::integer::{
-		IntegerAddChip, IntegerDivChip, IntegerMulChip, IntegerReduceChip, IntegerSubChip,
-		LeftShiftersAssigner, UnassignedInteger,
+		IntegerAddChip, IntegerDivChip, IntegerEqualConfig, IntegerMulChip, IntegerReduceChip,
+		IntegerSubChip, LeftShiftersAssigner, UnassignedInteger,
 	};
 	use crate::params::ecc::secp256k1::Secp256k1Params;
 	use crate::params::hasher::poseidon_bn254_5x5::Params;
@@ -603,7 +603,7 @@ mod test {
 	const DOMAIN: u128 = 42;
 	const NUM_NEIGHBOURS: usize = 4;
 	type WB = Fp;
-	type WS = Fq;
+	type SecpScalar = Fq;
 	type N = Fr;
 	type C = Secp256k1Affine;
 	const NUM_LIMBS: usize = 4;
@@ -641,11 +641,12 @@ mod test {
 			let integer_div_selector =
 				IntegerDivChip::<WB, N, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
 			let integer_mul_selector_secp_scalar =
-				IntegerMulChip::<WS, N, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
+				IntegerMulChip::<SecpScalar, N, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
 			let ecc_add = EccAddConfig::new(
 				integer_reduce_selector, integer_sub_selector, integer_mul_selector,
 				integer_div_selector,
 			);
+			let integer_equal = IntegerEqualConfig::new(main.clone(), set.clone());
 
 			let ecc_double = EccDoubleConfig::new(
 				integer_reduce_selector, integer_add_selector, integer_sub_selector,
@@ -653,7 +654,7 @@ mod test {
 			);
 
 			let ecc_ladder = EccUnreducedLadderConfig::new(
-				integer_add_selector, integer_sub_selector, integer_mul_selector,
+				integer_add_selector, integer_sub_selector, integer_mul_selector_secp_scalar,
 				integer_div_selector,
 			);
 
@@ -667,10 +668,13 @@ mod test {
 				bits2num_selector.clone(),
 			);
 
-			let ecdsa = EcdsaConfig::new(ecc_mul_scalar, integer_mul_selector_secp_scalar);
+			let ecdsa = EcdsaConfig::new(
+				ecc_mul_scalar, ecc_add, integer_equal, integer_reduce_selector,
+				integer_mul_selector,
+			);
 
 			let aux = AuxConfig::new(ecc_double);
-			let ecdsa_assigner = EcdsaAssignerConfig::new(aux, integer_mul_selector_secp_scalar);
+			let ecdsa_assigner = EcdsaAssignerConfig::new(aux);
 
 			let fr_selector = FullRoundChip::<_, HASHER_WIDTH, Params>::configure(&common, meta);
 			let pr_selector = PartialRoundChip::<_, HASHER_WIDTH, Params>::configure(&common, meta);
@@ -690,8 +694,8 @@ mod test {
 		set: Vec<Value<N>>,
 		public_key: UnassignedPublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
 		g_as_ecpoint: UnassignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
-		msg_hash: Vec<UnassignedInteger<WS, N, NUM_LIMBS, NUM_BITS, P>>,
-		s_inv: Vec<UnassignedInteger<WS, N, NUM_LIMBS, NUM_BITS, P>>,
+		msg_hash: Vec<UnassignedInteger<SecpScalar, N, NUM_LIMBS, NUM_BITS, P>>,
+		s_inv: Vec<UnassignedInteger<SecpScalar, N, NUM_LIMBS, NUM_BITS, P>>,
 	}
 
 	impl TestOpinionCircuit {
@@ -699,8 +703,8 @@ mod test {
 			attestations: Vec<SignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>>, domain: N,
 			set: Vec<N>, public_key: PublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
 			g_as_ecpoint: EcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
-			msg_hash: Vec<Integer<WS, N, NUM_LIMBS, NUM_BITS, P>>,
-			s_inv: Vec<Integer<WS, N, NUM_LIMBS, NUM_BITS, P>>,
+			msg_hash: Vec<Integer<SecpScalar, N, NUM_LIMBS, NUM_BITS, P>>,
+			s_inv: Vec<Integer<SecpScalar, N, NUM_LIMBS, NUM_BITS, P>>,
 		) -> Self {
 			Self {
 				attestations: attestations
@@ -755,7 +759,6 @@ mod test {
 			let mut sig_datas = Vec::new();
 			for i in 0..self.attestations.len() {
 				let ecdsa_assigner = EcdsaAssigner::new(
-					self.public_key.clone(),
 					self.g_as_ecpoint.clone(),
 					self.msg_hash[i].clone(),
 					self.s_inv[i].clone(),
@@ -798,15 +801,24 @@ mod test {
 			}
 
 			let left_shifters_assigner =
-				LeftShiftersAssigner::<WS, N, NUM_LIMBS, NUM_BITS, P>::default();
+				LeftShiftersAssigner::<SecpScalar, N, NUM_LIMBS, NUM_BITS, P>::default();
 			let left_shifters = left_shifters_assigner.synthesize(
 				&config.common,
 				&(),
 				layouter.namespace(|| "left_shifters"),
 			)?;
 
+			let public_key_assigner = PublicKeyAssigner::new(self.public_key.clone());
+			let public_key = public_key_assigner.synthesize(
+				&config.common,
+				&(),
+				layouter.namespace(|| "public_key assigner"),
+			)?;
+
 			let opinion: OpinionChipset<NUM_NEIGHBOURS, C, N, NUM_LIMBS, NUM_BITS, P, EC, HC, SHC> =
-				OpinionChipset::new(domain, set, attestations, sig_datas, left_shifters);
+				OpinionChipset::new(
+					domain, set, attestations, public_key, sig_datas, left_shifters,
+				);
 			let (scores, op_hash) = opinion.synthesize(
 				&config.common,
 				&config.opinion,
@@ -851,9 +863,9 @@ mod test {
 			let attestation = Attestation::new(about, domain, value, message);
 
 			let att_hash_n = attestation.hash::<HASHER_WIDTH, PoseidonNativeHasher>();
-			let att_hash: WS = big_to_fe(fe_to_big(att_hash_n));
+			let att_hash: SecpScalar = big_to_fe(fe_to_big(att_hash_n));
 			let signature = attester.sign(att_hash.clone(), rng);
-			let s_inv_fq = big_to_fe::<WS>(signature.s.value()).invert().unwrap();
+			let s_inv_fq = big_to_fe::<SecpScalar>(signature.s.value()).invert().unwrap();
 
 			let msg_hash_int = Integer::from_w(att_hash);
 			let s_inv_int = Integer::from_w(s_inv_fq);
@@ -915,9 +927,9 @@ mod test {
 			let attestation = Attestation::new(about, domain, value, message);
 
 			let att_hash_n = attestation.hash::<HASHER_WIDTH, PoseidonNativeHasher>();
-			let att_hash: WS = big_to_fe(fe_to_big(att_hash_n));
+			let att_hash: SecpScalar = big_to_fe(fe_to_big(att_hash_n));
 			let signature = attester.sign(att_hash.clone(), rng);
-			let s_inv_fq = big_to_fe::<WS>(signature.s.value()).invert().unwrap();
+			let s_inv_fq = big_to_fe::<SecpScalar>(signature.s.value()).invert().unwrap();
 
 			let msg_hash_int = Integer::from_w(att_hash);
 			let s_inv_int = Integer::from_w(s_inv_fq);

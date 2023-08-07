@@ -103,7 +103,7 @@ impl EccTableSelectConfig {
 pub struct EccMulConfig {
 	/// Constructs configs and selector from different circuits.
 	ladder: EccUnreducedLadderConfig,
-	pub(crate) add: EccAddConfig,
+	add: EccAddConfig,
 	double: EccDoubleConfig,
 	table_select: EccTableSelectConfig,
 	bits2num: Selector,

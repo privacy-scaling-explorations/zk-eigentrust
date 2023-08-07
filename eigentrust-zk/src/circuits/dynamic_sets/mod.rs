@@ -12,13 +12,15 @@ use crate::ecc::{
 	EccUnreducedLadderConfig,
 };
 use crate::ecdsa::native::PublicKey;
-use crate::ecdsa::{EcdsaAssigner, EcdsaAssignerConfig, EcdsaConfig, UnassignedPublicKey};
+use crate::ecdsa::{
+	EcdsaAssigner, EcdsaAssignerConfig, EcdsaConfig, PublicKeyAssigner, UnassignedPublicKey,
+};
 use crate::gadgets::main::MulAddChipset;
 use crate::gadgets::set::{SetChip, SetConfig};
 use crate::integer::native::Integer;
 use crate::integer::{
-	IntegerAddChip, IntegerDivChip, IntegerMulChip, IntegerReduceChip, IntegerSubChip,
-	LeftShiftersAssigner, UnassignedInteger,
+	IntegerAddChip, IntegerDivChip, IntegerEqualConfig, IntegerMulChip, IntegerReduceChip,
+	IntegerSubChip, LeftShiftersAssigner, UnassignedInteger,
 };
 use crate::params::ecc::EccParams;
 use crate::params::rns::RnsParams;
@@ -258,35 +260,37 @@ impl<
 			IntegerMulChip::<C::Base, N, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
 		let integer_div_selector =
 			IntegerDivChip::<C::Base, N, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
-		let integer_mul_selector_secp_scalar =
+		let integer_mul_selector_scalar =
 			IntegerMulChip::<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
+		let integer_equal = IntegerEqualConfig::new(main.clone(), set.clone());
+
 		let ecc_add = EccAddConfig::new(
 			integer_reduce_selector, integer_sub_selector, integer_mul_selector,
 			integer_div_selector,
 		);
-
 		let ecc_double = EccDoubleConfig::new(
 			integer_reduce_selector, integer_add_selector, integer_sub_selector,
 			integer_mul_selector, integer_div_selector,
 		);
-
 		let ecc_ladder = EccUnreducedLadderConfig::new(
-			integer_add_selector, integer_sub_selector, integer_mul_selector, integer_div_selector,
+			integer_add_selector, integer_sub_selector, integer_mul_selector_scalar,
+			integer_div_selector,
 		);
-
 		let ecc_table_select = EccTableSelectConfig::new(main.clone());
-
 		let ecc_mul_scalar = EccMulConfig::new(
 			ecc_ladder,
-			ecc_add,
+			ecc_add.clone(),
 			ecc_double.clone(),
 			ecc_table_select,
 			bits2num_selector,
 		);
 
-		let ecdsa = EcdsaConfig::new(ecc_mul_scalar, integer_mul_selector_secp_scalar);
+		let ecdsa = EcdsaConfig::new(
+			ecc_mul_scalar, ecc_add, integer_equal, integer_reduce_selector,
+			integer_mul_selector_scalar,
+		);
 		let aux = AuxConfig::new(ecc_double);
-		let ecdsa_assigner = EcdsaAssignerConfig::new(aux, integer_mul_selector_secp_scalar);
+		let ecdsa_assigner = EcdsaAssignerConfig::new(aux);
 		let hasher = H::configure(&common, meta);
 		let sponge = SH::configure(&common, meta);
 		let opinion = OpinionConfig::new(ecdsa, main.clone(), set, hasher.clone(), sponge.clone());
@@ -372,21 +376,6 @@ impl<
 				},
 			)?;
 
-		let mut assigned_attestations = Vec::new();
-		for atts in &self.attestations {
-			let mut att_vec = Vec::new();
-			for att in atts {
-				let att_assigner = SignedAttestationAssigner::new(att.clone());
-				let assigned_att = att_assigner.synthesize(
-					&config.common,
-					&(),
-					layouter.namespace(|| "att_assigner"),
-				)?;
-				att_vec.push(assigned_att);
-			}
-			assigned_attestations.push(att_vec);
-		}
-
 		let lshift: LeftShiftersAssigner<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P> =
 			LeftShiftersAssigner::default();
 		let left_shifters = lshift.synthesize(
@@ -395,15 +384,14 @@ impl<
 			layouter.namespace(|| "lshift assigner"),
 		)?;
 
-		// TODO: Prevent self-attestations
 		let mut ops = Vec::new();
 		let mut op_hashes = Vec::new();
 		// signature verification
 		for i in 0..NUM_NEIGHBOURS {
 			let mut assigned_sig_data = Vec::new();
+			let mut att_vec = Vec::new();
 			for j in 0..NUM_NEIGHBOURS {
 				let ecdsa_assigner = EcdsaAssigner::new(
-					self.pks[i].clone(),
 					self.g_as_ecpoint.clone(),
 					self.msg_hashes[i][j].clone(),
 					self.s_inv[i][j].clone(),
@@ -414,13 +402,29 @@ impl<
 					layouter.namespace(|| "ecdsa assigner"),
 				)?;
 				assigned_sig_data.push(assigned_ecdsa);
+
+				let att_assigner = SignedAttestationAssigner::new(self.attestations[i][j].clone());
+				let assigned_att = att_assigner.synthesize(
+					&config.common,
+					&(),
+					layouter.namespace(|| "att_assigner"),
+				)?;
+				att_vec.push(assigned_att);
 			}
+
+			let public_key_assigner = PublicKeyAssigner::new(self.pks[i].clone());
+			let public_key = public_key_assigner.synthesize(
+				&config.common,
+				&(),
+				layouter.namespace(|| "public_key assigner"),
+			)?;
 
 			let opinion =
 				OpinionChipset::<NUM_NEIGHBOURS, C, N, NUM_LIMBS, NUM_BITS, P, EC, H, SH>::new(
 					domain.clone(),
 					set.clone(),
-					assigned_attestations[i].clone(),
+					att_vec,
+					public_key,
 					assigned_sig_data,
 					left_shifters.clone(),
 				);

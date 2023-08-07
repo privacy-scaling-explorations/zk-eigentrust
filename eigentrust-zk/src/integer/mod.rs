@@ -3,7 +3,12 @@ pub mod native;
 /// RNS operations for the non-native field arithmetic
 use self::native::Integer;
 use crate::{
-	params::rns::RnsParams, Chip, Chipset, CommonConfig, FieldExt, RegionCtx, UnassignedValue,
+	gadgets::{
+		main::{IsEqualChipset, MainConfig, SubChipset},
+		set::{SetChipset, SetConfig},
+	},
+	params::rns::RnsParams,
+	Chip, Chipset, CommonConfig, FieldExt, RegionCtx, UnassignedValue,
 };
 use halo2::{
 	circuit::{AssignedCell, Layouter, Region, Value},
@@ -722,6 +727,89 @@ where
 				)
 			},
 		)
+	}
+}
+
+/// Selectors for child chips/chipsets
+#[derive(Debug, Clone)]
+pub struct IntegerEqualConfig {
+	main: MainConfig,
+	set: SetConfig,
+}
+
+impl IntegerEqualConfig {
+	/// Construct a new config given the selector of child chips
+	pub fn new(main: MainConfig, set: SetConfig) -> Self {
+		Self { main, set }
+	}
+}
+
+/// Chipset structure for the EC equality.
+pub struct IntegerEqualChipset<
+	W: FieldExt,
+	N: FieldExt,
+	const NUM_LIMBS: usize,
+	const NUM_BITS: usize,
+	P,
+> where
+	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
+{
+	x: AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
+	y: AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
+}
+
+impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
+	IntegerEqualChipset<W, N, NUM_LIMBS, NUM_BITS, P>
+where
+	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
+{
+	/// Creates a new ecc double chipset.
+	pub fn new(
+		x: AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
+		y: AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
+	) -> Self {
+		Self { x, y }
+	}
+}
+
+impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P> Chipset<N>
+	for IntegerEqualChipset<W, N, NUM_LIMBS, NUM_BITS, P>
+where
+	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
+{
+	type Config = IntegerEqualConfig;
+	type Output = AssignedCell<N, N>;
+
+	/// Synthesize the circuit.
+	fn synthesize(
+		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<N>,
+	) -> Result<Self::Output, Error> {
+		let (zero, one) = layouter.assign_region(
+			|| "assigner",
+			|region: Region<'_, N>| {
+				let mut ctx = RegionCtx::new(region, 0);
+				let zero = ctx.assign_fixed(common.fixed[0], N::ZERO)?;
+				let one = ctx.assign_fixed(common.fixed[1], N::ONE)?;
+
+				Ok((zero, one))
+			},
+		)?;
+
+		let mut is_eq_vec = Vec::new();
+		for i in 0..NUM_LIMBS {
+			let eq_x_i = IsEqualChipset::new(self.x.limbs[i].clone(), self.y.limbs[i].clone());
+			let res =
+				eq_x_i.synthesize(&common, &config.main, layouter.namespace(|| "is_equal_x_i"))?;
+			is_eq_vec.push(res);
+		}
+
+		let set = SetChipset::new(is_eq_vec, zero);
+		let res = set.synthesize(&common, &config.set, layouter.namespace(|| "is_in_set"))?;
+
+		let sub = SubChipset::new(one, res);
+		let is_equal = sub.synthesize(&common, &config.main, layouter.namespace(|| "is_equal"))?;
+
+		Ok(is_equal)
 	}
 }
 
