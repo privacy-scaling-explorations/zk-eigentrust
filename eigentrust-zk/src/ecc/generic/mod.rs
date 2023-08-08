@@ -660,12 +660,12 @@ where
 		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<N>,
 	) -> Result<Self::Output, Error> {
 		let x_eq = IntegerEqualChipset::new(self.p.x, self.q.x);
-		let is_x_eq = x_eq.synthesize(&common, &config.int_eq, layouter.namespace(|| "x_eq"))?;
+		let is_x_eq = x_eq.synthesize(common, &config.int_eq, layouter.namespace(|| "x_eq"))?;
 		let y_eq = IntegerEqualChipset::new(self.p.y, self.q.y);
-		let is_y_eq = y_eq.synthesize(&common, &config.int_eq, layouter.namespace(|| "y_eq"))?;
+		let is_y_eq = y_eq.synthesize(common, &config.int_eq, layouter.namespace(|| "y_eq"))?;
 		let point_eq = IsEqualChipset::new(is_x_eq, is_y_eq);
 		let is_point_eq =
-			point_eq.synthesize(&common, &config.main, layouter.namespace(|| "point_eq"))?;
+			point_eq.synthesize(common, &config.main, layouter.namespace(|| "point_eq"))?;
 
 		Ok(is_point_eq)
 	}
@@ -723,11 +723,11 @@ where
 			UnassignedEcPoint::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::from(EcPoint::default());
 		let point_assigner = PointAssigner::new(unassigned_point);
 		let point =
-			point_assigner.synthesize(&common, &(), layouter.namespace(|| "default_assigner"))?;
+			point_assigner.synthesize(common, &(), layouter.namespace(|| "default_assigner"))?;
 
 		let is_equal_point = EccEqualChipset::new(self.p, point);
 		let is_eq =
-			is_equal_point.synthesize(&common, &config, layouter.namespace(|| "is_eq_point"))?;
+			is_equal_point.synthesize(common, config, layouter.namespace(|| "is_eq_point"))?;
 
 		Ok(is_eq)
 	}

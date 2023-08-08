@@ -795,15 +795,15 @@ where
 		for i in 0..NUM_LIMBS {
 			let eq_x_i = IsEqualChipset::new(self.x.limbs[i].clone(), self.y.limbs[i].clone());
 			let res =
-				eq_x_i.synthesize(&common, &config.main, layouter.namespace(|| "is_equal_x_i"))?;
+				eq_x_i.synthesize(common, &config.main, layouter.namespace(|| "is_equal_x_i"))?;
 			is_eq_vec.push(res);
 		}
 
 		let set = SetChipset::new(is_eq_vec, zero);
-		let res = set.synthesize(&common, &config.set, layouter.namespace(|| "is_in_set"))?;
+		let res = set.synthesize(common, &config.set, layouter.namespace(|| "is_in_set"))?;
 
 		let sub = SubChipset::new(one, res);
-		let is_equal = sub.synthesize(&common, &config.main, layouter.namespace(|| "is_equal"))?;
+		let is_equal = sub.synthesize(common, &config.main, layouter.namespace(|| "is_equal"))?;
 
 		Ok(is_equal)
 	}

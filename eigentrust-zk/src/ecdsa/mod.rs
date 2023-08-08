@@ -446,14 +446,14 @@ where
 		let new_x = AssignedInteger::new(new_x_int, x_candidate.limbs);
 		let reducer = IntegerReduceChip::new(new_x);
 		let reduced_x = reducer.synthesize(
-			&common,
+			common,
 			&config.int_reduce,
 			layouter.namespace(|| "reduce base in scalar"),
 		)?;
 
 		let ecc_eq_chipset = IntegerEqualChipset::new(reduced_x, r);
 		let is_eq = ecc_eq_chipset.synthesize(
-			&common,
+			common,
 			&config.int_eq,
 			layouter.namespace(|| "r_point.x == r"),
 		)?;

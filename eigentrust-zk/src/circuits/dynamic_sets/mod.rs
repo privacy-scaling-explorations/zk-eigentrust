@@ -132,7 +132,7 @@ where
 		let attestations_converted = attestations
 			.clone()
 			.into_iter()
-			.map(|att| att.into_iter().map(|x| UnassignedSignedAttestation::from(x)).collect_vec())
+			.map(|att| att.into_iter().map(UnassignedSignedAttestation::from).collect_vec())
 			.collect_vec();
 		// Pubkey values
 		let pks = pks.into_iter().map(|x| UnassignedPublicKey::new(x)).collect_vec();
@@ -262,7 +262,7 @@ impl<
 			IntegerDivChip::<C::Base, N, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
 		let integer_mul_selector_scalar =
 			IntegerMulChip::<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
-		let integer_equal = IntegerEqualConfig::new(main.clone(), set.clone());
+		let integer_equal = IntegerEqualConfig::new(main.clone(), set);
 
 		let ecc_add = EccAddConfig::new(
 			integer_reduce_selector, integer_sub_selector, integer_mul_selector,

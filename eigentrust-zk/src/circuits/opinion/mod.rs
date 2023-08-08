@@ -425,7 +425,7 @@ where
 		let pk_point = self.public_key.get_inner_point();
 		let default_point = EccDefaultChipset::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::new(pk_point);
 		let is_pk_default = default_point.synthesize(
-			&common,
+			common,
 			&config.ecc_equal,
 			layouter.namespace(|| "is_pk_default"),
 		)?;
@@ -510,7 +510,7 @@ where
 
 			let select_cond = OrChipset::new(is_pk_default.clone(), is_valid);
 			let cond = select_cond.synthesize(
-				&common,
+				common,
 				&config.main,
 				layouter.namespace(|| "pk_or_invalid_sig_chipset"),
 			)?;
@@ -518,7 +518,7 @@ where
 			// Check if address is default/zero
 			let select_cond = OrChipset::new(cond, is_default_address);
 			let cond = select_cond.synthesize(
-				&common,
+				common,
 				&config.main,
 				layouter.namespace(|| "pk_or_invalid_sig_chipset"),
 			)?;

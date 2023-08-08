@@ -467,12 +467,12 @@ where
 		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<C::Scalar>,
 	) -> Result<Self::Output, Error> {
 		let x_eq = IntegerEqualChipset::new(self.p.x, self.q.x);
-		let is_x_eq = x_eq.synthesize(&common, &config.int_eq, layouter.namespace(|| "x_eq"))?;
+		let is_x_eq = x_eq.synthesize(common, &config.int_eq, layouter.namespace(|| "x_eq"))?;
 		let y_eq = IntegerEqualChipset::new(self.p.y, self.q.y);
-		let is_y_eq = y_eq.synthesize(&common, &config.int_eq, layouter.namespace(|| "y_eq"))?;
+		let is_y_eq = y_eq.synthesize(common, &config.int_eq, layouter.namespace(|| "y_eq"))?;
 		let point_eq = IsEqualChipset::new(is_x_eq, is_y_eq);
 		let is_point_eq =
-			point_eq.synthesize(&common, &config.main, layouter.namespace(|| "point_eq"))?;
+			point_eq.synthesize(common, &config.main, layouter.namespace(|| "point_eq"))?;
 
 		Ok(is_point_eq)
 	}
