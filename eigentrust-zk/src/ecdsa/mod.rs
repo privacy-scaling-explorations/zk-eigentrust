@@ -52,16 +52,8 @@ where
 	/// Constructor for unassigned signature
 	pub fn new(sig: Signature<C, N, NUM_LIMBS, NUM_BITS, P>) -> Self {
 		Self {
-			r: UnassignedInteger::new(
-				sig.r.clone(),
-				Value::known(P::compose(sig.r.limbs)),
-				sig.r.limbs.map(|x| Value::known(x)),
-			),
-			s: UnassignedInteger::new(
-				sig.s.clone(),
-				Value::known(P::compose(sig.s.limbs)),
-				sig.s.limbs.map(|x| Value::known(x)),
-			),
+			r: UnassignedInteger::new(sig.r.clone(), sig.r.limbs.map(|x| Value::known(x))),
+			s: UnassignedInteger::new(sig.s.clone(), sig.s.limbs.map(|x| Value::known(x))),
 		}
 	}
 }
@@ -204,20 +196,8 @@ where
 {
 	/// Creates a new Unassigned Public Key object
 	pub fn new(pk: PublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>) -> Self {
-		let x = UnassignedInteger::new(
-			pk.0.x.clone(),
-			Value::known(<P as RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS>>::compose(
-				pk.0.x.limbs,
-			)),
-			pk.0.x.limbs.map(|x| Value::known(x)),
-		);
-		let y = UnassignedInteger::new(
-			pk.0.y.clone(),
-			Value::known(<P as RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS>>::compose(
-				pk.0.y.limbs,
-			)),
-			pk.0.y.limbs.map(|x| Value::known(x)),
-		);
+		let x = UnassignedInteger::new(pk.0.x.clone(), pk.0.x.limbs.map(|x| Value::known(x)));
+		let y = UnassignedInteger::new(pk.0.y.clone(), pk.0.y.limbs.map(|x| Value::known(x)));
 		let p = UnassignedEcPoint::new(x, y);
 		Self(p)
 	}

@@ -305,8 +305,8 @@ mod test {
 			native::Integer, AssignedInteger, IntegerAddChip, IntegerDivChip, IntegerMulChip,
 			IntegerReduceChip, IntegerSubChip, UnassignedInteger,
 		},
+		params::hasher::poseidon_bn254_5x5::Params,
 		params::{ecc::bn254::Bn254Params, rns::bn256::Bn256_4_68},
-		params::{hasher::poseidon_bn254_5x5::Params, rns::RnsParams},
 		poseidon::{
 			native::sponge::PoseidonSponge,
 			sponge::{PoseidonSpongeConfig, StatefulSpongeChipset},
@@ -468,12 +468,10 @@ mod test {
 		fn new(ec_point: EcPoint<G1Affine, NUM_LIMBS, NUM_BITS, P, EC>) -> Self {
 			let unassigned_x = UnassignedInteger::new(
 				ec_point.x.clone(),
-				Value::known(P::compose(ec_point.x.limbs)),
 				ec_point.x.limbs.map(|x| Value::known(x)),
 			);
 			let unassigned_y = UnassignedInteger::new(
 				ec_point.y.clone(),
-				Value::known(P::compose(ec_point.y.limbs)),
 				ec_point.y.limbs.map(|y| Value::known(y)),
 			);
 
