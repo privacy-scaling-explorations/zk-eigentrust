@@ -8,7 +8,7 @@ use crate::circuits::HASHER_WIDTH;
 use crate::ecc::generic::native::EcPoint;
 use crate::ecc::generic::UnassignedEcPoint;
 use crate::ecc::{
-	AuxConfig, EccAddConfig, EccDoubleConfig, EccMulConfig, EccTableSelectConfig,
+	AuxConfig, EccAddConfig, EccDoubleConfig, EccEqualConfig, EccMulConfig, EccTableSelectConfig,
 	EccUnreducedLadderConfig,
 };
 use crate::ecdsa::native::PublicKey;
@@ -268,6 +268,7 @@ impl<
 			integer_reduce_selector, integer_sub_selector, integer_mul_selector,
 			integer_div_selector,
 		);
+		let ecc_equal = EccEqualConfig::new(main.clone(), integer_equal.clone());
 		let ecc_double = EccDoubleConfig::new(
 			integer_reduce_selector, integer_add_selector, integer_sub_selector,
 			integer_mul_selector, integer_div_selector,
@@ -293,7 +294,13 @@ impl<
 		let ecdsa_assigner = EcdsaAssignerConfig::new(aux);
 		let hasher = H::configure(&common, meta);
 		let sponge = SH::configure(&common, meta);
-		let opinion = OpinionConfig::new(ecdsa, main.clone(), set, hasher.clone(), sponge.clone());
+		let opinion = OpinionConfig::new(
+			ecdsa,
+			main.clone(),
+			ecc_equal,
+			hasher.clone(),
+			sponge.clone(),
+		);
 
 		EigenTrustSetConfig { common, main, hasher, sponge, ecdsa_assigner, opinion }
 	}

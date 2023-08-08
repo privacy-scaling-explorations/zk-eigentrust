@@ -4,13 +4,13 @@ pub mod native;
 use crate::{
 	circuits::dynamic_sets::native::Attestation,
 	circuits::HASHER_WIDTH,
+	ecc::{generic::EccDefaultChipset, EccEqualConfig},
 	ecdsa::{
 		AssignedEcdsa, AssignedPublicKey, AssignedSignature, EcdsaChipset, EcdsaConfig,
 		SignatureAssigner, UnassignedSignature,
 	},
-	gadgets::{
-		main::{IsEqualChipset, IsZeroChipset, MainConfig, MulAddChipset, SelectChipset},
-		set::{SetChipset, SetConfig},
+	gadgets::main::{
+		IsEqualChipset, IsZeroChipset, MainConfig, MulAddChipset, OrChipset, SelectChipset,
 	},
 	params::{ecc::EccParams, rns::RnsParams},
 	Chipset, CommonConfig, FieldExt, HasherChipset, RegionCtx, SpongeHasherChipset,
@@ -289,7 +289,7 @@ where
 {
 	ecdsa: EcdsaConfig,
 	main: MainConfig,
-	set: SetConfig,
+	ecc_equal: EccEqualConfig,
 	hasher: H::Config,
 	sponge: S::Config,
 }
@@ -301,9 +301,10 @@ where
 {
 	/// Construct a new config
 	pub fn new(
-		ecdsa: EcdsaConfig, main: MainConfig, set: SetConfig, hasher: H::Config, sponge: S::Config,
+		ecdsa: EcdsaConfig, main: MainConfig, ecc_equal: EccEqualConfig, hasher: H::Config,
+		sponge: S::Config,
 	) -> Self {
-		Self { ecdsa, main, set, hasher, sponge }
+		Self { ecdsa, main, ecc_equal, hasher, sponge }
 	}
 }
 
@@ -421,6 +422,14 @@ where
 			},
 		)?;
 
+		let pk_point = self.public_key.get_inner_point();
+		let default_point = EccDefaultChipset::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::new(pk_point);
+		let is_pk_default = default_point.synthesize(
+			&common,
+			&config.ecc_equal,
+			layouter.namespace(|| "is_pk_default"),
+		)?;
+
 		let mut scores = Vec::new();
 		let mut hashes = Vec::new();
 		for i in 0..NUM_NEIGHBOURS {
@@ -484,55 +493,54 @@ where
 			)?;
 
 			let chip = EcdsaChipset::new(
-				self.attestations[i].signature.clone(),
+				att.signature.clone(),
 				self.public_key.clone(),
 				self.sig_data[i].clone(),
 			);
 			let is_valid =
 				chip.synthesize(common, &config.ecdsa, layouter.namespace(|| "ecdsa_verify"))?;
 
-			// Checking pubkey and attestation values if they are default or not (default is zero)
+			// Checking address and public keys values if they are default or not (default is zero)
 			let is_zero_chip = IsZeroChipset::new(self.set[i].clone());
-			let is_default_pubkey = is_zero_chip.synthesize(
+			let is_default_address = is_zero_chip.synthesize(
 				common,
 				&config.main,
 				layouter.namespace(|| "is_default_pubkey"),
 			)?;
 
-			let is_zero_chip = IsZeroChipset::new(att.attestation.about.clone());
-			let att_about = is_zero_chip.synthesize(
+			let select_cond = OrChipset::new(is_pk_default.clone(), is_valid);
+			let cond = select_cond.synthesize(
+				&common,
+				&config.main,
+				layouter.namespace(|| "pk_or_invalid_sig_chipset"),
+			)?;
+
+			// Check if address is default/zero
+			let select_cond = OrChipset::new(cond, is_default_address);
+			let cond = select_cond.synthesize(
+				&common,
+				&config.main,
+				layouter.namespace(|| "pk_or_invalid_sig_chipset"),
+			)?;
+
+			// Select chip for attestation score
+			let score_select =
+				SelectChipset::new(cond.clone(), att.attestation.value, zero.clone());
+			let final_score = score_select.synthesize(
 				common,
 				&config.main,
-				layouter.namespace(|| "att_about"),
+				layouter.namespace(|| "select chipset"),
 			)?;
 
-			let is_zero_chip = IsZeroChipset::new(att.attestation.domain.clone());
-			let att_domain = is_zero_chip.synthesize(
-				common,
-				&config.main,
-				layouter.namespace(|| "att_domain"),
-			)?;
-
-			let multi_and_check = vec![is_default_pubkey, att_about, att_domain];
-
-			// Checks if there is a zero value. If there is a zero value in the set that means one of the variable is not default.
-			// Basically, instead of doing 3 AND operation we did one set check
-			let set_chip = SetChipset::new(multi_and_check, zero.clone());
-			let is_default_values_zero = set_chip.synthesize(
-				common,
-				&config.set,
-				layouter.namespace(|| "set_check_zero"),
-			)?;
-
-			// Select chip for if case
-			let hash_select =
-				SelectChipset::new(is_default_values_zero, att_hash[0].clone(), zero.clone());
+			// Select chip for attestation hash
+			let hash_select = SelectChipset::new(cond, att_hash[0].clone(), zero.clone());
 			let final_hash = hash_select.synthesize(
 				common,
 				&config.main,
 				layouter.namespace(|| "select chipset"),
 			)?;
 
+			scores.push(final_score);
 			hashes.push(final_hash);
 		}
 
@@ -554,8 +562,8 @@ mod test {
 	use crate::circuits::{PoseidonNativeHasher, PoseidonNativeSponge, HASHER_WIDTH};
 	use crate::ecc::generic::UnassignedEcPoint;
 	use crate::ecc::{
-		AuxConfig, EccAddConfig, EccDoubleConfig, EccMulConfig, EccTableSelectConfig,
-		EccUnreducedLadderConfig,
+		AuxConfig, EccAddConfig, EccDoubleConfig, EccEqualConfig, EccMulConfig,
+		EccTableSelectConfig, EccUnreducedLadderConfig,
 	};
 	use crate::ecdsa::native::{EcdsaKeypair, PublicKey};
 	use crate::ecdsa::{EcdsaAssigner, EcdsaAssignerConfig, EcdsaConfig};
@@ -642,12 +650,13 @@ mod test {
 				IntegerDivChip::<WB, N, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
 			let integer_mul_selector_secp_scalar =
 				IntegerMulChip::<SecpScalar, N, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
+			let integer_equal = IntegerEqualConfig::new(main.clone(), set.clone());
+
 			let ecc_add = EccAddConfig::new(
 				integer_reduce_selector, integer_sub_selector, integer_mul_selector,
 				integer_div_selector,
 			);
-			let integer_equal = IntegerEqualConfig::new(main.clone(), set.clone());
-
+			let ecc_equal = EccEqualConfig::new(main.clone(), integer_equal.clone());
 			let ecc_double = EccDoubleConfig::new(
 				integer_reduce_selector, integer_add_selector, integer_sub_selector,
 				integer_mul_selector, integer_div_selector,
@@ -659,7 +668,6 @@ mod test {
 			);
 
 			let ecc_table_select = EccTableSelectConfig::new(main.clone());
-
 			let ecc_mul_scalar = EccMulConfig::new(
 				ecc_ladder.clone(),
 				ecc_add.clone(),
@@ -682,7 +690,7 @@ mod test {
 			let absorb_selector = AbsorbChip::<_, HASHER_WIDTH>::configure(&common, meta);
 			let sponge = PoseidonSpongeConfig::new(poseidon.clone(), absorb_selector);
 
-			let opinion = OpinionConfig::new(ecdsa, main, set, poseidon, sponge);
+			let opinion = OpinionConfig::new(ecdsa, main, ecc_equal, poseidon, sponge);
 			TestConfig { common, opinion, ecdsa_assigner }
 		}
 	}

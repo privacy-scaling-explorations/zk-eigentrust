@@ -259,6 +259,11 @@ where
 	pub fn new(p: AssignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P>) -> Self {
 		Self(p)
 	}
+
+	/// Access the inner Ec point
+	pub fn get_inner_point(&self) -> AssignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P> {
+		self.0.clone()
+	}
 }
 
 /// Public Key Assigner structure

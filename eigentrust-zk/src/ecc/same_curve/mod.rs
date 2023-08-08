@@ -3,20 +3,23 @@ pub mod native;
 
 use self::native::EcPoint;
 use super::{
-	AuxConfig, EccAddConfig, EccBatchedMulConfig, EccDoubleConfig, EccMulConfig,
+	AuxConfig, EccAddConfig, EccBatchedMulConfig, EccDoubleConfig, EccEqualConfig, EccMulConfig,
 	EccTableSelectConfig, EccUnreducedLadderConfig,
 };
 use crate::{
-	gadgets::{bits2num::Bits2NumChip, main::SelectChipset},
+	gadgets::{
+		bits2num::Bits2NumChip,
+		main::{IsEqualChipset, SelectChipset},
+	},
 	integer::{
 		native::Integer, AssignedInteger, IntegerAddChip, IntegerAssigner, IntegerDivChip,
-		IntegerMulChip, IntegerReduceChip, IntegerSubChip, UnassignedInteger,
+		IntegerEqualChipset, IntegerMulChip, IntegerReduceChip, IntegerSubChip, UnassignedInteger,
 	},
 	params::{ecc::EccParams, rns::RnsParams},
 	utils::{assigned_as_bool, be_assigned_bits_to_usize},
 	Chip, Chipset, CommonConfig, FieldExt, UnassignedValue,
 };
-use halo2::{arithmetic::Field, halo2curves::ff::PrimeField};
+use halo2::halo2curves::ff::PrimeField;
 use halo2::{
 	circuit::{AssignedCell, Layouter},
 	halo2curves::CurveAffine,
@@ -418,6 +421,60 @@ where
 
 		let r = AssignedEcPoint::new(r_x, r_y);
 		Ok(r)
+	}
+}
+
+struct EccEqualChipset<C: CurveAffine, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
+where
+	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
+{
+	// Assigned point p
+	p: AssignedEcPoint<C, NUM_LIMBS, NUM_BITS, P>,
+	// Assigned point q
+	q: AssignedEcPoint<C, NUM_LIMBS, NUM_BITS, P>,
+}
+
+impl<C: CurveAffine, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
+	EccEqualChipset<C, NUM_LIMBS, NUM_BITS, P>
+where
+	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
+{
+	/// Creates a new ecc equal chipset.
+	pub fn new(
+		p: AssignedEcPoint<C, NUM_LIMBS, NUM_BITS, P>,
+		q: AssignedEcPoint<C, NUM_LIMBS, NUM_BITS, P>,
+	) -> Self {
+		Self { p, q }
+	}
+}
+
+impl<C: CurveAffine, const NUM_LIMBS: usize, const NUM_BITS: usize, P> Chipset<C::Scalar>
+	for EccEqualChipset<C, NUM_LIMBS, NUM_BITS, P>
+where
+	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
+{
+	type Config = EccEqualConfig;
+	type Output = AssignedCell<C::Scalar, C::Scalar>;
+
+	/// Synthesize the circuit.
+	fn synthesize(
+		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<C::Scalar>,
+	) -> Result<Self::Output, Error> {
+		let x_eq = IntegerEqualChipset::new(self.p.x, self.q.x);
+		let is_x_eq = x_eq.synthesize(&common, &config.int_eq, layouter.namespace(|| "x_eq"))?;
+		let y_eq = IntegerEqualChipset::new(self.p.y, self.q.y);
+		let is_y_eq = y_eq.synthesize(&common, &config.int_eq, layouter.namespace(|| "y_eq"))?;
+		let point_eq = IsEqualChipset::new(is_x_eq, is_y_eq);
+		let is_point_eq =
+			point_eq.synthesize(&common, &config.main, layouter.namespace(|| "point_eq"))?;
+
+		Ok(is_point_eq)
 	}
 }
 

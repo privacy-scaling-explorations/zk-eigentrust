@@ -66,6 +66,8 @@ where
 		let pos_from = set.iter().position(|&x| x == from_pk);
 		assert!(pos_from.is_some());
 
+		let is_default_pk = self.from == PublicKey::default();
+
 		let mut scores = Vec::new();
 		let mut hashes = Vec::new();
 		for i in 0..NUM_NEIGHBOURS {
@@ -88,7 +90,6 @@ where
 			let is_valid = ecdsa_verifier.verify();
 
 			let is_default_addr = set[i] == N::ZERO;
-			let is_default_pk = self.from == PublicKey::default();
 			let invalid_condition = !is_valid || is_default_addr || is_default_pk;
 			let (final_score, final_hash) = if invalid_condition {
 				(N::ZERO, N::ZERO)
