@@ -663,7 +663,7 @@ mod test {
 			);
 
 			let ecc_ladder = EccUnreducedLadderConfig::new(
-				integer_add_selector, integer_sub_selector, integer_mul_selector_secp_scalar,
+				integer_add_selector, integer_sub_selector, integer_mul_selector,
 				integer_div_selector,
 			);
 
@@ -678,7 +678,7 @@ mod test {
 
 			let ecdsa = EcdsaConfig::new(
 				ecc_mul_scalar, ecc_add, integer_equal, integer_reduce_selector,
-				integer_mul_selector,
+				integer_mul_selector_secp_scalar,
 			);
 
 			let aux = AuxConfig::new(ecc_double);

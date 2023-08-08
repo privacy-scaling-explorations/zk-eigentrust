@@ -61,9 +61,9 @@ where
 
 	/// Validate attestations & calculate the hash
 	pub fn validate(&self, set: Vec<N>) -> (N, Vec<N>, N) {
-		let from_pk = self.from.to_address();
+		let addr = self.from.to_address();
 
-		let pos_from = set.iter().position(|&x| x == from_pk);
+		let pos_from = set.iter().position(|&x| x == addr);
 		assert!(pos_from.is_some());
 
 		let is_default_pk = self.from == PublicKey::default();
@@ -85,7 +85,7 @@ where
 			let att_hash = att_hasher.finalize()[0];
 
 			let sig = self.attestations[i].signature.clone();
-			let msg_hash = Integer::from_n(att_hash);
+			let msg_hash = Integer::<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>::from_n(att_hash);
 			let ecdsa_verifier = EcdsaVerifier::new(sig, msg_hash, self.from.clone());
 			let is_valid = ecdsa_verifier.verify();
 
@@ -105,6 +105,6 @@ where
 		sponge_hasher.update(&hashes);
 		let op_hash = sponge_hasher.squeeze();
 
-		(from_pk, scores, op_hash)
+		(addr, scores, op_hash)
 	}
 }

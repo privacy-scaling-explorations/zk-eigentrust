@@ -1,6 +1,7 @@
 use crate::{
 	circuits::{opinion::native::Opinion, RationalScore, HASHER_WIDTH},
 	ecdsa::native::{PublicKey, Signature},
+	integer::native::Integer,
 	params::{ecc::EccParams, rns::RnsParams},
 	utils::fe_to_big,
 	FieldExt, Hasher, SpongeHasher,
@@ -40,6 +41,17 @@ where
 	pub fn new(
 		attestation: Attestation<N>, signature: Signature<C, N, NUM_LIMBS, NUM_BITS, P>,
 	) -> Self {
+		Self { attestation, signature }
+	}
+
+	/// Constructs a new empty attestation
+	pub fn empty(domain: N) -> Self {
+		let mut attestation = Attestation::default();
+		attestation.domain = domain;
+		let mut signature = Signature::default();
+		signature.s = Integer::one();
+		signature.r = Integer::one();
+
 		Self { attestation, signature }
 	}
 }
@@ -186,9 +198,8 @@ impl<
 		&mut self, from: PublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
 		op: Vec<Option<SignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>>>,
 	) -> N {
-		let default_att = SignedAttestation::default();
-		let op_unwrapped =
-			op.iter().map(|x| x.clone().unwrap_or(default_att.clone())).collect_vec();
+		let empty_att = SignedAttestation::empty(self.domain);
+		let op_unwrapped = op.iter().map(|x| x.clone().unwrap_or(empty_att.clone())).collect_vec();
 		let op = Opinion::<NUM_NEIGHBOURS, C, N, NUM_LIMBS, NUM_BITS, P, EC, H, SH>::new(
 			from, op_unwrapped, self.domain,
 		);
@@ -407,8 +418,8 @@ mod test {
 			if addrs[i] == N::zero() {
 				res.push(None)
 			} else {
-				let (about, key, value, message) =
-					(addrs[i], N::from_u128(DOMAIN), scores[i], N::zero());
+				let domain = N::from_u128(DOMAIN);
+				let (about, key, value, message) = (addrs[i], domain, scores[i], N::zero());
 				let attestation = Attestation::new(about, key, value, message);
 				let msg = big_to_fe(fe_to_big(
 					attestation.hash::<HASHER_WIDTH, PoseidonNativeHasher>(),

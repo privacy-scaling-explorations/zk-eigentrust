@@ -380,13 +380,6 @@ where
 	fn synthesize(
 		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<N>,
 	) -> Result<Self::Output, Error> {
-		let r = self.signature.r;
-
-		// Constraint for the s_inv
-		let mul_chip = IntegerMulChip::new(self.signature.s.clone(), self.sig_data.s_inv.clone());
-		let is_one =
-			mul_chip.synthesize(common, &config.int_mul, layouter.namespace(|| "s_inv * s"))?;
-
 		let unassigned_one: UnassignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P> =
 			UnassignedInteger::from(Integer::one());
 		let int_assigner = IntegerAssigner::new(unassigned_one);
@@ -395,6 +388,12 @@ where
 			&(),
 			layouter.namespace(|| "one as assigned integer"),
 		)?;
+
+		let r = self.signature.r;
+		// Constraint for the s_inv
+		let mul_chip = IntegerMulChip::new(self.signature.s.clone(), self.sig_data.s_inv.clone());
+		let is_one =
+			mul_chip.synthesize(common, &config.int_mul, layouter.namespace(|| "s_inv * s"))?;
 
 		layouter.assign_region(
 			|| "constraint for the s_inv",
@@ -674,7 +673,8 @@ mod test {
 			let integer_div_selector =
 				IntegerDivChip::<W, N, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
 			let integer_equal = IntegerEqualConfig::new(main.clone(), set.clone());
-			let integer_mul_selector_secp_scalar =
+
+			let integer_mul_secp_scalar_selector =
 				IntegerMulChip::<SecpScalar, N, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
 
 			let ecc_add = EccAddConfig::new(
@@ -686,7 +686,7 @@ mod test {
 				integer_mul_selector, integer_div_selector,
 			);
 			let ecc_ladder = EccUnreducedLadderConfig::new(
-				integer_add_selector, integer_sub_selector, integer_mul_selector_secp_scalar,
+				integer_add_selector, integer_sub_selector, integer_mul_selector,
 				integer_div_selector,
 			);
 			let ecc_table_select = EccTableSelectConfig::new(main.clone());
@@ -702,7 +702,7 @@ mod test {
 			let ecdsa_assigner = EcdsaAssignerConfig::new(aux);
 			let ecdsa = EcdsaConfig::new(
 				ecc_mul_scalar, ecc_add, integer_equal, integer_reduce_selector,
-				integer_mul_selector,
+				integer_mul_secp_scalar_selector,
 			);
 
 			TestConfig { common, ecdsa_assigner, ecdsa }
@@ -785,12 +785,13 @@ mod test {
 
 			let chip = EcdsaChipset::new(signature, public_key, ecdsa_variables);
 
-			chip.synthesize(
+			let res = chip.synthesize(
 				&config.common,
 				&config.ecdsa,
 				layouter.namespace(|| "ecdsa_verify"),
 			)?;
-			Ok(())
+
+			layouter.constrain_instance(res.cell(), config.common.instance, 0)
 		}
 	}
 
@@ -818,7 +819,7 @@ mod test {
 		let circuit =
 			TestEcdsaCircuit::new(public_key, g_as_ecpoint, signature, msg_hash_integer, s_inv);
 		let k = 15;
-		let prover = MockProver::run(k, &circuit, vec![vec![]]).unwrap();
+		let prover = MockProver::run(k, &circuit, vec![vec![Fr::one()]]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
 	}
 }

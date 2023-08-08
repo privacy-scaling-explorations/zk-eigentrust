@@ -274,8 +274,7 @@ impl<
 			integer_mul_selector, integer_div_selector,
 		);
 		let ecc_ladder = EccUnreducedLadderConfig::new(
-			integer_add_selector, integer_sub_selector, integer_mul_selector_scalar,
-			integer_div_selector,
+			integer_add_selector, integer_sub_selector, integer_mul_selector, integer_div_selector,
 		);
 		let ecc_table_select = EccTableSelectConfig::new(main.clone());
 		let ecc_mul_scalar = EccMulConfig::new(
