@@ -410,14 +410,14 @@ where
 	fn synthesize(
 		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<N>,
 	) -> Result<Self::Output, Error> {
-		// TODO: Do the check for the public key from the given set
+		// TODO: Reconstruct the address from public key and check against the set item at the same position
 
 		let (zero, one) = layouter.assign_region(
 			|| "assign_zero_and_one",
 			|region: Region<'_, N>| {
 				let mut ctx = RegionCtx::new(region, 0);
-				let zero = ctx.assign_fixed(common.fixed[0], N::ZERO)?;
-				let one = ctx.assign_fixed(common.fixed[1], N::ONE)?;
+				let zero = ctx.assign_from_constant(common.advice[0], N::ZERO)?;
+				let one = ctx.assign_from_constant(common.advice[1], N::ONE)?;
 
 				Ok((zero, one))
 			},

@@ -94,8 +94,7 @@ where
 	// Assign limbs
 	for i in 0..NUM_LIMBS {
 		ctx.copy_assign(common.advice[i], x[i].clone())?;
-		if let Some(..) = y_opt {
-			let y = y_opt.unwrap();
+		if let Some(y) = y_opt {
 			ctx.copy_assign(common.advice[i + NUM_LIMBS], y[i].clone())?;
 		}
 	}
@@ -784,8 +783,8 @@ where
 			|| "assigner",
 			|region: Region<'_, N>| {
 				let mut ctx = RegionCtx::new(region, 0);
-				let zero = ctx.assign_fixed(common.fixed[0], N::ZERO)?;
-				let one = ctx.assign_fixed(common.fixed[1], N::ONE)?;
+				let zero = ctx.assign_from_constant(common.advice[0], N::ZERO)?;
+				let one = ctx.assign_from_constant(common.advice[1], N::ONE)?;
 
 				Ok((zero, one))
 			},
@@ -793,13 +792,12 @@ where
 
 		let mut is_eq_vec = Vec::new();
 		for i in 0..NUM_LIMBS {
-			let eq_x_i = IsEqualChipset::new(self.x.limbs[i].clone(), self.y.limbs[i].clone());
-			let res =
-				eq_x_i.synthesize(common, &config.main, layouter.namespace(|| "is_equal_x_i"))?;
+			let eq_i = IsEqualChipset::new(self.x.limbs[i].clone(), self.y.limbs[i].clone());
+			let res = eq_i.synthesize(common, &config.main, layouter.namespace(|| "is_eq_i"))?;
 			is_eq_vec.push(res);
 		}
 
-		let set = SetChipset::new(is_eq_vec, zero);
+		let set = SetChipset::new(is_eq_vec, zero.clone());
 		let res = set.synthesize(common, &config.set, layouter.namespace(|| "is_in_set"))?;
 
 		let sub = SubChipset::new(one, res);
@@ -893,10 +891,8 @@ where
 	}
 }
 
-//--
-
 /// Integer assigner chip
-pub struct FixedIntegerAssigner<
+pub struct ConstIntegerAssigner<
 	W: FieldExt,
 	N: FieldExt,
 	const NUM_LIMBS: usize,
@@ -909,7 +905,7 @@ pub struct FixedIntegerAssigner<
 }
 
 impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
-	FixedIntegerAssigner<W, N, NUM_LIMBS, NUM_BITS, P>
+	ConstIntegerAssigner<W, N, NUM_LIMBS, NUM_BITS, P>
 where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 {
@@ -920,7 +916,7 @@ where
 }
 
 impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P> Chipset<N>
-	for FixedIntegerAssigner<W, N, NUM_LIMBS, NUM_BITS, P>
+	for ConstIntegerAssigner<W, N, NUM_LIMBS, NUM_BITS, P>
 where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 {
@@ -936,7 +932,8 @@ where
 				let mut ctx = RegionCtx::new(region, 0);
 				let mut limbs = Vec::new();
 				for i in 0..NUM_LIMBS {
-					let assigned_limb = ctx.assign_fixed(common.fixed[i], self.x.limbs[i])?;
+					let assigned_limb =
+						ctx.assign_from_constant(common.advice[i], self.x.limbs[i])?;
 					limbs.push(assigned_limb);
 				}
 
@@ -984,7 +981,7 @@ where
 				let mut left_shifters = [(); NUM_LIMBS].map(|_| None);
 				for i in 0..NUM_LIMBS {
 					left_shifters[i] =
-						Some(ctx.assign_fixed(common.fixed[i], left_shifters_native[i])?);
+						Some(ctx.assign_from_constant(common.advice[i], left_shifters_native[i])?);
 				}
 				Ok(left_shifters.map(|x| x.unwrap()))
 			},

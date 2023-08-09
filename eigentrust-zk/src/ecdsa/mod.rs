@@ -8,7 +8,7 @@ use crate::ecc::generic::{
 use crate::ecc::{AuxConfig, EccAddConfig};
 use crate::integer::native::Integer;
 use crate::integer::{
-	FixedIntegerAssigner, IntegerAssigner, IntegerEqualChipset, IntegerEqualConfig,
+	ConstIntegerAssigner, IntegerAssigner, IntegerEqualChipset, IntegerEqualConfig,
 	IntegerReduceChip, UnassignedInteger,
 };
 use crate::params::ecc::EccParams;
@@ -382,7 +382,7 @@ where
 		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<N>,
 	) -> Result<Self::Output, Error> {
 		let int_assigner =
-			FixedIntegerAssigner::<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>::new(Integer::one());
+			ConstIntegerAssigner::<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>::new(Integer::one());
 		let assigned_one = int_assigner.synthesize(
 			common,
 			&(),

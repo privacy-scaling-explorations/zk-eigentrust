@@ -183,7 +183,7 @@ impl<'a, F: FieldExt> RegionCtx<'a, F> {
 		)
 	}
 
-	/// Assign to advice column from an instance column
+	/// Assign to advice column from an fixed column
 	pub fn assign_from_constant(
 		&mut self, advice: Column<Advice>, constant: F,
 	) -> Result<AssignedCell<F, F>, Error> {

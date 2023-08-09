@@ -867,7 +867,7 @@ mod test {
 	}
 
 	#[test]
-	#[ignore = "Failing ecdsa verification"]
+	// #[ignore = "Failing ecdsa verification"]
 	fn test_closed_graph_circut_prod() {
 		// Test Dynamic Sets Circuit production
 		let ops: Vec<Vec<N>> = vec![
