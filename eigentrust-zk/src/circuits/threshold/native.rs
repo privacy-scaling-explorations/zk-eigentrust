@@ -112,11 +112,7 @@ mod tests {
 	};
 	use halo2::{
 		arithmetic::Field,
-		halo2curves::{
-			bn256::Fr,
-			ff::PrimeField,
-			secp256k1::{Fq, Secp256k1Affine},
-		},
+		halo2curves::{bn256::Fr, ff::PrimeField, secp256k1::Secp256k1Affine},
 	};
 	use itertools::Itertools;
 	use num_bigint::{BigInt, ToBigInt};
@@ -128,7 +124,6 @@ mod tests {
 
 	const DOMAIN: u128 = 42;
 	type C = Secp256k1Affine;
-	type WN = Fq;
 	type N = Fr;
 	const NUM_LIMBS: usize = 4;
 	const NUM_BITS: usize = 68;

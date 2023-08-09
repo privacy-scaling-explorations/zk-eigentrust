@@ -9,11 +9,12 @@ use super::{
 use crate::{
 	gadgets::{
 		bits2integer::{Bits2IntegerChipset, Bits2IntegerChipsetConfig},
-		main::{IsEqualChipset, SelectChipset},
+		main::{AndChipset, SelectChipset},
 	},
 	integer::{
-		native::Integer, AssignedInteger, IntegerAddChip, IntegerAssigner, IntegerDivChip,
-		IntegerEqualChipset, IntegerMulChip, IntegerReduceChip, IntegerSubChip, UnassignedInteger,
+		native::Integer, AssignedInteger, FixedIntegerAssigner, IntegerAddChip, IntegerAssigner,
+		IntegerDivChip, IntegerEqualChipset, IntegerMulChip, IntegerReduceChip, IntegerSubChip,
+		UnassignedInteger,
 	},
 	params::{ecc::EccParams, rns::RnsParams},
 	utils::{assigned_as_bool, be_assigned_bits_to_usize},
@@ -663,9 +664,9 @@ where
 		let is_x_eq = x_eq.synthesize(common, &config.int_eq, layouter.namespace(|| "x_eq"))?;
 		let y_eq = IntegerEqualChipset::new(self.p.y, self.q.y);
 		let is_y_eq = y_eq.synthesize(common, &config.int_eq, layouter.namespace(|| "y_eq"))?;
-		let point_eq = IsEqualChipset::new(is_x_eq, is_y_eq);
+		let point_and = AndChipset::new(is_x_eq, is_y_eq);
 		let is_point_eq =
-			point_eq.synthesize(common, &config.main, layouter.namespace(|| "point_eq"))?;
+			point_and.synthesize(common, &config.main, layouter.namespace(|| "point_eq"))?;
 
 		Ok(is_point_eq)
 	}
@@ -719,9 +720,8 @@ where
 	fn synthesize(
 		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<N>,
 	) -> Result<Self::Output, Error> {
-		let unassigned_point =
-			UnassignedEcPoint::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::from(EcPoint::default());
-		let point_assigner = PointAssigner::new(unassigned_point);
+		let point_assigner =
+			FixedPointAssigner::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::new(EcPoint::default());
 		let point =
 			point_assigner.synthesize(common, &(), layouter.namespace(|| "default_assigner"))?;
 
@@ -1144,6 +1144,65 @@ where
 	) -> Result<Self::Output, Error> {
 		let x_assigner = IntegerAssigner::new(self.point.x);
 		let y_assigner = IntegerAssigner::new(self.point.y);
+
+		let x = x_assigner.synthesize(common, &(), layouter.namespace(|| "x assigner"))?;
+		let y = y_assigner.synthesize(common, &(), layouter.namespace(|| "y assigner"))?;
+
+		let point = AssignedEcPoint::new(x, y);
+		Ok(point)
+	}
+}
+
+//---
+
+/// Assigning a point into fixed columns
+pub struct FixedPointAssigner<
+	C: CurveAffine,
+	N: FieldExt,
+	const NUM_LIMBS: usize,
+	const NUM_BITS: usize,
+	P,
+	EC,
+> where
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
+	C::Base: FieldExt,
+	C::ScalarExt: FieldExt,
+{
+	// Unassigned Point
+	point: EcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
+}
+
+impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P, EC>
+	FixedPointAssigner<C, N, NUM_LIMBS, NUM_BITS, P, EC>
+where
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
+	C::Base: FieldExt,
+	C::ScalarExt: FieldExt,
+{
+	/// Creates a new PointAssigner object
+	pub fn new(point: EcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>) -> Self {
+		Self { point }
+	}
+}
+
+impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P, EC> Chipset<N>
+	for FixedPointAssigner<C, N, NUM_LIMBS, NUM_BITS, P, EC>
+where
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
+	C::Base: FieldExt,
+	C::ScalarExt: FieldExt,
+{
+	type Config = ();
+	type Output = AssignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P>;
+
+	fn synthesize(
+		self, common: &CommonConfig, _: &Self::Config, mut layouter: impl Layouter<N>,
+	) -> Result<Self::Output, Error> {
+		let x_assigner = FixedIntegerAssigner::new(self.point.x);
+		let y_assigner = FixedIntegerAssigner::new(self.point.y);
 
 		let x = x_assigner.synthesize(common, &(), layouter.namespace(|| "x assigner"))?;
 		let y = y_assigner.synthesize(common, &(), layouter.namespace(|| "y assigner"))?;

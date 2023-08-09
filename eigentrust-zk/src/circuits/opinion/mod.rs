@@ -11,6 +11,7 @@ use crate::{
 	},
 	gadgets::main::{
 		IsEqualChipset, IsZeroChipset, MainConfig, MulAddChipset, OrChipset, SelectChipset,
+		SubChipset,
 	},
 	params::{ecc::EccParams, rns::RnsParams},
 	Chipset, CommonConfig, FieldExt, HasherChipset, RegionCtx, SpongeHasherChipset,
@@ -500,6 +501,14 @@ where
 			let is_valid =
 				chip.synthesize(common, &config.ecdsa, layouter.namespace(|| "ecdsa_verify"))?;
 
+			// Get the bit representig if the verification failed
+			let inverse_bit = SubChipset::new(one.clone(), is_valid);
+			let is_invalid = inverse_bit.synthesize(
+				common,
+				&config.main,
+				layouter.namespace(|| "inverse_bit"),
+			)?;
+
 			// Checking address and public keys values if they are default or not (default is zero)
 			let is_zero_chip = IsZeroChipset::new(self.set[i].clone());
 			let is_default_address = is_zero_chip.synthesize(
@@ -508,7 +517,7 @@ where
 				layouter.namespace(|| "is_default_pubkey"),
 			)?;
 
-			let select_cond = OrChipset::new(is_pk_default.clone(), is_valid);
+			let select_cond = OrChipset::new(is_pk_default.clone(), is_invalid);
 			let cond = select_cond.synthesize(
 				common,
 				&config.main,
@@ -525,7 +534,7 @@ where
 
 			// Select chip for attestation score
 			let score_select =
-				SelectChipset::new(cond.clone(), att.attestation.value, zero.clone());
+				SelectChipset::new(cond.clone(), zero.clone(), att.attestation.value);
 			let final_score = score_select.synthesize(
 				common,
 				&config.main,
@@ -533,7 +542,7 @@ where
 			)?;
 
 			// Select chip for attestation hash
-			let hash_select = SelectChipset::new(cond, att_hash[0].clone(), zero.clone());
+			let hash_select = SelectChipset::new(cond, zero.clone(), att_hash[0].clone());
 			let final_hash = hash_select.synthesize(
 				common,
 				&config.main,
@@ -765,7 +774,7 @@ mod test {
 			&self, config: TestConfig, mut layouter: impl Layouter<N>,
 		) -> Result<(), Error> {
 			let mut sig_datas = Vec::new();
-			for i in 0..self.attestations.len() {
+			for i in 0..NUM_NEIGHBOURS {
 				let ecdsa_assigner = EcdsaAssigner::new(
 					self.g_as_ecpoint.clone(),
 					self.msg_hash[i].clone(),
@@ -786,7 +795,7 @@ mod test {
 				|region: Region<'_, N>| {
 					let mut ctx = RegionCtx::new(region, 0);
 					let mut set = Vec::new();
-					for i in 0..self.set.len() {
+					for i in 0..NUM_NEIGHBOURS {
 						let assigned_addr =
 							ctx.assign_advice(config.common.advice[0], self.set[i])?;
 						set.push(assigned_addr);
@@ -798,7 +807,7 @@ mod test {
 			)?;
 
 			let mut attestations = Vec::new();
-			for i in 0..self.attestations.len() {
+			for i in 0..NUM_NEIGHBOURS {
 				let att_assigner = SignedAttestationAssigner::new(self.attestations[i].clone());
 				let assigned_att = att_assigner.synthesize(
 					&config.common,
@@ -833,7 +842,7 @@ mod test {
 				layouter.namespace(|| "opinion"),
 			)?;
 
-			for i in 0..scores.len() {
+			for i in 0..NUM_NEIGHBOURS {
 				layouter.constrain_instance(scores[i].cell(), config.common.instance, i)?;
 			}
 			layouter.constrain_instance(op_hash.cell(), config.common.instance, scores.len())?;

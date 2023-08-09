@@ -893,6 +893,62 @@ where
 	}
 }
 
+//--
+
+/// Integer assigner chip
+pub struct FixedIntegerAssigner<
+	W: FieldExt,
+	N: FieldExt,
+	const NUM_LIMBS: usize,
+	const NUM_BITS: usize,
+	P,
+> where
+	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
+{
+	x: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
+}
+
+impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
+	FixedIntegerAssigner<W, N, NUM_LIMBS, NUM_BITS, P>
+where
+	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
+{
+	/// Constructor for Integer assigner
+	pub fn new(x: Integer<W, N, NUM_LIMBS, NUM_BITS, P>) -> Self {
+		Self { x }
+	}
+}
+
+impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P> Chipset<N>
+	for FixedIntegerAssigner<W, N, NUM_LIMBS, NUM_BITS, P>
+where
+	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
+{
+	type Config = ();
+	type Output = AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>;
+
+	fn synthesize(
+		self, common: &CommonConfig, _: &Self::Config, mut layouter: impl Layouter<N>,
+	) -> Result<Self::Output, Error> {
+		let assigned_limbs = layouter.assign_region(
+			|| "int_assigner",
+			|region: Region<'_, N>| {
+				let mut ctx = RegionCtx::new(region, 0);
+				let mut limbs = Vec::new();
+				for i in 0..NUM_LIMBS {
+					let assigned_limb = ctx.assign_fixed(common.fixed[i], self.x.limbs[i])?;
+					limbs.push(assigned_limb);
+				}
+
+				Ok(limbs)
+			},
+		)?;
+
+		let x_assigned = AssignedInteger::new(self.x, assigned_limbs.try_into().unwrap());
+		Ok(x_assigned)
+	}
+}
+
 /// Assigner for left shifters from Rns
 #[derive(Clone, Debug, Default)]
 pub struct LeftShiftersAssigner<

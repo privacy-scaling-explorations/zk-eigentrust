@@ -371,10 +371,8 @@ where
 	/// Verify a signature for a given message hash and public key using wrong field arithmetic
 	/// Similar to the ZK circuit setting instead of computing s_inverse we take it in as an advice value
 	pub fn verify(&self) -> bool {
-		let Signature { r, .. } = &self.signature;
-
 		let u_1 = self.msg_hash.mul(&self.s_inv).result;
-		let u_2 = r.mul(&self.s_inv).result;
+		let u_2 = self.signature.r.mul(&self.s_inv).result;
 		let v_1 = self.g_as_ecpoint.mul_scalar(u_1);
 		let v_2 = self.public_key.0.mul_scalar(u_2);
 		let r_point = v_1.add(&v_2);
@@ -384,7 +382,7 @@ where
 			Integer::<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>::from_limbs(x_candidate.limbs);
 		let x_reduced = x_int.reduce().result;
 
-		x_reduced.limbs == r.limbs
+		x_reduced.limbs == self.signature.r.limbs
 	}
 }
 

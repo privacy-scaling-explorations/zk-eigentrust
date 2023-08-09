@@ -43,7 +43,6 @@ use halo2::{
 	circuit::{Layouter, Region, SimpleFloorPlanner},
 	plonk::{Circuit, ConstraintSystem, Error},
 };
-use itertools::Itertools;
 use std::marker::PhantomData;
 
 #[derive(Clone)]
@@ -55,7 +54,6 @@ where
 {
 	common: CommonConfig,
 	main: MainConfig,
-	hasher: H::Config,
 	sponge: S::Config,
 	ecdsa_assigner: EcdsaAssignerConfig,
 	opinion: OpinionConfig<F, H, S>,
@@ -125,62 +123,56 @@ where
 {
 	/// Constructs a new EigenTrustSet circuit
 	pub fn new(
-		attestations: Vec<Vec<SignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>>>,
-		pks: Vec<PublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>>,
+		attestations: Vec<Vec<Option<SignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>>>>,
+		pks: Vec<Option<PublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>>>, domain: N,
 	) -> Self {
-		//Attestation values
-		let attestations_converted = attestations
-			.clone()
-			.into_iter()
-			.map(|att| att.into_iter().map(UnassignedSignedAttestation::from).collect_vec())
-			.collect_vec();
-		// Pubkey values
-		let pks = pks.into_iter().map(|x| UnassignedPublicKey::new(x)).collect_vec();
+		let mut unassigned_attestations = Vec::new();
+		let mut unassigned_msg_hashes = Vec::new();
+		let mut unassigned_s_invs = Vec::new();
+		let mut unassigned_pks = Vec::new();
 
-		// Calculate msg_hashes
-		let msg_hashes = attestations
-			.clone()
-			.into_iter()
-			.map(|att| {
-				att.into_iter()
-					.map(|x: SignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>| {
-						let att_hash = x.attestation.hash::<HASHER_WIDTH, HN>();
-						let msg_hash_int = Integer::from_n(att_hash);
-						UnassignedInteger::from(msg_hash_int)
-					})
-					.collect_vec()
-			})
-			.collect_vec();
+		for i in 0..NUM_NEIGHBOURS {
+			let mut att_row = Vec::new();
+			let mut msg_hashes_row = Vec::new();
+			let mut s_inv_row = Vec::new();
+			for j in 0..NUM_NEIGHBOURS {
+				let att = attestations[i][j].clone().unwrap_or(SignedAttestation::empty(domain));
+				let unassigned_attestation = UnassignedSignedAttestation::from(att.clone());
+				let att_hash = att.attestation.hash::<HASHER_WIDTH, HN>();
+				let msg_hash_int = Integer::from_n(att_hash);
+				let unassigned_msg_hash = UnassignedInteger::from(msg_hash_int);
 
-		// Calculate s inverses
-		let s_inv = attestations
-			.iter()
-			.map(|att| {
-				att.iter()
-					.map(|sigatt| {
-						let s_inv_w =
-							big_to_fe::<C::ScalarExt>(sigatt.signature.s.value()).invert().unwrap();
-						let s_inv_int = Integer::from_w(s_inv_w);
-						UnassignedInteger::from(s_inv_int)
-					})
-					.collect_vec()
-			})
-			.collect_vec();
+				let s_inv_w = big_to_fe::<C::ScalarExt>(att.signature.s.value()).invert().unwrap();
+				let s_inv_int = Integer::from_w(s_inv_w);
+				let unassigned_s_inv = UnassignedInteger::from(s_inv_int);
+
+				att_row.push(unassigned_attestation);
+				msg_hashes_row.push(unassigned_msg_hash);
+				s_inv_row.push(unassigned_s_inv);
+			}
+
+			unassigned_attestations.push(att_row);
+			unassigned_msg_hashes.push(msg_hashes_row);
+			unassigned_s_invs.push(s_inv_row);
+
+			let pk = pks[i].clone().unwrap_or(PublicKey::default());
+			let unassigned_pk = UnassignedPublicKey::new(pk);
+			unassigned_pks.push(unassigned_pk);
+		}
 
 		// Calculate generator as ecpoint
 		let g = C::generator();
 		let coordinates_g = g.coordinates().unwrap();
-		let g_as_ecpoint = EcPoint::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::new(
-			Integer::from_w(*coordinates_g.x()),
-			Integer::from_w(*coordinates_g.y()),
-		);
+		let g_x = Integer::from_w(*coordinates_g.x());
+		let g_y = Integer::from_w(*coordinates_g.y());
+		let g_as_ecpoint = EcPoint::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::new(g_x, g_y);
 		let g_as_ecpoint = UnassignedEcPoint::from(g_as_ecpoint);
 
 		Self {
-			attestations: attestations_converted,
-			pks,
-			msg_hashes,
-			s_inv,
+			attestations: unassigned_attestations,
+			pks: unassigned_pks,
+			msg_hashes: unassigned_msg_hashes,
+			s_inv: unassigned_s_invs,
 			g_as_ecpoint,
 			_p: PhantomData,
 		}
@@ -301,7 +293,7 @@ impl<
 			sponge.clone(),
 		);
 
-		EigenTrustSetConfig { common, main, hasher, sponge, ecdsa_assigner, opinion }
+		EigenTrustSetConfig { common, main, sponge, ecdsa_assigner, opinion }
 	}
 
 	fn synthesize(
@@ -332,7 +324,7 @@ impl<
 					let mut instance_count = 0;
 
 					let mut assigned_set = Vec::new();
-					for i in 0..self.pks.len() {
+					for i in 0..NUM_NEIGHBOURS {
 						let index = i % ADVICE;
 
 						let addr = ctx.assign_from_instance(
@@ -356,12 +348,12 @@ impl<
 							config.common.advice[index], config.common.instance, instance_count,
 						)?;
 
-						assigned_s.push(ps);
-						instance_count += 1;
-
 						if i == ADVICE - 1 {
 							ctx.next();
 						}
+
+						assigned_s.push(ps);
+						instance_count += 1;
 					}
 					ctx.next();
 
@@ -440,6 +432,7 @@ impl<
 				&config.opinion,
 				layouter.namespace(|| "opinion"),
 			)?;
+
 			ops.push(opinions);
 			op_hashes.push(op_hash);
 		}
@@ -719,6 +712,7 @@ mod test {
 			secp256k1::{Fq, Secp256k1Affine},
 		},
 	};
+	use itertools::Itertools;
 	use rand::thread_rng;
 
 	const NUM_NEIGHBOURS: usize = 5;
@@ -756,7 +750,7 @@ mod test {
 		let pub_keys = keypairs.clone().map(|kp| kp.public_key).to_vec();
 		let domain = N::from_u128(DOMAIN);
 
-		let (attestations, set, op_hashes) = {
+		let (attestations, set, op_hash) = {
 			let mut attestations = Vec::new();
 			let mut set = Vec::new();
 
@@ -800,14 +794,26 @@ mod test {
 			}
 			let mut sponge = SHN::new();
 			sponge.update(&op_hashes);
-			let op_hashes = sponge.squeeze();
+			let op_hash = sponge.squeeze();
 
-			(attestations, set, op_hashes)
+			(attestations, set, op_hash)
 		};
 
+		let mut opt_att = Vec::new();
+		let mut opt_pks = Vec::new();
+
+		for i in 0..NUM_NEIGHBOURS {
+			let mut att_row = Vec::new();
+			for j in 0..NUM_NEIGHBOURS {
+				att_row.push(Some(attestations[i][j].clone()));
+			}
+			opt_att.push(att_row);
+			opt_pks.push(Some(pub_keys[i].clone()));
+		}
+
 		// Constructing public inputs for the circuit
-		let mut res = set.clone();
-		res.extend({
+		let mut public_inputs = set.clone();
+		public_inputs.extend({
 			let mut et = native::EigenTrustSet::<
 				NUM_NEIGHBOURS,
 				NUM_ITERATIONS,
@@ -834,8 +840,8 @@ mod test {
 
 			et.converge()
 		});
-		res.push(domain);
-		res.push(op_hashes);
+		public_inputs.push(domain);
+		public_inputs.push(op_hash);
 
 		let et = EigenTrustSet::<
 			NUM_NEIGHBOURS,
@@ -850,19 +856,18 @@ mod test {
 			H,
 			HN,
 			SH,
-		>::new(attestations, pub_keys);
+		>::new(opt_att, opt_pks, domain);
 
 		let k = 20;
-		let prover = match MockProver::<N>::run(k, &et, vec![res.to_vec()]) {
+		let prover = match MockProver::<N>::run(k, &et, vec![public_inputs.to_vec()]) {
 			Ok(prover) => prover,
 			Err(e) => panic!("{}", e),
 		};
-
 		assert_eq!(prover.verify(), Ok(()));
 	}
 
-	#[ignore = "Currently not working"]
 	#[test]
+	#[ignore = "Failing ecdsa verification"]
 	fn test_closed_graph_circut_prod() {
 		// Test Dynamic Sets Circuit production
 		let ops: Vec<Vec<N>> = vec![
@@ -881,7 +886,7 @@ mod test {
 		let pub_keys = keypairs.clone().map(|kp| kp.public_key).to_vec();
 		let domain = N::from_u128(DOMAIN);
 
-		let (attestations, set, op_hashes) = {
+		let (attestations, set, op_hash) = {
 			let mut attestations = Vec::new();
 			let mut set = Vec::new();
 
@@ -925,14 +930,26 @@ mod test {
 			}
 			let mut sponge = SHN::new();
 			sponge.update(&op_hashes);
-			let op_hashes = sponge.squeeze();
+			let op_hash = sponge.squeeze();
 
-			(attestations, set, op_hashes)
+			(attestations, set, op_hash)
 		};
 
+		let mut opt_att = Vec::new();
+		let mut opt_pks = Vec::new();
+
+		for i in 0..NUM_NEIGHBOURS {
+			let mut att_row = Vec::new();
+			for j in 0..NUM_NEIGHBOURS {
+				att_row.push(Some(attestations[i][j].clone()));
+			}
+			opt_att.push(att_row);
+			opt_pks.push(Some(pub_keys[i].clone()));
+		}
+
 		// Constructing public inputs for the circuit
-		let mut res = set.clone();
-		res.extend({
+		let mut public_inputs = set.clone();
+		public_inputs.extend({
 			let mut et = native::EigenTrustSet::<
 				NUM_NEIGHBOURS,
 				NUM_ITERATIONS,
@@ -959,8 +976,8 @@ mod test {
 
 			et.converge()
 		});
-		res.push(domain);
-		res.push(op_hashes);
+		public_inputs.push(domain);
+		public_inputs.push(op_hash);
 
 		let et = EigenTrustSet::<
 			NUM_NEIGHBOURS,
@@ -975,12 +992,12 @@ mod test {
 			H,
 			HN,
 			SH,
-		>::new(attestations, pub_keys);
+		>::new(opt_att, opt_pks, domain);
 
 		let k = 20;
 		let rng = &mut rand::thread_rng();
 		let params = generate_params(k);
-		let res = prove_and_verify::<Bn256, _, _>(params, et, &[&res], rng).unwrap();
+		let res = prove_and_verify::<Bn256, _, _>(params, et, &[&public_inputs], rng).unwrap();
 		assert!(res);
 	}
 }

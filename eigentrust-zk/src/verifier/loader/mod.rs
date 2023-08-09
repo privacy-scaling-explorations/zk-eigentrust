@@ -807,7 +807,7 @@ mod test {
 		params::{ecc::bn254::Bn254Params, rns::bn256::Bn256_4_68},
 		poseidon::{
 			sponge::{PoseidonSpongeConfig, StatefulSpongeChipset},
-			PoseidonChipset, PoseidonConfig,
+			PoseidonConfig,
 		},
 		verifier::transcript::native::WIDTH,
 		Chip, CommonConfig, RegionCtx,
@@ -825,7 +825,6 @@ mod test {
 	type C = G1Affine;
 	type P = Bn256_4_68;
 	type EC = Bn254Params;
-	type H = PoseidonChipset<Fr, 5, Params>;
 	type S = StatefulSpongeChipset<Fr, 5, Params>;
 	type Scalar = Fr;
 	type Base = Fq;

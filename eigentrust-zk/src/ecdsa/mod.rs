@@ -8,7 +8,8 @@ use crate::ecc::generic::{
 use crate::ecc::{AuxConfig, EccAddConfig};
 use crate::integer::native::Integer;
 use crate::integer::{
-	IntegerAssigner, IntegerEqualChipset, IntegerEqualConfig, IntegerReduceChip, UnassignedInteger,
+	FixedIntegerAssigner, IntegerAssigner, IntegerEqualChipset, IntegerEqualConfig,
+	IntegerReduceChip, UnassignedInteger,
 };
 use crate::params::ecc::EccParams;
 use crate::{
@@ -380,16 +381,14 @@ where
 	fn synthesize(
 		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<N>,
 	) -> Result<Self::Output, Error> {
-		let unassigned_one: UnassignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P> =
-			UnassignedInteger::from(Integer::one());
-		let int_assigner = IntegerAssigner::new(unassigned_one);
+		let int_assigner =
+			FixedIntegerAssigner::<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>::new(Integer::one());
 		let assigned_one = int_assigner.synthesize(
 			common,
 			&(),
 			layouter.namespace(|| "one as assigned integer"),
 		)?;
 
-		let r = self.signature.r;
 		// Constraint for the s_inv
 		let mul_chip = IntegerMulChip::new(self.signature.s.clone(), self.sig_data.s_inv.clone());
 		let is_one =
@@ -409,7 +408,7 @@ where
 		let u_1_chip = IntegerMulChip::new(self.sig_data.msg_hash, self.sig_data.s_inv.clone());
 		let u_1 = u_1_chip.synthesize(common, &config.int_mul, layouter.namespace(|| "u_1"))?;
 
-		let u_2_chip = IntegerMulChip::new(r.clone(), self.sig_data.s_inv);
+		let u_2_chip = IntegerMulChip::new(self.signature.r.clone(), self.sig_data.s_inv);
 		let u_2 = u_2_chip.synthesize(common, &config.int_mul, layouter.namespace(|| "u_2"))?;
 
 		let v_1_ecc_mul_scalar_chip = EccMulChipset::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::new(
@@ -450,7 +449,7 @@ where
 			layouter.namespace(|| "reduce base in scalar"),
 		)?;
 
-		let ecc_eq_chipset = IntegerEqualChipset::new(reduced_x, r);
+		let ecc_eq_chipset = IntegerEqualChipset::new(reduced_x, self.signature.r);
 		let is_eq = ecc_eq_chipset.synthesize(
 			common,
 			&config.int_eq,

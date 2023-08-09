@@ -310,7 +310,7 @@ mod test {
 		poseidon::{
 			native::sponge::PoseidonSponge,
 			sponge::{PoseidonSpongeConfig, StatefulSpongeChipset},
-			PoseidonChipset, PoseidonConfig,
+			PoseidonConfig,
 		},
 		verifier::{
 			loader::{
@@ -341,7 +341,6 @@ mod test {
 
 	type C = G1Affine;
 	type P = Bn256_4_68;
-	type H = PoseidonChipset<Scalar, WIDTH, Params>;
 	type S = StatefulSpongeChipset<Scalar, WIDTH, Params>;
 	type NativeH = PoseidonSponge<Scalar, WIDTH, Params>;
 	type Scalar = Fr;
