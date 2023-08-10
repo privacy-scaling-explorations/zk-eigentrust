@@ -335,7 +335,7 @@ where
 		)?;
 
 		// Reduce p_y
-		let p_y = IntegerReduceChip::new(self.p.y.clone());
+		let p_y = IntegerReduceChip::new(self.p.y);
 		let p_y_reduced = p_y.synthesize(
 			common,
 			&config.integer_reduce_selector,

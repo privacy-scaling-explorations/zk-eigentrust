@@ -46,11 +46,8 @@ where
 
 	/// Constructs a new empty attestation
 	pub fn empty(domain: N) -> Self {
-		let mut attestation = Attestation::default();
-		attestation.domain = domain;
-		let mut signature = Signature::default();
-		signature.s = Integer::one();
-		signature.r = Integer::one();
+		let attestation = Attestation::<N> { domain, ..Default::default() };
+		let signature = Signature { r: Integer::one(), s: Integer::one(), ..Default::default() };
 
 		Self { attestation, signature }
 	}

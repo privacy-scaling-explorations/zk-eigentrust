@@ -285,13 +285,7 @@ impl<
 		let ecdsa_assigner = EcdsaAssignerConfig::new(aux);
 		let hasher = H::configure(&common, meta);
 		let sponge = SH::configure(&common, meta);
-		let opinion = OpinionConfig::new(
-			ecdsa,
-			main.clone(),
-			ecc_equal,
-			hasher.clone(),
-			sponge.clone(),
-		);
+		let opinion = OpinionConfig::new(ecdsa, main.clone(), ecc_equal, hasher, sponge.clone());
 
 		EigenTrustSetConfig { common, main, sponge, ecdsa_assigner, opinion }
 	}

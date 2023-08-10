@@ -797,7 +797,7 @@ where
 			is_eq_vec.push(res);
 		}
 
-		let set = SetChipset::new(is_eq_vec, zero.clone());
+		let set = SetChipset::new(is_eq_vec, zero);
 		let res = set.synthesize(common, &config.set, layouter.namespace(|| "is_in_set"))?;
 
 		let sub = SubChipset::new(one, res);
