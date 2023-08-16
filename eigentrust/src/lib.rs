@@ -53,7 +53,9 @@ pub mod error;
 pub mod eth;
 pub mod storage;
 
-use crate::attestation::{SignatureEth, SignatureRaw, SignedAttestationEth, SignedAttestationFr};
+use crate::attestation::{
+	SignatureEth, SignatureRaw, SignedAttestationEth, SignedAttestationScalar,
+};
 use att_station::{
 	AttestationCreatedFilter, AttestationData as ContractAttestationData, AttestationStation,
 };
@@ -260,7 +262,7 @@ impl Client {
 		);
 
 		// Initialize attestation matrix
-		let mut attestation_matrix: Vec<Vec<Option<SignedAttestationFr>>> =
+		let mut attestation_matrix: Vec<Vec<Option<SignedAttestationScalar>>> =
 			vec![vec![None; MAX_NEIGHBOURS]; MAX_NEIGHBOURS];
 
 		// Populate the attestation matrix with the attestations data

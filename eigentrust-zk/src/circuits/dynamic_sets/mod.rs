@@ -519,16 +519,16 @@ impl<
 					let addr_j = set[j].clone();
 					// Condition 1. addr_j != addr_i
 					let equal_chip = IsEqualChipset::new(addr_j.clone(), addr_i.clone());
-					let is_add_i = equal_chip.synthesize(
+					let is_addr_i = equal_chip.synthesize(
 						&config.common,
 						&config.main,
-						layouter.namespace(|| "op_pk_j_x == pk_i_x"),
+						layouter.namespace(|| "op_addr_j_x == addr_i_x"),
 					)?;
-					let sub = SubChipset::new(one.clone(), is_add_i);
-					let is_not_add_i = sub.synthesize(
+					let sub = SubChipset::new(one.clone(), is_addr_i);
+					let is_not_addr_i = sub.synthesize(
 						&config.common,
 						&config.main,
-						layouter.namespace(|| " 1 - is_add_i"),
+						layouter.namespace(|| " 1 - is_addr_i"),
 					)?;
 
 					// Condition 2. addr_j != Address::zero()
@@ -542,24 +542,24 @@ impl<
 					let is_not_default_addr = sub.synthesize(
 						&config.common,
 						&config.main,
-						layouter.namespace(|| " 1 - is_add_i"),
+						layouter.namespace(|| " 1 - is_default_addr"),
 					)?;
 
 					// Conditions for distributing the score
-					// 1. pk_j != pk_i
-					// 2. pk_j != PublicKey::default()
+					// 1. addr_j != addr_i
+					// 2. addr_j != Address::zero()
 					// 3. op_score_sum == 0
-					let and_chip = AndChipset::new(is_not_add_i, is_not_default_addr);
+					let and_chip = AndChipset::new(is_not_addr_i, is_not_default_addr);
 					let cond = and_chip.synthesize(
 						&config.common,
 						&config.main,
-						layouter.namespace(|| "is_not_add_i && is_not_null"),
+						layouter.namespace(|| "is_not_addr_i && is_not_null"),
 					)?;
 					let and_chip = AndChipset::new(cond, is_sum_zero.clone());
 					let cond = and_chip.synthesize(
 						&config.common,
 						&config.main,
-						layouter.namespace(|| "is_not_add_i && is_not_null"),
+						layouter.namespace(|| "is_not_addr_i && is_not_null"),
 					)?;
 					let select_chip = SelectChipset::new(cond, one.clone(), ops_i[j].clone());
 					ops_i[j] = select_chip.synthesize(
@@ -760,7 +760,7 @@ mod test {
 				// Attestation to the other peers
 				for j in 0..NUM_NEIGHBOURS {
 					let attestation =
-						Attestation::new(pub_keys[j].to_address(), domain, ops[i][j], Fr::ZERO);
+						Attestation::new(pub_keys[j].to_address(), domain, ops[i][j], N::ZERO);
 
 					let att_hash = attestation.hash::<HASHER_WIDTH, PoseidonNativeHasher>();
 					let att_hash: Fq = big_to_fe(fe_to_big(att_hash));
@@ -772,17 +772,8 @@ mod test {
 				}
 				attestations.push(attestations_i);
 
-				let op: Opinion<
-					NUM_NEIGHBOURS,
-					Secp256k1Affine,
-					Fr,
-					4,
-					68,
-					Secp256k1_4_68,
-					Secp256k1Params,
-					HN,
-					SHN,
-				> = Opinion::new(pub_keys[i].clone(), attestations[i].clone(), domain);
+				let op: Opinion<NUM_NEIGHBOURS, C, N, NUM_LIMBS, NUM_BITS, P, EC, HN, SHN> =
+					Opinion::new(pub_keys[i].clone(), attestations[i].clone(), domain);
 				let (_, _, op_hash) = op.validate(set.clone());
 				op_hashes.push(op_hash);
 			}
@@ -861,7 +852,6 @@ mod test {
 	}
 
 	#[test]
-	// #[ignore = "Failing ecdsa verification"]
 	fn test_closed_graph_circut_prod() {
 		// Test Dynamic Sets Circuit production
 		let ops: Vec<Vec<N>> = vec![
@@ -896,7 +886,7 @@ mod test {
 				// Attestation to the other peers
 				for j in 0..NUM_NEIGHBOURS {
 					let attestation =
-						Attestation::new(pub_keys[j].to_address(), domain, ops[i][j], Fr::ZERO);
+						Attestation::new(pub_keys[j].to_address(), domain, ops[i][j], N::ZERO);
 
 					let att_hash = attestation.hash::<HASHER_WIDTH, PoseidonNativeHasher>();
 					let att_hash: Fq = big_to_fe(fe_to_big(att_hash));
@@ -908,17 +898,8 @@ mod test {
 				}
 				attestations.push(attestations_i);
 
-				let op: Opinion<
-					NUM_NEIGHBOURS,
-					Secp256k1Affine,
-					Fr,
-					4,
-					68,
-					Secp256k1_4_68,
-					Secp256k1Params,
-					HN,
-					SHN,
-				> = Opinion::new(pub_keys[i].clone(), attestations[i].clone(), domain);
+				let op: Opinion<NUM_NEIGHBOURS, C, N, NUM_LIMBS, NUM_BITS, P, EC, HN, SHN> =
+					Opinion::new(pub_keys[i].clone(), attestations[i].clone(), domain);
 				let (_, _, op_hash) = op.validate(set.clone());
 				op_hashes.push(op_hash);
 			}

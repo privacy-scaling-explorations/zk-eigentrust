@@ -38,9 +38,9 @@ pub type ECDSASignature = ecdsa::RecoverableSignature;
 /// Signature represented with field elements
 pub type SignatureFr = Signature<Secp256k1Affine, Scalar, NUM_LIMBS, NUM_BITS, Secp256k1_4_68>;
 /// Attestation represented with field
-pub type AttestationFr = Attestation<Scalar>;
+pub type AttestationScalar = Attestation<Scalar>;
 /// Signed Attestation represented with field elements
-pub type SignedAttestationFr =
+pub type SignedAttestationScalar =
 	SignedAttestation<Secp256k1Affine, Scalar, NUM_LIMBS, NUM_BITS, Secp256k1_4_68>;
 
 /// Attestation struct.
@@ -90,7 +90,7 @@ impl AttestationEth {
 	}
 
 	/// Converts the attestation to the scalar representation.
-	pub fn to_attestation_fr(&self) -> Result<AttestationFr, EigenError> {
+	pub fn to_attestation_fr(&self) -> Result<AttestationScalar, EigenError> {
 		// About
 		let about = scalar_from_address(&self.about)?;
 
@@ -123,7 +123,7 @@ impl AttestationEth {
 
 		let message = Scalar::from_uniform_bytes(&message_bytes);
 
-		Ok(AttestationFr { about, domain, value, message })
+		Ok(AttestationScalar { about, domain, value, message })
 	}
 
 	/// Construct the key from the attestation domain
@@ -277,10 +277,10 @@ impl SignedAttestationEth {
 	}
 
 	/// Convert to a struct with field values
-	pub fn to_signed_signature_fr(&self) -> Result<SignedAttestationFr, EigenError> {
+	pub fn to_signed_signature_fr(&self) -> Result<SignedAttestationScalar, EigenError> {
 		let attestation_fr = self.attestation.to_attestation_fr()?;
 		let signature_fr = self.signature.to_signature_fr();
-		Ok(SignedAttestationFr::new(attestation_fr, signature_fr))
+		Ok(SignedAttestationScalar::new(attestation_fr, signature_fr))
 	}
 }
 
