@@ -897,7 +897,9 @@ where
 		// Subtracting curve's bit size from binary field bit size to find the bits difference
 		let bits_difference = NUM_BITS * NUM_LIMBS - (C::ScalarExt::NUM_BITS as usize);
 		let bits = &bits[bits_difference..];
-		let bits_bool = self.scalar.integer.to_bits();
+		let mut bits_bool = self.scalar.integer.to_bits();
+		bits_bool.reverse();
+		let bits_bool = &bits_bool[bits_difference..];
 
 		let mut assigned_bits = Vec::new();
 		for i in 0..bits.len() {

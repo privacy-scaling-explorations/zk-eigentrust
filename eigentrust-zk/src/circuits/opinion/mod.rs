@@ -914,7 +914,6 @@ mod test {
 		assert_eq!(prover.verify(), Ok(()));
 	}
 
-	#[ignore = "Currently not working"]
 	#[test]
 	fn test_opinion_prod() {
 		// Test Opinion Chipset production
