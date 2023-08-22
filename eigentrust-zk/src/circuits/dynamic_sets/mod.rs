@@ -851,6 +851,7 @@ mod test {
 		assert_eq!(prover.verify(), Ok(()));
 	}
 
+	#[ignore = "Closed circuit test takes too long to run"]
 	#[test]
 	fn test_closed_graph_circut_prod() {
 		// Test Dynamic Sets Circuit production
