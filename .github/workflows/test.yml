@@ -36,26 +36,13 @@ jobs:
         uses: foundry-rs/foundry-toolchain@v1
 
       - name: Fmt Check
-        uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: --all -- --check
+        run: ./scripts/fmt-check.sh
+
+      - name: Clippy Check
+        run: ./scripts/clippy.sh
 
       - name: Build
-        uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --release
-
-      - name: Get Diff Action
-        uses: technote-space/get-diff-action@v4.0.1
-        with: 
-          args: --exit-code
-            
-      - name: Clippy Check
-        uses: actions-rs/cargo@v1
-        with:
-          command: clippy
+        run: ./scripts/build.sh && ./scripts/diff.sh
 
       - uses: taiki-e/install-action@nextest
 
@@ -63,4 +50,4 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: nextest
-          args: run --all
+          args: run --all --release
