@@ -335,6 +335,12 @@ where
 		Self::new(inputs)
 	}
 
+	fn configure(common: &CommonConfig, meta: &mut ConstraintSystem<F>) -> PoseidonConfig {
+		let fr_selector = FullRoundChip::<F, WIDTH, P>::configure(common, meta);
+		let pr_selector = PartialRoundChip::<F, WIDTH, P>::configure(common, meta);
+		PoseidonConfig::new(fr_selector, pr_selector)
+	}
+
 	fn finalize(
 		self, common: &CommonConfig, config: &Self::Config, layouter: impl Layouter<F>,
 	) -> Result<[AssignedCell<F, F>; WIDTH], Error> {

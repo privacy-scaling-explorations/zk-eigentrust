@@ -371,21 +371,18 @@ where
 	/// Verify a signature for a given message hash and public key using wrong field arithmetic
 	/// Similar to the ZK circuit setting instead of computing s_inverse we take it in as an advice value
 	pub fn verify(&self) -> bool {
-		let Signature { r, .. } = &self.signature;
-
 		let u_1 = self.msg_hash.mul(&self.s_inv).result;
-		let u_2 = r.mul(&self.s_inv).result;
+		let u_2 = self.signature.r.mul(&self.s_inv).result;
 		let v_1 = self.g_as_ecpoint.mul_scalar(u_1);
 		let v_2 = self.public_key.0.mul_scalar(u_2);
 		let r_point = v_1.add(&v_2);
 
 		let x_candidate = r_point.x;
-		for i in 0..NUM_LIMBS {
-			if x_candidate.limbs[i] != r.limbs[i] {
-				return false;
-			}
-		}
-		true
+		let x_int =
+			Integer::<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>::from_limbs(x_candidate.limbs);
+		let x_reduced = x_int.reduce().result;
+
+		x_reduced.limbs == self.signature.r.limbs
 	}
 }
 
@@ -434,51 +431,52 @@ mod test {
 		},
 	};
 
+	type SecpScalar = Fq;
+	type N = Fr;
+	type C = Secp256k1Affine;
+	const NUM_LIMBS: usize = 4;
+	const NUM_BITS: usize = 68;
+	type P = Secp256k1_4_68;
+	type EC = Secp256k1Params;
+
 	#[test]
 	fn should_verify_ecdsa_signature() {
 		let rng = &mut rand::thread_rng();
-		let keypair =
-			EcdsaKeypair::<Secp256k1Affine, Fr, 4, 68, Secp256k1_4_68, Secp256k1Params>::generate_keypair(rng);
-		let msg_hash = Fq::from_u128(123456789);
+		let keypair = EcdsaKeypair::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::generate_keypair(rng);
+		let msg_hash = SecpScalar::from_u128(123456789);
 		let signature = keypair.sign(msg_hash.clone(), rng);
 		let public_key = keypair.public_key.clone();
-		let verifier =
-			EcdsaVerifier::<Secp256k1Affine, Fr, 4, 68, Secp256k1_4_68, Secp256k1Params>::new(
-				signature,
-				Integer::from_w(msg_hash),
-				public_key,
-			);
+		let verifier = EcdsaVerifier::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::new(
+			signature,
+			Integer::from_w(msg_hash),
+			public_key,
+		);
 		assert!(verifier.verify());
 	}
 
 	#[test]
 	fn should_not_verify_invalid_ecdsa_signature() {
 		let rng = &mut rand::thread_rng();
-		let keypair =
-			EcdsaKeypair::<Secp256k1Affine, Fr, 4, 68, Secp256k1_4_68, Secp256k1Params>::generate_keypair(rng);
-		let msg_hash = Fq::from_u128(123456789);
+		let keypair = EcdsaKeypair::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::generate_keypair(rng);
+		let msg_hash = SecpScalar::from_u128(123456789);
 		let signature = keypair.sign(msg_hash.clone(), rng);
 		let public_key = keypair.public_key.clone();
-
-		let wrong_pk_point = public_key.0.mul_scalar(Integer::from_w(Fq::from(2u64)));
+		let wrong_pk_point = public_key.0.mul_scalar(Integer::from_w(SecpScalar::from(2u64)));
 		let wrong_pk = PublicKey::new(wrong_pk_point);
-		let result =
-			EcdsaVerifier::<Secp256k1Affine, Fr, 4, 68, Secp256k1_4_68, Secp256k1Params>::new(
-				signature,
-				Integer::from_w(msg_hash),
-				wrong_pk,
-			);
+		let result = EcdsaVerifier::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::new(
+			signature,
+			Integer::from_w(msg_hash),
+			wrong_pk,
+		);
 		assert!(!result.verify());
 	}
 
 	#[test]
 	fn should_recover_public_key() {
 		let rng = &mut rand::thread_rng();
-		let keypair =
-		EcdsaKeypair::<Secp256k1Affine, Fr, 4, 68, Secp256k1_4_68, Secp256k1Params>::generate_keypair(rng);
-		let msg_hash = Fq::random(rng.clone());
+		let keypair = EcdsaKeypair::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::generate_keypair(rng);
+		let msg_hash = SecpScalar::random(rng.clone());
 		let sig = keypair.sign(msg_hash.clone(), rng);
-
 		let public_key = keypair.public_key.clone();
 		let recovered_public_key = keypair.recover_public_key(sig, Integer::from_w(msg_hash));
 		assert_eq!(public_key, recovered_public_key);

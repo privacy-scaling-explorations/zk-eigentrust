@@ -26,7 +26,8 @@
 	clippy::needless_borrow
 )]
 
-use eddsa::native::PublicKey;
+use std::hash::Hash;
+
 use halo2::halo2curves::bn256::Fr as Scalar;
 use halo2::plonk::TableColumn;
 use halo2::{
@@ -41,8 +42,6 @@ use halo2::{
 
 pub use halo2;
 use serde::{Deserialize, Serialize};
-
-use crate::circuits::{PoseidonNativeHasher, PoseidonNativeSponge};
 
 /// EigenTrust-related circuits
 pub mod circuits;
@@ -76,7 +75,7 @@ pub mod utils;
 pub mod verifier;
 
 /// Extention to the traits provided by halo2
-pub trait FieldExt: PrimeField + FromUniformBytes<64> {}
+pub trait FieldExt: PrimeField + FromUniformBytes<64> + Hash {}
 impl FieldExt for BnBase {}
 impl FieldExt for BnScalar {}
 impl FieldExt for SecpBase {}
@@ -104,6 +103,8 @@ pub trait SpongeHasher<F: FieldExt>: Clone {
 pub trait HasherChipset<F: FieldExt, const WIDTH: usize>: Chipset<F> + Clone {
 	/// Creates a new hasher chipset
 	fn new(inputs: [AssignedCell<F, F>; WIDTH]) -> Self;
+	/// Configure
+	fn configure(common: &CommonConfig, meta: &mut ConstraintSystem<F>) -> Self::Config;
 	/// Finalize the hasher
 	fn finalize(
 		self, common: &CommonConfig, config: &Self::Config, layouter: impl Layouter<F>,
@@ -111,11 +112,13 @@ pub trait HasherChipset<F: FieldExt, const WIDTH: usize>: Chipset<F> + Clone {
 }
 
 /// Sponge Hasher chipset trait
-pub trait SpongeHasherChipset<F: FieldExt>: Clone {
+pub trait SpongeHasherChipset<F: FieldExt, const WIDTH: usize>: Clone {
 	/// Config selectors for the sponge
 	type Config: Clone;
 	/// Creates a new sponge hasher chipset
 	fn init(common: &CommonConfig, layouter: impl Layouter<F>) -> Result<Self, Error>;
+	/// Configure
+	fn configure(common: &CommonConfig, meta: &mut ConstraintSystem<F>) -> Self::Config;
 	/// Update current sponge chipset state
 	fn update(&mut self, inputs: &[AssignedCell<F, F>]);
 	/// Finalize the sponge hasher
@@ -180,7 +183,7 @@ impl<'a, F: FieldExt> RegionCtx<'a, F> {
 		)
 	}
 
-	/// Assign to advice column from an instance column
+	/// Assign to advice column from an fixed column
 	pub fn assign_from_constant(
 		&mut self, advice: Column<Advice>, constant: F,
 	) -> Result<AssignedCell<F, F>, Error> {
@@ -301,39 +304,6 @@ pub trait Chipset<F: FieldExt> {
 	fn synthesize(
 		self, common: &CommonConfig, config: &Self::Config, layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error>;
-}
-
-/// Calculate message hashes from given public keys and scores
-pub fn calculate_message_hash<const N: usize, const S: usize>(
-	pks: Vec<PublicKey>, scores: Vec<Vec<Scalar>>,
-) -> (Scalar, Vec<Scalar>) {
-	assert!(pks.len() == N);
-	assert!(scores.len() == S);
-	for score in &scores {
-		assert!(score.len() == N);
-	}
-
-	let pks_x: Vec<Scalar> = pks.iter().map(|pk| pk.0.x).collect();
-	let pks_y: Vec<Scalar> = pks.iter().map(|pk| pk.0.y).collect();
-	let mut pk_sponge = PoseidonNativeSponge::new();
-	pk_sponge.update(&pks_x);
-	pk_sponge.update(&pks_y);
-	let pks_hash = pk_sponge.squeeze();
-
-	let messages = scores
-		.into_iter()
-		.map(|ops| {
-			let mut scores_sponge = PoseidonNativeSponge::new();
-			scores_sponge.update(&ops);
-			let scores_hash = scores_sponge.squeeze();
-
-			let final_hash_input =
-				[pks_hash, scores_hash, Scalar::zero(), Scalar::zero(), Scalar::zero()];
-			PoseidonNativeHasher::new(final_hash_input).permute()[0]
-		})
-		.collect();
-
-	(pks_hash, messages)
 }
 
 #[derive(Debug, Clone)]

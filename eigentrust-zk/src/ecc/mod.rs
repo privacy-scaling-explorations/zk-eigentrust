@@ -3,7 +3,7 @@ pub mod generic;
 /// Ecc where base field is the wrong field and scalar is the native
 pub mod same_curve;
 
-use crate::gadgets::main::MainConfig;
+use crate::{gadgets::main::MainConfig, integer::IntegerEqualConfig};
 use halo2::plonk::Selector;
 
 /// Configuration elements for the circuit are defined here.
@@ -61,6 +61,20 @@ impl EccDoubleConfig {
 
 /// Configuration elements for the circuit are defined here.
 #[derive(Debug, Clone)]
+pub struct EccEqualConfig {
+	int_eq: IntegerEqualConfig,
+	main: MainConfig,
+}
+
+impl EccEqualConfig {
+	/// Constructor for Ecc equality config
+	pub fn new(main: MainConfig, int_eq: IntegerEqualConfig) -> Self {
+		Self { int_eq, main }
+	}
+}
+
+/// Configuration elements for the circuit are defined here.
+#[derive(Debug, Clone)]
 pub struct EccUnreducedLadderConfig {
 	/// Constructs selectors from different circuits.
 	integer_add_selector: Selector,
@@ -103,7 +117,7 @@ impl EccTableSelectConfig {
 pub struct EccMulConfig {
 	/// Constructs configs and selector from different circuits.
 	ladder: EccUnreducedLadderConfig,
-	pub(crate) add: EccAddConfig,
+	add: EccAddConfig,
 	double: EccDoubleConfig,
 	table_select: EccTableSelectConfig,
 	bits2num: Selector,

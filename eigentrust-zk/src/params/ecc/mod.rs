@@ -13,7 +13,7 @@ use num_traits::One;
 use std::fmt::Debug;
 
 /// Params for Ecc operations
-pub trait EccParams<C: CurveAffine>: Clone + Debug + Default + PartialEq {
+pub trait EccParams<C: CurveAffine>: Clone + Default + Debug + PartialEq {
 	/// Sliding window size
 	fn window_size() -> u32;
 

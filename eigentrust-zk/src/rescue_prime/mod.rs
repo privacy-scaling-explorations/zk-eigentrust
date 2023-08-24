@@ -192,13 +192,15 @@ where
 
 #[derive(Clone)]
 /// Constructs a config structure for the circuit.
-pub struct RescuePrimeConfig<F: FieldExt, const WIDTH: usize, P>
-where
-	P: RoundParams<F, WIDTH>,
-{
+pub struct RescuePrimeConfig {
 	selector: Selector,
-	_f: PhantomData<F>,
-	_p: PhantomData<P>,
+}
+
+impl RescuePrimeConfig {
+	/// Construct new config
+	pub fn new(selector: Selector) -> Self {
+		Self { selector }
+	}
 }
 
 #[derive(Clone)]
@@ -227,7 +229,7 @@ impl<F: FieldExt, const WIDTH: usize, P> Chipset<F> for RescuePrimeChipset<F, WI
 where
 	P: RoundParams<F, WIDTH>,
 {
-	type Config = RescuePrimeConfig<F, WIDTH, P>;
+	type Config = RescuePrimeConfig;
 	type Output = [AssignedCell<F, F>; WIDTH];
 
 	fn synthesize(
@@ -245,6 +247,11 @@ where
 {
 	fn new(inputs: [AssignedCell<F, F>; WIDTH]) -> Self {
 		Self::new(inputs)
+	}
+
+	fn configure(common: &CommonConfig, meta: &mut ConstraintSystem<F>) -> Self::Config {
+		let selector = RescuePrimeChip::<F, WIDTH, P>::configure(common, meta);
+		RescuePrimeConfig::new(selector)
 	}
 
 	fn finalize(

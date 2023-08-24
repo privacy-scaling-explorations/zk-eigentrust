@@ -3,20 +3,21 @@ pub mod native;
 
 use self::native::EcPoint;
 use super::{
-	AuxConfig, EccAddConfig, EccBatchedMulConfig, EccDoubleConfig, EccMulConfig,
+	AuxConfig, EccAddConfig, EccBatchedMulConfig, EccDoubleConfig, EccEqualConfig, EccMulConfig,
 	EccTableSelectConfig, EccUnreducedLadderConfig,
 };
 use crate::{
 	gadgets::{
 		bits2integer::{Bits2IntegerChipset, Bits2IntegerChipsetConfig},
-		main::SelectChipset,
+		main::{AndChipset, SelectChipset},
 	},
 	integer::{
-		native::Integer, AssignedInteger, IntegerAddChip, IntegerAssigner, IntegerDivChip,
-		IntegerMulChip, IntegerReduceChip, IntegerSubChip, UnassignedInteger,
+		native::Integer, AssignedInteger, ConstIntegerAssigner, IntegerAddChip, IntegerAssigner,
+		IntegerDivChip, IntegerEqualChipset, IntegerMulChip, IntegerReduceChip, IntegerSubChip,
+		UnassignedInteger,
 	},
 	params::{ecc::EccParams, rns::RnsParams},
-	utils::{assigned_as_bool, be_assigned_bits_to_usize},
+	utils::be_assigned_bits_to_usize,
 	Chip, Chipset, CommonConfig, FieldExt, UnassignedValue,
 };
 use halo2::{
@@ -614,6 +615,126 @@ where
 	}
 }
 
+/// Elliptic curve equality chipset
+pub struct EccEqualChipset<
+	C: CurveAffine,
+	N: FieldExt,
+	const NUM_LIMBS: usize,
+	const NUM_BITS: usize,
+	P,
+> where
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS>,
+	C::Base: FieldExt,
+{
+	// Assigned point p
+	p: AssignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P>,
+	// Assigned point q
+	q: AssignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P>,
+}
+
+impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
+	EccEqualChipset<C, N, NUM_LIMBS, NUM_BITS, P>
+where
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS>,
+	C::Base: FieldExt,
+{
+	/// Creates a new ecc equal chipset.
+	pub fn new(
+		p: AssignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P>,
+		q: AssignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P>,
+	) -> Self {
+		Self { p, q }
+	}
+}
+
+impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P> Chipset<N>
+	for EccEqualChipset<C, N, NUM_LIMBS, NUM_BITS, P>
+where
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS>,
+	C::Base: FieldExt,
+{
+	type Config = EccEqualConfig;
+	type Output = AssignedCell<N, N>;
+
+	/// Synthesize the circuit.
+	fn synthesize(
+		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<N>,
+	) -> Result<Self::Output, Error> {
+		let x_eq = IntegerEqualChipset::new(self.p.x, self.q.x);
+		let y_eq = IntegerEqualChipset::new(self.p.y, self.q.y);
+
+		let is_x_eq = x_eq.synthesize(common, &config.int_eq, layouter.namespace(|| "x_eq"))?;
+		let is_y_eq = y_eq.synthesize(common, &config.int_eq, layouter.namespace(|| "y_eq"))?;
+
+		let point_eq = AndChipset::new(is_x_eq, is_y_eq);
+		let is_point_eq =
+			point_eq.synthesize(common, &config.main, layouter.namespace(|| "point_eq"))?;
+
+		Ok(is_point_eq)
+	}
+}
+
+/// Default Elliptic curve point check
+pub struct EccDefaultChipset<
+	C: CurveAffine,
+	N: FieldExt,
+	const NUM_LIMBS: usize,
+	const NUM_BITS: usize,
+	P,
+	EC,
+> where
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
+{
+	// Assigned point p
+	p: AssignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P>,
+	_p: PhantomData<EC>,
+}
+
+impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P, EC>
+	EccDefaultChipset<C, N, NUM_LIMBS, NUM_BITS, P, EC>
+where
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
+{
+	/// Creates a new ecc equal chipset.
+	pub fn new(p: AssignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P>) -> Self {
+		Self { p, _p: PhantomData }
+	}
+}
+
+impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P, EC> Chipset<N>
+	for EccDefaultChipset<C, N, NUM_LIMBS, NUM_BITS, P, EC>
+where
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
+	C::Base: FieldExt,
+	C::Scalar: FieldExt,
+{
+	type Config = EccEqualConfig;
+	type Output = AssignedCell<N, N>;
+
+	/// Synthesize the circuit.
+	fn synthesize(
+		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<N>,
+	) -> Result<Self::Output, Error> {
+		let point_assigner =
+			ConstPointAssigner::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::new(EcPoint::default());
+		let default_point =
+			point_assigner.synthesize(common, &(), layouter.namespace(|| "default_assigner"))?;
+
+		let is_equal_point = EccEqualChipset::new(self.p, default_point);
+		let is_default =
+			is_equal_point.synthesize(common, config, layouter.namespace(|| "is_eq_point"))?;
+
+		Ok(is_default)
+	}
+}
+
 /// Chipset structure for the EccTableSelectChipset.
 struct EccTableSelectChipset<
 	C: CurveAffine,
@@ -626,7 +747,7 @@ struct EccTableSelectChipset<
 	C::Base: FieldExt,
 {
 	// Assigned bit
-	bit: AssignedCell<N, N>,
+	bit: AssignedBit<N>,
 	// Assigned point p
 	p: AssignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P>,
 	// Assigned point q
@@ -641,7 +762,7 @@ where
 {
 	/// Creates a new ecc table select chipset.
 	pub fn new(
-		bit: AssignedCell<N, N>, p: AssignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P>,
+		bit: AssignedBit<N>, p: AssignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P>,
 		q: AssignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P>,
 	) -> Self {
 		Self { bit, p, q }
@@ -666,7 +787,7 @@ where
 		for i in 0..NUM_LIMBS {
 			// Select x coordinate limbs
 			let select = SelectChipset::new(
-				self.bit.clone(),
+				self.bit.assigned_value.clone(),
 				self.p.x.limbs[i].clone(),
 				self.q.x.limbs[i].clone(),
 			);
@@ -675,7 +796,7 @@ where
 
 			// Select y coordinate limbs
 			let select = SelectChipset::new(
-				self.bit.clone(),
+				self.bit.assigned_value.clone(),
 				self.p.y.limbs[i].clone(),
 				self.q.y.limbs[i].clone(),
 			);
@@ -683,7 +804,7 @@ where
 				Some(select.synthesize(common, &config.main, layouter.namespace(|| "acc_y"))?);
 		}
 
-		let selected_point = if assigned_as_bool::<N>(self.bit) {
+		let selected_point = if self.bit.bit {
 			let selected_x_integer =
 				AssignedInteger::new(self.p.x.integer.clone(), selected_x.map(|x| x.unwrap()));
 			let selected_y_integer =
@@ -769,16 +890,25 @@ where
 		)?;
 
 		let bits2integer_config = Bits2IntegerChipsetConfig::new(config.bits2num);
-		let bits = Bits2IntegerChipset::new(self.scalar);
+		let bits = Bits2IntegerChipset::new(self.scalar.clone());
 		let mut bits =
 			bits.synthesize(common, &bits2integer_config, layouter.namespace(|| "bits"))?;
 		bits.reverse();
 		// Subtracting curve's bit size from binary field bit size to find the bits difference
 		let bits_difference = NUM_BITS * NUM_LIMBS - (C::ScalarExt::NUM_BITS as usize);
 		let bits = &bits[bits_difference..];
+		let mut bits_bool = self.scalar.integer.to_bits();
+		bits_bool.reverse();
+		let bits_bool = &bits_bool[bits_difference..];
+
+		let mut assigned_bits = Vec::new();
+		for i in 0..bits.len() {
+			let assigned_bit = AssignedBit::new(bits_bool[i], bits[i].clone());
+			assigned_bits.push(assigned_bit);
+		}
 
 		let acc_point_chip = EccTableSelectChipset::new(
-			bits[0].clone(),
+			assigned_bits[0].clone(),
 			aux_init_plus_scalar.clone(),
 			self.aux.init[0].clone(),
 		);
@@ -789,7 +919,7 @@ where
 		)?;
 
 		let carry_point_chip = EccTableSelectChipset::new(
-			bits[1].clone(),
+			assigned_bits[1].clone(),
 			aux_init_plus_scalar.clone(),
 			self.aux.init[0].clone(),
 		);
@@ -811,9 +941,9 @@ where
 		acc_point =
 			acc_add_chip.synthesize(common, &config.add, layouter.namespace(|| "acc_add"))?;
 
-		for bit in bits.iter().skip(2) {
+		for assigned_bit in assigned_bits.iter().skip(2) {
 			let carry_point_chip = EccTableSelectChipset::new(
-				bit.clone(),
+				assigned_bit.clone(),
 				aux_init_plus_scalar.clone(),
 				self.aux.init[0].clone(),
 			);
@@ -1034,6 +1164,63 @@ where
 	}
 }
 
+/// Assigning a point into fixed columns
+pub struct ConstPointAssigner<
+	C: CurveAffine,
+	N: FieldExt,
+	const NUM_LIMBS: usize,
+	const NUM_BITS: usize,
+	P,
+	EC,
+> where
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
+	C::Base: FieldExt,
+	C::ScalarExt: FieldExt,
+{
+	// Unassigned Point
+	point: EcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
+}
+
+impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P, EC>
+	ConstPointAssigner<C, N, NUM_LIMBS, NUM_BITS, P, EC>
+where
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
+	C::Base: FieldExt,
+	C::ScalarExt: FieldExt,
+{
+	/// Creates a new PointAssigner object
+	pub fn new(point: EcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>) -> Self {
+		Self { point }
+	}
+}
+
+impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P, EC> Chipset<N>
+	for ConstPointAssigner<C, N, NUM_LIMBS, NUM_BITS, P, EC>
+where
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
+	C::Base: FieldExt,
+	C::ScalarExt: FieldExt,
+{
+	type Config = ();
+	type Output = AssignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P>;
+
+	fn synthesize(
+		self, common: &CommonConfig, _: &Self::Config, mut layouter: impl Layouter<N>,
+	) -> Result<Self::Output, Error> {
+		let x_assigner = ConstIntegerAssigner::new(self.point.x);
+		let y_assigner = ConstIntegerAssigner::new(self.point.y);
+
+		let x = x_assigner.synthesize(common, &(), layouter.namespace(|| "x assigner"))?;
+		let y = y_assigner.synthesize(common, &(), layouter.namespace(|| "y assigner"))?;
+
+		let point = AssignedEcPoint::new(x, y);
+		Ok(point)
+	}
+}
+
 #[derive(Clone)]
 /// Assigned aux structure
 pub struct AssignedAux<
@@ -1179,6 +1366,18 @@ where
 
 		let assigned_aux = AssignedAux::new(aux_inits, aux_fins);
 		Ok(assigned_aux)
+	}
+}
+
+#[derive(Debug, Clone)]
+struct AssignedBit<N: FieldExt> {
+	bit: bool,
+	assigned_value: AssignedCell<N, N>,
+}
+
+impl<N: FieldExt> AssignedBit<N> {
+	pub fn new(bit: bool, assigned_value: AssignedCell<N, N>) -> Self {
+		Self { bit, assigned_value }
 	}
 }
 
@@ -1756,14 +1955,9 @@ mod test {
 		for _ in 0..10 {
 			let scalar = SecpScalar::random(rng.clone());
 			scalars_vec.push(Integer::from_w(scalar));
-			let a = Integer::<Fp, Fr, NUM_LIMBS, NUM_BITS, Secp256k1_4_68>::from_n(Fr::random(
-				rng.clone(),
-			));
-			let b = Integer::<Fp, Fr, NUM_LIMBS, NUM_BITS, Secp256k1_4_68>::from_n(Fr::random(
-				rng.clone(),
-			));
-			let point =
-				EcPoint::<Secp256k1Affine, Fr, 4, 68, Secp256k1_4_68, Secp256k1Params>::new(a, b);
+			let a = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::from_n(Fr::random(rng.clone()));
+			let b = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::from_n(Fr::random(rng.clone()));
+			let point = EcPoint::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::new(a, b);
 			points_vec.push(point);
 		}
 

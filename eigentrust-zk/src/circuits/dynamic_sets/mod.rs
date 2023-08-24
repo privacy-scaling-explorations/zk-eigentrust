@@ -1,472 +1,491 @@
 /// Native version of EigenTrustSet(ECDSA)
-///
-/// NOTE: This is temporary since Halo2 version of ECDSA is not ready
-pub mod ecdsa_native;
-/// Native version of EigenTrustSet
 pub mod native;
 
-use super::{
-	Eddsa, FullRoundHasher, PartialRoundHasher, PoseidonHasher, SpongeHasher, HASHER_WIDTH,
+use self::native::SignedAttestation;
+use super::opinion::{OpinionChipset, OpinionConfig};
+use super::opinion::{SignedAttestationAssigner, UnassignedSignedAttestation};
+use crate::circuits::HASHER_WIDTH;
+use crate::ecc::generic::native::EcPoint;
+use crate::ecc::generic::UnassignedEcPoint;
+use crate::ecc::{
+	AuxConfig, EccAddConfig, EccDoubleConfig, EccEqualConfig, EccMulConfig, EccTableSelectConfig,
+	EccUnreducedLadderConfig,
 };
-use crate::eddsa::native::Signature;
-use crate::UnassignedValue;
+use crate::ecdsa::native::PublicKey;
+use crate::ecdsa::{
+	EcdsaAssigner, EcdsaAssignerConfig, EcdsaConfig, PublicKeyAssigner, UnassignedPublicKey,
+};
+use crate::gadgets::main::MulAddChipset;
+use crate::gadgets::set::{SetChip, SetConfig};
+use crate::integer::native::Integer;
+use crate::integer::{
+	IntegerAddChip, IntegerDivChip, IntegerEqualConfig, IntegerMulChip, IntegerReduceChip,
+	IntegerSubChip, LeftShiftersAssigner, UnassignedInteger,
+};
+use crate::params::ecc::EccParams;
+use crate::params::rns::RnsParams;
+use crate::utils::big_to_fe;
 use crate::{
-	eddsa::{
-		native::{PublicKey, UnassignedPublicKey, UnassignedSignature},
-		EddsaConfig,
-	},
-	edwards::{
-		params::BabyJubJub, IntoAffineChip, PointAddChip, ScalarMulChip, StrictScalarMulConfig,
-	},
 	gadgets::{
-		absorb::AbsorbChip,
 		bits2num::Bits2NumChip,
-		lt_eq::{LessEqualConfig, NShiftedChip},
 		main::{
 			AddChipset, AndChipset, InverseChipset, IsEqualChipset, MainChip, MainConfig,
 			MulChipset, OrChipset, SelectChipset, SubChipset,
 		},
 	},
-	poseidon::{sponge::PoseidonSpongeConfig, PoseidonConfig},
 	Chip, Chipset, CommonConfig, RegionCtx, ADVICE,
 };
+use crate::{FieldExt, HasherChipset, SpongeHasherChipset};
+use crate::{Hasher, UnassignedValue};
+use halo2::arithmetic::Field;
+use halo2::halo2curves::CurveAffine;
 use halo2::{
-	circuit::{Layouter, Region, SimpleFloorPlanner, Value},
-	halo2curves::{bn256::Fr as Scalar, ff::PrimeField},
+	circuit::{Layouter, Region, SimpleFloorPlanner},
 	plonk::{Circuit, ConstraintSystem, Error},
 };
-use itertools::Itertools;
+use std::marker::PhantomData;
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 /// The columns config for the EigenTrustSet circuit.
-pub struct EigenTrustSetConfig {
+pub struct EigenTrustSetConfig<F: FieldExt, H, S>
+where
+	H: HasherChipset<F, HASHER_WIDTH>,
+	S: SpongeHasherChipset<F, HASHER_WIDTH>,
+{
 	common: CommonConfig,
 	main: MainConfig,
-	sponge: PoseidonSpongeConfig,
-	poseidon: PoseidonConfig,
-	eddsa: EddsaConfig,
+	sponge: S::Config,
+	ecdsa_assigner: EcdsaAssignerConfig,
+	opinion: OpinionConfig<F, H, S>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 /// Structure of the EigenTrustSet circuit
 pub struct EigenTrustSet<
 	const NUM_NEIGHBOURS: usize,
 	const NUM_ITER: usize,
 	const INITIAL_SCORE: u128,
-> {
+	C: CurveAffine,
+	N: FieldExt,
+	const NUM_LIMBS: usize,
+	const NUM_BITS: usize,
+	P,
+	EC,
+	H,
+	HN,
+	SH,
+> where
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::Scalar, N, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
+	C::Base: FieldExt,
+	C::ScalarExt: FieldExt,
+	H: HasherChipset<N, HASHER_WIDTH>,
+	HN: Hasher<N, HASHER_WIDTH>,
+	SH: SpongeHasherChipset<N, HASHER_WIDTH>,
+{
+	// Attestation
+	attestations: Vec<Vec<UnassignedSignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>>>,
 	// Public keys
-	pk_x: Vec<Value<Scalar>>,
-	pk_y: Vec<Value<Scalar>>,
-	// Signature
-	big_r_x: Vec<Value<Scalar>>,
-	big_r_y: Vec<Value<Scalar>>,
-	s: Vec<Value<Scalar>>,
-	// Opinions
-	op_pk_x: Vec<Vec<Value<Scalar>>>,
-	op_pk_y: Vec<Vec<Value<Scalar>>>,
-	ops: Vec<Vec<Value<Scalar>>>,
+	pks: Vec<UnassignedPublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>>,
+	// Message hashes
+	msg_hashes: Vec<Vec<UnassignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>>>,
+	// Signature s inverse
+	s_inv: Vec<Vec<UnassignedInteger<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>>>,
+	/// Generator as EC point
+	g_as_ecpoint: UnassignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
+	// Phantom Data
+	_p: PhantomData<(H, HN, SH)>,
 }
 
-impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u128>
-	EigenTrustSet<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE>
+impl<
+		const NUM_NEIGHBOURS: usize,
+		const NUM_ITER: usize,
+		const INITIAL_SCORE: u128,
+		C: CurveAffine,
+		N: FieldExt,
+		const NUM_LIMBS: usize,
+		const NUM_BITS: usize,
+		P,
+		EC,
+		H,
+		HN,
+		SH,
+	>
+	EigenTrustSet<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE, C, N, NUM_LIMBS, NUM_BITS, P, EC, H, HN, SH>
+where
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::Scalar, N, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
+	C::Base: FieldExt,
+	C::ScalarExt: FieldExt,
+	H: HasherChipset<N, HASHER_WIDTH>,
+	HN: Hasher<N, HASHER_WIDTH>,
+	SH: SpongeHasherChipset<N, HASHER_WIDTH>,
 {
 	/// Constructs a new EigenTrustSet circuit
 	pub fn new(
-		pks: Vec<PublicKey>, signatures: Vec<Signature>, op_pks: Vec<Vec<PublicKey>>,
-		ops: Vec<Vec<Scalar>>,
+		attestations: Vec<Vec<Option<SignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>>>>,
+		pks: Vec<Option<PublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>>>, domain: N,
 	) -> Self {
-		// Pubkey values
-		let pks = pks.into_iter().map(UnassignedPublicKey::from).collect_vec();
-		let pk_x = pks.iter().map(|pk| pk.0.x).collect();
-		let pk_y = pks.iter().map(|pk| pk.0.y).collect();
+		let mut unassigned_attestations = Vec::new();
+		let mut unassigned_msg_hashes = Vec::new();
+		let mut unassigned_s_invs = Vec::new();
+		let mut unassigned_pks = Vec::new();
 
-		// Signature values
-		let signatures = signatures.into_iter().map(UnassignedSignature::from).collect_vec();
-		let big_r_x = signatures.iter().map(|sig| sig.big_r.x).collect();
-		let big_r_y = signatures.iter().map(|sig| sig.big_r.y).collect();
-		let s = signatures.iter().map(|sig| sig.s).collect();
+		for i in 0..NUM_NEIGHBOURS {
+			let mut att_row = Vec::new();
+			let mut msg_hashes_row = Vec::new();
+			let mut s_inv_row = Vec::new();
+			for j in 0..NUM_NEIGHBOURS {
+				let att = attestations[i][j].clone().unwrap_or(SignedAttestation::empty(domain));
+				let unassigned_attestation = UnassignedSignedAttestation::from(att.clone());
+				let att_hash = att.attestation.hash::<HASHER_WIDTH, HN>();
+				let msg_hash_int = Integer::from_n(att_hash);
+				let unassigned_msg_hash = UnassignedInteger::from(msg_hash_int);
 
-		// Opinions
-		let op_pks = op_pks
-			.into_iter()
-			.map(|pks| pks.into_iter().map(UnassignedPublicKey::from).collect_vec())
-			.collect_vec();
-		let op_pk_x = op_pks.iter().map(|pks| pks.iter().map(|pk| pk.0.x).collect()).collect();
-		let op_pk_y = op_pks.iter().map(|pks| pks.iter().map(|pk| pk.0.y).collect()).collect();
-		let ops = ops.iter().map(|vals| vals.iter().map(|x| Value::known(*x)).collect()).collect();
+				let s_inv_w = big_to_fe::<C::ScalarExt>(att.signature.s.value()).invert().unwrap();
+				let s_inv_int = Integer::from_w(s_inv_w);
+				let unassigned_s_inv = UnassignedInteger::from(s_inv_int);
 
-		Self { pk_x, pk_y, big_r_x, big_r_y, s, op_pk_x, op_pk_y, ops }
+				att_row.push(unassigned_attestation);
+				msg_hashes_row.push(unassigned_msg_hash);
+				s_inv_row.push(unassigned_s_inv);
+			}
+
+			unassigned_attestations.push(att_row);
+			unassigned_msg_hashes.push(msg_hashes_row);
+			unassigned_s_invs.push(s_inv_row);
+
+			let pk = pks[i].clone().unwrap_or(PublicKey::default());
+			let unassigned_pk = UnassignedPublicKey::new(pk);
+			unassigned_pks.push(unassigned_pk);
+		}
+
+		// Calculate generator as ecpoint
+		let g = C::generator();
+		let coordinates_g = g.coordinates().unwrap();
+		let g_x = Integer::from_w(*coordinates_g.x());
+		let g_y = Integer::from_w(*coordinates_g.y());
+		let g_as_ecpoint = EcPoint::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::new(g_x, g_y);
+		let g_as_ecpoint = UnassignedEcPoint::from(g_as_ecpoint);
+
+		Self {
+			attestations: unassigned_attestations,
+			pks: unassigned_pks,
+			msg_hashes: unassigned_msg_hashes,
+			s_inv: unassigned_s_invs,
+			g_as_ecpoint,
+			_p: PhantomData,
+		}
 	}
 }
 
-impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u128> Circuit<Scalar>
-	for EigenTrustSet<NUM_NEIGHBOURS, NUM_ITER, INITIAL_SCORE>
+impl<
+		const NUM_NEIGHBOURS: usize,
+		const NUM_ITER: usize,
+		const INITIAL_SCORE: u128,
+		C: CurveAffine,
+		N: FieldExt,
+		const NUM_LIMBS: usize,
+		const NUM_BITS: usize,
+		P,
+		EC,
+		H,
+		HN,
+		SH,
+	> Circuit<N>
+	for EigenTrustSet<
+		NUM_NEIGHBOURS,
+		NUM_ITER,
+		INITIAL_SCORE,
+		C,
+		N,
+		NUM_LIMBS,
+		NUM_BITS,
+		P,
+		EC,
+		H,
+		HN,
+		SH,
+	> where
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::Scalar, N, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
+	C::Base: FieldExt,
+	C::ScalarExt: FieldExt,
+	H: HasherChipset<N, HASHER_WIDTH>,
+	HN: Hasher<N, HASHER_WIDTH>,
+	SH: SpongeHasherChipset<N, HASHER_WIDTH>,
 {
-	type Config = EigenTrustSetConfig;
+	type Config = EigenTrustSetConfig<N, H, SH>;
 	type FloorPlanner = SimpleFloorPlanner;
 
 	fn without_witnesses(&self) -> Self {
+		let att = UnassignedSignedAttestation::without_witnesses();
 		let pk = UnassignedPublicKey::without_witnesses();
-		let sig = UnassignedSignature::without_witnesses();
-		let op_pk = UnassignedPublicKey::without_witnesses();
+
 		Self {
-			pk_x: vec![pk.0.x; NUM_NEIGHBOURS],
-			pk_y: vec![pk.0.y; NUM_NEIGHBOURS],
-			big_r_x: vec![sig.big_r.x; NUM_NEIGHBOURS],
-			big_r_y: vec![sig.big_r.y; NUM_NEIGHBOURS],
-			s: vec![sig.s; NUM_NEIGHBOURS],
-			op_pk_x: vec![vec![op_pk.0.x; NUM_NEIGHBOURS]; NUM_NEIGHBOURS],
-			op_pk_y: vec![vec![op_pk.0.y; NUM_NEIGHBOURS]; NUM_NEIGHBOURS],
-			ops: vec![vec![Value::unknown(); NUM_NEIGHBOURS]; NUM_NEIGHBOURS],
+			attestations: vec![vec![att; NUM_NEIGHBOURS]; NUM_NEIGHBOURS],
+			pks: vec![pk; NUM_NEIGHBOURS],
+			msg_hashes: vec![vec![UnassignedInteger::without_witnesses(); NUM_NEIGHBOURS]],
+			s_inv: vec![
+				vec![UnassignedInteger::without_witnesses(); NUM_NEIGHBOURS];
+				NUM_NEIGHBOURS
+			],
+			g_as_ecpoint: UnassignedEcPoint::without_witnesses(),
+			_p: PhantomData,
 		}
 	}
 
-	fn configure(meta: &mut ConstraintSystem<Scalar>) -> Self::Config {
+	fn configure(meta: &mut ConstraintSystem<N>) -> Self::Config {
 		let common = CommonConfig::new(meta);
 		let main = MainConfig::new(MainChip::configure(&common, meta));
-
-		let full_round_selector = FullRoundHasher::configure(&common, meta);
-		let partial_round_selector = PartialRoundHasher::configure(&common, meta);
-		let poseidon = PoseidonConfig::new(full_round_selector, partial_round_selector);
-
-		let absorb_selector = AbsorbChip::<Scalar, HASHER_WIDTH>::configure(&common, meta);
-		let sponge = PoseidonSpongeConfig::new(poseidon.clone(), absorb_selector);
-
 		let bits2num_selector = Bits2NumChip::configure(&common, meta);
-		let n_shifted_selector = NShiftedChip::configure(&common, meta);
-		let lt_eq = LessEqualConfig::new(main.clone(), bits2num_selector, n_shifted_selector);
+		let set_selector = SetChip::configure(&common, meta);
+		let set = SetConfig::new(main.clone(), set_selector);
 
-		let scalar_mul_selector = ScalarMulChip::<_, BabyJubJub>::configure(&common, meta);
-		let strict_scalar_mul = StrictScalarMulConfig::new(bits2num_selector, scalar_mul_selector);
+		let integer_reduce_selector =
+			IntegerReduceChip::<C::Base, N, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
+		let integer_add_selector =
+			IntegerAddChip::<C::Base, N, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
+		let integer_sub_selector =
+			IntegerSubChip::<C::Base, N, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
+		let integer_mul_selector =
+			IntegerMulChip::<C::Base, N, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
+		let integer_div_selector =
+			IntegerDivChip::<C::Base, N, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
+		let integer_mul_selector_scalar =
+			IntegerMulChip::<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
+		let integer_equal = IntegerEqualConfig::new(main.clone(), set);
 
-		let add_point_selector = PointAddChip::<_, BabyJubJub>::configure(&common, meta);
-		let affine_selector = IntoAffineChip::configure(&common, meta);
-
-		let eddsa = EddsaConfig::new(
-			poseidon.clone(),
-			lt_eq,
-			strict_scalar_mul,
-			add_point_selector,
-			affine_selector,
+		let ecc_add = EccAddConfig::new(
+			integer_reduce_selector, integer_sub_selector, integer_mul_selector,
+			integer_div_selector,
+		);
+		let ecc_equal = EccEqualConfig::new(main.clone(), integer_equal.clone());
+		let ecc_double = EccDoubleConfig::new(
+			integer_reduce_selector, integer_add_selector, integer_sub_selector,
+			integer_mul_selector, integer_div_selector,
+		);
+		let ecc_ladder = EccUnreducedLadderConfig::new(
+			integer_add_selector, integer_sub_selector, integer_mul_selector, integer_div_selector,
+		);
+		let ecc_table_select = EccTableSelectConfig::new(main.clone());
+		let ecc_mul_scalar = EccMulConfig::new(
+			ecc_ladder,
+			ecc_add.clone(),
+			ecc_double.clone(),
+			ecc_table_select,
+			bits2num_selector,
 		);
 
-		EigenTrustSetConfig { common, main, eddsa, sponge, poseidon }
+		let ecdsa = EcdsaConfig::new(
+			ecc_mul_scalar, ecc_add, integer_equal, integer_reduce_selector,
+			integer_mul_selector_scalar,
+		);
+		let aux = AuxConfig::new(ecc_double);
+		let ecdsa_assigner = EcdsaAssignerConfig::new(aux);
+		let hasher = H::configure(&common, meta);
+		let sponge = SH::configure(&common, meta);
+		let opinion = OpinionConfig::new(ecdsa, main.clone(), ecc_equal, hasher, sponge.clone());
+
+		EigenTrustSetConfig { common, main, sponge, ecdsa_assigner, opinion }
 	}
 
 	fn synthesize(
-		&self, config: Self::Config, mut layouter: impl Layouter<Scalar>,
+		&self, config: Self::Config, mut layouter: impl Layouter<N>,
 	) -> Result<(), Error> {
-		let (
-			zero,
-			pk_x,
-			pk_y,
-			big_r_x,
-			big_r_y,
-			s,
-			ops,
-			init_score,
-			total_score,
-			passed_s,
-			one,
-			default_pk_x,
-			default_pk_y,
-			op_pk_x,
-			op_pk_y,
-		) = layouter.assign_region(
-			|| "temp",
-			|region: Region<'_, Scalar>| {
-				let mut ctx = RegionCtx::new(region, 0);
+		let (zero, one, init_score, total_score, set, passed_s, domain, ops_hash) = layouter
+			.assign_region(
+				|| "assigner",
+				|region: Region<'_, N>| {
+					let mut ctx = RegionCtx::new(region, 0);
 
-				let zero = ctx.assign_from_constant(config.common.advice[0], Scalar::zero())?;
+					let zero = ctx.assign_from_constant(config.common.advice[0], N::ZERO)?;
+					let one = ctx.assign_from_constant(config.common.advice[1], N::ONE)?;
 
-				let assigned_initial_score = ctx.assign_from_constant(
-					config.common.advice[2],
-					Scalar::from_u128(INITIAL_SCORE),
-				)?;
-
-				let assigned_total_score = ctx.assign_from_constant(
-					config.common.advice[3],
-					Scalar::from_u128(INITIAL_SCORE * NUM_NEIGHBOURS as u128),
-				)?;
-
-				// Move to the next row
-				ctx.next();
-
-				let mut assigned_pk_x = Vec::new();
-				for chunk in self.pk_x.chunks(ADVICE) {
-					for (i, chunk_i) in chunk.iter().enumerate() {
-						let pk_x = ctx.assign_advice(config.common.advice[i], *chunk_i)?;
-						assigned_pk_x.push(pk_x)
-					}
-					// Move to the next row
-					ctx.next();
-				}
-
-				let mut assigned_pk_y = Vec::new();
-				for chunk in self.pk_y.chunks(ADVICE) {
-					for (i, chunk_i) in chunk.iter().enumerate() {
-						let pk_y = ctx.assign_advice(config.common.advice[i], *chunk_i)?;
-						assigned_pk_y.push(pk_y)
-					}
-					// Move to the next row
-					ctx.next();
-				}
-
-				let mut assigned_big_r_x = Vec::new();
-				for chunk in self.big_r_x.chunks(ADVICE) {
-					for (i, chunk_i) in chunk.iter().enumerate() {
-						let big_r_x = ctx.assign_advice(config.common.advice[i], *chunk_i)?;
-						assigned_big_r_x.push(big_r_x)
-					}
-					// Move to the next row
-					ctx.next();
-				}
-
-				let mut assigned_big_r_y = Vec::new();
-				for chunk in self.big_r_y.chunks(ADVICE) {
-					for (i, chunk_i) in chunk.iter().enumerate() {
-						let big_r_y = ctx.assign_advice(config.common.advice[i], *chunk_i)?;
-						assigned_big_r_y.push(big_r_y)
-					}
-					// Move to the next row
-					ctx.next();
-				}
-
-				let mut assigned_s = Vec::new();
-				for chunk in self.s.chunks(ADVICE) {
-					for (i, chunk_i) in chunk.iter().enumerate() {
-						let s = ctx.assign_advice(config.common.advice[i], *chunk_i)?;
-						assigned_s.push(s)
-					}
-					// Move to the next row
-					ctx.next();
-				}
-
-				let mut assigned_ops = Vec::new();
-				for neighbour_ops in &self.ops {
-					let mut assigned_neighbour_op = Vec::new();
-					for chunk in neighbour_ops.chunks(ADVICE) {
-						for (i, chunk_i) in chunk.iter().enumerate() {
-							let s = ctx.assign_advice(config.common.advice[i], *chunk_i)?;
-							assigned_neighbour_op.push(s)
-						}
-						// Move to the next row
-						ctx.next();
-					}
-					assigned_ops.push(assigned_neighbour_op);
-				}
-
-				let mut passed_s = Vec::new();
-				for i in 0..NUM_NEIGHBOURS {
-					let index = i % ADVICE;
-					let ps = ctx.assign_from_instance(
-						config.common.advice[index], config.common.instance, i,
+					let assigned_initial_score = ctx.assign_from_constant(
+						config.common.advice[3],
+						N::from_u128(INITIAL_SCORE),
 					)?;
-					passed_s.push(ps);
-					if i == ADVICE - 1 {
-						ctx.next();
-					}
-				}
-				ctx.next();
 
-				let one = ctx.assign_from_constant(config.common.advice[0], Scalar::one())?;
+					let assigned_total_score = ctx.assign_from_constant(
+						config.common.advice[4],
+						N::from_u128(INITIAL_SCORE * NUM_NEIGHBOURS as u128),
+					)?;
 
-				let default_pk_x = ctx.assign_advice(
-					config.common.advice[1],
-					Value::known(PublicKey::default().0.x),
-				)?;
+					// Move to the next row
+					ctx.next();
 
-				let default_pk_y = ctx.assign_advice(
-					config.common.advice[2],
-					Value::known(PublicKey::default().0.y),
-				)?;
-				ctx.next();
+					let mut instance_count = 0;
 
-				let mut assigned_op_pk_x = Vec::new();
-				for neighbour_pk_x in &self.op_pk_x {
-					let mut assigned_neighbour_pk_x = Vec::new();
-					for chunk in neighbour_pk_x.chunks(ADVICE) {
-						for (i, chunk_i) in chunk.iter().enumerate() {
-							let x = ctx.assign_advice(config.common.advice[i], *chunk_i)?;
-							assigned_neighbour_pk_x.push(x);
+					let mut assigned_set = Vec::new();
+					for i in 0..NUM_NEIGHBOURS {
+						let index = i % ADVICE;
+
+						let addr = ctx.assign_from_instance(
+							config.common.advice[index], config.common.instance, instance_count,
+						)?;
+
+						if i == ADVICE - 1 {
+							ctx.next();
 						}
-						// Move to the next row
-						ctx.next();
-					}
-					assigned_op_pk_x.push(assigned_neighbour_pk_x);
-				}
 
-				let mut assigned_op_pk_y = Vec::new();
-				for neighbour_pk_y in &self.op_pk_y {
-					let mut assigned_neighbour_pk_y = Vec::new();
-					for chunk in neighbour_pk_y.chunks(ADVICE) {
-						for (i, chunk_i) in chunk.iter().enumerate() {
-							let y = ctx.assign_advice(config.common.advice[i], *chunk_i)?;
-							assigned_neighbour_pk_y.push(y);
+						assigned_set.push(addr);
+						instance_count += 1;
+					}
+					ctx.next();
+
+					let mut assigned_s = Vec::new();
+					for i in 0..NUM_NEIGHBOURS {
+						let index = i % ADVICE;
+
+						let ps = ctx.assign_from_instance(
+							config.common.advice[index], config.common.instance, instance_count,
+						)?;
+
+						if i == ADVICE - 1 {
+							ctx.next();
 						}
-						// Move to the next row
-						ctx.next();
-					}
-					assigned_op_pk_y.push(assigned_neighbour_pk_y);
-				}
 
-				Ok((
-					zero, assigned_pk_x, assigned_pk_y, assigned_big_r_x, assigned_big_r_y,
-					assigned_s, assigned_ops, assigned_initial_score, assigned_total_score,
-					passed_s, one, default_pk_x, default_pk_y, assigned_op_pk_x, assigned_op_pk_y,
-				))
-			},
+						assigned_s.push(ps);
+						instance_count += 1;
+					}
+					ctx.next();
+
+					let domain = ctx.assign_from_instance(
+						config.common.advice[0], config.common.instance, instance_count,
+					)?;
+
+					instance_count += 1;
+
+					let ops_hash = ctx.assign_from_instance(
+						config.common.advice[1], config.common.instance, instance_count,
+					)?;
+
+					Ok((
+						zero, one, assigned_initial_score, assigned_total_score, assigned_set,
+						assigned_s, domain, ops_hash,
+					))
+				},
+			)?;
+
+		let lshift: LeftShiftersAssigner<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P> =
+			LeftShiftersAssigner::default();
+		let left_shifters = lshift.synthesize(
+			&config.common,
+			&(),
+			layouter.namespace(|| "lshift assigner"),
 		)?;
 
+		let mut ops = Vec::new();
+		let mut op_hashes = Vec::new();
 		// signature verification
-		let zero_state = [zero.clone(), zero.clone(), zero.clone(), zero.clone(), zero.clone()];
-		let mut pk_sponge = SpongeHasher::new(zero_state.clone(), zero.clone());
-		pk_sponge.update(&pk_x);
-		pk_sponge.update(&pk_y);
-		let pks_hash = pk_sponge.synthesize(
+		for i in 0..NUM_NEIGHBOURS {
+			let mut assigned_sig_data = Vec::new();
+			let mut att_vec = Vec::new();
+			for j in 0..NUM_NEIGHBOURS {
+				let ecdsa_assigner = EcdsaAssigner::new(
+					self.g_as_ecpoint.clone(),
+					self.msg_hashes[i][j].clone(),
+					self.s_inv[i][j].clone(),
+				);
+				let assigned_ecdsa = ecdsa_assigner.synthesize(
+					&config.common,
+					&config.ecdsa_assigner,
+					layouter.namespace(|| "ecdsa assigner"),
+				)?;
+				assigned_sig_data.push(assigned_ecdsa);
+
+				let att_assigner = SignedAttestationAssigner::new(self.attestations[i][j].clone());
+				let assigned_att = att_assigner.synthesize(
+					&config.common,
+					&(),
+					layouter.namespace(|| "att_assigner"),
+				)?;
+				att_vec.push(assigned_att);
+			}
+
+			let public_key_assigner = PublicKeyAssigner::new(self.pks[i].clone());
+			let public_key = public_key_assigner.synthesize(
+				&config.common,
+				&(),
+				layouter.namespace(|| "public_key assigner"),
+			)?;
+
+			let opinion =
+				OpinionChipset::<NUM_NEIGHBOURS, C, N, NUM_LIMBS, NUM_BITS, P, EC, H, SH>::new(
+					domain.clone(),
+					set.clone(),
+					att_vec,
+					public_key,
+					assigned_sig_data,
+					left_shifters.clone(),
+				);
+
+			let (opinions, op_hash) = opinion.synthesize(
+				&config.common,
+				&config.opinion,
+				layouter.namespace(|| "opinion"),
+			)?;
+
+			ops.push(opinions);
+			op_hashes.push(op_hash);
+		}
+
+		let mut sponge = SH::init(&config.common, layouter.namespace(|| "op_hasher"))?;
+		sponge.update(&op_hashes);
+		let op_hash_res = sponge.squeeze(
 			&config.common,
 			&config.sponge,
-			layouter.namespace(|| "pks_sponge"),
+			layouter.namespace(|| "op_hash"),
 		)?;
 
-		for i in 0..NUM_NEIGHBOURS {
-			let mut scores_sponge = SpongeHasher::new(zero_state.clone(), zero.clone());
-			scores_sponge.update(&ops[i]);
-			let scores_message_hash = scores_sponge.synthesize(
-				&config.common,
-				&config.sponge,
-				layouter.namespace(|| "scores_sponge"),
-			)?;
-			let message_hash_input = [
-				pks_hash[0].clone(),
-				scores_message_hash[0].clone(),
-				zero.clone(),
-				zero.clone(),
-				zero.clone(),
-			];
-			let poseidon = PoseidonHasher::new(message_hash_input);
-			let res = poseidon.synthesize(
-				&config.common,
-				&config.poseidon,
-				layouter.namespace(|| "message_hash"),
-			)?;
-
-			let eddsa = Eddsa::new(
-				big_r_x[i].clone(),
-				big_r_y[i].clone(),
-				s[i].clone(),
-				pk_x[i].clone(),
-				pk_y[i].clone(),
-				res[0].clone(),
-			);
-			eddsa.synthesize(
-				&config.common,
-				&config.eddsa,
-				layouter.namespace(|| "eddsa"),
-			)?;
-		}
+		layouter.assign_region(
+			|| "passed_op_hash == op_hash",
+			|region: Region<'_, N>| {
+				let ctx = &mut RegionCtx::new(region, 0);
+				let op_hash = ctx.copy_assign(config.common.advice[0], ops_hash.clone())?;
+				let op_hash_res = ctx.copy_assign(config.common.advice[1], op_hash_res.clone())?;
+				ctx.constrain_equal(op_hash, op_hash_res)?;
+				Ok(())
+			},
+		)?;
 
 		// filter peers' ops
 		let ops = {
 			let mut filtered_ops = Vec::new();
 
 			for i in 0..NUM_NEIGHBOURS {
-				let pk_i_x = pk_x[i].clone();
-				let pk_i_y = pk_y[i].clone();
-
+				let addr_i = set[i].clone();
 				let mut ops_i = Vec::new();
-
-				let mut op_pk_x_i = Vec::new();
-				let mut op_pk_y_i = Vec::new();
 
 				// Update the opinion array - pairs of (key, score)
 				for j in 0..NUM_NEIGHBOURS {
-					let set_pk_j_x = pk_x[j].clone();
-					let set_pk_j_y = pk_y[j].clone();
-					let op_pk_j_x = op_pk_x[i][j].clone();
-					let op_pk_j_y = op_pk_y[i][j].clone();
+					let addr_j = set[j].clone();
 
-					// Condition: set_pk_j != op_pk_j
-					let equal_chip = IsEqualChipset::new(set_pk_j_x.clone(), op_pk_j_x.clone());
-					let is_same_pk_j_x = equal_chip.synthesize(
+					// Condition: addr_j != Address::zero()
+					let equal_chip = IsEqualChipset::new(addr_j.clone(), zero.clone());
+					let is_default_addr = equal_chip.synthesize(
 						&config.common,
 						&config.main,
-						layouter.namespace(|| "set_pk_j_x == op_pk_j_x"),
-					)?;
-					let equal_chip = IsEqualChipset::new(set_pk_j_y.clone(), op_pk_j_y.clone());
-					let is_same_pk_j_y = equal_chip.synthesize(
-						&config.common,
-						&config.main,
-						layouter.namespace(|| "set_pk_j_y == op_pk_j_y"),
-					)?;
-					let and_chip = AndChipset::new(is_same_pk_j_x, is_same_pk_j_y);
-					let is_same_pk_j = and_chip.synthesize(
-						&config.common,
-						&config.main,
-						layouter.namespace(|| "set_pk_j == op_pk_j"),
-					)?;
-					let sub_chip = SubChipset::new(one.clone(), is_same_pk_j);
-					let is_diff_pk_j = sub_chip.synthesize(
-						&config.common,
-						&config.main,
-						layouter.namespace(|| "set_pk_j != op_pk_j"),
+						layouter.namespace(|| "op_addr_j == default_addr"),
 					)?;
 
-					// Condition: op_pk_j != PublicKey::default()
-					let equal_chip = IsEqualChipset::new(set_pk_j_x.clone(), default_pk_x.clone());
-					let is_default_pk_x = equal_chip.synthesize(
+					// Condition: set_addr_j == addr_i
+					let equal_chip = IsEqualChipset::new(addr_j.clone(), addr_i.clone());
+					let is_addr_i = equal_chip.synthesize(
 						&config.common,
 						&config.main,
-						layouter.namespace(|| "set_pk_j_x == default_pk_x"),
-					)?;
-					let equal_chip = IsEqualChipset::new(set_pk_j_y.clone(), default_pk_y.clone());
-					let is_default_pk_y = equal_chip.synthesize(
-						&config.common,
-						&config.main,
-						layouter.namespace(|| "set_pk_j_y == default_pk_y"),
-					)?;
-					let and_chip = AndChipset::new(is_default_pk_x, is_default_pk_y);
-					let is_pk_j_null = and_chip.synthesize(
-						&config.common,
-						&config.main,
-						layouter.namespace(|| "set_pk_j == default_pk"),
-					)?;
-
-					// Condition: set_pk_j == pk_i
-					let equal_chip = IsEqualChipset::new(set_pk_j_x.clone(), pk_i_x.clone());
-					let is_pk_i_x = equal_chip.synthesize(
-						&config.common,
-						&config.main,
-						layouter.namespace(|| "set_pk_j_x == pk_i_x"),
-					)?;
-					let equal_chip = IsEqualChipset::new(set_pk_j_y.clone(), pk_i_y.clone());
-					let is_pk_i_y = equal_chip.synthesize(
-						&config.common,
-						&config.main,
-						layouter.namespace(|| "set_pk_j_y == pk_i_y"),
-					)?;
-					let and_chip = AndChipset::new(is_pk_i_x, is_pk_i_y);
-					let is_pk_i = and_chip.synthesize(
-						&config.common,
-						&config.main,
-						layouter.namespace(|| "set_pk_j == pk_i"),
+						layouter.namespace(|| "addr_j == addr_i"),
 					)?;
 
 					// Conditions for nullifying the score
-					// 1. set_pk_j != op_pk_j
-					// 2. set_pk_j == 0 (null or default)
-					// 3. set_pk_j == pk_i
-					let or_chip = OrChipset::new(is_diff_pk_j.clone(), is_pk_j_null);
+					// 1. set_addr_j == 0 (null or default)
+					// 2. set_addr_j == addr_i
+					let or_chip = OrChipset::new(is_addr_i.clone(), is_default_addr);
 					let cond = or_chip.synthesize(
 						&config.common,
 						&config.main,
-						layouter.namespace(|| "is_diff_pk_j || is_pk_j_null"),
-					)?;
-					let or_chip = OrChipset::new(cond, is_pk_i);
-					let cond = or_chip.synthesize(
-						&config.common,
-						&config.main,
-						layouter.namespace(|| "is_diff_pk_j || is_pk_j_null || is_pk_i"),
+						layouter.namespace(|| "is_addr_i || is_addr_j_null"),
 					)?;
 
 					let select_chip = SelectChipset::new(cond, zero.clone(), ops[i][j].clone());
@@ -476,31 +495,12 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u1
 						layouter.namespace(|| "filtered op score"),
 					)?;
 					ops_i.push(new_ops_i_j);
-
-					// Condition for correcting the pk
-					// 1. set_pk_j != op_pk_j
-					let select_chip =
-						SelectChipset::new(is_diff_pk_j.clone(), set_pk_j_x, op_pk_j_x);
-					let new_op_pk_j_x = select_chip.synthesize(
-						&config.common,
-						&config.main,
-						layouter.namespace(|| "update op_pk_x"),
-					)?;
-					op_pk_x_i.push(new_op_pk_j_x);
-
-					let select_chip = SelectChipset::new(is_diff_pk_j, set_pk_j_y, op_pk_j_y);
-					let new_op_pk_j_y = select_chip.synthesize(
-						&config.common,
-						&config.main,
-						layouter.namespace(|| "update op_pk_y"),
-					)?;
-					op_pk_y_i.push(new_op_pk_j_y);
 				}
 
 				// Distribute the scores
 				let mut op_score_sum = zero.clone();
-				for ops_ij in ops_i.iter().take(NUM_NEIGHBOURS) {
-					let add_chip = AddChipset::new(op_score_sum.clone(), ops_ij.clone());
+				for j in 0..NUM_NEIGHBOURS {
+					let add_chip = AddChipset::new(op_score_sum.clone(), ops_i[j].clone());
 					op_score_sum = add_chip.synthesize(
 						&config.common,
 						&config.main,
@@ -514,80 +514,52 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u1
 					&config.main,
 					layouter.namespace(|| "op_score_sum == 0"),
 				)?;
+
 				for j in 0..NUM_NEIGHBOURS {
-					let op_pk_j_x = op_pk_x_i[j].clone();
-					let op_pk_j_y = op_pk_y_i[j].clone();
-
-					// Condition 1. op_pk_j != pk_i
-					let equal_chip = IsEqualChipset::new(op_pk_j_x.clone(), pk_i_x.clone());
-					let is_pk_i_x = equal_chip.synthesize(
+					let addr_j = set[j].clone();
+					// Condition 1. addr_j != addr_i
+					let equal_chip = IsEqualChipset::new(addr_j.clone(), addr_i.clone());
+					let is_addr_i = equal_chip.synthesize(
 						&config.common,
 						&config.main,
-						layouter.namespace(|| "op_pk_j_x == pk_i_x"),
+						layouter.namespace(|| "op_addr_j_x == addr_i_x"),
 					)?;
-					let equal_chip = IsEqualChipset::new(op_pk_j_y.clone(), pk_i_y.clone());
-					let is_pk_i_y = equal_chip.synthesize(
+					let sub = SubChipset::new(one.clone(), is_addr_i);
+					let is_not_addr_i = sub.synthesize(
 						&config.common,
 						&config.main,
-						layouter.namespace(|| "op_pk_j_y == pk_i_y"),
-					)?;
-					let and_chip = AndChipset::new(is_pk_i_x, is_pk_i_y);
-					let is_pk_i = and_chip.synthesize(
-						&config.common,
-						&config.main,
-						layouter.namespace(|| "op_pk_j == pk_i"),
-					)?;
-					let sub_chip = SubChipset::new(one.clone(), is_pk_i);
-					let is_diff_pk = sub_chip.synthesize(
-						&config.common,
-						&config.main,
-						layouter.namespace(|| "op_pk_j != pk_i"),
+						layouter.namespace(|| " 1 - is_addr_i"),
 					)?;
 
-					// Condition 2. op_pk_j != PublicKey::default()
-					let pk_x_equal_chip =
-						IsEqualChipset::new(pk_x[j].clone(), default_pk_x.clone());
-					let is_default_pk_x = pk_x_equal_chip.synthesize(
+					// Condition 2. addr_j != Address::zero()
+					let equal_chip = IsEqualChipset::new(addr_j.clone(), zero.clone());
+					let is_default_addr = equal_chip.synthesize(
 						&config.common,
 						&config.main,
-						layouter.namespace(|| "pk_j_x == default_pk_x"),
+						layouter.namespace(|| "op_addr_j == default_addr"),
 					)?;
-
-					let pk_y_equal_chip =
-						IsEqualChipset::new(pk_y[j].clone(), default_pk_y.clone());
-					let is_default_pk_y = pk_y_equal_chip.synthesize(
+					let sub = SubChipset::new(one.clone(), is_default_addr);
+					let is_not_default_addr = sub.synthesize(
 						&config.common,
 						&config.main,
-						layouter.namespace(|| "pk_j_y == default_pk_y"),
-					)?;
-					let and_chip = AndChipset::new(is_default_pk_x, is_default_pk_y);
-					let is_null = and_chip.synthesize(
-						&config.common,
-						&config.main,
-						layouter.namespace(|| "pk_j == default"),
-					)?;
-					let sub_chip = SubChipset::new(one.clone(), is_null);
-					let is_not_null = sub_chip.synthesize(
-						&config.common,
-						&config.main,
-						layouter.namespace(|| "pk_j != default"),
+						layouter.namespace(|| " 1 - is_default_addr"),
 					)?;
 
 					// Conditions for distributing the score
-					// 1. pk_j != pk_i
-					// 2. pk_j != PublicKey::default()
+					// 1. addr_j != addr_i
+					// 2. addr_j != Address::zero()
 					// 3. op_score_sum == 0
-					let and_chip = AndChipset::new(is_diff_pk, is_not_null);
+					let and_chip = AndChipset::new(is_not_addr_i, is_not_default_addr);
 					let cond = and_chip.synthesize(
 						&config.common,
 						&config.main,
-						layouter.namespace(|| "is_diff_pk && is_not_null"),
+						layouter.namespace(|| "is_not_addr_i && is_not_null"),
 					)?;
 					let and_chip = AndChipset::new(cond, is_sum_zero.clone());
 					let cond = and_chip.synthesize(
 						&config.common,
 						&config.main,
-						layouter.namespace(|| "is_diff_pk && is_not_null && is_sum_zero"),
+						layouter.namespace(|| "is_not_addr_i && is_not_null"),
 					)?;
 					let select_chip = SelectChipset::new(cond, one.clone(), ops_i[j].clone());
 					ops_i[j] = select_chip.synthesize(
@@ -607,13 +579,13 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u1
 		// "Normalization"
 		let ops = {
 			let mut normalized_ops = Vec::new();
-			for ops in ops.iter().take(NUM_NEIGHBOURS) {
+			for i in 0..NUM_NEIGHBOURS {
 				let mut ops_i = Vec::new();
 
 				// Compute the sum of scores
 				let mut op_score_sum = zero.clone();
-				for op in ops.iter().take(NUM_NEIGHBOURS) {
-					let add_chip = AddChipset::new(op_score_sum.clone(), op.clone());
+				for j in 0..NUM_NEIGHBOURS {
+					let add_chip = AddChipset::new(op_score_sum.clone(), ops[i][j].clone());
 					op_score_sum = add_chip.synthesize(
 						&config.common,
 						&config.main,
@@ -633,8 +605,8 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u1
 					layouter.namespace(|| "invert_sum"),
 				)?;
 
-				for op in ops.iter().take(NUM_NEIGHBOURS) {
-					let mul_chip = MulChipset::new(op.clone(), inverted_sum.clone());
+				for j in 0..NUM_NEIGHBOURS {
+					let mul_chip = MulChipset::new(ops[i][j].clone(), inverted_sum.clone());
 					let normalized_op = mul_chip.synthesize(
 						&config.common,
 						&config.main,
@@ -653,41 +625,25 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u1
 		// Compute the EigenTrust scores
 		let mut s = vec![init_score; NUM_NEIGHBOURS];
 		for _ in 0..NUM_ITER {
-			let mut sop = Vec::new();
-			for i in 0..NUM_NEIGHBOURS {
-				let op_i = ops[i].clone();
-				let mut sop_i = Vec::new();
-				for op in op_i.iter().take(NUM_NEIGHBOURS) {
-					let mul_chip = MulChipset::new(op.clone(), s[i].clone());
-					let res = mul_chip.synthesize(
-						&config.common,
-						&config.main,
-						layouter.namespace(|| "op_mul"),
-					)?;
-					sop_i.push(res);
-				}
-				sop.push(sop_i);
-			}
-
 			let mut new_s = vec![zero.clone(); NUM_NEIGHBOURS];
 			for i in 0..NUM_NEIGHBOURS {
-				for sop in sop.iter().take(NUM_NEIGHBOURS) {
-					let add_chip = AddChipset::new(new_s[i].clone(), sop[i].clone());
-					new_s[i] = add_chip.synthesize(
+				for j in 0..NUM_NEIGHBOURS {
+					let mul_add_chip =
+						MulAddChipset::new(ops[j][i].clone(), s[j].clone(), new_s[i].clone());
+					new_s[i] = mul_add_chip.synthesize(
 						&config.common,
 						&config.main,
-						layouter.namespace(|| "op_add"),
+						layouter.namespace(|| "op_mul_add"),
 					)?;
 				}
 			}
-
 			s = new_s;
 		}
 
 		// Constrain the final scores
 		layouter.assign_region(
 			|| "passed_s == s",
-			|region: Region<'_, Scalar>| {
+			|region: Region<'_, N>| {
 				let ctx = &mut RegionCtx::new(region, 0);
 				for i in 0..NUM_NEIGHBOURS {
 					let passed_s = ctx.copy_assign(config.common.advice[0], passed_s[i].clone())?;
@@ -701,8 +657,8 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u1
 
 		// Constrain the total reputation in the set
 		let mut sum = zero;
-		for passed_s in passed_s.iter().take(NUM_NEIGHBOURS) {
-			let add_chipset = AddChipset::new(sum.clone(), passed_s.clone());
+		for i in 0..NUM_NEIGHBOURS {
+			let add_chipset = AddChipset::new(sum.clone(), passed_s[i].clone());
 			sum = add_chipset.synthesize(
 				&config.common,
 				&config.main,
@@ -711,7 +667,7 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u1
 		}
 		layouter.assign_region(
 			|| "s_sum == total_score",
-			|region: Region<'_, Scalar>| {
+			|region: Region<'_, N>| {
 				let ctx = &mut RegionCtx::new(region, 0);
 				let sum = ctx.copy_assign(config.common.advice[0], sum.clone())?;
 				let total_score = ctx.copy_assign(config.common.advice[1], total_score.clone())?;
@@ -728,20 +684,51 @@ impl<const NUM_NEIGHBOURS: usize, const NUM_ITER: usize, const INITIAL_SCORE: u1
 mod test {
 	use super::*;
 	use crate::{
-		calculate_message_hash,
-		eddsa::native::{sign, SecretKey},
-		utils::{generate_params, prove_and_verify},
+		circuits::{
+			dynamic_sets::native::{Attestation, SignedAttestation},
+			opinion::native::Opinion,
+			PoseidonNativeHasher, PoseidonNativeSponge,
+		},
+		ecdsa::native::EcdsaKeypair,
+		params::{
+			ecc::secp256k1::Secp256k1Params, hasher::poseidon_bn254_5x5::Params,
+			rns::secp256k1::Secp256k1_4_68,
+		},
+		poseidon::{sponge::StatefulSpongeChipset, PoseidonChipset},
+		utils::{big_to_fe, fe_to_big, generate_params, prove_and_verify},
 	};
-	use halo2::{dev::MockProver, halo2curves::bn256::Bn256};
+	use halo2::{
+		arithmetic::Field,
+		dev::MockProver,
+		halo2curves::{
+			bn256::{Bn256, Fr},
+			ff::PrimeField,
+			secp256k1::Secp256k1Affine,
+		},
+	};
+	use itertools::Itertools;
 	use rand::thread_rng;
 
 	const NUM_NEIGHBOURS: usize = 5;
 	const NUM_ITERATIONS: usize = 20;
 	const INITIAL_SCORE: u128 = 1000;
+	const DOMAIN: u128 = 42;
+
+	type C = Secp256k1Affine;
+	type N = Fr;
+	const NUM_LIMBS: usize = 4;
+	const NUM_BITS: usize = 68;
+	type P = Secp256k1_4_68;
+	type EC = Secp256k1Params;
+	type H = PoseidonChipset<N, HASHER_WIDTH, Params>;
+	type SH = StatefulSpongeChipset<N, HASHER_WIDTH, Params>;
+	type HN = PoseidonNativeHasher;
+	type SHN = PoseidonNativeSponge;
 
 	#[test]
-	fn test_closed_graph_circut() {
-		let ops: Vec<Vec<Scalar>> = vec![
+	fn test_closed_graph_circuit() {
+		// Test Dynamic Sets Circuit
+		let ops: Vec<Vec<N>> = vec![
 			vec![0, 200, 300, 500, 0],
 			vec![100, 0, 100, 100, 700],
 			vec![400, 100, 0, 200, 300],
@@ -749,59 +736,126 @@ mod test {
 			vec![300, 100, 400, 200, 0],
 		]
 		.into_iter()
-		.map(|arr| arr.into_iter().map(|x| Scalar::from_u128(x)).collect())
+		.map(|arr| arr.into_iter().map(|x| N::from_u128(x)).collect())
 		.collect();
 
 		let rng = &mut thread_rng();
-		let secret_keys = [(); NUM_NEIGHBOURS].map(|_| SecretKey::random(rng));
-		let pub_keys = secret_keys.clone().map(|x| x.public());
+		let keypairs = [(); NUM_NEIGHBOURS].map(|_| EcdsaKeypair::generate_keypair(rng));
+		let pub_keys = keypairs.clone().map(|kp| kp.public_key).to_vec();
+		let domain = N::from_u128(DOMAIN);
 
-		let op_pub_keys: Vec<Vec<PublicKey>> =
-			(0..NUM_NEIGHBOURS).map(|_| pub_keys.to_vec()).collect();
+		let (attestations, set, op_hash) = {
+			let mut attestations = Vec::new();
+			let mut set = Vec::new();
 
-		let (res, signatures) = {
-			let mut signatures = vec![];
-
-			let mut et =
-				native::EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
 			for i in 0..NUM_NEIGHBOURS {
-				et.add_member(pub_keys[i].clone());
-
-				let (_, message_hashes) = calculate_message_hash::<NUM_NEIGHBOURS, 1>(
-					op_pub_keys[i].to_vec(),
-					vec![ops[i].clone()],
-				);
-				let sig = sign(&secret_keys[i], &pub_keys[i], message_hashes[0]);
-				signatures.push(sig.clone());
-
-				let scores = [0, 1, 2, 3, 4].map(|j| (op_pub_keys[i][j], ops[i][j]));
-				let op = native::Opinion::new(sig, message_hashes[0], scores.to_vec());
-				et.update_op(pub_keys[i].clone(), op);
+				let addr = pub_keys[i].to_address();
+				set.push(addr);
 			}
-			let s = et.converge();
 
-			(s, signatures)
+			let mut op_hashes = Vec::new();
+			for i in 0..NUM_NEIGHBOURS {
+				let mut attestations_i = Vec::new();
+
+				// Attestation to the other peers
+				for j in 0..NUM_NEIGHBOURS {
+					let attestation =
+						Attestation::new(pub_keys[j].to_address(), domain, ops[i][j], N::ZERO);
+
+					let att_hash = attestation.hash::<HASHER_WIDTH, PoseidonNativeHasher>();
+					let att_hash = big_to_fe(fe_to_big(att_hash));
+
+					let signature = keypairs[i].sign(att_hash, rng);
+					let signed_att = SignedAttestation::new(attestation, signature);
+
+					attestations_i.push(signed_att);
+				}
+				attestations.push(attestations_i);
+
+				let op: Opinion<NUM_NEIGHBOURS, C, N, NUM_LIMBS, NUM_BITS, P, EC, HN, SHN> =
+					Opinion::new(pub_keys[i].clone(), attestations[i].clone(), domain);
+				let (_, _, op_hash) = op.validate(set.clone());
+				op_hashes.push(op_hash);
+			}
+			let mut sponge = SHN::new();
+			sponge.update(&op_hashes);
+			let op_hash = sponge.squeeze();
+
+			(attestations, set, op_hash)
 		};
 
-		let et = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new(
-			pub_keys.to_vec(),
-			signatures,
-			op_pub_keys,
-			ops,
-		);
+		let mut opt_att = Vec::new();
+		let mut opt_pks = Vec::new();
 
-		let k = 14;
-		let prover = match MockProver::<Scalar>::run(k, &et, vec![res.to_vec()]) {
+		for i in 0..NUM_NEIGHBOURS {
+			let mut att_row = Vec::new();
+			for j in 0..NUM_NEIGHBOURS {
+				att_row.push(Some(attestations[i][j].clone()));
+			}
+			opt_att.push(att_row);
+			opt_pks.push(Some(pub_keys[i].clone()));
+		}
+
+		// Constructing public inputs for the circuit
+		let mut public_inputs = set.clone();
+		public_inputs.extend({
+			let mut et = native::EigenTrustSet::<
+				NUM_NEIGHBOURS,
+				NUM_ITERATIONS,
+				INITIAL_SCORE,
+				C,
+				N,
+				NUM_LIMBS,
+				NUM_BITS,
+				P,
+				EC,
+				HN,
+				SHN,
+			>::new(domain);
+
+			for i in 0..NUM_NEIGHBOURS {
+				et.add_member(set[i]);
+			}
+
+			for i in 0..NUM_NEIGHBOURS {
+				let attestations_opt =
+					attestations[i].iter().map(|x| Some(x.clone())).collect_vec();
+				et.update_op(pub_keys[i].clone(), attestations_opt);
+			}
+
+			et.converge()
+		});
+		public_inputs.push(domain);
+		public_inputs.push(op_hash);
+
+		let et = EigenTrustSet::<
+			NUM_NEIGHBOURS,
+			NUM_ITERATIONS,
+			INITIAL_SCORE,
+			C,
+			N,
+			NUM_LIMBS,
+			NUM_BITS,
+			P,
+			EC,
+			H,
+			HN,
+			SH,
+		>::new(opt_att, opt_pks, domain);
+
+		let k = 20;
+		let prover = match MockProver::<N>::run(k, &et, vec![public_inputs.to_vec()]) {
 			Ok(prover) => prover,
 			Err(e) => panic!("{}", e),
 		};
-
 		assert_eq!(prover.verify(), Ok(()));
 	}
 
+	#[ignore = "Closed circuit test takes too long to run"]
 	#[test]
 	fn test_closed_graph_circut_prod() {
-		let ops: Vec<Vec<Scalar>> = vec![
+		// Test Dynamic Sets Circuit production
+		let ops: Vec<Vec<N>> = vec![
 			vec![0, 200, 300, 500, 0],
 			vec![100, 0, 100, 100, 700],
 			vec![400, 100, 0, 200, 300],
@@ -809,50 +863,117 @@ mod test {
 			vec![300, 100, 400, 200, 0],
 		]
 		.into_iter()
-		.map(|arr| arr.into_iter().map(|x| Scalar::from_u128(x)).collect())
+		.map(|arr| arr.into_iter().map(|x| N::from_u128(x)).collect())
 		.collect();
+
 		let rng = &mut thread_rng();
-		let secret_keys = [(); NUM_NEIGHBOURS].map(|_| SecretKey::random(rng));
-		let pub_keys = secret_keys.clone().map(|x| x.public());
+		let keypairs = [(); NUM_NEIGHBOURS].map(|_| EcdsaKeypair::generate_keypair(rng));
+		let pub_keys = keypairs.clone().map(|kp| kp.public_key).to_vec();
+		let domain = N::from_u128(DOMAIN);
 
-		let op_pub_keys: Vec<Vec<PublicKey>> =
-			(0..NUM_NEIGHBOURS).map(|_| pub_keys.to_vec()).collect();
+		let (attestations, set, op_hash) = {
+			let mut attestations = Vec::new();
+			let mut set = Vec::new();
 
-		let (res, signatures) = {
-			let mut signatures = vec![];
-
-			let mut et =
-				native::EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new();
 			for i in 0..NUM_NEIGHBOURS {
-				et.add_member(pub_keys[i].clone());
-
-				let (_, message_hashes) = calculate_message_hash::<NUM_NEIGHBOURS, 1>(
-					op_pub_keys[i].to_vec(),
-					vec![ops[i].clone()],
-				);
-				let sig = sign(&secret_keys[i], &pub_keys[i], message_hashes[0]);
-				signatures.push(sig.clone());
-
-				let scores = [0, 1, 2, 3, 4].map(|j| (op_pub_keys[i][j], ops[i][j]));
-				let op = native::Opinion::new(sig, message_hashes[0], scores.to_vec());
-				et.update_op(pub_keys[i].clone(), op);
+				let addr = pub_keys[i].to_address();
+				set.push(addr);
 			}
-			let s = et.converge();
 
-			(s, signatures)
+			let mut op_hashes = Vec::new();
+			for i in 0..NUM_NEIGHBOURS {
+				let mut attestations_i = Vec::new();
+
+				// Attestation to the other peers
+				for j in 0..NUM_NEIGHBOURS {
+					let attestation =
+						Attestation::new(pub_keys[j].to_address(), domain, ops[i][j], N::ZERO);
+
+					let att_hash = attestation.hash::<HASHER_WIDTH, PoseidonNativeHasher>();
+					let att_hash = big_to_fe(fe_to_big(att_hash));
+
+					let signature = keypairs[i].sign(att_hash, rng);
+					let signed_att = SignedAttestation::new(attestation, signature);
+
+					attestations_i.push(signed_att);
+				}
+				attestations.push(attestations_i);
+
+				let op: Opinion<NUM_NEIGHBOURS, C, N, NUM_LIMBS, NUM_BITS, P, EC, HN, SHN> =
+					Opinion::new(pub_keys[i].clone(), attestations[i].clone(), domain);
+				let (_, _, op_hash) = op.validate(set.clone());
+				op_hashes.push(op_hash);
+			}
+			let mut sponge = SHN::new();
+			sponge.update(&op_hashes);
+			let op_hash = sponge.squeeze();
+
+			(attestations, set, op_hash)
 		};
 
-		let et = EigenTrustSet::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>::new(
-			pub_keys.to_vec(),
-			signatures,
-			op_pub_keys,
-			ops,
-		);
+		let mut opt_att = Vec::new();
+		let mut opt_pks = Vec::new();
 
-		let k = 14;
+		for i in 0..NUM_NEIGHBOURS {
+			let mut att_row = Vec::new();
+			for j in 0..NUM_NEIGHBOURS {
+				att_row.push(Some(attestations[i][j].clone()));
+			}
+			opt_att.push(att_row);
+			opt_pks.push(Some(pub_keys[i].clone()));
+		}
+
+		// Constructing public inputs for the circuit
+		let mut public_inputs = set.clone();
+		public_inputs.extend({
+			let mut et = native::EigenTrustSet::<
+				NUM_NEIGHBOURS,
+				NUM_ITERATIONS,
+				INITIAL_SCORE,
+				C,
+				N,
+				NUM_LIMBS,
+				NUM_BITS,
+				P,
+				EC,
+				HN,
+				SHN,
+			>::new(domain);
+
+			for i in 0..NUM_NEIGHBOURS {
+				et.add_member(set[i]);
+			}
+
+			for i in 0..NUM_NEIGHBOURS {
+				let attestations_opt =
+					attestations[i].iter().map(|x| Some(x.clone())).collect_vec();
+				et.update_op(pub_keys[i].clone(), attestations_opt);
+			}
+
+			et.converge()
+		});
+		public_inputs.push(domain);
+		public_inputs.push(op_hash);
+
+		let et = EigenTrustSet::<
+			NUM_NEIGHBOURS,
+			NUM_ITERATIONS,
+			INITIAL_SCORE,
+			C,
+			N,
+			NUM_LIMBS,
+			NUM_BITS,
+			P,
+			EC,
+			H,
+			HN,
+			SH,
+		>::new(opt_att, opt_pks, domain);
+
+		let k = 20;
 		let rng = &mut rand::thread_rng();
 		let params = generate_params(k);
-		let res = prove_and_verify::<Bn256, _, _>(params, et, &[&res], rng).unwrap();
+		let res = prove_and_verify::<Bn256, _, _>(params, et, &[&public_inputs], rng).unwrap();
 		assert!(res);
 	}
 }

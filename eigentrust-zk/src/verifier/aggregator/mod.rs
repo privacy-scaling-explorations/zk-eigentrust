@@ -3,7 +3,7 @@ use self::native::Snark;
 /// Native version of Aggregator
 pub mod native;
 use crate::{
-	ecc::{AuxConfig, EccMulConfig},
+	ecc::{AuxConfig, EccAddConfig, EccMulConfig},
 	gadgets::main::MainConfig,
 	params::rns::bn256::Bn256_4_68,
 	params::{ecc::bn254::Bn254Params, hasher::poseidon_bn254_5x5::Params},
@@ -108,15 +108,16 @@ pub struct AggregatorConfig {
 	pub(crate) main: MainConfig,
 	pub(crate) poseidon_sponge: PoseidonSpongeConfig,
 	pub(crate) ecc_mul_scalar: EccMulConfig,
+	pub(crate) ecc_add: EccAddConfig,
 	pub(crate) aux: AuxConfig,
 }
 
 impl AggregatorConfig {
 	fn new(
 		main: MainConfig, poseidon_sponge: PoseidonSpongeConfig, ecc_mul_scalar: EccMulConfig,
-		aux: AuxConfig,
+		ecc_add: EccAddConfig, aux: AuxConfig,
 	) -> Self {
-		Self { main, poseidon_sponge, ecc_mul_scalar, aux }
+		Self { main, poseidon_sponge, ecc_mul_scalar, ecc_add, aux }
 	}
 }
 
@@ -163,12 +164,14 @@ impl Chipset<Fr> for AggregatorChipset {
 				G1Affine,
 				_,
 				Bn256_4_68,
+				WIDTH,
 				StatefulSpongeChipset<Fr, WIDTH, Params>,
 				Bn254Params,
 			>::new(
 				layouter.namespace(|| "loader"),
 				common.clone(),
 				config.ecc_mul_scalar.clone(),
+				config.ecc_add.clone(),
 				config.aux.clone(),
 				config.main.clone(),
 				config.poseidon_sponge.clone(),
@@ -194,6 +197,7 @@ impl Chipset<Fr> for AggregatorChipset {
 					G1Affine,
 					_,
 					Bn256_4_68,
+					WIDTH,
 					StatefulSpongeChipset<Fr, WIDTH, Params>,
 					Bn254Params,
 				> = TranscriptReadChipset::new(snark.proof(), loader_config.clone());
@@ -213,6 +217,7 @@ impl Chipset<Fr> for AggregatorChipset {
 				G1Affine,
 				_,
 				Bn256_4_68,
+				WIDTH,
 				StatefulSpongeChipset<Fr, WIDTH, Params>,
 				Bn254Params,
 			> = TranscriptReadChipset::new(as_proof, loader_config);
@@ -403,15 +408,21 @@ mod test {
 			let int_div =
 				IntegerDivChip::<Fq, Fr, NUM_LIMBS, NUM_BITS, Bn256_4_68>::configure(&common, meta);
 
-			let ladder = EccUnreducedLadderConfig::new(int_add, int_sub, int_mul, int_div);
-			let add = EccAddConfig::new(int_red, int_sub, int_mul, int_div);
-			let double = EccDoubleConfig::new(int_red, int_add, int_sub, int_mul, int_div);
-			let table_select = EccTableSelectConfig::new(main.clone());
-			let ecc_mul_scalar =
-				EccMulConfig::new(ladder, add, double.clone(), table_select, bits2num);
-			let aux = AuxConfig::new(double);
+			let ecc_ladder = EccUnreducedLadderConfig::new(int_add, int_sub, int_mul, int_div);
+			let ecc_add = EccAddConfig::new(int_red, int_sub, int_mul, int_div);
+			let ecc_double = EccDoubleConfig::new(int_red, int_add, int_sub, int_mul, int_div);
+			let ecc_table_select = EccTableSelectConfig::new(main.clone());
+			let ecc_mul_scalar = EccMulConfig::new(
+				ecc_ladder,
+				ecc_add.clone(),
+				ecc_double.clone(),
+				ecc_table_select,
+				bits2num,
+			);
+			let aux = AuxConfig::new(ecc_double);
 
-			let aggregator = AggregatorConfig { main, poseidon_sponge, ecc_mul_scalar, aux };
+			let aggregator =
+				AggregatorConfig { main, poseidon_sponge, ecc_mul_scalar, ecc_add, aux };
 
 			AggregatorTestCircuitConfig { common, aggregator }
 		}

@@ -1,6 +1,6 @@
 use crate::{
 	params::rns::{compose_big, decompose_big, RnsParams},
-	utils::fe_to_big,
+	utils::{fe_to_big, field_to_bits},
 	FieldExt,
 };
 use num_bigint::BigUint;
@@ -121,6 +121,17 @@ where
 		assert_eq!(limbs_vec.len(), NUM_LIMBS);
 		let limbs: [N; NUM_LIMBS] = limbs_vec.try_into().unwrap();
 		Self::from_limbs(limbs)
+	}
+
+	/// Convert the value to bits representation
+	pub fn to_bits(&self) -> Vec<bool> {
+		let mut bits = Vec::new();
+		for i in 0..NUM_LIMBS {
+			let limb_bits = field_to_bits::<_, NUM_BITS>(self.limbs[i]).map(|x| x == N::ONE);
+			bits.extend(&limb_bits);
+		}
+
+		bits
 	}
 
 	/// Returns integer with value zero

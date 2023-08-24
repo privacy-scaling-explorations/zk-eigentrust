@@ -219,9 +219,9 @@ pub fn compose_big_decimal<F: FieldExt, const NUM_LIMBS: usize, const POWER_OF_T
 	let scale = BigUint::from(10usize).pow(POWER_OF_TEN);
 	limbs.reverse();
 	let mut val = fe_to_big(limbs[0]);
-	for limb in limbs.iter().take(NUM_LIMBS).skip(1) {
+	for i in 1..NUM_LIMBS {
 		val *= scale.clone();
-		val += fe_to_big(*limb);
+		val += fe_to_big(limbs[i]);
 	}
 	val
 }
@@ -233,9 +233,9 @@ pub fn compose_big_decimal_f<F: FieldExt, const NUM_LIMBS: usize, const POWER_OF
 	let scale = F::from_u128(10).pow([POWER_OF_TEN as u64]);
 	limbs.reverse();
 	let mut val = limbs[0];
-	for limb in limbs.iter().take(NUM_LIMBS).skip(1) {
+	for i in 1..NUM_LIMBS {
 		val *= scale;
-		val += *limb;
+		val += limbs[i];
 	}
 	val
 }

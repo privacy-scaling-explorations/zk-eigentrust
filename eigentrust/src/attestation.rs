@@ -7,15 +7,19 @@ use crate::{
 	att_station::AttestationCreatedFilter,
 	error::EigenError,
 	eth::{address_from_public_key, scalar_from_address},
-	NUM_BITS, NUM_LIMBS,
 };
 use eigentrust_zk::{
-	circuits::dynamic_sets::ecdsa_native::{
-		Attestation as AttestationFr, SignedAttestation as SignedAttestationFr,
+	circuits::{
+		dynamic_sets::native::{Attestation, SignedAttestation},
+		HASHER_WIDTH,
 	},
 	ecdsa::native::Signature,
 	halo2::halo2curves::{bn256::Fr as Scalar, ff::FromUniformBytes, secp256k1::Secp256k1Affine},
-	params::rns::secp256k1::Secp256k1_4_68,
+	params::{hasher::poseidon_bn254_5x5::Params, rns::secp256k1::Secp256k1_4_68},
+};
+use eigentrust_zk::{
+	circuits::{NUM_BITS, NUM_LIMBS},
+	poseidon::native::Poseidon,
 };
 use ethers::types::{Address, Bytes, Uint8, H160, H256};
 use secp256k1::{
@@ -33,6 +37,11 @@ pub type ECDSAPublicKey = secp256k1::PublicKey;
 pub type ECDSASignature = ecdsa::RecoverableSignature;
 /// Signature represented with field elements
 pub type SignatureFr = Signature<Secp256k1Affine, Scalar, NUM_LIMBS, NUM_BITS, Secp256k1_4_68>;
+/// Attestation represented with field
+pub type AttestationScalar = Attestation<Scalar>;
+/// Signed Attestation represented with field elements
+pub type SignedAttestationScalar =
+	SignedAttestation<Secp256k1Affine, Scalar, NUM_LIMBS, NUM_BITS, Secp256k1_4_68>;
 
 /// Attestation struct.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -81,7 +90,7 @@ impl AttestationEth {
 	}
 
 	/// Converts the attestation to the scalar representation.
-	pub fn to_attestation_fr(&self) -> Result<AttestationFr, EigenError> {
+	pub fn to_attestation_fr(&self) -> Result<AttestationScalar, EigenError> {
 		// About
 		let about = scalar_from_address(&self.about)?;
 
@@ -114,7 +123,7 @@ impl AttestationEth {
 
 		let message = Scalar::from_uniform_bytes(&message_bytes);
 
-		Ok(AttestationFr { about, domain, value, message })
+		Ok(AttestationScalar { about, domain, value, message })
 	}
 
 	/// Construct the key from the attestation domain
@@ -217,7 +226,8 @@ impl SignedAttestationEth {
 	/// Recover the public key from the attestation signature
 	pub fn recover_public_key(&self) -> Result<ECDSAPublicKey, EigenError> {
 		let attestation = self.attestation.to_attestation_fr()?;
-		let message_hash = attestation.hash().to_bytes();
+		let message_hash =
+			attestation.hash::<HASHER_WIDTH, Poseidon<Scalar, HASHER_WIDTH, Params>>().to_bytes();
 		let signature_raw: SignatureRaw = self.signature.clone().into();
 		let signature = RecoverableSignature::from(signature_raw);
 
@@ -267,10 +277,10 @@ impl SignedAttestationEth {
 	}
 
 	/// Convert to a struct with field values
-	pub fn to_signed_signature_fr(&self) -> Result<SignedAttestationFr, EigenError> {
+	pub fn to_signed_signature_fr(&self) -> Result<SignedAttestationScalar, EigenError> {
 		let attestation_fr = self.attestation.to_attestation_fr()?;
 		let signature_fr = self.signature.to_signature_fr();
-		Ok(SignedAttestationFr::new(attestation_fr, signature_fr))
+		Ok(SignedAttestationScalar::new(attestation_fr, signature_fr))
 	}
 }
 
@@ -611,7 +621,9 @@ mod tests {
 
 		let attestation_fr = attestation_eth.to_attestation_fr().unwrap();
 
-		let message = attestation_fr.hash().to_bytes();
+		let message = attestation_fr
+			.hash::<HASHER_WIDTH, Poseidon<Scalar, HASHER_WIDTH, Params>>()
+			.to_bytes();
 
 		let signature = secp.sign_ecdsa_recoverable(
 			&Message::from_slice(message.as_slice()).unwrap(),
@@ -645,7 +657,9 @@ mod tests {
 
 		let attestation_eth = AttestationEth::default();
 		let attestation_fr = attestation_eth.to_attestation_fr().unwrap();
-		let message = attestation_fr.hash().to_bytes();
+		let message = attestation_fr
+			.hash::<HASHER_WIDTH, Poseidon<Scalar, HASHER_WIDTH, Params>>()
+			.to_bytes();
 
 		let signature = secp.sign_ecdsa_recoverable(
 			&Message::from_slice(message.as_slice()).unwrap(),
@@ -699,7 +713,9 @@ mod tests {
 
 		let attestation_fr = attestation_eth.to_attestation_fr().unwrap();
 
-		let message = attestation_fr.hash().to_bytes();
+		let message = attestation_fr
+			.hash::<HASHER_WIDTH, Poseidon<Scalar, HASHER_WIDTH, Params>>()
+			.to_bytes();
 		let signature = secp.sign_ecdsa_recoverable(
 			&Message::from_slice(message.as_slice()).unwrap(),
 			&secret_key,

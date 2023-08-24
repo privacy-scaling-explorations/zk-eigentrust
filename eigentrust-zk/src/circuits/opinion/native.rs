@@ -1,83 +1,110 @@
-use halo2::halo2curves::{bn256::Fr, secp256k1::Secp256k1Affine};
+use std::marker::PhantomData;
+
+use halo2::halo2curves::CurveAffine;
 
 use crate::{
-	circuits::dynamic_sets::ecdsa_native::{Attestation, SignedAttestation},
-	circuits::{PoseidonNativeHasher, PoseidonNativeSponge},
+	circuits::dynamic_sets::native::SignedAttestation,
+	circuits::HASHER_WIDTH,
 	ecdsa::native::{EcdsaVerifier, PublicKey},
 	integer::native::Integer,
-	params::{ecc::secp256k1::Secp256k1Params, rns::secp256k1::Secp256k1_4_68},
+	params::{ecc::EccParams, rns::RnsParams},
+	FieldExt, Hasher, SpongeHasher,
 };
 
 /// Opinion info of peer
-pub struct Opinion<const NUM_NEIGHBOURS: usize> {
-	from: PublicKey<Secp256k1Affine, Fr, 4, 68, Secp256k1_4_68, Secp256k1Params>,
-	attestations: Vec<SignedAttestation>,
+pub struct Opinion<
+	const NUM_NEIGHBOURS: usize,
+	C: CurveAffine,
+	N: FieldExt,
+	const NUM_LIMBS: usize,
+	const NUM_BITS: usize,
+	P,
+	EC,
+	H: Hasher<N, HASHER_WIDTH>,
+	SH: SpongeHasher<N>,
+> where
+	P: RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
+	C::ScalarExt: FieldExt,
+	C::Base: FieldExt,
+{
+	from: PublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
+	attestations: Vec<SignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>>,
+	domain: N,
+	_h: PhantomData<(H, SH)>,
 }
 
-impl<const NUM_NEIGHBOURS: usize> Opinion<NUM_NEIGHBOURS> {
+impl<
+		const NUM_NEIGHBOURS: usize,
+		C: CurveAffine,
+		N: FieldExt,
+		const NUM_LIMBS: usize,
+		const NUM_BITS: usize,
+		P,
+		EC,
+		H: Hasher<N, HASHER_WIDTH>,
+		SH: SpongeHasher<N>,
+	> Opinion<NUM_NEIGHBOURS, C, N, NUM_LIMBS, NUM_BITS, P, EC, H, SH>
+where
+	P: RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS>,
+	EC: EccParams<C>,
+	C::ScalarExt: FieldExt,
+	C::Base: FieldExt,
+{
 	/// Construct new instance
 	pub fn new(
-		from: PublicKey<Secp256k1Affine, Fr, 4, 68, Secp256k1_4_68, Secp256k1Params>,
-		attestations: Vec<SignedAttestation>,
+		from: PublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
+		attestations: Vec<SignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>>, domain: N,
 	) -> Self {
-		Self { from, attestations }
+		Self { from, attestations, domain, _h: PhantomData }
 	}
 
 	/// Validate attestations & calculate the hash
-	pub fn validate(&self, set: Vec<Fr>) -> (Fr, Vec<Fr>, Fr) {
-		let from_pk = self.from.to_address();
+	pub fn validate(&self, set: Vec<N>) -> (N, Vec<N>, N) {
+		let addr = self.from.to_address();
 
-		let pos_from = set.iter().position(|&x| x == from_pk);
+		let pos_from = set.iter().position(|&x| x == addr);
 		assert!(pos_from.is_some());
 
-		let mut scores = vec![Fr::zero(); set.len()];
+		let is_default_pk = self.from == PublicKey::default();
+
+		let mut scores = Vec::new();
 		let mut hashes = Vec::new();
-
-		let default_att = SignedAttestation::default();
-		let default_hasher = PoseidonNativeHasher::new([
-			default_att.attestation.about,
-			default_att.attestation.domain,
-			default_att.attestation.value,
-			default_att.attestation.message,
-			Fr::zero(),
-		]);
-		let default_hash = default_hasher.permute()[0];
 		for i in 0..NUM_NEIGHBOURS {
-			let is_default_pubkey = set[i] == Fr::zero();
-
 			let att = self.attestations[i].clone();
-			let is_default_sig = att.attestation == Attestation::default();
+			assert!(att.attestation.about == set[i]);
+			assert!(att.attestation.domain == self.domain);
 
-			if is_default_pubkey || is_default_sig {
-				scores[i] = Fr::default();
-				hashes.push(default_hash);
+			let att_hasher = H::new([
+				att.attestation.about,
+				att.attestation.domain,
+				att.attestation.value,
+				att.attestation.message,
+				N::ZERO,
+			]);
+			let att_hash = att_hasher.finalize()[0];
+
+			let sig = self.attestations[i].signature.clone();
+			let msg_hash = Integer::<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>::from_n(att_hash);
+			let ecdsa_verifier = EcdsaVerifier::new(sig, msg_hash, self.from.clone());
+			let is_valid = ecdsa_verifier.verify();
+
+			let is_default_addr = set[i] == N::ZERO;
+			let invalid_condition = !is_valid || is_default_addr || is_default_pk;
+			let (final_score, final_hash) = if invalid_condition {
+				(N::ZERO, N::ZERO)
 			} else {
-				assert!(att.attestation.about == set[i]);
+				(att.attestation.value, att_hash)
+			};
 
-				let att_hasher = PoseidonNativeHasher::new([
-					att.attestation.about,
-					att.attestation.domain,
-					att.attestation.value,
-					att.attestation.message,
-					Fr::zero(),
-				]);
-				let att_hash = att_hasher.permute()[0];
-
-				let sig = self.attestations[i].signature.clone();
-				let msg_hash = Integer::from_n(att_hash);
-				let ecdsa_verifier = EcdsaVerifier::new(sig, msg_hash, self.from.clone());
-				assert!(ecdsa_verifier.verify());
-
-				scores[i] = att.attestation.value;
-
-				hashes.push(att_hash);
-			}
+			scores.push(final_score);
+			hashes.push(final_hash);
 		}
 
-		let mut sponge_hasher = PoseidonNativeSponge::new();
+		let mut sponge_hasher = SH::new();
 		sponge_hasher.update(&hashes);
 		let op_hash = sponge_hasher.squeeze();
 
-		(from_pk, scores, op_hash)
+		(addr, scores, op_hash)
 	}
 }
