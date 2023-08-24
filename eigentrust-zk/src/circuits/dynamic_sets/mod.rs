@@ -703,7 +703,7 @@ mod test {
 		halo2curves::{
 			bn256::{Bn256, Fr},
 			ff::PrimeField,
-			secp256k1::{Fq, Secp256k1Affine},
+			secp256k1::Secp256k1Affine,
 		},
 	};
 	use itertools::Itertools;
@@ -763,7 +763,7 @@ mod test {
 						Attestation::new(pub_keys[j].to_address(), domain, ops[i][j], N::ZERO);
 
 					let att_hash = attestation.hash::<HASHER_WIDTH, PoseidonNativeHasher>();
-					let att_hash: Fq = big_to_fe(fe_to_big(att_hash));
+					let att_hash = big_to_fe(fe_to_big(att_hash));
 
 					let signature = keypairs[i].sign(att_hash, rng);
 					let signed_att = SignedAttestation::new(attestation, signature);
@@ -890,7 +890,7 @@ mod test {
 						Attestation::new(pub_keys[j].to_address(), domain, ops[i][j], N::ZERO);
 
 					let att_hash = attestation.hash::<HASHER_WIDTH, PoseidonNativeHasher>();
-					let att_hash: Fq = big_to_fe(fe_to_big(att_hash));
+					let att_hash = big_to_fe(fe_to_big(att_hash));
 
 					let signature = keypairs[i].sign(att_hash, rng);
 					let signed_att = SignedAttestation::new(attestation, signature);

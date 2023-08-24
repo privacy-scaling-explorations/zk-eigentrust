@@ -243,9 +243,7 @@ mod tests {
 			} else {
 				let (about, key, value, message) = (addrs[i], N::zero(), scores[i], N::zero());
 				let attestation = Attestation::new(about, key, value, message);
-				let msg = big_to_fe(fe_to_big(
-					attestation.hash::<HASHER_WIDTH, PoseidonNativeHasher>(),
-				));
+				let msg = big_to_fe(fe_to_big(attestation.hash::<HASHER_WIDTH, H>()));
 				let signature = keypair.sign(msg, rng);
 				let signed_attestation = SignedAttestation::new(attestation, signature);
 

@@ -1955,14 +1955,9 @@ mod test {
 		for _ in 0..10 {
 			let scalar = SecpScalar::random(rng.clone());
 			scalars_vec.push(Integer::from_w(scalar));
-			let a = Integer::<Fp, Fr, NUM_LIMBS, NUM_BITS, Secp256k1_4_68>::from_n(Fr::random(
-				rng.clone(),
-			));
-			let b = Integer::<Fp, Fr, NUM_LIMBS, NUM_BITS, Secp256k1_4_68>::from_n(Fr::random(
-				rng.clone(),
-			));
-			let point =
-				EcPoint::<Secp256k1Affine, Fr, 4, 68, Secp256k1_4_68, Secp256k1Params>::new(a, b);
+			let a = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::from_n(Fr::random(rng.clone()));
+			let b = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::from_n(Fr::random(rng.clone()));
+			let point = EcPoint::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::new(a, b);
 			points_vec.push(point);
 		}
 

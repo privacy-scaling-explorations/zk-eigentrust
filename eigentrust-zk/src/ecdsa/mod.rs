@@ -28,7 +28,6 @@ use halo2::{
 use std::marker::PhantomData;
 
 #[derive(Clone, Debug)]
-// TODO: Implement From<Signature>
 /// Unassigned signature structure
 pub struct UnassignedSignature<
 	C: CurveAffine,
@@ -171,7 +170,6 @@ where
 	}
 }
 
-// TODO: Implement From<PublicKey>
 /// Unassigned Public Key structure
 #[derive(Clone, Debug)]
 pub struct UnassignedPublicKey<
@@ -201,6 +199,20 @@ where
 		let y = UnassignedInteger::new(pk.0.y.clone(), pk.0.y.limbs.map(|x| Value::known(x)));
 		let p = UnassignedEcPoint::new(x, y);
 		Self(p)
+	}
+}
+
+impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P, EC>
+	From<PublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>>
+	for UnassignedPublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>
+where
+	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
+	C::Base: FieldExt,
+	C::ScalarExt: FieldExt,
+	EC: EccParams<C>,
+{
+	fn from(pub_key: PublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>) -> Self {
+		Self(UnassignedEcPoint::from(pub_key.0))
 	}
 }
 
@@ -735,7 +747,7 @@ mod test {
 		}
 	}
 
-	impl Circuit<Fr> for TestEcdsaCircuit {
+	impl Circuit<N> for TestEcdsaCircuit {
 		type Config = TestConfig;
 		type FloorPlanner = SimpleFloorPlanner;
 
@@ -749,12 +761,12 @@ mod test {
 			}
 		}
 
-		fn configure(meta: &mut ConstraintSystem<Fr>) -> TestConfig {
+		fn configure(meta: &mut ConstraintSystem<N>) -> TestConfig {
 			TestConfig::new(meta)
 		}
 
 		fn synthesize(
-			&self, config: TestConfig, mut layouter: impl Layouter<Fr>,
+			&self, config: TestConfig, mut layouter: impl Layouter<N>,
 		) -> Result<(), Error> {
 			let ecdsa_assigner = EcdsaAssigner::new(
 				self.g_as_ecpoint.clone(),
@@ -798,15 +810,21 @@ mod test {
 	fn test_ecdsa() {
 		// Test Halo2 ECDSA verify
 		let rng = &mut rand::thread_rng();
-		let keypair =
-			EcdsaKeypair::<Secp256k1Affine, Fr, 4, 68, Secp256k1_4_68, Secp256k1Params>::generate_keypair(rng);
+		let keypair = EcdsaKeypair::<
+			Secp256k1Affine,
+			N,
+			NUM_LIMBS,
+			NUM_BITS,
+			Secp256k1_4_68,
+			Secp256k1Params,
+		>::generate_keypair(rng);
 		let public_key = keypair.public_key.clone();
 
-		let msg_hash = Fq::from_u128(123456789);
+		let msg_hash = SecpScalar::from_u128(123456789);
 		let msg_hash_integer = Integer::from_w(msg_hash);
 
 		let signature = keypair.sign(msg_hash.clone(), rng);
-		let s_inv_fq = big_to_fe::<Fq>(signature.s.value()).invert().unwrap();
+		let s_inv_fq = big_to_fe::<SecpScalar>(signature.s.value()).invert().unwrap();
 		let s_inv = Integer::from_w(s_inv_fq);
 
 		let g = Secp256k1::generator().to_affine();
@@ -818,7 +836,7 @@ mod test {
 		let circuit =
 			TestEcdsaCircuit::new(public_key, g_as_ecpoint, signature, msg_hash_integer, s_inv);
 		let k = 15;
-		let prover = MockProver::run(k, &circuit, vec![vec![Fr::one()]]).unwrap();
+		let prover = MockProver::run(k, &circuit, vec![vec![N::ONE]]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
 	}
 }
