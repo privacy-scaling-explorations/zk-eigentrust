@@ -1,5 +1,4 @@
 use super::*;
-use halo2::halo2curves::bn256::Fr;
 
 /// Configures a structure.
 #[derive(Clone)]
@@ -26,7 +25,7 @@ impl Sbox for Params {
 	}
 }
 
-impl RoundParams<Fr, 10> for Params {
+impl<F: FieldExt> RoundParams<F, 10> for Params {
 	fn partial_rounds() -> usize {
 		60
 	}
