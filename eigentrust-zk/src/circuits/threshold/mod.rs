@@ -1,38 +1,15 @@
 use crate::{
-	ecc::{
-		AuxConfig, EccAddConfig, EccDoubleConfig, EccMulConfig, EccTableSelectConfig,
-		EccUnreducedLadderConfig,
-	},
 	gadgets::{
-		absorb::AbsorbChip,
 		bits2num::Bits2NumChip,
 		lt_eq::{LessEqualChipset, LessEqualConfig, NShiftedChip},
 		main::{InverseChipset, IsZeroChipset, MainChip, MainConfig, MulAddChipset, MulChipset},
 		set::{SelectItemChip, SetPositionChip},
 	},
-	integer::{IntegerAddChip, IntegerDivChip, IntegerMulChip, IntegerReduceChip, IntegerSubChip},
-	params::rns::bn256::Bn256_4_68,
-	poseidon::{sponge::PoseidonSpongeConfig, PoseidonConfig},
-	verifier::{
-		aggregator::{native::Snark, AggregatorChipset, AggregatorConfig, Svk, UnassignedSnark},
-		transcript::native::WIDTH,
-	},
-	Chip, Chipset, CommonConfig, RegionCtx, ADVICE,
+	Chip, Chipset, CommonConfig, FieldExt, RegionCtx, ADVICE,
 };
 use halo2::{
-	arithmetic::Field,
 	circuit::{Layouter, SimpleFloorPlanner, Value},
-	halo2curves::{
-		bn256::{Fq, Fr},
-		ff::PrimeField,
-	},
 	plonk::{Circuit, ConstraintSystem, Error, Selector},
-};
-use itertools::Itertools;
-
-use super::{
-	dynamic_sets::ecdsa_native::{NUM_BITS, NUM_LIMBS},
-	FullRoundHasher, PartialRoundHasher,
 };
 
 /// Native version of checking score threshold
@@ -44,7 +21,6 @@ pub struct ThresholdCircuitConfig {
 	common: CommonConfig,
 	main: MainConfig,
 	lt_eq: LessEqualConfig,
-	aggregator: AggregatorConfig,
 	set_pos_selector: Selector,
 	select_item_selector: Selector,
 }
@@ -52,41 +28,43 @@ pub struct ThresholdCircuitConfig {
 #[derive(Clone, Debug)]
 /// Structure of the EigenTrustSet circuit
 pub struct ThresholdCircuit<
+	F: FieldExt,
+	const NUM_LIMBS: usize,
 	const POWER_OF_TEN: usize,
 	const NUM_NEIGHBOURS: usize,
 	const INITIAL_SCORE: u128,
 > {
-	sets: Vec<Value<Fr>>,
-	scores: Vec<Value<Fr>>,
-	num_decomposed: Vec<Value<Fr>>,
-	den_decomposed: Vec<Value<Fr>>,
-
-	svk: Svk,
-	snarks: Vec<UnassignedSnark>,
-	as_proof: Option<Vec<u8>>,
+	sets: Vec<Value<F>>,
+	scores: Vec<Value<F>>,
+	num_decomposed: Vec<Value<F>>,
+	den_decomposed: Vec<Value<F>>,
 }
 
-impl<const POWER_OF_TEN: usize, const NUM_NEIGHBOURS: usize, const INITIAL_SCORE: u128>
-	ThresholdCircuit<POWER_OF_TEN, NUM_NEIGHBOURS, INITIAL_SCORE>
+impl<
+		F: FieldExt,
+		const NUM_LIMBS: usize,
+		const POWER_OF_TEN: usize,
+		const NUM_NEIGHBOURS: usize,
+		const INITIAL_SCORE: u128,
+	> ThresholdCircuit<F, NUM_LIMBS, POWER_OF_TEN, NUM_NEIGHBOURS, INITIAL_SCORE>
 {
 	/// Constructs a new ThresholdCircuit
-	pub fn new(
-		sets: &[Fr], scores: &[Fr], num_decomposed: &[Fr], den_decomposed: &[Fr], svk: Svk,
-		snarks: Vec<Snark>, as_proof: Vec<u8>,
-	) -> Self {
+	pub fn new(sets: &[F], scores: &[F], num_decomposed: &[F], den_decomposed: &[F]) -> Self {
 		let sets = sets.iter().map(|s| Value::known(*s)).collect();
 		let scores = scores.iter().map(|s| Value::known(*s)).collect();
 		let num_decomposed = (0..NUM_LIMBS).map(|i| Value::known(num_decomposed[i])).collect();
 		let den_decomposed = (0..NUM_LIMBS).map(|i| Value::known(den_decomposed[i])).collect();
-
-		let snarks = snarks.into_iter().map_into().collect();
-		let as_proof = Some(as_proof);
-		Self { sets, scores, den_decomposed, num_decomposed, svk, snarks, as_proof }
+		Self { sets, scores, den_decomposed, num_decomposed }
 	}
 }
 
-impl<const POWER_OF_TEN: usize, const NUM_NEIGHBOURS: usize, const INITIAL_SCORE: u128> Circuit<Fr>
-	for ThresholdCircuit<POWER_OF_TEN, NUM_NEIGHBOURS, INITIAL_SCORE>
+impl<
+		F: FieldExt,
+		const NUM_LIMBS: usize,
+		const POWER_OF_TEN: usize,
+		const NUM_NEIGHBOURS: usize,
+		const INITIAL_SCORE: u128,
+	> Circuit<F> for ThresholdCircuit<F, NUM_LIMBS, POWER_OF_TEN, NUM_NEIGHBOURS, INITIAL_SCORE>
 {
 	type Config = ThresholdCircuitConfig;
 	type FloorPlanner = SimpleFloorPlanner;
@@ -96,14 +74,10 @@ impl<const POWER_OF_TEN: usize, const NUM_NEIGHBOURS: usize, const INITIAL_SCORE
 		let scores = (0..NUM_NEIGHBOURS).map(|_| Value::unknown()).collect();
 		let num_decomposed = (0..NUM_LIMBS).map(|_| Value::unknown()).collect();
 		let den_decomposed = (0..NUM_LIMBS).map(|_| Value::unknown()).collect();
-
-		let svk = self.svk;
-		let snarks = self.snarks.iter().map(UnassignedSnark::without_witness).collect();
-		let as_proof = None;
-		Self { sets, scores, num_decomposed, den_decomposed, svk, snarks, as_proof }
+		Self { sets, scores, num_decomposed, den_decomposed }
 	}
 
-	fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
+	fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
 		let common = CommonConfig::new(meta);
 		let main = MainConfig::new(MainChip::configure(&common, meta));
 
@@ -111,51 +85,14 @@ impl<const POWER_OF_TEN: usize, const NUM_NEIGHBOURS: usize, const INITIAL_SCORE
 		let n_shifted_selector = NShiftedChip::configure(&common, meta);
 		let lt_eq = LessEqualConfig::new(main.clone(), bits_2_num_selector, n_shifted_selector);
 
-		let full_round_selector = FullRoundHasher::configure(&common, meta);
-		let partial_round_selector = PartialRoundHasher::configure(&common, meta);
-		let poseidon = PoseidonConfig::new(full_round_selector, partial_round_selector);
-
-		let absorb_selector = AbsorbChip::<Fr, WIDTH>::configure(&common, meta);
-		let poseidon_sponge = PoseidonSpongeConfig::new(poseidon, absorb_selector);
-
-		let bits2num = Bits2NumChip::configure(&common, meta);
-
-		let int_red =
-			IntegerReduceChip::<Fq, Fr, NUM_LIMBS, NUM_BITS, Bn256_4_68>::configure(&common, meta);
-		let int_add =
-			IntegerAddChip::<Fq, Fr, NUM_LIMBS, NUM_BITS, Bn256_4_68>::configure(&common, meta);
-		let int_sub =
-			IntegerSubChip::<Fq, Fr, NUM_LIMBS, NUM_BITS, Bn256_4_68>::configure(&common, meta);
-		let int_mul =
-			IntegerMulChip::<Fq, Fr, NUM_LIMBS, NUM_BITS, Bn256_4_68>::configure(&common, meta);
-		let int_div =
-			IntegerDivChip::<Fq, Fr, NUM_LIMBS, NUM_BITS, Bn256_4_68>::configure(&common, meta);
-
-		let ladder = EccUnreducedLadderConfig::new(int_add, int_sub, int_mul, int_div);
-		let add = EccAddConfig::new(int_red, int_sub, int_mul, int_div);
-		let double = EccDoubleConfig::new(int_red, int_add, int_sub, int_mul, int_div);
-		let table_select = EccTableSelectConfig::new(main.clone());
-		let ecc_mul_scalar = EccMulConfig::new(ladder, add, double.clone(), table_select, bits2num);
-		let aux = AuxConfig::new(double);
-
-		let aggregator =
-			AggregatorConfig { main: main.clone(), poseidon_sponge, ecc_mul_scalar, aux };
-
 		let set_pos_selector = SetPositionChip::configure(&common, meta);
 		let select_item_selector = SelectItemChip::configure(&common, meta);
 
-		ThresholdCircuitConfig {
-			common,
-			main,
-			lt_eq,
-			aggregator,
-			set_pos_selector,
-			select_item_selector,
-		}
+		ThresholdCircuitConfig { common, main, lt_eq, set_pos_selector, select_item_selector }
 	}
 
 	fn synthesize(
-		&self, config: Self::Config, mut layouter: impl Layouter<Fr>,
+		&self, config: Self::Config, mut layouter: impl Layouter<F>,
 	) -> Result<(), Error> {
 		let (
 			num_neighbor,
@@ -176,16 +113,16 @@ impl<const POWER_OF_TEN: usize, const NUM_NEIGHBOURS: usize, const INITIAL_SCORE
 				// constants
 				let num_neighbor = ctx.assign_from_constant(
 					config.common.advice[0],
-					Fr::from_u128(NUM_NEIGHBOURS as u128),
+					F::from_u128(NUM_NEIGHBOURS as u128),
 				)?;
-				let init_score = ctx
-					.assign_from_constant(config.common.advice[1], Fr::from_u128(INITIAL_SCORE))?;
+				let init_score =
+					ctx.assign_from_constant(config.common.advice[1], F::from_u128(INITIAL_SCORE))?;
 				let max_limb_value = ctx.assign_from_constant(
 					config.common.advice[2],
-					Fr::from_u128(10_u128).pow([POWER_OF_TEN as u64]),
+					F::from_u128(10_u128).pow([POWER_OF_TEN as u64]),
 				)?;
-				let one = ctx.assign_from_constant(config.common.advice[5], Fr::ONE)?;
-				let zero = ctx.assign_from_constant(config.common.advice[6], Fr::ZERO)?;
+				let one = ctx.assign_from_constant(config.common.advice[5], F::ONE)?;
+				let zero = ctx.assign_from_constant(config.common.advice[6], F::ZERO)?;
 
 				// Public input
 				let target_addr =
@@ -269,23 +206,7 @@ impl<const POWER_OF_TEN: usize, const NUM_NEIGHBOURS: usize, const INITIAL_SCORE
 			},
 		)?;
 
-		// verify if the "sets" & "scores" are valid, using aggregation verify
-		// TODO: Uncomment when the aggregator bug is fixed.
-		//
-		// let aggregator =
-		// 	AggregatorChipset::new(self.svk, self.snarks.clone(), self.as_proof.clone());
-		// let _agg_proof = aggregator.synthesize(
-		// 	&config.common,
-		// 	&config.aggregator,
-		// 	layouter.namespace(|| "aggregator chipset"),
-		// )?;
-		// for i in 0..16_usize {
-		// 	layouter.constrain_instance(
-		// 		agg_proof[i].cell(),
-		// 		config.common.instance,
-		// 		3_usize + i, // 3 rows are taken by "target_addr", "threshold", "native_threshold_check"
-		// 	)?;
-		// }
+		// TODO: verify if the "sets" & "scores" are valid, using aggregation verify
 
 		// obtain the score of "target_addr" from "scores", using SetPositionChip & SelectItemChip
 		let set_pos_chip = SetPositionChip::new(sets, target_addr);
@@ -505,8 +426,7 @@ mod tests {
 			ecc::secp256k1::Secp256k1Params,
 			rns::{decompose_big_decimal, secp256k1::Secp256k1_4_68},
 		},
-		utils::{big_to_fe, fe_to_big, generate_params},
-		verifier::aggregator::native::NativeAggregator,
+		utils::{big_to_fe, fe_to_big, generate_params, prove_and_verify},
 	};
 	use halo2::{
 		arithmetic::Field,
@@ -615,9 +535,13 @@ mod tests {
 		(pks_fr, s, s_ratios)
 	}
 
-	fn ratio_to_decomposed_helper<const NUM_LIMBS: usize, const POWER_OF_TEN: usize>(
+	fn ratio_to_decomposed_helper<
+		F: FieldExt,
+		const NUM_LIMBS: usize,
+		const POWER_OF_TEN: usize,
+	>(
 		ratio: BigRational,
-	) -> ([Fr; NUM_LIMBS], [Fr; NUM_LIMBS]) {
+	) -> ([F; NUM_LIMBS], [F; NUM_LIMBS]) {
 		let num = ratio.numer();
 		let den = ratio.denom();
 		let max_len = NUM_LIMBS * POWER_OF_TEN;
@@ -631,13 +555,12 @@ mod tests {
 		let num_scaled_uint = num_scaled.to_biguint().unwrap();
 		let den_scaled_uint = den_scaled.to_biguint().unwrap();
 
-		let num_decomposed = decompose_big_decimal::<Fr, NUM_LIMBS, POWER_OF_TEN>(num_scaled_uint);
-		let den_decomposed = decompose_big_decimal::<Fr, NUM_LIMBS, POWER_OF_TEN>(den_scaled_uint);
+		let num_decomposed = decompose_big_decimal::<F, NUM_LIMBS, POWER_OF_TEN>(num_scaled_uint);
+		let den_decomposed = decompose_big_decimal::<F, NUM_LIMBS, POWER_OF_TEN>(den_scaled_uint);
 
 		(num_decomposed, den_decomposed)
 	}
 
-	#[ignore = "EigenTrustSet(ecdsa) circuit is not ready & aggregator has a bug."]
 	#[test]
 	fn test_threshold_circuit() {
 		// Test Threshold Circuit
@@ -667,37 +590,23 @@ mod tests {
 		let score = scores[target_idx].clone();
 		let score_ratio = score_ratios[target_idx].clone();
 		let (num_decomposed, den_decomposed) =
-			ratio_to_decomposed_helper::<NUM_LIMBS, POWER_OF_TEN>(score_ratio.clone());
-		let threshold = Fr::from_u128(1000_u128);
+			ratio_to_decomposed_helper::<N, NUM_LIMBS, POWER_OF_TEN>(score_ratio.clone());
+		let threshold = N::from_u128(1000_u128);
 
 		let native_threshold: Threshold<N, NUM_LIMBS, POWER_OF_TEN, NUM_NEIGHBOURS, INITIAL_SCORE> =
 			Threshold::new(score, score_ratio, threshold);
 		let native_threshold_check =
 			if native_threshold.check_threshold() { N::ONE } else { N::ZERO };
 
-		// Prepare the aggregator inputs
-		let _rng = &mut thread_rng();
-		let k = 21;
-		let params = generate_params::<Bn256>(k);
+		let pub_ins = vec![target_addr, threshold, native_threshold_check];
 
-		// let ecdsa_et_circuit = EigenTrustSet::new();
-		// let instances_1: Vec<Vec<Fr>> = vec![scores.clone()];
-		// let snark_1 = Snark::new(&params, ecdsa_et_circuit, instances_1, rng);
-		// let snarks = vec![snark_1];
-
-		// TODO: Replace "mock_snarks" with "snarks" when "EigenTrustSet"(ecdsa) circuit is implemented & aggregator bug is fixed.
-		let mock_snarks = vec![];
-		let NativeAggregator { svk, snarks, instances, as_proof } =
-			NativeAggregator::new(&params, mock_snarks);
-
-		// Threshold circuit testing
-		let mut pub_ins = vec![target_addr, threshold, native_threshold_check];
-		pub_ins.extend(instances);
-
-		let threshold_circuit: ThresholdCircuit<POWER_OF_TEN, NUM_NEIGHBOURS, INITIAL_SCORE> =
-			ThresholdCircuit::new(
-				&sets, &scores, &num_decomposed, &den_decomposed, svk, snarks, as_proof,
-			);
+		let threshold_circuit: ThresholdCircuit<
+			N,
+			NUM_LIMBS,
+			POWER_OF_TEN,
+			NUM_NEIGHBOURS,
+			INITIAL_SCORE,
+		> = ThresholdCircuit::new(&sets, &scores, &num_decomposed, &den_decomposed);
 
 		let k = 12;
 		let prover = match MockProver::<N>::run(k, &threshold_circuit, vec![pub_ins]) {
