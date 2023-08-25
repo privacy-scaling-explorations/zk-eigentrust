@@ -1,10 +1,21 @@
+use std::marker::PhantomData;
+
 use crate::{
+	ecc::{
+		AuxConfig, EccAddConfig, EccDoubleConfig, EccMulConfig, EccTableSelectConfig,
+		EccUnreducedLadderConfig,
+	},
 	gadgets::{
+		absorb::AbsorbChip,
 		bits2num::Bits2NumChip,
 		lt_eq::{LessEqualChipset, LessEqualConfig, NShiftedChip},
 		main::{InverseChipset, IsZeroChipset, MainChip, MainConfig, MulAddChipset, MulChipset},
 		set::{SelectItemChip, SetPositionChip},
 	},
+	integer::{IntegerAddChip, IntegerDivChip, IntegerMulChip, IntegerReduceChip, IntegerSubChip},
+	params::{hasher::RoundParams, rns::RnsParams},
+	poseidon::{sponge::PoseidonSpongeConfig, FullRoundChip, PartialRoundChip, PoseidonConfig},
+	verifier::aggregator::{AggregatorChipset, AggregatorConfig},
 	Chip, Chipset, CommonConfig, FieldExt, RegionCtx, ADVICE,
 };
 use halo2::{
@@ -21,6 +32,7 @@ pub struct ThresholdCircuitConfig {
 	common: CommonConfig,
 	main: MainConfig,
 	lt_eq: LessEqualConfig,
+	aggregator: AggregatorConfig,
 	set_pos_selector: Selector,
 	select_item_selector: Selector,
 }
@@ -28,43 +40,107 @@ pub struct ThresholdCircuitConfig {
 #[derive(Clone, Debug)]
 /// Structure of the EigenTrustSet circuit
 pub struct ThresholdCircuit<
-	F: FieldExt,
+	W: FieldExt,
+	N: FieldExt,
+	const FIELD_NUM_LIMBS: usize,
+	const FIELD_NUM_BITS: usize,
 	const NUM_LIMBS: usize,
 	const POWER_OF_TEN: usize,
 	const NUM_NEIGHBOURS: usize,
 	const INITIAL_SCORE: u128,
-> {
-	sets: Vec<Value<F>>,
-	scores: Vec<Value<F>>,
-	num_decomposed: Vec<Value<F>>,
-	den_decomposed: Vec<Value<F>>,
+	P,
+	RP,
+	const WIDTH: usize,
+> where
+	P: RnsParams<W, N, FIELD_NUM_LIMBS, FIELD_NUM_BITS>,
+	RP: RoundParams<N, WIDTH>,
+{
+	sets: Vec<Value<N>>,
+	scores: Vec<Value<N>>,
+	num_decomposed: Vec<Value<N>>,
+	den_decomposed: Vec<Value<N>>,
+
+	_w: PhantomData<W>,
+	_p: PhantomData<P>,
+	_rp: PhantomData<RP>,
 }
 
 impl<
-		F: FieldExt,
+		W: FieldExt,
+		N: FieldExt,
+		const FIELD_NUM_LIMBS: usize,
+		const FIELD_NUM_BITS: usize,
 		const NUM_LIMBS: usize,
 		const POWER_OF_TEN: usize,
 		const NUM_NEIGHBOURS: usize,
 		const INITIAL_SCORE: u128,
-	> ThresholdCircuit<F, NUM_LIMBS, POWER_OF_TEN, NUM_NEIGHBOURS, INITIAL_SCORE>
+		P,
+		RP,
+		const WIDTH: usize,
+	>
+	ThresholdCircuit<
+		W,
+		N,
+		FIELD_NUM_LIMBS,
+		FIELD_NUM_BITS,
+		NUM_LIMBS,
+		POWER_OF_TEN,
+		NUM_NEIGHBOURS,
+		INITIAL_SCORE,
+		P,
+		RP,
+		WIDTH,
+	> where
+	P: RnsParams<W, N, FIELD_NUM_LIMBS, FIELD_NUM_BITS>,
+	RP: RoundParams<N, WIDTH>,
 {
 	/// Constructs a new ThresholdCircuit
-	pub fn new(sets: &[F], scores: &[F], num_decomposed: &[F], den_decomposed: &[F]) -> Self {
+	pub fn new(sets: &[N], scores: &[N], num_decomposed: &[N], den_decomposed: &[N]) -> Self {
 		let sets = sets.iter().map(|s| Value::known(*s)).collect();
 		let scores = scores.iter().map(|s| Value::known(*s)).collect();
 		let num_decomposed = (0..NUM_LIMBS).map(|i| Value::known(num_decomposed[i])).collect();
 		let den_decomposed = (0..NUM_LIMBS).map(|i| Value::known(den_decomposed[i])).collect();
-		Self { sets, scores, den_decomposed, num_decomposed }
+		Self {
+			sets,
+			scores,
+			den_decomposed,
+			num_decomposed,
+
+			_w: PhantomData,
+			_p: PhantomData,
+			_rp: PhantomData,
+		}
 	}
 }
 
 impl<
-		F: FieldExt,
+		W: FieldExt,
+		N: FieldExt,
+		const FIELD_NUM_LIMBS: usize,
+		const FIELD_NUM_BITS: usize,
 		const NUM_LIMBS: usize,
 		const POWER_OF_TEN: usize,
 		const NUM_NEIGHBOURS: usize,
 		const INITIAL_SCORE: u128,
-	> Circuit<F> for ThresholdCircuit<F, NUM_LIMBS, POWER_OF_TEN, NUM_NEIGHBOURS, INITIAL_SCORE>
+		P,
+		RP,
+		const WIDTH: usize,
+	> Circuit<N>
+	for ThresholdCircuit<
+		W,
+		N,
+		FIELD_NUM_LIMBS,
+		FIELD_NUM_BITS,
+		NUM_LIMBS,
+		POWER_OF_TEN,
+		NUM_NEIGHBOURS,
+		INITIAL_SCORE,
+		P,
+		RP,
+		WIDTH,
+	> where
+	P: RnsParams<W, N, FIELD_NUM_LIMBS, FIELD_NUM_BITS>,
+	RP: RoundParams<N, WIDTH>,
 {
 	type Config = ThresholdCircuitConfig;
 	type FloorPlanner = SimpleFloorPlanner;
@@ -74,10 +150,18 @@ impl<
 		let scores = (0..NUM_NEIGHBOURS).map(|_| Value::unknown()).collect();
 		let num_decomposed = (0..NUM_LIMBS).map(|_| Value::unknown()).collect();
 		let den_decomposed = (0..NUM_LIMBS).map(|_| Value::unknown()).collect();
-		Self { sets, scores, num_decomposed, den_decomposed }
+		Self {
+			sets,
+			scores,
+			num_decomposed,
+			den_decomposed,
+			_w: PhantomData,
+			_p: PhantomData,
+			_rp: PhantomData,
+		}
 	}
 
-	fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+	fn configure(meta: &mut ConstraintSystem<N>) -> Self::Config {
 		let common = CommonConfig::new(meta);
 		let main = MainConfig::new(MainChip::configure(&common, meta));
 
@@ -85,14 +169,63 @@ impl<
 		let n_shifted_selector = NShiftedChip::configure(&common, meta);
 		let lt_eq = LessEqualConfig::new(main.clone(), bits_2_num_selector, n_shifted_selector);
 
+		let fr_selector = FullRoundChip::<N, WIDTH, RP>::configure(&common, meta);
+		let pr_selector = PartialRoundChip::<N, WIDTH, RP>::configure(&common, meta);
+		let poseidon = PoseidonConfig::new(fr_selector, pr_selector);
+		let absorb_selector = AbsorbChip::<N, WIDTH>::configure(&common, meta);
+		let poseidon_sponge = PoseidonSpongeConfig::new(poseidon, absorb_selector);
+
+		let integer_add_selector =
+			IntegerAddChip::<W, N, FIELD_NUM_LIMBS, FIELD_NUM_BITS, P>::configure(&common, meta);
+		let integer_sub_selector =
+			IntegerSubChip::<W, N, FIELD_NUM_LIMBS, FIELD_NUM_BITS, P>::configure(&common, meta);
+		let integer_mul_selector =
+			IntegerMulChip::<W, N, FIELD_NUM_LIMBS, FIELD_NUM_BITS, P>::configure(&common, meta);
+		let integer_div_selector =
+			IntegerDivChip::<W, N, FIELD_NUM_LIMBS, FIELD_NUM_BITS, P>::configure(&common, meta);
+		let ladder = EccUnreducedLadderConfig::new(
+			integer_add_selector, integer_sub_selector, integer_mul_selector, integer_div_selector,
+		);
+		let integer_reduce_selector =
+			IntegerReduceChip::<W, N, FIELD_NUM_LIMBS, FIELD_NUM_BITS, P>::configure(&common, meta);
+		let add = EccAddConfig::new(
+			integer_reduce_selector, integer_sub_selector, integer_mul_selector,
+			integer_div_selector,
+		);
+		let double = EccDoubleConfig::new(
+			integer_reduce_selector, integer_add_selector, integer_sub_selector,
+			integer_mul_selector, integer_div_selector,
+		);
+		let table_select = EccTableSelectConfig::new(main.clone());
+		let bits2num = Bits2NumChip::configure(&common, meta);
+		let ecc_mul_scalar = EccMulConfig::new(ladder, add, double, table_select, bits2num);
+		let ecc_add = EccAddConfig::new(
+			integer_reduce_selector, integer_sub_selector, integer_mul_selector,
+			integer_div_selector,
+		);
+		let ecc_double = EccDoubleConfig::new(
+			integer_reduce_selector, integer_add_selector, integer_sub_selector,
+			integer_mul_selector, integer_div_selector,
+		);
+		let aux = AuxConfig::new(ecc_double);
+		let aggregator =
+			AggregatorConfig::new(main.clone(), poseidon_sponge, ecc_mul_scalar, ecc_add, aux);
+
 		let set_pos_selector = SetPositionChip::configure(&common, meta);
 		let select_item_selector = SelectItemChip::configure(&common, meta);
 
-		ThresholdCircuitConfig { common, main, lt_eq, set_pos_selector, select_item_selector }
+		ThresholdCircuitConfig {
+			common,
+			main,
+			lt_eq,
+			aggregator,
+			set_pos_selector,
+			select_item_selector,
+		}
 	}
 
 	fn synthesize(
-		&self, config: Self::Config, mut layouter: impl Layouter<F>,
+		&self, config: Self::Config, mut layouter: impl Layouter<N>,
 	) -> Result<(), Error> {
 		let (
 			num_neighbor,
@@ -113,16 +246,16 @@ impl<
 				// constants
 				let num_neighbor = ctx.assign_from_constant(
 					config.common.advice[0],
-					F::from_u128(NUM_NEIGHBOURS as u128),
+					N::from_u128(NUM_NEIGHBOURS as u128),
 				)?;
 				let init_score =
-					ctx.assign_from_constant(config.common.advice[1], F::from_u128(INITIAL_SCORE))?;
+					ctx.assign_from_constant(config.common.advice[1], N::from_u128(INITIAL_SCORE))?;
 				let max_limb_value = ctx.assign_from_constant(
 					config.common.advice[2],
-					F::from_u128(10_u128).pow([POWER_OF_TEN as u64]),
+					N::from_u128(10_u128).pow([POWER_OF_TEN as u64]),
 				)?;
-				let one = ctx.assign_from_constant(config.common.advice[5], F::ONE)?;
-				let zero = ctx.assign_from_constant(config.common.advice[6], F::ZERO)?;
+				let one = ctx.assign_from_constant(config.common.advice[5], N::ONE)?;
+				let zero = ctx.assign_from_constant(config.common.advice[6], N::ZERO)?;
 
 				// Public input
 				let target_addr =
@@ -206,7 +339,26 @@ impl<
 			},
 		)?;
 
-		// TODO: verify if the "sets" & "scores" are valid, using aggregation verify
+		// // TODO: verify if the "sets" & "scores" are valid, using aggregation verify
+		// let aggregator = AggregatorChipset::new(svk, snarks, as_proof);
+		// let limbs = aggregator.synthesize(&config.common, &config.aggregator, layouter)?;
+		// layouter.assign_region(
+		// 	|| "aggregator_native_res_limbs == limbs",
+		// 	|region| {
+		// 		let mut ctx = RegionCtx::new(region, 0);
+		// 		for i in 0..limbs.len() {
+		// 			let native_limb = ctx.assign_from_instance(
+		// 				config.common.advice[0],
+		// 				config.common.instance,
+		// 				10 + i,
+		// 			)?;
+		// 			let halo2_limb = ctx.copy_assign(config.common.advice[1], limbs[i])?;
+		// 			ctx.constrain_equal(native_limb, halo2_limb)?;
+		// 		}
+
+		// 		Ok(())
+		// 	},
+		// )?;
 
 		// obtain the score of "target_addr" from "scores", using SetPositionChip & SelectItemChip
 		let set_pos_chip = SetPositionChip::new(sets, target_addr);
@@ -424,7 +576,8 @@ mod tests {
 		ecdsa::native::{EcdsaKeypair, PublicKey},
 		params::{
 			ecc::secp256k1::Secp256k1Params,
-			rns::{decompose_big_decimal, secp256k1::Secp256k1_4_68},
+			hasher::poseidon_bn254_5x5::Params,
+			rns::{bn256::Bn256_4_68, decompose_big_decimal, secp256k1::Secp256k1_4_68},
 		},
 		utils::{big_to_fe, fe_to_big, generate_params, prove_and_verify},
 	};
@@ -432,7 +585,7 @@ mod tests {
 		arithmetic::Field,
 		dev::MockProver,
 		halo2curves::{
-			bn256::{Bn256, Fr},
+			bn256::{Bn256, Fq, Fr},
 			ff::PrimeField,
 			secp256k1::Secp256k1Affine,
 		},
@@ -443,6 +596,7 @@ mod tests {
 
 	const DOMAIN: u128 = 42;
 	type C = Secp256k1Affine;
+	type W = Fq;
 	type N = Fr;
 	const NUM_LIMBS: usize = 4;
 	const NUM_BITS: usize = 68;
@@ -601,11 +755,17 @@ mod tests {
 		let pub_ins = vec![target_addr, threshold, native_threshold_check];
 
 		let threshold_circuit: ThresholdCircuit<
+			W,
 			N,
+			4,
+			68,
 			NUM_LIMBS,
 			POWER_OF_TEN,
 			NUM_NEIGHBOURS,
 			INITIAL_SCORE,
+			Bn256_4_68,
+			Params,
+			HASHER_WIDTH,
 		> = ThresholdCircuit::new(&sets, &scores, &num_decomposed, &den_decomposed);
 
 		let k = 12;
@@ -657,11 +817,17 @@ mod tests {
 		let pub_ins = vec![target_addr, threshold, native_threshold_check];
 
 		let threshold_circuit: ThresholdCircuit<
+			W,
 			N,
+			4,
+			68,
 			NUM_LIMBS,
 			POWER_OF_TEN,
 			NUM_NEIGHBOURS,
 			INITIAL_SCORE,
+			Bn256_4_68,
+			Params,
+			HASHER_WIDTH,
 		> = ThresholdCircuit::new(&sets, &scores, &num_decomposed, &den_decomposed);
 
 		let k = 12;
