@@ -1,16 +1,18 @@
+use std::marker::PhantomData;
+
 use crate::{
 	integer::native::Integer,
 	params::hasher::poseidon_bn254_5x5::Params,
-	params::rns::bn256::Bn256_4_68,
+	params::rns::RnsParams,
 	poseidon::native::sponge::PoseidonSponge,
 	verifier::{
 		gen_pk,
-		loader::native::{NUM_BITS, NUM_LIMBS},
 		transcript::native::{NativeTranscriptRead, NativeTranscriptWrite, WIDTH},
 	},
+	FieldExt,
 };
 use halo2::{
-	halo2curves::bn256::{Bn256, Fr, G1Affine},
+	halo2curves::{bn256::Bn256, CurveAffine},
 	plonk::{create_proof, Circuit},
 	poly::{
 		commitment::ParamsProver,
@@ -19,7 +21,7 @@ use halo2::{
 			multiopen::ProverGWC,
 		},
 	},
-	transcript::{TranscriptReadBuffer, TranscriptWriterBuffer},
+	transcript::TranscriptReadBuffer,
 };
 use rand::{thread_rng, RngCore};
 use snark_verifier::{
@@ -35,32 +37,46 @@ use super::{Psv, Svk};
 
 #[derive(Clone)]
 /// Snark structure
-pub struct Snark {
+pub struct Snark<
+	C: CurveAffine,
+	W: FieldExt,
+	N: FieldExt,
+	const NUM_LIMBS: usize,
+	const NUM_BITS: usize,
+	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
+> {
 	/// Protocol
-	pub protocol: PlonkProtocol<G1Affine>,
+	pub protocol: PlonkProtocol<C>,
 	/// Instances
-	pub instances: Vec<Vec<Fr>>,
+	pub instances: Vec<Vec<N>>,
 	/// Proof
 	pub proof: Vec<u8>,
+
+	_w: PhantomData<W>,
+	_p: PhantomData<P>,
 }
 
-impl Snark {
+impl<
+		C: CurveAffine,
+		W: FieldExt,
+		N: FieldExt,
+		const NUM_LIMBS: usize,
+		const NUM_BITS: usize,
+		P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
+	> Snark<C, W, N, NUM_LIMBS, NUM_BITS, P>
+{
 	/// Create a new Snark
-	pub fn new<C: Circuit<Fr>, R: RngCore>(
-		params: &ParamsKZG<Bn256>, circuit: C, instances: Vec<Vec<Fr>>, rng: &mut R,
+	pub fn new<CKT: Circuit<N>, R: RngCore>(
+		params: &ParamsKZG<Bn256>, circuit: CKT, instances: Vec<Vec<N>>, rng: &mut R,
 	) -> Self {
-		let pk = gen_pk(params, &circuit);
+		let pk = gen_pk::<C, CKT>(params, &circuit);
 		let config = Config::kzg().with_num_instance(vec![instances.len()]);
 
 		let protocol = compile(params, pk.get_vk(), config);
 
-		let instances_slice: Vec<&[Fr]> = instances.iter().map(|x| x.as_slice()).collect();
-		let mut transcript = NativeTranscriptWrite::<
-			_,
-			G1Affine,
-			Bn256_4_68,
-			PoseidonSponge<Fr, WIDTH, Params>,
-		>::new(Vec::new());
+		let instances_slice: Vec<&[N]> = instances.iter().map(|x| x.as_slice()).collect();
+		let mut transcript =
+			NativeTranscriptWrite::<_, C, P, PoseidonSponge<N, WIDTH, Params>>::new(Vec::new());
 		create_proof::<KZGCommitmentScheme<Bn256>, ProverGWC<_>, _, _, _, _>(
 			params,
 			&pk,
@@ -72,35 +88,52 @@ impl Snark {
 		.unwrap();
 		let proof = transcript.finalize();
 
-		Self { protocol, instances, proof }
+		Self { protocol, instances, proof, _w: PhantomData, _p: PhantomData }
 	}
 }
 
 /// Native Aggregator
 #[derive(Clone)]
-pub struct NativeAggregator {
+pub struct NativeAggregator<
+	C: CurveAffine,
+	W: FieldExt,
+	N: FieldExt,
+	const NUM_LIMBS: usize,
+	const NUM_BITS: usize,
+	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
+> {
 	/// Succinct Verifying Key
 	pub svk: Svk,
 	/// Snarks for the aggregation
-	pub snarks: Vec<Snark>,
+	pub snarks: Vec<Snark<C, W, N, NUM_LIMBS, NUM_BITS, P>>,
 	/// Instances
-	pub instances: Vec<Fr>,
+	pub instances: Vec<N>,
 	/// Accumulation Scheme Proof
 	pub as_proof: Vec<u8>,
 }
 
-impl NativeAggregator {
+impl<
+		C: CurveAffine,
+		W: FieldExt,
+		N: FieldExt,
+		const NUM_LIMBS: usize,
+		const NUM_BITS: usize,
+		P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
+	> NativeAggregator<C, W, N, NUM_LIMBS, NUM_BITS, P>
+{
 	/// Create a new aggregator.
-	pub fn new(params: &ParamsKZG<Bn256>, snarks: Vec<Snark>) -> Self {
+	pub fn new(
+		params: &ParamsKZG<Bn256>, snarks: Vec<Snark<C, W, N, NUM_LIMBS, NUM_BITS, P>>,
+	) -> Self {
 		let svk = params.get_g()[0].into();
 
 		let mut plonk_proofs = Vec::new();
 		for snark in &snarks {
 			let mut transcript_read: NativeTranscriptRead<
 				_,
-				G1Affine,
-				Bn256_4_68,
-				PoseidonSponge<Fr, WIDTH, Params>,
+				C,
+				P,
+				PoseidonSponge<N, WIDTH, Params>,
 			> = NativeTranscriptRead::init(snark.proof.as_slice());
 
 			let proof = Psv::read_proof(
@@ -112,12 +145,10 @@ impl NativeAggregator {
 			plonk_proofs.extend(res);
 		}
 
-		let mut transcript_write = NativeTranscriptWrite::<
-			Vec<u8>,
-			G1Affine,
-			Bn256_4_68,
-			PoseidonSponge<Fr, WIDTH, Params>,
-		>::new(Vec::new());
+		let mut transcript_write =
+			NativeTranscriptWrite::<Vec<u8>, C, P, PoseidonSponge<N, WIDTH, Params>>::new(
+				Vec::new(),
+			);
 		let rng = &mut thread_rng();
 		let accumulator = KzgAs::<Bn256, Gwc19>::create_proof(
 			&Default::default(),
@@ -130,7 +161,7 @@ impl NativeAggregator {
 
 		let KzgAccumulator { lhs, rhs } = accumulator;
 		let accumulator_limbs = [lhs.x, lhs.y, rhs.x, rhs.y]
-			.map(|v| Integer::<_, _, NUM_LIMBS, NUM_BITS, Bn256_4_68>::from_w(v).limbs)
+			.map(|v| Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::from_w(v).limbs)
 			.concat();
 
 		Self { svk, snarks, instances: accumulator_limbs, as_proof }
@@ -143,9 +174,9 @@ impl NativeAggregator {
 			let snark_proof = snark.proof.clone();
 			let mut transcript_read: NativeTranscriptRead<
 				_,
-				G1Affine,
-				Bn256_4_68,
-				PoseidonSponge<Fr, WIDTH, Params>,
+				C,
+				P,
+				PoseidonSponge<N, WIDTH, Params>,
 			> = NativeTranscriptRead::init(snark_proof.as_slice());
 			let proof = Psv::read_proof(
 				&self.svk, &snark.protocol, &snark.instances, &mut transcript_read,
@@ -156,12 +187,8 @@ impl NativeAggregator {
 		}
 
 		let as_proof = self.as_proof.clone();
-		let mut transcript: NativeTranscriptRead<
-			_,
-			G1Affine,
-			Bn256_4_68,
-			PoseidonSponge<Fr, WIDTH, Params>,
-		> = NativeTranscriptRead::init(as_proof.as_slice());
+		let mut transcript: NativeTranscriptRead<_, C, P, PoseidonSponge<N, WIDTH, Params>> =
+			NativeTranscriptRead::init(as_proof.as_slice());
 		let proof =
 			KzgAs::<Bn256, Gwc19>::read_proof(&Default::default(), &accumulators, &mut transcript)
 				.unwrap();
@@ -171,7 +198,7 @@ impl NativeAggregator {
 
 		let KzgAccumulator { lhs, rhs } = accumulator;
 		let accumulator_limbs = [lhs.x, lhs.y, rhs.x, rhs.y]
-			.map(|v| Integer::<_, _, NUM_LIMBS, NUM_BITS, Bn256_4_68>::from_w(v).limbs)
+			.map(|v| Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::from_w(v).limbs)
 			.concat();
 
 		assert!(self.instances == accumulator_limbs);
@@ -181,10 +208,10 @@ impl NativeAggregator {
 #[cfg(test)]
 mod test {
 	use super::{NativeAggregator, Snark};
-	use crate::{utils::generate_params, CommonConfig, RegionCtx};
+	use crate::{params::rns::bn256::Bn256_4_68, utils::generate_params, CommonConfig, RegionCtx};
 	use halo2::{
 		circuit::{Layouter, Region, SimpleFloorPlanner, Value},
-		halo2curves::bn256::{Bn256, Fr},
+		halo2curves::bn256::{Bn256, Fq, Fr, G1Affine},
 		plonk::{Circuit, ConstraintSystem, Error},
 		poly::Rotation,
 	};
@@ -267,17 +294,18 @@ mod test {
 		let k = 21;
 		let params = generate_params::<Bn256>(k);
 
-		let random_circuit_1 = MulChip::new(Fr::one(), Fr::one());
-		let random_circuit_2 = MulChip::new(Fr::one(), Fr::one());
+		let random_circuit_1 = MulChip::new(Scalar::one(), Scalar::one());
+		let random_circuit_2 = MulChip::new(Scalar::one(), Scalar::one());
 
-		let instances_1: Vec<Vec<Fr>> = vec![vec![Fr::one()]];
-		let instances_2: Vec<Vec<Fr>> = vec![vec![Fr::one()]];
+		let instances_1: Vec<Vec<Scalar>> = vec![vec![Scalar::one()]];
+		let instances_2: Vec<Vec<Scalar>> = vec![vec![Scalar::one()]];
 
 		let snark_1 = Snark::new(&params, random_circuit_1, instances_1.clone(), rng);
 		let snark_2 = Snark::new(&params, random_circuit_2, instances_2.clone(), rng);
 
 		let snarks = vec![snark_1, snark_2];
-		let native_aggregator = NativeAggregator::new(&params, snarks);
+		let native_aggregator =
+			NativeAggregator::<G1Affine, Fq, Scalar, 4, 68, Bn256_4_68>::new(&params, snarks);
 
 		// Should pass the assertion
 		native_aggregator.verify();

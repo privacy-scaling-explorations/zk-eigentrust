@@ -15,11 +15,14 @@ use crate::{
 	integer::{IntegerAddChip, IntegerDivChip, IntegerMulChip, IntegerReduceChip, IntegerSubChip},
 	params::{hasher::RoundParams, rns::RnsParams},
 	poseidon::{sponge::PoseidonSpongeConfig, FullRoundChip, PartialRoundChip, PoseidonConfig},
-	verifier::aggregator::{AggregatorChipset, AggregatorConfig},
+	verifier::aggregator::{
+		native::Snark, AggregatorChipset, AggregatorConfig, Svk, UnassignedSnark,
+	},
 	Chip, Chipset, CommonConfig, FieldExt, RegionCtx, ADVICE,
 };
 use halo2::{
 	circuit::{Layouter, SimpleFloorPlanner, Value},
+	halo2curves::CurveAffine,
 	plonk::{Circuit, ConstraintSystem, Error, Selector},
 };
 
@@ -40,6 +43,7 @@ pub struct ThresholdCircuitConfig {
 #[derive(Clone, Debug)]
 /// Structure of the EigenTrustSet circuit
 pub struct ThresholdCircuit<
+	C: CurveAffine,
 	W: FieldExt,
 	N: FieldExt,
 	const FIELD_NUM_LIMBS: usize,
@@ -60,12 +64,17 @@ pub struct ThresholdCircuit<
 	num_decomposed: Vec<Value<N>>,
 	den_decomposed: Vec<Value<N>>,
 
+	svk: Svk,
+	snarks: Vec<UnassignedSnark<C, N>>,
+	as_proof: Option<Vec<u8>>,
+
 	_w: PhantomData<W>,
 	_p: PhantomData<P>,
 	_rp: PhantomData<RP>,
 }
 
 impl<
+		C: CurveAffine,
 		W: FieldExt,
 		N: FieldExt,
 		const FIELD_NUM_LIMBS: usize,
@@ -79,6 +88,7 @@ impl<
 		const WIDTH: usize,
 	>
 	ThresholdCircuit<
+		C,
 		W,
 		N,
 		FIELD_NUM_LIMBS,
@@ -95,16 +105,26 @@ impl<
 	RP: RoundParams<N, WIDTH>,
 {
 	/// Constructs a new ThresholdCircuit
-	pub fn new(sets: &[N], scores: &[N], num_decomposed: &[N], den_decomposed: &[N]) -> Self {
+	pub fn new(
+		sets: &[N], scores: &[N], num_decomposed: &[N], den_decomposed: &[N], svk: Svk,
+		snarks: Vec<Snark<C, W, N, FIELD_NUM_LIMBS, FIELD_NUM_BITS, P>>, as_proof: Option<Vec<u8>>,
+	) -> Self {
 		let sets = sets.iter().map(|s| Value::known(*s)).collect();
 		let scores = scores.iter().map(|s| Value::known(*s)).collect();
 		let num_decomposed = (0..NUM_LIMBS).map(|i| Value::known(num_decomposed[i])).collect();
 		let den_decomposed = (0..NUM_LIMBS).map(|i| Value::known(den_decomposed[i])).collect();
+
+		let snarks = snarks.into_iter().map(UnassignedSnark::from).collect();
+
 		Self {
 			sets,
 			scores,
 			den_decomposed,
 			num_decomposed,
+
+			svk,
+			snarks,
+			as_proof,
 
 			_w: PhantomData,
 			_p: PhantomData,
@@ -114,6 +134,7 @@ impl<
 }
 
 impl<
+		C: CurveAffine,
 		W: FieldExt,
 		N: FieldExt,
 		const FIELD_NUM_LIMBS: usize,
@@ -127,6 +148,7 @@ impl<
 		const WIDTH: usize,
 	> Circuit<N>
 	for ThresholdCircuit<
+		C,
 		W,
 		N,
 		FIELD_NUM_LIMBS,
@@ -150,11 +172,21 @@ impl<
 		let scores = (0..NUM_NEIGHBOURS).map(|_| Value::unknown()).collect();
 		let num_decomposed = (0..NUM_LIMBS).map(|_| Value::unknown()).collect();
 		let den_decomposed = (0..NUM_LIMBS).map(|_| Value::unknown()).collect();
+
+		let svk = self.svk;
+		let snarks = self.snarks.iter().map(UnassignedSnark::without_witness).collect();
+		let as_proof = None;
+
 		Self {
 			sets,
 			scores,
 			num_decomposed,
 			den_decomposed,
+
+			svk,
+			snarks,
+			as_proof,
+
 			_w: PhantomData,
 			_p: PhantomData,
 			_rp: PhantomData,
@@ -339,26 +371,28 @@ impl<
 			},
 		)?;
 
-		// // TODO: verify if the "sets" & "scores" are valid, using aggregation verify
-		// let aggregator = AggregatorChipset::new(svk, snarks, as_proof);
-		// let limbs = aggregator.synthesize(&config.common, &config.aggregator, layouter)?;
-		// layouter.assign_region(
-		// 	|| "aggregator_native_res_limbs == limbs",
-		// 	|region| {
-		// 		let mut ctx = RegionCtx::new(region, 0);
-		// 		for i in 0..limbs.len() {
-		// 			let native_limb = ctx.assign_from_instance(
-		// 				config.common.advice[0],
-		// 				config.common.instance,
-		// 				10 + i,
-		// 			)?;
-		// 			let halo2_limb = ctx.copy_assign(config.common.advice[1], limbs[i])?;
-		// 			ctx.constrain_equal(native_limb, halo2_limb)?;
-		// 		}
+		// TODO: verify if the "sets" & "scores" are valid, using aggregation verify
+		let aggregator = AggregatorChipset::new(self.svk, self.snarks, self.as_proof);
+		let halo2_agg_limbs =
+			aggregator.synthesize(&config.common, &config.aggregator, layouter)?;
+		layouter.assign_region(
+			|| "native_agg_limbs == halo2_agg_limbs",
+			|region| {
+				let mut ctx = RegionCtx::new(region, 0);
+				for i in 0..halo2_agg_limbs.len() {
+					let native_limb = ctx.assign_from_instance(
+						config.common.advice[0],
+						config.common.instance,
+						3 + i,
+					)?;
+					let halo2_limb =
+						ctx.copy_assign(config.common.advice[1], halo2_agg_limbs[i])?;
+					ctx.constrain_equal(native_limb, halo2_limb)?;
+				}
 
-		// 		Ok(())
-		// 	},
-		// )?;
+				Ok(())
+			},
+		)?;
 
 		// obtain the score of "target_addr" from "scores", using SetPositionChip & SelectItemChip
 		let set_pos_chip = SetPositionChip::new(sets, target_addr);
@@ -569,7 +603,11 @@ mod tests {
 	use super::*;
 	use crate::{
 		circuits::{
-			dynamic_sets::native::{Attestation, EigenTrustSet, SignedAttestation},
+			dynamic_sets::{
+				native::{Attestation, EigenTrustSet, SignedAttestation},
+				EigenTrustSet as EigenTrustSetCircuit,
+			},
+			opinion::native::Opinion,
 			threshold::native::Threshold,
 			PoseidonNativeHasher, PoseidonNativeSponge, HASHER_WIDTH,
 		},
@@ -579,13 +617,15 @@ mod tests {
 			hasher::poseidon_bn254_5x5::Params,
 			rns::{bn256::Bn256_4_68, decompose_big_decimal, secp256k1::Secp256k1_4_68},
 		},
+		poseidon::{sponge::StatefulSpongeChipset, PoseidonChipset},
 		utils::{big_to_fe, fe_to_big, generate_params, prove_and_verify},
+		verifier::aggregator::native::NativeAggregator,
 	};
 	use halo2::{
 		arithmetic::Field,
 		dev::MockProver,
 		halo2curves::{
-			bn256::{Bn256, Fq, Fr},
+			bn256::{Bn256, Fq, Fr, G1Affine},
 			ff::PrimeField,
 			secp256k1::Secp256k1Affine,
 		},
@@ -640,7 +680,14 @@ mod tests {
 		const INITIAL_SCORE: u128,
 	>(
 		ops: Vec<Vec<N>>,
-	) -> (Vec<N>, Vec<N>, Vec<BigRational>) {
+	) -> (
+		(Vec<N>, Vec<N>, Vec<BigRational>),
+		(
+			Vec<Vec<Option<SignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>>>>,
+			Vec<Option<PublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>>>,
+			Vec<Fr>,
+		),
+	) {
 		assert!(ops.len() == NUM_NEIGHBOURS);
 		for op in &ops {
 			assert!(op.len() == NUM_NEIGHBOURS);
@@ -686,7 +733,66 @@ mod tests {
 		let s = set.converge();
 		let s_ratios = set.converge_rational();
 
-		(pks_fr, s, s_ratios)
+		// Prepare the EigenTrustSet Circuit inputs
+		let (attestations, set, op_hash) = {
+			let mut attestations = Vec::new();
+			let mut set = Vec::new();
+
+			for i in 0..NUM_NEIGHBOURS {
+				let addr = pks[i].to_address();
+				set.push(addr);
+			}
+
+			let mut op_hashes = Vec::new();
+			for i in 0..NUM_NEIGHBOURS {
+				let mut attestations_i = Vec::new();
+
+				// Attestation to the other peers
+				for j in 0..NUM_NEIGHBOURS {
+					let attestation =
+						Attestation::new(pks[j].to_address(), domain, ops[i][j], N::ZERO);
+
+					let att_hash = attestation.hash::<HASHER_WIDTH, PoseidonNativeHasher>();
+					let att_hash = big_to_fe(fe_to_big(att_hash));
+
+					let signature = keypairs[i].sign(att_hash, rng);
+					let signed_att = SignedAttestation::new(attestation, signature);
+
+					attestations_i.push(signed_att);
+				}
+				attestations.push(attestations_i);
+
+				let op: Opinion<NUM_NEIGHBOURS, C, N, NUM_LIMBS, NUM_BITS, P, EC, H, SH> =
+					Opinion::new(pks[i].clone(), attestations[i].clone(), domain);
+				let (_, _, op_hash) = op.validate(set.clone());
+				op_hashes.push(op_hash);
+			}
+			let mut sponge = SH::new();
+			sponge.update(&op_hashes);
+			let op_hash = sponge.squeeze();
+
+			(attestations, set, op_hash)
+		};
+
+		let mut opt_att = Vec::new();
+		let mut opt_pks = Vec::new();
+
+		for i in 0..NUM_NEIGHBOURS {
+			let mut att_row = Vec::new();
+			for j in 0..NUM_NEIGHBOURS {
+				att_row.push(Some(attestations[i][j].clone()));
+			}
+			opt_att.push(att_row);
+			opt_pks.push(Some(pks[i].clone()));
+		}
+
+		// Constructing public inputs for the circuit
+		let mut public_inputs = set.clone();
+		public_inputs.extend(s);
+		public_inputs.push(domain);
+		public_inputs.push(op_hash);
+
+		((pks_fr, s, s_ratios), (opt_att, opt_pks, public_inputs))
 	}
 
 	fn ratio_to_decomposed_helper<
@@ -735,9 +841,10 @@ mod tests {
 		.map(|arr| arr.into_iter().map(|x| N::from_u128(x)).collect())
 		.collect();
 
-		let (sets, scores, score_ratios) =
+		let ((sets, scores, score_ratios), (opt_att, opt_pks, et_circuit_pi)) =
 			eigen_trust_set_testing_helper::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(ops);
 
+		// Prepare the public & private inputs
 		let target_idx = 2;
 
 		let target_addr = sets[target_idx].clone();
@@ -754,7 +861,37 @@ mod tests {
 
 		let pub_ins = vec![target_addr, threshold, native_threshold_check];
 
+		// Prepare the Aggregator input
+		let rng = &mut thread_rng();
+		let k = 21;
+		let params = generate_params::<Bn256>(k);
+
+		let et_circuit = EigenTrustSetCircuit::<
+			NUM_NEIGHBOURS,
+			NUM_ITERATIONS,
+			INITIAL_SCORE,
+			C,
+			N,
+			4,
+			68,
+			P,
+			EC,
+			PoseidonChipset<N, HASHER_WIDTH, Params>,
+			H,
+			StatefulSpongeChipset<N, HASHER_WIDTH, Params>,
+		>::new(opt_att, opt_pks, Fr::from_u128(DOMAIN));
+		let et_circuit_instances: Vec<Vec<Fr>> = vec![et_circuit_pi];
+		let snark_1 = Snark::new(&params, et_circuit, et_circuit_instances, rng);
+
+		let snarks = vec![snark_1];
+		let NativeAggregator { svk, snarks, instances, as_proof } =
+			NativeAggregator::new(&params, snarks);
+
+		let pub_ins = [pub_ins, instances].concat();
+
+		// Prepare the ThresholdCircuit
 		let threshold_circuit: ThresholdCircuit<
+			G1Affine,
 			W,
 			N,
 			4,
@@ -766,8 +903,17 @@ mod tests {
 			Bn256_4_68,
 			Params,
 			HASHER_WIDTH,
-		> = ThresholdCircuit::new(&sets, &scores, &num_decomposed, &den_decomposed);
+		> = ThresholdCircuit::new(
+			&sets,
+			&scores,
+			&num_decomposed,
+			&den_decomposed,
+			svk,
+			snarks,
+			Some(as_proof),
+		);
 
+		// Testing
 		let k = 12;
 		let prover = match MockProver::<N>::run(k, &threshold_circuit, vec![pub_ins]) {
 			Ok(prover) => prover,
@@ -797,9 +943,10 @@ mod tests {
 		.map(|arr| arr.into_iter().map(|x| N::from_u128(x)).collect())
 		.collect();
 
-		let (sets, scores, score_ratios) =
+		let ((sets, scores, score_ratios), (opt_att, opt_pks, et_circuit_pi)) =
 			eigen_trust_set_testing_helper::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE>(ops);
 
+		// Prepare the public & private inputs of Threshold circuit
 		let target_idx = 2;
 
 		let target_addr = sets[target_idx].clone();
@@ -816,7 +963,36 @@ mod tests {
 
 		let pub_ins = vec![target_addr, threshold, native_threshold_check];
 
+		// Prepare the Aggregator input
+		let rng = &mut thread_rng();
+		let k = 21;
+		let params = generate_params::<Bn256>(k);
+
+		let et_circuit = EigenTrustSetCircuit::<
+			NUM_NEIGHBOURS,
+			NUM_ITERATIONS,
+			INITIAL_SCORE,
+			C,
+			N,
+			4,
+			68,
+			P,
+			EC,
+			PoseidonChipset<N, HASHER_WIDTH, Params>,
+			H,
+			StatefulSpongeChipset<N, HASHER_WIDTH, Params>,
+		>::new(opt_att, opt_pks, Fr::from_u128(DOMAIN));
+		let et_circuit_instances: Vec<Vec<Fr>> = vec![et_circuit_pi];
+		let snark_1 = Snark::new(&params, et_circuit, et_circuit_instances, rng);
+
+		let snarks = vec![snark_1];
+		let NativeAggregator { svk, snarks, instances, as_proof } =
+			NativeAggregator::new(&params, snarks);
+
+		let pub_ins = [pub_ins, instances].concat();
+
 		let threshold_circuit: ThresholdCircuit<
+			G1Affine,
 			W,
 			N,
 			4,
@@ -828,7 +1004,15 @@ mod tests {
 			Bn256_4_68,
 			Params,
 			HASHER_WIDTH,
-		> = ThresholdCircuit::new(&sets, &scores, &num_decomposed, &den_decomposed);
+		> = ThresholdCircuit::new(
+			&sets,
+			&scores,
+			&num_decomposed,
+			&den_decomposed,
+			svk,
+			snarks,
+			Some(as_proof),
+		);
 
 		let k = 12;
 		let rng = &mut rand::thread_rng();
