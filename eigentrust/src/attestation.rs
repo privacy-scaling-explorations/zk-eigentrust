@@ -6,37 +6,26 @@
 use crate::{
 	att_station::AttestationCreatedFilter,
 	error::EigenError,
-	eth::{address_from_public_key, scalar_from_address},
+	eth::{address_from_ecdsa_key, scalar_from_address},
+	ECDSAKeypair, ECDSAPublicKey, ECDSASignature, Scalar,
 };
 use eigentrust_zk::{
 	circuits::{
 		dynamic_sets::native::{Attestation, SignedAttestation},
-		HASHER_WIDTH,
+		HASHER_WIDTH, NUM_BITS, NUM_LIMBS,
 	},
-	ecdsa::native::Signature,
-	halo2::halo2curves::{bn256::Fr as Scalar, ff::FromUniformBytes, secp256k1::Secp256k1Affine},
+	halo2::halo2curves::{ff::FromUniformBytes, secp256k1::Fq, secp256k1::Secp256k1Affine},
+	integer::native::Integer,
 	params::{hasher::poseidon_bn254_5x5::Params, rns::secp256k1::Secp256k1_4_68},
-};
-use eigentrust_zk::{
-	circuits::{NUM_BITS, NUM_LIMBS},
 	poseidon::native::Poseidon,
 };
 use ethers::types::{Address, Bytes, Uint8, H160, H256};
-use secp256k1::{
-	ecdsa::{self, RecoverableSignature, RecoveryId},
-	Message,
-};
 
 /// Domain prefix.
 pub const DOMAIN_PREFIX: [u8; DOMAIN_PREFIX_LEN] = *b"eigen_trust_";
 /// Domain prefix length.
 pub const DOMAIN_PREFIX_LEN: usize = 12;
-/// ECDSA public key
-pub type ECDSAPublicKey = secp256k1::PublicKey;
-/// ECDSA signature
-pub type ECDSASignature = ecdsa::RecoverableSignature;
-/// Signature represented with field elements
-pub type SignatureFr = Signature<Secp256k1Affine, Scalar, NUM_LIMBS, NUM_BITS, Secp256k1_4_68>;
+
 /// Attestation represented with field
 pub type AttestationScalar = Attestation<Scalar>;
 /// Signed Attestation represented with field elements
@@ -184,7 +173,7 @@ impl SignatureEth {
 	}
 
 	/// Convert the struct into Fr version
-	pub fn to_signature_fr(&self) -> SignatureFr {
+	pub fn to_signature_fr(&self) -> ECDSASignature {
 		let sig_r = *self.sig_r.as_fixed_bytes();
 		let sig_s = *self.sig_s.as_fixed_bytes();
 		let rec_id = u8::from(self.rec_id.clone());
@@ -194,7 +183,7 @@ impl SignatureEth {
 		bytes.extend(sig_s.to_vec());
 		bytes.push(rec_id);
 
-		SignatureFr::from_bytes(bytes)
+		ECDSASignature::from_bytes(bytes)
 	}
 }
 
@@ -229,11 +218,11 @@ impl SignedAttestationEth {
 		let message_hash =
 			attestation.hash::<HASHER_WIDTH, Poseidon<Scalar, HASHER_WIDTH, Params>>().to_bytes();
 		let signature_raw: SignatureRaw = self.signature.clone().into();
-		let signature = RecoverableSignature::from(signature_raw);
+		let signature = ECDSASignature::from(signature_raw);
+		let field_element = Fq::from_bytes(&message_hash).unwrap();
 
-		let public_key = signature
-			.recover(&Message::from_slice(message_hash.as_slice()).unwrap())
-			.map_err(|_| EigenError::RecoveryError("Failed to recover public key".to_string()))?;
+		let public_key =
+			ECDSAKeypair::recover_public_key(signature, Integer::from_w(field_element));
 
 		Ok(public_key)
 	}
@@ -270,7 +259,7 @@ impl SignedAttestationEth {
 		let payload = self.to_payload();
 		let key = self.attestation.get_key();
 		let pk = self.recover_public_key()?;
-		let attestor = address_from_public_key(&pk);
+		let attestor = address_from_ecdsa_key(&pk);
 		let attested = self.attestation.about;
 
 		Ok((attestor, attested, key, payload))
@@ -401,14 +390,6 @@ impl SignatureRaw {
 		Self { sig_r, sig_s, rec_id }
 	}
 
-	/// Gets the ECDSA recoverable signature.
-	pub fn get_signature(&self) -> RecoverableSignature {
-		let concat_sig = [self.sig_r, self.sig_s].concat();
-		let recovery_id = RecoveryId::from_i32(i32::from(self.rec_id)).unwrap();
-
-		RecoverableSignature::from_compact(concat_sig.as_slice(), recovery_id).unwrap()
-	}
-
 	/// Converts a vector of bytes into the struct.
 	pub fn from_bytes(bytes: Vec<u8>) -> Result<Self, EigenError> {
 		if bytes.len() != 65 {
@@ -439,27 +420,27 @@ impl SignatureRaw {
 	}
 }
 
-impl From<RecoverableSignature> for SignatureRaw {
-	fn from(sig: RecoverableSignature) -> Self {
-		let (rec_id, sig) = sig.serialize_compact();
+impl From<ECDSASignature> for SignatureRaw {
+	fn from(sig: ECDSASignature) -> Self {
+		let sig_bytes = sig.to_bytes();
 
 		let mut sig_r = [0; 32];
 		let mut sig_s = [0; 32];
-		sig_r.copy_from_slice(&sig[..32]);
-		sig_s.copy_from_slice(&sig[32..]);
+		sig_r.copy_from_slice(&sig_bytes[..32]);
+		sig_s.copy_from_slice(&sig_bytes[32..64]);
 
-		let rec_id = rec_id.to_i32() as u8;
+		let rec_id = sig.recovery_id().to_byte();
 
 		Self { sig_r, sig_s, rec_id }
 	}
 }
 
-impl From<SignatureRaw> for RecoverableSignature {
+impl From<SignatureRaw> for ECDSASignature {
 	fn from(sig: SignatureRaw) -> Self {
-		let concat_sig = [sig.sig_r, sig.sig_s].concat();
-		let recovery_id = RecoveryId::from_i32(i32::from(sig.rec_id)).unwrap();
+		let mut signature_bytes = [sig.sig_r, sig.sig_s].concat();
+		signature_bytes.push(sig.rec_id);
 
-		RecoverableSignature::from_compact(concat_sig.as_slice(), recovery_id).unwrap()
+		ECDSASignature::from_bytes(signature_bytes)
 	}
 }
 
@@ -545,12 +526,7 @@ impl From<SignedAttestationEth> for SignedAttestationRaw {
 mod tests {
 	use crate::att_station::AttestationData as ContractAttestationData;
 	use crate::attestation::*;
-	use ethers::{
-		prelude::k256::ecdsa::SigningKey,
-		signers::{Signer, Wallet},
-		types::Bytes,
-	};
-	use secp256k1::{Message, Secp256k1, SecretKey};
+	use ethers::types::Bytes;
 
 	#[test]
 	fn test_attestation_to_scalar_att() {
@@ -612,35 +588,29 @@ mod tests {
 
 	#[test]
 	fn test_attestation_payload_from_signed_att() {
-		let secp = Secp256k1::new();
-		let secret_key_as_bytes = [0x40; 32];
-		let secret_key = SecretKey::from_slice(&secret_key_as_bytes).unwrap();
+		let rng = &mut rand::thread_rng();
+		let keypair = ECDSAKeypair::generate_keypair(rng);
 
 		let attestation_eth = AttestationEth::default();
 		let attestation_raw: AttestationRaw = attestation_eth.clone().into();
-
 		let attestation_fr = attestation_eth.to_attestation_fr().unwrap();
 
 		let message = attestation_fr
 			.hash::<HASHER_WIDTH, Poseidon<Scalar, HASHER_WIDTH, Params>>()
 			.to_bytes();
+		let message_fq = Fq::from_bytes(&message).unwrap();
 
-		let signature = secp.sign_ecdsa_recoverable(
-			&Message::from_slice(message.as_slice()).unwrap(),
-			&secret_key,
-		);
+		let signature = keypair.sign(message_fq, rng);
 		let sig_raw = SignatureRaw::from(signature);
 		let sig_eth: SignatureEth = sig_raw.clone().into();
 
 		let signed_attestation = SignedAttestationEth::new(attestation_eth, sig_eth);
 
 		// Convert the signed attestation to attestation payload
-		let attestation_payload = signed_attestation.to_payload();
+		let attestation_payload = signed_attestation.to_payload().to_vec();
 
-		// Check the attestation payload
-		let (recid, sig) = sig_raw.get_signature().serialize_compact();
-		let mut payload_bytes = sig.to_vec();
-		payload_bytes.push(recid.to_i32() as u8);
+		// Construct payload bytes
+		let mut payload_bytes = sig_raw.to_bytes();
 		payload_bytes.push(attestation_raw.value);
 
 		assert_eq!(attestation_payload.to_vec(), payload_bytes);
@@ -648,56 +618,46 @@ mod tests {
 
 	#[test]
 	fn test_address_from_signed_att() {
-		let secp = Secp256k1::new();
-
-		let secret_key_as_bytes = [0xcd; 32];
-
-		let secret_key =
-			SecretKey::from_slice(&secret_key_as_bytes).expect("32 bytes, within curve order");
+		let rng = &mut rand::thread_rng();
+		let keypair = ECDSAKeypair::generate_keypair(rng);
 
 		let attestation_eth = AttestationEth::default();
 		let attestation_fr = attestation_eth.to_attestation_fr().unwrap();
+
 		let message = attestation_fr
 			.hash::<HASHER_WIDTH, Poseidon<Scalar, HASHER_WIDTH, Params>>()
 			.to_bytes();
+		let message_fq = Fq::from_bytes(&message).unwrap();
 
-		let signature = secp.sign_ecdsa_recoverable(
-			&Message::from_slice(message.as_slice()).unwrap(),
-			&secret_key,
-		);
-
+		let signature = keypair.sign(message_fq, rng);
 		let signature_raw = SignatureRaw::from(signature);
 		let signature_eth: SignatureEth = signature_raw.into();
+
 		let signed_attestation = SignedAttestationEth::new(attestation_eth, signature_eth);
 
 		// Replace with expected address
-		let expected_address =
-			Wallet::from(SigningKey::from_bytes(secret_key_as_bytes.as_ref().into()).unwrap())
-				.address();
+		let expected_address_bytes = keypair.public_key.to_address().to_bytes();
+		let expected_address = Address::from_slice(&expected_address_bytes[..20]);
 
 		let public_key = signed_attestation.recover_public_key().unwrap();
-		let address = address_from_public_key(&public_key);
+		let address = address_from_ecdsa_key(&public_key);
 
 		assert_eq!(address, expected_address);
 	}
 
 	#[test]
 	fn test_contract_att_data_from_signed_att() {
-		let secp = Secp256k1::new();
-		let secret_key_as_bytes = [0x40; 32];
-		let secret_key =
-			SecretKey::from_slice(&secret_key_as_bytes).expect("32 bytes, within curve order");
+		let rng = &mut rand::thread_rng();
+		let keypair = ECDSAKeypair::generate_keypair(rng);
+
 		let about_bytes = [
 			0xff, 0x61, 0x4a, 0x6d, 0x59, 0x56, 0x2a, 0x42, 0x37, 0x72, 0x37, 0x76, 0x32, 0x4d,
 			0x36, 0x53, 0x62, 0x6d, 0x35, 0xff,
 		];
-		// Build key
 		let domain_input = [
 			0xff, 0x61, 0x4a, 0x6d, 0x59, 0x56, 0x2a, 0x42, 0x37, 0x72, 0x37, 0x76, 0x32, 0x4d,
 			0x36, 0x53, 0x62, 0x6d, 0x35, 0xff,
 		];
-
-		// Message input
 		let message = [
 			0xff, 0x75, 0x32, 0x45, 0x75, 0x79, 0x32, 0x77, 0x7a, 0x34, 0x58, 0x6c, 0x34, 0x34,
 			0x4a, 0x74, 0x6a, 0x78, 0x68, 0x4c, 0x4a, 0x52, 0x67, 0x48, 0x45, 0x6c, 0x4e, 0x73,
@@ -716,10 +676,9 @@ mod tests {
 		let message = attestation_fr
 			.hash::<HASHER_WIDTH, Poseidon<Scalar, HASHER_WIDTH, Params>>()
 			.to_bytes();
-		let signature = secp.sign_ecdsa_recoverable(
-			&Message::from_slice(message.as_slice()).unwrap(),
-			&secret_key,
-		);
+		let message_fq = Fq::from_bytes(&message).unwrap();
+
+		let signature = keypair.sign(message_fq, rng);
 		let signature_raw = SignatureRaw::from(signature);
 		let signature_eth: SignatureEth = signature_raw.into();
 

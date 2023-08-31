@@ -213,6 +213,11 @@ where
 		bytes.extend(&s_bytes);
 		bytes
 	}
+
+	/// Return the recovery id
+	pub fn recovery_id(&self) -> RecoveryId {
+		self.rec_id
+	}
 }
 
 /// Keypair struct for ECDSA signature
@@ -287,7 +292,7 @@ where
 
 	/// Recover public key, given the signature and message hash
 	pub fn recover_public_key(
-		&self, sig: Signature<C, N, NUM_LIMBS, NUM_BITS, P>,
+		sig: Signature<C, N, NUM_LIMBS, NUM_BITS, P>,
 		msg_hash: Integer<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>,
 	) -> PublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC> {
 		let Signature { r, s, rec_id } = sig.clone();
@@ -478,7 +483,11 @@ mod test {
 		let msg_hash = SecpScalar::random(rng.clone());
 		let sig = keypair.sign(msg_hash.clone(), rng);
 		let public_key = keypair.public_key.clone();
-		let recovered_public_key = keypair.recover_public_key(sig, Integer::from_w(msg_hash));
+		let recovered_public_key =
+			EcdsaKeypair::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::recover_public_key(
+				sig,
+				Integer::from_w(msg_hash),
+			);
 		assert_eq!(public_key, recovered_public_key);
 	}
 }

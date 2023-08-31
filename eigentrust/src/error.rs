@@ -35,6 +35,10 @@ pub enum EigenError {
 	#[error("IOError: {0}")]
 	IOError(std::io::Error),
 
+	/// Keys Error
+	#[error("KeysError: {0}")]
+	KeysError(String),
+
 	/// Network error
 	#[error("NetworkError: {0}")]
 	NetworkError(String),
