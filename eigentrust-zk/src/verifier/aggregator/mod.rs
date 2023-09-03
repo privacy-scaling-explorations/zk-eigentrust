@@ -252,16 +252,18 @@ mod test {
 	use crate::{
 		circuits::{FullRoundHasher, PartialRoundHasher},
 		ecc::{
-			AuxConfig, EccAddConfig, EccDoubleConfig, EccMulConfig, EccTableSelectConfig,
-			EccUnreducedLadderConfig,
+			AuxConfig, EccAddConfig, EccDoubleConfig, EccEqualConfig, EccInfinityConfig,
+			EccMulConfig, EccTableSelectConfig, EccUnreducedLadderConfig,
 		},
 		gadgets::{
 			absorb::AbsorbChip,
 			bits2num::Bits2NumChip,
 			main::{MainChip, MainConfig},
+			set::{SetChip, SetConfig},
 		},
 		integer::{
-			IntegerAddChip, IntegerDivChip, IntegerMulChip, IntegerReduceChip, IntegerSubChip,
+			IntegerAddChip, IntegerDivChip, IntegerEqualConfig, IntegerMulChip, IntegerReduceChip,
+			IntegerSubChip,
 		},
 		params::rns::bn256::Bn256_4_68,
 		poseidon::{sponge::PoseidonSpongeConfig, PoseidonConfig},
@@ -409,15 +411,28 @@ mod test {
 				IntegerDivChip::<Fq, Fr, NUM_LIMBS, NUM_BITS, Bn256_4_68>::configure(&common, meta);
 
 			let ecc_ladder = EccUnreducedLadderConfig::new(int_add, int_sub, int_mul, int_div);
-			let ecc_add = EccAddConfig::new(int_red, int_sub, int_mul, int_div);
-			let ecc_double = EccDoubleConfig::new(int_red, int_add, int_sub, int_mul, int_div);
 			let ecc_table_select = EccTableSelectConfig::new(main.clone());
+			let set_selector = SetChip::configure(&common, meta);
+			let set = SetConfig::new(main.clone(), set_selector);
+			let int_eq = IntegerEqualConfig::new(main.clone(), set);
+			let ecc_eq = EccEqualConfig::new(main.clone(), int_eq);
+			let ecc_infinity = EccInfinityConfig::new(ecc_eq);
+			let ecc_add = EccAddConfig::new(
+				ecc_table_select.clone(),
+				ecc_infinity.clone(),
+				int_red,
+				int_sub,
+				int_mul,
+				int_div,
+			);
+			let ecc_double = EccDoubleConfig::new(int_red, int_add, int_sub, int_mul, int_div);
 			let ecc_mul_scalar = EccMulConfig::new(
-				ecc_ladder,
+				ecc_ladder.clone(),
 				ecc_add.clone(),
 				ecc_double.clone(),
 				ecc_table_select,
-				bits2num,
+				ecc_infinity,
+				bits2num.clone(),
 			);
 			let aux = AuxConfig::new(ecc_double);
 
@@ -432,16 +447,15 @@ mod test {
 		) -> Result<(), Error> {
 			let aggregator_chipset =
 				AggregatorChipset::new(self.svk, self.snarks.clone(), self.as_proof.clone());
-			let _accumulator_limbs = aggregator_chipset.synthesize(
+			let accumulator_limbs = aggregator_chipset.synthesize(
 				&config.common,
 				&config.aggregator,
 				layouter.namespace(|| "aggregator chipset"),
 			)?;
 
-			// TODO: Uncomment when the bug is fixed
-			// for (row, inst) in accumulator_limbs.enumerate() {
-			// 	layouter.constrain_instance(inst.cell(), config.common.instance, row)?;
-			// }
+			for (row, inst) in accumulator_limbs.iter().enumerate() {
+				layouter.constrain_instance(inst.cell(), config.common.instance, row)?;
+			}
 			Ok(())
 		}
 	}
