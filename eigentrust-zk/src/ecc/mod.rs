@@ -22,8 +22,6 @@ impl EccInfinityConfig {
 /// Configuration elements for the circuit are defined here.
 #[derive(Debug, Clone)]
 pub struct EccAddConfig {
-	table_select: EccTableSelectConfig,
-	infinity: EccInfinityConfig,
 	/// Constructs selectors from different circuits.
 	integer_reduce_selector: Selector,
 	integer_sub_selector: Selector,
@@ -34,13 +32,10 @@ pub struct EccAddConfig {
 impl EccAddConfig {
 	/// Construct a new config given the selector of child chips
 	pub fn new(
-		table_select: EccTableSelectConfig, infinity: EccInfinityConfig,
 		integer_reduce_selector: Selector, integer_sub_selector: Selector,
 		integer_mul_selector: Selector, integer_div_selector: Selector,
 	) -> Self {
 		Self {
-			table_select,
-			infinity,
 			integer_reduce_selector,
 			integer_sub_selector,
 			integer_mul_selector,
@@ -138,7 +133,6 @@ pub struct EccMulConfig {
 	add: EccAddConfig,
 	double: EccDoubleConfig,
 	table_select: EccTableSelectConfig,
-	infinity: EccInfinityConfig,
 	bits2num: Selector,
 }
 
@@ -146,9 +140,9 @@ impl EccMulConfig {
 	/// Construct a new config given the selector of child chips
 	pub fn new(
 		ladder: EccUnreducedLadderConfig, add: EccAddConfig, double: EccDoubleConfig,
-		table_select: EccTableSelectConfig, infinity: EccInfinityConfig, bits2num: Selector,
+		table_select: EccTableSelectConfig, bits2num: Selector,
 	) -> Self {
-		Self { ladder, add, double, table_select, infinity, bits2num }
+		Self { ladder, add, double, table_select, bits2num }
 	}
 }
 

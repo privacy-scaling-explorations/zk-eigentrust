@@ -8,8 +8,8 @@ use crate::circuits::HASHER_WIDTH;
 use crate::ecc::generic::native::EcPoint;
 use crate::ecc::generic::UnassignedEcPoint;
 use crate::ecc::{
-	AuxConfig, EccAddConfig, EccDoubleConfig, EccEqualConfig, EccInfinityConfig, EccMulConfig,
-	EccTableSelectConfig, EccUnreducedLadderConfig,
+	AuxConfig, EccAddConfig, EccDoubleConfig, EccEqualConfig, EccMulConfig, EccTableSelectConfig,
+	EccUnreducedLadderConfig,
 };
 use crate::ecdsa::native::PublicKey;
 use crate::ecdsa::{
@@ -254,18 +254,10 @@ impl<
 			IntegerDivChip::<C::Base, N, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
 		let integer_mul_selector_scalar =
 			IntegerMulChip::<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
-		let integer_equal = IntegerEqualConfig::new(main.clone(), set.clone());
+		let integer_equal = IntegerEqualConfig::new(main.clone(), set);
 
-		let ecc_table_select = EccTableSelectConfig::new(main.clone());
-		let int_eq = IntegerEqualConfig::new(main.clone(), set);
-		let ecc_eq = EccEqualConfig::new(main.clone(), int_eq);
-		let ecc_infinity = EccInfinityConfig::new(ecc_eq);
 		let ecc_add = EccAddConfig::new(
-			ecc_table_select.clone(),
-			ecc_infinity.clone(),
-			integer_reduce_selector,
-			integer_sub_selector,
-			integer_mul_selector,
+			integer_reduce_selector, integer_sub_selector, integer_mul_selector,
 			integer_div_selector,
 		);
 		let ecc_equal = EccEqualConfig::new(main.clone(), integer_equal.clone());
@@ -277,13 +269,13 @@ impl<
 			integer_add_selector, integer_sub_selector, integer_mul_selector, integer_div_selector,
 		);
 
+		let ecc_table_select = EccTableSelectConfig::new(main.clone());
 		let ecc_mul_scalar = EccMulConfig::new(
-			ecc_ladder.clone(),
+			ecc_ladder,
 			ecc_add.clone(),
 			ecc_double.clone(),
 			ecc_table_select,
-			ecc_infinity,
-			bits2num_selector.clone(),
+			bits2num_selector,
 		);
 
 		let ecdsa = EcdsaConfig::new(

@@ -1269,15 +1269,14 @@ mod test {
 		EccUnreducedLadderChipset, EccUnreducedLadderConfig, PointAssigner, UnassignedEcPoint,
 	};
 	use crate::{
-		ecc::{same_curve::native::EcPoint, AuxConfig, EccEqualConfig, EccInfinityConfig},
+		ecc::{same_curve::native::EcPoint, AuxConfig},
 		gadgets::{
 			bits2num::Bits2NumChip,
 			main::{MainChip, MainConfig},
-			set::{SetChip, SetConfig},
 		},
 		integer::{
-			native::Integer, IntegerAddChip, IntegerDivChip, IntegerEqualConfig, IntegerMulChip,
-			IntegerReduceChip, IntegerSubChip,
+			native::Integer, IntegerAddChip, IntegerDivChip, IntegerMulChip, IntegerReduceChip,
+			IntegerSubChip,
 		},
 		params::ecc::bn254::Bn254Params,
 		params::rns::bn256::Bn256_4_68,
@@ -1330,18 +1329,8 @@ mod test {
 			let integer_div_selector =
 				IntegerDivChip::<W, N, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
 
-			let ecc_table_select = EccTableSelectConfig::new(main.clone());
-			let set_selector = SetChip::configure(&common, meta);
-			let set = SetConfig::new(main.clone(), set_selector);
-			let int_eq = IntegerEqualConfig::new(main.clone(), set);
-			let ecc_eq = EccEqualConfig::new(main.clone(), int_eq);
-			let ecc_infinity = EccInfinityConfig::new(ecc_eq);
 			let ecc_add = EccAddConfig::new(
-				ecc_table_select.clone(),
-				ecc_infinity.clone(),
-				integer_reduce_selector,
-				integer_sub_selector,
-				integer_mul_selector,
+				integer_reduce_selector, integer_sub_selector, integer_mul_selector,
 				integer_div_selector,
 			);
 
@@ -1355,12 +1344,12 @@ mod test {
 				integer_div_selector,
 			);
 
+			let ecc_table_select = EccTableSelectConfig::new(main);
 			let ecc_mul = EccMulConfig::new(
 				ecc_ladder.clone(),
 				ecc_add.clone(),
 				ecc_double.clone(),
 				ecc_table_select,
-				ecc_infinity,
 				bits2num_selector.clone(),
 			);
 

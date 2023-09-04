@@ -236,22 +236,6 @@ where
 	fn synthesize(
 		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<N>,
 	) -> Result<Self::Output, Error> {
-		// TODO: Find a way to implement this checks to the circuit
-		if self.p.is_infinity() {
-			return Ok(self.q.clone());
-		}
-		if self.q.is_infinity() {
-			return Ok(self.p.clone());
-		}
-		if self.p.x.integer == self.q.x.integer {
-			let zero_integer = ConstIntegerAssigner::new(Integer::zero());
-			let zero = zero_integer
-				.synthesize(common, &(), layouter.namespace(|| "zero_integer"))
-				.unwrap();
-			let infinity = AssignedEcPoint::new(zero.clone(), zero);
-			return Ok(infinity);
-		}
-
 		// Reduce p_x
 		let p_x = IntegerReduceChip::new(self.p.x);
 		let p_x_reduced = p_x.synthesize(
@@ -1465,15 +1449,14 @@ mod test {
 		EccUnreducedLadderChipset, EccUnreducedLadderConfig, PointAssigner, UnassignedEcPoint,
 	};
 	use crate::{
-		ecc::{generic::native::EcPoint, AuxConfig, EccEqualConfig, EccInfinityConfig},
+		ecc::{generic::native::EcPoint, AuxConfig},
 		gadgets::{
 			bits2num::Bits2NumChip,
 			main::{MainChip, MainConfig},
-			set::{SetChip, SetConfig},
 		},
 		integer::{
-			native::Integer, AssignedInteger, IntegerAddChip, IntegerDivChip, IntegerEqualConfig,
-			IntegerMulChip, IntegerReduceChip, IntegerSubChip, UnassignedInteger,
+			native::Integer, AssignedInteger, IntegerAddChip, IntegerDivChip, IntegerMulChip,
+			IntegerReduceChip, IntegerSubChip, UnassignedInteger,
 		},
 		params::{ecc::secp256k1::Secp256k1Params, rns::secp256k1::Secp256k1_4_68},
 		Chip, Chipset, CommonConfig, RegionCtx, UnassignedValue,
@@ -1529,18 +1512,8 @@ mod test {
 			let integer_div_selector =
 				IntegerDivChip::<W, N, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
 
-			let ecc_table_select = EccTableSelectConfig::new(main.clone());
-			let set_selector = SetChip::configure(&common, meta);
-			let set = SetConfig::new(main.clone(), set_selector);
-			let int_eq = IntegerEqualConfig::new(main.clone(), set);
-			let ecc_eq = EccEqualConfig::new(main.clone(), int_eq);
-			let ecc_infinity = EccInfinityConfig::new(ecc_eq);
 			let ecc_add = EccAddConfig::new(
-				ecc_table_select.clone(),
-				ecc_infinity.clone(),
-				integer_reduce_selector,
-				integer_sub_selector,
-				integer_mul_selector,
+				integer_reduce_selector, integer_sub_selector, integer_mul_selector,
 				integer_div_selector,
 			);
 
@@ -1554,12 +1527,12 @@ mod test {
 				integer_div_selector,
 			);
 
+			let ecc_table_select = EccTableSelectConfig::new(main);
 			let ecc_mul = EccMulConfig::new(
 				ecc_ladder.clone(),
 				ecc_add.clone(),
 				ecc_double.clone(),
 				ecc_table_select,
-				ecc_infinity,
 				bits2num_selector.clone(),
 			);
 

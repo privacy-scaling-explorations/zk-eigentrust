@@ -611,7 +611,7 @@ mod test {
 		EcdsaAssigner, EcdsaAssignerConfig, EcdsaChipset, EcdsaConfig, PublicKeyAssigner,
 		SignatureAssigner, UnassignedPublicKey, UnassignedSignature,
 	};
-	use crate::ecc::{AuxConfig, EccEqualConfig, EccInfinityConfig};
+	use crate::ecc::AuxConfig;
 	use crate::ecdsa::native::EcdsaKeypair;
 	use crate::gadgets::set::{SetChip, SetConfig};
 	use crate::integer::IntegerEqualConfig;
@@ -687,16 +687,9 @@ mod test {
 
 			let integer_mul_secp_scalar_selector =
 				IntegerMulChip::<SecpScalar, N, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
-			let ecc_table_select = EccTableSelectConfig::new(main.clone());
-			let int_eq = IntegerEqualConfig::new(main.clone(), set);
-			let ecc_eq = EccEqualConfig::new(main.clone(), int_eq);
-			let ecc_infinity = EccInfinityConfig::new(ecc_eq);
+
 			let ecc_add = EccAddConfig::new(
-				ecc_table_select.clone(),
-				ecc_infinity.clone(),
-				integer_reduce_selector,
-				integer_sub_selector,
-				integer_mul_selector,
+				integer_reduce_selector, integer_sub_selector, integer_mul_selector,
 				integer_div_selector,
 			);
 			let ecc_double = EccDoubleConfig::new(
@@ -708,12 +701,12 @@ mod test {
 				integer_div_selector,
 			);
 
+			let ecc_table_select = EccTableSelectConfig::new(main);
 			let ecc_mul_scalar = EccMulConfig::new(
 				ecc_ladder.clone(),
 				ecc_add.clone(),
 				ecc_double.clone(),
 				ecc_table_select,
-				ecc_infinity,
 				bits2num_selector.clone(),
 			);
 

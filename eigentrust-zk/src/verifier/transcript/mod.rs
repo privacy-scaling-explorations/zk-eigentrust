@@ -292,19 +292,18 @@ mod test {
 		circuits::{FullRoundHasher, PartialRoundHasher},
 		ecc::{
 			same_curve::{native::EcPoint, AssignedEcPoint, UnassignedEcPoint},
-			AuxConfig, EccAddConfig, EccDoubleConfig, EccEqualConfig, EccInfinityConfig,
-			EccMulConfig, EccTableSelectConfig, EccUnreducedLadderConfig,
+			AuxConfig, EccAddConfig, EccDoubleConfig, EccMulConfig, EccTableSelectConfig,
+			EccUnreducedLadderConfig,
 		},
 		gadgets::{
 			absorb::AbsorbChip,
 			bits2num::Bits2NumChip,
 			main::{MainChip, MainConfig},
-			set::{SetChip, SetConfig},
 		},
 		halo2::transcript::TranscriptWriterBuffer,
 		integer::{
-			native::Integer, AssignedInteger, IntegerAddChip, IntegerDivChip, IntegerEqualConfig,
-			IntegerMulChip, IntegerReduceChip, IntegerSubChip, UnassignedInteger,
+			native::Integer, AssignedInteger, IntegerAddChip, IntegerDivChip, IntegerMulChip,
+			IntegerReduceChip, IntegerSubChip, UnassignedInteger,
 		},
 		params::hasher::poseidon_bn254_5x5::Params,
 		params::{ecc::bn254::Bn254Params, rns::bn256::Bn256_4_68},
@@ -385,28 +384,16 @@ mod test {
 				IntegerDivChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
 
 			let ecc_ladder = EccUnreducedLadderConfig::new(int_add, int_sub, int_mul, int_div);
-			let ecc_table_select = EccTableSelectConfig::new(main.clone());
-			let set_selector = SetChip::configure(&common, meta);
-			let set = SetConfig::new(main.clone(), set_selector);
-			let int_eq = IntegerEqualConfig::new(main.clone(), set);
-			let ecc_eq = EccEqualConfig::new(main.clone(), int_eq);
-			let ecc_infinity = EccInfinityConfig::new(ecc_eq);
-			let ecc_add = EccAddConfig::new(
-				ecc_table_select.clone(),
-				ecc_infinity.clone(),
-				int_red,
-				int_sub,
-				int_mul,
-				int_div,
-			);
+
+			let ecc_add = EccAddConfig::new(int_red, int_sub, int_mul, int_div);
 			let ecc_double = EccDoubleConfig::new(int_red, int_add, int_sub, int_mul, int_div);
 
+			let ecc_table_select = EccTableSelectConfig::new(main.clone());
 			let ecc_mul_scalar = EccMulConfig::new(
 				ecc_ladder.clone(),
 				ecc_add.clone(),
 				ecc_double.clone(),
 				ecc_table_select,
-				ecc_infinity,
 				bits2num.clone(),
 			);
 			let aux = AuxConfig::new(ecc_double);
