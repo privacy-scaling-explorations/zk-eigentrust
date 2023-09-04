@@ -59,7 +59,8 @@ impl From<Snark> for UnassignedSnark {
 }
 
 impl UnassignedSnark {
-	fn without_witness(&self) -> Self {
+	/// halo2 circuit helper
+	pub fn without_witness(&self) -> Self {
 		UnassignedSnark {
 			protocol: self.protocol.clone(),
 			instances: self
