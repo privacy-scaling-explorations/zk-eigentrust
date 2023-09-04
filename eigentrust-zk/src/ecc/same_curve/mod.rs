@@ -177,7 +177,6 @@ where
 
 		let is_infinity =
 			ecc_equal.synthesize(common, &config.ecc_eq, layouter.namespace(|| "is_infinity"))?;
-		println!("is infinity x {:#?}", is_infinity);
 
 		Ok(is_infinity)
 	}
@@ -226,22 +225,6 @@ where
 	fn synthesize(
 		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<C::Scalar>,
 	) -> Result<Self::Output, Error> {
-		// TODO: Find a way to implement this checks to the circuit
-		if self.p.is_infinity() {
-			return Ok(self.q.clone());
-		}
-		if self.q.is_infinity() {
-			return Ok(self.p.clone());
-		}
-		if self.p.x.integer == self.q.x.integer {
-			let zero_integer = ConstIntegerAssigner::new(Integer::zero());
-			let zero = zero_integer
-				.synthesize(common, &(), layouter.namespace(|| "zero_integer"))
-				.unwrap();
-			let infinity = AssignedEcPoint::new(zero.clone(), zero);
-			return Ok(infinity);
-		}
-
 		// Reduce p_x
 		let p_x = IntegerReduceChip::new(self.p.x.clone());
 		let p_x_reduced = p_x.synthesize(
@@ -943,22 +926,7 @@ where
 			layouter.namespace(|| "acc_add_aux_fin"),
 		)?;
 
-		// If given point is infinity it will return infinity
-		let is_infinity_chip = EccInfinityChipset::new(self.p.clone());
-		let is_infinity = is_infinity_chip.synthesize(
-			common,
-			&config.infinity,
-			layouter.namespace(|| "is_infinity"),
-		)?;
-		let selected_point_chip =
-			EccTableSelectChipset::new(is_infinity.clone(), self.p, acc_point);
-		let selected_point = selected_point_chip.synthesize(
-			common,
-			&config.table_select,
-			layouter.namespace(|| "selected_point"),
-		)?;
-
-		Ok(selected_point)
+		Ok(acc_point)
 	}
 }
 

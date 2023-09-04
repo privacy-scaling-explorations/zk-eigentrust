@@ -111,12 +111,6 @@ where
 
 	/// Add one point to another
 	pub fn add(&self, other: &Self) -> Self {
-		// Infinity checks
-		if self.is_infinity() {
-			return other.clone();
-		} else if other.is_infinity() {
-			return self.clone();
-		}
 		// m = (q_y - p_y) / (q_x - p_x)
 		let numerator = other.y.sub(&self.y);
 		let denominator = other.x.sub(&self.x);
@@ -135,10 +129,6 @@ where
 
 	/// Double the given point
 	pub fn double(&self) -> Self {
-		// Infinity check
-		if self.is_infinity() {
-			return self.clone();
-		}
 		// m = (3 * p_x^2) / 2 * p_y
 		let double_p_y = self.y.add(&self.y);
 		let p_x_square = self.x.mul(&self.x);
@@ -164,13 +154,6 @@ where
 		// P is to_double (x_1, y_1)
 		// Q is to_add (x_2, y_2)
 
-		// Infinity checks
-		if self.is_infinity() {
-			return other.clone();
-		}
-		if other.is_infinity() {
-			return self.double();
-		}
 		// m_0 = (y_2 - y_1) / (x_2 - x_1)
 		let numerator = other.y.sub(&self.y);
 		let denominator = other.x.sub(&self.x);
@@ -202,10 +185,6 @@ where
 
 	/// Scalar multiplication for given point with using ladder
 	pub fn mul_scalar(&self, scalar: C::Scalar) -> Self {
-		// Infinity check
-		if self.is_infinity() {
-			return self.clone();
-		}
 		let (aux_init, aux_fin) = Self::aux(1);
 		let exp: EcPoint<C, NUM_LIMBS, NUM_BITS, P, EC> = self.clone();
 		// Converts given input to its bit by Scalar Field's bit size

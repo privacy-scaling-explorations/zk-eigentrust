@@ -1043,22 +1043,7 @@ where
 			layouter.namespace(|| "acc_add_aux_fin"),
 		)?;
 
-		// If given point is infinity it will return infinity
-		let is_infinity_chip = EccInfinityChipset::new(self.p.clone());
-		let is_infinity = is_infinity_chip.synthesize(
-			common,
-			&config.infinity,
-			layouter.namespace(|| "is_infinity"),
-		)?;
-		let selected_point_chip =
-			EccTableSelectChipset::new(is_infinity.clone(), self.p, acc_point);
-		let selected_point = selected_point_chip.synthesize(
-			common,
-			&config.table_select,
-			layouter.namespace(|| "selected_point"),
-		)?;
-
-		Ok(selected_point)
+		Ok(acc_point)
 	}
 }
 
