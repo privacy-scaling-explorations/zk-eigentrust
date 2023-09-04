@@ -102,7 +102,7 @@ impl Clone for AggregatorChipset {
 }
 
 /// AggregatorConfig structure
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct AggregatorConfig {
 	// Configurations for the needed circuit configs.
 	pub(crate) main: MainConfig,
@@ -113,7 +113,8 @@ pub struct AggregatorConfig {
 }
 
 impl AggregatorConfig {
-	fn new(
+	/// Create a new instance
+	pub fn new(
 		main: MainConfig, poseidon_sponge: PoseidonSpongeConfig, ecc_mul_scalar: EccMulConfig,
 		ecc_add: EccAddConfig, aux: AuxConfig,
 	) -> Self {
