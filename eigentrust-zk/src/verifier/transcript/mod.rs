@@ -384,17 +384,15 @@ mod test {
 				IntegerDivChip::<Base, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
 
 			let ecc_ladder = EccUnreducedLadderConfig::new(int_add, int_sub, int_mul, int_div);
-
 			let ecc_add = EccAddConfig::new(int_red, int_sub, int_mul, int_div);
 			let ecc_double = EccDoubleConfig::new(int_red, int_add, int_sub, int_mul, int_div);
-
 			let ecc_table_select = EccTableSelectConfig::new(main.clone());
 			let ecc_mul_scalar = EccMulConfig::new(
-				ecc_ladder.clone(),
+				ecc_ladder,
 				ecc_add.clone(),
 				ecc_double.clone(),
 				ecc_table_select,
-				bits2num.clone(),
+				bits2num,
 			);
 			let aux = AuxConfig::new(ecc_double);
 			TestConfig { common, main, poseidon_sponge, ecc_mul_scalar, ecc_add, aux }
