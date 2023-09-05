@@ -50,6 +50,16 @@ where
 		Self { x, y, _ec: PhantomData }
 	}
 
+	/// Create a new object with x = 0 and y = 0
+	pub fn zero() -> Self {
+		Self::new(Integer::zero(), Integer::zero())
+	}
+
+	/// Checks if given point is at the infinity or not
+	pub fn is_infinity(&self) -> bool {
+		self == &EcPoint::zero()
+	}
+
 	/// Selection function for the table
 	fn select(bit: bool, table: [Self; 2]) -> Self {
 		if bit {
@@ -165,7 +175,6 @@ where
 	/// Scalar multiplication for given point with using ladder
 	pub fn mul_scalar(&self, scalar: Integer<C::ScalarExt, N, NUM_LIMBS, NUM_BITS, P>) -> Self {
 		let (aux_init, aux_fin) = Self::aux(1);
-
 		let exp = self.clone();
 		// Converts given input to its bit by Scalar Field's bit size
 		let mut bits = Vec::new();

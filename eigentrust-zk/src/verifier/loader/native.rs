@@ -416,6 +416,7 @@ where
 		let point = pairs
 			.iter()
 			.cloned()
+			.filter(|(_, base)| !base.inner.is_infinity())
 			.map(|(scalar, base)| {
 				let new = scalar.clone();
 				base.inner.mul_scalar(new.inner)

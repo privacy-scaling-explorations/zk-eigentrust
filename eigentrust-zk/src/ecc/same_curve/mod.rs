@@ -9,7 +9,7 @@ use super::{
 use crate::{
 	gadgets::{
 		bits2num::Bits2NumChip,
-		main::{IsEqualChipset, SelectChipset},
+		main::{AndChipset, SelectChipset},
 	},
 	integer::{
 		native::Integer, AssignedInteger, IntegerAddChip, IntegerAssigner, IntegerDivChip,
@@ -122,6 +122,11 @@ where
 		y: AssignedInteger<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS, P>,
 	) -> AssignedEcPoint<C, NUM_LIMBS, NUM_BITS, P> {
 		Self { x, y }
+	}
+
+	/// Checks if given point is at the infinity or not
+	pub fn is_infinity(&self) -> bool {
+		self.x.integer == Integer::zero() && self.y.integer == Integer::zero()
 	}
 }
 
@@ -424,6 +429,7 @@ where
 	}
 }
 
+#[derive(Debug)]
 struct EccEqualChipset<C: CurveAffine, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
@@ -467,10 +473,12 @@ where
 		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<C::Scalar>,
 	) -> Result<Self::Output, Error> {
 		let x_eq = IntegerEqualChipset::new(self.p.x, self.q.x);
-		let is_x_eq = x_eq.synthesize(common, &config.int_eq, layouter.namespace(|| "x_eq"))?;
 		let y_eq = IntegerEqualChipset::new(self.p.y, self.q.y);
+
+		let is_x_eq = x_eq.synthesize(common, &config.int_eq, layouter.namespace(|| "x_eq"))?;
 		let is_y_eq = y_eq.synthesize(common, &config.int_eq, layouter.namespace(|| "y_eq"))?;
-		let point_eq = IsEqualChipset::new(is_x_eq, is_y_eq);
+
+		let point_eq = AndChipset::new(is_x_eq, is_y_eq);
 		let is_point_eq =
 			point_eq.synthesize(common, &config.main, layouter.namespace(|| "point_eq"))?;
 
@@ -1285,7 +1293,6 @@ mod test {
 			);
 
 			let ecc_table_select = EccTableSelectConfig::new(main);
-
 			let ecc_mul = EccMulConfig::new(
 				ecc_ladder.clone(),
 				ecc_add.clone(),
