@@ -24,7 +24,7 @@ pub async fn deploy_as(signer: Arc<ClientSigner>) -> Result<Address, EigenError>
 	Ok(transaction.address())
 }
 
-/// Returns a vector of ECDSA private keys derived from the given mnemonic phrase.
+/// Returns a vector of ECDSA key pairs derived from the given mnemonic phrase.
 pub fn ecdsa_keypairs_from_mnemonic(
 	mnemonic: &str, count: u32,
 ) -> Result<Vec<ECDSAKeypair>, EigenError> {
@@ -47,6 +47,7 @@ pub fn ecdsa_keypairs_from_mnemonic(
 
 		let mut pk_bytes: [u8; 32] = [0; 32];
 		pk_bytes.copy_from_slice(&signing_key.to_bytes()[0..32]);
+		pk_bytes.reverse();
 
 		let scalar_pk_option = <Secp256k1Affine as CurveAffine>::ScalarExt::from_bytes(&pk_bytes);
 
@@ -98,11 +99,7 @@ pub fn scalar_from_address(address: &Address) -> Result<Scalar, EigenError> {
 
 #[cfg(test)]
 mod tests {
-	use crate::{
-		eth::{address_from_ecdsa_key, deploy_as},
-		Client, ClientConfig, ECDSAKeypair,
-	};
-	use eigentrust_zk::halo2::halo2curves::secp256k1::Fq;
+	use crate::{eth::*, Client, ClientConfig, ECDSAKeypair, SecpScalar};
 	use ethers::utils::{hex, Anvil};
 
 	const TEST_MNEMONIC: &'static str =
@@ -129,22 +126,40 @@ mod tests {
 		drop(anvil);
 	}
 
-	#[ignore]
+	#[test]
+	fn test_ecdsa_keypairs_from_mnemonic() {
+		// Expected address
+		let address_str = "f39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
+		let expected_address_bytes: [u8; 20] =
+			hex::decode(address_str).expect("Decoding failed").try_into().expect("Wrong length");
+
+		let keypairs = ecdsa_keypairs_from_mnemonic(TEST_MNEMONIC, 1).unwrap();
+		let recovered_address = keypairs[0].public_key.to_address().to_bytes().to_vec();
+
+		let mut recovered_address_bytes: [u8; 20] = [0; 20];
+		recovered_address_bytes.copy_from_slice(&recovered_address[0..20]);
+
+		assert_eq!(recovered_address_bytes, expected_address_bytes);
+	}
+
 	#[test]
 	fn test_address_from_public_key() {
 		// Test private key
 		let private_key_str = "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
-		// Expected address
-		let address_str = "f39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
-
-		let private_key_bytes: [u8; 32] = hex::decode(private_key_str)
+		let mut private_key_bytes: [u8; 32] = hex::decode(private_key_str)
 			.expect("Decoding failed")
 			.try_into()
 			.expect("Wrong length");
+
+		// Expected address
+		let address_str = "f39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
 		let expected_address_bytes: [u8; 20] =
 			hex::decode(address_str).expect("Decoding failed").try_into().expect("Wrong length");
 
-		let private_key_fq = Fq::from_bytes(&private_key_bytes).unwrap();
+		// Build scalar
+		private_key_bytes.reverse();
+		let private_key_fq = SecpScalar::from_bytes(&private_key_bytes).unwrap();
+
 		let keypair = ECDSAKeypair::from_private_key(private_key_fq);
 
 		let recovered_address = address_from_ecdsa_key(&keypair.public_key);

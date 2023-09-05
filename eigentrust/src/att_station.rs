@@ -4,7 +4,8 @@ pub use attestation_station::*;
 /// More information at: <https://github.com/gakonst/ethers-rs>
 #[allow(
 	clippy::enum_variant_names, clippy::too_many_arguments, clippy::upper_case_acronyms,
-	clippy::type_complexity, dead_code, non_camel_case_types, missing_docs
+	clippy::type_complexity, dead_code, non_camel_case_types, missing_docs,
+	clippy::useless_conversion
 )]
 pub mod attestation_station {
 	#[allow(deprecated)]

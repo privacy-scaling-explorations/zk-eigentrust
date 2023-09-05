@@ -7,14 +7,14 @@ use crate::{
 	att_station::AttestationCreatedFilter,
 	error::EigenError,
 	eth::{address_from_ecdsa_key, scalar_from_address},
-	ECDSAKeypair, ECDSAPublicKey, ECDSASignature, Scalar,
+	ECDSAKeypair, ECDSAPublicKey, ECDSASignature, Scalar, SecpScalar,
 };
 use eigentrust_zk::{
 	circuits::{
 		dynamic_sets::native::{Attestation, SignedAttestation},
 		HASHER_WIDTH, NUM_BITS, NUM_LIMBS,
 	},
-	halo2::halo2curves::{ff::FromUniformBytes, secp256k1::Fq, secp256k1::Secp256k1Affine},
+	halo2::halo2curves::{ff::FromUniformBytes, secp256k1::Secp256k1Affine},
 	integer::native::Integer,
 	params::{hasher::poseidon_bn254_5x5::Params, rns::secp256k1::Secp256k1_4_68},
 	poseidon::native::Poseidon,
@@ -25,10 +25,9 @@ use ethers::types::{Address, Bytes, Uint8, H160, H256};
 pub const DOMAIN_PREFIX: [u8; DOMAIN_PREFIX_LEN] = *b"eigen_trust_";
 /// Domain prefix length.
 pub const DOMAIN_PREFIX_LEN: usize = 12;
-
-/// Attestation represented with field
+/// Attestation represented with field.
 pub type AttestationScalar = Attestation<Scalar>;
-/// Signed Attestation represented with field elements
+/// Signed Attestation represented with field elements.
 pub type SignedAttestationScalar =
 	SignedAttestation<Secp256k1Affine, Scalar, NUM_LIMBS, NUM_BITS, Secp256k1_4_68>;
 
@@ -215,14 +214,26 @@ impl SignedAttestationEth {
 	/// Recover the public key from the attestation signature
 	pub fn recover_public_key(&self) -> Result<ECDSAPublicKey, EigenError> {
 		let attestation = self.attestation.to_attestation_fr()?;
-		let message_hash =
-			attestation.hash::<HASHER_WIDTH, Poseidon<Scalar, HASHER_WIDTH, Params>>().to_bytes();
+
+		// Recover signature
 		let signature_raw: SignatureRaw = self.signature.clone().into();
 		let signature = ECDSASignature::from(signature_raw);
-		let field_element = Fq::from_bytes(&message_hash).unwrap();
+
+		// Recover signed attestation hash
+		let att_hash =
+			attestation.hash::<HASHER_WIDTH, Poseidon<Scalar, HASHER_WIDTH, Params>>().to_bytes();
+		let scalar_opt = SecpScalar::from_bytes(&att_hash);
+		let secp_scalar_att_hash = match scalar_opt.is_some().into() {
+			true => scalar_opt.unwrap(),
+			false => {
+				return Err(EigenError::ParsingError(
+					"Failed to convert attestation hash to scalar".to_string(),
+				))
+			},
+		};
 
 		let public_key =
-			ECDSAKeypair::recover_public_key(signature, Integer::from_w(field_element));
+			ECDSAKeypair::recover_public_key(signature, Integer::from_w(secp_scalar_att_hash));
 
 		Ok(public_key)
 	}
@@ -525,7 +536,7 @@ impl From<SignedAttestationEth> for SignedAttestationRaw {
 #[cfg(test)]
 mod tests {
 	use crate::att_station::AttestationData as ContractAttestationData;
-	use crate::attestation::*;
+	use crate::{attestation::*, SecpScalar};
 	use ethers::types::Bytes;
 
 	#[test]
@@ -598,7 +609,7 @@ mod tests {
 		let message = attestation_fr
 			.hash::<HASHER_WIDTH, Poseidon<Scalar, HASHER_WIDTH, Params>>()
 			.to_bytes();
-		let message_fq = Fq::from_bytes(&message).unwrap();
+		let message_fq = SecpScalar::from_bytes(&message).unwrap();
 
 		let signature = keypair.sign(message_fq, rng);
 		let sig_raw = SignatureRaw::from(signature);
@@ -627,7 +638,7 @@ mod tests {
 		let message = attestation_fr
 			.hash::<HASHER_WIDTH, Poseidon<Scalar, HASHER_WIDTH, Params>>()
 			.to_bytes();
-		let message_fq = Fq::from_bytes(&message).unwrap();
+		let message_fq = SecpScalar::from_bytes(&message).unwrap();
 
 		let signature = keypair.sign(message_fq, rng);
 		let signature_raw = SignatureRaw::from(signature);
@@ -676,7 +687,7 @@ mod tests {
 		let message = attestation_fr
 			.hash::<HASHER_WIDTH, Poseidon<Scalar, HASHER_WIDTH, Params>>()
 			.to_bytes();
-		let message_fq = Fq::from_bytes(&message).unwrap();
+		let message_fq = SecpScalar::from_bytes(&message).unwrap();
 
 		let signature = keypair.sign(message_fq, rng);
 		let signature_raw = SignatureRaw::from(signature);

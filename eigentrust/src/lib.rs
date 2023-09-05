@@ -70,7 +70,6 @@ use eigentrust_zk::{
 		bn256,
 		ff::PrimeField,
 		secp256k1::{Fq, Secp256k1Affine},
-		serde::SerdeObject,
 	},
 	params::{
 		ecc::secp256k1::Secp256k1Params, hasher::poseidon_bn254_5x5::Params,
@@ -83,15 +82,11 @@ use eth::{address_from_ecdsa_key, ecdsa_keypairs_from_mnemonic, scalar_from_addr
 use ethers::{
 	abi::{Address, RawLog},
 	contract::EthEvent,
-	prelude::EthDisplay,
-	providers::Middleware,
-	signers::{LocalWallet, Signer},
-	types::{Filter, Log, H256},
-};
-use ethers::{
 	middleware::SignerMiddleware,
-	providers::{Http, Provider},
-	signers::{coins_bip39::English, MnemonicBuilder},
+	prelude::EthDisplay,
+	providers::{Http, Middleware, Provider},
+	signers::{coins_bip39::English, LocalWallet, MnemonicBuilder, Signer},
+	types::{Filter, Log, H256},
 };
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
@@ -117,6 +112,8 @@ const DOMAIN: u128 = 42;
 pub type ClientSigner = SignerMiddleware<Provider<Http>, LocalWallet>;
 /// Scalar type.
 pub type Scalar = bn256::Fr;
+/// SECP Scalar type.
+pub type SecpScalar = Fq;
 /// ECDSA public key.
 pub type ECDSAPublicKey =
 	PublicKey<Secp256k1Affine, Scalar, NUM_LIMBS, NUM_BITS, Secp256k1_4_68, Secp256k1Params>;
@@ -196,11 +193,10 @@ impl Client {
 		let attestation_fr = attestation_eth.to_attestation_fr()?;
 
 		// Format for signature
-		let att_hash =
-			attestation_fr.hash::<HASHER_WIDTH, Poseidon<Scalar, HASHER_WIDTH, Params>>();
-		let attestation_fq = Fq::from_raw_bytes(att_hash.to_raw_bytes().as_slice()).ok_or(
-			EigenError::ParsingError("Failed to convert hash to Fq".to_string()),
-		)?;
+		let att_hash = attestation_fr
+			.hash::<HASHER_WIDTH, Poseidon<Scalar, HASHER_WIDTH, Params>>()
+			.to_bytes();
+		let attestation_fq = SecpScalar::from_bytes(&att_hash).unwrap();
 
 		// Sign
 		let signature = keypairs[0].sign(attestation_fq, rng);
@@ -431,7 +427,6 @@ mod lib_tests {
 	const TEST_MNEMONIC: &'static str =
 		"test test test test test test test test test test test junk";
 
-	#[ignore]
 	#[tokio::test]
 	async fn test_attest() {
 		let anvil = Anvil::new().spawn();
@@ -469,7 +464,6 @@ mod lib_tests {
 		drop(anvil);
 	}
 
-	#[ignore]
 	#[tokio::test]
 	async fn test_get_attestations() {
 		let anvil = Anvil::new().spawn();

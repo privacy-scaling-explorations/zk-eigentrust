@@ -88,17 +88,21 @@ where
 
 	/// Construct an Ethereum address for the given ECDSA public key
 	pub fn to_address(&self) -> N {
-		let pub_key_bytes = self.to_bytes();
+		let raw_pub_key = self.to_bytes();
+		let (x, y) = raw_pub_key.split_at(32);
 
-		// Hash with Keccak256
-		let mut hasher = Keccak256::new();
-		hasher.update(&pub_key_bytes[..]);
-		let hashed_public_key = hasher.finalize().to_vec();
+		// Reverse and concatenate x and y coordinates.
+		let rev_x: Vec<u8> = x.iter().rev().cloned().collect();
+		let rev_y: Vec<u8> = y.iter().rev().cloned().collect();
+		let pub_key = [rev_x, rev_y].concat();
 
-		// Get the last 20 bytes of the hash
+		// Hash and get first 20 bytes.
+		let hashed_public_key = Keccak256::digest(&pub_key);
+		let address_slice = &Keccak256::digest(&pub_key)[hashed_public_key.len() - 20..];
+
+		// Build fixed-size array.
 		let mut address = [0u8; 32];
-		address[12..].copy_from_slice(&hashed_public_key[hashed_public_key.len() - 20..]);
-		address.reverse();
+		address[..20].copy_from_slice(address_slice);
 
 		let mut address_bytes = <N as PrimeField>::Repr::default();
 		address.as_ref().read_exact(address_bytes.as_mut()).unwrap();
@@ -214,7 +218,7 @@ where
 		bytes
 	}
 
-	/// Return the recovery id
+	/// Returns the signature recovery id.
 	pub fn recovery_id(&self) -> RecoveryId {
 		self.rec_id
 	}
