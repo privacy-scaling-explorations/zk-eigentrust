@@ -3,16 +3,15 @@
 //! This module provides types and functionalities for general ethereum interactions.
 
 use crate::{
-	att_station::AttestationStation, attestation::ECDSAPublicKey, error::EigenError, ClientSigner,
+	att_station::AttestationStation, error::EigenError, ClientSigner, ECDSAKeypair, ECDSAPublicKey,
+	Scalar,
 };
-use eigentrust_zk::halo2::halo2curves::bn256::Fr as Scalar;
+use eigentrust_zk::halo2::halo2curves::{secp256k1::Secp256k1Affine, CurveAffine};
 use ethers::{
 	abi::Address,
 	prelude::k256::ecdsa::SigningKey,
 	signers::coins_bip39::{English, Mnemonic},
-	utils::keccak256,
 };
-use secp256k1::SecretKey;
 use std::sync::Arc;
 
 /// Deploys the AttestationStation contract.
@@ -25,10 +24,10 @@ pub async fn deploy_as(signer: Arc<ClientSigner>) -> Result<Address, EigenError>
 	Ok(transaction.address())
 }
 
-/// Returns a vector of ECDSA private keys derived from the given mnemonic phrase.
-pub fn ecdsa_secret_from_mnemonic(
+/// Returns a vector of ECDSA key pairs derived from the given mnemonic phrase.
+pub fn ecdsa_keypairs_from_mnemonic(
 	mnemonic: &str, count: u32,
-) -> Result<Vec<SecretKey>, EigenError> {
+) -> Result<Vec<ECDSAKeypair>, EigenError> {
 	let mnemonic = Mnemonic::<English>::new_from_phrase(mnemonic)
 		.map_err(|e| EigenError::ParsingError(e.to_string()))?;
 	let mut keys = Vec::new();
@@ -41,31 +40,40 @@ pub fn ecdsa_secret_from_mnemonic(
 		let derivation_path: Vec<u32> =
 			vec![44 + BIP32_HARDEN, 60 + BIP32_HARDEN, BIP32_HARDEN, 0, i];
 
-		let derived_pk =
-			mnemonic.derive_key(&derivation_path, None).expect("Failed to derive signing key");
+		let private_key = mnemonic
+			.derive_key(&derivation_path, None)
+			.map_err(|e| EigenError::KeysError(e.to_string()))?;
+		let signing_key: &SigningKey = private_key.as_ref();
 
-		let raw_pk: &SigningKey = derived_pk.as_ref();
+		let mut pk_bytes: [u8; 32] = [0; 32];
+		pk_bytes.copy_from_slice(&signing_key.to_bytes()[0..32]);
+		pk_bytes.reverse();
 
-		let secret_key = SecretKey::from_slice(raw_pk.to_bytes().as_slice())
-			.expect("32 bytes, within curve order");
+		let scalar_pk_option = <Secp256k1Affine as CurveAffine>::ScalarExt::from_bytes(&pk_bytes);
 
-		keys.push(secret_key);
+		let scalar_pk = match scalar_pk_option.is_some().into() {
+			true => scalar_pk_option.unwrap(),
+			false => {
+				return Err(EigenError::ParsingError(
+					"Failed to construct scalar private key from bytes".to_string(),
+				))
+			},
+		};
+
+		keys.push(ECDSAKeypair::from_private_key(scalar_pk));
 	}
 
 	Ok(keys)
 }
 
 /// Constructs an Ethereum address for the given ECDSA public key.
-pub fn address_from_public_key(pub_key: &ECDSAPublicKey) -> Address {
-	let pub_key_bytes: [u8; 65] = pub_key.serialize_uncompressed();
+pub fn address_from_ecdsa_key(pub_key: &ECDSAPublicKey) -> Address {
+	let address: Vec<u8> = pub_key.to_address().to_bytes().to_vec();
 
-	// Hash with Keccak256
-	let hashed_public_key = keccak256(&pub_key_bytes[1..]);
+	let mut address_array = [0; 20];
+	address_array.copy_from_slice(&address[0..20]);
 
-	// Get the last 20 bytes of the hash
-	let address_bytes = &hashed_public_key[hashed_public_key.len() - 20..];
-
-	Address::from_slice(address_bytes)
+	Address::from(address_array)
 }
 
 /// Constructs a Scalar from the given Ethereum address.
@@ -91,16 +99,8 @@ pub fn scalar_from_address(address: &Address) -> Result<Scalar, EigenError> {
 
 #[cfg(test)]
 mod tests {
-	use crate::{
-		eth::{address_from_public_key, deploy_as},
-		Client, ClientConfig,
-	};
-	use ethers::{
-		prelude::k256::ecdsa::SigningKey,
-		signers::{Signer, Wallet},
-		utils::Anvil,
-	};
-	use secp256k1::{PublicKey, Secp256k1, SecretKey};
+	use crate::{eth::*, Client, ClientConfig, ECDSAKeypair, SecpScalar};
+	use ethers::utils::{hex, Anvil};
 
 	const TEST_MNEMONIC: &'static str =
 		"test test test test test test test test test test test junk";
@@ -127,22 +127,43 @@ mod tests {
 	}
 
 	#[test]
+	fn test_ecdsa_keypairs_from_mnemonic() {
+		// Expected address
+		let address_str = "f39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
+		let expected_address_bytes: [u8; 20] =
+			hex::decode(address_str).expect("Decoding failed").try_into().expect("Wrong length");
+
+		let keypairs = ecdsa_keypairs_from_mnemonic(TEST_MNEMONIC, 1).unwrap();
+		let recovered_address = keypairs[0].public_key.to_address().to_bytes().to_vec();
+
+		let mut recovered_address_bytes: [u8; 20] = [0; 20];
+		recovered_address_bytes.copy_from_slice(&recovered_address[0..20]);
+
+		assert_eq!(recovered_address_bytes, expected_address_bytes);
+	}
+
+	#[test]
 	fn test_address_from_public_key() {
-		let secp = Secp256k1::new();
+		// Test private key
+		let private_key_str = "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
+		let mut private_key_bytes: [u8; 32] = hex::decode(private_key_str)
+			.expect("Decoding failed")
+			.try_into()
+			.expect("Wrong length");
 
-		let secret_key_as_bytes = [0x40; 32];
+		// Expected address
+		let address_str = "f39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
+		let expected_address_bytes: [u8; 20] =
+			hex::decode(address_str).expect("Decoding failed").try_into().expect("Wrong length");
 
-		let secret_key =
-			SecretKey::from_slice(&secret_key_as_bytes).expect("32 bytes, within curve order");
+		// Build scalar
+		private_key_bytes.reverse();
+		let private_key_fq = SecpScalar::from_bytes(&private_key_bytes).unwrap();
 
-		let pub_key = PublicKey::from_secret_key(&secp, &secret_key);
+		let keypair = ECDSAKeypair::from_private_key(private_key_fq);
 
-		let recovered_address = address_from_public_key(&pub_key);
+		let recovered_address = address_from_ecdsa_key(&keypair.public_key);
 
-		let expected_address =
-			Wallet::from(SigningKey::from_bytes(secret_key_as_bytes.as_ref().into()).unwrap())
-				.address();
-
-		assert_eq!(recovered_address, expected_address);
+		assert_eq!(recovered_address.to_fixed_bytes(), expected_address_bytes);
 	}
 }
