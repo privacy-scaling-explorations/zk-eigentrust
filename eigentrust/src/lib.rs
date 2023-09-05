@@ -60,34 +60,35 @@ use att_station::{
 	AttestationCreatedFilter, AttestationData as ContractAttestationData, AttestationStation,
 };
 use attestation::{AttestationEth, AttestationRaw, SignedAttestationRaw};
-use eigentrust_zk::circuits::{
-	PoseidonNativeHasher, PoseidonNativeSponge, HASHER_WIDTH, MIN_PEER_COUNT, NUM_BITS, NUM_LIMBS,
+use eigentrust_zk::{
+	circuits::{
+		dynamic_sets::native::EigenTrustSet, PoseidonNativeHasher, PoseidonNativeSponge,
+		HASHER_WIDTH, MIN_PEER_COUNT, NUM_BITS, NUM_LIMBS,
+	},
+	ecdsa::native::{EcdsaKeypair, PublicKey, Signature},
+	halo2::halo2curves::{
+		bn256,
+		ff::PrimeField,
+		secp256k1::{Fq, Secp256k1Affine},
+	},
+	params::{
+		ecc::secp256k1::Secp256k1Params, hasher::poseidon_bn254_5x5::Params,
+		rns::secp256k1::Secp256k1_4_68,
+	},
+	poseidon::native::Poseidon,
 };
-use eigentrust_zk::halo2::halo2curves::bn256::Fr as Scalar;
-use eigentrust_zk::halo2::halo2curves::ff::PrimeField;
-use eigentrust_zk::halo2::halo2curves::secp256k1::Secp256k1Affine;
-use eigentrust_zk::params::ecc::secp256k1::Secp256k1Params;
-use eigentrust_zk::params::hasher::poseidon_bn254_5x5::Params;
-use eigentrust_zk::params::rns::secp256k1::Secp256k1_4_68;
-use eigentrust_zk::poseidon::native::Poseidon;
-use eigentrust_zk::{circuits::dynamic_sets::native::EigenTrustSet, ecdsa::native::PublicKey};
 use error::EigenError;
-use eth::{address_from_public_key, ecdsa_secret_from_mnemonic, scalar_from_address};
+use eth::{address_from_ecdsa_key, ecdsa_keypairs_from_mnemonic, scalar_from_address};
 use ethers::{
 	abi::{Address, RawLog},
 	contract::EthEvent,
+	middleware::SignerMiddleware,
 	prelude::EthDisplay,
-	providers::Middleware,
-	signers::{LocalWallet, Signer},
+	providers::{Http, Middleware, Provider},
+	signers::{coins_bip39::English, LocalWallet, MnemonicBuilder, Signer},
 	types::{Filter, Log, H256},
 };
-use ethers::{
-	middleware::SignerMiddleware,
-	providers::{Http, Provider},
-	signers::{coins_bip39::English, MnemonicBuilder},
-};
 use log::{info, warn};
-use secp256k1::{ecdsa::RecoverableSignature, Message, SECP256K1};
 use serde::{Deserialize, Serialize};
 use std::{
 	collections::{BTreeSet, HashMap},
@@ -106,8 +107,21 @@ const _NUM_DECIMAL_LIMBS: usize = 2;
 const _POWER_OF_TEN: usize = 72;
 /// Attestation domain value
 const DOMAIN: u128 = 42;
-/// Signer type alias.
+
+/// Client Signer.
 pub type ClientSigner = SignerMiddleware<Provider<Http>, LocalWallet>;
+/// Scalar type.
+pub type Scalar = bn256::Fr;
+/// SECP Scalar type.
+pub type SecpScalar = Fq;
+/// ECDSA public key.
+pub type ECDSAPublicKey =
+	PublicKey<Secp256k1Affine, Scalar, NUM_LIMBS, NUM_BITS, Secp256k1_4_68, Secp256k1Params>;
+/// ECDSA keypair.
+pub type ECDSAKeypair =
+	EcdsaKeypair<Secp256k1Affine, Scalar, NUM_LIMBS, NUM_BITS, Secp256k1_4_68, Secp256k1Params>;
+/// ECDSA signature.
+pub type ECDSASignature = Signature<Secp256k1Affine, Scalar, NUM_LIMBS, NUM_BITS, Secp256k1_4_68>;
 
 /// Client configuration settings.
 #[derive(Serialize, Deserialize, Debug, EthDisplay, Clone)]
@@ -172,22 +186,20 @@ impl Client {
 
 	/// Submits an attestation to the attestation station.
 	pub async fn attest(&self, attestation: AttestationRaw) -> Result<(), EigenError> {
-		let ctx = SECP256K1;
-		let secret_keys = ecdsa_secret_from_mnemonic(&self.mnemonic, 1)?;
+		let rng = &mut rand::thread_rng();
+		let keypairs = ecdsa_keypairs_from_mnemonic(&self.mnemonic, 1)?;
 
 		let attestation_eth = AttestationEth::from(attestation);
 		let attestation_fr = attestation_eth.to_attestation_fr()?;
 
 		// Format for signature
-		let att_hash =
-			attestation_fr.hash::<HASHER_WIDTH, Poseidon<Scalar, HASHER_WIDTH, Params>>();
+		let att_hash = attestation_fr
+			.hash::<HASHER_WIDTH, Poseidon<Scalar, HASHER_WIDTH, Params>>()
+			.to_bytes();
+		let attestation_fq = SecpScalar::from_bytes(&att_hash).unwrap();
 
-		// Sign attestation
-		let signature: RecoverableSignature = ctx.sign_ecdsa_recoverable(
-			&Message::from_slice(att_hash.to_bytes().as_slice())
-				.map_err(|e| EigenError::RecoveryError(e.to_string()))?,
-			&secret_keys[0],
-		);
+		// Sign
+		let signature = keypairs[0].sign(attestation_fq, rng);
 
 		let signature_raw = SignatureRaw::from(signature);
 		let signature_eth = SignatureEth::from(signature_raw);
@@ -200,7 +212,7 @@ impl Client {
 
 		// Verify signature is recoverable
 		let recovered_pubkey = signed_attestation.recover_public_key()?;
-		let recovered_address = address_from_public_key(&recovered_pubkey);
+		let recovered_address = address_from_ecdsa_key(&recovered_pubkey);
 		assert!(recovered_address == self.signer.address());
 
 		// Stored contract data
@@ -238,7 +250,7 @@ impl Client {
 		// Insert the attester and attested of each attestation into the set
 		for signed_att in &attestations {
 			let public_key = signed_att.recover_public_key()?;
-			let attester = address_from_public_key(&public_key);
+			let attester = address_from_ecdsa_key(&public_key);
 			participants_set.insert(signed_att.attestation.about);
 			participants_set.insert(attester);
 
@@ -268,7 +280,7 @@ impl Client {
 		// Populate the attestation matrix with the attestations data
 		for signed_att in &attestations {
 			let public_key = signed_att.recover_public_key()?;
-			let attester = address_from_public_key(&public_key);
+			let attester = address_from_ecdsa_key(&public_key);
 			let attester_pos = participants.iter().position(|&r| r == attester).unwrap();
 			let attested_pos =
 				participants.iter().position(|&r| r == signed_att.attestation.about).unwrap();
@@ -303,13 +315,8 @@ impl Client {
 		for i in 0..participants.len() {
 			let addr = participants[i];
 			if let Some(pk) = pks.get(&addr) {
-				let pk_x = pk.serialize_uncompressed();
-				let mut pk_bytes: [u8; 64] = [0; 64];
-				pk_bytes.copy_from_slice(&pk_x[1..]);
-				let pk_fr = PublicKey::from_bytes(pk_bytes.to_vec());
-
 				let opinion = attestation_matrix[i].clone();
-				eigen_trust_set.update_op(pk_fr, opinion);
+				eigen_trust_set.update_op(pk.clone(), opinion);
 			}
 		}
 
