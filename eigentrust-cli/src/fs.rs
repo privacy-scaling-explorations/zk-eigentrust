@@ -11,6 +11,8 @@ use eigentrust::{
 use log::warn;
 use std::{env::current_dir, path::PathBuf};
 
+const DEFAULT_MNEMONIC: &str = "test test test test test test test test test test test junk";
+
 /// Enum representing the possible file extensions.
 pub enum FileType {
 	/// CSV file.
@@ -64,6 +66,6 @@ pub fn load_mnemonic() -> String {
 	dotenv().ok();
 	var("MNEMONIC").unwrap_or_else(|_| {
 		warn!("MNEMONIC environment variable is not set. Using default.");
-		"test test test test test test test test test test test junk".to_string()
+		DEFAULT_MNEMONIC.to_string()
 	})
 }
