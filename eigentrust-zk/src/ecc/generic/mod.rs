@@ -3,8 +3,8 @@ pub mod native;
 
 use self::native::EcPoint;
 use super::{
-	AuxConfig, EccAddConfig, EccBatchedMulConfig, EccDoubleConfig, EccEqualConfig,
-	EccInfinityConfig, EccMulConfig, EccTableSelectConfig, EccUnreducedLadderConfig,
+	AuxConfig, EccAddConfig, EccBatchedMulConfig, EccDoubleConfig, EccEqualConfig, EccMulConfig,
+	EccTableSelectConfig, EccUnreducedLadderConfig,
 };
 use crate::{
 	gadgets::{
@@ -133,61 +133,6 @@ where
 	/// Checks if given point is at the infinity or not
 	pub fn is_infinity(&self) -> bool {
 		self.x.integer == Integer::zero() && self.y.integer == Integer::zero()
-	}
-}
-
-/// Chipset structure for the Ecc Infinity Check.
-struct EccInfinityChipset<
-	C: CurveAffine,
-	N: FieldExt,
-	const NUM_LIMBS: usize,
-	const NUM_BITS: usize,
-	P,
-> where
-	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
-	C::Base: FieldExt,
-	C::Scalar: FieldExt,
-{
-	// Assigned point p
-	p: AssignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P>,
-}
-
-impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
-	EccInfinityChipset<C, N, NUM_LIMBS, NUM_BITS, P>
-where
-	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
-	C::Base: FieldExt,
-	C::Scalar: FieldExt,
-{
-	/// Creates a new ecc infinity chipset.
-	pub fn new(p: AssignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P>) -> Self {
-		Self { p }
-	}
-}
-
-impl<C: CurveAffine, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P> Chipset<N>
-	for EccInfinityChipset<C, N, NUM_LIMBS, NUM_BITS, P>
-where
-	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS> + RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
-	C::Base: FieldExt,
-	C::Scalar: FieldExt,
-{
-	type Config = EccInfinityConfig;
-	type Output = AssignedBit<N>;
-
-	/// Synthesize the circuit.
-	fn synthesize(
-		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<N>,
-	) -> Result<Self::Output, Error> {
-		let zero_integer = ConstIntegerAssigner::new(Integer::zero());
-		let zero = zero_integer.synthesize(common, &(), layouter.namespace(|| "zero_integer"))?;
-		let zero_point = AssignedEcPoint::new(zero.clone(), zero);
-		let ecc_equal = EccEqualChipset::new(self.p.clone(), zero_point);
-		let is_infinity =
-			ecc_equal.synthesize(common, &config.ecc_eq, layouter.namespace(|| "is_infinity"))?;
-		let is_infinity_bool = self.p.is_infinity();
-		let is_infinity_bit = AssignedBit::new(is_infinity_bool, is_infinity);
-		Ok(is_infinity_bit)
 	}
 }
 

@@ -8,19 +8,6 @@ use halo2::plonk::Selector;
 
 /// Configuration elements for the circuit are defined here.
 #[derive(Debug, Clone)]
-pub struct EccInfinityConfig {
-	ecc_eq: EccEqualConfig,
-}
-
-impl EccInfinityConfig {
-	/// Constructor for Ecc infinity config
-	pub fn new(ecc_eq: EccEqualConfig) -> Self {
-		Self { ecc_eq }
-	}
-}
-
-/// Configuration elements for the circuit are defined here.
-#[derive(Debug, Clone)]
 pub struct EccAddConfig {
 	/// Constructs selectors from different circuits.
 	integer_reduce_selector: Selector,

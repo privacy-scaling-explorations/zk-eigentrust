@@ -737,7 +737,6 @@ where
 		let point = pairs
 			.iter()
 			.cloned()
-			// TODO: Add circuit check here
 			.filter(|(_, base)| !base.inner.is_infinity())
 			.map(|(scalar, base)| {
 				let config = base.loader.clone();
