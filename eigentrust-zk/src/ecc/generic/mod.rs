@@ -129,6 +129,11 @@ where
 	) -> AssignedEcPoint<C, N, NUM_LIMBS, NUM_BITS, P> {
 		Self { x, y }
 	}
+
+	/// Checks if given point is at the infinity or not
+	pub fn is_infinity(&self) -> bool {
+		self.x.integer == Integer::zero() && self.y.integer == Integer::zero()
+	}
 }
 
 /// Chipset structure for the EccAdd.
@@ -1468,7 +1473,6 @@ mod test {
 			);
 
 			let ecc_table_select = EccTableSelectConfig::new(main);
-
 			let ecc_mul = EccMulConfig::new(
 				ecc_ladder.clone(),
 				ecc_add.clone(),

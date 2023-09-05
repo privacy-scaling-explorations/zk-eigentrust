@@ -737,6 +737,7 @@ where
 		let point = pairs
 			.iter()
 			.cloned()
+			.filter(|(_, base)| !base.inner.is_infinity())
 			.map(|(scalar, base)| {
 				let config = base.loader.clone();
 				let aux = base.loader.aux.clone();

@@ -434,16 +434,15 @@ mod test {
 		) -> Result<(), Error> {
 			let aggregator_chipset =
 				AggregatorChipset::new(self.svk, self.snarks.clone(), self.as_proof.clone());
-			let _accumulator_limbs = aggregator_chipset.synthesize(
+			let accumulator_limbs = aggregator_chipset.synthesize(
 				&config.common,
 				&config.aggregator,
 				layouter.namespace(|| "aggregator chipset"),
 			)?;
 
-			// TODO: Uncomment when the bug is fixed
-			// for (row, inst) in accumulator_limbs.enumerate() {
-			// 	layouter.constrain_instance(inst.cell(), config.common.instance, row)?;
-			// }
+			for (row, inst) in accumulator_limbs.iter().enumerate() {
+				layouter.constrain_instance(inst.cell(), config.common.instance, row)?;
+			}
 			Ok(())
 		}
 	}

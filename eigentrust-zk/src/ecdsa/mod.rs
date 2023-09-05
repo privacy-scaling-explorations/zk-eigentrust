@@ -700,7 +700,7 @@ mod test {
 				integer_add_selector, integer_sub_selector, integer_mul_selector,
 				integer_div_selector,
 			);
-			let ecc_table_select = EccTableSelectConfig::new(main.clone());
+			let ecc_table_select = EccTableSelectConfig::new(main);
 			let ecc_mul_scalar = EccMulConfig::new(
 				ecc_ladder.clone(),
 				ecc_add.clone(),

@@ -56,9 +56,14 @@ where
 		Self { x, y, _ec: PhantomData }
 	}
 
-	/// Create a new object with x = 0 and y = 1
+	/// Create a new object with x = 0 and y = 0
 	pub fn zero() -> Self {
-		Self::new(Integer::zero(), Integer::one())
+		Self::new(Integer::zero(), Integer::zero())
+	}
+
+	/// Checks if given point is at the infinity or not
+	pub fn is_infinity(&self) -> bool {
+		self == &EcPoint::zero()
 	}
 
 	/// Create a new object with x = 1 and y = 1
