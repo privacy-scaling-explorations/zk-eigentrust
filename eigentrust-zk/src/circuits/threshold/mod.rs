@@ -70,7 +70,7 @@ impl<
 	/// Constructs a new ThresholdCircuit
 	pub fn new(
 		sets: &[Fr], scores: &[Fr], num_decomposed: &[Fr], den_decomposed: &[Fr], svk: Svk,
-		snarks: Vec<Snark>, as_proof: Option<Vec<u8>>,
+		snarks: Vec<Snark>, as_proof: Vec<u8>,
 	) -> Self {
 		let sets = sets.iter().map(|s| Value::known(*s)).collect();
 		let scores = scores.iter().map(|s| Value::known(*s)).collect();
@@ -78,6 +78,7 @@ impl<
 		let den_decomposed = (0..NUM_LIMBS).map(|i| Value::known(den_decomposed[i])).collect();
 
 		let snarks = snarks.into_iter().map(UnassignedSnark::from).collect();
+		let as_proof = Some(as_proof);
 
 		Self { sets, scores, den_decomposed, num_decomposed, svk, snarks, as_proof }
 	}
@@ -778,29 +779,30 @@ mod tests {
 		let pub_ins = vec![target_addr, threshold, native_threshold_check];
 
 		// Prepare the Aggregator input
-		let rng = &mut thread_rng();
-		let k = 21;
-		let params = generate_params::<Bn256>(k);
-		let et_circuit = EigenTrustSetCircuit::<
-			NUM_NEIGHBOURS,
-			NUM_ITERATIONS,
-			INITIAL_SCORE,
-			C,
-			N,
-			4,
-			68,
-			P,
-			EC,
-			PoseidonChipset<N, HASHER_WIDTH, Params>,
-			H,
-			StatefulSpongeChipset<N, HASHER_WIDTH, Params>,
-		>::new(opt_att, opt_pks, Fr::from_u128(DOMAIN));
-		let et_circuit_instances: Vec<Vec<Fr>> = vec![et_circuit_pi];
-		let snark_1 = Snark::new(&params, et_circuit, et_circuit_instances, rng);
+		let NativeAggregator { svk, snarks, instances, as_proof } = {
+			let rng = &mut thread_rng();
+			let k = 20;
+			let params = generate_params::<Bn256>(k);
+			let et_circuit = EigenTrustSetCircuit::<
+				NUM_NEIGHBOURS,
+				NUM_ITERATIONS,
+				INITIAL_SCORE,
+				C,
+				N,
+				4,
+				68,
+				P,
+				EC,
+				PoseidonChipset<N, HASHER_WIDTH, Params>,
+				H,
+				StatefulSpongeChipset<N, HASHER_WIDTH, Params>,
+			>::new(opt_att, opt_pks, Fr::from_u128(DOMAIN));
+			let et_circuit_instances: Vec<Vec<Fr>> = vec![et_circuit_pi];
+			let snark_1 = Snark::new(&params, et_circuit, et_circuit_instances, rng);
 
-		let snarks = vec![snark_1];
-		let NativeAggregator { svk, snarks, instances, as_proof } =
-			NativeAggregator::new(&params, snarks);
+			let snarks = vec![snark_1];
+			NativeAggregator::new(&params, snarks)
+		};
 
 		let pub_ins = [pub_ins, instances].concat();
 
@@ -811,13 +813,7 @@ mod tests {
 			NUM_NEIGHBOURS,
 			INITIAL_SCORE,
 		> = ThresholdCircuit::new(
-			&sets,
-			&scores,
-			&num_decomposed,
-			&den_decomposed,
-			svk,
-			snarks,
-			Some(as_proof),
+			&sets, &scores, &num_decomposed, &den_decomposed, svk, snarks, as_proof,
 		);
 
 		let k = 12;
@@ -870,30 +866,31 @@ mod tests {
 		let pub_ins = vec![target_addr, threshold, native_threshold_check];
 
 		// Prepare the Aggregator input
-		let rng = &mut thread_rng();
-		let k = 21;
-		let params = generate_params::<Bn256>(k);
+		let NativeAggregator { svk, snarks, instances, as_proof } = {
+			let rng = &mut thread_rng();
+			let k = 20;
+			let params = generate_params::<Bn256>(k);
 
-		let et_circuit = EigenTrustSetCircuit::<
-			NUM_NEIGHBOURS,
-			NUM_ITERATIONS,
-			INITIAL_SCORE,
-			C,
-			N,
-			4,
-			68,
-			P,
-			EC,
-			PoseidonChipset<N, HASHER_WIDTH, Params>,
-			H,
-			StatefulSpongeChipset<N, HASHER_WIDTH, Params>,
-		>::new(opt_att, opt_pks, Fr::from_u128(DOMAIN));
-		let et_circuit_instances: Vec<Vec<Fr>> = vec![et_circuit_pi];
-		let snark_1 = Snark::new(&params, et_circuit, et_circuit_instances, rng);
+			let et_circuit = EigenTrustSetCircuit::<
+				NUM_NEIGHBOURS,
+				NUM_ITERATIONS,
+				INITIAL_SCORE,
+				C,
+				N,
+				4,
+				68,
+				P,
+				EC,
+				PoseidonChipset<N, HASHER_WIDTH, Params>,
+				H,
+				StatefulSpongeChipset<N, HASHER_WIDTH, Params>,
+			>::new(opt_att, opt_pks, Fr::from_u128(DOMAIN));
+			let et_circuit_instances: Vec<Vec<Fr>> = vec![et_circuit_pi];
+			let snark_1 = Snark::new(&params, et_circuit, et_circuit_instances, rng);
 
-		let snarks = vec![snark_1];
-		let NativeAggregator { svk, snarks, instances, as_proof } =
-			NativeAggregator::new(&params, snarks);
+			let snarks = vec![snark_1];
+			NativeAggregator::new(&params, snarks)
+		};
 
 		let pub_ins = [pub_ins, instances].concat();
 
@@ -903,13 +900,7 @@ mod tests {
 			NUM_NEIGHBOURS,
 			INITIAL_SCORE,
 		> = ThresholdCircuit::new(
-			&sets,
-			&scores,
-			&num_decomposed,
-			&den_decomposed,
-			svk,
-			snarks,
-			Some(as_proof),
+			&sets, &scores, &num_decomposed, &den_decomposed, svk, snarks, as_proof,
 		);
 
 		let k = 12;
