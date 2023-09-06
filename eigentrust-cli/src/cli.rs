@@ -209,35 +209,49 @@ pub async fn handle_bandada(config: &ClientConfig, data: BandadaData) -> Result<
 
 	match action {
 		Action::Add => {
-			// Create a CSVFileStorage for scores
-			let scores_storage = CSVFileStorage::<ScoreRecord>::new("scores.csv".into());
+			// Load scores
+			let scores = CSVFileStorage::<ScoreRecord>::new("scores.csv".into()).load()?;
 
-			// Read scores from the CSV file using load method from the Storage trait
-			let scores = scores_storage.load()?;
-
+			// Find the participant record
 			let participant_record = scores
 				.iter()
-				.find(|record| *record.peer_address().as_str() == *address)
+				.find(|record| record.peer_address().as_str() == address)
 				.ok_or(EigenError::ValidationError(
 					"Participant not found in score records.".to_string(),
 				))?;
 
-			let participant_score: u32 = participant_record.score_fr().parse().map_err(|_| {
-				EigenError::ParsingError("Failed to parse participant score.".to_string())
+			// Parse participant values with error handling
+			let participant_score = participant_record
+				.score_fr()
+				.parse()
+				.map_err(|_| EigenError::ParsingError("Failed to parse score.".to_string()))?;
+
+			let score_num = participant_record
+				.numerator()
+				.parse()
+				.map_err(|_| EigenError::ParsingError("Failed to parse numerator.".to_string()))?;
+
+			let score_den = participant_record.denominator().parse().map_err(|_| {
+				EigenError::ParsingError("Failed to parse denominator.".to_string())
 			})?;
 
-			let threshold: u32 = config
+			let threshold = config
 				.band_th
 				.parse()
 				.map_err(|_| EigenError::ParsingError("Failed to parse threshold.".to_string()))?;
 
-			if participant_score < threshold {
-				return Err(EigenError::ValidationError(
-					"Participant score is below the group threshold.".to_string(),
-				));
-			}
+			// Verify threshold
+			let pass_threshold =
+				Client::verify_threshold(participant_score, score_num, score_den, threshold);
 
-			bandada_api.add_member(&config.band_id, identity_commitment).await?;
+			if pass_threshold {
+				bandada_api.add_member(&config.band_id, identity_commitment).await?;
+			} else {
+				return Err(EigenError::ValidationError(format!(
+					"Participant score below threshold. Score {} < Threshold {}.",
+					participant_score, threshold
+				)));
+			}
 		},
 		Action::Remove => {
 			bandada_api.remove_member(&config.band_id, identity_commitment).await?;

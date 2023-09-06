@@ -62,8 +62,8 @@ use att_station::{
 use attestation::{AttestationEth, AttestationRaw, SignedAttestationRaw};
 use eigentrust_zk::{
 	circuits::{
-		dynamic_sets::native::EigenTrustSet, PoseidonNativeHasher, PoseidonNativeSponge,
-		HASHER_WIDTH, MIN_PEER_COUNT, NUM_BITS, NUM_LIMBS,
+		dynamic_sets::native::EigenTrustSet, threshold::native::Threshold, PoseidonNativeHasher,
+		PoseidonNativeSponge, HASHER_WIDTH, MIN_PEER_COUNT, NUM_BITS, NUM_LIMBS,
 	},
 	ecdsa::native::{EcdsaKeypair, PublicKey, Signature},
 	halo2::halo2curves::{
@@ -89,6 +89,7 @@ use ethers::{
 	types::{Filter, Log, H256},
 };
 use log::{info, warn};
+use num_rational::BigRational;
 use serde::{Deserialize, Serialize};
 use std::{
 	collections::{BTreeSet, HashMap},
@@ -102,9 +103,9 @@ const NUM_ITERATIONS: usize = 20;
 /// Initial score for each participant before the algorithms is run.
 const INITIAL_SCORE: u128 = 1000;
 /// Number of limbs for representing big numbers in threshold checking.
-const _NUM_DECIMAL_LIMBS: usize = 2;
+const NUM_DECIMAL_LIMBS: usize = 2;
 /// Number of digits of each limbs for threshold checking.
-const _POWER_OF_TEN: usize = 72;
+const POWER_OF_TEN: usize = 72;
 /// Attestation domain value
 const DOMAIN: u128 = 42;
 
@@ -416,6 +417,23 @@ impl Client {
 	/// Gets signer.
 	pub fn get_signer(&self) -> Arc<ClientSigner> {
 		self.signer.clone()
+	}
+
+	/// Verifies if a participant's score surpasses the score threshold.
+	pub fn verify_threshold(score: u64, score_num: u64, score_den: u64, threshold: u64) -> bool {
+		let score_fr = Scalar::from(score);
+		let threshold_fr = Scalar::from(threshold);
+		let score_ratio = BigRational::new(score_num.into(), score_den.into());
+
+		let th_circuit: Threshold<
+			Scalar,
+			NUM_DECIMAL_LIMBS,
+			POWER_OF_TEN,
+			MAX_NEIGHBOURS,
+			INITIAL_SCORE,
+		> = Threshold::new(score_fr, score_ratio, threshold_fr);
+
+		th_circuit.check_threshold()
 	}
 }
 
