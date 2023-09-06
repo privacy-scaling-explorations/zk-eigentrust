@@ -284,33 +284,32 @@ impl<
 			},
 		)?;
 
-		// // verify if the "sets" & "scores" are valid, using aggregation verify
-		// // TODO: Uncomment the following verification when the halo2 aggregator issue is fixed.
-		// let aggregator =
-		// 	AggregatorChipset::new(self.svk, self.snarks.clone(), self.as_proof.clone());
-		// let halo2_agg_limbs = aggregator.synthesize(
-		// 	&config.common,
-		// 	&config.aggregator,
-		// 	layouter.namespace(|| "aggregation"),
-		// )?;
-		// layouter.assign_region(
-		// 	|| "native_agg_limbs == halo2_agg_limbs",
-		// 	|region| {
-		// 		let mut ctx = RegionCtx::new(region, 0);
-		// 		for i in 0..halo2_agg_limbs.len() {
-		// 			let native_limb = ctx.assign_from_instance(
-		// 				config.common.advice[0],
-		// 				config.common.instance,
-		// 				3 + i,
-		// 			)?;
-		// 			let halo2_limb =
-		// 				ctx.copy_assign(config.common.advice[1], halo2_agg_limbs[i].clone())?;
-		// 			ctx.constrain_equal(native_limb, halo2_limb)?;
-		// 		}
+		// verify if the "sets" & "scores" are valid, using aggregation verify
+		let aggregator =
+			AggregatorChipset::new(self.svk, self.snarks.clone(), self.as_proof.clone());
+		let halo2_agg_limbs = aggregator.synthesize(
+			&config.common,
+			&config.aggregator,
+			layouter.namespace(|| "aggregation"),
+		)?;
+		layouter.assign_region(
+			|| "native_agg_limbs == halo2_agg_limbs",
+			|region| {
+				let mut ctx = RegionCtx::new(region, 0);
+				for i in 0..halo2_agg_limbs.len() {
+					let native_limb = ctx.assign_from_instance(
+						config.common.advice[0],
+						config.common.instance,
+						3 + i,
+					)?;
+					let halo2_limb =
+						ctx.copy_assign(config.common.advice[1], halo2_agg_limbs[i].clone())?;
+					ctx.constrain_equal(native_limb, halo2_limb)?;
+				}
 
-		// 		Ok(())
-		// 	},
-		// )?;
+				Ok(())
+			},
+		)?;
 
 		// obtain the score of "target_addr" from "scores", using SetPositionChip & SelectItemChip
 		let set_pos_chip = SetPositionChip::new(sets, target_addr);
