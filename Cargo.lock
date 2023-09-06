@@ -916,6 +916,7 @@ dependencies = [
  "eigentrust-zk",
  "ethers",
  "log",
+ "num-rational",
  "rand",
  "serde",
  "serde_json",
