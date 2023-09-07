@@ -85,7 +85,7 @@ use ethers::{
 	prelude::EthDisplay,
 	providers::{Http, Middleware, Provider},
 	signers::{coins_bip39::English, LocalWallet, MnemonicBuilder, Signer},
-	types::{Filter, Log, H256},
+	types::{Filter, Log, H160, H256},
 };
 use log::{info, warn};
 use num_rational::BigRational;
@@ -289,9 +289,9 @@ impl Client {
 		}
 
 		// Build domain
-		let domain_bytes: H256 = H256::from_str(&self.config.domain)
-			.map_err(|e| EigenError::ParsingError(e.to_string()))?;
-		let domain = Scalar::from_bytes(domain_bytes.as_fixed_bytes()).unwrap();
+		let domain_bytes: H160 = H160::from_str(&self.config.domain)
+			.map_err(|e| EigenError::ParsingError(format!("Error parsing domain: {}", e)))?;
+		let domain = Scalar::from_bytes(H256::from(domain_bytes).as_fixed_bytes()).unwrap();
 
 		// Initialize EigenTrustSet
 		let mut eigen_trust_set = EigenTrustSet::<
