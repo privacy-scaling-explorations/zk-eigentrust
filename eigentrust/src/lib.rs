@@ -356,16 +356,13 @@ impl Client {
 				let score_bytes = score_rat.to_integer().to_bytes_be().1;
 
 				let mut numerator: [u8; 32] = [0; 32];
-				let num_offset = 32 - num_bytes.len();
-				numerator[num_offset..].copy_from_slice(&num_bytes);
+				numerator[32 - num_bytes.len()..].copy_from_slice(&num_bytes);
 
 				let mut denominator: [u8; 32] = [0; 32];
-				let den_offset = 32 - den_bytes.len();
-				denominator[den_offset..].copy_from_slice(&den_bytes);
+				denominator[32 - den_bytes.len()..].copy_from_slice(&den_bytes);
 
 				let mut score_hex: [u8; 32] = [0; 32];
-				let score_offset = 32 - score_bytes.len();
-				score_hex[score_offset..].copy_from_slice(&score_bytes);
+				score_hex[32 - score_bytes.len()..].copy_from_slice(&score_bytes);
 
 				Score { address, score_fr: scalar, score_rat: (numerator, denominator), score_hex }
 			})
