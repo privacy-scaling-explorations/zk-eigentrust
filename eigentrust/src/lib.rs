@@ -68,7 +68,6 @@ use eigentrust_zk::{
 	ecdsa::native::{EcdsaKeypair, PublicKey, Signature},
 	halo2::halo2curves::{
 		bn256,
-		ff::PrimeField,
 		secp256k1::{Fq, Secp256k1Affine},
 	},
 	params::{
@@ -93,6 +92,7 @@ use num_rational::BigRational;
 use serde::{Deserialize, Serialize};
 use std::{
 	collections::{BTreeSet, HashMap},
+	str::FromStr,
 	sync::Arc,
 };
 
@@ -106,8 +106,6 @@ const INITIAL_SCORE: u128 = 1000;
 const NUM_DECIMAL_LIMBS: usize = 2;
 /// Number of digits of each limbs for threshold checking.
 const POWER_OF_TEN: usize = 72;
-/// Attestation domain value
-const DOMAIN: u128 = 42;
 
 /// Client Signer.
 pub type ClientSigner = SignerMiddleware<Provider<Http>, LocalWallet>;
@@ -290,7 +288,11 @@ impl Client {
 			attestation_matrix[attester_pos][attested_pos] = Some(signed_attestation_fr);
 		}
 
-		let domain = Scalar::from_u128(DOMAIN);
+		// Build domain
+		let domain_bytes: H256 = H256::from_str(&self.config.domain)
+			.map_err(|e| EigenError::ParsingError(e.to_string()))?;
+		let domain = Scalar::from_bytes(domain_bytes.as_fixed_bytes()).unwrap();
+
 		// Initialize EigenTrustSet
 		let mut eigen_trust_set = EigenTrustSet::<
 			MAX_NEIGHBOURS,
