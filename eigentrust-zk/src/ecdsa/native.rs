@@ -96,12 +96,12 @@ where
 		let rev_y: Vec<u8> = y.iter().rev().cloned().collect();
 		let pub_key = [rev_x, rev_y].concat();
 
-		// Hash and get first 20 bytes.
-		let hashed_public_key = Keccak256::digest(&pub_key);
-		let original_address_slice: &[u8] = &hashed_public_key[hashed_public_key.len() - 20..];
+		// Hash and get the last 20 bytes.
+		let pub_key_hash = Keccak256::digest(pub_key);
+		let address: &[u8] = &pub_key_hash[pub_key_hash.len() - 20..];
 
 		// Get little endian address
-		let le_address: Vec<u8> = original_address_slice.iter().rev().cloned().collect();
+		let le_address: Vec<u8> = address.iter().rev().cloned().collect();
 
 		// Build fixed-size array.
 		let mut address = [0u8; 64];
