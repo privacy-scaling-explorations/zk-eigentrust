@@ -15,11 +15,7 @@ use crate::{
 };
 use halo2::{
 	circuit::{AssignedCell, Layouter, Region, Value},
-	halo2curves::{
-		bn256::{Bn256, G1Affine},
-		pairing::MultiMillerLoop,
-		CurveAffine,
-	},
+	halo2curves::CurveAffine,
 	plonk::Error,
 };
 use itertools::Itertools;
@@ -28,6 +24,7 @@ use snark_verifier::{
 		kzg::{Gwc19, KzgAs, KzgSuccinctVerifyingKey},
 		AccumulationScheme,
 	},
+	util::arithmetic::MultiMillerLoop,
 	verifier::{
 		plonk::{PlonkProtocol, PlonkSuccinctVerifier},
 		SnarkVerifier,
@@ -42,33 +39,26 @@ pub type Svk<C> = KzgSuccinctVerifyingKey<C>;
 
 #[derive(Debug, Clone)]
 /// UnassignedSnark structure
-pub struct UnassignedSnark<C: CurveAffine, P, const WIDTH: usize, S, EC, E>
+pub struct UnassignedSnark<E>
 where
-	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
-	S: SpongeHasherChipset<C::Scalar, WIDTH>,
-	EC: EccParams<C>,
 	E: MultiMillerLoop,
-	C::Base: FieldExt,
-	C::Scalar: FieldExt,
+	E::Scalar: FieldExt,
 {
-	protocol: PlonkProtocol<C>,
-	instances: Vec<Vec<Value<C::Scalar>>>,
+	protocol: PlonkProtocol<E::G1Affine>,
+	instances: Vec<Vec<Value<E::Scalar>>>,
 	proof: Option<Vec<u8>>,
-	_p: PhantomData<(P, S, EC, E)>,
 }
 
-impl<C: CurveAffine, P, const WIDTH: usize, S, SN, EC, E> From<Snark<C, P, WIDTH, SN, EC, E>>
-	for UnassignedSnark<C, P, WIDTH, S, EC, E>
+impl<E, P, S, EC> From<Snark<E, P, S, EC>> for UnassignedSnark<E>
 where
-	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
-	S: SpongeHasherChipset<C::Scalar, WIDTH>,
-	SN: SpongeHasher<C::Scalar>,
-	EC: EccParams<C>,
 	E: MultiMillerLoop,
-	C::Base: FieldExt,
-	C::Scalar: FieldExt,
+	P: RnsParams<<E::G1Affine as CurveAffine>::Base, E::Scalar, NUM_LIMBS, NUM_BITS>,
+	S: SpongeHasher<E::Scalar>,
+	EC: EccParams<E::G1Affine>,
+	<E::G1Affine as CurveAffine>::Base: FieldExt,
+	E::Scalar: FieldExt,
 {
-	fn from(snark: Snark<C, P, WIDTH, SN, EC, E>) -> Self {
+	fn from(snark: Snark<E, P, S, EC>) -> Self {
 		Self {
 			protocol: snark.protocol,
 			instances: snark
@@ -77,19 +67,14 @@ where
 				.map(|instances| instances.into_iter().map(Value::known).collect_vec())
 				.collect(),
 			proof: Some(snark.proof),
-			_p: PhantomData,
 		}
 	}
 }
 
-impl<C: CurveAffine, P, const WIDTH: usize, S, EC, E> UnassignedSnark<C, P, WIDTH, S, EC, E>
+impl<E> UnassignedSnark<E>
 where
-	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
-	S: SpongeHasherChipset<C::Scalar, WIDTH>,
-	EC: EccParams<C>,
 	E: MultiMillerLoop,
-	C::Base: FieldExt,
-	C::Scalar: FieldExt,
+	E::Scalar: FieldExt,
 {
 	fn without_witness(&self) -> Self {
 		UnassignedSnark {
@@ -100,7 +85,6 @@ where
 				.map(|instances| vec![Value::unknown(); instances.len()])
 				.collect(),
 			proof: None,
-			_p: PhantomData,
 		}
 	}
 
@@ -111,51 +95,50 @@ where
 
 #[derive(Debug)]
 /// AggregatorChipset
-pub struct AggregatorChipset<C: CurveAffine, P, const WIDTH: usize, S, EC, E>
+pub struct AggregatorChipset<E, P, S, EC>
 where
-	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
-	S: SpongeHasherChipset<C::Scalar, WIDTH>,
-	EC: EccParams<C>,
 	E: MultiMillerLoop,
-	C::Base: FieldExt,
-	C::Scalar: FieldExt,
+	P: RnsParams<<E::G1Affine as CurveAffine>::Base, E::Scalar, NUM_LIMBS, NUM_BITS>,
+	S: SpongeHasherChipset<E::Scalar>,
+	EC: EccParams<E::G1Affine>,
+	<E::G1Affine as CurveAffine>::Base: FieldExt,
+	E::Scalar: FieldExt,
 {
 	// Succinct Verifying Key
-	svk: Svk,
+	svk: Svk<E::G1Affine>,
 	// Snarks for the aggregation
-	snarks: Vec<UnassignedSnark<C, P, WIDTH, S, EC, E>>,
+	snarks: Vec<UnassignedSnark<E>>,
 	// Accumulation Scheme Proof
 	as_proof: Option<Vec<u8>>,
 	// Phantom Data
 	_p: PhantomData<(P, S, EC, E)>,
 }
 
-impl<C: CurveAffine, P, const WIDTH: usize, S, EC, E> AggregatorChipset<C, P, WIDTH, S, EC, E>
+impl<E, P, S, EC> AggregatorChipset<E, P, S, EC>
 where
-	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
-	S: SpongeHasherChipset<C::Scalar, WIDTH>,
-	EC: EccParams<C>,
 	E: MultiMillerLoop,
-	C::Base: FieldExt,
-	C::Scalar: FieldExt,
+	P: RnsParams<<E::G1Affine as CurveAffine>::Base, E::Scalar, NUM_LIMBS, NUM_BITS>,
+	S: SpongeHasherChipset<E::Scalar>,
+	EC: EccParams<E::G1Affine>,
+	<E::G1Affine as CurveAffine>::Base: FieldExt,
+	E::Scalar: FieldExt,
 {
 	/// Create a new aggregator.
 	pub fn new(
-		svk: Svk, snarks: Vec<UnassignedSnark<C, P, WIDTH, S, EC, E>>, as_proof: Option<Vec<u8>>,
+		svk: Svk<E::G1Affine>, snarks: Vec<UnassignedSnark<E>>, as_proof: Option<Vec<u8>>,
 	) -> Self {
 		Self { svk, snarks, as_proof, _p: PhantomData }
 	}
 }
 
-impl<C: CurveAffine, P, const WIDTH: usize, S, EC, E> Clone
-	for AggregatorChipset<C, P, WIDTH, S, EC, E>
+impl<E, P, S, EC> Clone for AggregatorChipset<E, P, S, EC>
 where
-	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
-	S: SpongeHasherChipset<C::Scalar, WIDTH>,
-	EC: EccParams<C>,
 	E: MultiMillerLoop,
-	C::Base: FieldExt,
-	C::Scalar: FieldExt,
+	P: RnsParams<<E::G1Affine as CurveAffine>::Base, E::Scalar, NUM_LIMBS, NUM_BITS>,
+	S: SpongeHasherChipset<E::Scalar>,
+	EC: EccParams<E::G1Affine>,
+	<E::G1Affine as CurveAffine>::Base: FieldExt,
+	E::Scalar: FieldExt,
 {
 	/// Returns a copy of the value.
 	fn clone(&self) -> Self {
@@ -170,9 +153,9 @@ where
 
 /// AggregatorConfig structure
 #[derive(Clone)]
-pub struct AggregatorConfig<F: FieldExt, S, const WIDTH: usize>
+pub struct AggregatorConfig<F: FieldExt, S>
 where
-	S: SpongeHasherChipset<F, WIDTH>,
+	S: SpongeHasherChipset<F>,
 {
 	// Configurations for the needed circuit configs.
 	pub(crate) main: MainConfig,
@@ -182,9 +165,9 @@ where
 	pub(crate) aux: AuxConfig,
 }
 
-impl<F: FieldExt, S, const WIDTH: usize> AggregatorConfig<F, S, WIDTH>
+impl<F: FieldExt, S> AggregatorConfig<F, S>
 where
-	S: SpongeHasherChipset<F, WIDTH>,
+	S: SpongeHasherChipset<F>,
 {
 	fn new(
 		main: MainConfig, sponge: S::Config, ecc_mul_scalar: EccMulConfig, ecc_add: EccAddConfig,
@@ -194,26 +177,25 @@ where
 	}
 }
 
-impl<C: CurveAffine, P, const WIDTH: usize, S, EC, E> Chipset<C::Scalar>
-	for AggregatorChipset<C, P, WIDTH, S, EC, E>
+impl<E, P, S, EC> Chipset<E::Scalar> for AggregatorChipset<E, P, S, EC>
 where
-	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
-	S: SpongeHasherChipset<C::Scalar, WIDTH>,
-	EC: EccParams<C>,
 	E: MultiMillerLoop,
-	C::Base: FieldExt,
-	C::Scalar: FieldExt,
+	P: RnsParams<<E::G1Affine as CurveAffine>::Base, E::Scalar, NUM_LIMBS, NUM_BITS>,
+	S: SpongeHasherChipset<E::Scalar>,
+	EC: EccParams<E::G1Affine>,
+	<E::G1Affine as CurveAffine>::Base: FieldExt,
+	E::Scalar: FieldExt,
 {
-	type Config = AggregatorConfig<C::ScalarExt, S, WIDTH>;
-	type Output = Vec<AssignedCell<C::Scalar, C::Scalar>>;
+	type Config = AggregatorConfig<E::Scalar, S>;
+	type Output = Vec<AssignedCell<E::Scalar, E::Scalar>>;
 
 	/// Synthesize the circuit.
 	fn synthesize(
-		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<C::Scalar>,
+		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<E::Scalar>,
 	) -> Result<Self::Output, Error> {
 		let assigned_instances = layouter.assign_region(
 			|| "assign_instances",
-			|region: Region<'_, C::Scalar>| {
+			|region: Region<'_, E::Scalar>| {
 				let mut ctx = RegionCtx::new(region, 0);
 
 				let mut advice_i = 0;
@@ -241,7 +223,7 @@ where
 		)?;
 
 		let accumulator_limbs = {
-			let loader_config = LoaderConfig::<'_, C, _, P, WIDTH, S, EC>::new(
+			let loader_config = LoaderConfig::<'_, E::G1Affine, _, P, S, EC>::new(
 				layouter.namespace(|| "loader"),
 				common.clone(),
 				config.ecc_mul_scalar.clone(),
@@ -266,7 +248,7 @@ where
 
 				let protocol = snark.protocol.loaded(&loader_config);
 
-				let mut transcript_read: TranscriptReadChipset<&[u8], C, _, P, WIDTH, S, EC> =
+				let mut transcript_read: TranscriptReadChipset<&[u8], E::G1Affine, _, P, S, EC> =
 					TranscriptReadChipset::new(snark.proof(), loader_config.clone());
 
 				let proof = PlonkSuccinctVerifier::<KzgAs<E, Gwc19>>::read_proof(
@@ -282,17 +264,14 @@ where
 			}
 
 			let as_proof = self.as_proof.as_deref();
-			let mut transcript: TranscriptReadChipset<&[u8], C, _, P, WIDTH, S, EC> =
+			let mut transcript: TranscriptReadChipset<&[u8], E::G1Affine, _, P, S, EC> =
 				TranscriptReadChipset::new(as_proof, loader_config);
-			let proof = KzgAs::<Bn256, Gwc19>::read_proof(
-				&Default::default(),
-				&accumulators,
-				&mut transcript,
-			)
-			.unwrap();
+			let proof =
+				KzgAs::<E, Gwc19>::read_proof(&Default::default(), &accumulators, &mut transcript)
+					.unwrap();
 
 			let accumulator =
-				KzgAs::<Bn256, Gwc19>::verify(&Default::default(), &accumulators, &proof).unwrap();
+				KzgAs::<E, Gwc19>::verify(&Default::default(), &accumulators, &proof).unwrap();
 
 			let lhs_x = accumulator.lhs.inner.x;
 			let lhs_y = accumulator.lhs.inner.y;
@@ -313,7 +292,7 @@ mod test {
 		native::NativeAggregator, AggregatorChipset, AggregatorConfig, Snark, Svk, UnassignedSnark,
 	};
 	use crate::{
-		circuits::{FullRoundHasher, PartialRoundHasher, HASHER_WIDTH},
+		circuits::{FullRoundHasher, PartialRoundHasher, PoseidonNativeSponge, HASHER_WIDTH},
 		ecc::{
 			AuxConfig, EccAddConfig, EccDoubleConfig, EccMulConfig, EccTableSelectConfig,
 			EccUnreducedLadderConfig,
@@ -326,7 +305,9 @@ mod test {
 		integer::{
 			IntegerAddChip, IntegerDivChip, IntegerMulChip, IntegerReduceChip, IntegerSubChip,
 		},
-		params::{hasher::poseidon_bn254_5x5::Params, rns::bn256::Bn256_4_68},
+		params::{
+			ecc::bn254::Bn254Params, hasher::poseidon_bn254_5x5::Params, rns::bn256::Bn256_4_68,
+		},
 		poseidon::{
 			sponge::{PoseidonSpongeConfig, StatefulSpongeChipset},
 			PoseidonConfig,
@@ -420,18 +401,22 @@ mod test {
 	#[derive(Clone)]
 	struct AggregatorTestCircuitConfig {
 		common: CommonConfig,
-		aggregator: AggregatorConfig<Fr, StatefulSpongeChipset<Fr, HASHER_WIDTH, Params>, 5>,
+		aggregator: AggregatorConfig<Fr, StatefulSpongeChipset<Fr, HASHER_WIDTH, Params>>,
 	}
 
 	#[derive(Clone)]
 	struct AggregatorTestCircuit {
-		svk: Svk,
-		snarks: Vec<UnassignedSnark<G1Affine>>,
+		svk: Svk<G1Affine>,
+		snarks: Vec<UnassignedSnark<Bn256>>,
 		as_proof: Option<Vec<u8>>,
 	}
 
 	impl AggregatorTestCircuit {
-		fn new(svk: Svk, snarks: Vec<Snark>, as_proof: Vec<u8>) -> Self {
+		fn new(
+			svk: Svk<G1Affine>,
+			snarks: Vec<Snark<Bn256, Bn256_4_68, PoseidonNativeSponge, Bn254Params>>,
+			as_proof: Vec<u8>,
+		) -> Self {
 			Self { svk, snarks: snarks.into_iter().map_into().collect(), as_proof: Some(as_proof) }
 		}
 	}
@@ -495,8 +480,12 @@ mod test {
 		fn synthesize(
 			&self, config: Self::Config, mut layouter: impl Layouter<Fr>,
 		) -> Result<(), Error> {
-			let aggregator_chipset =
-				AggregatorChipset::new(self.svk, self.snarks.clone(), self.as_proof.clone());
+			let aggregator_chipset = AggregatorChipset::<
+				Bn256,
+				Bn256_4_68,
+				StatefulSpongeChipset<Fr, HASHER_WIDTH, Params>,
+				Bn254Params,
+			>::new(self.svk, self.snarks.clone(), self.as_proof.clone());
 			let accumulator_limbs = aggregator_chipset.synthesize(
 				&config.common,
 				&config.aggregator,

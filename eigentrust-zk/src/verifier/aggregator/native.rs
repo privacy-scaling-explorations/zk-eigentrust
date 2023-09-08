@@ -13,10 +13,7 @@ use crate::{
 };
 use halo2::{
 	halo2curves::{
-		ff::WithSmallOrderMulGroup,
-		pairing::{Engine, MultiMillerLoop},
-		serde::SerdeObject,
-		CurveAffine,
+		ff::WithSmallOrderMulGroup, pairing::MultiMillerLoop, serde::SerdeObject, CurveAffine,
 	},
 	plonk::{create_proof, Circuit},
 	poly::{
@@ -43,7 +40,7 @@ use snark_verifier::{
 
 #[derive(Clone)]
 /// Snark structure
-pub struct Snark<E: Engine, P, S, EC>
+pub struct Snark<E, P, S, EC>
 where
 	E: MultiMillerLoop,
 	P: RnsParams<<E::G1Affine as CurveAffine>::Base, E::Scalar, NUM_LIMBS, NUM_BITS>,
@@ -62,7 +59,7 @@ where
 	_p: PhantomData<(P, S, EC, E)>,
 }
 
-impl<E: Engine, P, S, EC> Snark<E, P, S, EC>
+impl<E, P, S, EC> Snark<E, P, S, EC>
 where
 	E: MultiMillerLoop + Debug,
 	P: RnsParams<<E::G1Affine as CurveAffine>::Base, E::Scalar, NUM_LIMBS, NUM_BITS>,
@@ -101,7 +98,7 @@ where
 
 /// Native Aggregator
 #[derive(Clone)]
-pub struct NativeAggregator<E: Engine, P, S, EC>
+pub struct NativeAggregator<E, P, S, EC>
 where
 	E: MultiMillerLoop + Debug,
 	P: RnsParams<<E::G1Affine as CurveAffine>::Base, E::Scalar, NUM_LIMBS, NUM_BITS>,
@@ -124,7 +121,7 @@ where
 	_p: PhantomData<(P, S, EC, E)>,
 }
 
-impl<E: Engine, P, S, EC> NativeAggregator<E, P, S, EC>
+impl<E, P, S, EC> NativeAggregator<E, P, S, EC>
 where
 	E: MultiMillerLoop + Debug,
 	P: RnsParams<<E::G1Affine as CurveAffine>::Base, E::Scalar, NUM_LIMBS, NUM_BITS>,
