@@ -1,4 +1,4 @@
-use std::marker::PhantomData;
+use std::{fmt::Debug, marker::PhantomData};
 
 use super::{Psv, Svk};
 use crate::{
@@ -12,7 +12,12 @@ use crate::{
 	FieldExt, SpongeHasher,
 };
 use halo2::{
-	halo2curves::{pairing::MultiMillerLoop, CurveAffine},
+	halo2curves::{
+		ff::WithSmallOrderMulGroup,
+		pairing::{Engine, MultiMillerLoop},
+		serde::SerdeObject,
+		CurveAffine,
+	},
 	plonk::{create_proof, Circuit},
 	poly::{
 		commitment::ParamsProver,
@@ -38,45 +43,47 @@ use snark_verifier::{
 
 #[derive(Clone)]
 /// Snark structure
-pub struct Snark<CA: CurveAffine, P, const WIDTH: usize, S, EC, E>
+pub struct Snark<E: Engine, P, S, EC>
 where
-	P: RnsParams<CA::Base, CA::Scalar, NUM_LIMBS, NUM_BITS>,
-	S: SpongeHasher<CA::Scalar>,
-	EC: EccParams<CA>,
 	E: MultiMillerLoop,
-	CA::Base: FieldExt,
-	CA::Scalar: FieldExt,
+	P: RnsParams<<E::G1Affine as CurveAffine>::Base, E::Scalar, NUM_LIMBS, NUM_BITS>,
+	S: SpongeHasher<E::Scalar>,
+	EC: EccParams<E::G1Affine>,
+	<E::G1Affine as CurveAffine>::Base: FieldExt,
+	E::Scalar: FieldExt,
 {
 	/// Protocol
 	pub protocol: PlonkProtocol<E::G1Affine>,
 	/// Instances
-	pub instances: Vec<Vec<CA::Scalar>>,
+	pub instances: Vec<Vec<E::Scalar>>,
 	/// Proof
 	pub proof: Vec<u8>,
 	/// Phantom Datas
 	_p: PhantomData<(P, S, EC, E)>,
 }
 
-impl<CA: CurveAffine, P, const WIDTH: usize, S, EC, E> Snark<CA, P, WIDTH, S, EC, E>
+impl<E: Engine, P, S, EC> Snark<E, P, S, EC>
 where
-	P: RnsParams<CA::Base, CA::Scalar, NUM_LIMBS, NUM_BITS>,
-	S: SpongeHasher<CA::Scalar>,
-	EC: EccParams<CA>,
-	E: MultiMillerLoop,
-	CA::Base: FieldExt,
-	CA::Scalar: FieldExt,
+	E: MultiMillerLoop + Debug,
+	P: RnsParams<<E::G1Affine as CurveAffine>::Base, E::Scalar, NUM_LIMBS, NUM_BITS>,
+	S: SpongeHasher<E::Scalar>,
+	EC: EccParams<E::G1Affine>,
+	<E::G1Affine as CurveAffine>::Base: FieldExt,
+	E::Scalar: FieldExt + WithSmallOrderMulGroup<3>,
+	E::G1Affine: SerdeObject,
+	E::G2Affine: SerdeObject,
 {
 	/// Create a new Snark
-	pub fn new<C: Circuit<CA::Scalar>, R: RngCore>(
-		params: &ParamsKZG<E>, circuit: C, instances: Vec<Vec<CA::Scalar>>, rng: &mut R,
+	pub fn new<C: Circuit<E::Scalar>, R: RngCore>(
+		params: &ParamsKZG<E>, circuit: C, instances: Vec<Vec<E::Scalar>>, rng: &mut R,
 	) -> Self {
 		let pk = gen_pk(params, &circuit);
 		let config = Config::kzg().with_num_instance(vec![instances.len()]);
 
 		let protocol = compile(params, pk.get_vk(), config);
 
-		let instances_slice: Vec<&[CA::Scalar]> = instances.iter().map(|x| x.as_slice()).collect();
-		let mut transcript = NativeTranscriptWrite::<_, CA, P, S>::new(Vec::new());
+		let instances_slice: Vec<&[E::Scalar]> = instances.iter().map(|x| x.as_slice()).collect();
+		let mut transcript = NativeTranscriptWrite::<_, E::G1Affine, P, S>::new(Vec::new());
 		create_proof::<KZGCommitmentScheme<E>, ProverGWC<_>, _, _, _, _>(
 			params,
 			&pk,
@@ -94,55 +101,60 @@ where
 
 /// Native Aggregator
 #[derive(Clone)]
-pub struct NativeAggregator<C: CurveAffine, P, const WIDTH: usize, S, EC, E>
+pub struct NativeAggregator<E: Engine, P, S, EC>
 where
-	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
-	S: SpongeHasher<C::Scalar>,
-	EC: EccParams<C>,
-	E: MultiMillerLoop,
-	C::Base: FieldExt,
-	C::Scalar: FieldExt,
+	E: MultiMillerLoop + Debug,
+	P: RnsParams<<E::G1Affine as CurveAffine>::Base, E::Scalar, NUM_LIMBS, NUM_BITS>,
+	S: SpongeHasher<E::Scalar>,
+	EC: EccParams<E::G1Affine>,
+	<E::G1Affine as CurveAffine>::Base: FieldExt,
+	E::Scalar: FieldExt + WithSmallOrderMulGroup<3>,
+	E::G1Affine: SerdeObject,
+	E::G2Affine: SerdeObject,
 {
 	/// Succinct Verifying Key
-	pub svk: Svk,
+	pub svk: Svk<E::G1Affine>,
 	/// Snarks for the aggregation
-	pub snarks: Vec<Snark<C, P, WIDTH, S, EC, E>>,
+	pub snarks: Vec<Snark<E, P, S, EC>>,
 	/// Instances
-	pub instances: Vec<C::Scalar>,
+	pub instances: Vec<E::Scalar>,
 	/// Accumulation Scheme Proof
 	pub as_proof: Vec<u8>,
 	// Phantom Data
 	_p: PhantomData<(P, S, EC, E)>,
 }
 
-impl<C: CurveAffine, P, const WIDTH: usize, S, EC, E> NativeAggregator<C, P, WIDTH, S, EC, E>
+impl<E: Engine, P, S, EC> NativeAggregator<E, P, S, EC>
 where
-	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
-	S: SpongeHasher<C::Scalar>,
-	EC: EccParams<C>,
-	E: MultiMillerLoop,
-	C::Base: FieldExt,
-	C::Scalar: FieldExt,
+	E: MultiMillerLoop + Debug,
+	P: RnsParams<<E::G1Affine as CurveAffine>::Base, E::Scalar, NUM_LIMBS, NUM_BITS>,
+	S: SpongeHasher<E::Scalar>,
+	EC: EccParams<E::G1Affine>,
+	<E::G1Affine as CurveAffine>::Base: FieldExt,
+	E::Scalar: FieldExt + WithSmallOrderMulGroup<3>,
+	E::G1Affine: SerdeObject,
+	E::G2Affine: SerdeObject,
 {
 	/// Create a new aggregator.
-	pub fn new(params: &ParamsKZG<E>, snarks: Vec<Snark<C, P, WIDTH, S, EC, E>>) -> Self {
+	pub fn new(params: &ParamsKZG<E>, snarks: Vec<Snark<E, P, S, EC>>) -> Self {
 		let svk = params.get_g()[0].into();
 
 		let mut plonk_proofs = Vec::new();
 		for snark in &snarks {
-			let mut transcript_read: NativeTranscriptRead<_, C, P, S> =
+			let mut transcript_read: NativeTranscriptRead<_, E::G1Affine, P, S> =
 				NativeTranscriptRead::init(snark.proof.as_slice());
 
-			let proof = Psv::read_proof(
+			let proof = Psv::<E>::read_proof(
 				&svk, &snark.protocol, &snark.instances, &mut transcript_read,
 			)
 			.unwrap();
-			let res = Psv::verify(&svk, &snark.protocol, &snark.instances, &proof).unwrap();
+			let res = Psv::<E>::verify(&svk, &snark.protocol, &snark.instances, &proof).unwrap();
 
 			plonk_proofs.extend(res);
 		}
 
-		let mut transcript_write = NativeTranscriptWrite::<Vec<u8>, C, P, S>::new(Vec::new());
+		let mut transcript_write =
+			NativeTranscriptWrite::<Vec<u8>, E::G1Affine, P, S>::new(Vec::new());
 		let rng = &mut thread_rng();
 		let accumulator = KzgAs::<E, Gwc19>::create_proof(
 			&Default::default(),
@@ -154,7 +166,9 @@ where
 		let as_proof = transcript_write.finalize();
 
 		let KzgAccumulator { lhs, rhs } = accumulator;
-		let accumulator_limbs = [lhs.x, lhs.y, rhs.x, rhs.y]
+		let lhs_coord = lhs.coordinates().unwrap();
+		let rhs_coord = rhs.coordinates().unwrap();
+		let accumulator_limbs = [*lhs_coord.x(), *lhs_coord.y(), *rhs_coord.x(), *rhs_coord.y()]
 			.map(|v| Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_w(v).limbs)
 			.concat();
 
@@ -166,7 +180,7 @@ where
 		let mut accumulators = Vec::new();
 		for snark in self.snarks.iter() {
 			let snark_proof = snark.proof.clone();
-			let mut transcript_read: NativeTranscriptRead<_, C, P, S> =
+			let mut transcript_read: NativeTranscriptRead<_, E::G1Affine, P, S> =
 				NativeTranscriptRead::init(snark_proof.as_slice());
 			let proof = PlonkSuccinctVerifier::<KzgAs<E, Gwc19>>::read_proof(
 				&self.svk, &snark.protocol, &snark.instances, &mut transcript_read,
@@ -180,7 +194,7 @@ where
 		}
 
 		let as_proof = self.as_proof.clone();
-		let mut transcript: NativeTranscriptRead<_, C, P, S> =
+		let mut transcript: NativeTranscriptRead<_, E::G1Affine, P, S> =
 			NativeTranscriptRead::init(as_proof.as_slice());
 		let proof =
 			KzgAs::<E, Gwc19>::read_proof(&Default::default(), &accumulators, &mut transcript)
@@ -190,7 +204,9 @@ where
 			KzgAs::<E, Gwc19>::verify(&Default::default(), &accumulators, &proof).unwrap();
 
 		let KzgAccumulator { lhs, rhs } = accumulator;
-		let accumulator_limbs = [lhs.x, lhs.y, rhs.x, rhs.y]
+		let lhs_coord = lhs.coordinates().unwrap();
+		let rhs_coord = rhs.coordinates().unwrap();
+		let accumulator_limbs = [*lhs_coord.x(), *lhs_coord.y(), *rhs_coord.x(), *rhs_coord.y()]
 			.map(|v| Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_w(v).limbs)
 			.concat();
 
@@ -201,7 +217,12 @@ where
 #[cfg(test)]
 mod test {
 	use super::{NativeAggregator, Snark};
-	use crate::{utils::generate_params, CommonConfig, RegionCtx};
+	use crate::{
+		circuits::PoseidonNativeSponge,
+		params::{ecc::bn254::Bn254Params, rns::bn256::Bn256_4_68},
+		utils::generate_params,
+		CommonConfig, RegionCtx,
+	};
 	use halo2::{
 		circuit::{Layouter, Region, SimpleFloorPlanner, Value},
 		halo2curves::bn256::{Bn256, Fr},
@@ -293,7 +314,12 @@ mod test {
 		let instances_1: Vec<Vec<Fr>> = vec![vec![Fr::one()]];
 		let instances_2: Vec<Vec<Fr>> = vec![vec![Fr::one()]];
 
-		let snark_1 = Snark::new(&params, random_circuit_1, instances_1.clone(), rng);
+		let snark_1 = Snark::<Bn256, Bn256_4_68, PoseidonNativeSponge, Bn254Params>::new(
+			&params,
+			random_circuit_1,
+			instances_1.clone(),
+			rng,
+		);
 		let snark_2 = Snark::new(&params, random_circuit_2, instances_2.clone(), rng);
 
 		let snarks = vec![snark_1, snark_2];

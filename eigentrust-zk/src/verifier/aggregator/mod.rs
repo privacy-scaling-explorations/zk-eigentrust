@@ -1,5 +1,6 @@
 /// Native version of Aggregator
 pub mod native;
+
 use self::native::Snark;
 use super::loader::native::{NUM_BITS, NUM_LIMBS};
 use crate::{
@@ -35,9 +36,9 @@ use snark_verifier::{
 use std::marker::PhantomData;
 
 /// Plonk verifier
-pub type Psv = PlonkSuccinctVerifier<KzgAs<Bn256, Gwc19>>;
+pub type Psv<E> = PlonkSuccinctVerifier<KzgAs<E, Gwc19>>;
 /// KZG succinct verifying key
-pub type Svk = KzgSuccinctVerifyingKey<G1Affine>;
+pub type Svk<C> = KzgSuccinctVerifyingKey<C>;
 
 #[derive(Debug, Clone)]
 /// UnassignedSnark structure
