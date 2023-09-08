@@ -527,7 +527,7 @@ mod test {
 		let snark_2 = Snark::new(&params, random_circuit_2, instances_2, rng);
 
 		let snarks = vec![snark_1, snark_2];
-		let NativeAggregator { svk, snarks, instances, as_proof } =
+		let NativeAggregator { svk, snarks, instances, as_proof, .. } =
 			NativeAggregator::new(&params, snarks);
 
 		let aggregator_circuit = AggregatorTestCircuit::new(svk, snarks, as_proof);
