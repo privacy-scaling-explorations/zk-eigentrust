@@ -72,7 +72,6 @@ where
 		let mut hashes = Vec::new();
 		for i in 0..NUM_NEIGHBOURS {
 			let att = self.attestations[i].clone();
-
 			assert!(att.attestation.about == set[i]);
 			assert!(att.attestation.domain == self.domain);
 
