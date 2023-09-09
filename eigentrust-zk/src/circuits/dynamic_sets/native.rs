@@ -13,7 +13,7 @@ use num_traits::{FromPrimitive, One, Zero};
 use std::{collections::HashMap, marker::PhantomData};
 
 /// Attestation submission struct
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct SignedAttestation<
 	C: CurveAffine,
 	N: FieldExt,
