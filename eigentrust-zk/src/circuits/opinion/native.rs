@@ -73,10 +73,8 @@ where
 		for i in 0..NUM_NEIGHBOURS {
 			let att = self.attestations[i].clone();
 
-			if att != SignedAttestation::empty(self.domain) {
-				assert!(att.attestation.about == set[i]);
-				assert!(att.attestation.domain == self.domain);
-			}
+			assert!(att.attestation.about == set[i]);
+			assert!(att.attestation.domain == self.domain);
 
 			let att_hasher = H::new([
 				att.attestation.about,
