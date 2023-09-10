@@ -4,7 +4,7 @@ use crate::{
 	params::hasher::poseidon_bn254_5x5::Params,
 	poseidon::{
 		native::{sponge::PoseidonSponge, Poseidon},
-		sponge::PoseidonSpongeChipset,
+		sponge::StatefulSpongeChipset,
 		FullRoundChip, PartialRoundChip, PoseidonChipset,
 	},
 };
@@ -39,6 +39,6 @@ pub type PartialRoundHasher = PartialRoundChip<Scalar, HASHER_WIDTH, Params>;
 /// Full rounds of permuation chip
 pub type FullRoundHasher = FullRoundChip<Scalar, HASHER_WIDTH, Params>;
 /// Type alias for the poseidon spong chip with a width of 5 and bn254 params
-pub type SpongeHasher = PoseidonSpongeChipset<Scalar, HASHER_WIDTH, Params>;
+pub type SpongeHasher = StatefulSpongeChipset<Scalar, HASHER_WIDTH, Params>;
 /// Type alias for Eddsa chip on BabyJubJub elliptic curve
 pub type Eddsa = EddsaChipset<Scalar, BabyJubJub, Params>;

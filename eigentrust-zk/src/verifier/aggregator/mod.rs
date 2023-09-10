@@ -292,7 +292,7 @@ mod test {
 		native::NativeAggregator, AggregatorChipset, AggregatorConfig, Snark, Svk, UnassignedSnark,
 	};
 	use crate::{
-		circuits::{FullRoundHasher, PartialRoundHasher, PoseidonNativeSponge, HASHER_WIDTH},
+		circuits::{FullRoundHasher, PartialRoundHasher, PoseidonNativeSponge, SpongeHasher},
 		ecc::{
 			AuxConfig, EccAddConfig, EccDoubleConfig, EccMulConfig, EccTableSelectConfig,
 			EccUnreducedLadderConfig,
@@ -305,13 +305,8 @@ mod test {
 		integer::{
 			IntegerAddChip, IntegerDivChip, IntegerMulChip, IntegerReduceChip, IntegerSubChip,
 		},
-		params::{
-			ecc::bn254::Bn254Params, hasher::poseidon_bn254_5x5::Params, rns::bn256::Bn256_4_68,
-		},
-		poseidon::{
-			sponge::{PoseidonSpongeConfig, StatefulSpongeChipset},
-			PoseidonConfig,
-		},
+		params::{ecc::bn254::Bn254Params, rns::bn256::Bn256_4_68},
+		poseidon::{sponge::PoseidonSpongeConfig, PoseidonConfig},
 		utils::generate_params,
 		verifier::{
 			loader::native::{NUM_BITS, NUM_LIMBS},
@@ -329,7 +324,12 @@ mod test {
 	use itertools::Itertools;
 	use rand::thread_rng;
 
+	type E = Bn256;
+	type C = G1Affine;
 	type Scalar = Fr;
+	type W = Fq;
+	type P = Bn256_4_68;
+	type EC = Bn254Params;
 
 	#[derive(Clone)]
 	pub struct MulConfig {
@@ -401,27 +401,25 @@ mod test {
 	#[derive(Clone)]
 	struct AggregatorTestCircuitConfig {
 		common: CommonConfig,
-		aggregator: AggregatorConfig<Fr, StatefulSpongeChipset<Fr, HASHER_WIDTH, Params>>,
+		aggregator: AggregatorConfig<Scalar, SpongeHasher>,
 	}
 
 	#[derive(Clone)]
 	struct AggregatorTestCircuit {
-		svk: Svk<G1Affine>,
-		snarks: Vec<UnassignedSnark<Bn256>>,
+		svk: Svk<C>,
+		snarks: Vec<UnassignedSnark<E>>,
 		as_proof: Option<Vec<u8>>,
 	}
 
 	impl AggregatorTestCircuit {
 		fn new(
-			svk: Svk<G1Affine>,
-			snarks: Vec<Snark<Bn256, Bn256_4_68, PoseidonNativeSponge, Bn254Params>>,
-			as_proof: Vec<u8>,
+			svk: Svk<C>, snarks: Vec<Snark<E, P, PoseidonNativeSponge, EC>>, as_proof: Vec<u8>,
 		) -> Self {
 			Self { svk, snarks: snarks.into_iter().map_into().collect(), as_proof: Some(as_proof) }
 		}
 	}
 
-	impl Circuit<Fr> for AggregatorTestCircuit {
+	impl Circuit<Scalar> for AggregatorTestCircuit {
 		type Config = AggregatorTestCircuitConfig;
 		type FloorPlanner = SimpleFloorPlanner;
 
@@ -433,7 +431,7 @@ mod test {
 			}
 		}
 
-		fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
+		fn configure(meta: &mut ConstraintSystem<Scalar>) -> Self::Config {
 			let common = CommonConfig::new(meta);
 			let main_selector = MainChip::configure(&common, meta);
 			let main = MainConfig::new(main_selector);
@@ -442,22 +440,21 @@ mod test {
 			let partial_round_selector = PartialRoundHasher::configure(&common, meta);
 			let poseidon = PoseidonConfig::new(full_round_selector, partial_round_selector);
 
-			let absorb_selector = AbsorbChip::<Fr, WIDTH>::configure(&common, meta);
+			let absorb_selector = AbsorbChip::<Scalar, WIDTH>::configure(&common, meta);
 			let sponge = PoseidonSpongeConfig::new(poseidon, absorb_selector);
 
 			let bits2num = Bits2NumChip::configure(&common, meta);
 
-			let int_red = IntegerReduceChip::<Fq, Fr, NUM_LIMBS, NUM_BITS, Bn256_4_68>::configure(
-				&common, meta,
-			);
+			let int_red =
+				IntegerReduceChip::<W, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
 			let int_add =
-				IntegerAddChip::<Fq, Fr, NUM_LIMBS, NUM_BITS, Bn256_4_68>::configure(&common, meta);
+				IntegerAddChip::<W, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
 			let int_sub =
-				IntegerSubChip::<Fq, Fr, NUM_LIMBS, NUM_BITS, Bn256_4_68>::configure(&common, meta);
+				IntegerSubChip::<W, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
 			let int_mul =
-				IntegerMulChip::<Fq, Fr, NUM_LIMBS, NUM_BITS, Bn256_4_68>::configure(&common, meta);
+				IntegerMulChip::<W, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
 			let int_div =
-				IntegerDivChip::<Fq, Fr, NUM_LIMBS, NUM_BITS, Bn256_4_68>::configure(&common, meta);
+				IntegerDivChip::<W, Scalar, NUM_LIMBS, NUM_BITS, P>::configure(&common, meta);
 
 			let ecc_ladder = EccUnreducedLadderConfig::new(int_add, int_sub, int_mul, int_div);
 			let ecc_add = EccAddConfig::new(int_red, int_sub, int_mul, int_div);
@@ -478,14 +475,13 @@ mod test {
 		}
 
 		fn synthesize(
-			&self, config: Self::Config, mut layouter: impl Layouter<Fr>,
+			&self, config: Self::Config, mut layouter: impl Layouter<Scalar>,
 		) -> Result<(), Error> {
-			let aggregator_chipset = AggregatorChipset::<
-				Bn256,
-				Bn256_4_68,
-				StatefulSpongeChipset<Fr, HASHER_WIDTH, Params>,
-				Bn254Params,
-			>::new(self.svk, self.snarks.clone(), self.as_proof.clone());
+			let aggregator_chipset = AggregatorChipset::<E, P, SpongeHasher, EC>::new(
+				self.svk,
+				self.snarks.clone(),
+				self.as_proof.clone(),
+			);
 			let accumulator_limbs = aggregator_chipset.synthesize(
 				&config.common,
 				&config.aggregator,
@@ -505,13 +501,13 @@ mod test {
 		// Testing Aggregator
 		let rng = &mut thread_rng();
 		let k = 22;
-		let params = generate_params::<Bn256>(k);
+		let params = generate_params::<E>(k);
 
-		let random_circuit_1 = MulChip::new(Fr::one(), Fr::one());
-		let random_circuit_2 = MulChip::new(Fr::one(), Fr::one());
+		let random_circuit_1 = MulChip::new(Scalar::one(), Scalar::one());
+		let random_circuit_2 = MulChip::new(Scalar::one(), Scalar::one());
 
-		let instances_1: Vec<Vec<Fr>> = vec![vec![Fr::one()]];
-		let instances_2: Vec<Vec<Fr>> = vec![vec![Fr::one()]];
+		let instances_1: Vec<Vec<Scalar>> = vec![vec![Scalar::one()]];
+		let instances_2: Vec<Vec<Scalar>> = vec![vec![Scalar::one()]];
 
 		let snark_1 = Snark::new(&params, random_circuit_1, instances_1, rng);
 		let snark_2 = Snark::new(&params, random_circuit_2, instances_2, rng);
