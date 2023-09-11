@@ -68,7 +68,6 @@ use eigentrust_zk::{
 	ecdsa::native::{EcdsaKeypair, PublicKey, Signature},
 	halo2::halo2curves::{
 		bn256,
-		ff::PrimeField,
 		secp256k1::{Fq, Secp256k1Affine},
 	},
 	params::{
@@ -86,13 +85,14 @@ use ethers::{
 	prelude::EthDisplay,
 	providers::{Http, Middleware, Provider},
 	signers::{coins_bip39::English, LocalWallet, MnemonicBuilder, Signer},
-	types::{Filter, Log, H256},
+	types::{Filter, Log, H160, H256},
 };
 use log::{info, warn};
 use num_rational::BigRational;
 use serde::{Deserialize, Serialize};
 use std::{
 	collections::{BTreeSet, HashMap},
+	str::FromStr,
 	sync::Arc,
 };
 
@@ -106,8 +106,6 @@ const INITIAL_SCORE: u128 = 1000;
 const NUM_DECIMAL_LIMBS: usize = 2;
 /// Number of digits of each limbs for threshold checking.
 const POWER_OF_TEN: usize = 72;
-/// Attestation domain value
-const DOMAIN: u128 = 42;
 
 /// Client Signer.
 pub type ClientSigner = SignerMiddleware<Provider<Http>, LocalWallet>;
@@ -290,7 +288,11 @@ impl Client {
 			attestation_matrix[attester_pos][attested_pos] = Some(signed_attestation_fr);
 		}
 
-		let domain = Scalar::from_u128(DOMAIN);
+		// Build domain
+		let domain_bytes: H160 = H160::from_str(&self.config.domain)
+			.map_err(|e| EigenError::ParsingError(format!("Error parsing domain: {}", e)))?;
+		let domain = Scalar::from_bytes(H256::from(domain_bytes).as_fixed_bytes()).unwrap();
+
 		// Initialize EigenTrustSet
 		let mut eigen_trust_set = EigenTrustSet::<
 			MAX_NEIGHBOURS,
@@ -349,14 +351,18 @@ impl Client {
 				let mut scalar = score_fr.to_bytes();
 				scalar.reverse();
 
+				let num_bytes = score_rat.numer().to_bytes_be().1;
+				let den_bytes = score_rat.denom().to_bytes_be().1;
+				let score_bytes = score_rat.to_integer().to_bytes_be().1;
+
 				let mut numerator: [u8; 32] = [0; 32];
-				numerator.copy_from_slice(score_rat.numer().to_bytes_be().1.as_slice());
+				numerator[32 - num_bytes.len()..].copy_from_slice(&num_bytes);
 
 				let mut denominator: [u8; 32] = [0; 32];
-				denominator.copy_from_slice(score_rat.denom().to_bytes_be().1.as_slice());
+				denominator[32 - den_bytes.len()..].copy_from_slice(&den_bytes);
 
 				let mut score_hex: [u8; 32] = [0; 32];
-				score_hex.copy_from_slice(score_rat.to_integer().to_bytes_be().1.as_slice());
+				score_hex[32 - score_bytes.len()..].copy_from_slice(&score_bytes);
 
 				Score { address, score_fr: scalar, score_rat: (numerator, denominator), score_hex }
 			})

@@ -68,12 +68,9 @@ pub fn ecdsa_keypairs_from_mnemonic(
 
 /// Constructs an Ethereum address for the given ECDSA public key.
 pub fn address_from_ecdsa_key(pub_key: &ECDSAPublicKey) -> Address {
-	let address: Vec<u8> = pub_key.to_address().to_bytes().to_vec();
-
-	let mut address_array = [0; 20];
-	address_array.copy_from_slice(&address[0..20]);
-
-	Address::from(address_array)
+	let mut address_bytes = pub_key.to_address().to_bytes();
+	address_bytes[..20].reverse();
+	Address::from_slice(&address_bytes[0..20])
 }
 
 /// Constructs a Scalar from the given Ethereum address.
@@ -134,12 +131,16 @@ mod tests {
 			hex::decode(address_str).expect("Decoding failed").try_into().expect("Wrong length");
 
 		let keypairs = ecdsa_keypairs_from_mnemonic(TEST_MNEMONIC, 1).unwrap();
-		let recovered_address = keypairs[0].public_key.to_address().to_bytes().to_vec();
 
-		let mut recovered_address_bytes: [u8; 20] = [0; 20];
-		recovered_address_bytes.copy_from_slice(&recovered_address[0..20]);
+		// Get the little-endian address from the public key.
+		let le_address = keypairs[0].public_key.to_address().to_bytes();
 
-		assert_eq!(recovered_address_bytes, expected_address_bytes);
+		// Convert the first 20 bytes of the little-endian address back to the original format.
+		let mut rec_address_bytes: [u8; 20] = [0; 20];
+		rec_address_bytes.copy_from_slice(&le_address[0..20]);
+		rec_address_bytes.reverse();
+
+		assert_eq!(rec_address_bytes, expected_address_bytes);
 	}
 
 	#[test]

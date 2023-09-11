@@ -9,7 +9,7 @@ use crate::{
 };
 use csv::{ReaderBuilder, WriterBuilder};
 use ethers::{
-	types::{H160, H256},
+	types::{H160, H256, U256},
 	utils::hex,
 };
 use serde::Deserialize;
@@ -132,11 +132,11 @@ impl ScoreRecord {
 
 	/// Creates a new score record from a score.
 	pub fn from_score(score: Score) -> Self {
-		let peer_address = Self::to_hex_string(&score.address, true);
-		let score_fr_hex = Self::to_hex_string(&score.score_fr, true);
-		let numerator = Self::to_hex_string(&score.score_rat.0, false);
-		let denominator = Self::to_hex_string(&score.score_rat.1, false);
-		let score_hex = Self::to_hex_string(&score.score_hex, true);
+		let peer_address = format!("0x{}", hex::encode(score.address));
+		let score_fr_hex = format!("0x{}", hex::encode(score.score_fr));
+		let numerator = U256::from_big_endian(&score.score_rat.0).to_string();
+		let denominator = U256::from_big_endian(&score.score_rat.1).to_string();
+		let score_hex = U256::from_big_endian(&score.score_hex).to_string();
 
 		Self::new(
 			peer_address, score_fr_hex, numerator, denominator, score_hex,
@@ -166,16 +166,6 @@ impl ScoreRecord {
 	/// Returns the score.
 	pub fn score(&self) -> &String {
 		&self.score
-	}
-
-	/// Converts bytes to a hexadecimal string.
-	fn to_hex_string(bytes: &[u8], prefix: bool) -> String {
-		let hex_string = bytes.iter().map(|byte| format!("{:02x}", byte)).collect::<String>();
-		if prefix {
-			format!("0x{}", hex_string)
-		} else {
-			hex_string
-		}
 	}
 }
 
