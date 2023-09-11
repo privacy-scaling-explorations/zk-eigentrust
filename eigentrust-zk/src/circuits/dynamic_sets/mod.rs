@@ -50,7 +50,7 @@ use std::marker::PhantomData;
 pub struct EigenTrustSetConfig<F: FieldExt, H, S>
 where
 	H: HasherChipset<F, HASHER_WIDTH>,
-	S: SpongeHasherChipset<F, HASHER_WIDTH>,
+	S: SpongeHasherChipset<F>,
 {
 	common: CommonConfig,
 	main: MainConfig,
@@ -81,7 +81,7 @@ pub struct EigenTrustSet<
 	C::ScalarExt: FieldExt,
 	H: HasherChipset<N, HASHER_WIDTH>,
 	HN: Hasher<N, HASHER_WIDTH>,
-	SH: SpongeHasherChipset<N, HASHER_WIDTH>,
+	SH: SpongeHasherChipset<N>,
 {
 	// Attestation
 	attestations: Vec<Vec<UnassignedSignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>>>,
@@ -119,7 +119,7 @@ where
 	C::ScalarExt: FieldExt,
 	H: HasherChipset<N, HASHER_WIDTH>,
 	HN: Hasher<N, HASHER_WIDTH>,
-	SH: SpongeHasherChipset<N, HASHER_WIDTH>,
+	SH: SpongeHasherChipset<N>,
 {
 	/// Constructs a new EigenTrustSet circuit
 	pub fn new(
@@ -213,7 +213,7 @@ impl<
 	C::ScalarExt: FieldExt,
 	H: HasherChipset<N, HASHER_WIDTH>,
 	HN: Hasher<N, HASHER_WIDTH>,
-	SH: SpongeHasherChipset<N, HASHER_WIDTH>,
+	SH: SpongeHasherChipset<N>,
 {
 	type Config = EigenTrustSetConfig<N, H, SH>;
 	type FloorPlanner = SimpleFloorPlanner;

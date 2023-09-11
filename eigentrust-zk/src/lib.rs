@@ -112,7 +112,7 @@ pub trait HasherChipset<F: FieldExt, const WIDTH: usize>: Chipset<F> + Clone {
 }
 
 /// Sponge Hasher chipset trait
-pub trait SpongeHasherChipset<F: FieldExt, const WIDTH: usize>: Clone {
+pub trait SpongeHasherChipset<F: FieldExt>: Clone {
 	/// Config selectors for the sponge
 	type Config: Clone;
 	/// Creates a new sponge hasher chipset

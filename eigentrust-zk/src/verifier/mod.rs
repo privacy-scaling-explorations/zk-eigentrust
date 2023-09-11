@@ -1,8 +1,11 @@
 use halo2::{
 	dev::MockProver,
 	halo2curves::{
-		bn256::{Bn256, Fq, Fr, G1Affine},
+		ff::{FromUniformBytes, WithSmallOrderMulGroup},
 		group::ff::PrimeField,
+		pairing::Engine,
+		serde::SerdeObject,
+		CurveAffine,
 	},
 	plonk::{create_proof, keygen_pk, keygen_vk, Circuit, ProvingKey, VerifyingKey},
 	poly::{
@@ -21,9 +24,11 @@ use snark_verifier::{
 	loader::evm::{self, Address, EvmLoader, ExecutorBuilder},
 	pcs::kzg::{Gwc19, KzgAs},
 	system::halo2::{compile, transcript::evm::EvmTranscript, Config},
+	util::arithmetic::MultiMillerLoop,
 	verifier::{self, SnarkVerifier},
 };
-use std::rc::Rc;
+use std::{fmt::Debug, rc::Rc};
+use verifier::plonk::PlonkVerifier;
 
 /// PLONK proof aggregator
 pub mod aggregator;
@@ -31,8 +36,6 @@ pub mod aggregator;
 pub mod loader;
 /// Poseidon transcript
 pub mod transcript;
-
-type PlonkVerifier = verifier::plonk::PlonkVerifier<KzgAs<Bn256, Gwc19>>;
 
 /// Encode instances and proof into calldata.
 pub fn encode_calldata<F>(instances: &[Vec<F>], proof: &[u8]) -> Vec<u8>
@@ -53,29 +56,41 @@ where
 }
 
 /// Generate Public Key
-pub fn gen_pk<C: Circuit<Fr>>(params: &ParamsKZG<Bn256>, circuit: &C) -> ProvingKey<G1Affine> {
+pub fn gen_pk<E: Engine + Debug, C: Circuit<E::Scalar>>(
+	params: &ParamsKZG<E>, circuit: &C,
+) -> ProvingKey<E::G1Affine>
+where
+	E::Scalar: FromUniformBytes<64>,
+	E::G1Affine: SerdeObject,
+	E::G2Affine: SerdeObject,
+{
 	let vk = keygen_vk(params, circuit).unwrap();
 	keygen_pk(params, vk, circuit).unwrap()
 }
 
 /// Generate proof
-pub fn gen_proof<C: Circuit<Fr>>(
-	params: &ParamsKZG<Bn256>, pk: &ProvingKey<G1Affine>, circuit: C, instances: Vec<Vec<Fr>>,
-) -> Vec<u8> {
+pub fn gen_proof<E: Engine + Debug, C: Circuit<E::Scalar>>(
+	params: &ParamsKZG<E>, pk: &ProvingKey<E::G1Affine>, circuit: C, instances: Vec<Vec<E::Scalar>>,
+) -> Vec<u8>
+where
+	E::Scalar: PrimeField<Repr = [u8; 32]> + FromUniformBytes<64> + WithSmallOrderMulGroup<3> + Ord,
+	E::G1Affine: SerdeObject,
+	E::G2Affine: SerdeObject,
+{
 	MockProver::run(params.k(), &circuit, instances.clone()).unwrap().assert_satisfied();
 
 	let instances = instances.iter().map(|instances| instances.as_slice()).collect_vec();
 	let proof = {
-		let mut transcript = TranscriptWriterBuffer::<_, G1Affine, _>::init(Vec::new());
-		create_proof::<KZGCommitmentScheme<Bn256>, ProverGWC<_>, _, _, EvmTranscript<_, _, _, _>, _>(
-            params,
-            pk,
-            &[circuit],
-            &[instances.as_slice()],
-            OsRng,
-            &mut transcript,
-        )
-        .unwrap();
+		let mut transcript = TranscriptWriterBuffer::<_, E::G1Affine, _>::init(Vec::new());
+		create_proof::<KZGCommitmentScheme<E>, ProverGWC<_>, _, _, EvmTranscript<_, _, _, _>, _>(
+			params,
+			pk,
+			&[circuit],
+			&[instances.as_slice()],
+			OsRng,
+			&mut transcript,
+		)
+		.unwrap();
 		transcript.finalize()
 	};
 
@@ -83,38 +98,57 @@ pub fn gen_proof<C: Circuit<Fr>>(
 }
 
 /// Generate solidity verifier
-pub fn gen_evm_verifier(
-	params: &ParamsKZG<Bn256>, vk: &VerifyingKey<G1Affine>, num_instance: Vec<usize>,
-) -> Vec<u8> {
+pub fn gen_evm_verifier<E: Engine + Debug>(
+	params: &ParamsKZG<E>, vk: &VerifyingKey<E::G1Affine>, num_instance: Vec<usize>,
+) -> Vec<u8>
+where
+	E: MultiMillerLoop,
+	E::Scalar: PrimeField<Repr = [u8; 32]> + FromUniformBytes<64> + WithSmallOrderMulGroup<3> + Ord,
+	<E::G1Affine as CurveAffine>::Base: PrimeField<Repr = [u8; 32]>,
+	E::G1Affine: SerdeObject,
+	E::G2Affine: SerdeObject,
+{
 	let code = gen_evm_verifier_code(params, vk, num_instance);
 	evm::compile_yul(&code)
 }
 
 /// Generate solidity verifier
-pub fn gen_evm_verifier_code(
-	params: &ParamsKZG<Bn256>, vk: &VerifyingKey<G1Affine>, num_instance: Vec<usize>,
-) -> String {
+pub fn gen_evm_verifier_code<E: Engine + Debug>(
+	params: &ParamsKZG<E>, vk: &VerifyingKey<E::G1Affine>, num_instance: Vec<usize>,
+) -> String
+where
+	E: MultiMillerLoop,
+	E::Scalar: PrimeField<Repr = [u8; 32]> + FromUniformBytes<64> + WithSmallOrderMulGroup<3> + Ord,
+	<E::G1Affine as CurveAffine>::Base: PrimeField<Repr = [u8; 32]>,
+	E::G1Affine: SerdeObject,
+	E::G2Affine: SerdeObject,
+{
 	let protocol = compile(
 		params,
 		vk,
 		Config::kzg().with_num_instance(num_instance.clone()),
 	);
 
-	let loader = EvmLoader::new::<Fq, Fr>();
+	let loader = EvmLoader::new::<<E::G1Affine as CurveAffine>::Base, E::Scalar>();
 	let protocol = protocol.loaded(&loader);
 	let mut transcript = EvmTranscript::<_, Rc<EvmLoader>, _, _>::new(&loader);
 
 	let instances = transcript.load_instances(num_instance);
 	let vk = (params.get_g()[0], params.g2(), params.s_g2()).into();
 
-	let proof = PlonkVerifier::read_proof(&vk, &protocol, &instances, &mut transcript).unwrap();
-	PlonkVerifier::verify(&vk, &protocol, &instances, &proof).unwrap();
+	let proof =
+		PlonkVerifier::<KzgAs<E, Gwc19>>::read_proof(&vk, &protocol, &instances, &mut transcript)
+			.unwrap();
+	PlonkVerifier::<KzgAs<E, Gwc19>>::verify(&vk, &protocol, &instances, &proof).unwrap();
 
 	loader.yul_code()
 }
 
 /// Verify proof inside the smart contract
-pub fn evm_verify(deployment_code: Vec<u8>, instances: Vec<Vec<Fr>>, proof: Vec<u8>) {
+pub fn evm_verify<F>(deployment_code: Vec<u8>, instances: Vec<Vec<F>>, proof: Vec<u8>)
+where
+	F: PrimeField<Repr = [u8; 32]>,
+{
 	let calldata = encode_calldata(&instances, &proof);
 	let mut evm = ExecutorBuilder::default().with_gas_limit(u64::MAX.into()).build();
 
