@@ -62,9 +62,9 @@ use att_station::{
 use attestation::{AttestationEth, AttestationRaw, SignedAttestationRaw};
 use eigentrust_zk::{
 	circuits::{
-		dynamic_sets::native::EigenTrustSet, threshold::native::Threshold, EigenTrust4,
-		PoseidonNativeHasher, PoseidonNativeSponge, HASHER_WIDTH, MIN_PEER_COUNT, NUM_BITS,
-		NUM_LIMBS,
+		dynamic_sets::native::EigenTrustSet as NativeEigenTrustSet, dynamic_sets::EigenTrustSet,
+		threshold::native::Threshold, EigenTrust4, PoseidonHasher, PoseidonNativeHasher,
+		PoseidonNativeSponge, SpongeHasher, HASHER_WIDTH, MIN_PEER_COUNT, NUM_BITS, NUM_LIMBS,
 	},
 	ecdsa::native::{EcdsaKeypair, PublicKey, Signature},
 	halo2::{
@@ -73,6 +73,7 @@ use eigentrust_zk::{
 			bn256::{self, Bn256},
 			secp256k1::{Fq, Secp256k1Affine},
 		},
+		plonk::ProvingKey,
 		poly::{commitment::Params as KZGParams, kzg::commitment::ParamsKZG},
 		SerdeFormat,
 	},
@@ -80,7 +81,10 @@ use eigentrust_zk::{
 		ecc::secp256k1::Secp256k1Params, hasher::poseidon_bn254_5x5::Params,
 		rns::secp256k1::Secp256k1_4_68,
 	},
-	poseidon::native::Poseidon,
+	poseidon::{
+		native::{sponge::PoseidonSponge, Poseidon},
+		PoseidonChipset,
+	},
 	utils::{generate_params, keygen, prove},
 };
 use error::EigenError;
@@ -326,7 +330,7 @@ impl Client {
 		let domain = Scalar::from_bytes(H256::from(domain_bytes).as_fixed_bytes()).unwrap();
 
 		// Initialize EigenTrustSet
-		let mut eigen_trust_set = EigenTrustSet::<
+		let mut eigen_trust_set = NativeEigenTrustSet::<
 			MAX_NEIGHBOURS,
 			NUM_ITERATIONS,
 			INITIAL_SCORE,
@@ -404,7 +408,9 @@ impl Client {
 	}
 
 	/// Generates a proof for the EigenTrust global scores.
-	pub async fn generate_proof(&self, att: Vec<SignedAttestationRaw>) -> Result<(), EigenError> {
+	pub async fn generate_proof(
+		&self, att: Vec<SignedAttestationRaw>,
+	) -> Result<Vec<u8>, EigenError> {
 		// Parse attestation logs into signed attestation and attestation structs
 		let attestations: Vec<SignedAttestationEth> =
 			att.into_iter().map(|signed_raw| signed_raw.into()).collect();
@@ -464,7 +470,7 @@ impl Client {
 		let domain = Scalar::from_bytes(H256::from(domain_bytes).as_fixed_bytes()).unwrap();
 
 		// Initialize EigenTrustSet
-		let mut eigen_trust_set = EigenTrustSet::<
+		let mut eigen_trust_set = NativeEigenTrustSet::<
 			MAX_NEIGHBOURS,
 			NUM_ITERATIONS,
 			INITIAL_SCORE,
@@ -490,13 +496,21 @@ impl Client {
 			eigen_trust_set.add_member(*participant);
 		}
 
+		let mut opt_att = Vec::new();
+		let mut opt_pks = Vec::new();
+
 		// Update the set with the opinions of each participant
 		for i in 0..participants.len() {
 			let addr = participants[i];
+
 			if let Some(pk) = pks.get(&addr) {
 				let opinion = attestation_matrix[i].clone();
-				eigen_trust_set.update_op(pk.clone(), opinion);
+				eigen_trust_set.update_op(pk.clone(), opinion.clone());
 			}
+
+			let pk = pks.get(&addr).map(|pk| pk.clone());
+			opt_pks.push(pk);
+			opt_att.push(attestation_matrix[i].clone());
 		}
 
 		// Build public inputs
@@ -516,14 +530,56 @@ impl Client {
 		// Insert Domain
 		public_inputs.push(domain);
 
-		// TODO: Build new circuit
+		let et_circuit = EigenTrustSet::<
+			MAX_NEIGHBOURS,
+			NUM_ITERATIONS,
+			INITIAL_SCORE,
+			Secp256k1Affine,
+			Scalar,
+			NUM_LIMBS,
+			NUM_BITS,
+			Secp256k1_4_68,
+			Secp256k1Params,
+			PoseidonHasher,
+			PoseidonNativeHasher,
+			SpongeHasher,
+		>::new(opt_att, opt_pks, domain);
 
-		// TODO: Get pk
-		// let pk = keygen(&self.params, circuit)
+		let k = 20;
+		let raw_params = Client::generate_params(k);
+		let parsed_params: ParamsKZG<Bn256> =
+			ParamsKZG::<Bn256>::read(&mut raw_params.as_slice()).unwrap();
 
-		// let proof = prove::<Bn256, _, _>(&params, et_circuit, &[&public_inputs], &pk, rng).unwrap();
+		let raw_pk = Client::generate_et_pk(raw_params).unwrap();
+		let parsed_pk: ProvingKey<bn256::G1Affine> = ProvingKey::from_bytes::<
+			EigenTrustSet<
+				MAX_NEIGHBOURS,
+				NUM_ITERATIONS,
+				INITIAL_SCORE,
+				Secp256k1Affine,
+				Scalar,
+				NUM_LIMBS,
+				NUM_BITS,
+				Secp256k1_4_68,
+				Secp256k1Params,
+				PoseidonHasher,
+				PoseidonNativeHasher,
+				SpongeHasher,
+			>,
+		>(&raw_pk, SerdeFormat::Processed)
+		.unwrap();
 
-		Ok(())
+		let rng = &mut rand::thread_rng();
+		let proof = prove::<Bn256, _, _>(
+			&parsed_params,
+			et_circuit,
+			&[&public_inputs],
+			&parsed_pk,
+			rng,
+		)
+		.unwrap();
+
+		Ok(proof)
 	}
 
 	/// Fetches attestations from the contract.

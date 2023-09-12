@@ -262,6 +262,26 @@ pub async fn handle_bandada(config: &ClientConfig, data: BandadaData) -> Result<
 }
 
 /// Handle `scores` and `local_scores` commands.
+pub async fn handle_proof(config: ClientConfig) -> Result<(), EigenError> {
+	let mnemonic = load_mnemonic();
+	let client = Client::new(config, mnemonic);
+
+	let att_fp = get_file_path("attestations", FileType::Csv)?;
+
+	handle_attestations(client.get_config().clone()).await?;
+	let att_storage = CSVFileStorage::<AttestationRecord>::new(att_fp);
+	let attestations: Result<Vec<SignedAttestationRaw>, EigenError> =
+		att_storage.load()?.into_iter().map(|record| record.try_into()).collect();
+
+	// Generate proof
+	let proof: Vec<u8> = client.generate_proof(attestations?).await?;
+
+	println!("Proof: {:?}", proof);
+
+	Ok(())
+}
+
+/// Handle `scores` and `local_scores` commands.
 pub async fn handle_scores(
 	config: ClientConfig, origin: AttestationsOrigin,
 ) -> Result<(), EigenError> {

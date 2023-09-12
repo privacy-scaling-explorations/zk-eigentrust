@@ -60,7 +60,7 @@ async fn main() -> Result<(), EigenError> {
 			info!("AttestationStation deployed at {:?}", as_address);
 		},
 		Mode::LocalScores => handle_scores(config, AttestationsOrigin::Local).await?,
-		Mode::Proof => info!("Not implemented yet."),
+		Mode::Proof => handle_proof(config).await?,
 		Mode::Scores => handle_scores(config, AttestationsOrigin::Fetch).await?,
 		Mode::Show => info!("Client config:\n{:#?}", config),
 		Mode::Update(update_data) => handle_update(&mut config, update_data)?,
