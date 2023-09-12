@@ -33,7 +33,7 @@ use cli::*;
 use dotenv::dotenv;
 use eigentrust::{error::EigenError, eth::deploy_as, Client, ClientConfig};
 use env_logger::{init_from_env, Env};
-use fs::{load_config, load_mnemonic, load_params};
+use fs::{load_config, load_mnemonic};
 use log::{debug, info};
 
 #[tokio::main]
@@ -48,16 +48,14 @@ async fn main() -> Result<(), EigenError> {
 			debug!("Attesting:{:?}", attestation);
 
 			let mnemonic = load_mnemonic();
-			let params = load_params()?;
-			let client = Client::new(config, mnemonic, params);
+			let client = Client::new(config, mnemonic);
 			client.attest(attestation).await?;
 		},
 		Mode::Attestations => handle_attestations(config).await?,
 		Mode::Bandada(bandada_data) => handle_bandada(&config, bandada_data).await?,
 		Mode::Deploy => {
 			let mnemonic = load_mnemonic();
-			let params = load_params()?;
-			let client = Client::new(config, mnemonic, params);
+			let client = Client::new(config, mnemonic);
 			let as_address = deploy_as(client.get_signer()).await?;
 			info!("AttestationStation deployed at {:?}", as_address);
 		},

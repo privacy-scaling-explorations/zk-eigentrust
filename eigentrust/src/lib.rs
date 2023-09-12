@@ -165,12 +165,11 @@ pub struct Client {
 	signer: Arc<ClientSigner>,
 	config: ClientConfig,
 	mnemonic: String,
-	params: ParamsKZG<Bn256>,
 }
 
 impl Client {
 	/// Creates a new Client instance.
-	pub fn new(config: ClientConfig, mnemonic: String, params_bytes: Vec<u8>) -> Self {
+	pub fn new(config: ClientConfig, mnemonic: String) -> Self {
 		// Setup provider
 		let provider = Provider::<Http>::try_from(&config.node_url)
 			.expect("Failed to create provider from config node url");
@@ -188,10 +187,7 @@ impl Client {
 		// Arc for thread-safe sharing of signer
 		let shared_signer = Arc::new(signer);
 
-		let mut params_slice = params_bytes.as_slice();
-		let params = ParamsKZG::read(&mut params_slice).expect("Failed to read KZG params");
-
-		Self { signer: shared_signer, config, mnemonic, params }
+		Self { signer: shared_signer, config, mnemonic }
 	}
 
 	/// Generates new KZG params (Mostly used for testing)
@@ -622,7 +618,7 @@ mod lib_tests {
 			domain: "0x0000000000000000000000000000000000000000".to_string(),
 			node_url: anvil.endpoint().to_string(),
 		};
-		let client = Client::new(config, TEST_MNEMONIC.to_string(), Vec::new());
+		let client = Client::new(config, TEST_MNEMONIC.to_string());
 
 		// Deploy attestation station
 		let as_address = deploy_as(client.get_signer()).await.unwrap();
@@ -638,7 +634,7 @@ mod lib_tests {
 			node_url: anvil.endpoint().to_string(),
 		};
 
-		let updated_client = Client::new(updated_config, TEST_MNEMONIC.to_string(), Vec::new());
+		let updated_client = Client::new(updated_config, TEST_MNEMONIC.to_string());
 
 		// Attest
 		let attestation = AttestationRaw::new([0; 20], [0; 20], 5, [0; 32]);
@@ -659,7 +655,7 @@ mod lib_tests {
 			domain: "0x0000000000000000000000000000000000000000".to_string(),
 			node_url: anvil.endpoint().to_string(),
 		};
-		let client = Client::new(config, TEST_MNEMONIC.to_string(), Vec::new());
+		let client = Client::new(config, TEST_MNEMONIC.to_string());
 
 		// Deploy attestation station
 		let as_address = deploy_as(client.get_signer()).await.unwrap();
@@ -674,7 +670,7 @@ mod lib_tests {
 			domain: "0x0000000000000000000000000000000000000000".to_string(),
 			node_url: anvil.endpoint().to_string(),
 		};
-		let client = Client::new(config, TEST_MNEMONIC.to_string(), Vec::new());
+		let client = Client::new(config, TEST_MNEMONIC.to_string());
 
 		// Build Attestation
 		let about_bytes = [

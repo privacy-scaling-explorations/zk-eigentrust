@@ -163,7 +163,7 @@ impl FromStr for Action {
 /// Handle `attestations` command.
 pub async fn handle_attestations(config: ClientConfig) -> Result<(), EigenError> {
 	let mnemonic = load_mnemonic();
-	let client = Client::new(config, mnemonic, Vec::new());
+	let client = Client::new(config, mnemonic);
 
 	let attestations = client.get_attestations().await?;
 
@@ -266,7 +266,7 @@ pub async fn handle_scores(
 	config: ClientConfig, origin: AttestationsOrigin,
 ) -> Result<(), EigenError> {
 	let mnemonic = load_mnemonic();
-	let client = Client::new(config, mnemonic, Vec::new());
+	let client = Client::new(config, mnemonic);
 
 	let att_fp = get_file_path("attestations", FileType::Csv)?;
 

@@ -114,7 +114,7 @@ mod tests {
 			domain: "0x0000000000000000000000000000000000000000".to_string(),
 			node_url: anvil.endpoint().to_string(),
 		};
-		let client = Client::new(config, TEST_MNEMONIC.to_string(), Vec::new());
+		let client = Client::new(config, TEST_MNEMONIC.to_string());
 
 		// Deploy
 		let res = deploy_as(client.signer).await;
