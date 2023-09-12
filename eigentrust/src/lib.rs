@@ -62,16 +62,19 @@ use att_station::{
 use attestation::{AttestationEth, AttestationRaw, SignedAttestationRaw};
 use eigentrust_zk::{
 	circuits::{
-		dynamic_sets::native::EigenTrustSet, threshold::native::Threshold, PoseidonNativeHasher,
-		PoseidonNativeSponge, HASHER_WIDTH, MIN_PEER_COUNT, NUM_BITS, NUM_LIMBS,
+		dynamic_sets::native::EigenTrustSet, threshold::native::Threshold, EigenTrust4,
+		PoseidonNativeHasher, PoseidonNativeSponge, HASHER_WIDTH, MIN_PEER_COUNT, NUM_BITS,
+		NUM_LIMBS,
 	},
 	ecdsa::native::{EcdsaKeypair, PublicKey, Signature},
 	halo2::{
+		arithmetic::Field,
 		halo2curves::{
 			bn256::{self, Bn256},
 			secp256k1::{Fq, Secp256k1Affine},
 		},
 		poly::{commitment::Params as KZGParams, kzg::commitment::ParamsKZG},
+		SerdeFormat,
 	},
 	params::{
 		ecc::secp256k1::Secp256k1Params, hasher::poseidon_bn254_5x5::Params,
@@ -189,6 +192,31 @@ impl Client {
 		let params = ParamsKZG::read(&mut params_slice).expect("Failed to read KZG params");
 
 		Self { signer: shared_signer, config, mnemonic, params }
+	}
+
+	/// Generates new KZG params (Mostly used for testing)
+	pub fn generate_params(k: u32) -> Vec<u8> {
+		let params = generate_params::<Bn256>(k);
+		let mut buffer: Vec<u8> = Vec::new();
+		params.write(&mut buffer).expect("Failed to generate KZG params");
+		buffer
+	}
+
+	/// Generates new proving key for EigenTrust circuit
+	pub fn generate_et_pk(params_bytes: Vec<u8>) -> Result<Vec<u8>, EigenError> {
+		let rng = &mut rand::thread_rng();
+
+		let opt_att = vec![vec![None; NUM_ITERATIONS]; NUM_ITERATIONS];
+		let opt_pks = vec![None; NUM_ITERATIONS];
+		let domain = Scalar::random(rng);
+		let et = EigenTrust4::new(opt_att, opt_pks, domain);
+
+		let mut params_slice = params_bytes.as_slice();
+		let params =
+			ParamsKZG::<Bn256>::read(&mut params_slice).expect("Failed to read KZG params");
+		let pk = keygen(&params, et)
+			.map_err(|_| EigenError::KeygenError("Failed to generate pk/vk pair".to_string()))?;
+		Ok(pk.to_bytes(SerdeFormat::Processed))
 	}
 
 	/// Submits an attestation to the attestation station.
