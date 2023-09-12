@@ -66,16 +66,19 @@ use eigentrust_zk::{
 		PoseidonNativeSponge, HASHER_WIDTH, MIN_PEER_COUNT, NUM_BITS, NUM_LIMBS,
 	},
 	ecdsa::native::{EcdsaKeypair, PublicKey, Signature},
-	halo2::halo2curves::{
-		bn256::{self, Bn256},
-		secp256k1::{Fq, Secp256k1Affine},
+	halo2::{
+		halo2curves::{
+			bn256::{self, Bn256},
+			secp256k1::{Fq, Secp256k1Affine},
+		},
+		poly::{commitment::Params as KZGParams, kzg::commitment::ParamsKZG},
 	},
 	params::{
 		ecc::secp256k1::Secp256k1Params, hasher::poseidon_bn254_5x5::Params,
 		rns::secp256k1::Secp256k1_4_68,
 	},
 	poseidon::native::Poseidon,
-	utils::{generate_params, prove},
+	utils::{generate_params, keygen, prove},
 };
 use error::EigenError;
 use eth::{address_from_ecdsa_key, ecdsa_keypairs_from_mnemonic, scalar_from_address};
@@ -159,11 +162,12 @@ pub struct Client {
 	signer: Arc<ClientSigner>,
 	config: ClientConfig,
 	mnemonic: String,
+	params: ParamsKZG<Bn256>,
 }
 
 impl Client {
 	/// Creates a new Client instance.
-	pub fn new(config: ClientConfig, mnemonic: String) -> Self {
+	pub fn new(config: ClientConfig, mnemonic: String, params_bytes: Vec<u8>) -> Self {
 		// Setup provider
 		let provider = Provider::<Http>::try_from(&config.node_url)
 			.expect("Failed to create provider from config node url");
@@ -181,7 +185,10 @@ impl Client {
 		// Arc for thread-safe sharing of signer
 		let shared_signer = Arc::new(signer);
 
-		Self { signer: shared_signer, config, mnemonic }
+		let mut params_slice = params_bytes.as_slice();
+		let params = ParamsKZG::read(&mut params_slice).expect("Failed to read KZG params");
+
+		Self { signer: shared_signer, config, mnemonic, params }
 	}
 
 	/// Submits an attestation to the attestation station.
@@ -455,8 +462,8 @@ impl Client {
 		}
 
 		// Add participants to set
-		for participant in scalar_set {
-			eigen_trust_set.add_member(participant);
+		for participant in &scalar_set {
+			eigen_trust_set.add_member(*participant);
 		}
 
 		// Update the set with the opinions of each participant
@@ -469,7 +476,7 @@ impl Client {
 		}
 
 		// Build public inputs
-		let public_inputs = Vec::new();
+		let mut public_inputs = Vec::new();
 
 		// Insert scalar set
 		for scalar in scalar_set {
@@ -485,15 +492,12 @@ impl Client {
 		// Insert Domain
 		public_inputs.push(domain);
 
-		let k = 20;
-		let rng = &mut rand::thread_rng();
-		let params = generate_params(k);
-
 		// TODO: Build new circuit
 
 		// TODO: Get pk
+		// let pk = keygen(&self.params, circuit)
 
-		let proof = prove::<Bn256, _, _>(&params, et_circuit, &[&public_inputs], &pk, rng).unwrap();
+		// let proof = prove::<Bn256, _, _>(&params, et_circuit, &[&public_inputs], &pk, rng).unwrap();
 
 		Ok(())
 	}
@@ -590,7 +594,7 @@ mod lib_tests {
 			domain: "0x0000000000000000000000000000000000000000".to_string(),
 			node_url: anvil.endpoint().to_string(),
 		};
-		let client = Client::new(config, TEST_MNEMONIC.to_string());
+		let client = Client::new(config, TEST_MNEMONIC.to_string(), Vec::new());
 
 		// Deploy attestation station
 		let as_address = deploy_as(client.get_signer()).await.unwrap();
@@ -606,7 +610,7 @@ mod lib_tests {
 			node_url: anvil.endpoint().to_string(),
 		};
 
-		let updated_client = Client::new(updated_config, TEST_MNEMONIC.to_string());
+		let updated_client = Client::new(updated_config, TEST_MNEMONIC.to_string(), Vec::new());
 
 		// Attest
 		let attestation = AttestationRaw::new([0; 20], [0; 20], 5, [0; 32]);
@@ -627,7 +631,7 @@ mod lib_tests {
 			domain: "0x0000000000000000000000000000000000000000".to_string(),
 			node_url: anvil.endpoint().to_string(),
 		};
-		let client = Client::new(config, TEST_MNEMONIC.to_string());
+		let client = Client::new(config, TEST_MNEMONIC.to_string(), Vec::new());
 
 		// Deploy attestation station
 		let as_address = deploy_as(client.get_signer()).await.unwrap();
@@ -642,7 +646,7 @@ mod lib_tests {
 			domain: "0x0000000000000000000000000000000000000000".to_string(),
 			node_url: anvil.endpoint().to_string(),
 		};
-		let client = Client::new(config, TEST_MNEMONIC.to_string());
+		let client = Client::new(config, TEST_MNEMONIC.to_string(), Vec::new());
 
 		// Build Attestation
 		let about_bytes = [

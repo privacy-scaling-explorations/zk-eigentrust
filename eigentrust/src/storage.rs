@@ -106,6 +106,75 @@ impl<T: Serialize + DeserializeOwned + Clone> Storage<Vec<T>> for CSVFileStorage
 	}
 }
 
+/// The `JSONFileStorage` struct provides a mechanism for persisting
+/// and retrieving structured data to and from JSON files.
+pub struct JSONFileStorage<T> {
+	filepath: PathBuf,
+	phantom: PhantomData<T>,
+}
+
+impl<T> JSONFileStorage<T> {
+	/// Creates a new JSONFileStorage.
+	pub fn new(filepath: PathBuf) -> Self {
+		Self { filepath, phantom: PhantomData }
+	}
+
+	/// Returns the path to the file.
+	pub fn filepath(&self) -> &PathBuf {
+		&self.filepath
+	}
+}
+
+impl<T: Serialize + DeserializeOwned + Clone> Storage<T> for JSONFileStorage<T> {
+	type Err = EigenError;
+
+	fn load(&self) -> Result<T, Self::Err> {
+		let file = File::open(&self.filepath).map_err(EigenError::IOError)?;
+		let reader = BufReader::new(file);
+		from_reader(reader).map_err(|e| EigenError::ParsingError(e.to_string()))
+	}
+
+	fn save(&mut self, data: T) -> Result<(), Self::Err> {
+		let json_str = to_string(&data).map_err(|e| EigenError::ParsingError(e.to_string()))?;
+
+		let mut file = File::create(&self.filepath).map_err(EigenError::IOError)?;
+		file.write_all(json_str.as_bytes()).map_err(EigenError::IOError)
+	}
+}
+
+/// The `BinFileStorage` struct provides a mechanism for persisting
+/// and retrieving data to and from bin files.
+pub struct BinFileStorage {
+	filepath: PathBuf,
+}
+
+impl BinFileStorage {
+	/// Creates a new JSONFileStorage.
+	pub fn new(filepath: PathBuf) -> Self {
+		Self { filepath }
+	}
+
+	/// Returns the path to the file.
+	pub fn filepath(&self) -> &PathBuf {
+		&self.filepath
+	}
+}
+
+impl Storage<Vec<u8>> for BinFileStorage {
+	type Err = EigenError;
+
+	fn load(&self) -> Result<Vec<u8>, Self::Err> {
+		let file = File::open(&self.filepath).map_err(EigenError::IOError)?;
+		let reader = BufReader::new(file);
+		from_reader(reader).map_err(|e| EigenError::ParsingError(e.to_string()))
+	}
+
+	fn save(&mut self, data: Vec<u8>) -> Result<(), Self::Err> {
+		let mut file = File::create(&self.filepath).map_err(EigenError::IOError)?;
+		file.write_all(&data).map_err(EigenError::IOError)
+	}
+}
+
 /// Score record
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ScoreRecord {
@@ -245,42 +314,6 @@ pub fn str_to_32_byte_array(hex: &str) -> Result<[u8; 32], EigenError> {
 	H256::from_str(hex)
 		.map(|bytes| *bytes.as_fixed_bytes())
 		.map_err(|e| EigenError::ConversionError(e.to_string()))
-}
-
-/// The `JSONFileStorage` struct provides a mechanism for persisting
-/// and retrieving structured data to and from JSON files.
-pub struct JSONFileStorage<T> {
-	filepath: PathBuf,
-	phantom: PhantomData<T>,
-}
-
-impl<T> JSONFileStorage<T> {
-	/// Creates a new JSONFileStorage.
-	pub fn new(filepath: PathBuf) -> Self {
-		Self { filepath, phantom: PhantomData }
-	}
-
-	/// Returns the path to the file.
-	pub fn filepath(&self) -> &PathBuf {
-		&self.filepath
-	}
-}
-
-impl<T: Serialize + DeserializeOwned + Clone> Storage<T> for JSONFileStorage<T> {
-	type Err = EigenError;
-
-	fn load(&self) -> Result<T, Self::Err> {
-		let file = File::open(&self.filepath).map_err(EigenError::IOError)?;
-		let reader = BufReader::new(file);
-		from_reader(reader).map_err(|e| EigenError::ParsingError(e.to_string()))
-	}
-
-	fn save(&mut self, data: T) -> Result<(), Self::Err> {
-		let json_str = to_string(&data).map_err(|e| EigenError::ParsingError(e.to_string()))?;
-
-		let mut file = File::create(&self.filepath).map_err(EigenError::IOError)?;
-		file.write_all(json_str.as_bytes()).map_err(EigenError::IOError)
-	}
 }
 
 #[cfg(test)]

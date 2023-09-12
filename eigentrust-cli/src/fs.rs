@@ -5,7 +5,7 @@
 use dotenv::{dotenv, var};
 use eigentrust::{
 	error::EigenError,
-	storage::{JSONFileStorage, Storage},
+	storage::{BinFileStorage, JSONFileStorage, Storage},
 	ClientConfig,
 };
 use log::warn;
@@ -19,6 +19,8 @@ pub enum FileType {
 	Csv,
 	/// JSON file.
 	Json,
+	/// Binary file.
+	Bin,
 }
 
 impl FileType {
@@ -27,6 +29,7 @@ impl FileType {
 		match self {
 			FileType::Csv => "csv",
 			FileType::Json => "json",
+			FileType::Bin => "bin",
 		}
 	}
 }
@@ -68,4 +71,13 @@ pub fn load_mnemonic() -> String {
 		warn!("MNEMONIC environment variable is not set. Using default.");
 		DEFAULT_MNEMONIC.to_string()
 	})
+}
+
+/// Loads the parameter for constructing proving and veirifying keys
+pub fn load_params() -> Result<Vec<u8>, EigenError> {
+	let k = 20;
+	let filepath = get_file_path(&format!("params-{}", k), FileType::Bin)?;
+	let bin_storage = BinFileStorage::new(filepath);
+
+	bin_storage.load()
 }
