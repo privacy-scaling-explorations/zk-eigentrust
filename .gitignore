@@ -8,3 +8,4 @@
 # Assets
 /eigentrust-cli/assets/attestation_station.rs
 /eigentrust-cli/assets/params-*.bin
+/eigentrust-cli/assets/et_pk.bin
