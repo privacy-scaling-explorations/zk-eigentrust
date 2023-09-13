@@ -11,6 +11,7 @@ use clap::{Args, Parser, Subcommand};
 use eigentrust::{
 	attestation::{AttestationRaw, SignedAttestationRaw},
 	error::EigenError,
+	eth::deploy_as,
 	storage::{
 		str_to_20_byte_array, str_to_32_byte_array, AttestationRecord, BinFileStorage,
 		CSVFileStorage, JSONFileStorage, ScoreRecord, Storage,
@@ -18,7 +19,7 @@ use eigentrust::{
 	Client,
 };
 use ethers::{abi::Address, providers::Http, types::H160};
-use log::info;
+use log::{debug, info};
 use std::str::FromStr;
 
 #[derive(Parser)]
@@ -171,6 +172,19 @@ impl FromStr for Action {
 	}
 }
 
+/// Handle submitting an attestation
+pub async fn handle_attest(
+	config: ClientConfig, attest_data: AttestData,
+) -> Result<(), EigenError> {
+	let attestation = attest_data.to_attestation_raw(&config)?;
+	debug!("Attesting:{:?}", attestation);
+
+	let mnemonic = load_mnemonic();
+	let client = Client::new(config, mnemonic);
+	client.attest(attestation).await?;
+	Ok(())
+}
+
 /// Handle `attestations` command.
 pub async fn handle_attestations(config: ClientConfig) -> Result<(), EigenError> {
 	let mnemonic = load_mnemonic();
@@ -268,6 +282,16 @@ pub async fn handle_bandada(config: &ClientConfig, data: BandadaData) -> Result<
 			bandada_api.remove_member(&config.band_id, identity_commitment).await?;
 		},
 	}
+
+	Ok(())
+}
+
+/// Handle the deployment of AS contract
+pub async fn handle_deploy(config: ClientConfig) -> Result<(), EigenError> {
+	let mnemonic = load_mnemonic();
+	let client = Client::new(config, mnemonic);
+	let as_address = deploy_as(client.get_signer()).await?;
+	info!("AttestationStation deployed at {:?}", as_address);
 
 	Ok(())
 }
