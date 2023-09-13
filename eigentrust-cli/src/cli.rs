@@ -54,7 +54,7 @@ pub enum Mode {
 	/// Generate KZG parameters
 	GenerateParams(GenParamsData),
 	/// Generate proving key
-	GenerateEtProvingKey(GenPkData),
+	GenerateEtProvingKey,
 }
 
 /// Attestation subcommand input.
@@ -114,13 +114,6 @@ pub struct UpdateData {
 /// GenerateParams subcommand inputs
 #[derive(Args, Debug)]
 pub struct GenParamsData {
-	/// K parameter
-	k: u32,
-}
-
-/// GeneratePprovingKey subcommand inputs
-#[derive(Args, Debug)]
-pub struct GenPkData {
 	/// K parameter
 	k: u32,
 }
@@ -416,8 +409,8 @@ pub fn handle_gen_params(gen_params_data: GenParamsData) -> Result<(), EigenErro
 	bin_storage.save(params)
 }
 
-pub fn handle_gen_et_pk(gen_pk_data: GenPkData) -> Result<(), EigenError> {
-	let k = gen_pk_data.k;
+pub fn handle_gen_et_pk() -> Result<(), EigenError> {
+	let k = 22;
 
 	let params_filepath = get_file_path(&format!("params-{}", k), FileType::Bin)?;
 	let params_storage = BinFileStorage::new(params_filepath);
