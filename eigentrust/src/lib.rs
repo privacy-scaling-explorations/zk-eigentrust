@@ -272,7 +272,7 @@ impl Client {
 
 	/// Calculates the EigenTrust global scores.
 	pub async fn calculate_scores(
-		&self, att: Vec<SignedAttestationRaw>,
+		&self, att: Vec<SignedAttestationRaw>, pk: Vec<u8>,
 	) -> Result<Vec<Score>, EigenError> {
 		// Parse attestation logs into signed attestation and attestation structs
 		let attestations: Vec<SignedAttestationEth> =

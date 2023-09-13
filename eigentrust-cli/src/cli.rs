@@ -4,7 +4,7 @@
 
 use crate::{
 	bandada::BandadaApi,
-	fs::{get_file_path, load_mnemonic, FileType},
+	fs::{get_file_path, load_et_pk, load_mnemonic, FileType},
 	ClientConfig,
 };
 use clap::{Args, Parser, Subcommand};
@@ -331,9 +331,11 @@ pub async fn handle_scores(
 		},
 	};
 
+	let pk = load_et_pk()?;
+
 	// Calculate scores
 	let score_records: Vec<ScoreRecord> = client
-		.calculate_scores(attestations)
+		.calculate_scores(attestations, pk)
 		.await?
 		.into_iter()
 		.map(ScoreRecord::from_score)

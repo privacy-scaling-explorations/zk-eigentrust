@@ -81,3 +81,11 @@ pub fn load_params() -> Result<Vec<u8>, EigenError> {
 
 	bin_storage.load()
 }
+
+/// Loads the proving key
+pub fn load_et_pk() -> Result<Vec<u8>, EigenError> {
+	let filepath = get_file_path("et_pk", FileType::Bin)?;
+	let bin_storage = BinFileStorage::new(filepath);
+
+	bin_storage.load()
+}
