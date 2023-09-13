@@ -412,7 +412,7 @@ pub fn handle_gen_params(gen_params_data: GenParamsData) -> Result<(), EigenErro
 }
 
 pub fn handle_gen_et_pk() -> Result<(), EigenError> {
-	let k = 22;
+	let k = 20;
 
 	let params_filepath = get_file_path(&format!("params-{}", k), FileType::Bin)?;
 	let params_storage = BinFileStorage::new(params_filepath);
