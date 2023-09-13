@@ -65,6 +65,8 @@ async fn main() -> Result<(), EigenError> {
 		Mode::Show => info!("Client config:\n{:#?}", config),
 		Mode::Update(update_data) => handle_update(&mut config, update_data)?,
 		Mode::Verify => info!("Not implemented yet."),
+		Mode::GenerateParams(gen_params_data) => handle_gen_params(gen_params_data)?,
+		Mode::GenerateEtProvingKey(gen_pk_data) => handle_gen_et_pk(gen_pk_data)?,
 	};
 
 	Ok(())

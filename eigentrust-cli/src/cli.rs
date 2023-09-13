@@ -12,8 +12,8 @@ use eigentrust::{
 	attestation::{AttestationRaw, SignedAttestationRaw},
 	error::EigenError,
 	storage::{
-		str_to_20_byte_array, str_to_32_byte_array, AttestationRecord, CSVFileStorage,
-		JSONFileStorage, ScoreRecord, Storage,
+		str_to_20_byte_array, str_to_32_byte_array, AttestationRecord, BinFileStorage,
+		CSVFileStorage, JSONFileStorage, ScoreRecord, Storage,
 	},
 	Client,
 };
@@ -51,6 +51,10 @@ pub enum Mode {
 	Update(UpdateData),
 	/// Verify the proofs.
 	Verify,
+	/// Generate KZG parameters
+	GenerateParams(GenParamsData),
+	/// Generate proving key
+	GenerateEtProvingKey(GenPkData),
 }
 
 /// Attestation subcommand input.
@@ -105,6 +109,20 @@ pub struct UpdateData {
 	/// Ethereum node URL.
 	#[clap(long = "node")]
 	node_url: Option<String>,
+}
+
+/// GenerateParams subcommand inputs
+#[derive(Args, Debug)]
+pub struct GenParamsData {
+	/// K parameter
+	k: u32,
+}
+
+/// GeneratePprovingKey subcommand inputs
+#[derive(Args, Debug)]
+pub struct GenPkData {
+	/// K parameter
+	k: u32,
 }
 
 /// Bandada API action.
@@ -386,6 +404,32 @@ pub fn handle_update(config: &mut ClientConfig, data: UpdateData) -> Result<(), 
 	let mut json_storage = JSONFileStorage::<ClientConfig>::new(filepath);
 
 	json_storage.save(config.clone())
+}
+
+pub fn handle_gen_params(gen_params_data: GenParamsData) -> Result<(), EigenError> {
+	let k = gen_params_data.k;
+	let params = Client::generate_params(k);
+
+	let filepath = get_file_path(&format!("params-{}", k), FileType::Bin)?;
+	let mut bin_storage = BinFileStorage::new(filepath);
+
+	bin_storage.save(params)
+}
+
+pub fn handle_gen_et_pk(gen_pk_data: GenPkData) -> Result<(), EigenError> {
+	let k = gen_pk_data.k;
+
+	let params_filepath = get_file_path(&format!("params-{}", k), FileType::Bin)?;
+	let params_storage = BinFileStorage::new(params_filepath);
+
+	let params = params_storage.load()?;
+
+	let proving_key = Client::generate_et_pk(params)?;
+
+	let pk_filepath = get_file_path("et_pk", FileType::Bin)?;
+	let mut pk_storage = BinFileStorage::new(pk_filepath);
+
+	pk_storage.save(proving_key)
 }
 
 #[cfg(test)]
