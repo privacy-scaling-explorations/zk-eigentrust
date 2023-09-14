@@ -69,8 +69,8 @@ use eigentrust_zk::{
 	halo2::{
 		arithmetic::Field,
 		halo2curves::{
-			bn256::{self, Bn256},
-			secp256k1::Fq,
+			bn256::{Bn256, Fr as Scalar, G1Affine},
+			secp256k1::Fq as SecpScalar,
 		},
 		plonk::ProvingKey,
 		poly::{commitment::Params as KZGParams, kzg::commitment::ParamsKZG},
@@ -102,10 +102,6 @@ use std::{
 
 /// Client Signer.
 pub type ClientSigner = SignerMiddleware<Provider<Http>, LocalWallet>;
-/// Scalar type.
-pub type Scalar = bn256::Fr;
-/// SECP Scalar type.
-pub type SecpScalar = Fq;
 /// Outbound local trust vector.
 pub type OpinionVector = Vec<Option<SignedAttestationScalar>>;
 
@@ -446,16 +442,12 @@ impl Client {
 
 		// Generate proving key
 		let raw_prov_key = Client::generate_et_pk(raw_params).unwrap();
-		let proving_key: ProvingKey<bn256::G1Affine> =
+		let proving_key: ProvingKey<G1Affine> =
 			ProvingKey::from_bytes::<EigenTrust4>(&raw_prov_key, SerdeFormat::Processed).unwrap();
 
 		// Build public inputs
-		let pub_inputs = ETPublicInputs::new(
-			scalar_set,
-			scalar_scores.clone(),
-			scalar_domain,
-			opinions_hash,
-		);
+		let pub_inputs =
+			ETPublicInputs::new(scalar_set, scalar_scores, scalar_domain, opinions_hash);
 
 		let rng = &mut rand::thread_rng();
 		let proof = prove::<Bn256, _, _>(
