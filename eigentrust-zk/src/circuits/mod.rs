@@ -1,3 +1,4 @@
+use self::dynamic_sets::{native::EigenTrustSet as NativeEigenTrustSet, EigenTrustSet};
 use crate::{
 	eddsa::EddsaChipset,
 	edwards::params::BabyJubJub,
@@ -13,8 +14,6 @@ use crate::{
 };
 use halo2::halo2curves::{bn256::Fr as Scalar, secp256k1::Secp256k1Affine};
 use num_rational::BigRational;
-
-use self::dynamic_sets::EigenTrustSet;
 
 /// EigenTrustSet
 pub mod dynamic_sets;
@@ -53,6 +52,20 @@ pub type FullRoundHasher = FullRoundChip<Scalar, HASHER_WIDTH, Params>;
 pub type SpongeHasher = StatefulSpongeChipset<Scalar, HASHER_WIDTH, Params>;
 /// Type alias for Eddsa chip on BabyJubJub elliptic curve
 pub type Eddsa = EddsaChipset<Scalar, BabyJubJub, Params>;
+/// Native EigenTrust set with 4 participants
+pub type NativeEigenTrust4 = NativeEigenTrustSet<
+	NUM_NEIGHBOURS,
+	NUM_ITERATIONS,
+	INITIAL_SCORE,
+	Secp256k1Affine,
+	Scalar,
+	NUM_LIMBS,
+	NUM_BITS,
+	Secp256k1_4_68,
+	Secp256k1Params,
+	PoseidonNativeHasher,
+	PoseidonNativeSponge,
+>;
 /// EigenTrust set with 4 participants
 pub type EigenTrust4 = EigenTrustSet<
 	NUM_NEIGHBOURS,

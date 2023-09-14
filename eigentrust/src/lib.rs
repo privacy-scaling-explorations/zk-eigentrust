@@ -63,8 +63,8 @@ use attestation::{AttestationEth, AttestationRaw, SignedAttestationRaw};
 use eigentrust_zk::{
 	circuits::{
 		dynamic_sets::native::EigenTrustSet as NativeEigenTrustSet, threshold::native::Threshold,
-		EigenTrust4, PoseidonNativeHasher, PoseidonNativeSponge, HASHER_WIDTH, MIN_PEER_COUNT,
-		NUM_BITS, NUM_LIMBS,
+		EigenTrust4, NativeEigenTrust4, PoseidonNativeHasher, PoseidonNativeSponge, HASHER_WIDTH,
+		MIN_PEER_COUNT, NUM_BITS, NUM_LIMBS,
 	},
 	ecdsa::native::{EcdsaKeypair, PublicKey, Signature},
 	halo2::{
@@ -392,19 +392,7 @@ impl Client {
 		let scalar_domain = self.get_scalar_domain()?;
 
 		// Initialize Native Set
-		let mut native_et = NativeEigenTrustSet::<
-			MAX_NEIGHBOURS,
-			NUM_ITERATIONS,
-			INITIAL_SCORE,
-			Secp256k1Affine,
-			Scalar,
-			NUM_LIMBS,
-			NUM_BITS,
-			Secp256k1_4_68,
-			Secp256k1Params,
-			PoseidonNativeHasher,
-			PoseidonNativeSponge,
-		>::new(scalar_domain);
+		let mut native_et = NativeEigenTrust4::new(scalar_domain);
 
 		// Add participants to native set
 		for member in scalar_set.clone() {
