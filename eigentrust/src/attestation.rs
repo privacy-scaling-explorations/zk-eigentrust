@@ -7,12 +7,12 @@ use crate::{
 	att_station::AttestationCreatedFilter,
 	error::EigenError,
 	eth::{address_from_ecdsa_key, scalar_from_address},
-	ECDSAKeypair, ECDSAPublicKey, ECDSASignature, Scalar, SecpScalar,
+	Scalar, SecpScalar,
 };
 use eigentrust_zk::{
 	circuits::{
 		dynamic_sets::native::{Attestation, SignedAttestation},
-		HASHER_WIDTH, NUM_BITS, NUM_LIMBS,
+		ECDSAKeypair, ECDSAPublicKey, ECDSASignature, HASHER_WIDTH, NUM_BITS, NUM_LIMBS,
 	},
 	halo2::halo2curves::{ff::FromUniformBytes, secp256k1::Secp256k1Affine},
 	integer::native::Integer,

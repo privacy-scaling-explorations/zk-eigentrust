@@ -1,5 +1,9 @@
-use self::dynamic_sets::{native::EigenTrustSet as NativeEigenTrustSet, EigenTrustSet};
+use self::{
+	dynamic_sets::{native::EigenTrustSet as NativeEigenTrustSet, EigenTrustSet},
+	threshold::native::Threshold,
+};
 use crate::{
+	ecdsa::native::{EcdsaKeypair, PublicKey, Signature},
 	eddsa::EddsaChipset,
 	edwards::params::BabyJubJub,
 	params::{
@@ -38,6 +42,10 @@ pub const NUM_LIMBS: usize = 4;
 pub const NUM_BITS: usize = 68;
 /// Default width for the hasher used
 pub const HASHER_WIDTH: usize = 5;
+/// Number of limbs for representing big numbers in threshold checking.
+const NUM_DECIMAL_LIMBS: usize = 2;
+/// Number of digits of each limbs for threshold checking.
+const POWER_OF_TEN: usize = 72;
 /// Type alias for the native poseidon hasher with a width of 5 and bn254 params
 pub type PoseidonNativeHasher = Poseidon<Scalar, HASHER_WIDTH, Params>;
 /// Type alias for native poseidon sponge with a width of 5 and bn254 params
@@ -52,6 +60,15 @@ pub type FullRoundHasher = FullRoundChip<Scalar, HASHER_WIDTH, Params>;
 pub type SpongeHasher = StatefulSpongeChipset<Scalar, HASHER_WIDTH, Params>;
 /// Type alias for Eddsa chip on BabyJubJub elliptic curve
 pub type Eddsa = EddsaChipset<Scalar, BabyJubJub, Params>;
+/// ECDSA public key.
+pub type ECDSAPublicKey =
+	PublicKey<Secp256k1Affine, Scalar, NUM_LIMBS, NUM_BITS, Secp256k1_4_68, Secp256k1Params>;
+/// ECDSA keypair.
+pub type ECDSAKeypair =
+	EcdsaKeypair<Secp256k1Affine, Scalar, NUM_LIMBS, NUM_BITS, Secp256k1_4_68, Secp256k1Params>;
+/// ECDSA signature.
+pub type ECDSASignature = Signature<Secp256k1Affine, Scalar, NUM_LIMBS, NUM_BITS, Secp256k1_4_68>;
+
 /// Native EigenTrust set with 4 participants
 pub type NativeEigenTrust4 = NativeEigenTrustSet<
 	NUM_NEIGHBOURS,
@@ -81,3 +98,7 @@ pub type EigenTrust4 = EigenTrustSet<
 	PoseidonNativeHasher,
 	SpongeHasher,
 >;
+
+/// Native Threshold for scores computed in EigenTrust4
+pub type Threshold4 =
+	Threshold<Scalar, NUM_DECIMAL_LIMBS, POWER_OF_TEN, NUM_NEIGHBOURS, INITIAL_SCORE>;

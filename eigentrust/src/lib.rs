@@ -62,25 +62,20 @@ use att_station::{
 use attestation::{AttestationEth, AttestationRaw, SignedAttestationRaw};
 use eigentrust_zk::{
 	circuits::{
-		dynamic_sets::native::EigenTrustSet as NativeEigenTrustSet, threshold::native::Threshold,
-		EigenTrust4, NativeEigenTrust4, PoseidonNativeHasher, PoseidonNativeSponge, HASHER_WIDTH,
-		MIN_PEER_COUNT, NUM_BITS, NUM_LIMBS,
+		threshold::native::Threshold, ECDSAPublicKey, EigenTrust4, NativeEigenTrust4,
+		PoseidonNativeSponge, HASHER_WIDTH, MIN_PEER_COUNT,
 	},
-	ecdsa::native::{EcdsaKeypair, PublicKey, Signature},
 	halo2::{
 		arithmetic::Field,
 		halo2curves::{
 			bn256::{self, Bn256},
-			secp256k1::{Fq, Secp256k1Affine},
+			secp256k1::Fq,
 		},
 		plonk::ProvingKey,
 		poly::{commitment::Params as KZGParams, kzg::commitment::ParamsKZG},
 		SerdeFormat,
 	},
-	params::{
-		ecc::secp256k1::Secp256k1Params, hasher::poseidon_bn254_5x5::Params,
-		rns::secp256k1::Secp256k1_4_68,
-	},
+	params::hasher::poseidon_bn254_5x5::Params,
 	poseidon::native::Poseidon,
 	utils::{generate_params, keygen, prove},
 };
@@ -121,14 +116,6 @@ pub type ClientSigner = SignerMiddleware<Provider<Http>, LocalWallet>;
 pub type Scalar = bn256::Fr;
 /// SECP Scalar type.
 pub type SecpScalar = Fq;
-/// ECDSA public key.
-pub type ECDSAPublicKey =
-	PublicKey<Secp256k1Affine, Scalar, NUM_LIMBS, NUM_BITS, Secp256k1_4_68, Secp256k1Params>;
-/// ECDSA keypair.
-pub type ECDSAKeypair =
-	EcdsaKeypair<Secp256k1Affine, Scalar, NUM_LIMBS, NUM_BITS, Secp256k1_4_68, Secp256k1Params>;
-/// ECDSA signature.
-pub type ECDSASignature = Signature<Secp256k1Affine, Scalar, NUM_LIMBS, NUM_BITS, Secp256k1_4_68>;
 /// Outbound local trust vector.
 pub type OpinionVector = Vec<Option<SignedAttestationScalar>>;
 
