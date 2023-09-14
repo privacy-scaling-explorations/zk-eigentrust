@@ -7,5 +7,5 @@
 
 # Assets
 /eigentrust-cli/assets/attestation_station.rs
-/eigentrust-cli/assets/params-*.bin
-/eigentrust-cli/assets/et_pk.bin
+/eigentrust-cli/assets/kzg-params-*.bin
+/eigentrust-cli/assets/et-proving-key.bin

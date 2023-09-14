@@ -26,8 +26,6 @@ pub mod opinion;
 /// Utility for checking the score threshold
 pub mod threshold;
 
-/// Rational score
-pub type RationalScore = BigRational;
 /// Number of peers in the set
 pub const NUM_NEIGHBOURS: usize = 4;
 /// Number of iterations to run until convergence
@@ -43,9 +41,14 @@ pub const NUM_BITS: usize = 68;
 /// Default width for the hasher used
 pub const HASHER_WIDTH: usize = 5;
 /// Number of limbs for representing big numbers in threshold checking.
-const NUM_DECIMAL_LIMBS: usize = 2;
+pub const NUM_DECIMAL_LIMBS: usize = 2;
 /// Number of digits of each limbs for threshold checking.
-const POWER_OF_TEN: usize = 72;
+pub const POWER_OF_TEN: usize = 72;
+/// Default polynomial degree for KZG parameters for EigenTrust circuit.
+pub const ET_PARAMS_K: u32 = 20;
+
+/// Rational score
+pub type RationalScore = BigRational;
 /// Type alias for the native poseidon hasher with a width of 5 and bn254 params
 pub type PoseidonNativeHasher = Poseidon<Scalar, HASHER_WIDTH, Params>;
 /// Type alias for native poseidon sponge with a width of 5 and bn254 params

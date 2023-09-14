@@ -15,7 +15,7 @@ use ethers::{
 use serde::Deserialize;
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::{from_reader, to_string};
-use std::io::{BufReader, Write};
+use std::io::{BufReader, Read, Write};
 use std::marker::PhantomData;
 use std::path::PathBuf;
 use std::{fs::File, str::FromStr};
@@ -149,7 +149,7 @@ pub struct BinFileStorage {
 }
 
 impl BinFileStorage {
-	/// Creates a new JSONFileStorage.
+	/// Creates a new BinFileStorage.
 	pub fn new(filepath: PathBuf) -> Self {
 		Self { filepath }
 	}
@@ -164,9 +164,10 @@ impl Storage<Vec<u8>> for BinFileStorage {
 	type Err = EigenError;
 
 	fn load(&self) -> Result<Vec<u8>, Self::Err> {
-		let file = File::open(&self.filepath).map_err(EigenError::IOError)?;
-		let reader = BufReader::new(file);
-		from_reader(reader).map_err(|e| EigenError::ParsingError(e.to_string()))
+		let mut file = File::open(&self.filepath).map_err(EigenError::IOError)?;
+		let mut data = Vec::new();
+		file.read_to_end(&mut data).map_err(EigenError::IOError)?;
+		Ok(data)
 	}
 
 	fn save(&mut self, data: Vec<u8>) -> Result<(), Self::Err> {

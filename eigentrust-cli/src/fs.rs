@@ -11,7 +11,14 @@ use eigentrust::{
 use log::warn;
 use std::{env::current_dir, path::PathBuf};
 
+/// Default mnemonic seed phrase.
 const DEFAULT_MNEMONIC: &str = "test test test test test test test test test test test junk";
+/// Library configuration file name.
+pub const CONFIG_FILENAME: &str = "config";
+/// KZG parameters file name.
+pub const PARAMS_FILENAME: &str = "kzg-params";
+/// EigenTrust proving key file name.
+pub const PROVING_KEY_FILENAME: &str = "et-proving-key";
 
 /// Enum representing the possible file extensions.
 pub enum FileType {
@@ -32,6 +39,15 @@ impl FileType {
 			FileType::Bin => "bin",
 		}
 	}
+}
+
+/// Loads the mnemonic from the environment file.
+pub fn load_mnemonic() -> String {
+	dotenv().ok();
+	var("MNEMONIC").unwrap_or_else(|_| {
+		warn!("MNEMONIC environment variable is not set. Using default.");
+		DEFAULT_MNEMONIC.to_string()
+	})
 }
 
 /// Retrieves the path to the `assets` directory.
@@ -58,34 +74,36 @@ pub fn get_file_path(file_name: &str, file_type: FileType) -> Result<PathBuf, Ei
 
 /// Loads the configuration file.
 pub fn load_config() -> Result<ClientConfig, EigenError> {
-	let filepath = get_file_path("config", FileType::Json)?;
-	let json_storage = JSONFileStorage::<ClientConfig>::new(filepath);
-
-	json_storage.load()
+	let filepath = get_file_path(CONFIG_FILENAME, FileType::Json)?;
+	JSONFileStorage::<ClientConfig>::new(filepath).load()
 }
 
-/// Loads the mnemonic from the environment file.
-pub fn load_mnemonic() -> String {
-	dotenv().ok();
-	var("MNEMONIC").unwrap_or_else(|_| {
-		warn!("MNEMONIC environment variable is not set. Using default.");
-		DEFAULT_MNEMONIC.to_string()
-	})
+/// Loads kzg parameters for constructing proving and veirifying keys
+pub fn load_kzg_params(pol_degree: u32) -> Result<Vec<u8>, EigenError> {
+	let filepath = get_file_path(
+		&format!("{}-{}", PARAMS_FILENAME, pol_degree),
+		FileType::Bin,
+	)?;
+	BinFileStorage::new(filepath).load()
 }
 
-/// Loads the parameter for constructing proving and veirifying keys
-pub fn load_params() -> Result<Vec<u8>, EigenError> {
-	let k = 20;
-	let filepath = get_file_path(&format!("params-{}", k), FileType::Bin)?;
-	let bin_storage = BinFileStorage::new(filepath);
-
-	bin_storage.load()
+/// Saves kzg parameters for constructing proving and veirifying keys
+pub fn save_kzg_params(pol_degree: u32, params: Vec<u8>) -> Result<(), EigenError> {
+	let filepath = get_file_path(
+		&format!("{}-{}", PARAMS_FILENAME, pol_degree),
+		FileType::Bin,
+	)?;
+	BinFileStorage::new(filepath).save(params)
 }
 
-/// Loads the proving key
-pub fn load_et_pk() -> Result<Vec<u8>, EigenError> {
-	let filepath = get_file_path("et_pk", FileType::Bin)?;
-	let bin_storage = BinFileStorage::new(filepath);
+/// Loads proving key from file
+pub fn load_proving_key() -> Result<Vec<u8>, EigenError> {
+	let filepath = get_file_path(PROVING_KEY_FILENAME, FileType::Bin)?;
+	BinFileStorage::new(filepath).load()
+}
 
-	bin_storage.load()
+/// Saves proving key to file
+pub fn save_proving_key(proving_key: Vec<u8>) -> Result<(), EigenError> {
+	let filepath = get_file_path(PROVING_KEY_FILENAME, FileType::Bin)?;
+	BinFileStorage::new(filepath).save(proving_key)
 }

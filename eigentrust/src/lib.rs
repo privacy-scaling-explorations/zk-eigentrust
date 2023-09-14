@@ -91,14 +91,18 @@ use ethers::{
 	signers::{coins_bip39::English, LocalWallet, MnemonicBuilder, Signer},
 	types::{Filter, Log, H160, H256},
 };
-use log::{info, warn};
+use log::{debug, info, warn};
 use num_rational::BigRational;
 use serde::{Deserialize, Serialize};
 use std::{
 	collections::{BTreeSet, HashMap},
 	str::FromStr,
 	sync::Arc,
+	time::Instant,
 };
+
+/// Re export eigentrust KZG params constant
+pub use eigentrust_zk::circuits::ET_PARAMS_K;
 
 /// Client Signer.
 pub type ClientSigner = SignerMiddleware<Provider<Http>, LocalWallet>;
@@ -149,7 +153,7 @@ pub struct ETPublicInputs {
 }
 
 impl ETPublicInputs {
-	/// Creates a new ETPublicparams instance.
+	/// Creates a new ETPublicInputs instance.
 	pub fn new(
 		participants: Vec<Scalar>, scores: Vec<Scalar>, domain: Scalar, opinion_hash: Scalar,
 	) -> Self {
@@ -209,15 +213,25 @@ impl Client {
 	}
 
 	/// Generates new KZG params (Mostly used for testing)
-	pub fn generate_params(k: u32) -> Vec<u8> {
+	pub fn generate_kzg_params(k: u32) -> Result<Vec<u8>, EigenError> {
+		info!("Generating KZG parameters, this may take a while!");
+
+		let start_time = Instant::now();
 		let params = generate_params::<Bn256>(k);
+		let elapsed_time = start_time.elapsed();
+
+		debug!("KZG parameters generation time: {:?}", elapsed_time);
+
 		let mut buffer: Vec<u8> = Vec::new();
-		params.write(&mut buffer).expect("Failed to generate KZG params");
-		buffer
+		params.write(&mut buffer).map_err(|e| {
+			EigenError::ReadWriteError(format!("Failed to write KZG parameters: {}", e))
+		})?;
+
+		Ok(buffer)
 	}
 
 	/// Generates new proving key for EigenTrust circuit
-	pub fn generate_et_pk(params_bytes: Vec<u8>) -> Result<Vec<u8>, EigenError> {
+	pub fn generate_et_pk(raw_kzg_params: Vec<u8>) -> Result<Vec<u8>, EigenError> {
 		let rng = &mut rand::thread_rng();
 
 		let opt_att = vec![vec![None; NUM_ITERATIONS]; NUM_ITERATIONS];
@@ -225,12 +239,18 @@ impl Client {
 		let domain = Scalar::random(rng);
 		let et = EigenTrust4::new(opt_att, opt_pks, domain);
 
-		let mut params_slice = params_bytes.as_slice();
-		let params =
-			ParamsKZG::<Bn256>::read(&mut params_slice).expect("Failed to read KZG params");
-		let pk = keygen(&params, et)
+		let kzg_params = ParamsKZG::<Bn256>::read(&mut raw_kzg_params.as_slice())
+			.map_err(|e| EigenError::ReadWriteError(format!("Failed to read KZG params: {}", e)))?;
+
+		info!("Generating proving key, this may take a while!");
+		let start_time = Instant::now();
+		let proving_key = keygen(&kzg_params, et)
 			.map_err(|_| EigenError::KeygenError("Failed to generate pk/vk pair".to_string()))?;
-		Ok(pk.to_bytes(SerdeFormat::Processed))
+		let elapsed_time = start_time.elapsed();
+
+		debug!("Proving key generation time: {:?}", elapsed_time);
+
+		Ok(proving_key.to_bytes(SerdeFormat::Processed))
 	}
 
 	/// Submits an attestation to the attestation station.
@@ -286,7 +306,7 @@ impl Client {
 
 	/// Calculates the EigenTrust global scores.
 	pub async fn calculate_scores(
-		&self, att: Vec<SignedAttestationRaw>, proving_key: Vec<u8>,
+		&self, att: Vec<SignedAttestationRaw>, raw_kzg_params: Vec<u8>, raw_prov_key: Vec<u8>,
 	) -> Result<ScoresReport, EigenError> {
 		// Get signed attestations
 		let attestations: Vec<SignedAttestationEth> =
@@ -430,28 +450,25 @@ impl Client {
 		sponge.update(&op_hashes);
 		let opinions_hash = sponge.squeeze();
 
-		// Initialize EigenTrustSet
-		let et_circuit: EigenTrust4 =
-			EigenTrust4::new(attestation_matrix, ecdsa_pub_keys, scalar_domain);
-
-		// Generate KZG params
-		let k = 20;
-		let raw_params = Client::generate_params(k);
-		let parsed_params: ParamsKZG<Bn256> =
-			ParamsKZG::<Bn256>::read(&mut raw_params.as_slice()).unwrap();
-
-		// Generate proving key
-		let raw_prov_key = Client::generate_et_pk(raw_params).unwrap();
-		let proving_key: ProvingKey<G1Affine> =
-			ProvingKey::from_bytes::<EigenTrust4>(&raw_prov_key, SerdeFormat::Processed).unwrap();
-
 		// Build public inputs
 		let pub_inputs =
 			ETPublicInputs::new(scalar_set, scalar_scores, scalar_domain, opinions_hash);
 
+		// Initialize EigenTrustSet
+		let et_circuit: EigenTrust4 =
+			EigenTrust4::new(attestation_matrix, ecdsa_pub_keys, scalar_domain);
+
+		// Parse KZG params
+		let kzg_params: ParamsKZG<Bn256> =
+			ParamsKZG::<Bn256>::read(&mut raw_kzg_params.as_slice()).unwrap();
+
+		// Parse proving key
+		let proving_key: ProvingKey<G1Affine> =
+			ProvingKey::from_bytes::<EigenTrust4>(&raw_prov_key, SerdeFormat::Processed).unwrap();
+
 		let rng = &mut rand::thread_rng();
 		let proof = prove::<Bn256, _, _>(
-			&parsed_params,
+			&kzg_params,
 			et_circuit,
 			&[&pub_inputs.to_vec()],
 			&proving_key,
