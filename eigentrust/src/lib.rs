@@ -63,7 +63,8 @@ use attestation::{AttestationEth, AttestationRaw, SignedAttestationRaw};
 use eigentrust_zk::{
 	circuits::{
 		threshold::native::Threshold, ECDSAPublicKey, EigenTrust4, NativeEigenTrust4,
-		PoseidonNativeSponge, HASHER_WIDTH, MIN_PEER_COUNT,
+		PoseidonNativeSponge, Threshold4, HASHER_WIDTH, MIN_PEER_COUNT, NUM_ITERATIONS,
+		NUM_NEIGHBOURS,
 	},
 	halo2::{
 		arithmetic::Field,
@@ -98,17 +99,6 @@ use std::{
 	str::FromStr,
 	sync::Arc,
 };
-
-/// Max amount of participants.
-const MAX_NEIGHBOURS: usize = 4;
-/// Number of iterations to run the eigen trust algorithm.
-const NUM_ITERATIONS: usize = 20;
-/// Initial score for each participant before the algorithms is run.
-const INITIAL_SCORE: u128 = 1000;
-/// Number of limbs for representing big numbers in threshold checking.
-const NUM_DECIMAL_LIMBS: usize = 2;
-/// Number of digits of each limbs for threshold checking.
-const POWER_OF_TEN: usize = 72;
 
 /// Client Signer.
 pub type ClientSigner = SignerMiddleware<Provider<Http>, LocalWallet>;
@@ -327,7 +317,7 @@ impl Client {
 
 		// Verify that the participants set is not larger than the maximum number of participants
 		assert!(
-			address_set.len() <= MAX_NEIGHBOURS,
+			address_set.len() <= NUM_NEIGHBOURS,
 			"Number of participants exceeds maximum number of neighbours"
 		);
 		// Verify that the number of participants is greater than the minimum number of participants
@@ -343,8 +333,8 @@ impl Client {
 			.collect::<Result<Vec<Scalar>, _>>()?;
 
 		// Setup circuit ECDSA public keys vector
-		let mut ecdsa_pub_keys: Vec<Option<ECDSAPublicKey>> = Vec::with_capacity(MAX_NEIGHBOURS);
-		for index in 0..MAX_NEIGHBOURS {
+		let mut ecdsa_pub_keys: Vec<Option<ECDSAPublicKey>> = Vec::with_capacity(NUM_NEIGHBOURS);
+		for index in 0..NUM_NEIGHBOURS {
 			let key = if index < address_set.len() {
 				pub_key_map.get(&address_set[index]).cloned()
 			} else {
@@ -356,7 +346,7 @@ impl Client {
 
 		// Initialize attestation matrix
 		let mut attestation_matrix: Vec<OpinionVector> =
-			vec![vec![None; MAX_NEIGHBOURS]; MAX_NEIGHBOURS];
+			vec![vec![None; NUM_NEIGHBOURS]; NUM_NEIGHBOURS];
 
 		// Populate the attestation matrix with the attestations data
 		for signed_att in &attestations {
@@ -554,13 +544,7 @@ impl Client {
 		let threshold_fr = Scalar::from(threshold);
 		let score_ratio = BigRational::new(score_num.into(), score_den.into());
 
-		let th_circuit: Threshold<
-			Scalar,
-			NUM_DECIMAL_LIMBS,
-			POWER_OF_TEN,
-			MAX_NEIGHBOURS,
-			INITIAL_SCORE,
-		> = Threshold::new(score_fr, score_ratio, threshold_fr);
+		let th_circuit: Threshold4 = Threshold::new(score_fr, score_ratio, threshold_fr);
 
 		th_circuit.check_threshold()
 	}
