@@ -62,9 +62,9 @@ use att_station::{
 use attestation::{AttestationEth, AttestationRaw, SignedAttestationRaw};
 use eigentrust_zk::{
 	circuits::{
-		dynamic_sets::native::EigenTrustSet as NativeEigenTrustSet, dynamic_sets::EigenTrustSet,
-		threshold::native::Threshold, EigenTrust4, PoseidonHasher, PoseidonNativeHasher,
-		PoseidonNativeSponge, SpongeHasher, HASHER_WIDTH, MIN_PEER_COUNT, NUM_BITS, NUM_LIMBS,
+		dynamic_sets::native::EigenTrustSet as NativeEigenTrustSet, threshold::native::Threshold,
+		EigenTrust4, PoseidonNativeHasher, PoseidonNativeSponge, HASHER_WIDTH, MIN_PEER_COUNT,
+		NUM_BITS, NUM_LIMBS,
 	},
 	ecdsa::native::{EcdsaKeypair, PublicKey, Signature},
 	halo2::{
@@ -81,10 +81,7 @@ use eigentrust_zk::{
 		ecc::secp256k1::Secp256k1Params, hasher::poseidon_bn254_5x5::Params,
 		rns::secp256k1::Secp256k1_4_68,
 	},
-	poseidon::{
-		native::{sponge::PoseidonSponge, Poseidon},
-		PoseidonChipset,
-	},
+	poseidon::native::Poseidon,
 	utils::{generate_params, keygen, prove},
 };
 use error::EigenError;
@@ -132,6 +129,8 @@ pub type ECDSAKeypair =
 	EcdsaKeypair<Secp256k1Affine, Scalar, NUM_LIMBS, NUM_BITS, Secp256k1_4_68, Secp256k1Params>;
 /// ECDSA signature.
 pub type ECDSASignature = Signature<Secp256k1Affine, Scalar, NUM_LIMBS, NUM_BITS, Secp256k1_4_68>;
+/// Outbound local trust vector.
+pub type OpinionVector = Vec<Option<SignedAttestationScalar>>;
 
 /// Client configuration settings.
 #[derive(Serialize, Deserialize, Debug, EthDisplay, Clone)]
@@ -162,6 +161,48 @@ pub struct Score {
 	pub score_rat: ([u8; 32], [u8; 32]),
 	/// Hexadecimal score.
 	pub score_hex: [u8; 32],
+}
+
+/// Eigentrust circuit public input parameters
+pub struct ETPublicInputs {
+	/// Participants' set
+	pub participants: Vec<Scalar>,
+	/// Participants' scores
+	pub scores: Vec<Scalar>,
+	/// Domain
+	pub domain: Scalar,
+	/// Opinions' hash
+	pub opinion_hash: Scalar,
+}
+
+impl ETPublicInputs {
+	/// Creates a new ETPublicparams instance.
+	pub fn new(
+		participants: Vec<Scalar>, scores: Vec<Scalar>, domain: Scalar, opinion_hash: Scalar,
+	) -> Self {
+		Self { participants, scores, domain, opinion_hash }
+	}
+
+	/// Returns the struct as a concatenated Vec<Scalar>.
+	pub fn to_vec(&self) -> Vec<Scalar> {
+		let mut result = Vec::new();
+		result.extend(self.participants.iter().cloned());
+		result.extend(self.scores.iter().cloned());
+		result.push(self.domain);
+		result.push(self.opinion_hash);
+
+		result
+	}
+}
+
+/// Scores report struct.
+pub struct ScoresReport {
+	/// Participants' scores
+	pub scores: Vec<Score>,
+	/// Verifier public inputs
+	pub pub_inputs: ETPublicInputs,
+	/// Proof
+	pub proof: Vec<u8>,
 }
 
 /// Client struct.
@@ -272,65 +313,86 @@ impl Client {
 
 	/// Calculates the EigenTrust global scores.
 	pub async fn calculate_scores(
-		&self, att: Vec<SignedAttestationRaw>, pk: Vec<u8>,
-	) -> Result<Vec<Score>, EigenError> {
-		// Parse attestation logs into signed attestation and attestation structs
+		&self, att: Vec<SignedAttestationRaw>, proving_key: Vec<u8>,
+	) -> Result<ScoresReport, EigenError> {
+		// Get signed attestations
 		let attestations: Vec<SignedAttestationEth> =
 			att.into_iter().map(|signed_raw| signed_raw.into()).collect();
 
-		// Construct a set to hold unique participant addresses
-		let mut participants_set = BTreeSet::<Address>::new();
-		let mut pks = HashMap::new();
+		// Initialize set to get participants
+		let mut btree_set: BTreeSet<Address> = BTreeSet::new();
 
-		// Insert the attester and attested of each attestation into the set
+		// Create (Address -> ECDSA Public Key) map
+		let mut pub_key_map = HashMap::new();
+
 		for signed_att in &attestations {
-			let public_key = signed_att.recover_public_key()?;
-			let attester = address_from_ecdsa_key(&public_key);
-			participants_set.insert(signed_att.attestation.about);
-			participants_set.insert(attester);
+			let pub_key: ECDSAPublicKey = signed_att.recover_public_key()?;
+			let att_origin: Address = address_from_ecdsa_key(&pub_key);
 
-			let pk = signed_att.recover_public_key()?;
-			pks.insert(attester, pk);
+			pub_key_map.insert(att_origin, pub_key);
+			btree_set.insert(signed_att.attestation.about);
+			btree_set.insert(att_origin);
 		}
 
-		// Create a vector of participants from the set
-		let participants: Vec<Address> = participants_set.into_iter().collect();
+		// Build participants set
+		// The participants' set order defines the attestations' order
+		let address_set: Vec<Address> = btree_set.clone().into_iter().collect();
 
 		// Verify that the participants set is not larger than the maximum number of participants
 		assert!(
-			participants.len() <= MAX_NEIGHBOURS,
+			address_set.len() <= MAX_NEIGHBOURS,
 			"Number of participants exceeds maximum number of neighbours"
 		);
-
 		// Verify that the number of participants is greater than the minimum number of participants
 		assert!(
-			participants.len() >= MIN_PEER_COUNT,
+			address_set.len() >= MIN_PEER_COUNT,
 			"Number of participants is less than the minimum number of neighbours"
 		);
 
+		// Build Scalar set
+		let scalar_set: Vec<Scalar> = btree_set
+			.into_iter()
+			.map(|participant| scalar_from_address(&participant))
+			.collect::<Result<Vec<Scalar>, _>>()?;
+
+		// Setup circuit ECDSA public keys vector
+		let mut ecdsa_pub_keys: Vec<Option<ECDSAPublicKey>> = Vec::with_capacity(MAX_NEIGHBOURS);
+		for index in 0..MAX_NEIGHBOURS {
+			let key = if index < address_set.len() {
+				pub_key_map.get(&address_set[index]).cloned()
+			} else {
+				None
+			};
+
+			ecdsa_pub_keys.push(key);
+		}
+
 		// Initialize attestation matrix
-		let mut attestation_matrix: Vec<Vec<Option<SignedAttestationScalar>>> =
+		let mut attestation_matrix: Vec<OpinionVector> =
 			vec![vec![None; MAX_NEIGHBOURS]; MAX_NEIGHBOURS];
 
 		// Populate the attestation matrix with the attestations data
 		for signed_att in &attestations {
-			let public_key = signed_att.recover_public_key()?;
-			let attester = address_from_ecdsa_key(&public_key);
-			let attester_pos = participants.iter().position(|&r| r == attester).unwrap();
-			let attested_pos =
-				participants.iter().position(|&r| r == signed_att.attestation.about).unwrap();
+			let pub_key: ECDSAPublicKey = signed_att.recover_public_key()?;
+			let att_origin: Address = address_from_ecdsa_key(&pub_key);
 
-			let signed_attestation_fr = signed_att.to_signed_signature_fr()?;
-			attestation_matrix[attester_pos][attested_pos] = Some(signed_attestation_fr);
+			// Get attestation origin and destination indexes in the set
+			let origin_index = address_set.iter().position(|&r| r == att_origin).unwrap();
+			let dest_index =
+				address_set.iter().position(|&r| r == signed_att.attestation.about).unwrap();
+
+			// Get scalar signed attestations
+			let scalar_att: SignedAttestationScalar = signed_att.to_signed_signature_fr()?;
+
+			// Fill matrix
+			attestation_matrix[origin_index][dest_index] = Some(scalar_att);
 		}
 
 		// Build domain
-		let domain_bytes: H160 = H160::from_str(&self.config.domain)
-			.map_err(|e| EigenError::ParsingError(format!("Error parsing domain: {}", e)))?;
-		let domain = Scalar::from_bytes(H256::from(domain_bytes).as_fixed_bytes()).unwrap();
+		let scalar_domain = self.get_scalar_domain()?;
 
-		// Initialize EigenTrustSet
-		let mut eigen_trust_set = NativeEigenTrustSet::<
+		// Initialize Native Set
+		let mut native_et = NativeEigenTrustSet::<
 			MAX_NEIGHBOURS,
 			NUM_ITERATIONS,
 			INITIAL_SCORE,
@@ -342,45 +404,43 @@ impl Client {
 			Secp256k1Params,
 			PoseidonNativeHasher,
 			PoseidonNativeSponge,
-		>::new(domain);
+		>::new(scalar_domain);
 
-		// Add participants to set
-		for participant in &participants {
-			let participant_fr = scalar_from_address(participant)?;
-			eigen_trust_set.add_member(participant_fr);
+		// Add participants to native set
+		for member in scalar_set.clone() {
+			native_et.add_member(member);
 		}
 
-		// Update the set with the opinions of each participant
-		for i in 0..participants.len() {
-			let addr = participants[i];
-			if let Some(pk) = pks.get(&addr) {
-				let opinion = attestation_matrix[i].clone();
-				eigen_trust_set.update_op(pk.clone(), opinion);
+		// Submit participants' opinion to native set and get opinion hashes
+		let mut op_hashes: Vec<Scalar> = Vec::new();
+		for (origin_index, member) in address_set.clone().into_iter().enumerate() {
+			if let Some(pub_key) = pub_key_map.get(&member) {
+				let opinion = attestation_matrix[origin_index].clone();
+				op_hashes.push(native_et.update_op(pub_key.clone(), opinion));
 			}
 		}
 
 		// Calculate scores
-		let scores_fr = eigen_trust_set.converge();
-		let scores_rat = eigen_trust_set.converge_rational();
+		let rational_scores = native_et.converge_rational();
+		let scalar_scores: Vec<Scalar> = native_et.converge();
 
-		// Check that the scores vectors are of equal length
+		// Verify that the scores vectors are of equal length
 		assert_eq!(
-			scores_fr.len(),
-			scores_rat.len(),
+			scalar_scores.len(),
+			rational_scores.len(),
 			"Scores vectors are not of equal length"
 		);
-
-		// Check that the scores vector is at least as long as the participants vector
+		// Verify that the scores vector is at least as long as the participants vector
 		assert!(
-			scores_fr.len() >= participants.len(),
+			scalar_scores.len() >= address_set.len(),
 			"There are more participants than scores"
 		);
 
-		// Group the scores with the participants
-		let scores: Vec<Score> = participants
+		// Construct scores vec
+		let scores: Vec<Score> = address_set
 			.iter()
-			.zip(scores_fr.iter())
-			.zip(scores_rat.iter())
+			.zip(scalar_scores.iter())
+			.zip(rational_scores.iter())
 			.map(|((&participant, &score_fr), score_rat)| {
 				let address = participant.to_fixed_bytes();
 
@@ -404,182 +464,45 @@ impl Client {
 			})
 			.collect();
 
-		Ok(scores)
-	}
-
-	/// Generates a proof for the EigenTrust global scores.
-	pub async fn generate_proof(
-		&self, att: Vec<SignedAttestationRaw>,
-	) -> Result<Vec<u8>, EigenError> {
-		// Parse attestation logs into signed attestation and attestation structs
-		let attestations: Vec<SignedAttestationEth> =
-			att.into_iter().map(|signed_raw| signed_raw.into()).collect();
-
-		// Construct a set to hold unique participant addresses
-		let mut participants_set = BTreeSet::<Address>::new();
-		let mut pks = HashMap::new();
-
-		// Insert the attester and attested of each attestation into the set
-		for signed_att in &attestations {
-			let public_key = signed_att.recover_public_key()?;
-			let attester = address_from_ecdsa_key(&public_key);
-			participants_set.insert(signed_att.attestation.about);
-			participants_set.insert(attester);
-
-			let pk = signed_att.recover_public_key()?;
-			pks.insert(attester, pk);
-		}
-
-		// Create a vector of participants from the set
-		let participants: Vec<Address> = participants_set.into_iter().collect();
-
-		// Verify that the participants set is not larger than the maximum number of participants
-		assert!(
-			participants.len() <= MAX_NEIGHBOURS,
-			"Number of participants exceeds maximum number of neighbours"
-		);
-
-		// Verify that the number of participants is greater than the minimum number of participants
-		assert!(
-			participants.len() >= MIN_PEER_COUNT,
-			"Number of participants is less than the minimum number of neighbours"
-		);
-
-		// Initialize attestation matrix
-		let mut attestation_matrix: Vec<Vec<Option<SignedAttestationScalar>>> =
-			vec![vec![None; MAX_NEIGHBOURS]; MAX_NEIGHBOURS];
-
-		// Populate the attestation matrix with the attestations data
-		for signed_att in &attestations {
-			let public_key = signed_att.recover_public_key()?;
-			let attester = address_from_ecdsa_key(&public_key);
-			let attester_pos = participants.iter().position(|&r| r == attester).unwrap();
-			let attested_pos =
-				participants.iter().position(|&r| r == signed_att.attestation.about).unwrap();
-
-			let signed_attestation_fr = signed_att.to_signed_signature_fr()?;
-			attestation_matrix[attester_pos][attested_pos] = Some(signed_attestation_fr);
-		}
-
-		// TODO: Get attestation hashes
-		let att_hashes: Vec<Scalar> = Vec::new();
-
-		// Build domain
-		let domain_bytes: H160 = H160::from_str(&self.config.domain)
-			.map_err(|e| EigenError::ParsingError(format!("Error parsing domain: {}", e)))?;
-		let domain = Scalar::from_bytes(H256::from(domain_bytes).as_fixed_bytes()).unwrap();
+		// Generate opinions' sponge hash.
+		let mut sponge = PoseidonNativeSponge::new();
+		sponge.update(&op_hashes);
+		let opinions_hash = sponge.squeeze();
 
 		// Initialize EigenTrustSet
-		let mut eigen_trust_set = NativeEigenTrustSet::<
-			MAX_NEIGHBOURS,
-			NUM_ITERATIONS,
-			INITIAL_SCORE,
-			Secp256k1Affine,
-			Scalar,
-			NUM_LIMBS,
-			NUM_BITS,
-			Secp256k1_4_68,
-			Secp256k1Params,
-			PoseidonNativeHasher,
-			PoseidonNativeSponge,
-		>::new(domain);
+		let et_circuit: EigenTrust4 =
+			EigenTrust4::new(attestation_matrix, ecdsa_pub_keys, scalar_domain);
 
-		// Build Scalar set
-		let mut scalar_set: Vec<Scalar> = Vec::new();
-		for participant in &participants {
-			let participant_fr = scalar_from_address(participant)?;
-			scalar_set.push(participant_fr);
-		}
-
-		// Add participants to set
-		for participant in &scalar_set {
-			eigen_trust_set.add_member(*participant);
-		}
-
-		let mut opt_att = Vec::new();
-		let mut opt_pks = Vec::new();
-
-		// Update the set with the opinions of each participant
-		for i in 0..participants.len() {
-			let addr = participants[i];
-
-			if let Some(pk) = pks.get(&addr) {
-				let opinion = attestation_matrix[i].clone();
-				eigen_trust_set.update_op(pk.clone(), opinion.clone());
-			}
-
-			let pk = pks.get(&addr).map(|pk| pk.clone());
-			opt_pks.push(pk);
-			opt_att.push(attestation_matrix[i].clone());
-		}
-
-		// Build public inputs
-		let mut public_inputs = Vec::new();
-
-		// Insert scalar set
-		for scalar in scalar_set {
-			public_inputs.push(scalar);
-		}
-
-		// Insert attestation hashes
-		let mut sponge = PoseidonNativeSponge::new();
-		sponge.update(&att_hashes);
-		let op_hash = sponge.squeeze();
-		public_inputs.push(op_hash);
-
-		// Insert Domain
-		public_inputs.push(domain);
-
-		let et_circuit = EigenTrustSet::<
-			MAX_NEIGHBOURS,
-			NUM_ITERATIONS,
-			INITIAL_SCORE,
-			Secp256k1Affine,
-			Scalar,
-			NUM_LIMBS,
-			NUM_BITS,
-			Secp256k1_4_68,
-			Secp256k1Params,
-			PoseidonHasher,
-			PoseidonNativeHasher,
-			SpongeHasher,
-		>::new(opt_att, opt_pks, domain);
-
+		// Generate KZG params
 		let k = 20;
 		let raw_params = Client::generate_params(k);
 		let parsed_params: ParamsKZG<Bn256> =
 			ParamsKZG::<Bn256>::read(&mut raw_params.as_slice()).unwrap();
 
-		let raw_pk = Client::generate_et_pk(raw_params).unwrap();
-		let parsed_pk: ProvingKey<bn256::G1Affine> = ProvingKey::from_bytes::<
-			EigenTrustSet<
-				MAX_NEIGHBOURS,
-				NUM_ITERATIONS,
-				INITIAL_SCORE,
-				Secp256k1Affine,
-				Scalar,
-				NUM_LIMBS,
-				NUM_BITS,
-				Secp256k1_4_68,
-				Secp256k1Params,
-				PoseidonHasher,
-				PoseidonNativeHasher,
-				SpongeHasher,
-			>,
-		>(&raw_pk, SerdeFormat::Processed)
-		.unwrap();
+		// Generate proving key
+		let raw_prov_key = Client::generate_et_pk(raw_params).unwrap();
+		let proving_key: ProvingKey<bn256::G1Affine> =
+			ProvingKey::from_bytes::<EigenTrust4>(&raw_prov_key, SerdeFormat::Processed).unwrap();
+
+		// Build public inputs
+		let pub_inputs = ETPublicInputs::new(
+			scalar_set,
+			scalar_scores.clone(),
+			scalar_domain,
+			opinions_hash,
+		);
 
 		let rng = &mut rand::thread_rng();
 		let proof = prove::<Bn256, _, _>(
 			&parsed_params,
 			et_circuit,
-			&[&public_inputs],
-			&parsed_pk,
+			&[&pub_inputs.to_vec()],
+			&proving_key,
 			rng,
 		)
 		.unwrap();
 
-		Ok(proof)
+		Ok(ScoresReport { scores, pub_inputs, proof })
 	}
 
 	/// Fetches attestations from the contract.
@@ -634,6 +557,20 @@ impl Client {
 	/// Gets signer.
 	pub fn get_signer(&self) -> Arc<ClientSigner> {
 		self.signer.clone()
+	}
+
+	/// Gets the domain as BN256 scalar.
+	pub fn get_scalar_domain(&self) -> Result<Scalar, EigenError> {
+		let domain_bytes = H160::from_str(&self.config.domain)
+			.map_err(|e| EigenError::ParsingError(format!("Error parsing domain: {}", e)))?;
+		let domain_opt = Scalar::from_bytes(H256::from(domain_bytes).as_fixed_bytes());
+
+		match domain_opt.is_some().into() {
+			true => Ok(domain_opt.unwrap()),
+			false => Err(EigenError::ParsingError(
+				"Failed to construct scalar domain".to_string(),
+			)),
+		}
 	}
 
 	/// Verifies if a participant's score surpasses the score threshold.

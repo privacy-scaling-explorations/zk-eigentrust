@@ -309,7 +309,7 @@ pub async fn handle_proof(config: ClientConfig) -> Result<(), EigenError> {
 		att_storage.load()?.into_iter().map(|record| record.try_into()).collect();
 
 	// Generate proof
-	let proof: Vec<u8> = client.generate_proof(attestations?).await?;
+	let proof: Vec<u8> = client.calculate_scores(attestations?, Vec::new()).await?.proof;
 
 	println!("Proof: {:?}", proof);
 
@@ -361,6 +361,7 @@ pub async fn handle_scores(
 	let score_records: Vec<ScoreRecord> = client
 		.calculate_scores(attestations, pk)
 		.await?
+		.scores
 		.into_iter()
 		.map(ScoreRecord::from_score)
 		.collect();
