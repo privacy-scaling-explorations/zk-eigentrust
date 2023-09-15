@@ -4,10 +4,7 @@
 
 use crate::{
 	bandada::BandadaApi,
-	fs::{
-		get_file_path, load_kzg_params, load_mnemonic, load_proving_key, save_kzg_params,
-		save_proving_key, FileType,
-	},
+	fs::{get_file_path, load_mnemonic, EigenFile, FileType},
 	ClientConfig,
 };
 use clap::{Args, Parser, Subcommand};
@@ -43,14 +40,14 @@ pub enum Mode {
 	Bandada(BandadaData),
 	/// Deploy the contracts.
 	Deploy,
+	/// Generate EigenTrust circuit proving key
+	ETProvingKey,
 	/// Generate KZG parameters
 	KZGParams(KZGParamsData),
 	/// Calculate the global scores from the saved attestations.
 	LocalScores,
 	/// Generate the proofs.
 	Proof,
-	/// Generate proving key
-	ProvingKey,
 	/// Retrieves and saves all attestations and calculates the global scores.
 	Scores,
 	/// Display the current configuration.
@@ -301,23 +298,26 @@ pub async fn handle_deploy(config: ClientConfig) -> Result<(), EigenError> {
 }
 
 /// Handles proving key generation.
-pub fn handle_proving_key() -> Result<(), EigenError> {
-	let et_kzg_params = load_kzg_params(ET_PARAMS_K)?;
+pub fn handle_et_pk() -> Result<(), EigenError> {
+	let et_kzg_params = EigenFile::KzgParams(ET_PARAMS_K).load()?;
 	let proving_key = Client::generate_et_pk(et_kzg_params)?;
 
-	save_proving_key(proving_key)
+	EigenFile::ProvingKey.save(proving_key)
 }
 
 /// Handles KZG parameters generation.
 pub fn handle_params(data: KZGParamsData) -> Result<(), EigenError> {
-	let pol_degree = data.k.as_ref().map_or(Ok(ET_PARAMS_K), |k| {
-		k.parse::<u32>().map_err(|e| {
-			EigenError::ParsingError(format!("Error parsing polynomial degree - {}", e))
-		})
+	let k = data.k.ok_or(EigenError::ValidationError(
+		"Missing parameter 'k': polynomial degree.".to_string(),
+	))?;
+
+	let pol_degree = k.parse::<u32>().map_err(|e| {
+		EigenError::ParsingError(format!("Error parsing polynomial degree - {}", e))
 	})?;
+
 	let params = Client::generate_kzg_params(pol_degree)?;
 
-	save_kzg_params(pol_degree, params)
+	EigenFile::KzgParams(pol_degree).save(params)
 }
 
 /// Handles `proof` command.
@@ -332,16 +332,14 @@ pub async fn handle_proof(config: ClientConfig) -> Result<(), EigenError> {
 	let attestations: Result<Vec<SignedAttestationRaw>, EigenError> =
 		att_storage.load()?.into_iter().map(|record| record.try_into()).collect();
 
-	let proving_key = load_proving_key()?;
-	let kzg_params = load_kzg_params(ET_PARAMS_K)?;
+	let proving_key = EigenFile::ProvingKey.load()?;
+	let kzg_params = EigenFile::KzgParams(ET_PARAMS_K).load()?;
 
 	// Generate proof
 	let proof: Vec<u8> =
 		client.calculate_scores(attestations?, kzg_params, proving_key).await?.proof;
 
-	println!("Proof: {:?}", proof);
-
-	Ok(())
+	EigenFile::EtProof.save(proof)
 }
 
 /// Handles `scores` and `local_scores` commands.
@@ -383,8 +381,8 @@ pub async fn handle_scores(
 		},
 	};
 
-	let proving_key = load_proving_key()?;
-	let kzg_params = load_kzg_params(ET_PARAMS_K)?;
+	let proving_key = EigenFile::ProvingKey.load()?;
+	let kzg_params = EigenFile::KzgParams(ET_PARAMS_K).load()?;
 
 	// Calculate scores
 	let score_records: Vec<ScoreRecord> = client
@@ -453,6 +451,15 @@ pub fn handle_update(config: &mut ClientConfig, data: UpdateData) -> Result<(), 
 	let mut json_storage = JSONFileStorage::<ClientConfig>::new(filepath);
 
 	json_storage.save(config.clone())
+}
+
+/// Handles `verify` command.
+pub async fn handle_verify(config: ClientConfig) -> Result<(), EigenError> {
+	let mnemonic = load_mnemonic();
+	let client = Client::new(config, mnemonic);
+	let proof = EigenFile::EtProof.load()?;
+
+	client.verify(proof).await
 }
 
 #[cfg(test)]

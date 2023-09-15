@@ -50,11 +50,11 @@ async fn main() -> Result<(), EigenError> {
 		Mode::KZGParams(data) => handle_params(data)?,
 		Mode::LocalScores => handle_scores(config, AttestationsOrigin::Local).await?,
 		Mode::Proof => handle_proof(config).await?,
-		Mode::ProvingKey => handle_proving_key()?,
+		Mode::ETProvingKey => handle_et_pk()?,
 		Mode::Scores => handle_scores(config, AttestationsOrigin::Fetch).await?,
 		Mode::Show => info!("Client config:\n{:#?}", config),
 		Mode::Update(update_data) => handle_update(&mut config, update_data)?,
-		Mode::Verify => info!("Not implemented yet."),
+		Mode::Verify => handle_verify(config).await?,
 	};
 
 	Ok(())

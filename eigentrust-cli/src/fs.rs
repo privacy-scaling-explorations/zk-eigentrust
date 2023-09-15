@@ -14,11 +14,13 @@ use std::{env::current_dir, path::PathBuf};
 /// Default mnemonic seed phrase.
 const DEFAULT_MNEMONIC: &str = "test test test test test test test test test test test junk";
 /// Library configuration file name.
-pub const CONFIG_FILENAME: &str = "config";
+pub const CONFIG_FILE: &str = "config";
 /// KZG parameters file name.
-pub const PARAMS_FILENAME: &str = "kzg-params";
+pub const PARAMS_FILE: &str = "kzg-params";
 /// EigenTrust proving key file name.
-pub const PROVING_KEY_FILENAME: &str = "et-proving-key";
+pub const ET_PROVING_KEY_FILE: &str = "et-proving-key";
+/// EigenTrust generated proof file name.
+pub const ET_PROOF_FILE: &str = "et-proof";
 
 /// Enum representing the possible file extensions.
 pub enum FileType {
@@ -37,6 +39,41 @@ impl FileType {
 			FileType::Csv => "csv",
 			FileType::Json => "json",
 			FileType::Bin => "bin",
+		}
+	}
+}
+
+// Enum for different EigenTrust binary files
+pub enum EigenFile {
+	KzgParams(u32),
+	ProvingKey,
+	EtProof,
+}
+
+impl EigenFile {
+	/// Loads the contents of the file.
+	pub fn load(&self) -> Result<Vec<u8>, EigenError> {
+		let filepath = self.path()?;
+		BinFileStorage::new(filepath).load()
+	}
+
+	/// Saves the data to the file.
+	pub fn save(&self, data: Vec<u8>) -> Result<(), EigenError> {
+		let filepath = self.path()?;
+		BinFileStorage::new(filepath).save(data)
+	}
+
+	/// Returns the path of the file.
+	fn path(&self) -> Result<PathBuf, EigenError> {
+		get_file_path(&self.filename(), FileType::Bin)
+	}
+
+	/// Returns the filename of the file.
+	fn filename(&self) -> String {
+		match self {
+			EigenFile::KzgParams(pol_degree) => format!("{}-{}", PARAMS_FILE, pol_degree),
+			EigenFile::ProvingKey => ET_PROVING_KEY_FILE.to_string(),
+			EigenFile::EtProof => ET_PROOF_FILE.to_string(),
 		}
 	}
 }
@@ -74,36 +111,6 @@ pub fn get_file_path(file_name: &str, file_type: FileType) -> Result<PathBuf, Ei
 
 /// Loads the configuration file.
 pub fn load_config() -> Result<ClientConfig, EigenError> {
-	let filepath = get_file_path(CONFIG_FILENAME, FileType::Json)?;
+	let filepath = get_file_path(CONFIG_FILE, FileType::Json)?;
 	JSONFileStorage::<ClientConfig>::new(filepath).load()
-}
-
-/// Loads kzg parameters for constructing proving and veirifying keys
-pub fn load_kzg_params(pol_degree: u32) -> Result<Vec<u8>, EigenError> {
-	let filepath = get_file_path(
-		&format!("{}-{}", PARAMS_FILENAME, pol_degree),
-		FileType::Bin,
-	)?;
-	BinFileStorage::new(filepath).load()
-}
-
-/// Saves kzg parameters for constructing proving and veirifying keys
-pub fn save_kzg_params(pol_degree: u32, params: Vec<u8>) -> Result<(), EigenError> {
-	let filepath = get_file_path(
-		&format!("{}-{}", PARAMS_FILENAME, pol_degree),
-		FileType::Bin,
-	)?;
-	BinFileStorage::new(filepath).save(params)
-}
-
-/// Loads proving key from file
-pub fn load_proving_key() -> Result<Vec<u8>, EigenError> {
-	let filepath = get_file_path(PROVING_KEY_FILENAME, FileType::Bin)?;
-	BinFileStorage::new(filepath).load()
-}
-
-/// Saves proving key to file
-pub fn save_proving_key(proving_key: Vec<u8>) -> Result<(), EigenError> {
-	let filepath = get_file_path(PROVING_KEY_FILENAME, FileType::Bin)?;
-	BinFileStorage::new(filepath).save(proving_key)
 }

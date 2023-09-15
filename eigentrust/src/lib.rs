@@ -343,10 +343,15 @@ impl Client {
 		);
 
 		// Build Scalar set
-		let scalar_set: Vec<Scalar> = btree_set
+		let mut scalar_set: Vec<Scalar> = btree_set
 			.into_iter()
 			.map(|participant| scalar_from_address(&participant))
 			.collect::<Result<Vec<Scalar>, _>>()?;
+
+		// The scalar set size should be equal to the maximum number of participants
+		if scalar_set.len() < NUM_NEIGHBOURS {
+			scalar_set.resize(NUM_NEIGHBOURS, Scalar::zero());
+		}
 
 		// Setup circuit ECDSA public keys vector
 		let mut ecdsa_pub_keys: Vec<Option<ECDSAPublicKey>> = Vec::with_capacity(NUM_NEIGHBOURS);
@@ -388,8 +393,8 @@ impl Client {
 		let mut native_et = NativeEigenTrust4::new(scalar_domain);
 
 		// Add participants to native set
-		for member in scalar_set.clone() {
-			native_et.add_member(member);
+		for i in 0..address_set.len() {
+			native_et.add_member(scalar_set[i]);
 		}
 
 		// Submit participants' opinion to native set and get opinion hashes
@@ -518,7 +523,7 @@ impl Client {
 	}
 
 	/// Verifies last generated proof.
-	pub async fn verify(&self) -> Result<(), EigenError> {
+	pub async fn verify(&self, raw_proof: Vec<u8>) -> Result<(), EigenError> {
 		// TODO: Verify proof
 		Ok(())
 	}
