@@ -477,7 +477,7 @@ impl Client {
 
 		// Parse public inputs
 		let pub_inputs: ETPublicInputs =
-			ETPublicInputs::from_bytes(raw_public_inputs, NUM_NEIGHBOURS as usize)?;
+			ETPublicInputs::from_bytes(raw_public_inputs, NUM_NEIGHBOURS)?;
 
 		// Parse proving key
 		let proving_key: ProvingKey<G1Affine> =
