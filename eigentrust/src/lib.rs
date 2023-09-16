@@ -49,17 +49,20 @@
 
 pub mod att_station;
 pub mod attestation;
+pub mod circuit;
 pub mod error;
 pub mod eth;
 pub mod storage;
 
-use crate::attestation::{
-	SignatureEth, SignatureRaw, SignedAttestationEth, SignedAttestationScalar,
+use crate::{
+	attestation::{SignatureEth, SignatureRaw, SignedAttestationEth, SignedAttestationScalar},
+	circuit::{ETPublicInputs, OpinionVector, Score},
 };
 use att_station::{
 	AttestationCreatedFilter, AttestationData as ContractAttestationData, AttestationStation,
 };
 use attestation::{AttestationEth, AttestationRaw, SignedAttestationRaw};
+use circuit::ScoresReport;
 use eigentrust_zk::{
 	circuits::{
 		threshold::native::Threshold, ECDSAPublicKey, EigenTrust4, NativeEigenTrust4,
@@ -78,7 +81,7 @@ use eigentrust_zk::{
 	},
 	params::hasher::poseidon_bn254_5x5::Params,
 	poseidon::native::Poseidon,
-	utils::{generate_params, keygen, prove},
+	utils::{generate_params, keygen, prove, verify},
 };
 use error::EigenError;
 use eth::{address_from_ecdsa_key, ecdsa_keypairs_from_mnemonic, scalar_from_address};
@@ -101,13 +104,8 @@ use std::{
 	time::Instant,
 };
 
-/// Re export eigentrust KZG params constant
-pub use eigentrust_zk::circuits::ET_PARAMS_K;
-
 /// Client Signer.
 pub type ClientSigner = SignerMiddleware<Provider<Http>, LocalWallet>;
-/// Outbound local trust vector.
-pub type OpinionVector = Vec<Option<SignedAttestationScalar>>;
 
 /// Client configuration settings.
 #[derive(Serialize, Deserialize, Debug, EthDisplay, Clone)]
@@ -126,60 +124,6 @@ pub struct ClientConfig {
 	pub domain: String,
 	/// Ethereum node URL.
 	pub node_url: String,
-}
-
-/// Score struct.
-pub struct Score {
-	/// Participant address.
-	pub address: [u8; 20],
-	/// Scalar score.
-	pub score_fr: [u8; 32],
-	/// Rational score (numerator, denominator).
-	pub score_rat: ([u8; 32], [u8; 32]),
-	/// Hexadecimal score.
-	pub score_hex: [u8; 32],
-}
-
-/// Eigentrust circuit public input parameters
-pub struct ETPublicInputs {
-	/// Participants' set
-	pub participants: Vec<Scalar>,
-	/// Participants' scores
-	pub scores: Vec<Scalar>,
-	/// Domain
-	pub domain: Scalar,
-	/// Opinions' hash
-	pub opinion_hash: Scalar,
-}
-
-impl ETPublicInputs {
-	/// Creates a new ETPublicInputs instance.
-	pub fn new(
-		participants: Vec<Scalar>, scores: Vec<Scalar>, domain: Scalar, opinion_hash: Scalar,
-	) -> Self {
-		Self { participants, scores, domain, opinion_hash }
-	}
-
-	/// Returns the struct as a concatenated Vec<Scalar>.
-	pub fn to_vec(&self) -> Vec<Scalar> {
-		let mut result = Vec::new();
-		result.extend(self.participants.iter().cloned());
-		result.extend(self.scores.iter().cloned());
-		result.push(self.domain);
-		result.push(self.opinion_hash);
-
-		result
-	}
-}
-
-/// Scores report struct.
-pub struct ScoresReport {
-	/// Participants' scores
-	pub scores: Vec<Score>,
-	/// Verifier public inputs
-	pub pub_inputs: ETPublicInputs,
-	/// Proof
-	pub proof: Vec<u8>,
 }
 
 /// Client struct.
@@ -522,9 +466,33 @@ impl Client {
 		self.signer.get_logs(&filter).await.map_err(|e| EigenError::ParsingError(e.to_string()))
 	}
 
-	/// Verifies last generated proof.
-	pub async fn verify(&self, raw_proof: Vec<u8>) -> Result<(), EigenError> {
-		// TODO: Verify proof
+	/// Verifies the given proof.
+	pub async fn verify(
+		&self, raw_kzg_params: Vec<u8>, raw_public_inputs: Vec<u8>, raw_proving_key: Vec<u8>,
+		proof: Vec<u8>,
+	) -> Result<(), EigenError> {
+		// Parse KZG params
+		let kzg_params: ParamsKZG<Bn256> = ParamsKZG::<Bn256>::read(&mut raw_kzg_params.as_slice())
+			.map_err(|e| EigenError::ParsingError(e.to_string()))?;
+
+		// Parse public inputs
+		let pub_inputs: ETPublicInputs =
+			ETPublicInputs::from_bytes(raw_public_inputs, NUM_NEIGHBOURS as usize)?;
+
+		// Parse proving key
+		let proving_key: ProvingKey<G1Affine> =
+			ProvingKey::from_bytes::<EigenTrust4>(&raw_proving_key, SerdeFormat::Processed)
+				.map_err(|e| EigenError::ParsingError(e.to_string()))?;
+
+		// Verify
+		verify(
+			&kzg_params,
+			&[&pub_inputs.to_vec()],
+			&proof,
+			proving_key.get_vk(),
+		)
+		.map_err(|e| EigenError::VerificationError(e.to_string()))?;
+
 		Ok(())
 	}
 

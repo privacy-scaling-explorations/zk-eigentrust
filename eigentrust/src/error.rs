@@ -75,6 +75,10 @@ pub enum EigenError {
 	#[error("ValidationError: {0}")]
 	ValidationError(String),
 
+	/// Verification error
+	#[error("VerificationError: {0}")]
+	VerificationError(String),
+
 	/// Failed generating proving/verifying keys
 	#[error("KeygenError: {0}")]
 	KeygenError(String),

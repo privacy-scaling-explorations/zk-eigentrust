@@ -15,12 +15,14 @@ use std::{env::current_dir, path::PathBuf};
 const DEFAULT_MNEMONIC: &str = "test test test test test test test test test test test junk";
 /// Library configuration file name.
 pub const CONFIG_FILE: &str = "config";
-/// KZG parameters file name.
-pub const PARAMS_FILE: &str = "kzg-params";
-/// EigenTrust proving key file name.
-pub const ET_PROVING_KEY_FILE: &str = "et-proving-key";
 /// EigenTrust generated proof file name.
 pub const ET_PROOF_FILE: &str = "et-proof";
+/// EigenTrust proving key file name.
+pub const ET_PROVING_KEY_FILE: &str = "et-proving-key";
+/// EigenTrust proof public inputs file name.
+pub const ET_PUB_INP_FILE: &str = "et-public-inputs";
+/// KZG parameters file name.
+pub const PARAMS_FILE: &str = "kzg-params";
 
 /// Enum representing the possible file extensions.
 pub enum FileType {
@@ -48,6 +50,7 @@ pub enum EigenFile {
 	KzgParams(u32),
 	ProvingKey,
 	EtProof,
+	ETPublicInputs,
 }
 
 impl EigenFile {
@@ -74,6 +77,7 @@ impl EigenFile {
 			EigenFile::KzgParams(pol_degree) => format!("{}-{}", PARAMS_FILE, pol_degree),
 			EigenFile::ProvingKey => ET_PROVING_KEY_FILE.to_string(),
 			EigenFile::EtProof => ET_PROOF_FILE.to_string(),
+			EigenFile::ETPublicInputs => ET_PUB_INP_FILE.to_string(),
 		}
 	}
 }

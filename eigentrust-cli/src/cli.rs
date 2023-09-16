@@ -10,13 +10,14 @@ use crate::{
 use clap::{Args, Parser, Subcommand};
 use eigentrust::{
 	attestation::{AttestationRaw, SignedAttestationRaw},
+	circuit::ET_PARAMS_K,
 	error::EigenError,
 	eth::deploy_as,
 	storage::{
 		str_to_20_byte_array, str_to_32_byte_array, AttestationRecord, CSVFileStorage,
 		JSONFileStorage, ScoreRecord, Storage,
 	},
-	Client, ET_PARAMS_K,
+	Client,
 };
 use ethers::{abi::Address, providers::Http, types::H160};
 use log::{debug, info};
@@ -336,10 +337,12 @@ pub async fn handle_proof(config: ClientConfig) -> Result<(), EigenError> {
 	let kzg_params = EigenFile::KzgParams(ET_PARAMS_K).load()?;
 
 	// Generate proof
-	let proof: Vec<u8> =
-		client.calculate_scores(attestations?, kzg_params, proving_key).await?.proof;
+	let report = client.calculate_scores(attestations?, kzg_params, proving_key).await?;
 
-	EigenFile::EtProof.save(proof)
+	EigenFile::EtProof.save(report.proof)?;
+	EigenFile::ETPublicInputs.save(report.pub_inputs.to_bytes())?;
+
+	Ok(())
 }
 
 /// Handles `scores` and `local_scores` commands.
@@ -457,9 +460,18 @@ pub fn handle_update(config: &mut ClientConfig, data: UpdateData) -> Result<(), 
 pub async fn handle_verify(config: ClientConfig) -> Result<(), EigenError> {
 	let mnemonic = load_mnemonic();
 	let client = Client::new(config, mnemonic);
+
+	// Load data
+	let kzg_params = EigenFile::KzgParams(ET_PARAMS_K).load()?;
+	let public_inputs = EigenFile::ETPublicInputs.load()?;
+	let proving_key = EigenFile::ProvingKey.load()?;
 	let proof = EigenFile::EtProof.load()?;
 
-	client.verify(proof).await
+	// Verify proof
+	client.verify(kzg_params, public_inputs, proving_key, proof).await?;
+
+	info!("Proof has been verified.");
+	Ok(())
 }
 
 #[cfg(test)]

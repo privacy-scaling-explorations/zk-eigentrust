@@ -4,8 +4,8 @@
 
 use crate::{
 	attestation::{AttestationRaw, SignatureRaw, SignedAttestationRaw},
+	circuit::Score,
 	error::EigenError,
-	Score,
 };
 use csv::{ReaderBuilder, WriterBuilder};
 use ethers::{
