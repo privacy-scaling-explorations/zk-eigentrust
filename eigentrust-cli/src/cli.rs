@@ -33,30 +33,30 @@ pub struct Cli {
 /// CLI commands.
 #[derive(Subcommand)]
 pub enum Mode {
-	/// Submit an attestation. Requires 'AttestData'.
+	/// Submits an attestation. Requires 'AttestData'.
 	Attest(AttestData),
 	/// Retrieves and saves all attestations.
 	Attestations,
-	/// Create Bandada group.
+	/// Creates Bandada group.
 	Bandada(BandadaData),
-	/// Deploy the contracts.
+	/// Deploys the contracts.
 	Deploy,
-	/// Generate EigenTrust circuit proving key
+	/// Generates EigenTrust circuit proof.
+	ETProof,
+	/// Generates EigenTrust circuit proving key
 	ETProvingKey,
-	/// Generate KZG parameters
+	/// Verifies the stored eigentrust circuit proof.
+	ETVerify,
+	/// Generates KZG parameters
 	KZGParams(KZGParamsData),
-	/// Calculate the global scores from the saved attestations.
+	/// Calculates the global scores from the saved attestations.
 	LocalScores,
-	/// Generate the proofs.
-	Proof,
 	/// Retrieves and saves all attestations and calculates the global scores.
 	Scores,
-	/// Display the current configuration.
+	/// Displays the current configuration.
 	Show,
-	/// Update the configuration. Requires 'UpdateData'.
+	/// Updates the configuration. Requires 'UpdateData'.
 	Update(UpdateData),
-	/// Verify the proofs.
-	Verify,
 }
 
 /// Attestation subcommand input.
@@ -306,23 +306,8 @@ pub fn handle_et_pk() -> Result<(), EigenError> {
 	EigenFile::ProvingKey.save(proving_key)
 }
 
-/// Handles KZG parameters generation.
-pub fn handle_params(data: KZGParamsData) -> Result<(), EigenError> {
-	let k = data.k.ok_or(EigenError::ValidationError(
-		"Missing parameter 'k': polynomial degree.".to_string(),
-	))?;
-
-	let pol_degree = k.parse::<u32>().map_err(|e| {
-		EigenError::ParsingError(format!("Error parsing polynomial degree - {}", e))
-	})?;
-
-	let params = Client::generate_kzg_params(pol_degree)?;
-
-	EigenFile::KzgParams(pol_degree).save(params)
-}
-
-/// Handles `proof` command.
-pub async fn handle_proof(config: ClientConfig) -> Result<(), EigenError> {
+/// Handles the eigentrust proof generation command.
+pub async fn handle_et_proof(config: ClientConfig) -> Result<(), EigenError> {
 	let mnemonic = load_mnemonic();
 	let client = Client::new(config, mnemonic);
 
@@ -343,6 +328,39 @@ pub async fn handle_proof(config: ClientConfig) -> Result<(), EigenError> {
 	EigenFile::ETPublicInputs.save(report.pub_inputs.to_bytes())?;
 
 	Ok(())
+}
+
+/// Handles the eigentrust proof verification command.
+pub async fn handle_et_verify(config: ClientConfig) -> Result<(), EigenError> {
+	let mnemonic = load_mnemonic();
+	let client = Client::new(config, mnemonic);
+
+	// Load data
+	let kzg_params = EigenFile::KzgParams(ET_PARAMS_K).load()?;
+	let public_inputs = EigenFile::ETPublicInputs.load()?;
+	let proving_key = EigenFile::ProvingKey.load()?;
+	let proof = EigenFile::EtProof.load()?;
+
+	// Verify proof
+	client.verify(kzg_params, public_inputs, proving_key, proof).await?;
+
+	info!("EigenTrust proof has been verified.");
+	Ok(())
+}
+
+/// Handles KZG parameters generation.
+pub fn handle_params(data: KZGParamsData) -> Result<(), EigenError> {
+	let k = data.k.ok_or(EigenError::ValidationError(
+		"Missing parameter 'k': polynomial degree.".to_string(),
+	))?;
+
+	let pol_degree = k.parse::<u32>().map_err(|e| {
+		EigenError::ParsingError(format!("Error parsing polynomial degree - {}", e))
+	})?;
+
+	let params = Client::generate_kzg_params(pol_degree)?;
+
+	EigenFile::KzgParams(pol_degree).save(params)
 }
 
 /// Handles `scores` and `local_scores` commands.
@@ -454,24 +472,6 @@ pub fn handle_update(config: &mut ClientConfig, data: UpdateData) -> Result<(), 
 	let mut json_storage = JSONFileStorage::<ClientConfig>::new(filepath);
 
 	json_storage.save(config.clone())
-}
-
-/// Handles `verify` command.
-pub async fn handle_verify(config: ClientConfig) -> Result<(), EigenError> {
-	let mnemonic = load_mnemonic();
-	let client = Client::new(config, mnemonic);
-
-	// Load data
-	let kzg_params = EigenFile::KzgParams(ET_PARAMS_K).load()?;
-	let public_inputs = EigenFile::ETPublicInputs.load()?;
-	let proving_key = EigenFile::ProvingKey.load()?;
-	let proof = EigenFile::EtProof.load()?;
-
-	// Verify proof
-	client.verify(kzg_params, public_inputs, proving_key, proof).await?;
-
-	info!("Proof has been verified.");
-	Ok(())
 }
 
 #[cfg(test)]

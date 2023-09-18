@@ -47,14 +47,14 @@ async fn main() -> Result<(), EigenError> {
 		Mode::Attestations => handle_attestations(config).await?,
 		Mode::Bandada(bandada_data) => handle_bandada(&config, bandada_data).await?,
 		Mode::Deploy => handle_deploy(config).await?,
+		Mode::ETProof => handle_et_proof(config).await?,
+		Mode::ETProvingKey => handle_et_pk()?,
+		Mode::ETVerify => handle_et_verify(config).await?,
 		Mode::KZGParams(data) => handle_params(data)?,
 		Mode::LocalScores => handle_scores(config, AttestationsOrigin::Local).await?,
-		Mode::Proof => handle_proof(config).await?,
-		Mode::ETProvingKey => handle_et_pk()?,
 		Mode::Scores => handle_scores(config, AttestationsOrigin::Fetch).await?,
 		Mode::Show => info!("Client config:\n{:#?}", config),
 		Mode::Update(update_data) => handle_update(&mut config, update_data)?,
-		Mode::Verify => handle_verify(config).await?,
 	};
 
 	Ok(())

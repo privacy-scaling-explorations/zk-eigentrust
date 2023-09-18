@@ -485,15 +485,20 @@ impl Client {
 				.map_err(|e| EigenError::ParsingError(e.to_string()))?;
 
 		// Verify
-		verify(
+		let is_verified = verify(
 			&kzg_params,
 			&[&pub_inputs.to_vec()],
 			&proof,
 			proving_key.get_vk(),
 		)
-		.map_err(|e| EigenError::VerificationError(e.to_string()))?;
+		.map_err(|e| EigenError::VerificationError(e.to_string()));
 
-		Ok(())
+		match is_verified? {
+			true => Ok(()),
+			false => Err(EigenError::VerificationError(
+				"Verification failed".to_string(),
+			)),
+		}
 	}
 
 	/// Gets config.
