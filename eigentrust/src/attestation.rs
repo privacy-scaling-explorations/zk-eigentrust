@@ -646,9 +646,13 @@ mod tests {
 
 		let signed_attestation = SignedAttestationEth::new(attestation_eth, signature_eth);
 
-		// Replace with expected address
-		let expected_address_bytes = keypair.public_key.to_address().to_bytes();
-		let expected_address = Address::from_slice(&expected_address_bytes[..20]);
+		// Create expected address
+		let le_address = keypair.public_key.to_address().to_bytes();
+		let mut expected_address_bytes: [u8; 20] = [0; 20];
+		expected_address_bytes.copy_from_slice(&le_address[0..20]);
+		expected_address_bytes.reverse();
+
+		let expected_address = Address::from(expected_address_bytes);
 
 		let public_key = signed_attestation.recover_public_key().unwrap();
 		let address = address_from_ecdsa_key(&public_key);

@@ -810,14 +810,7 @@ mod test {
 	fn test_ecdsa() {
 		// Test Halo2 ECDSA verify
 		let rng = &mut rand::thread_rng();
-		let keypair = EcdsaKeypair::<
-			Secp256k1Affine,
-			N,
-			NUM_LIMBS,
-			NUM_BITS,
-			Secp256k1_4_68,
-			Secp256k1Params,
-		>::generate_keypair(rng);
+		let keypair = EcdsaKeypair::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::generate_keypair(rng);
 		let public_key = keypair.public_key.clone();
 
 		let msg_hash = SecpScalar::from_u128(123456789);
@@ -828,7 +821,7 @@ mod test {
 		let s_inv = Integer::from_w(s_inv_fq);
 
 		let g = Secp256k1::generator().to_affine();
-		let g_as_ecpoint = EcPoint::<Secp256k1Affine, N, NUM_LIMBS, NUM_BITS, P, EC>::new(
+		let g_as_ecpoint = EcPoint::<C, N, NUM_LIMBS, NUM_BITS, P, EC>::new(
 			Integer::from_w(g.x),
 			Integer::from_w(g.y),
 		);

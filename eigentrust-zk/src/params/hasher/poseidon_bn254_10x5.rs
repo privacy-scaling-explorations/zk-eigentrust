@@ -2,7 +2,7 @@ use super::*;
 use halo2::halo2curves::bn256::Fr;
 
 /// Configures a structure.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Params;
 
 impl Sbox for Params {

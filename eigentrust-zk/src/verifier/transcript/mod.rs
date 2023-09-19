@@ -1,7 +1,4 @@
-use super::loader::{
-	native::{NUM_BITS, NUM_LIMBS},
-	Halo2LEcPoint, Halo2LScalar, LoaderConfig,
-};
+use super::loader::{Halo2LEcPoint, Halo2LScalar, LoaderConfig};
 use crate::{
 	ecc::same_curve::AssignedEcPoint,
 	integer::{native::Integer, AssignedInteger},
@@ -33,13 +30,14 @@ pub struct TranscriptReadChipset<
 	RD: Read,
 	C: CurveAffine,
 	L: Layouter<C::Scalar>,
+	const NUM_LIMBS: usize,
+	const NUM_BITS: usize,
 	P,
-	const WIDTH: usize,
 	S,
 	EC,
 > where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
-	S: SpongeHasherChipset<C::Scalar, WIDTH>,
+	S: SpongeHasherChipset<C::Scalar>,
 	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
@@ -49,22 +47,33 @@ pub struct TranscriptReadChipset<
 	// PoseidonSponge
 	state: S,
 	// Loader
-	loader: LoaderConfig<'a, C, L, P, WIDTH, S, EC>,
+	loader: LoaderConfig<'a, C, L, NUM_LIMBS, NUM_BITS, P, S, EC>,
 	// PhantomData
 	_p: PhantomData<P>,
 }
 
-impl<'a, RD: Read, C: CurveAffine, L: Layouter<C::Scalar>, P, const WIDTH: usize, S, EC>
-	TranscriptReadChipset<'a, RD, C, L, P, WIDTH, S, EC>
+impl<
+		'a,
+		RD: Read,
+		C: CurveAffine,
+		L: Layouter<C::Scalar>,
+		const NUM_LIMBS: usize,
+		const NUM_BITS: usize,
+		P,
+		S,
+		EC,
+	> TranscriptReadChipset<'a, RD, C, L, NUM_LIMBS, NUM_BITS, P, S, EC>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
-	S: SpongeHasherChipset<C::Scalar, WIDTH>,
+	S: SpongeHasherChipset<C::Scalar>,
 	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
 {
 	/// Construct a new PoseidonReadChipset
-	pub fn new(reader: Option<RD>, loader: LoaderConfig<'a, C, L, P, WIDTH, S, EC>) -> Self {
+	pub fn new(
+		reader: Option<RD>, loader: LoaderConfig<'a, C, L, NUM_LIMBS, NUM_BITS, P, S, EC>,
+	) -> Self {
 		let sponge = {
 			let mut layouter_mut = loader.layouter.borrow_mut();
 			S::init(&loader.common, layouter_mut.namespace(|| "stateful_sponge")).unwrap()
@@ -74,23 +83,32 @@ where
 	}
 }
 
-impl<'a, RD: Read, C: CurveAffine, L: Layouter<C::Scalar>, P, const WIDTH: usize, S, EC>
-	Transcript<C, LoaderConfig<'a, C, L, P, WIDTH, S, EC>>
-	for TranscriptReadChipset<'a, RD, C, L, P, WIDTH, S, EC>
+impl<
+		'a,
+		RD: Read,
+		C: CurveAffine,
+		L: Layouter<C::Scalar>,
+		const NUM_LIMBS: usize,
+		const NUM_BITS: usize,
+		P,
+		S,
+		EC,
+	> Transcript<C, LoaderConfig<'a, C, L, NUM_LIMBS, NUM_BITS, P, S, EC>>
+	for TranscriptReadChipset<'a, RD, C, L, NUM_LIMBS, NUM_BITS, P, S, EC>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
-	S: SpongeHasherChipset<C::Scalar, WIDTH>,
+	S: SpongeHasherChipset<C::Scalar>,
 	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
 {
 	/// Returns [`LoaderConfig`].
-	fn loader(&self) -> &LoaderConfig<'a, C, L, P, WIDTH, S, EC> {
+	fn loader(&self) -> &LoaderConfig<'a, C, L, NUM_LIMBS, NUM_BITS, P, S, EC> {
 		&self.loader
 	}
 
 	/// Squeeze a challenge.
-	fn squeeze_challenge(&mut self) -> Halo2LScalar<'a, C, L, P, WIDTH, S, EC> {
+	fn squeeze_challenge(&mut self) -> Halo2LScalar<'a, C, L, NUM_LIMBS, NUM_BITS, P, S, EC> {
 		let result = {
 			let mut loader_ref = self.loader.layouter.borrow_mut();
 			let res = self
@@ -109,7 +127,7 @@ where
 
 	/// Update with an elliptic curve point.
 	fn common_ec_point(
-		&mut self, ec_point: &Halo2LEcPoint<C, L, P, WIDTH, S, EC>,
+		&mut self, ec_point: &Halo2LEcPoint<C, L, NUM_LIMBS, NUM_BITS, P, S, EC>,
 	) -> Result<(), snark_verifier::Error> {
 		self.state.update(&ec_point.inner.x.limbs);
 		self.state.update(&ec_point.inner.y.limbs);
@@ -119,7 +137,7 @@ where
 
 	/// Update with a scalar.
 	fn common_scalar(
-		&mut self, scalar: &Halo2LScalar<C, L, P, WIDTH, S, EC>,
+		&mut self, scalar: &Halo2LScalar<C, L, NUM_LIMBS, NUM_BITS, P, S, EC>,
 	) -> Result<(), snark_verifier::Error> {
 		self.state.update(&[scalar.inner.clone()]);
 
@@ -127,18 +145,29 @@ where
 	}
 }
 
-impl<'a, RD: Read, C: CurveAffine, L: Layouter<C::Scalar>, P, const WIDTH: usize, S, EC>
-	TranscriptRead<C, LoaderConfig<'a, C, L, P, WIDTH, S, EC>>
-	for TranscriptReadChipset<'a, RD, C, L, P, WIDTH, S, EC>
+impl<
+		'a,
+		RD: Read,
+		C: CurveAffine,
+		L: Layouter<C::Scalar>,
+		const NUM_LIMBS: usize,
+		const NUM_BITS: usize,
+		P,
+		S,
+		EC,
+	> TranscriptRead<C, LoaderConfig<'a, C, L, NUM_LIMBS, NUM_BITS, P, S, EC>>
+	for TranscriptReadChipset<'a, RD, C, L, NUM_LIMBS, NUM_BITS, P, S, EC>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
-	S: SpongeHasherChipset<C::Scalar, WIDTH>,
+	S: SpongeHasherChipset<C::Scalar>,
 	EC: EccParams<C>,
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
 {
 	/// Read a scalar.
-	fn read_scalar(&mut self) -> Result<Halo2LScalar<'a, C, L, P, WIDTH, S, EC>, VerifierError> {
+	fn read_scalar(
+		&mut self,
+	) -> Result<Halo2LScalar<'a, C, L, NUM_LIMBS, NUM_BITS, P, S, EC>, VerifierError> {
 		// Taking out reader from Value for a proper error handling
 		let scalar = self.reader.as_mut().map_or_else(
 			|| Ok(Value::unknown()),
@@ -186,7 +215,9 @@ where
 	}
 
 	/// Read an elliptic curve point.
-	fn read_ec_point(&mut self) -> Result<Halo2LEcPoint<'a, C, L, P, WIDTH, S, EC>, VerifierError> {
+	fn read_ec_point(
+		&mut self,
+	) -> Result<Halo2LEcPoint<'a, C, L, NUM_LIMBS, NUM_BITS, P, S, EC>, VerifierError> {
 		// Taking out reader from Value for a proper error handling
 		let (x, y, x_limbs, y_limbs) = self.reader.as_mut().map_or_else(
 			|| {
@@ -313,10 +344,7 @@ mod test {
 			PoseidonConfig,
 		},
 		verifier::{
-			loader::{
-				native::{NUM_BITS, NUM_LIMBS},
-				Halo2LEcPoint, Halo2LScalar,
-			},
+			loader::{Halo2LEcPoint, Halo2LScalar},
 			transcript::native::{NativeTranscriptWrite, WIDTH},
 		},
 		Chip, CommonConfig, RegionCtx, UnassignedValue,
@@ -346,6 +374,8 @@ mod test {
 	type Scalar = Fr;
 	type Base = Fq;
 	type EC = Bn254Params;
+	const NUM_LIMBS: usize = 4;
+	const NUM_BITS: usize = 68;
 
 	#[derive(Clone)]
 	struct TestConfig {
@@ -418,7 +448,7 @@ mod test {
 			&self, config: TestConfig, mut layouter: impl Layouter<Scalar>,
 		) -> Result<(), Error> {
 			let res = {
-				let loader = LoaderConfig::<C, _, P, WIDTH, S, EC>::new(
+				let loader = LoaderConfig::<C, _, NUM_LIMBS, NUM_BITS, P, S, EC>::new(
 					layouter.namespace(|| "loader"),
 					config.common.clone(),
 					config.ecc_mul_scalar,
@@ -428,10 +458,11 @@ mod test {
 					config.poseidon_sponge,
 				);
 				let reader = Vec::new();
-				let mut poseidon_read = TranscriptReadChipset::<_, C, _, P, WIDTH, S, EC>::new(
-					Some(reader.as_slice()),
-					loader,
-				);
+				let mut poseidon_read =
+					TranscriptReadChipset::<_, C, _, NUM_LIMBS, NUM_BITS, P, S, EC>::new(
+						Some(reader.as_slice()),
+						loader,
+					);
 				let res = poseidon_read.squeeze_challenge();
 				res.inner
 			};
@@ -446,11 +477,14 @@ mod test {
 	fn test_squeeze_challenge() {
 		// Test squeeze challenge
 		let reader = Vec::new();
-		let mut poseidon_read =
-			NativeTranscriptRead::<_, G1Affine, Bn256_4_68, PoseidonSponge<Fr, 5, Params>>::new(
-				reader.as_slice(),
-				NativeSVLoader,
-			);
+		let mut poseidon_read = NativeTranscriptRead::<
+			_,
+			G1Affine,
+			NUM_LIMBS,
+			NUM_BITS,
+			Bn256_4_68,
+			PoseidonSponge<Fr, 5, Params>,
+		>::new(reader.as_slice(), NativeSVLoader);
 
 		let res = poseidon_read.squeeze_challenge();
 		let k = 7;
@@ -517,7 +551,7 @@ mod test {
 
 			let res = {
 				let loader_layouter = layouter.namespace(|| "loader");
-				let loader = LoaderConfig::<C, _, P, WIDTH, S, EC>::new(
+				let loader = LoaderConfig::<C, _, NUM_LIMBS, NUM_BITS, P, S, EC>::new(
 					loader_layouter,
 					config.common.clone(),
 					config.ecc_mul_scalar,
@@ -542,10 +576,11 @@ mod test {
 				let ec_point = Halo2LEcPoint::new(assigned_point, loader.clone());
 
 				let reader = Vec::new();
-				let mut poseidon_read = TranscriptReadChipset::<_, C, _, P, WIDTH, S, EC>::new(
-					Some(reader.as_slice()),
-					loader,
-				);
+				let mut poseidon_read =
+					TranscriptReadChipset::<_, C, _, NUM_LIMBS, NUM_BITS, P, S, EC>::new(
+						Some(reader.as_slice()),
+						loader,
+					);
 				poseidon_read.common_ec_point(&ec_point).unwrap();
 
 				let res = poseidon_read.squeeze_challenge();
@@ -563,11 +598,14 @@ mod test {
 	fn test_common_ec_point() {
 		// Test common ec point
 		let reader = Vec::new();
-		let mut poseidon_read =
-			NativeTranscriptRead::<_, G1Affine, Bn256_4_68, PoseidonSponge<Fr, 5, Params>>::new(
-				reader.as_slice(),
-				NativeSVLoader,
-			);
+		let mut poseidon_read = NativeTranscriptRead::<
+			_,
+			G1Affine,
+			NUM_LIMBS,
+			NUM_BITS,
+			Bn256_4_68,
+			PoseidonSponge<Fr, 5, Params>,
+		>::new(reader.as_slice(), NativeSVLoader);
 		let rng = &mut thread_rng();
 		let ec_point = C::random(rng);
 		poseidon_read.common_ec_point(&ec_point).unwrap();
@@ -623,7 +661,7 @@ mod test {
 					)
 					.unwrap();
 
-				let loader = LoaderConfig::<C, _, P, WIDTH, S, EC>::new(
+				let loader = LoaderConfig::<C, _, NUM_LIMBS, NUM_BITS, P, S, EC>::new(
 					layouter.namespace(|| "loader"),
 					config.common.clone(),
 					config.ecc_mul_scalar,
@@ -634,10 +672,11 @@ mod test {
 				);
 				let scalar = Halo2LScalar::new(assigned_scalar, loader.clone());
 				let reader = Vec::new();
-				let mut poseidon_read = TranscriptReadChipset::<_, C, _, P, WIDTH, S, EC>::new(
-					Some(reader.as_slice()),
-					loader,
-				);
+				let mut poseidon_read =
+					TranscriptReadChipset::<_, C, _, NUM_LIMBS, NUM_BITS, P, S, EC>::new(
+						Some(reader.as_slice()),
+						loader,
+					);
 				poseidon_read.common_scalar(&scalar).unwrap();
 
 				let res = poseidon_read.squeeze_challenge();
@@ -654,11 +693,14 @@ mod test {
 	fn test_common_scalar() {
 		// Test common scalar
 		let reader = Vec::new();
-		let mut poseidon_read =
-			NativeTranscriptRead::<_, G1Affine, Bn256_4_68, PoseidonSponge<Fr, 5, Params>>::new(
-				reader.as_slice(),
-				NativeSVLoader,
-			);
+		let mut poseidon_read = NativeTranscriptRead::<
+			_,
+			G1Affine,
+			NUM_LIMBS,
+			NUM_BITS,
+			Bn256_4_68,
+			PoseidonSponge<Fr, 5, Params>,
+		>::new(reader.as_slice(), NativeSVLoader);
 		let rng = &mut thread_rng();
 		let scalar = Scalar::random(rng);
 		poseidon_read.common_scalar(&scalar).unwrap();
@@ -697,7 +739,7 @@ mod test {
 			&self, config: TestConfig, mut layouter: impl Layouter<Scalar>,
 		) -> Result<(), Error> {
 			let scalar = {
-				let loader = LoaderConfig::<C, _, P, WIDTH, S, EC>::new(
+				let loader = LoaderConfig::<C, _, NUM_LIMBS, NUM_BITS, P, S, EC>::new(
 					layouter.namespace(|| "loader"),
 					config.common.clone(),
 					config.ecc_mul_scalar,
@@ -707,10 +749,11 @@ mod test {
 					config.poseidon_sponge.clone(),
 				);
 
-				let mut poseidon_read = TranscriptReadChipset::<_, C, _, P, WIDTH, S, EC>::new(
-					self.reader.as_ref().map(|x| x.as_slice()),
-					loader,
-				);
+				let mut poseidon_read =
+					TranscriptReadChipset::<_, C, _, NUM_LIMBS, NUM_BITS, P, S, EC>::new(
+						self.reader.as_ref().map(|x| x.as_slice()),
+						loader,
+					);
 				let res = poseidon_read.read_scalar().unwrap();
 				res.inner
 			};
@@ -728,11 +771,14 @@ mod test {
 		let random = Scalar::random(rng);
 		let mut reader = Vec::new();
 		reader.write_all(random.to_bytes().as_slice()).unwrap();
-		let mut poseidon_read =
-			NativeTranscriptRead::<_, G1Affine, Bn256_4_68, PoseidonSponge<Fr, 5, Params>>::new(
-				reader.as_slice(),
-				NativeSVLoader,
-			);
+		let mut poseidon_read = NativeTranscriptRead::<
+			_,
+			G1Affine,
+			NUM_LIMBS,
+			NUM_BITS,
+			Bn256_4_68,
+			PoseidonSponge<Fr, 5, Params>,
+		>::new(reader.as_slice(), NativeSVLoader);
 
 		let res = poseidon_read.read_scalar().unwrap();
 		let circuit = TestReadScalarCircuit::new(reader);
@@ -768,7 +814,7 @@ mod test {
 			&self, config: TestConfig, mut layouter: impl Layouter<Scalar>,
 		) -> Result<(), Error> {
 			let (x_limbs, y_limbs) = {
-				let loader = LoaderConfig::<C, _, P, WIDTH, S, EC>::new(
+				let loader = LoaderConfig::<C, _, NUM_LIMBS, NUM_BITS, P, S, EC>::new(
 					layouter.namespace(|| "loader"),
 					config.common.clone(),
 					config.ecc_mul_scalar,
@@ -778,10 +824,11 @@ mod test {
 					config.poseidon_sponge.clone(),
 				);
 
-				let mut poseidon_read = TranscriptReadChipset::<_, C, _, P, WIDTH, S, EC>::new(
-					self.reader.as_ref().map(Vec::as_slice),
-					loader,
-				);
+				let mut poseidon_read =
+					TranscriptReadChipset::<_, C, _, NUM_LIMBS, NUM_BITS, P, S, EC>::new(
+						self.reader.as_ref().map(Vec::as_slice),
+						loader,
+					);
 				let res = poseidon_read.read_ec_point().unwrap();
 				let x_limbs = res.inner.clone().x.limbs;
 				let y_limbs = res.inner.clone().y.limbs;
@@ -809,11 +856,14 @@ mod test {
 		let mut reader = Vec::new();
 		reader.write_all(random.as_ref()).unwrap();
 
-		let mut poseidon_read =
-			NativeTranscriptRead::<_, G1Affine, Bn256_4_68, PoseidonSponge<Fr, 5, Params>>::new(
-				reader.as_slice(),
-				NativeSVLoader,
-			);
+		let mut poseidon_read = NativeTranscriptRead::<
+			_,
+			G1Affine,
+			NUM_LIMBS,
+			NUM_BITS,
+			Bn256_4_68,
+			PoseidonSponge<Fr, 5, Params>,
+		>::new(reader.as_slice(), NativeSVLoader);
 
 		let res = poseidon_read.read_ec_point().unwrap();
 		let x = Integer::<_, _, NUM_LIMBS, NUM_BITS, P>::from_w(res.x);
@@ -855,7 +905,7 @@ mod test {
 			&self, config: TestConfig, mut layouter: impl Layouter<Scalar>,
 		) -> Result<(), Error> {
 			let (x1_limbs, y1_limbs, scalar1, x2_limbs, y2_limbs, scalar2) = {
-				let loader = LoaderConfig::<C, _, P, WIDTH, S, EC>::new(
+				let loader = LoaderConfig::<C, _, NUM_LIMBS, NUM_BITS, P, S, EC>::new(
 					layouter.namespace(|| "loader"),
 					config.common.clone(),
 					config.ecc_mul_scalar,
@@ -865,10 +915,11 @@ mod test {
 					config.poseidon_sponge.clone(),
 				);
 
-				let mut poseidon_read = TranscriptReadChipset::<_, C, _, P, WIDTH, S, EC>::new(
-					self.reader.as_ref().map(|x| x.as_slice()),
-					loader,
-				);
+				let mut poseidon_read =
+					TranscriptReadChipset::<_, C, _, NUM_LIMBS, NUM_BITS, P, S, EC>::new(
+						self.reader.as_ref().map(|x| x.as_slice()),
+						loader,
+					);
 
 				let res = poseidon_read.read_ec_point().unwrap();
 				let x1_limbs = res.inner.clone().x.limbs;
@@ -926,11 +977,14 @@ mod test {
 			reader.write_all(random.as_ref()).unwrap();
 			reader.write_all(scalar.to_bytes().as_slice()).unwrap();
 		}
-		let mut poseidon_read =
-			NativeTranscriptRead::<_, G1Affine, Bn256_4_68, PoseidonSponge<Fr, 5, Params>>::new(
-				reader.as_slice(),
-				NativeSVLoader,
-			);
+		let mut poseidon_read = NativeTranscriptRead::<
+			_,
+			G1Affine,
+			NUM_LIMBS,
+			NUM_BITS,
+			Bn256_4_68,
+			PoseidonSponge<Fr, 5, Params>,
+		>::new(reader.as_slice(), NativeSVLoader);
 
 		let mut p_ins = Vec::new();
 		let res = poseidon_read.read_ec_point().unwrap();
@@ -984,7 +1038,7 @@ mod test {
 			&self, config: TestConfig, mut layouter: impl Layouter<Scalar>,
 		) -> Result<(), Error> {
 			let res = {
-				let loader = LoaderConfig::<C, _, P, WIDTH, S, EC>::new(
+				let loader = LoaderConfig::<C, _, NUM_LIMBS, NUM_BITS, P, S, EC>::new(
 					layouter.namespace(|| "loader"),
 					config.common.clone(),
 					config.ecc_mul_scalar,
@@ -994,10 +1048,11 @@ mod test {
 					config.poseidon_sponge.clone(),
 				);
 
-				let mut poseidon_read = TranscriptReadChipset::<_, C, _, P, WIDTH, S, EC>::new(
-					self.reader.as_ref().map(|x| x.as_slice()),
-					loader,
-				);
+				let mut poseidon_read =
+					TranscriptReadChipset::<_, C, _, NUM_LIMBS, NUM_BITS, P, S, EC>::new(
+						self.reader.as_ref().map(|x| x.as_slice()),
+						loader,
+					);
 
 				poseidon_read.read_ec_point().unwrap();
 				poseidon_read.read_scalar().unwrap();
@@ -1025,10 +1080,11 @@ mod test {
 			reader.write_all(random.as_ref()).unwrap();
 			reader.write_all(scalar.to_bytes().as_slice()).unwrap();
 		}
-		let mut poseidon_read = NativeTranscriptRead::<_, G1Affine, Bn256_4_68, NativeH>::new(
-			reader.as_slice(),
-			NativeSVLoader,
-		);
+		let mut poseidon_read =
+			NativeTranscriptRead::<_, G1Affine, NUM_LIMBS, NUM_BITS, Bn256_4_68, NativeH>::new(
+				reader.as_slice(),
+				NativeSVLoader,
+			);
 
 		poseidon_read.read_ec_point().unwrap();
 		poseidon_read.read_scalar().unwrap();
@@ -1070,7 +1126,7 @@ mod test {
 			&self, config: TestConfig, mut layouter: impl Layouter<Scalar>,
 		) -> Result<(), Error> {
 			let res = {
-				let loader = LoaderConfig::<C, _, P, WIDTH, S, EC>::new(
+				let loader = LoaderConfig::<C, _, NUM_LIMBS, NUM_BITS, P, S, EC>::new(
 					layouter.namespace(|| "loader"),
 					config.common.clone(),
 					config.ecc_mul_scalar,
@@ -1080,10 +1136,11 @@ mod test {
 					config.poseidon_sponge.clone(),
 				);
 
-				let mut poseidon_read = TranscriptReadChipset::<_, C, _, P, WIDTH, S, EC>::new(
-					self.reader.as_ref().map(|x| x.as_slice()),
-					loader,
-				);
+				let mut poseidon_read =
+					TranscriptReadChipset::<_, C, _, NUM_LIMBS, NUM_BITS, P, S, EC>::new(
+						self.reader.as_ref().map(|x| x.as_slice()),
+						loader,
+					);
 
 				poseidon_read.read_scalar().unwrap();
 				poseidon_read.read_ec_point().unwrap();
@@ -1111,7 +1168,9 @@ mod test {
 		let random_ec2 = C::random(rng.clone());
 
 		let mut poseidon_write =
-			NativeTranscriptWrite::<_, G1Affine, Bn256_4_68, NativeH>::init(Vec::new());
+			NativeTranscriptWrite::<_, G1Affine, NUM_LIMBS, NUM_BITS, Bn256_4_68, NativeH>::init(
+				Vec::new(),
+			);
 
 		poseidon_write.write_scalar(random_scalar1).unwrap();
 		poseidon_write.write_ec_point(random_ec1).unwrap();

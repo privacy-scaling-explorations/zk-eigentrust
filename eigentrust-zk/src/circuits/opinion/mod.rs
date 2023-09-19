@@ -286,7 +286,7 @@ where
 pub struct OpinionConfig<F: FieldExt, H, S>
 where
 	H: HasherChipset<F, HASHER_WIDTH>,
-	S: SpongeHasherChipset<F, HASHER_WIDTH>,
+	S: SpongeHasherChipset<F>,
 {
 	ecdsa: EcdsaConfig,
 	main: MainConfig,
@@ -298,7 +298,7 @@ where
 impl<F: FieldExt, H, S> OpinionConfig<F, H, S>
 where
 	H: HasherChipset<F, HASHER_WIDTH>,
-	S: SpongeHasherChipset<F, HASHER_WIDTH>,
+	S: SpongeHasherChipset<F>,
 {
 	/// Construct a new config
 	pub fn new(
@@ -327,7 +327,7 @@ pub struct OpinionChipset<
 	C::Base: FieldExt,
 	C::ScalarExt: FieldExt,
 	H: HasherChipset<N, HASHER_WIDTH>,
-	SH: SpongeHasherChipset<N, HASHER_WIDTH>,
+	SH: SpongeHasherChipset<N>,
 {
 	/// Domain of the attestations
 	domain: AssignedCell<N, N>,
@@ -362,7 +362,7 @@ where
 	C::Base: FieldExt,
 	C::ScalarExt: FieldExt,
 	H: HasherChipset<N, HASHER_WIDTH>,
-	SH: SpongeHasherChipset<N, HASHER_WIDTH>,
+	SH: SpongeHasherChipset<N>,
 {
 	/// Create a new chip.
 	pub fn new(
@@ -401,7 +401,7 @@ where
 	C::Base: FieldExt,
 	C::ScalarExt: FieldExt,
 	H: HasherChipset<N, HASHER_WIDTH>,
-	SH: SpongeHasherChipset<N, HASHER_WIDTH>,
+	SH: SpongeHasherChipset<N>,
 {
 	type Config = OpinionConfig<N, H, SH>;
 	type Output = (Vec<AssignedCell<N, N>>, AssignedCell<N, N>);

@@ -106,7 +106,7 @@ where
 	default: AssignedCell<F, F>,
 }
 
-impl<F: FieldExt, const WIDTH: usize, P> SpongeHasherChipset<F, WIDTH>
+impl<F: FieldExt, const WIDTH: usize, P> SpongeHasherChipset<F>
 	for StatefulSpongeChipset<F, WIDTH, P>
 where
 	P: RoundParams<F, WIDTH>,

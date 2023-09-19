@@ -7,7 +7,6 @@ use crate::{
 	FieldExt, Hasher, SpongeHasher,
 };
 use halo2::halo2curves::CurveAffine;
-use itertools::Itertools;
 use num_bigint::{BigInt, ToBigInt};
 use num_rational::BigRational;
 use num_traits::{FromPrimitive, One, Zero};
@@ -47,6 +46,14 @@ where
 	/// Constructs a new empty attestation
 	pub fn empty(domain: N) -> Self {
 		let attestation = Attestation::<N> { domain, ..Default::default() };
+		let signature = Signature { r: Integer::one(), s: Integer::one(), ..Default::default() };
+
+		Self { attestation, signature }
+	}
+
+	/// Constructs a new empty attestation with about
+	pub fn empty_with_about(about: N, domain: N) -> Self {
+		let attestation = Attestation::<N> { about, domain, ..Default::default() };
 		let signature = Signature { r: Integer::one(), s: Integer::one(), ..Default::default() };
 
 		Self { attestation, signature }
@@ -195,13 +202,28 @@ impl<
 		&mut self, from: PublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>,
 		op: Vec<Option<SignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>>>,
 	) -> N {
-		let empty_att = SignedAttestation::empty(self.domain);
-		let op_unwrapped = op.iter().map(|x| x.clone().unwrap_or(empty_att.clone())).collect_vec();
-		let op = Opinion::<NUM_NEIGHBOURS, C, N, NUM_LIMBS, NUM_BITS, P, EC, H, SH>::new(
-			from, op_unwrapped, self.domain,
+		// Get participant set addresses
+		let set: Vec<N> = self.set.iter().map(|&(addr, _)| addr).collect();
+
+		// Build the opinion group by unwrapping attestations and filling the empty ones with default values.
+		// Enumerating to keep track of the participant this opinion is about.
+		let opinion_group = op
+			.into_iter()
+			.enumerate()
+			.map(|(index, attestation)| {
+				attestation.unwrap_or_else(|| {
+					SignedAttestation::<C, N, NUM_LIMBS, NUM_BITS, P>::empty_with_about(
+						set[index], self.domain,
+					)
+				})
+			})
+			.collect();
+
+		// Build opinion from the opinion group and validate
+		let opinion = Opinion::<NUM_NEIGHBOURS, C, N, NUM_LIMBS, NUM_BITS, P, EC, H, SH>::new(
+			from, opinion_group, self.domain,
 		);
-		let set = self.set.iter().map(|&(addr, _)| addr).collect();
-		let (addr, scores, op_hash) = op.validate(set);
+		let (addr, scores, op_hash) = opinion.validate(set);
 
 		self.ops.insert(addr, scores);
 

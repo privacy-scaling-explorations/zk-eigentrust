@@ -26,6 +26,7 @@
 	clippy::needless_borrow
 )]
 
+use std::fmt::Debug;
 use std::hash::Hash;
 
 use halo2::halo2curves::bn256::Fr as Scalar;
@@ -112,9 +113,9 @@ pub trait HasherChipset<F: FieldExt, const WIDTH: usize>: Chipset<F> + Clone {
 }
 
 /// Sponge Hasher chipset trait
-pub trait SpongeHasherChipset<F: FieldExt, const WIDTH: usize>: Clone {
+pub trait SpongeHasherChipset<F: FieldExt>: Clone + Debug {
 	/// Config selectors for the sponge
-	type Config: Clone;
+	type Config: Clone + Debug;
 	/// Creates a new sponge hasher chipset
 	fn init(common: &CommonConfig, layouter: impl Layouter<F>) -> Result<Self, Error>;
 	/// Configure
