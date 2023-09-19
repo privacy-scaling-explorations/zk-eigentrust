@@ -158,12 +158,13 @@ impl Client {
 
 	/// Generates new KZG params (Mostly used for testing)
 	pub fn generate_kzg_params(k: u32) -> Result<Vec<u8>, EigenError> {
-		info!("Generating KZG parameters, this may take a while!");
+		info!("Generating KZG parameters, this may take a while.");
 
 		let start_time = Instant::now();
 		let params = generate_params::<Bn256>(k);
 		let elapsed_time = start_time.elapsed();
 
+		info!("KZG parameters generated.");
 		debug!("KZG parameters generation time: {:?}", elapsed_time);
 
 		let mut buffer: Vec<u8> = Vec::new();
@@ -186,12 +187,13 @@ impl Client {
 		let kzg_params = ParamsKZG::<Bn256>::read(&mut raw_kzg_params.as_slice())
 			.map_err(|e| EigenError::ReadWriteError(format!("Failed to read KZG params: {}", e)))?;
 
-		info!("Generating proving key, this may take a while!");
+		info!("Generating proving key, this may take a while.");
 		let start_time = Instant::now();
 		let proving_key = keygen(&kzg_params, et)
 			.map_err(|_| EigenError::KeygenError("Failed to generate pk/vk pair".to_string()))?;
 		let elapsed_time = start_time.elapsed();
 
+		info!("Proving key generated.");
 		debug!("Proving key generation time: {:?}", elapsed_time);
 
 		Ok(proving_key.to_bytes(SerdeFormat::Processed))

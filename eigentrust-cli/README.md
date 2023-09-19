@@ -56,12 +56,12 @@ The next step is submitting an attestation to a peer in the network. Attestation
 ./target/release/eigentrust-cli attest --to 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 --score 5
 ```
 
-With two peers and one score we can now run the eigentrust algorithm and calculate the global scores, but first we need to generate some important parameters. We'll start generating the KZG public verifier parameters.
+With two peers and one score we can now run the eigentrust algorithm and calculate the global scores, but first we need to generate some important parameters. We'll start generating the KZG public verifier parameters for the eigentrust circuit, it's polynomial degree is 20.
 
 **This command could take some time to complete depending on your hardware ⏳**
 
 ```bash
-./target/release/eigentrust-cli kzg-params
+./target/release/eigentrust-cli kzg-params --k 20
 ```
 
 Once we have them, it's possible to create a proving key:
