@@ -849,14 +849,14 @@ mod tests {
 
 	fn ratio_to_decomposed_helper<
 		F: FieldExt,
-		const NUM_LIMBS: usize,
+		const NUM_DECIMAL_LIMBS: usize,
 		const POWER_OF_TEN: usize,
 	>(
 		ratio: BigRational,
-	) -> ([F; NUM_LIMBS], [F; NUM_LIMBS]) {
+	) -> ([F; NUM_DECIMAL_LIMBS], [F; NUM_DECIMAL_LIMBS]) {
 		let num = ratio.numer();
 		let den = ratio.denom();
-		let max_len = NUM_LIMBS * POWER_OF_TEN;
+		let max_len = NUM_DECIMAL_LIMBS * POWER_OF_TEN;
 		let bigger = num.max(den);
 		let dig_len = bigger.to_string().len();
 		let diff = max_len - dig_len;
@@ -867,8 +867,10 @@ mod tests {
 		let num_scaled_uint = num_scaled.to_biguint().unwrap();
 		let den_scaled_uint = den_scaled.to_biguint().unwrap();
 
-		let num_decomposed = decompose_big_decimal::<F, NUM_LIMBS, POWER_OF_TEN>(num_scaled_uint);
-		let den_decomposed = decompose_big_decimal::<F, NUM_LIMBS, POWER_OF_TEN>(den_scaled_uint);
+		let num_decomposed =
+			decompose_big_decimal::<F, NUM_DECIMAL_LIMBS, POWER_OF_TEN>(num_scaled_uint);
+		let den_decomposed =
+			decompose_big_decimal::<F, NUM_DECIMAL_LIMBS, POWER_OF_TEN>(den_scaled_uint);
 
 		(num_decomposed, den_decomposed)
 	}
@@ -1050,7 +1052,7 @@ mod tests {
 
 		let threshold_circuit: ThresholdCircuit<
 			E,
-			NUM_LIMBS,
+			NUM_DECIMAL_LIMBS,
 			POWER_OF_TEN,
 			NUM_NEIGHBOURS,
 			INITIAL_SCORE,
