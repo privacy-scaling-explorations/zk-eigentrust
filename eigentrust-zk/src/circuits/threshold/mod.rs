@@ -399,6 +399,7 @@ impl<
 		)?;
 
 		// verify if the "sets" & "scores" are valid, using aggregation verify
+		// TODO: Use actual set and scores as PI for aggregator
 		let aggregator = AggregatorChipset::<E, NUM_LIMBS, NUM_BITS, P, S, EC>::new(
 			self.svk,
 			self.snarks.clone(),
