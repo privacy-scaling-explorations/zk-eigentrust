@@ -1,14 +1,15 @@
 use self::{
 	dynamic_sets::{native::EigenTrustSet as NativeEigenTrustSet, EigenTrustSet},
-	threshold::native::Threshold,
+	threshold::{native::Threshold, ThresholdCircuit},
 };
 use crate::{
 	ecdsa::native::{EcdsaKeypair, PublicKey, Signature},
 	eddsa::EddsaChipset,
 	edwards::params::BabyJubJub,
 	params::{
-		ecc::secp256k1::Secp256k1Params, hasher::poseidon_bn254_5x5::Params,
-		rns::secp256k1::Secp256k1_4_68,
+		ecc::{bn254::Bn254Params, secp256k1::Secp256k1Params},
+		hasher::poseidon_bn254_5x5::Params,
+		rns::{bn256::Bn256_4_68, secp256k1::Secp256k1_4_68},
 	},
 	poseidon::{
 		native::{sponge::PoseidonSponge, Poseidon},
@@ -16,7 +17,10 @@ use crate::{
 		FullRoundChip, PartialRoundChip, PoseidonChipset,
 	},
 };
-use halo2::halo2curves::{bn256::Fr as Scalar, secp256k1::Secp256k1Affine};
+use halo2::halo2curves::{
+	bn256::{Bn256, Fr as Scalar},
+	secp256k1::Secp256k1Affine,
+};
 use num_rational::BigRational;
 
 /// EigenTrustSet
@@ -103,5 +107,20 @@ pub type EigenTrust4 = EigenTrustSet<
 >;
 
 /// Native Threshold for scores computed in EigenTrust4
-pub type Threshold4 =
+pub type NativeThreshold4 =
 	Threshold<Scalar, NUM_DECIMAL_LIMBS, POWER_OF_TEN, NUM_NEIGHBOURS, INITIAL_SCORE>;
+
+/// Threshold Circuit for scores computed in EigenTrust4
+pub type Threshold4 = ThresholdCircuit<
+	Bn256,
+	NUM_DECIMAL_LIMBS,
+	POWER_OF_TEN,
+	NUM_NEIGHBOURS,
+	INITIAL_SCORE,
+	NUM_LIMBS,
+	NUM_BITS,
+	Bn256_4_68,
+	Bn254Params,
+	SpongeHasher,
+	Params,
+>;

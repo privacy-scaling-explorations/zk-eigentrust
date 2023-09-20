@@ -6,7 +6,6 @@ use crate::{
 	params::{ecc::EccParams, rns::RnsParams},
 	verifier::{
 		gen_pk,
-		loader::native::{NUM_BITS, NUM_LIMBS},
 		transcript::native::{NativeTranscriptRead, NativeTranscriptWrite},
 	},
 	FieldExt, SpongeHasher,
@@ -40,7 +39,7 @@ use snark_verifier::{
 
 #[derive(Clone)]
 /// Snark structure
-pub struct Snark<E, P, S, EC>
+pub struct Snark<E, const NUM_LIMBS: usize, const NUM_BITS: usize, P, S, EC>
 where
 	E: MultiMillerLoop,
 	P: RnsParams<<E::G1Affine as CurveAffine>::Base, E::Scalar, NUM_LIMBS, NUM_BITS>,
@@ -59,7 +58,8 @@ where
 	_p: PhantomData<(P, S, EC, E)>,
 }
 
-impl<E, P, S, EC> Snark<E, P, S, EC>
+impl<E, const NUM_LIMBS: usize, const NUM_BITS: usize, P, S, EC>
+	Snark<E, NUM_LIMBS, NUM_BITS, P, S, EC>
 where
 	E: MultiMillerLoop + Debug,
 	P: RnsParams<<E::G1Affine as CurveAffine>::Base, E::Scalar, NUM_LIMBS, NUM_BITS>,
@@ -80,7 +80,8 @@ where
 		let protocol = compile(params, pk.get_vk(), config);
 
 		let instances_slice: Vec<&[E::Scalar]> = instances.iter().map(|x| x.as_slice()).collect();
-		let mut transcript = NativeTranscriptWrite::<_, E::G1Affine, P, S>::new(Vec::new());
+		let mut transcript =
+			NativeTranscriptWrite::<_, E::G1Affine, NUM_LIMBS, NUM_BITS, P, S>::new(Vec::new());
 		create_proof::<KZGCommitmentScheme<E>, ProverGWC<_>, _, _, _, _>(
 			params,
 			&pk,
@@ -98,7 +99,7 @@ where
 
 /// Native Aggregator
 #[derive(Clone)]
-pub struct NativeAggregator<E, P, S, EC>
+pub struct NativeAggregator<E, const NUM_LIMBS: usize, const NUM_BITS: usize, P, S, EC>
 where
 	E: MultiMillerLoop + Debug,
 	P: RnsParams<<E::G1Affine as CurveAffine>::Base, E::Scalar, NUM_LIMBS, NUM_BITS>,
@@ -112,7 +113,7 @@ where
 	/// Succinct Verifying Key
 	pub svk: Svk<E::G1Affine>,
 	/// Snarks for the aggregation
-	pub snarks: Vec<Snark<E, P, S, EC>>,
+	pub snarks: Vec<Snark<E, NUM_LIMBS, NUM_BITS, P, S, EC>>,
 	/// Instances
 	pub instances: Vec<E::Scalar>,
 	/// Accumulation Scheme Proof
@@ -121,7 +122,8 @@ where
 	_p: PhantomData<(P, S, EC, E)>,
 }
 
-impl<E, P, S, EC> NativeAggregator<E, P, S, EC>
+impl<E, const NUM_LIMBS: usize, const NUM_BITS: usize, P, S, EC>
+	NativeAggregator<E, NUM_LIMBS, NUM_BITS, P, S, EC>
 where
 	E: MultiMillerLoop + Debug,
 	P: RnsParams<<E::G1Affine as CurveAffine>::Base, E::Scalar, NUM_LIMBS, NUM_BITS>,
@@ -133,13 +135,21 @@ where
 	E::G2Affine: SerdeObject,
 {
 	/// Create a new aggregator.
-	pub fn new(params: &ParamsKZG<E>, snarks: Vec<Snark<E, P, S, EC>>) -> Self {
+	pub fn new(
+		params: &ParamsKZG<E>, snarks: Vec<Snark<E, NUM_LIMBS, NUM_BITS, P, S, EC>>,
+	) -> Self {
 		let svk = params.get_g()[0].into();
 
 		let mut plonk_proofs = Vec::new();
 		for snark in &snarks {
-			let mut transcript_read: NativeTranscriptRead<_, E::G1Affine, P, S> =
-				NativeTranscriptRead::init(snark.proof.as_slice());
+			let mut transcript_read: NativeTranscriptRead<
+				_,
+				E::G1Affine,
+				NUM_LIMBS,
+				NUM_BITS,
+				P,
+				S,
+			> = NativeTranscriptRead::init(snark.proof.as_slice());
 
 			let proof = Psv::<E>::read_proof(
 				&svk, &snark.protocol, &snark.instances, &mut transcript_read,
@@ -151,7 +161,9 @@ where
 		}
 
 		let mut transcript_write =
-			NativeTranscriptWrite::<Vec<u8>, E::G1Affine, P, S>::new(Vec::new());
+			NativeTranscriptWrite::<Vec<u8>, E::G1Affine, NUM_LIMBS, NUM_BITS, P, S>::new(
+				Vec::new(),
+			);
 		let rng = &mut thread_rng();
 		let accumulator = KzgAs::<E, Gwc19>::create_proof(
 			&Default::default(),
@@ -177,8 +189,14 @@ where
 		let mut accumulators = Vec::new();
 		for snark in self.snarks.iter() {
 			let snark_proof = snark.proof.clone();
-			let mut transcript_read: NativeTranscriptRead<_, E::G1Affine, P, S> =
-				NativeTranscriptRead::init(snark_proof.as_slice());
+			let mut transcript_read: NativeTranscriptRead<
+				_,
+				E::G1Affine,
+				NUM_LIMBS,
+				NUM_BITS,
+				P,
+				S,
+			> = NativeTranscriptRead::init(snark_proof.as_slice());
 			let proof = PlonkSuccinctVerifier::<KzgAs<E, Gwc19>>::read_proof(
 				&self.svk, &snark.protocol, &snark.instances, &mut transcript_read,
 			)
@@ -191,7 +209,7 @@ where
 		}
 
 		let as_proof = self.as_proof.clone();
-		let mut transcript: NativeTranscriptRead<_, E::G1Affine, P, S> =
+		let mut transcript: NativeTranscriptRead<_, E::G1Affine, NUM_LIMBS, NUM_BITS, P, S> =
 			NativeTranscriptRead::init(as_proof.as_slice());
 		let proof =
 			KzgAs::<E, Gwc19>::read_proof(&Default::default(), &accumulators, &mut transcript)
@@ -229,6 +247,8 @@ mod test {
 	use rand::thread_rng;
 
 	type Scalar = Fr;
+	const NUM_LIMBS: usize = 4;
+	const NUM_BITS: usize = 68;
 
 	#[derive(Clone)]
 	pub struct MulConfig {
@@ -311,12 +331,14 @@ mod test {
 		let instances_1: Vec<Vec<Fr>> = vec![vec![Fr::one()]];
 		let instances_2: Vec<Vec<Fr>> = vec![vec![Fr::one()]];
 
-		let snark_1 = Snark::<Bn256, Bn256_4_68, PoseidonNativeSponge, Bn254Params>::new(
-			&params,
-			random_circuit_1,
-			instances_1.clone(),
-			rng,
-		);
+		let snark_1 = Snark::<
+			Bn256,
+			NUM_LIMBS,
+			NUM_BITS,
+			Bn256_4_68,
+			PoseidonNativeSponge,
+			Bn254Params,
+		>::new(&params, random_circuit_1, instances_1.clone(), rng);
 		let snark_2 = Snark::new(&params, random_circuit_2, instances_2.clone(), rng);
 
 		let snarks = vec![snark_1, snark_2];

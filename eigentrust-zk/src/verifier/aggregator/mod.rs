@@ -2,7 +2,6 @@
 pub mod native;
 
 use self::native::Snark;
-use super::loader::native::{NUM_BITS, NUM_LIMBS};
 use crate::{
 	ecc::{AuxConfig, EccAddConfig, EccMulConfig},
 	gadgets::main::MainConfig,
@@ -49,7 +48,8 @@ where
 	proof: Option<Vec<u8>>,
 }
 
-impl<E, P, S, EC> From<Snark<E, P, S, EC>> for UnassignedSnark<E>
+impl<E, const NUM_LIMBS: usize, const NUM_BITS: usize, P, S, EC>
+	From<Snark<E, NUM_LIMBS, NUM_BITS, P, S, EC>> for UnassignedSnark<E>
 where
 	E: MultiMillerLoop,
 	P: RnsParams<<E::G1Affine as CurveAffine>::Base, E::Scalar, NUM_LIMBS, NUM_BITS>,
@@ -58,7 +58,7 @@ where
 	<E::G1Affine as CurveAffine>::Base: FieldExt,
 	E::Scalar: FieldExt,
 {
-	fn from(snark: Snark<E, P, S, EC>) -> Self {
+	fn from(snark: Snark<E, NUM_LIMBS, NUM_BITS, P, S, EC>) -> Self {
 		Self {
 			protocol: snark.protocol,
 			instances: snark
@@ -76,7 +76,8 @@ where
 	E: MultiMillerLoop,
 	E::Scalar: FieldExt,
 {
-	fn without_witness(&self) -> Self {
+	/// Returns the struct with unknown witnesses
+	pub fn without_witness(&self) -> Self {
 		UnassignedSnark {
 			protocol: self.protocol.clone(),
 			instances: self
@@ -95,7 +96,7 @@ where
 
 #[derive(Debug)]
 /// AggregatorChipset
-pub struct AggregatorChipset<E, P, S, EC>
+pub struct AggregatorChipset<E, const NUM_LIMBS: usize, const NUM_BITS: usize, P, S, EC>
 where
 	E: MultiMillerLoop,
 	P: RnsParams<<E::G1Affine as CurveAffine>::Base, E::Scalar, NUM_LIMBS, NUM_BITS>,
@@ -114,7 +115,8 @@ where
 	_p: PhantomData<(P, S, EC, E)>,
 }
 
-impl<E, P, S, EC> AggregatorChipset<E, P, S, EC>
+impl<E, const NUM_LIMBS: usize, const NUM_BITS: usize, P, S, EC>
+	AggregatorChipset<E, NUM_LIMBS, NUM_BITS, P, S, EC>
 where
 	E: MultiMillerLoop,
 	P: RnsParams<<E::G1Affine as CurveAffine>::Base, E::Scalar, NUM_LIMBS, NUM_BITS>,
@@ -131,7 +133,8 @@ where
 	}
 }
 
-impl<E, P, S, EC> Clone for AggregatorChipset<E, P, S, EC>
+impl<E, const NUM_LIMBS: usize, const NUM_BITS: usize, P, S, EC> Clone
+	for AggregatorChipset<E, NUM_LIMBS, NUM_BITS, P, S, EC>
 where
 	E: MultiMillerLoop,
 	P: RnsParams<<E::G1Affine as CurveAffine>::Base, E::Scalar, NUM_LIMBS, NUM_BITS>,
@@ -152,7 +155,7 @@ where
 }
 
 /// AggregatorConfig structure
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct AggregatorConfig<F: FieldExt, S>
 where
 	S: SpongeHasherChipset<F>,
@@ -169,7 +172,8 @@ impl<F: FieldExt, S> AggregatorConfig<F, S>
 where
 	S: SpongeHasherChipset<F>,
 {
-	fn new(
+	/// Constructs new AggregatorConfig
+	pub fn new(
 		main: MainConfig, sponge: S::Config, ecc_mul_scalar: EccMulConfig, ecc_add: EccAddConfig,
 		aux: AuxConfig,
 	) -> Self {
@@ -177,7 +181,8 @@ where
 	}
 }
 
-impl<E, P, S, EC> Chipset<E::Scalar> for AggregatorChipset<E, P, S, EC>
+impl<E, const NUM_LIMBS: usize, const NUM_BITS: usize, P, S, EC> Chipset<E::Scalar>
+	for AggregatorChipset<E, NUM_LIMBS, NUM_BITS, P, S, EC>
 where
 	E: MultiMillerLoop,
 	P: RnsParams<<E::G1Affine as CurveAffine>::Base, E::Scalar, NUM_LIMBS, NUM_BITS>,
@@ -223,15 +228,16 @@ where
 		)?;
 
 		let accumulator_limbs = {
-			let loader_config = LoaderConfig::<'_, E::G1Affine, _, P, S, EC>::new(
-				layouter.namespace(|| "loader"),
-				common.clone(),
-				config.ecc_mul_scalar.clone(),
-				config.ecc_add.clone(),
-				config.aux.clone(),
-				config.main.clone(),
-				config.sponge.clone(),
-			);
+			let loader_config =
+				LoaderConfig::<'_, E::G1Affine, _, NUM_LIMBS, NUM_BITS, P, S, EC>::new(
+					layouter.namespace(|| "loader"),
+					common.clone(),
+					config.ecc_mul_scalar.clone(),
+					config.ecc_add.clone(),
+					config.aux.clone(),
+					config.main.clone(),
+					config.sponge.clone(),
+				);
 
 			let mut accumulators = Vec::new();
 			for (i, snark) in self.snarks.iter().enumerate() {
@@ -248,8 +254,16 @@ where
 
 				let protocol = snark.protocol.loaded(&loader_config);
 
-				let mut transcript_read: TranscriptReadChipset<&[u8], E::G1Affine, _, P, S, EC> =
-					TranscriptReadChipset::new(snark.proof(), loader_config.clone());
+				let mut transcript_read: TranscriptReadChipset<
+					&[u8],
+					E::G1Affine,
+					_,
+					NUM_LIMBS,
+					NUM_BITS,
+					P,
+					S,
+					EC,
+				> = TranscriptReadChipset::new(snark.proof(), loader_config.clone());
 
 				let proof = PlonkSuccinctVerifier::<KzgAs<E, Gwc19>>::read_proof(
 					&self.svk, &protocol, &loaded_instances, &mut transcript_read,
@@ -264,8 +278,16 @@ where
 			}
 
 			let as_proof = self.as_proof.as_deref();
-			let mut transcript: TranscriptReadChipset<&[u8], E::G1Affine, _, P, S, EC> =
-				TranscriptReadChipset::new(as_proof, loader_config);
+			let mut transcript: TranscriptReadChipset<
+				&[u8],
+				E::G1Affine,
+				_,
+				NUM_LIMBS,
+				NUM_BITS,
+				P,
+				S,
+				EC,
+			> = TranscriptReadChipset::new(as_proof, loader_config);
 			let proof =
 				KzgAs::<E, Gwc19>::read_proof(&Default::default(), &accumulators, &mut transcript)
 					.unwrap();
@@ -308,10 +330,7 @@ mod test {
 		params::{ecc::bn254::Bn254Params, rns::bn256::Bn256_4_68},
 		poseidon::{sponge::PoseidonSpongeConfig, PoseidonConfig},
 		utils::generate_params,
-		verifier::{
-			loader::native::{NUM_BITS, NUM_LIMBS},
-			transcript::native::WIDTH,
-		},
+		verifier::transcript::native::WIDTH,
 		Chip, Chipset, CommonConfig, RegionCtx,
 	};
 	use halo2::{
@@ -330,6 +349,9 @@ mod test {
 	type W = Fq;
 	type P = Bn256_4_68;
 	type EC = Bn254Params;
+	type S = PoseidonNativeSponge;
+	const NUM_LIMBS: usize = 4;
+	const NUM_BITS: usize = 68;
 
 	#[derive(Clone)]
 	pub struct MulConfig {
@@ -413,7 +435,7 @@ mod test {
 
 	impl AggregatorTestCircuit {
 		fn new(
-			svk: Svk<C>, snarks: Vec<Snark<E, P, PoseidonNativeSponge, EC>>, as_proof: Vec<u8>,
+			svk: Svk<C>, snarks: Vec<Snark<E, NUM_LIMBS, NUM_BITS, P, S, EC>>, as_proof: Vec<u8>,
 		) -> Self {
 			Self { svk, snarks: snarks.into_iter().map_into().collect(), as_proof: Some(as_proof) }
 		}
@@ -477,11 +499,12 @@ mod test {
 		fn synthesize(
 			&self, config: Self::Config, mut layouter: impl Layouter<Scalar>,
 		) -> Result<(), Error> {
-			let aggregator_chipset = AggregatorChipset::<E, P, SpongeHasher, EC>::new(
-				self.svk,
-				self.snarks.clone(),
-				self.as_proof.clone(),
-			);
+			let aggregator_chipset =
+				AggregatorChipset::<E, NUM_LIMBS, NUM_BITS, P, SpongeHasher, EC>::new(
+					self.svk,
+					self.snarks.clone(),
+					self.as_proof.clone(),
+				);
 			let accumulator_limbs = aggregator_chipset.synthesize(
 				&config.common,
 				&config.aggregator,

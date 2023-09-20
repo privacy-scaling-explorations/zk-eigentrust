@@ -5,11 +5,13 @@ pub mod poseidon_bn254_5x5;
 /// Rescue Prime Bn254 with WIDTH = 5 and EXPONENTIATION = 5
 pub mod rescue_prime_bn254_5x5;
 
+use std::fmt::Debug;
+
 use crate::FieldExt;
 use halo2::{circuit::Value, plonk::Expression};
 
 /// Trait definition of Round parameters of Poseidon
-pub trait RoundParams<F: FieldExt, const WIDTH: usize>: Sbox + Clone {
+pub trait RoundParams<F: FieldExt, const WIDTH: usize>: Sbox + Clone + Debug {
 	/// Returns a number of full rounds.
 	fn full_rounds() -> usize;
 	/// Returns a number of partial rounds.

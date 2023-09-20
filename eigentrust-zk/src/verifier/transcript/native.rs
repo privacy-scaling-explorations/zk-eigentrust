@@ -1,9 +1,4 @@
-use crate::{
-	integer::native::Integer,
-	params::rns::RnsParams,
-	verifier::loader::native::{NUM_BITS, NUM_LIMBS},
-	FieldExt, SpongeHasher,
-};
+use crate::{integer::native::Integer, params::rns::RnsParams, FieldExt, SpongeHasher};
 use halo2::{
 	halo2curves::{Coordinates, CurveAffine},
 	transcript::{
@@ -28,8 +23,14 @@ use std::{
 pub const WIDTH: usize = 5;
 
 /// NativeTranscriptRead structure
-pub struct NativeTranscriptRead<RD: Read, C: CurveAffine, P, H>
-where
+pub struct NativeTranscriptRead<
+	RD: Read,
+	C: CurveAffine,
+	const NUM_LIMBS: usize,
+	const NUM_BITS: usize,
+	P,
+	H,
+> where
 	H: SpongeHasher<C::Scalar>,
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	C::Base: FieldExt,
@@ -47,7 +48,8 @@ where
 	_c: PhantomData<C>,
 }
 
-impl<RD: Read, C: CurveAffine, P, H> NativeTranscriptRead<RD, C, P, H>
+impl<RD: Read, C: CurveAffine, const NUM_LIMBS: usize, const NUM_BITS: usize, P, H>
+	NativeTranscriptRead<RD, C, NUM_LIMBS, NUM_BITS, P, H>
 where
 	H: SpongeHasher<C::Scalar>,
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
@@ -61,8 +63,8 @@ where
 	}
 }
 
-impl<RD: Read, C: CurveAffine, P, H> Transcript<C, NativeSVLoader>
-	for NativeTranscriptRead<RD, C, P, H>
+impl<RD: Read, C: CurveAffine, const NUM_LIMBS: usize, const NUM_BITS: usize, P, H>
+	Transcript<C, NativeSVLoader> for NativeTranscriptRead<RD, C, NUM_LIMBS, NUM_BITS, P, H>
 where
 	H: SpongeHasher<C::Scalar>,
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
@@ -101,8 +103,8 @@ where
 	}
 }
 
-impl<RD: Read, C: CurveAffine, P, H> TranscriptRead<C, NativeSVLoader>
-	for NativeTranscriptRead<RD, C, P, H>
+impl<RD: Read, C: CurveAffine, const NUM_LIMBS: usize, const NUM_BITS: usize, P, H>
+	TranscriptRead<C, NativeSVLoader> for NativeTranscriptRead<RD, C, NUM_LIMBS, NUM_BITS, P, H>
 where
 	H: SpongeHasher<C::Scalar>,
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
@@ -154,8 +156,14 @@ where
 }
 
 /// NativeTranscriptWrite structure
-pub struct NativeTranscriptWrite<W: Write, C: CurveAffine, P, H>
-where
+pub struct NativeTranscriptWrite<
+	W: Write,
+	C: CurveAffine,
+	const NUM_LIMBS: usize,
+	const NUM_BITS: usize,
+	P,
+	H,
+> where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	H: SpongeHasher<C::Scalar>,
 	C::Base: FieldExt,
@@ -172,7 +180,8 @@ where
 	_c: PhantomData<C>,
 }
 
-impl<W: Write, C: CurveAffine, P, H> NativeTranscriptWrite<W, C, P, H>
+impl<W: Write, C: CurveAffine, const NUM_LIMBS: usize, const NUM_BITS: usize, P, H>
+	NativeTranscriptWrite<W, C, NUM_LIMBS, NUM_BITS, P, H>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	H: SpongeHasher<C::Scalar>,
@@ -191,8 +200,8 @@ where
 	}
 }
 
-impl<W: Write, C: CurveAffine, P, H> Transcript<C, NativeSVLoader>
-	for NativeTranscriptWrite<W, C, P, H>
+impl<W: Write, C: CurveAffine, const NUM_LIMBS: usize, const NUM_BITS: usize, P, H>
+	Transcript<C, NativeSVLoader> for NativeTranscriptWrite<W, C, NUM_LIMBS, NUM_BITS, P, H>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	H: SpongeHasher<C::Scalar>,
@@ -235,7 +244,8 @@ where
 	}
 }
 
-impl<W: Write, C: CurveAffine, P, H> TranscriptWrite<C> for NativeTranscriptWrite<W, C, P, H>
+impl<W: Write, C: CurveAffine, const NUM_LIMBS: usize, const NUM_BITS: usize, P, H>
+	TranscriptWrite<C> for NativeTranscriptWrite<W, C, NUM_LIMBS, NUM_BITS, P, H>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	H: SpongeHasher<C::Scalar>,
@@ -280,8 +290,8 @@ impl<C: CurveAffine> EncodedChallenge<C> for ChallengeScalar<C> {
 	}
 }
 
-impl<RD: Read, C: CurveAffine, P, H> Halo2Transcript<C, ChallengeScalar<C>>
-	for NativeTranscriptRead<RD, C, P, H>
+impl<RD: Read, C: CurveAffine, const NUM_LIMBS: usize, const NUM_BITS: usize, P, H>
+	Halo2Transcript<C, ChallengeScalar<C>> for NativeTranscriptRead<RD, C, NUM_LIMBS, NUM_BITS, P, H>
 where
 	H: SpongeHasher<C::Scalar>,
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
@@ -315,8 +325,9 @@ where
 	}
 }
 
-impl<RD: Read, C: CurveAffine, P, H> Halo2TranscriptRead<C, ChallengeScalar<C>>
-	for NativeTranscriptRead<RD, C, P, H>
+impl<RD: Read, C: CurveAffine, const NUM_LIMBS: usize, const NUM_BITS: usize, P, H>
+	Halo2TranscriptRead<C, ChallengeScalar<C>>
+	for NativeTranscriptRead<RD, C, NUM_LIMBS, NUM_BITS, P, H>
 where
 	H: SpongeHasher<C::Scalar>,
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
@@ -342,8 +353,9 @@ where
 	}
 }
 
-impl<RD: Read, C: CurveAffine, P, H> TranscriptReadBuffer<RD, C, ChallengeScalar<C>>
-	for NativeTranscriptRead<RD, C, P, H>
+impl<RD: Read, C: CurveAffine, const NUM_LIMBS: usize, const NUM_BITS: usize, P, H>
+	TranscriptReadBuffer<RD, C, ChallengeScalar<C>>
+	for NativeTranscriptRead<RD, C, NUM_LIMBS, NUM_BITS, P, H>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	H: SpongeHasher<C::Scalar>,
@@ -356,8 +368,8 @@ where
 	}
 }
 
-impl<W: Write, C: CurveAffine, P, H> Halo2Transcript<C, ChallengeScalar<C>>
-	for NativeTranscriptWrite<W, C, P, H>
+impl<W: Write, C: CurveAffine, const NUM_LIMBS: usize, const NUM_BITS: usize, P, H>
+	Halo2Transcript<C, ChallengeScalar<C>> for NativeTranscriptWrite<W, C, NUM_LIMBS, NUM_BITS, P, H>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	H: SpongeHasher<C::Scalar>,
@@ -390,8 +402,9 @@ where
 	}
 }
 
-impl<W: Write, C: CurveAffine, P, H> Halo2TranscriptWrite<C, ChallengeScalar<C>>
-	for NativeTranscriptWrite<W, C, P, H>
+impl<W: Write, C: CurveAffine, const NUM_LIMBS: usize, const NUM_BITS: usize, P, H>
+	Halo2TranscriptWrite<C, ChallengeScalar<C>>
+	for NativeTranscriptWrite<W, C, NUM_LIMBS, NUM_BITS, P, H>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	H: SpongeHasher<C::Scalar>,
@@ -417,8 +430,9 @@ where
 	}
 }
 
-impl<W: Write, C: CurveAffine, P, H> TranscriptWriterBuffer<W, C, ChallengeScalar<C>>
-	for NativeTranscriptWrite<W, C, P, H>
+impl<W: Write, C: CurveAffine, const NUM_LIMBS: usize, const NUM_BITS: usize, P, H>
+	TranscriptWriterBuffer<W, C, ChallengeScalar<C>>
+	for NativeTranscriptWrite<W, C, NUM_LIMBS, NUM_BITS, P, H>
 where
 	P: RnsParams<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS>,
 	H: SpongeHasher<C::Scalar>,
