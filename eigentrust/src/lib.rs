@@ -474,7 +474,7 @@ impl Client {
 		proof: Vec<u8>,
 	) -> Result<(), EigenError> {
 		// Parse KZG params
-		let kzg_params: ParamsKZG<Bn256> = ParamsKZG::<Bn256>::read(&mut raw_kzg_params.as_slice())
+		let kzg_params: ParamsKZG<Bn256> = ParamsKZG::read(&mut raw_kzg_params.as_slice())
 			.map_err(|e| EigenError::ParsingError(e.to_string()))?;
 
 		// Parse public inputs
