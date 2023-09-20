@@ -47,6 +47,10 @@ pub enum EigenError {
 	#[error("ParsingError: {0}")]
 	ParsingError(String),
 
+	/// Read/Write error
+	#[error("ReadWriteError: {0}")]
+	ReadWriteError(String),
+
 	/// Recovery error
 	#[error("RecoveryError: {0}")]
 	RecoveryError(String),
@@ -70,4 +74,12 @@ pub enum EigenError {
 	/// Validation error
 	#[error("ValidationError: {0}")]
 	ValidationError(String),
+
+	/// Verification error
+	#[error("VerificationError: {0}")]
+	VerificationError(String),
+
+	/// Failed generating proving/verifying keys
+	#[error("KeygenError: {0}")]
+	KeygenError(String),
 }

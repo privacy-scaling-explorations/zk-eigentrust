@@ -4,13 +4,15 @@
 
 use crate::{
 	bandada::BandadaApi,
-	fs::{get_file_path, load_mnemonic, FileType},
+	fs::{get_file_path, load_mnemonic, EigenFile, FileType},
 	ClientConfig,
 };
 use clap::{Args, Parser, Subcommand};
 use eigentrust::{
 	attestation::{AttestationRaw, SignedAttestationRaw},
+	circuit::ET_PARAMS_K,
 	error::EigenError,
+	eth::deploy_as,
 	storage::{
 		str_to_20_byte_array, str_to_32_byte_array, AttestationRecord, CSVFileStorage,
 		JSONFileStorage, ScoreRecord, Storage,
@@ -18,7 +20,7 @@ use eigentrust::{
 	Client,
 };
 use ethers::{abi::Address, providers::Http, types::H160};
-use log::info;
+use log::{debug, info};
 use std::str::FromStr;
 
 #[derive(Parser)]
@@ -31,26 +33,30 @@ pub struct Cli {
 /// CLI commands.
 #[derive(Subcommand)]
 pub enum Mode {
-	/// Submit an attestation. Requires 'AttestData'.
+	/// Submits an attestation. Requires 'AttestData'.
 	Attest(AttestData),
 	/// Retrieves and saves all attestations.
 	Attestations,
-	/// Create Bandada group.
+	/// Creates Bandada group.
 	Bandada(BandadaData),
-	/// Deploy the contracts.
+	/// Deploys the contracts.
 	Deploy,
-	/// Calculate the global scores from the saved attestations.
+	/// Generates EigenTrust circuit proof.
+	ETProof,
+	/// Generates EigenTrust circuit proving key
+	ETProvingKey,
+	/// Verifies the stored eigentrust circuit proof.
+	ETVerify,
+	/// Generates KZG parameters
+	KZGParams(KZGParamsData),
+	/// Calculates the global scores from the saved attestations.
 	LocalScores,
-	/// Generate the proofs.
-	Proof,
 	/// Retrieves and saves all attestations and calculates the global scores.
 	Scores,
-	/// Display the current configuration.
+	/// Displays the current configuration.
 	Show,
-	/// Update the configuration. Requires 'UpdateData'.
+	/// Updates the configuration. Requires 'UpdateData'.
 	Update(UpdateData),
-	/// Verify the proofs.
-	Verify,
 }
 
 /// Attestation subcommand input.
@@ -107,6 +113,14 @@ pub struct UpdateData {
 	node_url: Option<String>,
 }
 
+/// KZGParams subcommand inputs
+#[derive(Args, Debug)]
+pub struct KZGParamsData {
+	/// Polynomial degree.
+	#[clap(long = "k")]
+	k: Option<String>,
+}
+
 /// Bandada API action.
 pub enum Action {
 	Add,
@@ -160,7 +174,20 @@ impl FromStr for Action {
 	}
 }
 
-/// Handle `attestations` command.
+/// Handles submitting an attestation
+pub async fn handle_attest(
+	config: ClientConfig, attest_data: AttestData,
+) -> Result<(), EigenError> {
+	let attestation = attest_data.to_attestation_raw(&config)?;
+	debug!("Attesting:{:?}", attestation);
+
+	let mnemonic = load_mnemonic();
+	let client = Client::new(config, mnemonic);
+	client.attest(attestation).await?;
+	Ok(())
+}
+
+/// Handles `attestations` command.
 pub async fn handle_attestations(config: ClientConfig) -> Result<(), EigenError> {
 	let mnemonic = load_mnemonic();
 	let client = Client::new(config, mnemonic);
@@ -261,7 +288,82 @@ pub async fn handle_bandada(config: &ClientConfig, data: BandadaData) -> Result<
 	Ok(())
 }
 
-/// Handle `scores` and `local_scores` commands.
+/// Handles the deployment of AS contract.
+pub async fn handle_deploy(config: ClientConfig) -> Result<(), EigenError> {
+	let mnemonic = load_mnemonic();
+	let client = Client::new(config, mnemonic);
+	let as_address = deploy_as(client.get_signer()).await?;
+	info!("AttestationStation deployed at {:?}", as_address);
+
+	Ok(())
+}
+
+/// Handles proving key generation.
+pub fn handle_et_pk() -> Result<(), EigenError> {
+	let et_kzg_params = EigenFile::KzgParams(ET_PARAMS_K).load()?;
+	let proving_key = Client::generate_et_pk(et_kzg_params)?;
+
+	EigenFile::ProvingKey.save(proving_key)
+}
+
+/// Handles the eigentrust proof generation command.
+pub async fn handle_et_proof(config: ClientConfig) -> Result<(), EigenError> {
+	let mnemonic = load_mnemonic();
+	let client = Client::new(config, mnemonic);
+
+	let att_fp = get_file_path("attestations", FileType::Csv)?;
+
+	handle_attestations(client.get_config().clone()).await?;
+	let att_storage = CSVFileStorage::<AttestationRecord>::new(att_fp);
+	let attestations: Result<Vec<SignedAttestationRaw>, EigenError> =
+		att_storage.load()?.into_iter().map(|record| record.try_into()).collect();
+
+	let proving_key = EigenFile::ProvingKey.load()?;
+	let kzg_params = EigenFile::KzgParams(ET_PARAMS_K).load()?;
+
+	// Generate proof
+	let report = client.calculate_scores(attestations?, kzg_params, proving_key).await?;
+
+	EigenFile::EtProof.save(report.proof)?;
+	EigenFile::ETPublicInputs.save(report.pub_inputs.to_bytes())?;
+
+	Ok(())
+}
+
+/// Handles the eigentrust proof verification command.
+pub async fn handle_et_verify(config: ClientConfig) -> Result<(), EigenError> {
+	let mnemonic = load_mnemonic();
+	let client = Client::new(config, mnemonic);
+
+	// Load data
+	let kzg_params = EigenFile::KzgParams(ET_PARAMS_K).load()?;
+	let public_inputs = EigenFile::ETPublicInputs.load()?;
+	let proving_key = EigenFile::ProvingKey.load()?;
+	let proof = EigenFile::EtProof.load()?;
+
+	// Verify proof
+	client.verify(kzg_params, public_inputs, proving_key, proof).await?;
+
+	info!("EigenTrust proof has been verified.");
+	Ok(())
+}
+
+/// Handles KZG parameters generation.
+pub fn handle_params(data: KZGParamsData) -> Result<(), EigenError> {
+	let k = data.k.ok_or(EigenError::ValidationError(
+		"Missing parameter 'k': polynomial degree.".to_string(),
+	))?;
+
+	let pol_degree = k.parse::<u32>().map_err(|e| {
+		EigenError::ParsingError(format!("Error parsing polynomial degree - {}", e))
+	})?;
+
+	let params = Client::generate_kzg_params(pol_degree)?;
+
+	EigenFile::KzgParams(pol_degree).save(params)
+}
+
+/// Handles `scores` and `local_scores` commands.
 pub async fn handle_scores(
 	config: ClientConfig, origin: AttestationsOrigin,
 ) -> Result<(), EigenError> {
@@ -300,10 +402,14 @@ pub async fn handle_scores(
 		},
 	};
 
+	let proving_key = EigenFile::ProvingKey.load()?;
+	let kzg_params = EigenFile::KzgParams(ET_PARAMS_K).load()?;
+
 	// Calculate scores
 	let score_records: Vec<ScoreRecord> = client
-		.calculate_scores(attestations)
+		.calculate_scores(attestations, kzg_params, proving_key)
 		.await?
+		.scores
 		.into_iter()
 		.map(ScoreRecord::from_score)
 		.collect();

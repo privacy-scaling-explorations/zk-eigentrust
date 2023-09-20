@@ -2,11 +2,11 @@
 //!
 //! This module provides types and functionalities for general ethereum interactions.
 
-use crate::{
-	att_station::AttestationStation, error::EigenError, ClientSigner, ECDSAKeypair, ECDSAPublicKey,
-	Scalar,
+use crate::{att_station::AttestationStation, error::EigenError, ClientSigner, Scalar};
+use eigentrust_zk::{
+	circuits::{ECDSAKeypair, ECDSAPublicKey},
+	halo2::halo2curves::{secp256k1::Secp256k1Affine, CurveAffine},
 };
-use eigentrust_zk::halo2::halo2curves::{secp256k1::Secp256k1Affine, CurveAffine};
 use ethers::{
 	abi::Address,
 	prelude::k256::ecdsa::SigningKey,
@@ -96,7 +96,7 @@ pub fn scalar_from_address(address: &Address) -> Result<Scalar, EigenError> {
 
 #[cfg(test)]
 mod tests {
-	use crate::{eth::*, Client, ClientConfig, ECDSAKeypair, SecpScalar};
+	use crate::{eth::*, Client, ClientConfig, SecpScalar};
 	use ethers::utils::{hex, Anvil};
 
 	const TEST_MNEMONIC: &'static str =
