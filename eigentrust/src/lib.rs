@@ -66,7 +66,7 @@ use circuit::ScoresReport;
 use eigentrust_zk::{
 	circuits::{
 		threshold::native::Threshold, ECDSAPublicKey, EigenTrust4, NativeEigenTrust4,
-		PoseidonNativeSponge, Threshold4, HASHER_WIDTH, MIN_PEER_COUNT, NUM_ITERATIONS,
+		NativeThreshold4, PoseidonNativeSponge, HASHER_WIDTH, MIN_PEER_COUNT, NUM_ITERATIONS,
 		NUM_NEIGHBOURS,
 	},
 	halo2::{
@@ -533,7 +533,7 @@ impl Client {
 		let threshold_fr = Scalar::from(threshold);
 		let score_ratio = BigRational::new(score_num.into(), score_den.into());
 
-		let th_circuit: Threshold4 = Threshold::new(score_fr, score_ratio, threshold_fr);
+		let th_circuit: NativeThreshold4 = Threshold::new(score_fr, score_ratio, threshold_fr);
 
 		th_circuit.check_threshold()
 	}
