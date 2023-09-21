@@ -24,6 +24,7 @@ use halo2::{
 	},
 	transcript::{TranscriptReadBuffer, TranscriptWriterBuffer},
 };
+use itertools::Itertools;
 use rand::{thread_rng, RngCore};
 use snark_verifier::{
 	pcs::{
@@ -75,7 +76,8 @@ where
 		params: &ParamsKZG<E>, circuit: C, instances: Vec<Vec<E::Scalar>>, rng: &mut R,
 	) -> Self {
 		let pk = gen_pk(params, &circuit);
-		let config = Config::kzg().with_num_instance(vec![instances.len()]);
+		let inst_len = instances.iter().map(|x| x.len()).collect_vec();
+		let config = Config::kzg().with_num_instance(inst_len);
 
 		let protocol = compile(params, pk.get_vk(), config);
 

@@ -521,7 +521,7 @@ impl<
 			let scale = max_limb_value.clone();
 
 			let mut val = limbs[0].clone();
-			for i in 1..NUM_LIMBS {
+			for i in 1..limbs.len() {
 				let mul_add_chipset = MulAddChipset::new(val, scale.clone(), limbs[i].clone());
 				val = mul_add_chipset.synthesize(
 					&config.common,
@@ -539,7 +539,7 @@ impl<
 			let scale = max_limb_value;
 
 			let mut val = limbs[0].clone();
-			for i in 1..NUM_LIMBS {
+			for i in 1..limbs.len() {
 				let mul_add_chipset = MulAddChipset::new(val, scale.clone(), limbs[i].clone());
 				val = mul_add_chipset.synthesize(
 					&config.common,
@@ -968,7 +968,7 @@ mod tests {
 			&sets, &scores, &num_decomposed, &den_decomposed, svk, snarks, as_proof,
 		);
 
-		let k = 12;
+		let k = 21;
 		let prover = match MockProver::<N>::run(k, &threshold_circuit, vec![pub_ins]) {
 			Ok(prover) => prover,
 			Err(e) => panic!("{}", e),
@@ -1067,7 +1067,7 @@ mod tests {
 			&sets, &scores, &num_decomposed, &den_decomposed, svk, snarks, as_proof,
 		);
 
-		let k = 12;
+		let k = 21;
 		let rng = &mut rand::thread_rng();
 		let params = generate_params(k);
 		let res =
