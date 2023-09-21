@@ -55,16 +55,13 @@ pub mod eth;
 pub mod storage;
 
 use crate::{
-	attestation::{
-		SignatureEth, SignatureRaw, SignedAttestationEth, SignedAttestationScalar, DOMAIN_PREFIX,
-		DOMAIN_PREFIX_LEN,
-	},
+	attestation::{SignatureEth, SignatureRaw, SignedAttestationEth, SignedAttestationScalar},
 	circuit::{ETPublicInputs, OpinionVector, Score},
 };
 use att_station::{
 	AttestationCreatedFilter, AttestationData as ContractAttestationData, AttestationStation,
 };
-use attestation::{AttestationEth, AttestationRaw, SignedAttestationRaw};
+use attestation::{build_att_key, AttestationEth, AttestationRaw, SignedAttestationRaw};
 use circuit::ScoresReport;
 use eigentrust_zk::{
 	circuits::{
@@ -462,13 +459,15 @@ impl Client {
 		signed_attestations
 	}
 
-	/// Fetches "AttestationCreated" event logs from the contract, filtered by domain prefix.
+	/// Fetches "AttestationCreated" event logs from the contract, filtered by domain.
 	pub async fn get_logs(&self) -> Result<Vec<Log>, EigenError> {
 		let as_contract = AttestationStation::new(
 			self.config.as_address.parse::<Address>().unwrap(),
 			self.get_signer(),
 		);
 		let filter = as_contract.attestation_created_filter().filter.from_block(0);
+		let domain = H160::from_str(&self.config.domain)
+			.map_err(|e| EigenError::ParsingError(format!("Error parsing domain: {}", e)))?;
 
 		// Fetch logs matching the filter.
 		let logs = self
@@ -477,12 +476,9 @@ impl Client {
 			.await
 			.map_err(|e| EigenError::ParsingError(e.to_string()))?;
 
-		// Filter logs based on the domain prefix.
-		let filtered_logs: Vec<Log> = logs
-			.iter()
-			.filter(|log| &log.topics[3].as_fixed_bytes()[..DOMAIN_PREFIX_LEN] == DOMAIN_PREFIX)
-			.cloned()
-			.collect();
+		// Filter logs based on the correct key.
+		let filtered_logs: Vec<Log> =
+			logs.iter().filter(|log| log.topics[3] == build_att_key(domain)).cloned().collect();
 
 		Ok(filtered_logs)
 	}
@@ -679,7 +675,7 @@ mod lib_tests {
 	}
 
 	#[tokio::test]
-	async fn test_filter_logs_by_prefix() {
+	async fn test_get_logs() {
 		let anvil = Anvil::new().spawn();
 		let config = ClientConfig {
 			as_address: "0x5fbdb2315678afecb367f032d93f642f64180aa3".to_string(),
@@ -711,10 +707,10 @@ mod lib_tests {
 		let good_attestation = AttestationRaw::new([0; 20], [0; 20], 5, [0; 32]);
 		updated_client.attest(good_attestation).await.unwrap();
 
-		// Submit a bad attestation
 		let as_address = config.as_address.parse::<Address>().unwrap();
 		let as_contract = AttestationStation::new(as_address, client.get_signer());
 
+		// Submit a bad attestation
 		let contract_data = ContractAttestationData {
 			about: Address::zero(),
 			key: [0; 32],
