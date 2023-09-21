@@ -103,6 +103,7 @@ use std::{
 	sync::Arc,
 	time::Instant,
 };
+use storage::str_to_20_byte_array;
 
 /// Client Signer.
 pub type ClientSigner = SignerMiddleware<Provider<Http>, LocalWallet>;
@@ -466,8 +467,7 @@ impl Client {
 			self.get_signer(),
 		);
 		let filter = as_contract.attestation_created_filter().filter.from_block(0);
-		let domain = H160::from_str(&self.config.domain)
-			.map_err(|e| EigenError::ParsingError(format!("Error parsing domain: {}", e)))?;
+		let domain = H160::from(str_to_20_byte_array(&self.config.domain)?);
 
 		// Fetch logs matching the filter.
 		let logs = self
@@ -564,7 +564,7 @@ mod lib_tests {
 	};
 	use ethers::{
 		types::{Address, Bytes},
-		utils::Anvil,
+		utils::{hex, Anvil},
 	};
 
 	const TEST_MNEMONIC: &'static str =
@@ -610,13 +610,21 @@ mod lib_tests {
 	#[tokio::test]
 	async fn test_get_attestations() {
 		let anvil = Anvil::new().spawn();
+
+		// Build domain
+		let domain_input = [
+			0xff, 0x61, 0x4a, 0x6d, 0x59, 0x56, 0x2a, 0x42, 0x37, 0x72, 0x37, 0x76, 0x32, 0x4d,
+			0x36, 0x53, 0x62, 0x6d, 0x35, 0xff,
+		];
+		let domain = format!("0x{}", hex::encode(domain_input));
+
 		let config = ClientConfig {
 			as_address: "0x5fbdb2315678afecb367f032d93f642f64180aa3".to_string(),
 			band_id: "38922764296632428858395574229367".to_string(),
 			band_th: "500".to_string(),
 			band_url: "http://localhost:3000".to_string(),
 			chain_id: "31337".to_string(),
-			domain: "0x0000000000000000000000000000000000000000".to_string(),
+			domain: domain.clone(),
 			node_url: anvil.endpoint().to_string(),
 		};
 		let client = Client::new(config, TEST_MNEMONIC.to_string());
@@ -631,18 +639,13 @@ mod lib_tests {
 			band_th: "500".to_string(),
 			band_url: "http://localhost:3000".to_string(),
 			chain_id: "31337".to_string(),
-			domain: "0x0000000000000000000000000000000000000000".to_string(),
+			domain,
 			node_url: anvil.endpoint().to_string(),
 		};
 		let client = Client::new(config, TEST_MNEMONIC.to_string());
 
 		// Build Attestation
 		let about_bytes = [
-			0xff, 0x61, 0x4a, 0x6d, 0x59, 0x56, 0x2a, 0x42, 0x37, 0x72, 0x37, 0x76, 0x32, 0x4d,
-			0x36, 0x53, 0x62, 0x6d, 0x35, 0xff,
-		];
-
-		let domain_input = [
 			0xff, 0x61, 0x4a, 0x6d, 0x59, 0x56, 0x2a, 0x42, 0x37, 0x72, 0x37, 0x76, 0x32, 0x4d,
 			0x36, 0x53, 0x62, 0x6d, 0x35, 0xff,
 		];
