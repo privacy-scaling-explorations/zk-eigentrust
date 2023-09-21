@@ -423,6 +423,7 @@ impl<
 					let halo2_limb =
 						ctx.copy_assign(config.common.advice[1], halo2_agg_limbs[i].clone())?;
 					ctx.constrain_equal(native_limb, halo2_limb)?;
+					ctx.next();
 				}
 
 				Ok(())
@@ -876,7 +877,7 @@ mod tests {
 		(num_decomposed, den_decomposed)
 	}
 
-	#[ignore = "threshold circuit test takes too long to run"]
+	// #[ignore = "threshold circuit test takes too long to run"]
 	#[test]
 	fn test_threshold_circuit() {
 		// Test Threshold Circuit
@@ -974,16 +975,10 @@ mod tests {
 			Err(e) => panic!("{}", e),
 		};
 
-		let errs = prover.verify().err().unwrap();
-
-		for err in errs {
-			println!("{:?}", err);
-		}
-
 		assert_eq!(prover.verify(), Ok(()));
 	}
 
-	// #[ignore = "threshold circuit test takes too long to run"]
+	#[ignore = "threshold circuit test takes too long to run"]
 	#[test]
 	fn test_threshold_circuit_prod() {
 		// Test Threshold Circuit production
