@@ -974,10 +974,16 @@ mod tests {
 			Err(e) => panic!("{}", e),
 		};
 
+		let errs = prover.verify().err().unwrap();
+
+		for err in errs {
+			println!("{:?}", err);
+		}
+
 		assert_eq!(prover.verify(), Ok(()));
 	}
 
-	#[ignore = "threshold circuit test takes too long to run"]
+	// #[ignore = "threshold circuit test takes too long to run"]
 	#[test]
 	fn test_threshold_circuit_prod() {
 		// Test Threshold Circuit production

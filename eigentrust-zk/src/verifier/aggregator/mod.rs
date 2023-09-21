@@ -314,7 +314,11 @@ mod test {
 		native::NativeAggregator, AggregatorChipset, AggregatorConfig, Snark, Svk, UnassignedSnark,
 	};
 	use crate::{
-		circuits::{FullRoundHasher, PartialRoundHasher, PoseidonNativeSponge, SpongeHasher},
+		circuits::{
+			dynamic_sets::native::Attestation, ECDSAKeypair, ECDSAPublicKey, EigenTrust4,
+			FullRoundHasher, NativeEigenTrust4, Opinion4, PartialRoundHasher, PoseidonNativeHasher,
+			PoseidonNativeSponge, SignedAttestationSecp, SpongeHasher, HASHER_WIDTH,
+		},
 		ecc::{
 			AuxConfig, EccAddConfig, EccDoubleConfig, EccMulConfig, EccTableSelectConfig,
 			EccUnreducedLadderConfig,
@@ -329,14 +333,18 @@ mod test {
 		},
 		params::{ecc::bn254::Bn254Params, rns::bn256::Bn256_4_68},
 		poseidon::{sponge::PoseidonSpongeConfig, PoseidonConfig},
-		utils::generate_params,
+		utils::{big_to_fe, fe_to_big, generate_params},
 		verifier::transcript::native::WIDTH,
 		Chip, Chipset, CommonConfig, RegionCtx,
 	};
 	use halo2::{
+		arithmetic::Field,
 		circuit::{Layouter, Region, SimpleFloorPlanner, Value},
 		dev::MockProver,
-		halo2curves::bn256::{Bn256, Fq, Fr, G1Affine},
+		halo2curves::{
+			bn256::{Bn256, Fq, Fr, G1Affine},
+			ff::PrimeField,
+		},
 		plonk::{Circuit, ConstraintSystem, Error},
 		poly::Rotation,
 	};
@@ -352,6 +360,140 @@ mod test {
 	type S = PoseidonNativeSponge;
 	const NUM_LIMBS: usize = 4;
 	const NUM_BITS: usize = 68;
+
+	fn sign_opinion<
+		const NUM_NEIGHBOURS: usize,
+		const NUM_ITERATIONS: usize,
+		const INITIAL_SCORE: u128,
+		const DOMAIN: u128,
+	>(
+		keypair: &ECDSAKeypair, pks: &[Scalar], scores: &[Scalar],
+	) -> Vec<Option<SignedAttestationSecp>> {
+		assert!(pks.len() == NUM_NEIGHBOURS);
+		assert!(scores.len() == NUM_NEIGHBOURS);
+		let rng = &mut thread_rng();
+
+		let mut res = Vec::new();
+		for i in 0..NUM_NEIGHBOURS {
+			if pks[i] == Scalar::ZERO {
+				res.push(None)
+			} else {
+				let (about, key, value, message) =
+					(pks[i], Scalar::from_u128(DOMAIN), scores[i], Scalar::zero());
+				let attestation = Attestation::new(about, key, value, message);
+				let msg = big_to_fe(fe_to_big(
+					attestation.hash::<HASHER_WIDTH, PoseidonNativeHasher>(),
+				));
+				let signature = keypair.sign(msg, rng);
+				let signed_attestation = SignedAttestationSecp::new(attestation, signature);
+
+				res.push(Some(signed_attestation));
+			}
+		}
+		res
+	}
+
+	fn eigen_trust_set_testing_helper<
+		const NUM_NEIGHBOURS: usize,
+		const NUM_ITERATIONS: usize,
+		const INITIAL_SCORE: u128,
+		const DOMAIN: u128,
+	>(
+		ops: Vec<Vec<Scalar>>,
+	) -> (
+		Vec<Vec<Option<SignedAttestationSecp>>>,
+		Vec<Option<ECDSAPublicKey>>,
+		Vec<Fr>,
+	) {
+		assert!(ops.len() == NUM_NEIGHBOURS);
+		for op in &ops {
+			assert!(op.len() == NUM_NEIGHBOURS);
+		}
+
+		let domain = Scalar::from_u128(DOMAIN);
+		let mut set = NativeEigenTrust4::new(domain);
+
+		let rng = &mut thread_rng();
+
+		let keypairs: Vec<ECDSAKeypair> =
+			(0..NUM_NEIGHBOURS).into_iter().map(|_| ECDSAKeypair::generate_keypair(rng)).collect();
+		let pks: Vec<ECDSAPublicKey> = keypairs.iter().map(|kp| kp.public_key.clone()).collect();
+		let pks_fr: Vec<Scalar> = keypairs.iter().map(|kp| kp.public_key.to_address()).collect();
+
+		// Add the "address"(pk_fr) to the set
+		pks_fr.iter().for_each(|pk| set.add_member(*pk));
+
+		// Update the opinions
+		for i in 0..NUM_NEIGHBOURS {
+			let scores = ops[i].to_vec();
+			let op_i = sign_opinion::<NUM_NEIGHBOURS, NUM_ITERATIONS, INITIAL_SCORE, DOMAIN>(
+				&keypairs[i], &pks_fr, &scores,
+			);
+			set.update_op(pks[i].clone(), op_i);
+		}
+
+		let s = set.converge();
+
+		// Prepare the EigenTrustSet Circuit inputs
+		let (attestations, set, op_hash) = {
+			let mut attestations = Vec::new();
+			let mut set = Vec::new();
+
+			for i in 0..NUM_NEIGHBOURS {
+				let addr = pks[i].to_address();
+				set.push(addr);
+			}
+
+			let mut op_hashes = Vec::new();
+			for i in 0..NUM_NEIGHBOURS {
+				let mut attestations_i = Vec::new();
+
+				// Attestation to the other peers
+				for j in 0..NUM_NEIGHBOURS {
+					let attestation =
+						Attestation::new(pks[j].to_address(), domain, ops[i][j], Scalar::ZERO);
+
+					let att_hash = attestation.hash::<HASHER_WIDTH, PoseidonNativeHasher>();
+					let att_hash = big_to_fe(fe_to_big(att_hash));
+
+					let signature = keypairs[i].sign(att_hash, rng);
+					let signed_att = SignedAttestationSecp::new(attestation, signature);
+
+					attestations_i.push(signed_att);
+				}
+				attestations.push(attestations_i);
+
+				let op = Opinion4::new(pks[i].clone(), attestations[i].clone(), domain);
+				let (_, _, op_hash) = op.validate(set.clone());
+				op_hashes.push(op_hash);
+			}
+			let mut sponge = PoseidonNativeSponge::new();
+			sponge.update(&op_hashes);
+			let op_hash = sponge.squeeze();
+
+			(attestations, set, op_hash)
+		};
+
+		let mut opt_att = Vec::new();
+		let mut opt_pks = Vec::new();
+
+		for i in 0..NUM_NEIGHBOURS {
+			let mut att_row = Vec::new();
+			for j in 0..NUM_NEIGHBOURS {
+				att_row.push(Some(attestations[i][j].clone()));
+			}
+			opt_att.push(att_row);
+			opt_pks.push(Some(pks[i].clone()));
+		}
+
+		// Constructing public inputs for the circuit
+		let mut public_inputs = set.clone();
+		public_inputs.extend(s.clone());
+		public_inputs.push(domain);
+		public_inputs.push(op_hash);
+
+		(opt_att, opt_pks, public_inputs)
+	}
 
 	#[derive(Clone)]
 	pub struct MulConfig {
@@ -539,6 +681,54 @@ mod test {
 		let NativeAggregator { svk, snarks, instances, as_proof, .. } =
 			NativeAggregator::new(&params, snarks);
 
+		let aggregator_circuit = AggregatorTestCircuit::new(svk, snarks, as_proof);
+		let prover = MockProver::run(k, &aggregator_circuit, vec![instances]).unwrap();
+
+		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	// #[ignore = "Aggregator takes too long to run"]
+	#[test]
+	fn test_et_aggregator() {
+		const NUM_NEIGHBOURS: usize = 4;
+		const NUM_ITERATIONS: usize = 20;
+		const INITIAL_SCORE: u128 = 1000;
+		const DOMAIN: u128 = 42;
+
+		let ops: Vec<Vec<Scalar>> = vec![
+			vec![0, 200, 300, 500],
+			vec![100, 0, 600, 300],
+			vec![400, 100, 0, 500],
+			vec![100, 200, 700, 0],
+		]
+		.into_iter()
+		.map(|arr| arr.into_iter().map(|x| Scalar::from_u128(x)).collect())
+		.collect();
+
+		let (opt_att, opt_pks, et_circuit_pi) = eigen_trust_set_testing_helper::<
+			NUM_NEIGHBOURS,
+			NUM_ITERATIONS,
+			INITIAL_SCORE,
+			DOMAIN,
+		>(ops);
+
+		// Prepare the Aggregator input
+		let NativeAggregator { svk, snarks, instances, as_proof, .. } = {
+			let rng = &mut thread_rng();
+			let k = 20;
+			let params = generate_params::<Bn256>(k);
+
+			let et_circuit = EigenTrust4::new(opt_att, opt_pks, Fr::from_u128(DOMAIN));
+			let et_circuit_instances: Vec<Vec<Fr>> = vec![et_circuit_pi];
+			let snark_1 = Snark::<Bn256, NUM_LIMBS, NUM_BITS, P, S, EC>::new(
+				&params, et_circuit, et_circuit_instances, rng,
+			);
+
+			let snarks = vec![snark_1];
+			NativeAggregator::new(&params, snarks)
+		};
+
+		let k = 21;
 		let aggregator_circuit = AggregatorTestCircuit::new(svk, snarks, as_proof);
 		let prover = MockProver::run(k, &aggregator_circuit, vec![instances]).unwrap();
 
