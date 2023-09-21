@@ -333,7 +333,7 @@ mod test {
 		},
 		params::{ecc::bn254::Bn254Params, rns::bn256::Bn256_4_68},
 		poseidon::{sponge::PoseidonSpongeConfig, PoseidonConfig},
-		utils::{big_to_fe, fe_to_big, generate_params},
+		utils::{big_to_fe, fe_to_big, generate_params, prove_and_verify},
 		verifier::transcript::native::WIDTH,
 		Chip, Chipset, CommonConfig, RegionCtx,
 	};
@@ -689,7 +689,7 @@ mod test {
 
 	#[ignore = "Et Aggregator takes too long to run"]
 	#[test]
-	fn test_et_aggregator() {
+	fn test_et_aggregator_prod() {
 		const NUM_NEIGHBOURS: usize = 4;
 		const NUM_ITERATIONS: usize = 20;
 		const INITIAL_SCORE: u128 = 1000;
@@ -729,9 +729,11 @@ mod test {
 		};
 
 		let k = 21;
+		let rng = &mut thread_rng();
 		let aggregator_circuit = AggregatorTestCircuit::new(svk, snarks, as_proof);
-		let prover = MockProver::run(k, &aggregator_circuit, vec![instances]).unwrap();
-
-		assert_eq!(prover.verify(), Ok(()));
+		let params = generate_params(k);
+		let res = prove_and_verify::<Bn256, _, _>(params, aggregator_circuit, &[&instances], rng)
+			.unwrap();
+		assert!(res);
 	}
 }
