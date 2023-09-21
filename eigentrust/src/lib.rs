@@ -55,7 +55,10 @@ pub mod eth;
 pub mod storage;
 
 use crate::{
-	attestation::{SignatureEth, SignatureRaw, SignedAttestationEth, SignedAttestationScalar},
+	attestation::{
+		SignatureEth, SignatureRaw, SignedAttestationEth, SignedAttestationScalar, DOMAIN_PREFIX,
+		DOMAIN_PREFIX_LEN,
+	},
 	circuit::{ETPublicInputs, OpinionVector, Score},
 };
 use att_station::{
@@ -92,7 +95,7 @@ use ethers::{
 	prelude::EthDisplay,
 	providers::{Http, Middleware, Provider},
 	signers::{coins_bip39::English, LocalWallet, MnemonicBuilder, Signer},
-	types::{Filter, Log, H160, H256},
+	types::{Log, H160, H256},
 };
 use log::{debug, info, warn};
 use num_rational::BigRational;
@@ -221,8 +224,11 @@ impl Client {
 
 		let signed_attestation = SignedAttestationEth::new(attestation_eth, signature_eth);
 
-		let as_address_res = self.config.as_address.parse::<Address>();
-		let as_address = as_address_res.map_err(|e| EigenError::ParsingError(e.to_string()))?;
+		let as_address = self
+			.config
+			.as_address
+			.parse::<Address>()
+			.map_err(|e| EigenError::ParsingError(e.to_string()))?;
 		let as_contract = AttestationStation::new(as_address, self.signer.clone());
 
 		// Verify signature is recoverable
@@ -456,16 +462,29 @@ impl Client {
 		signed_attestations
 	}
 
-	/// Fetches logs from the contract.
+	/// Fetches "AttestationCreated" event logs from the contract, filtered by domain prefix.
 	pub async fn get_logs(&self) -> Result<Vec<Log>, EigenError> {
-		let filter = Filter::new()
-			.address(self.config.as_address.parse::<Address>().unwrap())
-			.event("AttestationCreated(address,address,bytes32,bytes)")
-			.topic1(Vec::<H256>::new())
-			.topic2(Vec::<H256>::new())
-			.from_block(0);
+		let as_contract = AttestationStation::new(
+			self.config.as_address.parse::<Address>().unwrap(),
+			self.get_signer(),
+		);
+		let filter = as_contract.attestation_created_filter().filter.from_block(0);
 
-		self.signer.get_logs(&filter).await.map_err(|e| EigenError::ParsingError(e.to_string()))
+		// Fetch logs matching the filter.
+		let logs = self
+			.signer
+			.get_logs(&filter)
+			.await
+			.map_err(|e| EigenError::ParsingError(e.to_string()))?;
+
+		// Filter logs based on the domain prefix.
+		let filtered_logs: Vec<Log> = logs
+			.iter()
+			.filter(|log| &log.topics[3].as_fixed_bytes()[..DOMAIN_PREFIX_LEN] == DOMAIN_PREFIX)
+			.cloned()
+			.collect();
+
+		Ok(filtered_logs)
 	}
 
 	/// Verifies the given proof.
@@ -541,8 +560,16 @@ impl Client {
 
 #[cfg(test)]
 mod lib_tests {
-	use crate::{attestation::AttestationRaw, eth::deploy_as, Client, ClientConfig};
-	use ethers::utils::Anvil;
+	use crate::{
+		att_station::AttestationStation,
+		attestation::{AttestationRaw, DOMAIN_PREFIX, DOMAIN_PREFIX_LEN},
+		eth::deploy_as,
+		Client, ClientConfig, ContractAttestationData,
+	};
+	use ethers::{
+		types::{Address, Bytes},
+		utils::Anvil,
+	};
 
 	const TEST_MNEMONIC: &'static str =
 		"test test test test test test test test test test test junk";
@@ -647,6 +674,63 @@ mod lib_tests {
 		assert_eq!(fetched_att.domain, domain_input);
 		assert_eq!(fetched_att.value, value);
 		assert_eq!(fetched_att.message, message);
+
+		drop(anvil);
+	}
+
+	#[tokio::test]
+	async fn test_filter_logs_by_prefix() {
+		let anvil = Anvil::new().spawn();
+		let config = ClientConfig {
+			as_address: "0x5fbdb2315678afecb367f032d93f642f64180aa3".to_string(),
+			band_id: "38922764296632428858395574229367".to_string(),
+			band_th: "500".to_string(),
+			band_url: "http://localhost:3000".to_string(),
+			chain_id: "31337".to_string(),
+			domain: "0x0000000000000000000000000000000000000000".to_string(),
+			node_url: anvil.endpoint().to_string(),
+		};
+		let client = Client::new(config.clone(), TEST_MNEMONIC.to_string());
+
+		// Deploy attestation station
+		let as_address = deploy_as(client.get_signer()).await.unwrap();
+
+		// Update config with new addresses and instantiate client
+		let updated_config = ClientConfig {
+			as_address: format!("{:?}", as_address),
+			band_id: "38922764296632428858395574229367".to_string(),
+			band_th: "500".to_string(),
+			band_url: "http://localhost:3000".to_string(),
+			chain_id: "31337".to_string(),
+			domain: "0x0000000000000000000000000000000000000000".to_string(),
+			node_url: anvil.endpoint().to_string(),
+		};
+		let updated_client = Client::new(updated_config, TEST_MNEMONIC.to_string());
+
+		// Submit a good attestation
+		let good_attestation = AttestationRaw::new([0; 20], [0; 20], 5, [0; 32]);
+		updated_client.attest(good_attestation).await.unwrap();
+
+		// Submit a bad attestation
+		let as_address = config.as_address.parse::<Address>().unwrap();
+		let as_contract = AttestationStation::new(as_address, client.get_signer());
+
+		let contract_data = ContractAttestationData {
+			about: Address::zero(),
+			key: [0; 32],
+			val: Bytes("0x0".into()),
+		};
+		let tx_call = as_contract.attest(vec![contract_data]);
+		tx_call.send().await.unwrap();
+
+		// Fetch logs
+		let fetched_logs = updated_client.get_logs().await.unwrap();
+
+		// Asserts
+		assert_eq!(fetched_logs.len(), 1);
+		let prefix_in_fetched_log =
+			&fetched_logs[0].topics[3].as_fixed_bytes()[..DOMAIN_PREFIX_LEN];
+		assert_eq!(prefix_in_fetched_log, DOMAIN_PREFIX);
 
 		drop(anvil);
 	}
