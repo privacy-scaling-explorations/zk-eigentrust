@@ -466,21 +466,17 @@ impl Client {
 			self.config.as_address.parse::<Address>().unwrap(),
 			self.get_signer(),
 		);
-		let filter = as_contract.attestation_created_filter().filter.from_block(0);
 		let domain = H160::from(str_to_20_byte_array(&self.config.domain)?);
 
+		// Set filter
+		let filter = as_contract
+			.attestation_created_filter()
+			.filter
+			.topic3(build_att_key(domain))
+			.from_block(0);
+
 		// Fetch logs matching the filter.
-		let logs = self
-			.signer
-			.get_logs(&filter)
-			.await
-			.map_err(|e| EigenError::ParsingError(e.to_string()))?;
-
-		// Filter logs based on the correct key.
-		let filtered_logs: Vec<Log> =
-			logs.iter().filter(|log| log.topics[3] == build_att_key(domain)).cloned().collect();
-
-		Ok(filtered_logs)
+		self.signer.get_logs(&filter).await.map_err(|e| EigenError::ParsingError(e.to_string()))
 	}
 
 	/// Verifies the given proof.
