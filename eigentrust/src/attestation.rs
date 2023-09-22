@@ -533,6 +533,16 @@ impl From<SignedAttestationEth> for SignedAttestationRaw {
 	}
 }
 
+/// Builds the attestation default key for the given domain.
+pub fn build_att_key(domain: H160) -> H256 {
+	let mut key = [0; 32];
+
+	key[..DOMAIN_PREFIX_LEN].copy_from_slice(&DOMAIN_PREFIX);
+	key[DOMAIN_PREFIX_LEN..].copy_from_slice(domain.as_fixed_bytes());
+
+	H256::from(key)
+}
+
 #[cfg(test)]
 mod tests {
 	use crate::att_station::AttestationData as ContractAttestationData;
