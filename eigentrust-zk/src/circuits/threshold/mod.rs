@@ -423,6 +423,7 @@ impl<
 					let halo2_limb =
 						ctx.copy_assign(config.common.advice[1], halo2_agg_limbs[i].clone())?;
 					ctx.constrain_equal(native_limb, halo2_limb)?;
+					ctx.next();
 				}
 
 				Ok(())

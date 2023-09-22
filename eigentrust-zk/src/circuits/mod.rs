@@ -1,5 +1,9 @@
 use self::{
-	dynamic_sets::{native::EigenTrustSet as NativeEigenTrustSet, EigenTrustSet},
+	dynamic_sets::{
+		native::{EigenTrustSet as NativeEigenTrustSet, SignedAttestation},
+		EigenTrustSet,
+	},
+	opinion::native::Opinion,
 	threshold::{native::Threshold, ThresholdCircuit},
 };
 use crate::{
@@ -75,6 +79,21 @@ pub type ECDSAKeypair =
 	EcdsaKeypair<Secp256k1Affine, Scalar, NUM_LIMBS, NUM_BITS, Secp256k1_4_68, Secp256k1Params>;
 /// ECDSA signature.
 pub type ECDSASignature = Signature<Secp256k1Affine, Scalar, NUM_LIMBS, NUM_BITS, Secp256k1_4_68>;
+/// Signed attestation
+pub type SignedAttestationSecp =
+	SignedAttestation<Secp256k1Affine, Scalar, NUM_LIMBS, NUM_BITS, Secp256k1_4_68>;
+/// Opinion for 4 neighbours
+pub type Opinion4 = Opinion<
+	NUM_NEIGHBOURS,
+	Secp256k1Affine,
+	Scalar,
+	NUM_LIMBS,
+	NUM_BITS,
+	Secp256k1_4_68,
+	Secp256k1Params,
+	PoseidonNativeHasher,
+	PoseidonNativeSponge,
+>;
 
 /// Native EigenTrust set with 4 participants
 pub type NativeEigenTrust4 = NativeEigenTrustSet<
