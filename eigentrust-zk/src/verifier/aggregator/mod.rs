@@ -588,11 +588,7 @@ mod test {
 		type FloorPlanner = SimpleFloorPlanner;
 
 		fn without_witnesses(&self) -> Self {
-			Self {
-				svk: self.svk,
-				snarks: self.snarks.iter().map(UnassignedSnark::without_witness).collect(),
-				as_proof: None,
-			}
+			Self { svk: self.svk, snarks: self.snarks.clone(), as_proof: self.as_proof.clone() }
 		}
 
 		fn configure(meta: &mut ConstraintSystem<Scalar>) -> Self::Config {

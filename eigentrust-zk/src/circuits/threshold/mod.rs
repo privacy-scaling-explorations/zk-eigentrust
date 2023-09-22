@@ -877,7 +877,7 @@ mod tests {
 		(num_decomposed, den_decomposed)
 	}
 
-	// #[ignore = "threshold circuit test takes too long to run"]
+	#[ignore = "threshold circuit test takes too long to run"]
 	#[test]
 	fn test_threshold_circuit() {
 		// Test Threshold Circuit
