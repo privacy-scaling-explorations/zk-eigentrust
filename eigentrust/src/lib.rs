@@ -61,7 +61,7 @@ use crate::{
 use att_station::{
 	AttestationCreatedFilter, AttestationData as ContractAttestationData, AttestationStation,
 };
-use attestation::{AttestationEth, AttestationRaw, SignedAttestationRaw};
+use attestation::{build_att_key, AttestationEth, AttestationRaw, SignedAttestationRaw};
 use circuit::ScoresReport;
 use eigentrust_zk::{
 	circuits::{
@@ -92,7 +92,7 @@ use ethers::{
 	prelude::EthDisplay,
 	providers::{Http, Middleware, Provider},
 	signers::{coins_bip39::English, LocalWallet, MnemonicBuilder, Signer},
-	types::{Filter, Log, H160, H256},
+	types::{Log, H160, H256},
 };
 use log::{debug, info, warn};
 use num_rational::BigRational;
@@ -103,6 +103,7 @@ use std::{
 	sync::Arc,
 	time::Instant,
 };
+use storage::str_to_20_byte_array;
 
 /// Client Signer.
 pub type ClientSigner = SignerMiddleware<Provider<Http>, LocalWallet>;
@@ -221,8 +222,11 @@ impl Client {
 
 		let signed_attestation = SignedAttestationEth::new(attestation_eth, signature_eth);
 
-		let as_address_res = self.config.as_address.parse::<Address>();
-		let as_address = as_address_res.map_err(|e| EigenError::ParsingError(e.to_string()))?;
+		let as_address = self
+			.config
+			.as_address
+			.parse::<Address>()
+			.map_err(|e| EigenError::ParsingError(e.to_string()))?;
 		let as_contract = AttestationStation::new(as_address, self.signer.clone());
 
 		// Verify signature is recoverable
@@ -456,15 +460,22 @@ impl Client {
 		signed_attestations
 	}
 
-	/// Fetches logs from the contract.
+	/// Fetches "AttestationCreated" event logs from the contract, filtered by domain.
 	pub async fn get_logs(&self) -> Result<Vec<Log>, EigenError> {
-		let filter = Filter::new()
-			.address(self.config.as_address.parse::<Address>().unwrap())
-			.event("AttestationCreated(address,address,bytes32,bytes)")
-			.topic1(Vec::<H256>::new())
-			.topic2(Vec::<H256>::new())
+		let as_contract = AttestationStation::new(
+			self.config.as_address.parse::<Address>().unwrap(),
+			self.get_signer(),
+		);
+		let domain = H160::from(str_to_20_byte_array(&self.config.domain)?);
+
+		// Set filter
+		let filter = as_contract
+			.attestation_created_filter()
+			.filter
+			.topic3(build_att_key(domain))
 			.from_block(0);
 
+		// Fetch logs matching the filter.
 		self.signer.get_logs(&filter).await.map_err(|e| EigenError::ParsingError(e.to_string()))
 	}
 
@@ -541,8 +552,16 @@ impl Client {
 
 #[cfg(test)]
 mod lib_tests {
-	use crate::{attestation::AttestationRaw, eth::deploy_as, Client, ClientConfig};
-	use ethers::utils::Anvil;
+	use crate::{
+		att_station::AttestationStation,
+		attestation::{AttestationRaw, DOMAIN_PREFIX, DOMAIN_PREFIX_LEN},
+		eth::deploy_as,
+		Client, ClientConfig, ContractAttestationData,
+	};
+	use ethers::{
+		types::{Address, Bytes},
+		utils::{hex, Anvil},
+	};
 
 	const TEST_MNEMONIC: &'static str =
 		"test test test test test test test test test test test junk";
@@ -587,13 +606,21 @@ mod lib_tests {
 	#[tokio::test]
 	async fn test_get_attestations() {
 		let anvil = Anvil::new().spawn();
+
+		// Build domain
+		let domain_input = [
+			0xff, 0x61, 0x4a, 0x6d, 0x59, 0x56, 0x2a, 0x42, 0x37, 0x72, 0x37, 0x76, 0x32, 0x4d,
+			0x36, 0x53, 0x62, 0x6d, 0x35, 0xff,
+		];
+		let domain = format!("0x{}", hex::encode(domain_input));
+
 		let config = ClientConfig {
 			as_address: "0x5fbdb2315678afecb367f032d93f642f64180aa3".to_string(),
 			band_id: "38922764296632428858395574229367".to_string(),
 			band_th: "500".to_string(),
 			band_url: "http://localhost:3000".to_string(),
 			chain_id: "31337".to_string(),
-			domain: "0x0000000000000000000000000000000000000000".to_string(),
+			domain: domain.clone(),
 			node_url: anvil.endpoint().to_string(),
 		};
 		let client = Client::new(config, TEST_MNEMONIC.to_string());
@@ -608,18 +635,13 @@ mod lib_tests {
 			band_th: "500".to_string(),
 			band_url: "http://localhost:3000".to_string(),
 			chain_id: "31337".to_string(),
-			domain: "0x0000000000000000000000000000000000000000".to_string(),
+			domain,
 			node_url: anvil.endpoint().to_string(),
 		};
 		let client = Client::new(config, TEST_MNEMONIC.to_string());
 
 		// Build Attestation
 		let about_bytes = [
-			0xff, 0x61, 0x4a, 0x6d, 0x59, 0x56, 0x2a, 0x42, 0x37, 0x72, 0x37, 0x76, 0x32, 0x4d,
-			0x36, 0x53, 0x62, 0x6d, 0x35, 0xff,
-		];
-
-		let domain_input = [
 			0xff, 0x61, 0x4a, 0x6d, 0x59, 0x56, 0x2a, 0x42, 0x37, 0x72, 0x37, 0x76, 0x32, 0x4d,
 			0x36, 0x53, 0x62, 0x6d, 0x35, 0xff,
 		];
@@ -647,6 +669,63 @@ mod lib_tests {
 		assert_eq!(fetched_att.domain, domain_input);
 		assert_eq!(fetched_att.value, value);
 		assert_eq!(fetched_att.message, message);
+
+		drop(anvil);
+	}
+
+	#[tokio::test]
+	async fn test_get_logs() {
+		let anvil = Anvil::new().spawn();
+		let config = ClientConfig {
+			as_address: "0x5fbdb2315678afecb367f032d93f642f64180aa3".to_string(),
+			band_id: "38922764296632428858395574229367".to_string(),
+			band_th: "500".to_string(),
+			band_url: "http://localhost:3000".to_string(),
+			chain_id: "31337".to_string(),
+			domain: "0x0000000000000000000000000000000000000000".to_string(),
+			node_url: anvil.endpoint().to_string(),
+		};
+		let client = Client::new(config.clone(), TEST_MNEMONIC.to_string());
+
+		// Deploy attestation station
+		let as_address = deploy_as(client.get_signer()).await.unwrap();
+
+		// Update config with new addresses and instantiate client
+		let updated_config = ClientConfig {
+			as_address: format!("{:?}", as_address),
+			band_id: "38922764296632428858395574229367".to_string(),
+			band_th: "500".to_string(),
+			band_url: "http://localhost:3000".to_string(),
+			chain_id: "31337".to_string(),
+			domain: "0x0000000000000000000000000000000000000000".to_string(),
+			node_url: anvil.endpoint().to_string(),
+		};
+		let updated_client = Client::new(updated_config, TEST_MNEMONIC.to_string());
+
+		// Submit a good attestation
+		let good_attestation = AttestationRaw::new([0; 20], [0; 20], 5, [0; 32]);
+		updated_client.attest(good_attestation).await.unwrap();
+
+		let as_address = config.as_address.parse::<Address>().unwrap();
+		let as_contract = AttestationStation::new(as_address, client.get_signer());
+
+		// Submit a bad attestation
+		let contract_data = ContractAttestationData {
+			about: Address::zero(),
+			key: [0; 32],
+			val: Bytes("0x0".into()),
+		};
+		let tx_call = as_contract.attest(vec![contract_data]);
+		tx_call.send().await.unwrap();
+
+		// Fetch logs
+		let fetched_logs = updated_client.get_logs().await.unwrap();
+
+		// Asserts
+		assert_eq!(fetched_logs.len(), 1);
+		let prefix_in_fetched_log =
+			&fetched_logs[0].topics[3].as_fixed_bytes()[..DOMAIN_PREFIX_LEN];
+		assert_eq!(prefix_in_fetched_log, DOMAIN_PREFIX);
 
 		drop(anvil);
 	}
