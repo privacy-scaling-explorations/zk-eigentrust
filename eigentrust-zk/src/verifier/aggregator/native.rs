@@ -319,12 +319,12 @@ mod test {
 		}
 	}
 
-	#[ignore = "Aggregator takes too long to run"]
+	// #[ignore = "Aggregator takes too long to run"]
 	#[test]
 	fn test_native_aggregator() {
 		// Testing Aggregator
 		let rng = &mut thread_rng();
-		let k = 21;
+		let k = 12;
 		let params = generate_params::<Bn256>(k);
 
 		let random_circuit_1 = MulChip::new(Fr::one(), Fr::one());

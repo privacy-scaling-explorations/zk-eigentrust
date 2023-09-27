@@ -124,7 +124,9 @@ mod test {
 		type FloorPlanner = SimpleFloorPlanner;
 
 		fn without_witnesses(&self) -> Self {
-			Self { unassigned_integer: UnassignedInteger::without_witnesses() }
+			Self {
+				unassigned_integer: UnassignedInteger::without_witnesses(&self.unassigned_integer),
+			}
 		}
 
 		fn configure(meta: &mut ConstraintSystem<N>) -> TestConfig {

@@ -81,7 +81,7 @@ impl<N: FieldExt> From<Attestation<N>> for UnassignedAttestation<N> {
 }
 
 impl<N: FieldExt> UnassignedValue for UnassignedAttestation<N> {
-	fn without_witnesses() -> Self {
+	fn without_witnesses(&self) -> Self {
 		Self {
 			about: Value::unknown(),
 			domain: Value::unknown(),
@@ -219,10 +219,10 @@ where
 	C::Base: FieldExt,
 	C::ScalarExt: FieldExt,
 {
-	fn without_witnesses() -> Self {
+	fn without_witnesses(&self) -> Self {
 		Self {
-			attestation: UnassignedAttestation::without_witnesses(),
-			signature: UnassignedSignature::without_witnesses(),
+			attestation: UnassignedAttestation::without_witnesses(&self.attestation),
+			signature: UnassignedSignature::without_witnesses(&self.signature),
 		}
 	}
 }
@@ -747,21 +747,21 @@ mod test {
 				attestations: self
 					.attestations
 					.iter()
-					.map(|_| UnassignedSignedAttestation::without_witnesses())
+					.map(|sig_att| UnassignedSignedAttestation::without_witnesses(&sig_att))
 					.collect_vec(),
 				domain: Value::unknown(),
 				set: self.set.iter().map(|_| Value::unknown()).collect_vec(),
-				public_key: UnassignedPublicKey::without_witnesses(),
-				g_as_ecpoint: UnassignedEcPoint::without_witnesses(),
+				public_key: UnassignedPublicKey::without_witnesses(&self.public_key),
+				g_as_ecpoint: UnassignedEcPoint::without_witnesses(&self.g_as_ecpoint),
 				msg_hash: self
 					.msg_hash
 					.iter()
-					.map(|_| UnassignedInteger::without_witnesses())
+					.map(|msg| UnassignedInteger::without_witnesses(&msg))
 					.collect_vec(),
 				s_inv: self
 					.s_inv
 					.iter()
-					.map(|_| UnassignedInteger::without_witnesses())
+					.map(|s_inv| UnassignedInteger::without_witnesses(&s_inv))
 					.collect_vec(),
 			}
 		}

@@ -219,16 +219,10 @@ where
 		&mut self,
 	) -> Result<Halo2LEcPoint<'a, C, L, NUM_LIMBS, NUM_BITS, P, S, EC>, VerifierError> {
 		// Taking out reader from Value for a proper error handling
-		let (x, y, x_limbs, y_limbs) = self.reader.as_mut().map_or_else(
-			|| {
-				Ok((
-					Integer::default(),
-					Integer::default(),
-					[Value::unknown(); NUM_LIMBS],
-					[Value::unknown(); NUM_LIMBS],
-				))
-			},
-			|reader| {
+		let (x, y, x_limbs, y_limbs) = self
+			.reader
+			.as_mut()
+			.map(|reader| {
 				let mut compressed = C::Repr::default();
 				let res = reader.read_exact(compressed.as_mut());
 				if let Err(e) = res {
@@ -267,8 +261,8 @@ where
 				}
 
 				Ok((x, y, x_limbs, y_limbs))
-			},
-		)?;
+			})
+			.unwrap()?;
 
 		let loader = self.loader.clone();
 		let (assigned_x, assigned_y) = {
@@ -518,7 +512,7 @@ mod test {
 		type FloorPlanner = SimpleFloorPlanner;
 
 		fn without_witnesses(&self) -> Self {
-			Self { ec_point: UnassignedEcPoint::without_witnesses() }
+			Self { ec_point: UnassignedEcPoint::without_witnesses(&self.ec_point) }
 		}
 
 		fn configure(meta: &mut ConstraintSystem<Scalar>) -> TestConfig {

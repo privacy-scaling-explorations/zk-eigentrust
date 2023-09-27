@@ -435,6 +435,7 @@ where
 			.cloned()
 			.filter(|(_, base)| !base.inner.is_infinity())
 			.map(|(scalar, base)| {
+				println!("scalar native {:?}", scalar);
 				let new = scalar.clone();
 				base.inner.mul_scalar(new.inner)
 			})

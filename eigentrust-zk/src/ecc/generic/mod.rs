@@ -89,11 +89,11 @@ where
 	P: RnsParams<C::Base, N, NUM_LIMBS, NUM_BITS>,
 	C::Base: FieldExt,
 {
-	fn without_witnesses() -> Self {
+	fn without_witnesses(&self) -> Self {
 		Self {
 			_ec: PhantomData,
-			x: UnassignedInteger::without_witnesses(),
-			y: UnassignedInteger::without_witnesses(),
+			x: UnassignedInteger::without_witnesses(&self.x),
+			y: UnassignedInteger::without_witnesses(&self.y),
 		}
 	}
 }
@@ -1511,8 +1511,8 @@ mod test {
 
 		fn without_witnesses(&self) -> Self {
 			Self {
-				p: UnassignedEcPoint::without_witnesses(),
-				q: UnassignedEcPoint::without_witnesses(),
+				p: UnassignedEcPoint::without_witnesses(&self.p),
+				q: UnassignedEcPoint::without_witnesses(&self.q),
 			}
 		}
 
@@ -1588,7 +1588,7 @@ mod test {
 		type FloorPlanner = SimpleFloorPlanner;
 
 		fn without_witnesses(&self) -> Self {
-			Self { p: UnassignedEcPoint::without_witnesses() }
+			Self { p: UnassignedEcPoint::without_witnesses(&self.p) }
 		}
 
 		fn configure(meta: &mut ConstraintSystem<N>) -> TestConfig {
@@ -1662,8 +1662,8 @@ mod test {
 
 		fn without_witnesses(&self) -> Self {
 			Self {
-				p: UnassignedEcPoint::without_witnesses(),
-				q: UnassignedEcPoint::without_witnesses(),
+				p: UnassignedEcPoint::without_witnesses(&self.p),
+				q: UnassignedEcPoint::without_witnesses(&self.q),
 			}
 		}
 
@@ -1745,8 +1745,8 @@ mod test {
 
 		fn without_witnesses(&self) -> Self {
 			Self {
-				p: UnassignedEcPoint::without_witnesses(),
-				value: UnassignedInteger::without_witnesses(),
+				p: UnassignedEcPoint::without_witnesses(&self.p),
+				value: UnassignedInteger::without_witnesses(&self.value),
 			}
 		}
 
@@ -1860,12 +1860,12 @@ mod test {
 				points: self
 					.points
 					.iter()
-					.map(|_| UnassignedEcPoint::without_witnesses())
+					.map(|p| UnassignedEcPoint::without_witnesses(&p))
 					.collect(),
 				scalars: self
 					.scalars
 					.iter()
-					.map(|_| UnassignedInteger::without_witnesses())
+					.map(|s| UnassignedInteger::without_witnesses(&s))
 					.collect(),
 			}
 		}

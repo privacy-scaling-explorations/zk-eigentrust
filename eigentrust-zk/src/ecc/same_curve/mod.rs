@@ -86,11 +86,11 @@ where
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
 {
-	fn without_witnesses() -> Self {
+	fn without_witnesses(&self) -> Self {
 		Self {
 			_ec: PhantomData,
-			x: UnassignedInteger::without_witnesses(),
-			y: UnassignedInteger::without_witnesses(),
+			x: UnassignedInteger::without_witnesses(&self.x),
+			y: UnassignedInteger::without_witnesses(&self.y),
 		}
 	}
 }
@@ -214,6 +214,8 @@ where
 		)?;
 
 		// denominator = q.x.sub(&p.x);
+		println!("q_x_reduced: {:?}", q_x_reduced.integer.value());
+		println!("p_x_reduced: {:?}", p_x_reduced.integer.value());
 		let denominator_chip = IntegerSubChip::new(q_x_reduced.clone(), p_x_reduced.clone());
 		let denominator = denominator_chip.synthesize(
 			common,
@@ -222,6 +224,7 @@ where
 		)?;
 
 		// m = numerator.result.div(&denominator.result)
+		println!("denominator: {:?}", denominator.integer.value());
 		let m_chip = IntegerDivChip::new(numerator, denominator);
 		let m = m_chip.synthesize(
 			common,
@@ -844,6 +847,7 @@ where
 			layouter.namespace(|| "acc_double"),
 		)?;
 
+		println!("acc_add_chip");
 		let acc_add_chip = EccAddChipset::new(acc_point, carry_point);
 		acc_point =
 			acc_add_chip.synthesize(common, &config.add, layouter.namespace(|| "acc_add"))?;
@@ -867,6 +871,23 @@ where
 			)?;
 		}
 
+		println!("acc_add_chip 2");
+		println!(
+			"acc_point.x.integer.value() {:?}",
+			acc_point.x.integer.value()
+		);
+		println!(
+			"self.aux.fin[0].x.integer.value() {:?}",
+			self.aux.fin[0].x.integer.value()
+		);
+		println!(
+			"acc_point.y.integer.value() {:?}",
+			acc_point.y.integer.value()
+		);
+		println!(
+			"self.aux.fin[0].y.integer.value() {:?}",
+			self.aux.fin[0].y.integer.value()
+		);
 		let acc_add_chip = EccAddChipset::new(acc_point, self.aux.fin[0].clone());
 		acc_point = acc_add_chip.synthesize(
 			common,
@@ -1330,8 +1351,8 @@ mod test {
 
 		fn without_witnesses(&self) -> Self {
 			Self {
-				p: UnassignedEcPoint::without_witnesses(),
-				q: UnassignedEcPoint::without_witnesses(),
+				p: UnassignedEcPoint::without_witnesses(&self.p),
+				q: UnassignedEcPoint::without_witnesses(&self.q),
 			}
 		}
 
@@ -1407,7 +1428,7 @@ mod test {
 		type FloorPlanner = SimpleFloorPlanner;
 
 		fn without_witnesses(&self) -> Self {
-			Self { p: UnassignedEcPoint::without_witnesses() }
+			Self { p: UnassignedEcPoint::without_witnesses(&self.p) }
 		}
 
 		fn configure(meta: &mut ConstraintSystem<N>) -> TestConfig {
@@ -1480,8 +1501,8 @@ mod test {
 
 		fn without_witnesses(&self) -> Self {
 			Self {
-				p: UnassignedEcPoint::without_witnesses(),
-				q: UnassignedEcPoint::without_witnesses(),
+				p: UnassignedEcPoint::without_witnesses(&self.p),
+				q: UnassignedEcPoint::without_witnesses(&self.q),
 			}
 		}
 
@@ -1559,7 +1580,7 @@ mod test {
 		type FloorPlanner = SimpleFloorPlanner;
 
 		fn without_witnesses(&self) -> Self {
-			Self { p: UnassignedEcPoint::without_witnesses(), value: Value::unknown() }
+			Self { p: UnassignedEcPoint::without_witnesses(&self.p), value: Value::unknown() }
 		}
 
 		fn configure(meta: &mut ConstraintSystem<N>) -> TestConfig {
@@ -1657,7 +1678,7 @@ mod test {
 				points: self
 					.points
 					.iter()
-					.map(|_| UnassignedEcPoint::without_witnesses())
+					.map(|p| UnassignedEcPoint::without_witnesses(&p))
 					.collect(),
 				scalars: self.scalars.iter().map(|_| Value::unknown()).collect(),
 			}

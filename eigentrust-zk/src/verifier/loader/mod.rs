@@ -736,7 +736,7 @@ where
 				|| "load_const",
 				|region: Region<'_, C::Scalar>| {
 					let mut ctx = RegionCtx::new(region, 0);
-					ctx.assign_fixed(self.common.fixed[0], *value)
+					ctx.assign_from_constant(self.common.advice[0], *value)
 				},
 			)
 			.unwrap();
@@ -944,13 +944,15 @@ where
 					let mut y_limbs: [Option<AssignedCell<C::Scalar, C::Scalar>>; NUM_LIMBS] =
 						[(); NUM_LIMBS].map(|_| None);
 					for i in 0..NUM_LIMBS {
-						x_limbs[i] =
-							Some(ctx.assign_fixed(self.common.fixed[i], x.limbs[i]).unwrap());
+						x_limbs[i] = Some(
+							ctx.assign_from_constant(self.common.advice[i], x.limbs[i]).unwrap(),
+						);
 					}
 					ctx.next();
 					for i in 0..NUM_LIMBS {
-						y_limbs[i] =
-							Some(ctx.assign_fixed(self.common.fixed[i], y.limbs[i]).unwrap());
+						y_limbs[i] = Some(
+							ctx.assign_from_constant(self.common.advice[i], y.limbs[i]).unwrap(),
+						);
 					}
 					Ok((x_limbs.map(|x| x.unwrap()), y_limbs.map(|x| x.unwrap())))
 				},
@@ -1000,11 +1002,13 @@ where
 			.iter()
 			.cloned()
 			.filter(|(_, base)| !base.inner.is_infinity())
+			// .filter(|(scalar, _)| !scalar.inner.value().error_if_known_and(|_| true).is_ok())
 			.map(|(scalar, base)| {
 				let config = base.loader.clone();
 				let aux = base.loader.aux.clone();
 
 				let mut layouter = base.loader.layouter.borrow_mut();
+				println!("EccMulChipset MSM");
 				let chip = EccMulChipset::new(base.inner.clone(), scalar.inner.clone(), aux);
 				let mul = chip
 					.synthesize(
