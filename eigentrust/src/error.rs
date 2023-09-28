@@ -47,6 +47,10 @@ pub enum EigenError {
 	#[error("ParsingError: {0}")]
 	ParsingError(String),
 
+	/// Proving error
+	#[error("ProvingError: {0}")]
+	ProvingError(String),
+
 	/// Read/Write error
 	#[error("ReadWriteError: {0}")]
 	ReadWriteError(String),

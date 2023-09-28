@@ -20,6 +20,7 @@ use crate::{
 		sponge::StatefulSpongeChipset,
 		FullRoundChip, PartialRoundChip, PoseidonChipset,
 	},
+	verifier::aggregator::native::NativeAggregator,
 };
 use halo2::halo2curves::{
 	bn256::{Bn256, Fr as Scalar},
@@ -54,6 +55,8 @@ pub const NUM_DECIMAL_LIMBS: usize = 2;
 pub const POWER_OF_TEN: usize = 72;
 /// Default polynomial degree for KZG parameters for EigenTrust circuit.
 pub const ET_PARAMS_K: u32 = 20;
+/// Default polynomial degree for KZG parameters for Threshold circuit.
+pub const TH_PARAMS_K: u32 = 21;
 
 /// Rational score
 pub type RationalScore = BigRational;
@@ -93,6 +96,15 @@ pub type Opinion4 = Opinion<
 	Secp256k1Params,
 	PoseidonNativeHasher,
 	PoseidonNativeSponge,
+>;
+/// Native Aggregator for set with 4 participants
+pub type NativeAggregator4 = NativeAggregator<
+	Bn256,
+	NUM_NEIGHBOURS,
+	NUM_BITS,
+	Bn256_4_68,
+	PoseidonNativeSponge,
+	Bn254Params,
 >;
 
 /// Native EigenTrust set with 4 participants

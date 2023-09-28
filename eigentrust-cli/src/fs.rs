@@ -4,6 +4,7 @@
 
 use dotenv::{dotenv, var};
 use eigentrust::{
+	circuit::Circuit,
 	error::EigenError,
 	storage::{BinFileStorage, JSONFileStorage, Storage},
 	ClientConfig,
@@ -15,12 +16,12 @@ use std::{env::current_dir, path::PathBuf};
 const DEFAULT_MNEMONIC: &str = "test test test test test test test test test test test junk";
 /// Library configuration file name.
 pub const CONFIG_FILE: &str = "config";
-/// EigenTrust generated proof file name.
-pub const ET_PROOF_FILE: &str = "et-proof";
-/// EigenTrust proving key file name.
-pub const ET_PROVING_KEY_FILE: &str = "et-proving-key";
-/// EigenTrust proof public inputs file name.
-pub const ET_PUB_INP_FILE: &str = "et-public-inputs";
+/// Proof file name.
+pub const PROOF_FILE: &str = "proof";
+/// Proving key file name.
+pub const PROVING_KEY_FILE: &str = "proving-key";
+/// Public inputs file name.
+pub const PUB_INP_FILE: &str = "public-inputs";
 /// KZG parameters file name.
 pub const PARAMS_FILE: &str = "kzg-params";
 
@@ -48,9 +49,9 @@ impl FileType {
 // Enum for different EigenTrust binary files
 pub enum EigenFile {
 	KzgParams(u32),
-	ProvingKey,
-	EtProof,
-	ETPublicInputs,
+	ProvingKey(Circuit),
+	Proof(Circuit),
+	PublicInputs(Circuit),
 }
 
 impl EigenFile {
@@ -75,9 +76,9 @@ impl EigenFile {
 	fn filename(&self) -> String {
 		match self {
 			EigenFile::KzgParams(pol_degree) => format!("{}-{}", PARAMS_FILE, pol_degree),
-			EigenFile::ProvingKey => ET_PROVING_KEY_FILE.to_string(),
-			EigenFile::EtProof => ET_PROOF_FILE.to_string(),
-			EigenFile::ETPublicInputs => ET_PUB_INP_FILE.to_string(),
+			EigenFile::ProvingKey(circuit) => format!("{}-{}", circuit.as_str(), PROVING_KEY_FILE),
+			EigenFile::Proof(circuit) => format!("{}-{}", circuit.as_str(), PROOF_FILE),
+			EigenFile::PublicInputs(circuit) => format!("{}-{}", circuit.as_str(), PUB_INP_FILE),
 		}
 	}
 }
