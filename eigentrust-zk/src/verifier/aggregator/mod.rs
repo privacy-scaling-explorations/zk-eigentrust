@@ -80,8 +80,12 @@ where
 	pub fn without_witness(&self) -> Self {
 		UnassignedSnark {
 			protocol: self.protocol.clone(),
-			instances: self.instances.clone(),
-			proof: self.proof.clone(),
+			instances: self
+				.instances
+				.iter()
+				.map(|instances| vec![Value::unknown(); instances.len()])
+				.collect(),
+			proof: None,
 		}
 	}
 
@@ -223,7 +227,7 @@ where
 			},
 		)?;
 
-		{
+		let accumulator_limbs = {
 			let loader_config =
 				LoaderConfig::<'_, E::G1Affine, _, NUM_LIMBS, NUM_BITS, P, S, EC>::new(
 					layouter.namespace(|| "loader"),
@@ -235,7 +239,7 @@ where
 					config.sponge.clone(),
 				);
 
-			// let mut accumulators = Vec::new();
+			let mut accumulators = Vec::new();
 			for (i, snark) in self.snarks.iter().enumerate() {
 				let mut loaded_instances = Vec::new();
 				for inst_vec in &assigned_instances[i] {
@@ -270,37 +274,37 @@ where
 				)
 				.unwrap();
 
-				// accumulators.extend(res);
+				accumulators.extend(res);
 			}
 
-			// let as_proof = self.as_proof.as_deref();
-			// let mut transcript: TranscriptReadChipset<
-			// 	&[u8],
-			// 	E::G1Affine,
-			// 	_,
-			// 	NUM_LIMBS,
-			// 	NUM_BITS,
-			// 	P,
-			// 	S,
-			// 	EC,
-			// > = TranscriptReadChipset::new(as_proof, loader_config);
-			// let proof =
-			// 	KzgAs::<E, Gwc19>::read_proof(&Default::default(), &accumulators, &mut transcript)
-			// 		.unwrap();
+			let as_proof = self.as_proof.as_deref();
+			let mut transcript: TranscriptReadChipset<
+				&[u8],
+				E::G1Affine,
+				_,
+				NUM_LIMBS,
+				NUM_BITS,
+				P,
+				S,
+				EC,
+			> = TranscriptReadChipset::new(as_proof, loader_config);
+			let proof =
+				KzgAs::<E, Gwc19>::read_proof(&Default::default(), &accumulators, &mut transcript)
+					.unwrap();
 
-			// let accumulator =
-			// 	KzgAs::<E, Gwc19>::verify(&Default::default(), &accumulators, &proof).unwrap();
+			let accumulator =
+				KzgAs::<E, Gwc19>::verify(&Default::default(), &accumulators, &proof).unwrap();
 
-			// let lhs_x = accumulator.lhs.inner.x;
-			// let lhs_y = accumulator.lhs.inner.y;
+			let lhs_x = accumulator.lhs.inner.x;
+			let lhs_y = accumulator.lhs.inner.y;
 
-			// let rhs_x = accumulator.rhs.inner.x;
-			// let rhs_y = accumulator.rhs.inner.y;
+			let rhs_x = accumulator.rhs.inner.x;
+			let rhs_y = accumulator.rhs.inner.y;
 
-			// [lhs_x, lhs_y, rhs_x, rhs_y].map(|v| v.limbs).into_iter().flatten().collect_vec()
+			[lhs_x, lhs_y, rhs_x, rhs_y].map(|v| v.limbs).into_iter().flatten().collect_vec()
 		};
 
-		Ok(Vec::new())
+		Ok(accumulator_limbs)
 	}
 }
 
@@ -584,7 +588,11 @@ mod test {
 		type FloorPlanner = SimpleFloorPlanner;
 
 		fn without_witnesses(&self) -> Self {
-			Self { svk: self.svk, snarks: self.snarks.clone(), as_proof: self.as_proof.clone() }
+			Self {
+				svk: self.svk,
+				snarks: self.snarks.iter().map(UnassignedSnark::without_witness).collect(),
+				as_proof: None,
+			}
 		}
 
 		fn configure(meta: &mut ConstraintSystem<Scalar>) -> Self::Config {
@@ -679,7 +687,7 @@ mod test {
 		assert_eq!(prover.verify(), Ok(()));
 	}
 
-	// #[ignore = "Et Aggregator takes too long to run"]
+	#[ignore = "Et Aggregator takes too long to run"]
 	#[test]
 	fn test_et_aggregator_prod() {
 		const NUM_NEIGHBOURS: usize = 4;

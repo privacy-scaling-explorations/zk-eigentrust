@@ -1002,13 +1002,11 @@ where
 			.iter()
 			.cloned()
 			.filter(|(_, base)| !base.inner.is_infinity())
-			// .filter(|(scalar, _)| !scalar.inner.value().error_if_known_and(|_| true).is_ok())
 			.map(|(scalar, base)| {
 				let config = base.loader.clone();
 				let aux = base.loader.aux.clone();
 
 				let mut layouter = base.loader.layouter.borrow_mut();
-				println!("EccMulChipset MSM");
 				let chip = EccMulChipset::new(base.inner.clone(), scalar.inner.clone(), aux);
 				let mul = chip
 					.synthesize(
