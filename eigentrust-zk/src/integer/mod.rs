@@ -72,9 +72,9 @@ impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
 where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 {
-	fn without_witnesses() -> Self {
+	fn without_witnesses(&self) -> Self {
 		Self {
-			integer: Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::default(),
+			integer: self.integer.clone(),
 			limbs: [Value::unknown(); NUM_LIMBS],
 			_wrong_field: PhantomData,
 			_rns: PhantomData,
@@ -1144,7 +1144,7 @@ mod test {
 		type FloorPlanner = SimpleFloorPlanner;
 
 		fn without_witnesses(&self) -> Self {
-			Self { x: UnassignedInteger::without_witnesses() }
+			Self { x: UnassignedInteger::without_witnesses(&self.x) }
 		}
 
 		fn configure(meta: &mut ConstraintSystem<N>) -> TestConfig {
@@ -1230,8 +1230,8 @@ mod test {
 
 		fn without_witnesses(&self) -> Self {
 			Self {
-				x: UnassignedInteger::without_witnesses(),
-				y: UnassignedInteger::without_witnesses(),
+				x: UnassignedInteger::without_witnesses(&self.x),
+				y: UnassignedInteger::without_witnesses(&self.y),
 			}
 		}
 
@@ -1303,8 +1303,8 @@ mod test {
 
 		fn without_witnesses(&self) -> Self {
 			Self {
-				x: UnassignedInteger::without_witnesses(),
-				y: UnassignedInteger::without_witnesses(),
+				x: UnassignedInteger::without_witnesses(&self.x),
+				y: UnassignedInteger::without_witnesses(&self.y),
 			}
 		}
 
@@ -1375,8 +1375,8 @@ mod test {
 
 		fn without_witnesses(&self) -> Self {
 			Self {
-				x: UnassignedInteger::without_witnesses(),
-				y: UnassignedInteger::without_witnesses(),
+				x: UnassignedInteger::without_witnesses(&self.x),
+				y: UnassignedInteger::without_witnesses(&self.y),
 			}
 		}
 
@@ -1447,8 +1447,8 @@ mod test {
 
 		fn without_witnesses(&self) -> Self {
 			Self {
-				x: UnassignedInteger::without_witnesses(),
-				y: UnassignedInteger::without_witnesses(),
+				x: UnassignedInteger::without_witnesses(&self.x),
+				y: UnassignedInteger::without_witnesses(&self.y),
 			}
 		}
 

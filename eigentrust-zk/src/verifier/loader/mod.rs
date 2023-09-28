@@ -736,7 +736,7 @@ where
 				|| "load_const",
 				|region: Region<'_, C::Scalar>| {
 					let mut ctx = RegionCtx::new(region, 0);
-					ctx.assign_fixed(self.common.fixed[0], *value)
+					ctx.assign_from_constant(self.common.advice[0], *value)
 				},
 			)
 			.unwrap();
@@ -944,13 +944,15 @@ where
 					let mut y_limbs: [Option<AssignedCell<C::Scalar, C::Scalar>>; NUM_LIMBS] =
 						[(); NUM_LIMBS].map(|_| None);
 					for i in 0..NUM_LIMBS {
-						x_limbs[i] =
-							Some(ctx.assign_fixed(self.common.fixed[i], x.limbs[i]).unwrap());
+						x_limbs[i] = Some(
+							ctx.assign_from_constant(self.common.advice[i], x.limbs[i]).unwrap(),
+						);
 					}
 					ctx.next();
 					for i in 0..NUM_LIMBS {
-						y_limbs[i] =
-							Some(ctx.assign_fixed(self.common.fixed[i], y.limbs[i]).unwrap());
+						y_limbs[i] = Some(
+							ctx.assign_from_constant(self.common.advice[i], y.limbs[i]).unwrap(),
+						);
 					}
 					Ok((x_limbs.map(|x| x.unwrap()), y_limbs.map(|x| x.unwrap())))
 				},

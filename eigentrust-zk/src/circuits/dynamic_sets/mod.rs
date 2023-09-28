@@ -43,6 +43,7 @@ use halo2::{
 	circuit::{Layouter, Region, SimpleFloorPlanner},
 	plonk::{Circuit, ConstraintSystem, Error},
 };
+use itertools::Itertools;
 use std::marker::PhantomData;
 
 #[derive(Clone)]
@@ -155,7 +156,7 @@ where
 			unassigned_msg_hashes.push(msg_hashes_row);
 			unassigned_s_invs.push(s_inv_row);
 
-			let pk = pks[i].clone().unwrap_or(PublicKey::default());
+			let pk = pks[i].clone().unwrap();
 			let unassigned_pk = UnassignedPublicKey::new(pk);
 			unassigned_pks.push(unassigned_pk);
 		}
@@ -219,18 +220,33 @@ impl<
 	type FloorPlanner = SimpleFloorPlanner;
 
 	fn without_witnesses(&self) -> Self {
-		let att = UnassignedSignedAttestation::without_witnesses();
-		let pk = UnassignedPublicKey::without_witnesses();
-
 		Self {
-			attestations: vec![vec![att; NUM_NEIGHBOURS]; NUM_NEIGHBOURS],
-			pks: vec![pk; NUM_NEIGHBOURS],
-			msg_hashes: vec![vec![UnassignedInteger::without_witnesses(); NUM_NEIGHBOURS]],
-			s_inv: vec![
-				vec![UnassignedInteger::without_witnesses(); NUM_NEIGHBOURS];
-				NUM_NEIGHBOURS
-			],
-			g_as_ecpoint: UnassignedEcPoint::without_witnesses(),
+			attestations: self
+				.attestations
+				.iter()
+				.map(|sig_att_vec| {
+					sig_att_vec
+						.iter()
+						.map(UnassignedSignedAttestation::without_witnesses)
+						.collect_vec()
+				})
+				.collect_vec(),
+			pks: self.pks.iter().map(UnassignedPublicKey::without_witnesses).collect_vec(),
+			msg_hashes: self
+				.msg_hashes
+				.iter()
+				.map(|msg_hash_vec| {
+					msg_hash_vec.iter().map(UnassignedInteger::without_witnesses).collect_vec()
+				})
+				.collect_vec(),
+			s_inv: self
+				.s_inv
+				.iter()
+				.map(|s_inv_vec| {
+					s_inv_vec.iter().map(UnassignedInteger::without_witnesses).collect_vec()
+				})
+				.collect_vec(),
+			g_as_ecpoint: UnassignedEcPoint::without_witnesses(&self.g_as_ecpoint),
 			_p: PhantomData,
 		}
 	}

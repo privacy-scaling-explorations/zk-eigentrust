@@ -86,11 +86,11 @@ where
 	C::Base: FieldExt,
 	C::Scalar: FieldExt,
 {
-	fn without_witnesses() -> Self {
+	fn without_witnesses(&self) -> Self {
 		Self {
 			_ec: PhantomData,
-			x: UnassignedInteger::without_witnesses(),
-			y: UnassignedInteger::without_witnesses(),
+			x: UnassignedInteger::without_witnesses(&self.x),
+			y: UnassignedInteger::without_witnesses(&self.y),
 		}
 	}
 }
@@ -866,7 +866,6 @@ where
 				layouter.namespace(|| "acc_ladder"),
 			)?;
 		}
-
 		let acc_add_chip = EccAddChipset::new(acc_point, self.aux.fin[0].clone());
 		acc_point = acc_add_chip.synthesize(
 			common,
@@ -1330,8 +1329,8 @@ mod test {
 
 		fn without_witnesses(&self) -> Self {
 			Self {
-				p: UnassignedEcPoint::without_witnesses(),
-				q: UnassignedEcPoint::without_witnesses(),
+				p: UnassignedEcPoint::without_witnesses(&self.p),
+				q: UnassignedEcPoint::without_witnesses(&self.q),
 			}
 		}
 
@@ -1407,7 +1406,7 @@ mod test {
 		type FloorPlanner = SimpleFloorPlanner;
 
 		fn without_witnesses(&self) -> Self {
-			Self { p: UnassignedEcPoint::without_witnesses() }
+			Self { p: UnassignedEcPoint::without_witnesses(&self.p) }
 		}
 
 		fn configure(meta: &mut ConstraintSystem<N>) -> TestConfig {
@@ -1480,8 +1479,8 @@ mod test {
 
 		fn without_witnesses(&self) -> Self {
 			Self {
-				p: UnassignedEcPoint::without_witnesses(),
-				q: UnassignedEcPoint::without_witnesses(),
+				p: UnassignedEcPoint::without_witnesses(&self.p),
+				q: UnassignedEcPoint::without_witnesses(&self.q),
 			}
 		}
 
@@ -1559,7 +1558,7 @@ mod test {
 		type FloorPlanner = SimpleFloorPlanner;
 
 		fn without_witnesses(&self) -> Self {
-			Self { p: UnassignedEcPoint::without_witnesses(), value: Value::unknown() }
+			Self { p: UnassignedEcPoint::without_witnesses(&self.p), value: Value::unknown() }
 		}
 
 		fn configure(meta: &mut ConstraintSystem<N>) -> TestConfig {
@@ -1657,7 +1656,7 @@ mod test {
 				points: self
 					.points
 					.iter()
-					.map(|_| UnassignedEcPoint::without_witnesses())
+					.map(|p| UnassignedEcPoint::without_witnesses(&p))
 					.collect(),
 				scalars: self.scalars.iter().map(|_| Value::unknown()).collect(),
 			}

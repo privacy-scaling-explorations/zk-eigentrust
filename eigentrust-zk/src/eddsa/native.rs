@@ -106,7 +106,7 @@ impl From<PublicKey> for UnassignedPublicKey {
 }
 
 impl UnassignedValue for UnassignedPublicKey {
-	fn without_witnesses() -> Self {
+	fn without_witnesses(&self) -> Self {
 		Self(UnassignedPoint { x: Value::unknown(), y: Value::unknown(), _p: PhantomData })
 	}
 }
@@ -162,7 +162,7 @@ impl From<Signature> for UnassignedSignature {
 }
 
 impl UnassignedValue for UnassignedSignature {
-	fn without_witnesses() -> Self {
+	fn without_witnesses(&self) -> Self {
 		Self {
 			big_r: UnassignedPoint { x: Value::unknown(), y: Value::unknown(), _p: PhantomData },
 			s: Value::unknown(),

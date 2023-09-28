@@ -75,10 +75,10 @@ where
 	P: RnsParams<C::ScalarExt, N, NUM_LIMBS, NUM_BITS>,
 	C::ScalarExt: FieldExt,
 {
-	fn without_witnesses() -> Self {
+	fn without_witnesses(&self) -> Self {
 		Self {
-			r: UnassignedInteger::without_witnesses(),
-			s: UnassignedInteger::without_witnesses(),
+			r: UnassignedInteger::without_witnesses(&self.r),
+			s: UnassignedInteger::without_witnesses(&self.s),
 		}
 	}
 }
@@ -224,8 +224,8 @@ where
 	C::ScalarExt: FieldExt,
 	EC: EccParams<C>,
 {
-	fn without_witnesses() -> Self {
-		Self(UnassignedEcPoint::without_witnesses())
+	fn without_witnesses(&self) -> Self {
+		Self(UnassignedEcPoint::without_witnesses(&self.0))
 	}
 }
 
@@ -753,11 +753,11 @@ mod test {
 
 		fn without_witnesses(&self) -> Self {
 			Self {
-				public_key: UnassignedPublicKey::without_witnesses(),
-				g_as_ecpoint: UnassignedEcPoint::without_witnesses(),
-				signature: UnassignedSignature::without_witnesses(),
-				msg_hash: UnassignedInteger::without_witnesses(),
-				s_inv: UnassignedInteger::without_witnesses(),
+				public_key: UnassignedPublicKey::without_witnesses(&self.public_key),
+				g_as_ecpoint: UnassignedEcPoint::without_witnesses(&self.g_as_ecpoint),
+				signature: UnassignedSignature::without_witnesses(&self.signature),
+				msg_hash: UnassignedInteger::without_witnesses(&self.msg_hash),
+				s_inv: UnassignedInteger::without_witnesses(&self.s_inv),
 			}
 		}
 

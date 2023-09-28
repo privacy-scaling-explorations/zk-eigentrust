@@ -131,7 +131,7 @@ pub trait SpongeHasherChipset<F: FieldExt>: Clone + Debug {
 /// UnassignedValue Trait
 pub trait UnassignedValue {
 	/// Returns unknown value type
-	fn without_witnesses() -> Self;
+	fn without_witnesses(&self) -> Self;
 }
 
 #[derive(Debug)]
