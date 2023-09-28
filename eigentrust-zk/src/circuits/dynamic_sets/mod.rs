@@ -227,33 +227,23 @@ impl<
 				.map(|sig_att_vec| {
 					sig_att_vec
 						.iter()
-						.map(|sig_att| UnassignedSignedAttestation::without_witnesses(&sig_att))
+						.map(UnassignedSignedAttestation::without_witnesses)
 						.collect_vec()
 				})
 				.collect_vec(),
-			pks: self
-				.pks
-				.iter()
-				.map(|pk| UnassignedPublicKey::without_witnesses(&pk))
-				.collect_vec(),
+			pks: self.pks.iter().map(UnassignedPublicKey::without_witnesses).collect_vec(),
 			msg_hashes: self
 				.msg_hashes
 				.iter()
 				.map(|msg_hash_vec| {
-					msg_hash_vec
-						.iter()
-						.map(|msg_hash| UnassignedInteger::without_witnesses(&msg_hash))
-						.collect_vec()
+					msg_hash_vec.iter().map(UnassignedInteger::without_witnesses).collect_vec()
 				})
 				.collect_vec(),
 			s_inv: self
 				.s_inv
 				.iter()
 				.map(|s_inv_vec| {
-					s_inv_vec
-						.iter()
-						.map(|s_inv| UnassignedInteger::without_witnesses(&s_inv))
-						.collect_vec()
+					s_inv_vec.iter().map(UnassignedInteger::without_witnesses).collect_vec()
 				})
 				.collect_vec(),
 			g_as_ecpoint: UnassignedEcPoint::without_witnesses(&self.g_as_ecpoint),
