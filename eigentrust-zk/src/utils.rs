@@ -329,11 +329,7 @@ pub fn fe_to_big<F: FieldExt>(fe: F) -> BigUint {
 }
 
 /// Converts a `BigRational` into scaled, decomposed numerator and denominator arrays of field elements.
-pub fn big_to_fe_rat<
-	F: FieldExt,
-	const NUM_DECIMAL_LIMBS: usize,
-	const POWER_OF_TEN: usize,
->(
+pub fn big_to_fe_rat<F: FieldExt, const NUM_DECIMAL_LIMBS: usize, const POWER_OF_TEN: usize>(
 	ratio: BigRational,
 ) -> ([F; NUM_DECIMAL_LIMBS], [F; NUM_DECIMAL_LIMBS]) {
 	let num = ratio.numer();
