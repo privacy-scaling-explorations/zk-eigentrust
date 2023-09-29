@@ -156,7 +156,7 @@ where
 			unassigned_msg_hashes.push(msg_hashes_row);
 			unassigned_s_invs.push(s_inv_row);
 
-			let pk = pks[i].clone().unwrap();
+			let pk = pks[i].clone().unwrap_or(PublicKey::default());
 			let unassigned_pk = UnassignedPublicKey::new(pk);
 			unassigned_pks.push(unassigned_pk);
 		}

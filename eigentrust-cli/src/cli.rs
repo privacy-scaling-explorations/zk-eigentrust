@@ -55,9 +55,9 @@ pub enum Mode {
 	Scores,
 	/// Generates a Threshold circuit proof for the selected participant.
 	ThProof(ThProofData),
-	/// Generates EigenTrust circuit proving key
+	/// Generates Threshold circuit proving key
 	ThProvingKey,
-	/// Verifies the stored threshold circuit proof.
+	/// Verifies the stored Threshold circuit proof.
 	ThVerify,
 	/// Displays the current configuration.
 	Show,
