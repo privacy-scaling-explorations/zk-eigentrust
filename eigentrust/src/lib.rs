@@ -668,7 +668,7 @@ impl Client {
 			.map_err(|e| EigenError::ParsingError(format!("Error parsing domain: {}", e)))?;
 		let domain_bytes_256 = H256::from(domain_bytes);
 
-		let mut domain = domain_bytes_256.as_fixed_bytes().clone();
+		let mut domain = *domain_bytes_256.as_fixed_bytes();
 		domain.reverse();
 
 		let domain_opt = Scalar::from_bytes(&domain);
