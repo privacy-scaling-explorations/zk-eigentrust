@@ -336,7 +336,7 @@ pub async fn handle_et_proof(config: ClientConfig) -> Result<(), EigenError> {
 	let kzg_params = EigenFile::KzgParams(ET_PARAMS_K).load()?;
 
 	// Generate proof
-	let report = client.calculate_scores(attestations?, kzg_params, proving_key)?;
+	let report = client.generate_et_proof(attestations?, kzg_params, proving_key)?;
 
 	EigenFile::Proof(Circuit::EigenTrust).save(report.proof)?;
 	EigenFile::PublicInputs(Circuit::EigenTrust).save(report.pub_inputs.to_bytes())?;
@@ -383,7 +383,6 @@ pub async fn handle_scores(
 ) -> Result<(), EigenError> {
 	let mnemonic = load_mnemonic();
 	let client = Client::new(config, mnemonic);
-
 	let att_fp = get_file_path("attestations", FileType::Csv)?;
 
 	// Get or Fetch attestations
@@ -416,22 +415,13 @@ pub async fn handle_scores(
 		},
 	};
 
-	let proving_key = EigenFile::ProvingKey(Circuit::EigenTrust).load()?;
-	let kzg_params = EigenFile::KzgParams(ET_PARAMS_K).load()?;
-
 	// Calculate scores
-	let score_records: Vec<ScoreRecord> = client
-		.calculate_scores(attestations, kzg_params, proving_key)?
-		.scores
-		.into_iter()
-		.map(ScoreRecord::from_score)
-		.collect();
-
-	let scores_fp = get_file_path("scores", FileType::Csv)?;
+	let score_records: Vec<ScoreRecord> =
+		client.calculate_scores(attestations)?.into_iter().map(ScoreRecord::from_score).collect();
 
 	// Save scores
+	let scores_fp = get_file_path("scores", FileType::Csv)?;
 	let mut records_storage = CSVFileStorage::<ScoreRecord>::new(scores_fp);
-
 	records_storage.save(score_records)?;
 
 	info!(

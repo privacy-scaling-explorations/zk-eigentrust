@@ -35,10 +35,8 @@ impl Circuit {
 	}
 }
 
-/// Scores report struct.
-pub struct ScoresReport {
-	/// Participants' scores
-	pub scores: Vec<Score>,
+/// EigenTrust report struct.
+pub struct ETReport {
 	/// Verifier public inputs
 	pub pub_inputs: ETPublicInputs,
 	/// Proof

@@ -62,7 +62,7 @@ use att_station::{
 	AttestationCreatedFilter, AttestationData as ContractAttestationData, AttestationStation,
 };
 use attestation::{build_att_key, AttestationEth, AttestationRaw, SignedAttestationRaw};
-use circuit::{ETSetup, ScoresReport, ThPublicInputs, ThReport, ThSetup};
+use circuit::{ETReport, ETSetup, ThPublicInputs, ThReport, ThSetup};
 use eigentrust_zk::{
 	circuits::{
 		threshold::native::Threshold, ECDSAPublicKey, EigenTrust4, NativeAggregator4,
@@ -225,16 +225,9 @@ impl Client {
 
 	/// Calculates the EigenTrust global scores.
 	pub fn calculate_scores(
-		&self, att: Vec<SignedAttestationRaw>, raw_kzg_params: Vec<u8>, raw_prov_key: Vec<u8>,
-	) -> Result<ScoresReport, EigenError> {
-		let rng = &mut rand::thread_rng();
+		&self, att: Vec<SignedAttestationRaw>,
+	) -> Result<Vec<Score>, EigenError> {
 		let et_setup = self.et_circuit_setup(att)?;
-
-		// Parse KZG params and proving key
-		let kzg_params: ParamsKZG<Bn256> =
-			ParamsKZG::<Bn256>::read(&mut raw_kzg_params.as_slice()).unwrap();
-		let proving_key: ProvingKey<G1Affine> =
-			ProvingKey::from_bytes::<EigenTrust4>(&raw_prov_key, SerdeFormat::Processed).unwrap();
 
 		// Construct scores vec
 		let scores: Vec<Score> = et_setup
@@ -265,6 +258,22 @@ impl Client {
 			})
 			.collect();
 
+		Ok(scores)
+	}
+
+	/// Generates an EigenTrust circuit proof.
+	pub fn generate_et_proof(
+		&self, att: Vec<SignedAttestationRaw>, raw_kzg_params: Vec<u8>, raw_prov_key: Vec<u8>,
+	) -> Result<ETReport, EigenError> {
+		let rng = &mut rand::thread_rng();
+		let et_setup = self.et_circuit_setup(att)?;
+
+		// Parse KZG params and proving key
+		let kzg_params: ParamsKZG<Bn256> =
+			ParamsKZG::<Bn256>::read(&mut raw_kzg_params.as_slice()).unwrap();
+		let proving_key: ProvingKey<G1Affine> =
+			ProvingKey::from_bytes::<EigenTrust4>(&raw_prov_key, SerdeFormat::Processed).unwrap();
+
 		// Initialize EigenTrustSet
 		let et_circuit: EigenTrust4 = EigenTrust4::new(
 			et_setup.attestation_matrix,
@@ -282,10 +291,10 @@ impl Client {
 		)
 		.map_err(|e| EigenError::ProvingError(format!("Failed to generate proof: {}", e)))?;
 
-		Ok(ScoresReport { scores, pub_inputs: et_setup.pub_inputs, proof })
+		Ok(ETReport { pub_inputs: et_setup.pub_inputs, proof })
 	}
 
-	/// Generates Threshold circuit proof for the selected participant
+	/// Generates Threshold circuit proof for the selected participant.
 	pub fn generate_th_proof(
 		&self, att: Vec<SignedAttestationRaw>, raw_et_kzg_params: Vec<u8>,
 		raw_th_kzg_params: Vec<u8>, raw_proving_key: Vec<u8>, threshold: u32, participant_id: u32,
@@ -657,7 +666,12 @@ impl Client {
 	pub fn get_scalar_domain(&self) -> Result<Scalar, EigenError> {
 		let domain_bytes = H160::from_str(&self.config.domain)
 			.map_err(|e| EigenError::ParsingError(format!("Error parsing domain: {}", e)))?;
-		let domain_opt = Scalar::from_bytes(H256::from(domain_bytes).as_fixed_bytes());
+		let domain_bytes_256 = H256::from(domain_bytes);
+
+		let mut domain = domain_bytes_256.as_fixed_bytes().clone();
+		domain.reverse();
+
+		let domain_opt = Scalar::from_bytes(&domain);
 
 		match domain_opt.is_some().into() {
 			true => Ok(domain_opt.unwrap()),
