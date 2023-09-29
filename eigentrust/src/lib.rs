@@ -291,8 +291,7 @@ impl Client {
 		raw_th_kzg_params: Vec<u8>, raw_proving_key: Vec<u8>, threshold: u32, participant_id: u32,
 	) -> Result<ThReport, EigenError> {
 		let rng = &mut thread_rng();
-		let th_setup =
-			self.th_circuit_setup(att, raw_et_kzg_params.clone(), threshold, participant_id)?;
+		let th_setup = self.th_circuit_setup(att, raw_et_kzg_params, threshold, participant_id)?;
 
 		// Build kzg params and proving key
 		let th_kzg_params =
@@ -499,13 +498,13 @@ impl Client {
 		// Extract and prepare participant-specific data
 		let id = participant_id as usize;
 		let p_address = et_setup.pub_inputs.participants[id];
-		let score = et_setup.pub_inputs.scores[id].clone();
+		let score = et_setup.pub_inputs.scores[id];
 		let rational_score = et_setup.rational_scores[id].clone();
 		let (scalar_num, scalar_den) =
 			big_to_fe_rat::<Scalar, NUM_DECIMAL_LIMBS, POWER_OF_TEN>(rational_score.clone());
 
 		// Check native threshold circuit
-		let scalar_th = Scalar::from(threshold as u64);
+		let scalar_th = Scalar::from(u64::from(threshold));
 		let native_th = NativeThreshold4::new(score, rational_score, scalar_th);
 		let native_th_check = if native_th.check_threshold() { Scalar::ONE } else { Scalar::ZERO };
 
