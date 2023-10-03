@@ -324,19 +324,13 @@ pub fn handle_et_pk() -> Result<(), EigenError> {
 pub async fn handle_et_proof(config: ClientConfig) -> Result<(), EigenError> {
 	let mnemonic = load_mnemonic();
 	let client = Client::new(config, mnemonic);
-
-	let att_fp = get_file_path("attestations", FileType::Csv)?;
-
-	handle_attestations(client.get_config().clone()).await?;
-	let att_storage = CSVFileStorage::<AttestationRecord>::new(att_fp);
-	let attestations: Result<Vec<SignedAttestationRaw>, EigenError> =
-		att_storage.load()?.into_iter().map(|record| record.try_into()).collect();
+	let attestations = load_or_fetch_attestations(client.get_config().clone()).await?;
 
 	let proving_key = EigenFile::ProvingKey(Circuit::EigenTrust).load()?;
 	let kzg_params = EigenFile::KzgParams(ET_PARAMS_K).load()?;
 
 	// Generate proof
-	let report = client.generate_et_proof(attestations?, kzg_params, proving_key)?;
+	let report = client.generate_et_proof(attestations, kzg_params, proving_key)?;
 
 	EigenFile::Proof(Circuit::EigenTrust).save(report.proof)?;
 	EigenFile::PublicInputs(Circuit::EigenTrust).save(report.pub_inputs.to_bytes())?;
@@ -436,19 +430,13 @@ pub async fn handle_scores(
 pub async fn handle_th_pk(config: ClientConfig) -> Result<(), EigenError> {
 	let mnemonic = load_mnemonic();
 	let client = Client::new(config, mnemonic);
+	let attestations = load_or_fetch_attestations(client.get_config().clone()).await?;
 
 	// Load KZG params
 	let et_kzg_params = EigenFile::KzgParams(ET_PARAMS_K).load()?;
 	let th_kzg_params = EigenFile::KzgParams(TH_PARAMS_K).load()?;
 
-	// Get attestations
-	let att_fp = get_file_path("attestations", FileType::Csv)?;
-	handle_attestations(client.get_config().clone()).await?;
-	let att_storage = CSVFileStorage::<AttestationRecord>::new(att_fp);
-	let attestations: Result<Vec<SignedAttestationRaw>, EigenError> =
-		att_storage.load()?.into_iter().map(|record| record.try_into()).collect();
-
-	let proving_key = client.generate_th_pk(attestations?, et_kzg_params, th_kzg_params)?;
+	let proving_key = client.generate_th_pk(attestations, et_kzg_params, th_kzg_params)?;
 
 	EigenFile::ProvingKey(Circuit::Threshold).save(proving_key)
 }
@@ -457,18 +445,12 @@ pub async fn handle_th_pk(config: ClientConfig) -> Result<(), EigenError> {
 pub async fn handle_th_proof(config: ClientConfig, data: ThProofData) -> Result<(), EigenError> {
 	let mnemonic = load_mnemonic();
 	let client = Client::new(config.clone(), mnemonic);
+	let attestations = load_or_fetch_attestations(client.get_config().clone()).await?;
 
 	// Load KZG params and proving key
 	let et_kzg_params = EigenFile::KzgParams(ET_PARAMS_K).load()?;
 	let th_kzg_params = EigenFile::KzgParams(TH_PARAMS_K).load()?;
 	let proving_key = EigenFile::ProvingKey(Circuit::Threshold).load()?;
-
-	// Get attestations
-	let att_fp = get_file_path("attestations", FileType::Csv)?;
-	handle_attestations(client.get_config().clone()).await?;
-	let att_storage = CSVFileStorage::<AttestationRecord>::new(att_fp);
-	let attestations: Result<Vec<SignedAttestationRaw>, EigenError> =
-		att_storage.load()?.into_iter().map(|record| record.try_into()).collect();
 
 	// Parse peer id
 	let peer_id = match data.peer {
@@ -481,7 +463,7 @@ pub async fn handle_th_proof(config: ClientConfig, data: ThProofData) -> Result<
 	};
 
 	let report = client.generate_th_proof(
-		attestations?,
+		attestations,
 		et_kzg_params,
 		th_kzg_params,
 		proving_key,
@@ -556,6 +538,25 @@ pub fn handle_update(config: &mut ClientConfig, data: UpdateData) -> Result<(), 
 	let mut json_storage = JSONFileStorage::<ClientConfig>::new(filepath);
 
 	json_storage.save(config.clone())
+}
+
+/// Tries to load attestations from local storage. If no attestations are found,
+/// it fetches them from the AS contract.
+pub async fn load_or_fetch_attestations(
+	config: ClientConfig,
+) -> Result<Vec<SignedAttestationRaw>, EigenError> {
+	let att_file_path = get_file_path("attestations", FileType::Csv)?;
+	let att_storage = CSVFileStorage::<AttestationRecord>::new(att_file_path.clone());
+	let local_records = att_storage.load()?;
+
+	if !local_records.is_empty() {
+		return local_records.into_iter().map(|record| record.try_into()).collect();
+	}
+
+	let client = Client::new(config, load_mnemonic());
+	handle_attestations(client.get_config().clone()).await?;
+
+	att_storage.load()?.into_iter().map(|record| record.try_into()).collect()
 }
 
 #[cfg(test)]
