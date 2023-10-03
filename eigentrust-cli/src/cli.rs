@@ -547,10 +547,17 @@ pub async fn load_or_fetch_attestations(
 ) -> Result<Vec<SignedAttestationRaw>, EigenError> {
 	let att_file_path = get_file_path("attestations", FileType::Csv)?;
 	let att_storage = CSVFileStorage::<AttestationRecord>::new(att_file_path.clone());
-	let local_records = att_storage.load()?;
 
-	if !local_records.is_empty() {
-		return local_records.into_iter().map(|record| record.try_into()).collect();
+	match att_storage.load() {
+		Ok(local_records) => {
+			if !local_records.is_empty() {
+				return local_records.into_iter().map(|record| record.try_into()).collect();
+			}
+			debug!("No local attestations found. Fetching from AS contract.");
+		},
+		Err(_) => {
+			debug!("Error loading local attestations. Fetching from AS contract.");
+		},
 	}
 
 	let client = Client::new(config, load_mnemonic());
