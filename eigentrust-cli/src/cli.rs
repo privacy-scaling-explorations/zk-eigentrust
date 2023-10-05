@@ -4,8 +4,7 @@
 
 use crate::{
 	bandada::BandadaApi,
-	fs::{get_file_path, load_mnemonic, EigenFile, FileType},
-	ClientConfig,
+	fs::{get_file_path, load_config, load_mnemonic, EigenFile, FileType},
 };
 use clap::{Args, Parser, Subcommand};
 use eigentrust::{
@@ -21,7 +20,52 @@ use eigentrust::{
 };
 use ethers::{abi::Address, providers::Http, types::H160};
 use log::{debug, info};
+use serde::{Deserialize, Serialize};
 use std::str::FromStr;
+
+/// CLI configuration settings.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct CliConfig {
+	/// AttestationStation contract address.
+	pub as_address: String,
+	/// Bandada group id.
+	pub band_id: String,
+	/// Bandada group threshold.
+	pub band_th: String,
+	/// Bandada API base URL.
+	pub band_url: String,
+	/// Network chain ID.
+	pub chain_id: String,
+	/// Attestation domain identifier.
+	pub domain: String,
+	/// Ethereum node URL.
+	pub node_url: String,
+}
+
+impl CliConfig {
+	/// Returns the AS address as [u8; 20]
+	pub fn as_address(&self) -> Result<[u8; 20], EigenError> {
+		let address = Address::from_str(&self.as_address)
+			.map_err(|e| EigenError::ParsingError(format!("Error parsing address: {}", e)))?;
+
+		Ok(address.to_fixed_bytes())
+	}
+
+	/// Returns the chain ID as the `u32` type
+	pub fn chain_id(&self) -> Result<u32, EigenError> {
+		self.chain_id
+			.parse::<u32>()
+			.map_err(|e| EigenError::ParsingError(format!("Error parsing chain ID: {}", e)))
+	}
+
+	/// Returns the Domain as [u8; 20]
+	pub fn domain(&self) -> Result<[u8; 20], EigenError> {
+		let domain = H160::from_str(&self.domain)
+			.map_err(|e| EigenError::ParsingError(format!("Error parsing domain: {}", e)))?;
+
+		Ok(domain.to_fixed_bytes())
+	}
+}
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -148,7 +192,7 @@ pub enum AttestationsOrigin {
 }
 
 impl AttestData {
-	pub fn to_attestation_raw(&self, config: &ClientConfig) -> Result<AttestationRaw, EigenError> {
+	pub fn to_attestation_raw(&self, config: &CliConfig) -> Result<AttestationRaw, EigenError> {
 		// Parse Address
 		let about = self
 			.address
@@ -156,7 +200,7 @@ impl AttestData {
 			.ok_or_else(|| EigenError::ValidationError("Missing address".to_string()))
 			.and_then(|address| str_to_20_byte_array(address))?;
 
-		// Use the `ClientConfig` instance to get domain
+		// Use the `CliConfig` instance to get domain
 		let domain = str_to_20_byte_array(&config.domain)?;
 
 		// Parse score
@@ -189,22 +233,38 @@ impl FromStr for Action {
 }
 
 /// Handles submitting an attestation
-pub async fn handle_attest(
-	config: ClientConfig, attest_data: AttestData,
-) -> Result<(), EigenError> {
+pub async fn handle_attest(attest_data: AttestData) -> Result<(), EigenError> {
+	let config = load_config()?;
+	let mnemonic = load_mnemonic();
+
+	// Build raw attestation
 	let attestation = attest_data.to_attestation_raw(&config)?;
 	debug!("Attesting:{:?}", attestation);
 
-	let mnemonic = load_mnemonic();
-	let client = Client::new(config, mnemonic);
+	let client = Client::new(
+		mnemonic,
+		config.chain_id()?,
+		config.as_address()?,
+		config.domain()?,
+		config.node_url,
+	);
+
+	// Submit attestation
 	client.attest(attestation).await?;
 	Ok(())
 }
 
 /// Handles `attestations` command.
-pub async fn handle_attestations(config: ClientConfig) -> Result<(), EigenError> {
+pub async fn handle_attestations() -> Result<(), EigenError> {
+	let config = load_config()?;
 	let mnemonic = load_mnemonic();
-	let client = Client::new(config, mnemonic);
+	let client = Client::new(
+		mnemonic,
+		config.chain_id()?,
+		config.as_address()?,
+		config.domain()?,
+		config.node_url,
+	);
 
 	let attestations = client.get_attestations().await?;
 
@@ -232,7 +292,8 @@ pub async fn handle_attestations(config: ClientConfig) -> Result<(), EigenError>
 }
 
 /// Handles the bandada subcommand.
-pub async fn handle_bandada(config: &ClientConfig, data: BandadaData) -> Result<(), EigenError> {
+pub async fn handle_bandada(data: BandadaData) -> Result<(), EigenError> {
+	let config = load_config()?;
 	let action: Action = data
 		.action
 		.as_deref()
@@ -303,9 +364,17 @@ pub async fn handle_bandada(config: &ClientConfig, data: BandadaData) -> Result<
 }
 
 /// Handles the deployment of AS contract.
-pub async fn handle_deploy(config: ClientConfig) -> Result<(), EigenError> {
+pub async fn handle_deploy() -> Result<(), EigenError> {
+	let config = load_config()?;
 	let mnemonic = load_mnemonic();
-	let client = Client::new(config, mnemonic);
+	let client = Client::new(
+		mnemonic,
+		config.chain_id()?,
+		config.as_address()?,
+		config.domain()?,
+		config.node_url,
+	);
+
 	let as_address = deploy_as(client.get_signer()).await?;
 	info!("AttestationStation deployed at {:?}", as_address);
 
@@ -321,10 +390,18 @@ pub fn handle_et_pk() -> Result<(), EigenError> {
 }
 
 /// Handles the eigentrust proof generation command.
-pub async fn handle_et_proof(config: ClientConfig) -> Result<(), EigenError> {
+pub async fn handle_et_proof() -> Result<(), EigenError> {
+	let config = load_config()?;
 	let mnemonic = load_mnemonic();
-	let client = Client::new(config, mnemonic);
-	let attestations = load_or_fetch_attestations(client.get_config().clone()).await?;
+	let client = Client::new(
+		mnemonic,
+		config.chain_id()?,
+		config.as_address()?,
+		config.domain()?,
+		config.node_url,
+	);
+
+	let attestations = load_or_fetch_attestations().await?;
 
 	let proving_key = EigenFile::ProvingKey(Circuit::EigenTrust).load()?;
 	let kzg_params = EigenFile::KzgParams(ET_PARAMS_K).load()?;
@@ -339,9 +416,16 @@ pub async fn handle_et_proof(config: ClientConfig) -> Result<(), EigenError> {
 }
 
 /// Handles the eigentrust proof verification command.
-pub async fn handle_et_verify(config: ClientConfig) -> Result<(), EigenError> {
+pub async fn handle_et_verify() -> Result<(), EigenError> {
+	let config = load_config()?;
 	let mnemonic = load_mnemonic();
-	let client = Client::new(config, mnemonic);
+	let client = Client::new(
+		mnemonic,
+		config.chain_id()?,
+		config.as_address()?,
+		config.domain()?,
+		config.node_url,
+	);
 
 	// Load data
 	let kzg_params = EigenFile::KzgParams(ET_PARAMS_K).load()?;
@@ -372,11 +456,17 @@ pub fn handle_params(data: KZGParamsData) -> Result<(), EigenError> {
 }
 
 /// Handles `scores` and `local_scores` commands.
-pub async fn handle_scores(
-	config: ClientConfig, origin: AttestationsOrigin,
-) -> Result<(), EigenError> {
+pub async fn handle_scores(origin: AttestationsOrigin) -> Result<(), EigenError> {
+	let config = load_config()?;
 	let mnemonic = load_mnemonic();
-	let client = Client::new(config, mnemonic);
+	let client = Client::new(
+		mnemonic,
+		config.chain_id()?,
+		config.as_address()?,
+		config.domain()?,
+		config.node_url,
+	);
+
 	let att_fp = get_file_path("attestations", FileType::Csv)?;
 
 	// Get or Fetch attestations
@@ -399,7 +489,7 @@ pub async fn handle_scores(
 			attestations?
 		},
 		AttestationsOrigin::Fetch => {
-			handle_attestations(client.get_config().clone()).await?;
+			handle_attestations().await?;
 
 			let att_storage = CSVFileStorage::<AttestationRecord>::new(att_fp);
 			let attestations: Result<Vec<SignedAttestationRaw>, EigenError> =
@@ -427,10 +517,17 @@ pub async fn handle_scores(
 }
 
 /// Handles threshold circuit proving key generation.
-pub async fn handle_th_pk(config: ClientConfig) -> Result<(), EigenError> {
+pub async fn handle_th_pk() -> Result<(), EigenError> {
+	let config = load_config()?;
 	let mnemonic = load_mnemonic();
-	let client = Client::new(config, mnemonic);
-	let attestations = load_or_fetch_attestations(client.get_config().clone()).await?;
+	let client = Client::new(
+		mnemonic,
+		config.chain_id()?,
+		config.as_address()?,
+		config.domain()?,
+		config.node_url,
+	);
+	let attestations = load_or_fetch_attestations().await?;
 
 	// Load KZG params
 	let et_kzg_params = EigenFile::KzgParams(ET_PARAMS_K).load()?;
@@ -442,10 +539,18 @@ pub async fn handle_th_pk(config: ClientConfig) -> Result<(), EigenError> {
 }
 
 /// Handles threshold circuit proof generation.
-pub async fn handle_th_proof(config: ClientConfig, data: ThProofData) -> Result<(), EigenError> {
+pub async fn handle_th_proof(data: ThProofData) -> Result<(), EigenError> {
+	let config = load_config()?;
 	let mnemonic = load_mnemonic();
-	let client = Client::new(config.clone(), mnemonic);
-	let attestations = load_or_fetch_attestations(client.get_config().clone()).await?;
+	let client = Client::new(
+		mnemonic,
+		config.chain_id()?,
+		config.as_address()?,
+		config.domain()?,
+		config.node_url,
+	);
+
+	let attestations = load_or_fetch_attestations().await?;
 
 	// Load KZG params and proving key
 	let et_kzg_params = EigenFile::KzgParams(ET_PARAMS_K).load()?;
@@ -478,9 +583,16 @@ pub async fn handle_th_proof(config: ClientConfig, data: ThProofData) -> Result<
 }
 
 /// Handles the eigentrust proof verification command.
-pub async fn handle_th_verify(config: ClientConfig) -> Result<(), EigenError> {
+pub async fn handle_th_verify() -> Result<(), EigenError> {
+	let config = load_config()?;
 	let mnemonic = load_mnemonic();
-	let client = Client::new(config, mnemonic);
+	let client = Client::new(
+		mnemonic,
+		config.chain_id()?,
+		config.as_address()?,
+		config.domain()?,
+		config.node_url,
+	);
 
 	// Load data
 	let kzg_params = EigenFile::KzgParams(TH_PARAMS_K).load()?;
@@ -496,7 +608,8 @@ pub async fn handle_th_verify(config: ClientConfig) -> Result<(), EigenError> {
 }
 
 /// Handles the CLI project configuration update.
-pub fn handle_update(config: &mut ClientConfig, data: UpdateData) -> Result<(), EigenError> {
+pub fn handle_update(data: UpdateData) -> Result<(), EigenError> {
+	let mut config = load_config()?;
 	if let Some(as_address) = data.as_address {
 		config.as_address = Address::from_str(&as_address)
 			.map_err(|e| EigenError::ParsingError(e.to_string()))?
@@ -535,16 +648,14 @@ pub fn handle_update(config: &mut ClientConfig, data: UpdateData) -> Result<(), 
 	}
 
 	let filepath = get_file_path("config", FileType::Json)?;
-	let mut json_storage = JSONFileStorage::<ClientConfig>::new(filepath);
+	let mut json_storage = JSONFileStorage::<CliConfig>::new(filepath);
 
 	json_storage.save(config.clone())
 }
 
 /// Tries to load attestations from local storage. If no attestations are found,
 /// it fetches them from the AS contract.
-pub async fn load_or_fetch_attestations(
-	config: ClientConfig,
-) -> Result<Vec<SignedAttestationRaw>, EigenError> {
+pub async fn load_or_fetch_attestations() -> Result<Vec<SignedAttestationRaw>, EigenError> {
 	let att_file_path = get_file_path("attestations", FileType::Csv)?;
 	let att_storage = CSVFileStorage::<AttestationRecord>::new(att_file_path.clone());
 
@@ -560,20 +671,22 @@ pub async fn load_or_fetch_attestations(
 		},
 	}
 
-	let client = Client::new(config, load_mnemonic());
-	handle_attestations(client.get_config().clone()).await?;
+	// Fetch attestations from AS contract
+	handle_attestations().await?;
 
 	att_storage.load()?.into_iter().map(|record| record.try_into()).collect()
 }
 
 #[cfg(test)]
 mod tests {
-	use crate::cli::{AttestData, Cli};
+	use crate::{
+		cli::{AttestData, Cli},
+		CliConfig,
+	};
 	use clap::CommandFactory;
 	use eigentrust::{
 		attestation::AttestationRaw,
 		storage::{str_to_20_byte_array, str_to_32_byte_array},
-		ClientConfig,
 	};
 
 	#[test]
@@ -583,7 +696,7 @@ mod tests {
 
 	#[test]
 	fn test_attest_data_to_attestation_raw() {
-		let config = ClientConfig {
+		let config = CliConfig {
 			as_address: "test".to_string(),
 			band_id: "38922764296632428858395574229367".to_string(),
 			band_th: "500".to_string(),

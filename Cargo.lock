@@ -935,6 +935,8 @@ dependencies = [
  "ethers",
  "log",
  "reqwest",
+ "serde",
+ "serde_json",
  "tokio",
 ]
 
