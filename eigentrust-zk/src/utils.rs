@@ -1,6 +1,6 @@
 //! Helper functions for generating params, pk/vk pairs, creating and verifying
 //! proofs, etc.
-use crate::FieldExt;
+use crate::{params::rns::decompose_big_decimal, FieldExt};
 use halo2::{
 	circuit::{AssignedCell, Value},
 	halo2curves::{
@@ -24,7 +24,8 @@ use halo2::{
 		Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer,
 	},
 };
-use num_bigint::BigUint;
+use num_bigint::{BigInt, BigUint};
+use num_rational::BigRational;
 use num_traits::{Num, One};
 use rand::Rng;
 use std::{
@@ -325,4 +326,29 @@ pub fn big_to_fe<F: FieldExt>(e: BigUint) -> F {
 /// Returns [`BigUint`] representation for the given [`FieldExt`].
 pub fn fe_to_big<F: FieldExt>(fe: F) -> BigUint {
 	BigUint::from_bytes_le(fe.to_repr().as_ref())
+}
+
+/// Converts a `BigRational` into scaled, decomposed numerator and denominator arrays of field elements.
+pub fn big_to_fe_rat<F: FieldExt, const NUM_DECIMAL_LIMBS: usize, const POWER_OF_TEN: usize>(
+	ratio: BigRational,
+) -> ([F; NUM_DECIMAL_LIMBS], [F; NUM_DECIMAL_LIMBS]) {
+	let num = ratio.numer();
+	let den = ratio.denom();
+	let max_len = NUM_DECIMAL_LIMBS * POWER_OF_TEN;
+	let bigger = num.max(den);
+	let dig_len = bigger.to_string().len();
+	let diff = max_len - dig_len;
+
+	let scale = BigInt::from(10_u32).pow(diff as u32);
+	let num_scaled = num * scale.clone();
+	let den_scaled = den * scale;
+	let num_scaled_uint = num_scaled.to_biguint().unwrap();
+	let den_scaled_uint = den_scaled.to_biguint().unwrap();
+
+	let num_decomposed =
+		decompose_big_decimal::<F, NUM_DECIMAL_LIMBS, POWER_OF_TEN>(num_scaled_uint);
+	let den_decomposed =
+		decompose_big_decimal::<F, NUM_DECIMAL_LIMBS, POWER_OF_TEN>(den_scaled_uint);
+
+	(num_decomposed, den_decomposed)
 }

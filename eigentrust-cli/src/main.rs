@@ -54,6 +54,9 @@ async fn main() -> Result<(), EigenError> {
 		Mode::LocalScores => handle_scores(config, AttestationsOrigin::Local).await?,
 		Mode::Scores => handle_scores(config, AttestationsOrigin::Fetch).await?,
 		Mode::Show => info!("Client config:\n{:#?}", config),
+		Mode::ThProof(data) => handle_th_proof(config, data).await?,
+		Mode::ThProvingKey => handle_th_pk(config).await?,
+		Mode::ThVerify => handle_th_verify(config).await?,
 		Mode::Update(update_data) => handle_update(&mut config, update_data)?,
 	};
 

@@ -12,6 +12,7 @@ use ethers::{
 	types::{H160, H256, U256},
 	utils::hex,
 };
+use log::debug;
 use serde::Deserialize;
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::{from_reader, to_string};
@@ -164,6 +165,7 @@ impl Storage<Vec<u8>> for BinFileStorage {
 	type Err = EigenError;
 
 	fn load(&self) -> Result<Vec<u8>, Self::Err> {
+		debug!("Loading file: {:?}", &self.filepath);
 		let mut file = File::open(&self.filepath).map_err(EigenError::IOError)?;
 		let mut data = Vec::new();
 		file.read_to_end(&mut data).map_err(EigenError::IOError)?;
@@ -171,6 +173,7 @@ impl Storage<Vec<u8>> for BinFileStorage {
 	}
 
 	fn save(&mut self, data: Vec<u8>) -> Result<(), Self::Err> {
+		debug!("Saving file to: {:?}", &self.filepath);
 		let mut file = File::create(&self.filepath).map_err(EigenError::IOError)?;
 		file.write_all(&data).map_err(EigenError::IOError)
 	}

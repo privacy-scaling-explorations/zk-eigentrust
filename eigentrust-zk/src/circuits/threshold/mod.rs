@@ -651,11 +651,10 @@ mod tests {
 		params::{
 			ecc::{bn254::Bn254Params, secp256k1::Secp256k1Params},
 			hasher::poseidon_bn254_5x5::Params,
-			rns::{bn256::Bn256_4_68, decompose_big_decimal, secp256k1::Secp256k1_4_68},
+			rns::{bn256::Bn256_4_68, secp256k1::Secp256k1_4_68},
 		},
-		utils::{big_to_fe, fe_to_big, generate_params, prove_and_verify},
+		utils::{big_to_fe, big_to_fe_rat, fe_to_big, generate_params, prove_and_verify},
 		verifier::aggregator::native::NativeAggregator,
-		FieldExt,
 	};
 	use halo2::{
 		arithmetic::Field,
@@ -666,7 +665,6 @@ mod tests {
 			secp256k1::Secp256k1Affine,
 		},
 	};
-	use num_bigint::BigInt;
 	use num_rational::BigRational;
 	use rand::thread_rng;
 
@@ -849,34 +847,6 @@ mod tests {
 		((pks_fr, s, s_ratios), (opt_att, opt_pks, public_inputs))
 	}
 
-	fn ratio_to_decomposed_helper<
-		F: FieldExt,
-		const NUM_DECIMAL_LIMBS: usize,
-		const POWER_OF_TEN: usize,
-	>(
-		ratio: BigRational,
-	) -> ([F; NUM_DECIMAL_LIMBS], [F; NUM_DECIMAL_LIMBS]) {
-		let num = ratio.numer();
-		let den = ratio.denom();
-		let max_len = NUM_DECIMAL_LIMBS * POWER_OF_TEN;
-		let bigger = num.max(den);
-		let dig_len = bigger.to_string().len();
-		let diff = max_len - dig_len;
-
-		let scale = BigInt::from(10_u32).pow(diff as u32);
-		let num_scaled = num * scale.clone();
-		let den_scaled = den * scale;
-		let num_scaled_uint = num_scaled.to_biguint().unwrap();
-		let den_scaled_uint = den_scaled.to_biguint().unwrap();
-
-		let num_decomposed =
-			decompose_big_decimal::<F, NUM_DECIMAL_LIMBS, POWER_OF_TEN>(num_scaled_uint);
-		let den_decomposed =
-			decompose_big_decimal::<F, NUM_DECIMAL_LIMBS, POWER_OF_TEN>(den_scaled_uint);
-
-		(num_decomposed, den_decomposed)
-	}
-
 	#[ignore = "threshold circuit test takes too long to run"]
 	#[test]
 	fn test_threshold_circuit() {
@@ -907,7 +877,7 @@ mod tests {
 		let score = scores[target_idx].clone();
 		let score_ratio = score_ratios[target_idx].clone();
 		let (num_decomposed, den_decomposed) =
-			ratio_to_decomposed_helper::<N, NUM_DECIMAL_LIMBS, POWER_OF_TEN>(score_ratio.clone());
+			big_to_fe_rat::<N, NUM_DECIMAL_LIMBS, POWER_OF_TEN>(score_ratio.clone());
 		let threshold = N::from_u128(1000_u128);
 
 		let native_threshold: Threshold<
@@ -1008,7 +978,7 @@ mod tests {
 		let score = scores[target_idx].clone();
 		let score_ratio = score_ratios[target_idx].clone();
 		let (num_decomposed, den_decomposed) =
-			ratio_to_decomposed_helper::<N, NUM_DECIMAL_LIMBS, POWER_OF_TEN>(score_ratio.clone());
+			big_to_fe_rat::<N, NUM_DECIMAL_LIMBS, POWER_OF_TEN>(score_ratio.clone());
 		let threshold = N::from_u128(1000_u128);
 
 		let native_threshold: Threshold<

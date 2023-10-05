@@ -10,7 +10,7 @@ use crate::{
 use clap::{Args, Parser, Subcommand};
 use eigentrust::{
 	attestation::{AttestationRaw, SignedAttestationRaw},
-	circuit::ET_PARAMS_K,
+	circuit::{Circuit, ET_PARAMS_K, TH_PARAMS_K},
 	error::EigenError,
 	eth::deploy_as,
 	storage::{
@@ -53,6 +53,12 @@ pub enum Mode {
 	LocalScores,
 	/// Retrieves and saves all attestations and calculates the global scores.
 	Scores,
+	/// Generates a Threshold circuit proof for the selected participant.
+	ThProof(ThProofData),
+	/// Generates Threshold circuit proving key
+	ThProvingKey,
+	/// Verifies the stored Threshold circuit proof.
+	ThVerify,
 	/// Displays the current configuration.
 	Show,
 	/// Updates the configuration. Requires 'UpdateData'.
@@ -113,12 +119,20 @@ pub struct UpdateData {
 	node_url: Option<String>,
 }
 
-/// KZGParams subcommand inputs
+/// KZGParams subcommand input.
 #[derive(Args, Debug)]
 pub struct KZGParamsData {
 	/// Polynomial degree.
 	#[clap(long = "k")]
 	k: Option<String>,
+}
+
+/// ThresholdProof subcommand input.
+#[derive(Args, Debug)]
+pub struct ThProofData {
+	/// Peer.
+	#[clap(long = "peer")]
+	peer: Option<String>,
 }
 
 /// Bandada API action.
@@ -298,34 +312,28 @@ pub async fn handle_deploy(config: ClientConfig) -> Result<(), EigenError> {
 	Ok(())
 }
 
-/// Handles proving key generation.
+/// Handles eigentrust circuit proving key generation.
 pub fn handle_et_pk() -> Result<(), EigenError> {
 	let et_kzg_params = EigenFile::KzgParams(ET_PARAMS_K).load()?;
 	let proving_key = Client::generate_et_pk(et_kzg_params)?;
 
-	EigenFile::ProvingKey.save(proving_key)
+	EigenFile::ProvingKey(Circuit::EigenTrust).save(proving_key)
 }
 
 /// Handles the eigentrust proof generation command.
 pub async fn handle_et_proof(config: ClientConfig) -> Result<(), EigenError> {
 	let mnemonic = load_mnemonic();
 	let client = Client::new(config, mnemonic);
+	let attestations = load_or_fetch_attestations(client.get_config().clone()).await?;
 
-	let att_fp = get_file_path("attestations", FileType::Csv)?;
-
-	handle_attestations(client.get_config().clone()).await?;
-	let att_storage = CSVFileStorage::<AttestationRecord>::new(att_fp);
-	let attestations: Result<Vec<SignedAttestationRaw>, EigenError> =
-		att_storage.load()?.into_iter().map(|record| record.try_into()).collect();
-
-	let proving_key = EigenFile::ProvingKey.load()?;
+	let proving_key = EigenFile::ProvingKey(Circuit::EigenTrust).load()?;
 	let kzg_params = EigenFile::KzgParams(ET_PARAMS_K).load()?;
 
 	// Generate proof
-	let report = client.calculate_scores(attestations?, kzg_params, proving_key).await?;
+	let report = client.generate_et_proof(attestations, kzg_params, proving_key)?;
 
-	EigenFile::EtProof.save(report.proof)?;
-	EigenFile::ETPublicInputs.save(report.pub_inputs.to_bytes())?;
+	EigenFile::Proof(Circuit::EigenTrust).save(report.proof)?;
+	EigenFile::PublicInputs(Circuit::EigenTrust).save(report.pub_inputs.to_bytes())?;
 
 	Ok(())
 }
@@ -337,12 +345,12 @@ pub async fn handle_et_verify(config: ClientConfig) -> Result<(), EigenError> {
 
 	// Load data
 	let kzg_params = EigenFile::KzgParams(ET_PARAMS_K).load()?;
-	let public_inputs = EigenFile::ETPublicInputs.load()?;
-	let proving_key = EigenFile::ProvingKey.load()?;
-	let proof = EigenFile::EtProof.load()?;
+	let public_inputs = EigenFile::PublicInputs(Circuit::EigenTrust).load()?;
+	let proving_key = EigenFile::ProvingKey(Circuit::EigenTrust).load()?;
+	let proof = EigenFile::Proof(Circuit::EigenTrust).load()?;
 
 	// Verify proof
-	client.verify(kzg_params, public_inputs, proving_key, proof).await?;
+	client.verify(kzg_params, public_inputs, proving_key, proof)?;
 
 	info!("EigenTrust proof has been verified.");
 	Ok(())
@@ -369,7 +377,6 @@ pub async fn handle_scores(
 ) -> Result<(), EigenError> {
 	let mnemonic = load_mnemonic();
 	let client = Client::new(config, mnemonic);
-
 	let att_fp = get_file_path("attestations", FileType::Csv)?;
 
 	// Get or Fetch attestations
@@ -402,23 +409,13 @@ pub async fn handle_scores(
 		},
 	};
 
-	let proving_key = EigenFile::ProvingKey.load()?;
-	let kzg_params = EigenFile::KzgParams(ET_PARAMS_K).load()?;
-
 	// Calculate scores
-	let score_records: Vec<ScoreRecord> = client
-		.calculate_scores(attestations, kzg_params, proving_key)
-		.await?
-		.scores
-		.into_iter()
-		.map(ScoreRecord::from_score)
-		.collect();
-
-	let scores_fp = get_file_path("scores", FileType::Csv)?;
+	let score_records: Vec<ScoreRecord> =
+		client.calculate_scores(attestations)?.into_iter().map(ScoreRecord::from_score).collect();
 
 	// Save scores
+	let scores_fp = get_file_path("scores", FileType::Csv)?;
 	let mut records_storage = CSVFileStorage::<ScoreRecord>::new(scores_fp);
-
 	records_storage.save(score_records)?;
 
 	info!(
@@ -426,6 +423,75 @@ pub async fn handle_scores(
 		records_storage.filepath().display()
 	);
 
+	Ok(())
+}
+
+/// Handles threshold circuit proving key generation.
+pub async fn handle_th_pk(config: ClientConfig) -> Result<(), EigenError> {
+	let mnemonic = load_mnemonic();
+	let client = Client::new(config, mnemonic);
+	let attestations = load_or_fetch_attestations(client.get_config().clone()).await?;
+
+	// Load KZG params
+	let et_kzg_params = EigenFile::KzgParams(ET_PARAMS_K).load()?;
+	let th_kzg_params = EigenFile::KzgParams(TH_PARAMS_K).load()?;
+
+	let proving_key = client.generate_th_pk(attestations, et_kzg_params, th_kzg_params)?;
+
+	EigenFile::ProvingKey(Circuit::Threshold).save(proving_key)
+}
+
+/// Handles threshold circuit proof generation.
+pub async fn handle_th_proof(config: ClientConfig, data: ThProofData) -> Result<(), EigenError> {
+	let mnemonic = load_mnemonic();
+	let client = Client::new(config.clone(), mnemonic);
+	let attestations = load_or_fetch_attestations(client.get_config().clone()).await?;
+
+	// Load KZG params and proving key
+	let et_kzg_params = EigenFile::KzgParams(ET_PARAMS_K).load()?;
+	let th_kzg_params = EigenFile::KzgParams(TH_PARAMS_K).load()?;
+	let proving_key = EigenFile::ProvingKey(Circuit::Threshold).load()?;
+
+	// Parse peer id
+	let peer_id = match data.peer {
+		Some(peer) => peer.parse::<u32>().map_err(|e| EigenError::ParsingError(e.to_string()))?,
+		None => {
+			return Err(EigenError::ValidationError(
+				"Missing parameter 'peer': participant address.".to_string(),
+			))
+		},
+	};
+
+	let report = client.generate_th_proof(
+		attestations,
+		et_kzg_params,
+		th_kzg_params,
+		proving_key,
+		config.band_th.parse().unwrap(),
+		peer_id,
+	)?;
+
+	EigenFile::Proof(Circuit::Threshold).save(report.proof)?;
+	EigenFile::PublicInputs(Circuit::Threshold).save(report.pub_inputs.to_bytes())?;
+
+	Ok(())
+}
+
+/// Handles the eigentrust proof verification command.
+pub async fn handle_th_verify(config: ClientConfig) -> Result<(), EigenError> {
+	let mnemonic = load_mnemonic();
+	let client = Client::new(config, mnemonic);
+
+	// Load data
+	let kzg_params = EigenFile::KzgParams(TH_PARAMS_K).load()?;
+	let public_inputs = EigenFile::PublicInputs(Circuit::Threshold).load()?;
+	let proving_key = EigenFile::ProvingKey(Circuit::Threshold).load()?;
+	let proof = EigenFile::Proof(Circuit::Threshold).load()?;
+
+	// Verify proof
+	client.verify(kzg_params, public_inputs, proving_key, proof)?;
+
+	info!("Threshold proof has been verified.");
 	Ok(())
 }
 
@@ -472,6 +538,32 @@ pub fn handle_update(config: &mut ClientConfig, data: UpdateData) -> Result<(), 
 	let mut json_storage = JSONFileStorage::<ClientConfig>::new(filepath);
 
 	json_storage.save(config.clone())
+}
+
+/// Tries to load attestations from local storage. If no attestations are found,
+/// it fetches them from the AS contract.
+pub async fn load_or_fetch_attestations(
+	config: ClientConfig,
+) -> Result<Vec<SignedAttestationRaw>, EigenError> {
+	let att_file_path = get_file_path("attestations", FileType::Csv)?;
+	let att_storage = CSVFileStorage::<AttestationRecord>::new(att_file_path.clone());
+
+	match att_storage.load() {
+		Ok(local_records) => {
+			if !local_records.is_empty() {
+				return local_records.into_iter().map(|record| record.try_into()).collect();
+			}
+			debug!("No local attestations found. Fetching from AS contract.");
+		},
+		Err(_) => {
+			debug!("Error loading local attestations. Fetching from AS contract.");
+		},
+	}
+
+	let client = Client::new(config, load_mnemonic());
+	handle_attestations(client.get_config().clone()).await?;
+
+	att_storage.load()?.into_iter().map(|record| record.try_into()).collect()
 }
 
 #[cfg(test)]
