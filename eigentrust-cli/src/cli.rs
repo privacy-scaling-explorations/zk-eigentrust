@@ -650,7 +650,7 @@ pub fn handle_update(data: UpdateData) -> Result<(), EigenError> {
 	let filepath = get_file_path("config", FileType::Json)?;
 	let mut json_storage = JSONFileStorage::<CliConfig>::new(filepath);
 
-	json_storage.save(config.clone())
+	json_storage.save(config)
 }
 
 /// Tries to load attestations from local storage. If no attestations are found,
