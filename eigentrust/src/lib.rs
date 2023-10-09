@@ -90,7 +90,6 @@ use ethers::{
 	abi::{Address, RawLog},
 	contract::EthEvent,
 	middleware::SignerMiddleware,
-	prelude::EthDisplay,
 	providers::{Http, Middleware, Provider},
 	signers::{coins_bip39::English, LocalWallet, MnemonicBuilder, Signer},
 	types::{Log, H160, H256},
@@ -98,49 +97,30 @@ use ethers::{
 use log::{debug, info, warn};
 use num_rational::BigRational;
 use rand::thread_rng;
-use serde::{Deserialize, Serialize};
 use std::{
 	collections::{BTreeSet, HashMap},
-	str::FromStr,
 	sync::Arc,
 	time::Instant,
 };
-use storage::str_to_20_byte_array;
 
 /// Client Signer.
 pub type ClientSigner = SignerMiddleware<Provider<Http>, LocalWallet>;
 
-/// Client configuration settings.
-#[derive(Serialize, Deserialize, Debug, EthDisplay, Clone)]
-pub struct ClientConfig {
-	/// AttestationStation contract address.
-	pub as_address: String,
-	/// Bandada group id.
-	pub band_id: String,
-	/// Bandada group threshold.
-	pub band_th: String,
-	/// Bandada API base URL.
-	pub band_url: String,
-	/// Network chain ID.
-	pub chain_id: String,
-	/// Attestation domain identifier.
-	pub domain: String,
-	/// Ethereum node URL.
-	pub node_url: String,
-}
-
 /// Client struct.
 pub struct Client {
-	signer: Arc<ClientSigner>,
-	config: ClientConfig,
+	as_address: Address,
+	domain: H160,
 	mnemonic: String,
+	signer: Arc<ClientSigner>,
 }
 
 impl Client {
 	/// Creates a new Client instance.
-	pub fn new(config: ClientConfig, mnemonic: String) -> Self {
+	pub fn new(
+		mnemonic: String, chain_id: u32, as_address: [u8; 20], domain: [u8; 20], node_url: String,
+	) -> Self {
 		// Setup provider
-		let provider = Provider::<Http>::try_from(&config.node_url)
+		let provider = Provider::<Http>::try_from(&node_url)
 			.expect("Failed to create provider from config node url");
 
 		// Setup wallet
@@ -150,18 +130,17 @@ impl Client {
 			.expect("Failed to build wallet with provided mnemonic");
 
 		// Setup signer
-		let chain_id: u64 = config.chain_id.parse().expect("Failed to parse chain id");
 		let signer: ClientSigner = SignerMiddleware::new(provider, wallet.with_chain_id(chain_id));
 
 		// Arc for thread-safe sharing of signer
 		let shared_signer = Arc::new(signer);
 
-		Self { signer: shared_signer, config, mnemonic }
-	}
-
-	/// Gets config.
-	pub fn get_config(&self) -> &ClientConfig {
-		&self.config
+		Self {
+			signer: shared_signer,
+			mnemonic,
+			as_address: Address::from(as_address),
+			domain: H160::from(domain),
+		}
 	}
 
 	/// Gets signer.
@@ -191,12 +170,7 @@ impl Client {
 
 		let signed_attestation = SignedAttestationEth::new(attestation_eth, signature_eth);
 
-		let as_address = self
-			.config
-			.as_address
-			.parse::<Address>()
-			.map_err(|e| EigenError::ParsingError(e.to_string()))?;
-		let as_contract = AttestationStation::new(as_address, self.signer.clone());
+		let as_contract = AttestationStation::new(self.as_address, self.signer.clone());
 
 		// Verify signature is recoverable
 		let recovered_pubkey = signed_attestation.recover_public_key()?;
@@ -645,17 +619,13 @@ impl Client {
 
 	/// Fetches "AttestationCreated" event logs from the contract, filtered by domain.
 	pub async fn get_logs(&self) -> Result<Vec<Log>, EigenError> {
-		let as_contract = AttestationStation::new(
-			self.config.as_address.parse::<Address>().unwrap(),
-			self.get_signer(),
-		);
-		let domain = H160::from(str_to_20_byte_array(&self.config.domain)?);
+		let as_contract = AttestationStation::new(self.as_address, self.get_signer());
 
 		// Set filter
 		let filter = as_contract
 			.attestation_created_filter()
 			.filter
-			.topic3(build_att_key(domain))
+			.topic3(build_att_key(self.domain))
 			.from_block(0);
 
 		// Fetch logs matching the filter.
@@ -664,9 +634,7 @@ impl Client {
 
 	/// Gets the domain as BN256 scalar.
 	pub fn get_scalar_domain(&self) -> Result<Scalar, EigenError> {
-		let domain_bytes = H160::from_str(&self.config.domain)
-			.map_err(|e| EigenError::ParsingError(format!("Error parsing domain: {}", e)))?;
-		let domain_bytes_256 = H256::from(domain_bytes);
+		let domain_bytes_256 = H256::from(self.domain);
 
 		let mut domain = *domain_bytes_256.as_fixed_bytes();
 		domain.reverse();
@@ -699,45 +667,42 @@ mod lib_tests {
 		att_station::AttestationStation,
 		attestation::{AttestationRaw, DOMAIN_PREFIX, DOMAIN_PREFIX_LEN},
 		eth::deploy_as,
-		Client, ClientConfig, ContractAttestationData,
+		Client, ContractAttestationData,
 	};
 	use ethers::{
-		types::{Address, Bytes},
-		utils::{hex, Anvil},
+		types::{Address, Bytes, H160},
+		utils::Anvil,
 	};
+	use std::str::FromStr;
 
 	const TEST_MNEMONIC: &'static str =
 		"test test test test test test test test test test test junk";
+	const TEST_AS_ADDRESS: &'static str = "0x5fbdb2315678afecb367f032d93f642f64180aa3";
+	const TEST_CHAIN_ID: u32 = 31337;
 
 	#[tokio::test]
 	async fn test_attest() {
 		let anvil = Anvil::new().spawn();
-		let config = ClientConfig {
-			as_address: "0x5fbdb2315678afecb367f032d93f642f64180aa3".to_string(),
-			band_id: "38922764296632428858395574229367".to_string(),
-			band_th: "500".to_string(),
-			band_url: "http://localhost:3000".to_string(),
-			chain_id: "31337".to_string(),
-			domain: "0x0000000000000000000000000000000000000000".to_string(),
-			node_url: anvil.endpoint().to_string(),
-		};
-		let client = Client::new(config, TEST_MNEMONIC.to_string());
+		let node_url = anvil.endpoint().to_string();
+		let client = Client::new(
+			TEST_MNEMONIC.to_string(),
+			TEST_CHAIN_ID,
+			Address::from_str(TEST_AS_ADDRESS).unwrap().to_fixed_bytes(),
+			H160::zero().to_fixed_bytes(),
+			node_url.clone(),
+		);
 
 		// Deploy attestation station
 		let as_address = deploy_as(client.get_signer()).await.unwrap();
 
-		// Update config with new addresses
-		let updated_config = ClientConfig {
-			as_address: format!("{:?}", as_address),
-			band_id: "38922764296632428858395574229367".to_string(),
-			band_th: "500".to_string(),
-			band_url: "http://localhost:3000".to_string(),
-			chain_id: "31337".to_string(),
-			domain: "0x0000000000000000000000000000000000000000".to_string(),
-			node_url: anvil.endpoint().to_string(),
-		};
-
-		let updated_client = Client::new(updated_config, TEST_MNEMONIC.to_string());
+		// Update client with new addresses
+		let updated_client = Client::new(
+			TEST_MNEMONIC.to_string(),
+			TEST_CHAIN_ID,
+			as_address.to_fixed_bytes(),
+			H160::zero().to_fixed_bytes(),
+			node_url,
+		);
 
 		// Attest
 		let attestation = AttestationRaw::new([0; 20], [0; 20], 5, [0; 32]);
@@ -749,39 +714,33 @@ mod lib_tests {
 	#[tokio::test]
 	async fn test_get_attestations() {
 		let anvil = Anvil::new().spawn();
+		let node_url = anvil.endpoint().to_string();
 
 		// Build domain
 		let domain_input = [
 			0xff, 0x61, 0x4a, 0x6d, 0x59, 0x56, 0x2a, 0x42, 0x37, 0x72, 0x37, 0x76, 0x32, 0x4d,
 			0x36, 0x53, 0x62, 0x6d, 0x35, 0xff,
 		];
-		let domain = format!("0x{}", hex::encode(domain_input));
 
-		let config = ClientConfig {
-			as_address: "0x5fbdb2315678afecb367f032d93f642f64180aa3".to_string(),
-			band_id: "38922764296632428858395574229367".to_string(),
-			band_th: "500".to_string(),
-			band_url: "http://localhost:3000".to_string(),
-			chain_id: "31337".to_string(),
-			domain: domain.clone(),
-			node_url: anvil.endpoint().to_string(),
-		};
-		let client = Client::new(config, TEST_MNEMONIC.to_string());
+		let client = Client::new(
+			TEST_MNEMONIC.to_string(),
+			TEST_CHAIN_ID,
+			Address::from_str(TEST_AS_ADDRESS).unwrap().to_fixed_bytes(),
+			domain_input,
+			node_url.clone(),
+		);
 
 		// Deploy attestation station
 		let as_address = deploy_as(client.get_signer()).await.unwrap();
 
 		// Update config with new addresses and instantiate client
-		let config = ClientConfig {
-			as_address: format!("{:?}", as_address),
-			band_id: "38922764296632428858395574229367".to_string(),
-			band_th: "500".to_string(),
-			band_url: "http://localhost:3000".to_string(),
-			chain_id: "31337".to_string(),
-			domain,
-			node_url: anvil.endpoint().to_string(),
-		};
-		let client = Client::new(config, TEST_MNEMONIC.to_string());
+		let client = Client::new(
+			TEST_MNEMONIC.to_string(),
+			TEST_CHAIN_ID,
+			as_address.to_fixed_bytes(),
+			domain_input,
+			node_url,
+		);
 
 		// Build Attestation
 		let about_bytes = [
@@ -819,37 +778,31 @@ mod lib_tests {
 	#[tokio::test]
 	async fn test_get_logs() {
 		let anvil = Anvil::new().spawn();
-		let config = ClientConfig {
-			as_address: "0x5fbdb2315678afecb367f032d93f642f64180aa3".to_string(),
-			band_id: "38922764296632428858395574229367".to_string(),
-			band_th: "500".to_string(),
-			band_url: "http://localhost:3000".to_string(),
-			chain_id: "31337".to_string(),
-			domain: "0x0000000000000000000000000000000000000000".to_string(),
-			node_url: anvil.endpoint().to_string(),
-		};
-		let client = Client::new(config.clone(), TEST_MNEMONIC.to_string());
+		let node_url = anvil.endpoint().to_string();
+		let client = Client::new(
+			TEST_MNEMONIC.to_string(),
+			TEST_CHAIN_ID,
+			Address::from_str(TEST_AS_ADDRESS).unwrap().to_fixed_bytes(),
+			H160::zero().to_fixed_bytes(),
+			node_url.clone(),
+		);
 
 		// Deploy attestation station
 		let as_address = deploy_as(client.get_signer()).await.unwrap();
 
 		// Update config with new addresses and instantiate client
-		let updated_config = ClientConfig {
-			as_address: format!("{:?}", as_address),
-			band_id: "38922764296632428858395574229367".to_string(),
-			band_th: "500".to_string(),
-			band_url: "http://localhost:3000".to_string(),
-			chain_id: "31337".to_string(),
-			domain: "0x0000000000000000000000000000000000000000".to_string(),
-			node_url: anvil.endpoint().to_string(),
-		};
-		let updated_client = Client::new(updated_config, TEST_MNEMONIC.to_string());
+		let updated_client = Client::new(
+			TEST_MNEMONIC.to_string(),
+			TEST_CHAIN_ID,
+			as_address.to_fixed_bytes(),
+			H160::zero().to_fixed_bytes(),
+			node_url,
+		);
 
 		// Submit a good attestation
 		let good_attestation = AttestationRaw::new([0; 20], [0; 20], 5, [0; 32]);
 		updated_client.attest(good_attestation).await.unwrap();
 
-		let as_address = config.as_address.parse::<Address>().unwrap();
 		let as_contract = AttestationStation::new(as_address, client.get_signer());
 
 		// Submit a bad attestation

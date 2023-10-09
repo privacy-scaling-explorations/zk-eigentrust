@@ -96,25 +96,29 @@ pub fn scalar_from_address(address: &Address) -> Result<Scalar, EigenError> {
 
 #[cfg(test)]
 mod tests {
-	use crate::{eth::*, Client, ClientConfig, SecpScalar};
-	use ethers::utils::{hex, Anvil};
+	use crate::{eth::*, Client, SecpScalar};
+	use ethers::{
+		types::H160,
+		utils::{hex, Anvil},
+	};
+	use std::str::FromStr;
 
 	const TEST_MNEMONIC: &'static str =
 		"test test test test test test test test test test test junk";
+	const TEST_AS_ADDRESS: &'static str = "0x5fbdb2315678afecb367f032d93f642f64180aa3";
+	const TEST_CHAIN_ID: u32 = 31337;
 
 	#[tokio::test]
 	async fn test_deploy_as() {
 		let anvil = Anvil::new().spawn();
-		let config = ClientConfig {
-			as_address: "0x5fbdb2315678afecb367f032d93f642f64180aa3".to_string(),
-			band_id: "38922764296632428858395574229367".to_string(),
-			band_th: "500".to_string(),
-			band_url: "http://localhost:3000".to_string(),
-			chain_id: "31337".to_string(),
-			domain: "0x0000000000000000000000000000000000000000".to_string(),
-			node_url: anvil.endpoint().to_string(),
-		};
-		let client = Client::new(config, TEST_MNEMONIC.to_string());
+		let node_url = anvil.endpoint().to_string();
+		let client = Client::new(
+			TEST_MNEMONIC.to_string(),
+			TEST_CHAIN_ID,
+			Address::from_str(TEST_AS_ADDRESS).unwrap().to_fixed_bytes(),
+			H160::zero().to_fixed_bytes(),
+			node_url,
+		);
 
 		// Deploy
 		let res = deploy_as(client.signer).await;

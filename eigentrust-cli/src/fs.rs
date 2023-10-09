@@ -2,12 +2,12 @@
 //!
 //! This module provides functionalities for filesystem actions.
 
+use crate::CliConfig;
 use dotenv::{dotenv, var};
 use eigentrust::{
 	circuit::Circuit,
 	error::EigenError,
 	storage::{BinFileStorage, JSONFileStorage, Storage},
-	ClientConfig,
 };
 use log::warn;
 use std::{env::current_dir, path::PathBuf};
@@ -115,9 +115,9 @@ pub fn get_file_path(file_name: &str, file_type: FileType) -> Result<PathBuf, Ei
 }
 
 /// Loads the configuration file.
-pub fn load_config() -> Result<ClientConfig, EigenError> {
+pub fn load_config() -> Result<CliConfig, EigenError> {
 	let filepath = get_file_path(CONFIG_FILE, FileType::Json)?;
-	JSONFileStorage::<ClientConfig>::new(filepath).load()
+	JSONFileStorage::<CliConfig>::new(filepath).load()
 }
 
 #[cfg(test)]
