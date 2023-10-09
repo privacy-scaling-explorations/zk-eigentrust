@@ -271,10 +271,11 @@ impl Client {
 	/// Generates Threshold circuit proof for the selected participant.
 	pub fn generate_th_proof(
 		&self, att: Vec<SignedAttestationRaw>, raw_et_kzg_params: Vec<u8>,
-		raw_th_kzg_params: Vec<u8>, raw_proving_key: Vec<u8>, threshold: u32, participant_id: u32,
+		raw_th_kzg_params: Vec<u8>, raw_proving_key: Vec<u8>, threshold: u32,
+		participant: [u8; 20],
 	) -> Result<ThReport, EigenError> {
 		let rng = &mut thread_rng();
-		let th_setup = self.th_circuit_setup(att, raw_et_kzg_params, threshold, participant_id)?;
+		let th_setup = self.th_circuit_setup(att, raw_et_kzg_params, threshold, participant)?;
 
 		// Build kzg params and proving key
 		let th_kzg_params =
@@ -467,7 +468,7 @@ impl Client {
 	/// Generates Threshold circuit proof for the selected participant
 	pub fn th_circuit_setup(
 		&self, att: Vec<SignedAttestationRaw>, raw_et_kzg_params: Vec<u8>, threshold: u32,
-		participant_id: u32,
+		participant: [u8; 20],
 	) -> Result<ThSetup, EigenError> {
 		let rng = &mut thread_rng();
 		let et_setup = self.et_circuit_setup(att)?;
@@ -478,8 +479,18 @@ impl Client {
 				EigenError::ReadWriteError(format!("Failed to read ET KZG params: {}", e))
 			})?;
 
+		// Find participant in the set and get the id
+		let participant_address = Address::from(participant);
+		let id = et_setup.address_set.iter().position(|r| r == &participant_address).ok_or_else(
+			|| {
+				EigenError::ValidationError(format!(
+					"Participant {} not found",
+					participant_address.to_string()
+				))
+			},
+		)?;
+
 		// Extract and prepare participant-specific data
-		let id = participant_id as usize;
 		let p_address = et_setup.pub_inputs.participants[id];
 		let score = et_setup.pub_inputs.scores[id];
 		let rational_score = et_setup.rational_scores[id].clone();
@@ -546,7 +557,7 @@ impl Client {
 		Ok(proving_key.to_bytes(SerdeFormat::Processed))
 	}
 
-	/// Generates new proving key for the Threshold circuit (not working)
+	/// Generates new proving key for the Threshold circuit
 	pub fn generate_th_pk(
 		&self, att: Vec<SignedAttestationRaw>, raw_et_kzg_params: Vec<u8>,
 		raw_th_kzg_params: Vec<u8>,
@@ -555,8 +566,9 @@ impl Client {
 			ParamsKZG::<Bn256>::read(&mut raw_th_kzg_params.as_slice()).map_err(|e| {
 				EigenError::ReadWriteError(format!("Failed to read TH KZG params: {}", e))
 			})?;
+		let participant = AttestationEth::from(att[0].clone().attestation).about.to_fixed_bytes();
 		let th_setup =
-			self.th_circuit_setup(att, raw_et_kzg_params, u32::default(), u32::default())?;
+			self.th_circuit_setup(att, raw_et_kzg_params, u32::default(), participant)?;
 
 		info!("Generating proving key, this may take a while.");
 		let start_time = Instant::now();
