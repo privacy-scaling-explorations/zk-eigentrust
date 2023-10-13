@@ -328,6 +328,11 @@ pub fn fe_to_big<F: FieldExt>(fe: F) -> BigUint {
 	BigUint::from_bytes_le(fe.to_repr().as_ref())
 }
 
+/// Returns [`BigUint`] representation for the given [`FieldExt`].
+pub fn fe_to_big_val<F: FieldExt>(fe: Value<F>) -> Value<BigUint> {
+	fe.map(|fe| fe_to_big(fe))
+}
+
 /// Converts a `BigRational` into scaled, decomposed numerator and denominator arrays of field elements.
 pub fn big_to_fe_rat<F: FieldExt, const NUM_DECIMAL_LIMBS: usize, const POWER_OF_TEN: usize>(
 	ratio: BigRational,

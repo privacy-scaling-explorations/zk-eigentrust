@@ -5,7 +5,7 @@ use crate::{
 };
 use halo2::{
 	halo2curves::{bn256::Fr, group::ff::PrimeField},
-	plonk::Expression,
+	plonk::Expression, circuit::Value,
 };
 use num_bigint::BigUint;
 use num_integer::Integer as BigInteger;
@@ -56,6 +56,24 @@ pub trait RnsParams<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_
 		res
 	}
 
+	/// Returns residue value from given inputs.
+	fn residues_val(n: &[Value<N>; NUM_LIMBS], t: &[Value<N>; NUM_LIMBS]) -> Vec<Value<N>> {
+		let lsh1 = Value::known(Self::left_shifters()[1]);
+		let rsh2 = Value::known(Self::right_shifters()[2]);
+
+		let mut res = Vec::new();
+		let mut carry = Value::known(N::ZERO);
+		for i in (0..NUM_LIMBS).step_by(2) {
+			let (t_0, t_1) = (t[i], t[i + 1]);
+			let (r_0, r_1) = (n[i], n[i + 1]);
+			let u = t_0 + (t_1 * lsh1) - r_0 - (lsh1 * r_1) + carry;
+			let v = u * rsh2;
+			carry = v;
+			res.push(v)
+		}
+		res
+	}
+
 	/// Returns `quotient` and `remainder` for the reduce operation.
 	fn construct_reduce_qr(a_bn: BigUint) -> (N, [N; NUM_LIMBS]) {
 		let wrong_mod_bn = Self::wrong_modulus();
@@ -63,6 +81,12 @@ pub trait RnsParams<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_
 		let q = big_to_fe(quotient);
 		let result = decompose_big::<N, NUM_LIMBS, NUM_BITS>(result_bn);
 		(q, result)
+	}
+
+	/// Returns `quotient` and `remainder` for the reduce operation.
+	fn construct_reduce_qr_val(a_bn: Value<BigUint>) -> (Value<N>, [Value<N>; NUM_LIMBS]) {
+		let (q, result) = a_bn.map(|a_bn| Self::construct_reduce_qr(a_bn)).unzip();
+		(q, result.transpose_array())
 	}
 
 	/// Returns `quotient` and `remainder` for the add operation.
@@ -75,6 +99,12 @@ pub trait RnsParams<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_
 		let q = big_to_fe(quotient);
 		let result = decompose_big::<N, NUM_LIMBS, NUM_BITS>(result_bn);
 		(q, result)
+	}
+
+	/// Returns `quotient` and `remainder` for the add operation.
+	fn construct_add_qr_val(a_bn: Value<BigUint>, b_bn: Value<BigUint>) -> (Value<N>, [Value<N>; NUM_LIMBS]) {
+		let (q, result) = a_bn.zip(b_bn).map(|(a_bn, b_bn)| Self::construct_add_qr(a_bn, b_bn)).unzip();
+		(q, result.transpose_array())
 	}
 
 	/// Returns `quotient` and `remainder` for the sub operation.
@@ -97,6 +127,12 @@ pub trait RnsParams<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_
 		(q, result)
 	}
 
+	/// Returns `quotient` and `remainder` for the sub operation.
+	fn construct_sub_qr_val(a_bn: Value<BigUint>, b_bn: Value<BigUint>) -> (Value<N>, [Value<N>; NUM_LIMBS]) {
+		let (q, result) = a_bn.zip(b_bn).map(|(a_bn, b_bn)| Self::construct_sub_qr(a_bn, b_bn)).unzip();
+		(q, result.transpose_array())
+	}
+
 	/// Returns `quotient` and `remainder` for the mul operation.
 	fn construct_mul_qr(a_bn: BigUint, b_bn: BigUint) -> ([N; NUM_LIMBS], [N; NUM_LIMBS]) {
 		let wrong_mod_bn = Self::wrong_modulus();
@@ -105,6 +141,13 @@ pub trait RnsParams<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_
 		let result = decompose_big::<N, NUM_LIMBS, NUM_BITS>(result_bn);
 		(q, result)
 	}
+
+	/// Returns `quotient` and `remainder` for the mul operation.
+	fn construct_mul_qr_val(a_bn: Value<BigUint>, b_bn: Value<BigUint>) -> ( [Value<N>; NUM_LIMBS], [Value<N>; NUM_LIMBS]) {
+		let (q, result) = a_bn.zip(b_bn).map(|(a_bn, b_bn)| Self::construct_mul_qr(a_bn, b_bn)).unzip();
+		(q.transpose_array(), result.transpose_array())
+	}
+
 
 	/// Returns `quotient` and `remainder` for the div operation.
 	fn construct_div_qr(a_bn: BigUint, b_bn: BigUint) -> ([N; NUM_LIMBS], [N; NUM_LIMBS]) {
@@ -120,6 +163,12 @@ pub trait RnsParams<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_
 		(q, result)
 	}
 
+	/// Returns `quotient` and `remainder` for the div operation.
+	fn construct_div_qr_val(a_bn: Value<BigUint>, b_bn: Value<BigUint>) -> ( [Value<N>; NUM_LIMBS], [Value<N>; NUM_LIMBS]) {
+		let (q, result) = a_bn.zip(b_bn).map(|(a_bn, b_bn)| Self::construct_div_qr(a_bn, b_bn)).unzip();
+		(q.transpose_array(), result.transpose_array())
+	}
+	
 	/// Constraint for the binary part of `Chinese Remainder Theorem`.
 	fn constrain_binary_crt(t: [N; NUM_LIMBS], result: [N; NUM_LIMBS], residues: Vec<N>) -> bool {
 		let lsh_one = Self::left_shifters()[1];
@@ -162,6 +211,25 @@ pub trait RnsParams<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_
 
 		constraints
 	}
+
+	// /// Constraint for the binary part of `Chinese Remainder Theorem`.
+	// fn constrain_binary_crt_val(t: [Value<N>; NUM_LIMBS], result: [Value<N>; NUM_LIMBS], residues: Vec<Value<N>>) -> bool {
+	// 	let lsh_one = Value::known(Self::left_shifters()[1]);
+	// 	let lsh_two = Value::known(Self::left_shifters()[2]);
+
+	// 	let mut is_satisfied = true;
+	// 	let mut v = Value::known(N::ZERO);
+	// 	for i in (0..NUM_LIMBS).step_by(2) {
+	// 		let (t_lo, t_hi) = (t[i], t[i + 1]);
+	// 		let (r_lo, r_hi) = (result[i], result[i + 1]);
+	// 		// CONSTRAINT
+	// 		let res = t_lo + t_hi * lsh_one - r_lo - r_hi * lsh_one - residues[i / 2] * lsh_two + v;
+	// 		v = residues[i / 2];
+	// 		let res_is_zero: bool = res.map(|r| r.is_zero().into());
+	// 		is_satisfied &= res_is_zero
+	// 	}
+	// 	is_satisfied
+	// }
 
 	/// Composes integer limbs into single [`FieldExt`] value.
 	fn compose(input: [N; NUM_LIMBS]) -> N {
@@ -247,6 +315,17 @@ pub fn compose_big<const NUM_LIMBS: usize, const NUM_BITS: usize>(
 	let mut res = BigUint::zero();
 	for i in (0..NUM_LIMBS).rev() {
 		res = (res << NUM_BITS) + input[i].clone();
+	}
+	res
+}
+
+/// Returns [`BigUint`] by composing `limbs`.
+pub fn compose_big_val<const NUM_LIMBS: usize, const NUM_BITS: usize>(
+	input: [Value<BigUint>; NUM_LIMBS],
+) -> Value<BigUint> {
+	let mut res = Value::known(BigUint::zero());
+	for i in (0..NUM_LIMBS).rev() {
+		res = (res.map(|res| res << NUM_BITS)) + input[i].clone();
 	}
 	res
 }

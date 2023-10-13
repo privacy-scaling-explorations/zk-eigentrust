@@ -660,7 +660,7 @@ mod test {
 		}
 	}
 
-	#[ignore = "Aggregator takes too long to run"]
+	// #[ignore = "Aggregator takes too long to run"]
 	#[test]
 	fn test_aggregator() {
 		// Testing Aggregator
@@ -687,7 +687,7 @@ mod test {
 		assert_eq!(prover.verify(), Ok(()));
 	}
 
-	#[ignore = "Et Aggregator takes too long to run"]
+	// #[ignore = "Et Aggregator takes too long to run"]
 	#[test]
 	fn test_et_aggregator_prod() {
 		const NUM_NEIGHBOURS: usize = 4;

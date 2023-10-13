@@ -296,9 +296,9 @@ where
 		};
 
 		let assigned_integer_x =
-			AssignedInteger::<_, _, NUM_LIMBS, NUM_BITS, P>::new(x, assigned_x.try_into().unwrap());
+			AssignedInteger::<_, _, NUM_LIMBS, NUM_BITS, P>::new(assigned_x.try_into().unwrap());
 		let assigned_integer_y =
-			AssignedInteger::<_, _, NUM_LIMBS, NUM_BITS, P>::new(y, assigned_y.try_into().unwrap());
+			AssignedInteger::<_, _, NUM_LIMBS, NUM_BITS, P>::new(assigned_y.try_into().unwrap());
 
 		let assigned_point = AssignedEcPoint::<_, NUM_LIMBS, NUM_BITS, P>::new(
 			assigned_integer_x, assigned_integer_y,
@@ -494,11 +494,9 @@ mod test {
 	impl TestCommonEcPointCircuit {
 		fn new(ec_point: EcPoint<G1Affine, NUM_LIMBS, NUM_BITS, P, EC>) -> Self {
 			let unassigned_x = UnassignedInteger::new(
-				ec_point.x.clone(),
 				ec_point.x.limbs.map(|x| Value::known(x)),
 			);
 			let unassigned_y = UnassignedInteger::new(
-				ec_point.y.clone(),
 				ec_point.y.limbs.map(|y| Value::known(y)),
 			);
 
@@ -556,11 +554,9 @@ mod test {
 				);
 
 				let assigned_integer_x = AssignedInteger::<_, _, NUM_LIMBS, NUM_BITS, P>::new(
-					x.integer.clone(),
 					assigned_coordinates.0,
 				);
 				let assigned_integer_y = AssignedInteger::<_, _, NUM_LIMBS, NUM_BITS, P>::new(
-					y.integer.clone(),
 					assigned_coordinates.1,
 				);
 

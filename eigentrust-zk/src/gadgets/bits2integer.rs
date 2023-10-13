@@ -156,8 +156,7 @@ mod test {
 				},
 			)?;
 
-			let assigned_integer = AssignedInteger::new(
-				self.unassigned_integer.integer.clone(),
+			let assigned_integer = AssignedInteger::<W, N, NUM_LIMBS, NUM_BITS, P>::new(
 				assigned_limbs.map(|x| x.unwrap()),
 			);
 

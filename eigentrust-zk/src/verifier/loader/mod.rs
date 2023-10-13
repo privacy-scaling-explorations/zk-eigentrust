@@ -4,7 +4,7 @@ use crate::{
 		AuxConfig, EccAddConfig, EccMulConfig,
 	},
 	gadgets::main::{AddChipset, InverseChipset, MainConfig, MulChipset, SubChipset},
-	integer::{native::Integer, AssignedInteger},
+	integer::{native::Integer, AssignedInteger, UnassignedInteger},
 	params::{ecc::EccParams, rns::RnsParams},
 	utils::assigned_to_field,
 	Chipset, CommonConfig, FieldExt, RegionCtx, SpongeHasherChipset,
@@ -879,8 +879,9 @@ where
 	/// This method tests for `self` and `other` values to be equal, and is used
 	/// by `==`.
 	fn eq(&self, other: &Self) -> bool {
-		self.inner.x.integer == other.inner.x.integer
-			&& self.inner.y.integer == other.inner.y.integer
+		// self.inner.x == other.inner.x
+		// 	&& self.inner.y == other.inner.y
+		unimplemented!()
 	}
 }
 
@@ -931,8 +932,8 @@ where
 	/// Load a constant elliptic curve point.
 	fn ec_point_load_const(&self, value: &C) -> Self::LoadedEcPoint {
 		let coords: Coordinates<C> = Option::from(value.coordinates()).unwrap();
-		let x = Integer::from_w(*coords.x());
-		let y = Integer::from_w(*coords.y());
+		let x: UnassignedInteger<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS, P> = UnassignedInteger::from(Integer::from_w(*coords.x()));
+		let y: UnassignedInteger<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS, P> = UnassignedInteger::from(Integer::from_w(*coords.y()));
 		let mut layouter = self.layouter.borrow_mut();
 		let (x_limbs, y_limbs) = layouter
 			.assign_region(
@@ -945,21 +946,21 @@ where
 						[(); NUM_LIMBS].map(|_| None);
 					for i in 0..NUM_LIMBS {
 						x_limbs[i] = Some(
-							ctx.assign_from_constant(self.common.advice[i], x.limbs[i]).unwrap(),
+							ctx.assign_advice(self.common.advice[i], x.limbs[i]).unwrap(),
 						);
 					}
 					ctx.next();
 					for i in 0..NUM_LIMBS {
 						y_limbs[i] = Some(
-							ctx.assign_from_constant(self.common.advice[i], y.limbs[i]).unwrap(),
+							ctx.assign_advice(self.common.advice[i], y.limbs[i]).unwrap(),
 						);
 					}
 					Ok((x_limbs.map(|x| x.unwrap()), y_limbs.map(|x| x.unwrap())))
 				},
 			)
 			.unwrap();
-		let x_assigned = AssignedInteger::new(x, x_limbs);
-		let y_assigned = AssignedInteger::new(y, y_limbs);
+		let x_assigned = AssignedInteger::new(x_limbs);
+		let y_assigned = AssignedInteger::new(y_limbs);
 
 		let assigned_point = AssignedEcPoint::new(x_assigned, y_assigned);
 		Halo2LEcPoint::new(assigned_point, self.clone())
@@ -2119,13 +2120,13 @@ mod test {
 					config.poseidon_sponge,
 				);
 
-			let p1_x = AssignedInteger::new(self.p1.inner.x.clone(), p1_x_limbs.clone());
-			let p1_y = AssignedInteger::new(self.p1.inner.y.clone(), p1_y_limbs.clone());
+			let p1_x = AssignedInteger::new( p1_x_limbs.clone());
+			let p1_y = AssignedInteger::new( p1_y_limbs.clone());
 			let p1_assigned_point = AssignedEcPoint::new(p1_x, p1_y);
 			let p1_halo2_point = Halo2LEcPoint::new(p1_assigned_point, loader_config.clone());
 
-			let p2_x = AssignedInteger::new(self.p2.inner.x.clone(), p2_x_limbs.clone());
-			let p2_y = AssignedInteger::new(self.p2.inner.y.clone(), p2_y_limbs.clone());
+			let p2_x = AssignedInteger::new( p2_x_limbs.clone());
+			let p2_y = AssignedInteger::new( p2_y_limbs.clone());
 			let p2_assigned_point = AssignedEcPoint::new(p2_x, p2_y);
 			let p2_halo2_point = Halo2LEcPoint::new(p2_assigned_point, loader_config.clone());
 
@@ -2239,8 +2240,8 @@ mod test {
 					let (_, lpoint) = nloaded_pair;
 					let halo2_scalar = Halo2LScalar::new(scalar.clone(), loader_config.clone());
 
-					let x = AssignedInteger::new(lpoint.inner.x.clone(), x_limbs.clone());
-					let y = AssignedInteger::new(lpoint.inner.y.clone(), y_limbs.clone());
+					let x = AssignedInteger::new( x_limbs.clone());
+					let y = AssignedInteger::new( y_limbs.clone());
 
 					let assigned_point = AssignedEcPoint::new(x, y);
 					let halo2_point = Halo2LEcPoint::new(assigned_point, loader_config.clone());

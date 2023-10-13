@@ -126,7 +126,8 @@ where
 
 	/// Checks if given point is at the infinity or not
 	pub fn is_infinity(&self) -> bool {
-		self.x.integer == Integer::zero() && self.y.integer == Integer::zero()
+		// self.x.limbs == Integer::zero().limbs && self.y.limbs == Integer::zero().limbs
+		unimplemented!()
 	}
 }
 
@@ -735,15 +736,15 @@ where
 
 		let selected_point = if assigned_as_bool::<C::Scalar>(self.bit) {
 			let selected_x_integer =
-				AssignedInteger::new(self.p.x.integer.clone(), selected_x.map(|x| x.unwrap()));
+				AssignedInteger::new(selected_x.map(|x| x.unwrap()));
 			let selected_y_integer =
-				AssignedInteger::new(self.p.y.integer, selected_y.map(|x| x.unwrap()));
+				AssignedInteger::new(selected_y.map(|x| x.unwrap()));
 			AssignedEcPoint::new(selected_x_integer, selected_y_integer)
 		} else {
 			let selected_x_integer =
-				AssignedInteger::new(self.q.x.integer.clone(), selected_x.map(|x| x.unwrap()));
+				AssignedInteger::new(selected_x.map(|x| x.unwrap()));
 			let selected_y_integer =
-				AssignedInteger::new(self.q.y.integer, selected_y.map(|x| x.unwrap()));
+				AssignedInteger::new(selected_y.map(|x| x.unwrap()));
 			AssignedEcPoint::new(selected_x_integer, selected_y_integer)
 		};
 
