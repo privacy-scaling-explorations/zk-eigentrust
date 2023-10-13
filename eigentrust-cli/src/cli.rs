@@ -540,6 +540,16 @@ pub async fn handle_th_pk() -> Result<(), EigenError> {
 
 /// Handles threshold circuit proof generation.
 pub async fn handle_th_proof(data: ThProofData) -> Result<(), EigenError> {
+	// Validate peer argument
+	let peer_id = match data.peer {
+		Some(peer) => H160::from_str(&peer).map_err(|e| EigenError::ParsingError(e.to_string()))?,
+		None => {
+			return Err(EigenError::ValidationError(
+				"Missing argument 'peer': participant address.".to_string(),
+			))
+		},
+	};
+
 	let config = load_config()?;
 	let mnemonic = load_mnemonic();
 	let client = Client::new(
@@ -557,23 +567,13 @@ pub async fn handle_th_proof(data: ThProofData) -> Result<(), EigenError> {
 	let th_kzg_params = EigenFile::KzgParams(TH_PARAMS_K).load()?;
 	let proving_key = EigenFile::ProvingKey(Circuit::Threshold).load()?;
 
-	// Parse peer id
-	let peer_id = match data.peer {
-		Some(peer) => peer.parse::<u32>().map_err(|e| EigenError::ParsingError(e.to_string()))?,
-		None => {
-			return Err(EigenError::ValidationError(
-				"Missing parameter 'peer': participant address.".to_string(),
-			))
-		},
-	};
-
 	let report = client.generate_th_proof(
 		attestations,
 		et_kzg_params,
 		th_kzg_params,
 		proving_key,
 		config.band_th.parse().unwrap(),
-		peer_id,
+		*peer_id.as_fixed_bytes(),
 	)?;
 
 	EigenFile::Proof(Circuit::Threshold).save(report.proof)?;

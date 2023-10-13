@@ -105,6 +105,9 @@ The command-line interface was built using [clap.rs](http://clap.rs/). There is 
 - `local-scores`: Uses locally stored attestation to calculate the global scores and stores them in the `scores.csv` file within the `assets` folder.
 - `scores`: Retrieve attestations and calculates the global scores and stores them in the `scores.csv` file within the `assets` folder.
 - `show`: Displays the `config.json` file.
+- `th-proof`: Generates a threshold proof for the given ethereum address.
+- `th-proving-key`: Generates the threshold circuit proving keys.
+- `th-verify`: Verifies the generated threshold proof.
 - `update`: Updates the specified field in `config.json`. Takes the following options:
 
   - `--as-address`: Updates the address of the AttestationStation contract.
@@ -133,6 +136,20 @@ The command-line interface was built using [clap.rs](http://clap.rs/). There is 
 ./target/release/eigentrust-cli scores # Can be skipped for testing, a scores.csv file is provided.
 ./target/release/eigentrust-cli update --band-id 51629751621128677209874422363557 --band-th 500
 ./target/release/eigentrust-cli bandada --action add --ic 82918723982 --addr 0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266
+```
+
+### Example of threshold proofs
+
+Threshold proofs are generated for a specific participant of the set, in this case we're assuming that you made an attestation with the examples given in this file.
+
+```bash
+# Generate necessary files
+./target/release/eigentrust-cli kzg-params --k 21
+./target/release/eigentrust-cli th-proving-key
+
+# Generate and verify proof
+./target/release/eigentrust-cli th-proof --peer 0x70997970C51812dc3A010C7d01b50e0d17dc79C8
+./target/release/eigentrust-cli th-verify
 ```
 
 ## Configuration
