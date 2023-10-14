@@ -382,9 +382,20 @@ pub async fn handle_deploy() -> Result<(), EigenError> {
 }
 
 /// Handles eigentrust circuit proving key generation.
-pub fn handle_et_pk() -> Result<(), EigenError> {
+pub async fn handle_et_pk() -> Result<(), EigenError> {
+	let config = load_config()?;
+	let mnemonic = load_mnemonic();
+	let client = Client::new(
+		mnemonic,
+		config.chain_id()?,
+		config.as_address()?,
+		config.domain()?,
+		config.node_url,
+	);
+	let attestations = load_or_fetch_attestations().await?;
 	let et_kzg_params = EigenFile::KzgParams(ET_PARAMS_K).load()?;
-	let proving_key = Client::generate_et_pk(et_kzg_params)?;
+
+	let proving_key = client.generate_et_pk(attestations, et_kzg_params)?;
 
 	EigenFile::ProvingKey(Circuit::EigenTrust).save(proving_key)
 }
@@ -434,7 +445,13 @@ pub async fn handle_et_verify() -> Result<(), EigenError> {
 	let proof = EigenFile::Proof(Circuit::EigenTrust).load()?;
 
 	// Verify proof
-	client.verify(kzg_params, public_inputs, proving_key, proof)?;
+	client.verify(
+		Circuit::EigenTrust,
+		kzg_params,
+		public_inputs,
+		proving_key,
+		proof,
+	)?;
 
 	info!("EigenTrust proof has been verified.");
 	Ok(())
@@ -601,7 +618,13 @@ pub async fn handle_th_verify() -> Result<(), EigenError> {
 	let proof = EigenFile::Proof(Circuit::Threshold).load()?;
 
 	// Verify proof
-	client.verify(kzg_params, public_inputs, proving_key, proof)?;
+	client.verify(
+		Circuit::Threshold,
+		kzg_params,
+		public_inputs,
+		proving_key,
+		proof,
+	)?;
 
 	info!("Threshold proof has been verified.");
 	Ok(())

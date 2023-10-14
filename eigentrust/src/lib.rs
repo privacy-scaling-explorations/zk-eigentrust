@@ -62,12 +62,12 @@ use att_station::{
 	AttestationCreatedFilter, AttestationData as ContractAttestationData, AttestationStation,
 };
 use attestation::{build_att_key, AttestationEth, AttestationRaw, SignedAttestationRaw};
-use circuit::{ETReport, ETSetup, ThPublicInputs, ThReport, ThSetup};
+use circuit::{Circuit, ETReport, ETSetup, ThPublicInputs, ThReport, ThSetup};
 use eigentrust_zk::{
 	circuits::{
-		threshold::native::Threshold, ECDSAPublicKey, EigenTrust4, NativeAggregator4,
+		threshold::native::Threshold, ECDSAPublicKey, EigenTrust4, KZGParams, NativeAggregator4,
 		NativeEigenTrust4, NativeThreshold4, PoseidonNativeSponge, Threshold4, HASHER_WIDTH,
-		MIN_PEER_COUNT, NUM_DECIMAL_LIMBS, NUM_ITERATIONS, NUM_NEIGHBOURS, POWER_OF_TEN,
+		MIN_PEER_COUNT, NUM_DECIMAL_LIMBS, NUM_NEIGHBOURS, POWER_OF_TEN,
 	},
 	halo2::{
 		arithmetic::Field,
@@ -76,12 +76,12 @@ use eigentrust_zk::{
 			secp256k1::Fq as SecpScalar,
 		},
 		plonk::ProvingKey,
-		poly::{commitment::Params as KZGParams, kzg::commitment::ParamsKZG},
+		poly::commitment::{CommitmentScheme, Params},
 		SerdeFormat,
 	},
-	params::hasher::poseidon_bn254_5x5::Params,
+	params::hasher::poseidon_bn254_5x5::Params as PoseidonParams,
 	poseidon::native::Poseidon,
-	utils::{big_to_fe_rat, generate_params, keygen, prove, verify},
+	utils::{big_to_fe_rat, keygen, prove, verify},
 	verifier::aggregator::native::Snark,
 };
 use error::EigenError;
@@ -158,7 +158,7 @@ impl Client {
 
 		// Format for signature
 		let att_hash = attestation_fr
-			.hash::<HASHER_WIDTH, Poseidon<Scalar, HASHER_WIDTH, Params>>()
+			.hash::<HASHER_WIDTH, Poseidon<Scalar, HASHER_WIDTH, PoseidonParams>>()
 			.to_bytes();
 		let attestation_fq = SecpScalar::from_bytes(&att_hash).unwrap();
 
@@ -243,22 +243,14 @@ impl Client {
 		let et_setup = self.et_circuit_setup(att)?;
 
 		// Parse KZG params and proving key
-		let kzg_params: ParamsKZG<Bn256> =
-			ParamsKZG::<Bn256>::read(&mut raw_kzg_params.as_slice()).unwrap();
+		let kzg_params = KZGParams::read_params(&mut raw_kzg_params.as_slice()).unwrap();
 		let proving_key: ProvingKey<G1Affine> =
 			ProvingKey::from_bytes::<EigenTrust4>(&raw_prov_key, SerdeFormat::Processed).unwrap();
-
-		// Initialize EigenTrustSet
-		let et_circuit: EigenTrust4 = EigenTrust4::new(
-			et_setup.attestation_matrix,
-			et_setup.ecdsa_set,
-			self.get_scalar_domain()?,
-		);
 
 		// Generate proof
 		let proof = prove::<Bn256, _, _>(
 			&kzg_params,
-			et_circuit,
+			et_setup.circuit,
 			&[&et_setup.pub_inputs.to_vec()],
 			&proving_key,
 			rng,
@@ -279,7 +271,7 @@ impl Client {
 
 		// Build kzg params and proving key
 		let th_kzg_params =
-			ParamsKZG::<Bn256>::read(&mut raw_th_kzg_params.as_slice()).map_err(|e| {
+			KZGParams::read_params(&mut raw_th_kzg_params.as_slice()).map_err(|e| {
 				EigenError::ReadWriteError(format!("Failed to read TH KZG params: {}", e))
 			})?;
 		let proving_key = ProvingKey::<G1Affine>::from_bytes::<Threshold4>(
@@ -302,30 +294,30 @@ impl Client {
 
 	/// Verifies the given proof.
 	pub fn verify(
-		&self, raw_kzg_params: Vec<u8>, raw_public_inputs: Vec<u8>, raw_proving_key: Vec<u8>,
-		proof: Vec<u8>,
+		&self, circuit: Circuit, raw_kzg_params: Vec<u8>, raw_public_inputs: Vec<u8>,
+		raw_proving_key: Vec<u8>, proof: Vec<u8>,
 	) -> Result<(), EigenError> {
 		// Parse KZG params
-		let kzg_params: ParamsKZG<Bn256> = ParamsKZG::read(&mut raw_kzg_params.as_slice())
+		let kzg_params = KZGParams::read_params(&mut raw_kzg_params.as_slice())
 			.map_err(|e| EigenError::ParsingError(e.to_string()))?;
 
-		// Parse public inputs
-		let pub_inputs: ETPublicInputs =
-			ETPublicInputs::from_bytes(raw_public_inputs, NUM_NEIGHBOURS)?;
-
-		// Parse proving key
-		let proving_key: ProvingKey<G1Affine> =
-			ProvingKey::from_bytes::<EigenTrust4>(&raw_proving_key, SerdeFormat::Processed)
-				.map_err(|e| EigenError::ParsingError(e.to_string()))?;
+		// Parse public inputs and proving key
+		let (pub_inputs, proving_key) = match circuit {
+			Circuit::EigenTrust => (
+				ETPublicInputs::from_bytes(raw_public_inputs, NUM_NEIGHBOURS)?.to_vec(),
+				ProvingKey::from_bytes::<EigenTrust4>(&raw_proving_key, SerdeFormat::Processed)
+					.map_err(|e| EigenError::ParsingError(e.to_string()))?,
+			),
+			Circuit::Threshold => (
+				ThPublicInputs::from_bytes(raw_public_inputs, NUM_NEIGHBOURS)?.to_vec(),
+				ProvingKey::from_bytes::<Threshold4>(&raw_proving_key, SerdeFormat::Processed)
+					.map_err(|e| EigenError::ParsingError(e.to_string()))?,
+			),
+		};
 
 		// Verify
-		let is_verified = verify(
-			&kzg_params,
-			&[&pub_inputs.to_vec()],
-			&proof,
-			proving_key.get_vk(),
-		)
-		.map_err(|e| EigenError::VerificationError(e.to_string()));
+		let is_verified = verify(&kzg_params, &[&pub_inputs], &proof, proving_key.get_vk())
+			.map_err(|e| EigenError::VerificationError(e.to_string()));
 
 		match is_verified? {
 			true => Ok(()),
@@ -460,8 +452,15 @@ impl Client {
 		let pub_inputs =
 			ETPublicInputs::new(scalar_set, scalar_scores, scalar_domain, opinions_hash);
 
+		// Initialize EigenTrustSet
+		let circuit: EigenTrust4 = EigenTrust4::new(
+			attestation_matrix.clone(),
+			ecdsa_pub_keys.clone(),
+			self.get_scalar_domain()?,
+		);
+
 		Ok(ETSetup::new(
-			address_set, attestation_matrix, ecdsa_pub_keys, pub_inputs, rational_scores,
+			address_set, attestation_matrix, circuit, ecdsa_pub_keys, pub_inputs, rational_scores,
 		))
 	}
 
@@ -475,7 +474,7 @@ impl Client {
 
 		// Build kzg params and proving key
 		let et_kzg_params =
-			ParamsKZG::<Bn256>::read(&mut raw_et_kzg_params.as_slice()).map_err(|e| {
+			KZGParams::read_params(&mut raw_et_kzg_params.as_slice()).map_err(|e| {
 				EigenError::ReadWriteError(format!("Failed to read ET KZG params: {}", e))
 			})?;
 
@@ -534,20 +533,16 @@ impl Client {
 	}
 
 	/// Generates new proving key for EigenTrust circuit
-	pub fn generate_et_pk(raw_kzg_params: Vec<u8>) -> Result<Vec<u8>, EigenError> {
-		let rng = &mut rand::thread_rng();
-
-		let opt_att = vec![vec![None; NUM_ITERATIONS]; NUM_ITERATIONS];
-		let opt_pks = vec![None; NUM_ITERATIONS];
-		let domain = Scalar::random(rng);
-		let et = EigenTrust4::new(opt_att, opt_pks, domain);
-
-		let kzg_params = ParamsKZG::<Bn256>::read(&mut raw_kzg_params.as_slice())
+	pub fn generate_et_pk(
+		&self, att: Vec<SignedAttestationRaw>, raw_et_kzg_params: Vec<u8>,
+	) -> Result<Vec<u8>, EigenError> {
+		let kzg_params = KZGParams::read_params(&mut raw_et_kzg_params.as_slice())
 			.map_err(|e| EigenError::ReadWriteError(format!("Failed to read KZG params: {}", e)))?;
+		let et_setup: ETSetup = self.et_circuit_setup(att)?;
 
 		info!("Generating proving key, this may take a while.");
 		let start_time = Instant::now();
-		let proving_key = keygen(&kzg_params, et)
+		let proving_key = keygen(&kzg_params, et_setup.circuit)
 			.map_err(|_| EigenError::KeygenError("Failed to generate pk/vk pair".to_string()))?;
 		let elapsed_time = start_time.elapsed();
 
@@ -563,7 +558,7 @@ impl Client {
 		raw_th_kzg_params: Vec<u8>,
 	) -> Result<Vec<u8>, EigenError> {
 		let th_kzg_params =
-			ParamsKZG::<Bn256>::read(&mut raw_th_kzg_params.as_slice()).map_err(|e| {
+			KZGParams::read_params(&mut raw_th_kzg_params.as_slice()).map_err(|e| {
 				EigenError::ReadWriteError(format!("Failed to read TH KZG params: {}", e))
 			})?;
 		let participant = AttestationEth::from(att[0].clone().attestation).about.to_fixed_bytes();
@@ -589,7 +584,7 @@ impl Client {
 		info!("Generating KZG parameters, this may take a while.");
 
 		let start_time = Instant::now();
-		let params = generate_params::<Bn256>(k);
+		let params = KZGParams::new_params(k);
 		let elapsed_time = start_time.elapsed();
 
 		info!("KZG parameters generated.");
