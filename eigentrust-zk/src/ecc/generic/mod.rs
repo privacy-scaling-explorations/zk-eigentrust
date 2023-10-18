@@ -131,11 +131,11 @@ where
 		Self { x, y }
 	}
 
-	/// Checks if given point is at the infinity or not
-	pub fn is_infinity(&self) -> bool {
-		// self.x.limbs == Integer::zero().limbs && self.y.limbs == Integer::zero().limbs
-		unimplemented!()
-	}
+	// /// Checks if given point is at the infinity or not
+	// pub fn is_infinity(&self) -> bool {
+	// 	// self.x.limbs == Integer::zero().limbs && self.y.limbs == Integer::zero().limbs
+	// 	unimplemented!()
+	// }
 }
 
 /// Chipset structure for the EccAdd.

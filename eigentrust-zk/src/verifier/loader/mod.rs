@@ -56,6 +56,10 @@ pub struct LoaderConfig<
 	pub(crate) sponge: <S as SpongeHasherChipset<C::ScalarExt>>::Config,
 	// Aux_init and Aux_fin for the ecc_mul operation
 	pub(crate) aux: AssignedAux<C, NUM_LIMBS, NUM_BITS, P, EC>,
+
+	num_scalar: Rc<RefCell<usize>>,
+	num_ec_point: Rc<RefCell<usize>>,
+
 	// PhantomData
 	_curve: PhantomData<C>,
 	_p: PhantomData<P>,
@@ -90,6 +94,9 @@ where
 			.unwrap();
 
 		let layouter_rc = Rc::new(RefCell::new(layouter));
+		let num_scalar = Rc::new(RefCell::default());
+		let num_ec_point = Rc::new(RefCell::default());
+
 		Self {
 			layouter: layouter_rc,
 			common,
@@ -98,6 +105,8 @@ where
 			main,
 			sponge,
 			aux,
+			num_scalar,
+			num_ec_point,
 			_curve: PhantomData,
 			_p: PhantomData,
 		}
@@ -124,13 +133,15 @@ where
 	/// Returns a copy of the value.
 	fn clone(&self) -> Self {
 		Self {
-			layouter: self.layouter.clone(),
+			layouter: Rc::clone(&self.layouter),
 			common: self.common.clone(),
 			ecc_mul_scalar: self.ecc_mul_scalar.clone(),
 			ecc_add: self.ecc_add.clone(),
 			main: self.main.clone(),
 			sponge: self.sponge.clone(),
 			aux: self.aux.clone(),
+			num_scalar: Rc::clone(&self.num_scalar),
+			num_ec_point: Rc::clone(&self.num_ec_point),
 			_curve: PhantomData,
 			_p: PhantomData,
 		}
@@ -181,6 +192,8 @@ pub struct Halo2LScalar<
 	pub(crate) inner: AssignedCell<C::Scalar, C::Scalar>,
 	// Loader
 	pub(crate) loader: LoaderConfig<'a, C, L, NUM_LIMBS, NUM_BITS, P, S, EC>,
+	// index
+	index: usize,
 	_h: PhantomData<S>,
 }
 
@@ -206,7 +219,9 @@ where
 		value: AssignedCell<C::Scalar, C::Scalar>,
 		loader: LoaderConfig<'a, C, L, NUM_LIMBS, NUM_BITS, P, S, EC>,
 	) -> Self {
-		Self { inner: value, loader, _h: PhantomData }
+		let index = *loader.num_scalar.borrow();
+		*loader.num_scalar.borrow_mut() += 1;
+		Self { inner: value, index, loader, _h: PhantomData }
 	}
 }
 
@@ -229,7 +244,7 @@ where
 {
 	/// Returns a copy of the value.
 	fn clone(&self) -> Self {
-		Self { inner: self.inner.clone(), loader: self.loader.clone(), _h: PhantomData }
+		Self { inner: self.inner.clone(), index: self.index.clone(), loader: self.loader.clone(), _h: PhantomData }
 	}
 }
 
@@ -276,10 +291,12 @@ where
 	///  This method tests for `self` and `other` values to be equal, and is
 	/// used by `==`.
 	fn eq(&self, other: &Self) -> bool {
-		let lhs = assigned_to_field(self.inner.clone());
-		let rhs = assigned_to_field(other.inner.clone());
+		// let lhs = assigned_to_field(self.inner.clone());
+		// let rhs = assigned_to_field(other.inner.clone());
 
-		lhs == rhs
+		// lhs == rhs
+
+		self.index == other.index
 	}
 }
 
@@ -309,7 +326,7 @@ where
 			&self.loader.main,
 			layouter_mut.namespace(|| "loader_inverse"),
 		);
-		inv_op.ok().map(|x| Self { inner: x, loader: self.loader.clone(), _h: PhantomData })
+		inv_op.ok().map(|x| Halo2LScalar::new(x, self.loader.clone()))
 	}
 }
 
@@ -346,7 +363,7 @@ where
 				layouter_mut.namespace(|| "loader_add"),
 			)
 			.unwrap();
-		Self { inner: add, loader: self.loader.clone(), _h: PhantomData }
+		Halo2LScalar::new(add, self.loader.clone())
 	}
 }
 
@@ -455,7 +472,7 @@ where
 				layouter_mut.namespace(|| "loader_mul"),
 			)
 			.unwrap();
-		Self { inner: mul, loader: self.loader.clone(), _h: PhantomData }
+		Halo2LScalar::new(mul, self.loader.clone())
 	}
 }
 
@@ -564,7 +581,7 @@ where
 				layouter_mut.namespace(|| "loader_sub"),
 			)
 			.unwrap();
-		Self { inner: sub, loader: self.loader.clone(), _h: PhantomData }
+		Halo2LScalar::new(sub, self.loader.clone())
 	}
 }
 
@@ -680,7 +697,7 @@ where
 				layouter_mut.namespace(|| "loader_neg"),
 			)
 			.unwrap();
-		Self { inner: neg, loader: self.loader.clone(), _h: PhantomData }
+		Halo2LScalar::new(neg, self.loader.clone())
 	}
 }
 
@@ -784,6 +801,8 @@ pub struct Halo2LEcPoint<
 	pub(crate) inner: AssignedEcPoint<C, NUM_LIMBS, NUM_BITS, P>,
 	// Loader
 	pub(crate) loader: LoaderConfig<'a, C, L, NUM_LIMBS, NUM_BITS, P, S, EC>,
+	// index
+	index: usize,
 	_h: PhantomData<S>,
 }
 
@@ -809,7 +828,9 @@ where
 		value: AssignedEcPoint<C, NUM_LIMBS, NUM_BITS, P>,
 		loader: LoaderConfig<'a, C, L, NUM_LIMBS, NUM_BITS, P, S, EC>,
 	) -> Self {
-		Self { inner: value, loader, _h: PhantomData }
+		let index = *loader.num_ec_point.borrow();
+		*loader.num_ec_point.borrow_mut() += 1;
+		Self { inner: value, index, loader, _h: PhantomData }
 	}
 }
 
@@ -832,7 +853,7 @@ where
 {
 	/// Returns a copy of the value.
 	fn clone(&self) -> Self {
-		Self { inner: self.inner.clone(), loader: self.loader.clone(), _h: PhantomData }
+		Self { inner: self.inner.clone(), loader: self.loader.clone(), index: self.index.clone(), _h: PhantomData }
 	}
 }
 
@@ -879,9 +900,7 @@ where
 	/// This method tests for `self` and `other` values to be equal, and is used
 	/// by `==`.
 	fn eq(&self, other: &Self) -> bool {
-		// self.inner.x == other.inner.x
-		// 	&& self.inner.y == other.inner.y
-		unimplemented!()
+		self.index == other.index
 	}
 }
 
@@ -1002,7 +1021,7 @@ where
 		let point = pairs
 			.iter()
 			.cloned()
-			.filter(|(_, base)| !base.inner.is_infinity())
+			// .filter(|(_, base)| !base.inner.is_infinity())
 			.map(|(scalar, base)| {
 				let config = base.loader.clone();
 				let aux = base.loader.aux.clone();

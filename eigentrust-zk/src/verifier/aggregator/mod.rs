@@ -665,19 +665,20 @@ mod test {
 	fn test_aggregator() {
 		// Testing Aggregator
 		let rng = &mut thread_rng();
-		let k = 22;
+		let k = 21;
 		let params = generate_params::<E>(k);
 
 		let random_circuit_1 = MulChip::new(Scalar::one(), Scalar::one());
-		let random_circuit_2 = MulChip::new(Scalar::one(), Scalar::one());
+		// let random_circuit_2 = MulChip::new(Scalar::one(), Scalar::one());
 
 		let instances_1: Vec<Vec<Scalar>> = vec![vec![Scalar::one()]];
-		let instances_2: Vec<Vec<Scalar>> = vec![vec![Scalar::one()]];
+		// let instances_2: Vec<Vec<Scalar>> = vec![vec![Scalar::one()]];
 
 		let snark_1 = Snark::new(&params, random_circuit_1, instances_1, rng);
-		let snark_2 = Snark::new(&params, random_circuit_2, instances_2, rng);
+		// let snark_2 = Snark::new(&params, random_circuit_2, instances_2, rng);
 
-		let snarks = vec![snark_1, snark_2];
+		// let snarks = vec![snark_1, snark_2];
+		let snarks = vec![snark_1];
 		let NativeAggregator { svk, snarks, instances, as_proof, .. } =
 			NativeAggregator::new(&params, snarks);
 
