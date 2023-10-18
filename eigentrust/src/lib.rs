@@ -66,8 +66,8 @@ use circuit::{Circuit, ETReport, ETSetup, ThPublicInputs, ThReport, ThSetup};
 use eigentrust_zk::{
 	circuits::{
 		threshold::native::Threshold, ECDSAPublicKey, EigenTrust4, KZGParams, NativeAggregator4,
-		NativeEigenTrust4, NativeThreshold4, PoseidonNativeSponge, Threshold4, HASHER_WIDTH,
-		MIN_PEER_COUNT, NUM_DECIMAL_LIMBS, NUM_NEIGHBOURS, POWER_OF_TEN,
+		NativeEigenTrust4, NativeThreshold4, Opinion4, PoseidonNativeSponge, Threshold4,
+		HASHER_WIDTH, MIN_PEER_COUNT, NUM_DECIMAL_LIMBS, NUM_NEIGHBOURS, POWER_OF_TEN,
 	},
 	halo2::{
 		arithmetic::Field,
@@ -418,14 +418,25 @@ impl Client {
 			native_et.add_member(scalar_set[i]);
 		}
 
-		// Submit participants' opinion to native set and get opinion hashes
+		// Submit participants' opinion
 		let mut op_hashes: Vec<Scalar> = Vec::new();
 		for (origin_index, member) in address_set.clone().into_iter().enumerate() {
 			if let Some(pub_key) = pub_key_map.get(&member) {
+				debug!("Updating opinion for {}", member);
 				let opinion = attestation_matrix[origin_index].clone();
-				op_hashes.push(native_et.update_op(pub_key.clone(), opinion));
+				native_et.update_op(pub_key.clone(), opinion.clone());
+
+				// Get opinion hash
+				let parsed_op = native_et.parse_op_group(opinion);
+				let op = Opinion4::new(pub_key.clone(), parsed_op, scalar_domain);
+				let (_, _, op_hash) = op.validate(scalar_set.clone());
+				op_hashes.push(op_hash)
 			}
 		}
+
+		let mut sponge = PoseidonNativeSponge::new();
+		sponge.update(&op_hashes);
+		let opinions_hash = sponge.squeeze();
 
 		// Calculate scores
 		let rational_scores = native_et.converge_rational();
@@ -442,11 +453,6 @@ impl Client {
 			scalar_scores.len() >= address_set.len(),
 			"There are more participants than scores"
 		);
-
-		// Generate opinions' sponge hash.
-		let mut sponge = PoseidonNativeSponge::new();
-		sponge.update(&op_hashes);
-		let opinions_hash = sponge.squeeze();
 
 		// Build public inputs
 		let pub_inputs =

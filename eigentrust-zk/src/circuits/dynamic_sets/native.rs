@@ -230,6 +230,26 @@ impl<
 		op_hash
 	}
 
+	/// Build the opinion group by unwrapping attestations and filling the empty ones with default values.
+	/// Enumerating to keep track of the participant this opinion is about.
+	pub fn parse_op_group(
+		&mut self, op: Vec<Option<SignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>>>,
+	) -> Vec<SignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>> {
+		// Get participant set addresses
+		let set: Vec<N> = self.set.iter().map(|&(addr, _)| addr).collect();
+
+		op.into_iter()
+			.enumerate()
+			.map(|(index, attestation)| {
+				attestation.unwrap_or_else(|| {
+					SignedAttestation::<C, N, NUM_LIMBS, NUM_BITS, P>::empty_with_about(
+						set[index], self.domain,
+					)
+				})
+			})
+			.collect()
+	}
+
 	/// Method for filtering invalid opinions
 	fn filter_peers_ops(&self) -> HashMap<N, Vec<N>> {
 		let mut filtered_ops: HashMap<N, Vec<N>> = HashMap::new();
