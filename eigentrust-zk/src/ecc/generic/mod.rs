@@ -17,7 +17,7 @@ use crate::{
 		UnassignedInteger,
 	},
 	params::{ecc::EccParams, rns::RnsParams},
-	utils::be_assigned_bits_to_usize,
+	utils::{be_assigned_bits_to_usize, assigned_to_field},
 	Chip, Chipset, CommonConfig, FieldExt, UnassignedValue,
 };
 use halo2::{
@@ -131,11 +131,26 @@ where
 		Self { x, y }
 	}
 
-	// /// Checks if given point is at the infinity or not
-	// pub fn is_infinity(&self) -> bool {
-	// 	// self.x.limbs == Integer::zero().limbs && self.y.limbs == Integer::zero().limbs
-	// 	unimplemented!()
-	// }
+	/// Checks if given point is at the infinity or not
+	pub fn is_infinity(&self) -> bool {
+		// self.x.limbs == Integer::zero().limbs && self.y.limbs == Integer::zero().limbs
+
+		// let mut is_infinity= true;
+		// for i in 0..NUM_LIMBS {
+		// 	let x_i = assigned_to_field(self.x.limbs[i].clone());
+		// 	is_infinity &= x_i == N::ZERO;
+
+		// 	let y_i = assigned_to_field(self.y.limbs[i].clone());
+		// 	is_infinity &= y_i == N::ZERO;
+		// }
+		// is_infinity
+
+
+		let res = self.x.value().zip(self.y.value()).map(|(x, y)| x == y && x == BigUint::default());
+		let mut is_infinity = false;
+		res.map(|r| is_infinity |= r);
+		is_infinity
+	}
 }
 
 /// Chipset structure for the EccAdd.

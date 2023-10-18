@@ -25,6 +25,7 @@ use halo2::{
 	halo2curves::CurveAffine,
 	plonk::Error,
 };
+use num_bigint::BigUint;
 use std::marker::PhantomData;
 
 /// Structure for the UnassignedEcPoint
@@ -124,11 +125,15 @@ where
 		Self { x, y }
 	}
 
-	// /// Checks if given point is at the infinity or not
-	// pub fn is_infinity(&self) -> bool {
-	// 	// self.x.limbs == Integer::zero().limbs && self.y.limbs == Integer::zero().limbs
-	// 	unimplemented!()
-	// }
+	/// Checks if given point is at the infinity or not
+	pub fn is_infinity(&self) -> bool {
+		// self.x.limbs == Integer::zero().limbs && self.y.limbs == Integer::zero().limbs
+
+		let res = self.x.value().zip(self.y.value()).map(|(x, y)| x == y && x == BigUint::default());
+		let mut is_infinity = false;
+		res.map(|r| is_infinity |= r);
+		is_infinity
+	}
 }
 
 /// Chipset structure for the EccAdd.
