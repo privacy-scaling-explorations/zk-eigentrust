@@ -12,12 +12,12 @@ use crate::{
 use eigentrust_zk::{
 	circuits::{
 		dynamic_sets::native::{Attestation, SignedAttestation},
-		ECDSAKeypair, ECDSAPublicKey, ECDSASignature, HASHER_WIDTH, NUM_BITS, NUM_LIMBS,
+		ECDSAKeypair, ECDSAPublicKey, ECDSASignature, PoseidonNativeHasher, HASHER_WIDTH, NUM_BITS,
+		NUM_LIMBS,
 	},
 	halo2::halo2curves::{ff::FromUniformBytes, secp256k1::Secp256k1Affine},
 	integer::native::Integer,
-	params::{hasher::poseidon_bn254_5x5::Params, rns::secp256k1::Secp256k1_4_68},
-	poseidon::native::Poseidon,
+	params::rns::secp256k1::Secp256k1_4_68,
 };
 use ethers::types::{Address, Bytes, Uint8, H160, H256};
 
@@ -220,8 +220,7 @@ impl SignedAttestationEth {
 		let signature = ECDSASignature::from(signature_raw);
 
 		// Recover signed attestation hash
-		let att_hash =
-			attestation.hash::<HASHER_WIDTH, Poseidon<Scalar, HASHER_WIDTH, Params>>().to_bytes();
+		let att_hash = attestation.hash::<HASHER_WIDTH, PoseidonNativeHasher>().to_bytes();
 		let scalar_opt = SecpScalar::from_bytes(&att_hash);
 		let secp_scalar_att_hash = match scalar_opt.is_some().into() {
 			true => scalar_opt.unwrap(),
@@ -616,9 +615,7 @@ mod tests {
 		let attestation_raw: AttestationRaw = attestation_eth.clone().into();
 		let attestation_fr = attestation_eth.to_attestation_fr().unwrap();
 
-		let message = attestation_fr
-			.hash::<HASHER_WIDTH, Poseidon<Scalar, HASHER_WIDTH, Params>>()
-			.to_bytes();
+		let message = attestation_fr.hash::<HASHER_WIDTH, PoseidonNativeHasher>().to_bytes();
 		let message_fq = SecpScalar::from_bytes(&message).unwrap();
 
 		let signature = keypair.sign(message_fq, rng);
@@ -645,9 +642,7 @@ mod tests {
 		let attestation_eth = AttestationEth::default();
 		let attestation_fr = attestation_eth.to_attestation_fr().unwrap();
 
-		let message = attestation_fr
-			.hash::<HASHER_WIDTH, Poseidon<Scalar, HASHER_WIDTH, Params>>()
-			.to_bytes();
+		let message = attestation_fr.hash::<HASHER_WIDTH, PoseidonNativeHasher>().to_bytes();
 		let message_fq = SecpScalar::from_bytes(&message).unwrap();
 
 		let signature = keypair.sign(message_fq, rng);
@@ -698,9 +693,7 @@ mod tests {
 
 		let attestation_fr = attestation_eth.to_attestation_fr().unwrap();
 
-		let message = attestation_fr
-			.hash::<HASHER_WIDTH, Poseidon<Scalar, HASHER_WIDTH, Params>>()
-			.to_bytes();
+		let message = attestation_fr.hash::<HASHER_WIDTH, PoseidonNativeHasher>().to_bytes();
 		let message_fq = SecpScalar::from_bytes(&message).unwrap();
 
 		let signature = keypair.sign(message_fq, rng);

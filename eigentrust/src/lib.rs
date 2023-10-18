@@ -66,8 +66,8 @@ use circuit::{Circuit, ETReport, ETSetup, ThPublicInputs, ThReport, ThSetup};
 use eigentrust_zk::{
 	circuits::{
 		threshold::native::Threshold, ECDSAPublicKey, EigenTrust4, KZGParams, NativeAggregator4,
-		NativeEigenTrust4, NativeThreshold4, Opinion4, PoseidonNativeSponge, Threshold4,
-		HASHER_WIDTH, MIN_PEER_COUNT, NUM_DECIMAL_LIMBS, NUM_NEIGHBOURS, POWER_OF_TEN,
+		NativeEigenTrust4, NativeThreshold4, Opinion4, PoseidonNativeHasher, PoseidonNativeSponge,
+		Threshold4, HASHER_WIDTH, MIN_PEER_COUNT, NUM_DECIMAL_LIMBS, NUM_NEIGHBOURS, POWER_OF_TEN,
 	},
 	halo2::{
 		arithmetic::Field,
@@ -79,9 +79,7 @@ use eigentrust_zk::{
 		poly::commitment::{CommitmentScheme, Params},
 		SerdeFormat,
 	},
-	params::hasher::poseidon_bn254_5x5::Params as PoseidonParams,
-	poseidon::native::Poseidon,
-	utils::{big_to_fe_rat, keygen, prove, verify},
+	utils::{big_to_fe, big_to_fe_rat, fe_to_big, keygen, prove, verify},
 	verifier::aggregator::native::Snark,
 };
 use error::EigenError;
@@ -157,13 +155,11 @@ impl Client {
 		let attestation_fr = attestation_eth.to_attestation_fr()?;
 
 		// Format for signature
-		let att_hash = attestation_fr
-			.hash::<HASHER_WIDTH, Poseidon<Scalar, HASHER_WIDTH, PoseidonParams>>()
-			.to_bytes();
-		let attestation_fq = SecpScalar::from_bytes(&att_hash).unwrap();
+		let att_hash_scalar = attestation_fr.hash::<HASHER_WIDTH, PoseidonNativeHasher>();
+		let att_hash_secp_scalar = big_to_fe(fe_to_big(att_hash_scalar));
 
 		// Sign
-		let signature = keypairs[0].sign(attestation_fq, rng);
+		let signature = keypairs[0].sign(att_hash_secp_scalar, rng);
 
 		let signature_raw = SignatureRaw::from(signature);
 		let signature_eth = SignatureEth::from(signature_raw);
