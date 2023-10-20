@@ -48,29 +48,8 @@ impl<F: FieldExt> Chip<F> for MainChip<F> {
 			let a = v_cells.query_advice(common.advice[0], Rotation::cur());
 			let b = v_cells.query_advice(common.advice[1], Rotation::cur());
 			let c = v_cells.query_advice(common.advice[2], Rotation::cur());
-			let d = v_cells.query_advice(common.advice[3], Rotation::cur());
-			let e = v_cells.query_advice(common.advice[4], Rotation::cur());
 
-			let sa = v_cells.query_fixed(common.fixed[0], Rotation::cur());
-			let sb = v_cells.query_fixed(common.fixed[1], Rotation::cur());
-			let sc = v_cells.query_fixed(common.fixed[2], Rotation::cur());
-			let sd = v_cells.query_fixed(common.fixed[3], Rotation::cur());
-			let se = v_cells.query_fixed(common.fixed[4], Rotation::cur());
-
-			let s_mul_ab = v_cells.query_fixed(common.fixed[5], Rotation::cur());
-			let s_mul_cd = v_cells.query_fixed(common.fixed[6], Rotation::cur());
-			let s_constant = v_cells.query_fixed(common.fixed[7], Rotation::cur());
-
-			let selector = v_cells.query_selector(selector);
-
-			vec![
-				selector
-					* (a.clone() * sa
-						+ b.clone() * sb + c.clone() * sc
-						+ d.clone() * sd + e * se
-						+ a * b * s_mul_ab + c * d * s_mul_cd
-						+ s_constant),
-			]
+			...
 		});
 		selector
 	}
@@ -85,20 +64,10 @@ impl<F: FieldExt> Chip<F> for MainChip<F> {
 
 				ctx.enable(*selector)?;
 
-				self.advice
-					.clone()
-					.into_iter()
-					.enumerate()
-					.map(|(i, v)| ctx.copy_assign(common.advice[i], v))
-					.collect::<Result<Vec<_>, Error>>()?;
+				// e.g.:
+				ctx.assign_advice(common.advice[0], self.advice[0]);
 
-				self.fixed
-					.into_iter()
-					.enumerate()
-					.map(|(i, v)| ctx.assign_fixed(common.fixed[i], v))
-					.collect::<Result<Vec<_>, Error>>()?;
-
-				Ok(())
+				...
 			},
 		)
 	}
@@ -158,26 +127,8 @@ impl<F: FieldExt> Chipset<F> for AddChipset<F> {
 	fn synthesize(
 		self, common: &CommonConfig, config: &Self::Config, mut layouter: impl Layouter<F>,
 	) -> Result<Self::Output, Error> {
-		// We should satisfy the equation below
-		// x + y - res = 0
-
-		// Witness layout:
-		// | A   | B   | C   | D   | E  |
-		// | --- | --- | --- | --- | ---|
-		// | x   | y   | res |     |    |
-
-		let (zero, sum) = layouter.assign_region(
-			|| "assign_values",
-			|region| {
-				let mut ctx = RegionCtx::new(region, 0);
-				let zero = ctx.assign_advice(common.advice[0], Value::known(F::ZERO))?;
-				let sum =
-					ctx.assign_advice(common.advice[1], self.x.value().cloned() + self.y.value())?;
-				Ok((zero, sum))
-			},
-		)?;
-
-		let advices = [self.x, self.y, sum.clone(), zero.clone(), zero];
+	    /// e.g.:
+		let advices = [self.x, self.y, self.x + self.y, zero, zero];
 		let fixed = [F::ONE, F::ONE, -F::ONE, F::ZERO, F::ZERO, F::ZERO, F::ZERO, F::ZERO];
 		let main_chip = MainChip::new(advices, fixed);
 		main_chip.synthesize(common, &config.selector, layouter.namespace(|| "main_add"))?;
@@ -242,3 +193,30 @@ impl SomeCircuit {
 ```
 Each chip that accepts `CommonConfig` has the responsability to pick column that it needs for enforcing constraints.
 (NOTE: This is a design flaw - the higher-level circuit should be the one picking the columns based on the requirements of the chips/chipsets.)
+
+Additional utils: `RegionCtx`
+
+RegionCtx is a wrapper around Halo2's vanilla Region API. Example usage:
+```rust
+let mut ctx = RegionCtx::new(region, 0);
+// Enabling selectors
+ctx.enable(*selector)?;
+// Assign advice columm from instance
+let assigned_inst = ctx.assign_from_instance(common.advice[0], common.instance, 0)?;
+// Assign from constant
+let assigned_one = ctx.assign_from_constant(common.advice[1], F::ONE)?;
+// Assign to advice column
+let assigned_res = ctx.assign_advice(common.advice[2], some_value)?;
+// Copy assign to advice column
+let assigned_x = ctx.copy_assign(common.advice[3], self.x)?;
+// Assigned to fixed column
+let assigned_zero = ctx.assign_fixed(common.fixed[0], F::ZERO)?;
+// Constrain equality
+ctx.constrain_equal(assigned_x, assigned_zero)?;
+// Constrain to constant
+ctx.constrain_to_constant(assigned_one, F::ONE)?;
+// Move to next row
+ctx.next();
+// Return back to region
+let region = ctx.into_region();
+```
