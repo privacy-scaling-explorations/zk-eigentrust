@@ -80,11 +80,11 @@ pub fn assigned_as_bool<F: FieldExt>(bit: AssignedCell<F, F>) -> bool {
 }
 
 /// Returns field value from the assigned cell value
-pub fn assigned_to_field<F: FieldExt>(cell: AssignedCell<F, F>) -> F {
+pub fn assigned_to_field<F: FieldExt>(cell: AssignedCell<F, F>) -> Option<F> {
 	let cell_value = cell.value();
-	let mut arr = F::ZERO;
+	let mut arr = None;
 	cell_value.map(|f| {
-		arr = *f;
+		arr = Some(*f);
 	});
 	arr
 }
