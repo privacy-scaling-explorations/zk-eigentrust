@@ -665,7 +665,7 @@ mod test {
 		}
 	}
 
-	// #[ignore = "Aggregator takes too long to run"]
+	#[ignore = "Aggregator takes too long to run"]
 	#[test]
 	fn test_aggregator() {
 		// Testing Aggregator
@@ -674,16 +674,15 @@ mod test {
 		let params = generate_params::<E>(k);
 
 		let random_circuit_1 = MulChip::new(Scalar::one(), Scalar::one());
-		// let random_circuit_2 = MulChip::new(Scalar::one(), Scalar::one());
+		let random_circuit_2 = MulChip::new(Scalar::one(), Scalar::one());
 
 		let instances_1: Vec<Vec<Scalar>> = vec![vec![Scalar::one()]];
-		// let instances_2: Vec<Vec<Scalar>> = vec![vec![Scalar::one()]];
+		let instances_2: Vec<Vec<Scalar>> = vec![vec![Scalar::one()]];
 
 		let snark_1 = Snark::new(&params, random_circuit_1, instances_1, rng);
-		// let snark_2 = Snark::new(&params, random_circuit_2, instances_2, rng);
+		let snark_2 = Snark::new(&params, random_circuit_2, instances_2, rng);
 
-		// let snarks = vec![snark_1, snark_2];
-		let snarks = vec![snark_1];
+		let snarks = vec![snark_1, snark_2];
 		let NativeAggregator { svk, snarks, instances, as_proof, .. } =
 			NativeAggregator::new(&params, snarks);
 
@@ -693,7 +692,36 @@ mod test {
 		assert_eq!(prover.verify(), Ok(()));
 	}
 
-	// #[ignore = "Et Aggregator takes too long to run"]
+	#[ignore = "Aggregator takes too long to run"]
+	#[test]
+	fn test_aggregator_prod() {
+		// Testing Aggregator
+		let rng = &mut thread_rng();
+		let k = 21;
+		let params = generate_params::<E>(k);
+
+		let random_circuit_1 = MulChip::new(Scalar::one(), Scalar::one());
+		let random_circuit_2 = MulChip::new(Scalar::one(), Scalar::one());
+
+		let instances_1: Vec<Vec<Scalar>> = vec![vec![Scalar::one()]];
+		let instances_2: Vec<Vec<Scalar>> = vec![vec![Scalar::one()]];
+
+		let snark_1 = Snark::new(&params, random_circuit_1, instances_1, rng);
+		let snark_2 = Snark::new(&params, random_circuit_2, instances_2, rng);
+
+		let snarks = vec![snark_1, snark_2];
+		let NativeAggregator { svk, snarks, instances, as_proof, .. } =
+			NativeAggregator::new(&params, snarks);
+
+		let aggregator_circuit = AggregatorTestCircuit::new(svk, snarks, as_proof);
+		
+		let params = generate_params(k);
+		let res = prove_and_verify::<Bn256, _, _>(params, aggregator_circuit, &[&instances], rng)
+			.unwrap();
+		assert!(res);
+	}
+
+	#[ignore = "Et Aggregator takes too long to run"]
 	#[test]
 	fn test_et_aggregator_prod() {
 		const NUM_NEIGHBOURS: usize = 4;
