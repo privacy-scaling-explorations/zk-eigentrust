@@ -224,25 +224,6 @@ pub trait RnsParams<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_
 		constraints
 	}
 
-	// /// Constraint for the binary part of `Chinese Remainder Theorem`.
-	// fn constrain_binary_crt_val(t: [Value<N>; NUM_LIMBS], result: [Value<N>; NUM_LIMBS], residues: Vec<Value<N>>) -> bool {
-	// 	let lsh_one = Value::known(Self::left_shifters()[1]);
-	// 	let lsh_two = Value::known(Self::left_shifters()[2]);
-
-	// 	let mut is_satisfied = true;
-	// 	let mut v = Value::known(N::ZERO);
-	// 	for i in (0..NUM_LIMBS).step_by(2) {
-	// 		let (t_lo, t_hi) = (t[i], t[i + 1]);
-	// 		let (r_lo, r_hi) = (result[i], result[i + 1]);
-	// 		// CONSTRAINT
-	// 		let res = t_lo + t_hi * lsh_one - r_lo - r_hi * lsh_one - residues[i / 2] * lsh_two + v;
-	// 		v = residues[i / 2];
-	// 		let res_is_zero: bool = res.map(|r| r.is_zero().into());
-	// 		is_satisfied &= res_is_zero
-	// 	}
-	// 	is_satisfied
-	// }
-
 	/// Composes integer limbs into single [`FieldExt`] value.
 	fn compose(input: [N; NUM_LIMBS]) -> N {
 		let left_shifters = Self::left_shifters();

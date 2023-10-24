@@ -292,13 +292,10 @@ where
 	fn synthesize(
 		self, common: &CommonConfig, selector: &Selector, mut layouter: impl Layouter<N>,
 	) -> Result<Self::Output, Error> {
-		// let integer = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::from_limbs(self.assigned_integer.limbs);
-		// let reduction_witness = integer.reduce();
-
 		let native_reduction_witness = self.assigned_integer.integer.reduce();
+		
 		let reduction_witness = {
 			let p_prime = P::negative_wrong_modulus_decomposed().map(Value::known);
-			let p_in_n = Value::known(P::wrong_modulus_in_native_modulus());
 			let a = self.assigned_integer.value();
 			let (q, res) = P::construct_reduce_qr_val(a);
 
@@ -310,12 +307,6 @@ where
 
 			// Calculate the residue values for the ReductionWitness.
 			let residues = P::residues_val(&res, &t);
-
-			// let satisfied = P::constrain_binary_crt(t, res, residues.clone());
-			// assert!(satisfied);
-
-			// let native_constraint = P::compose(integer.limbs) - q * p_in_n - P::compose(res);
-			// assert!(native_constraint == N::ZERO);
 
 			// Construct correct type for the ReductionWitness
 			let result_int = UnassignedInteger::new(native_reduction_witness.result, res);
@@ -440,14 +431,10 @@ where
 	fn synthesize(
 		self, common: &CommonConfig, selector: &Selector, mut layouter: impl Layouter<N>,
 	) -> Result<Self::Output, Error> {
-		// let x = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::from_limbs(self.x.limbs);
-		// let y = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::from_limbs(self.y.limbs);
-		// let reduction_witness = x.add(&y);
-
 		let native_reduction_witness = self.x.integer.add(&self.y.integer);
+		
 		let reduction_witness = {
 			let p_prime = P::negative_wrong_modulus_decomposed().map(Value::known);
-			let p_in_n = Value::known(P::wrong_modulus_in_native_modulus());
 			let a = self.x.value();
 			let b = self.y.value();
 			let (q, res) = P::construct_add_qr_val(a, b);
@@ -462,13 +449,6 @@ where
 
 			// Calculate the residue values for the ReductionWitness.
 			let residues = P::residues_val(&res, &t);
-
-			// let satisfied = P::constrain_binary_crt(t, res, residues.clone());
-			// assert!(satisfied);
-
-			// let native_constraint =
-			// 	P::compose(self.limbs) + P::compose(other.limbs) - q * p_in_n - P::compose(res);
-			// assert!(native_constraint == N::ZERO);
 
 			// Construct correct type for the ReductionWitness
 			let result_int = UnassignedInteger::new(native_reduction_witness.result, res);
@@ -597,14 +577,10 @@ where
 	fn synthesize(
 		self, common: &CommonConfig, selector: &Selector, mut layouter: impl Layouter<N>,
 	) -> Result<Self::Output, Error> {
-		// let x = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::from_limbs(self.x.limbs);
-		// let y = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::from_limbs(self.y.limbs);
-		// let reduction_witness = x.sub(&y);
-
 		let native_reduction_witness = self.x.integer.sub(&self.y.integer);
+		
 		let reduction_witness = {
 			let p_prime = P::negative_wrong_modulus_decomposed().map(Value::known);
-			let p_in_n = Value::known(P::wrong_modulus_in_native_modulus());
 			let a = self.x.value();
 			let b = self.y.value();
 			let (q, res) = P::construct_sub_qr_val(a, b);
@@ -618,13 +594,6 @@ where
 
 			// Calculate the residue values for the ReductionWitness.
 			let residues = P::residues_val(&res, &t);
-
-			// let satisfied = P::constrain_binary_crt(t, res, residues.clone());
-			// assert!(satisfied);
-
-			// let native_constraint =
-			// 	P::compose(self.limbs) - P::compose(other.limbs) + q * p_in_n - P::compose(res);
-			// assert!(native_constraint == N::ZERO);
 
 			// Construct correct type for the ReductionWitness
 			let result_int = UnassignedInteger::new(native_reduction_witness.result, res);
@@ -757,14 +726,10 @@ where
 	fn synthesize(
 		self, common: &CommonConfig, selector: &Selector, mut layouter: impl Layouter<N>,
 	) -> Result<Self::Output, Error> {
-		// let x = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::from_limbs(self.x.limbs);
-		// let y = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::from_limbs(self.y.limbs);
-		// let reduction_witness = x.mul(&y);
-
 		let native_reduction_witness = self.x.integer.mul(&self.y.integer);
+		
 		let reduction_witness = {
 			let p_prime = P::negative_wrong_modulus_decomposed().map(Value::known);
-			let p_in_n = Value::known(P::wrong_modulus_in_native_modulus());
 			let a = self.x.value();
 			let b = self.y.value();
 			let (q, res) = P::construct_mul_qr_val(a, b);
@@ -782,14 +747,6 @@ where
 
 			// Calculate the residue values for the ReductionWitness.
 			let residues = P::residues_val(&res, &t);
-
-			// let satisfied = P::constrain_binary_crt(t, res, residues.clone());
-			// assert!(satisfied);
-
-			// let native_constraint = P::compose(self.limbs) * P::compose(other.limbs)
-			// 	- P::compose(q) * p_in_n
-			// 	- P::compose(res);
-			// assert!(native_constraint == N::ZERO);
 
 			// Construct correct type for the ReductionWitness.
 			let result_int = UnassignedInteger::new(native_reduction_witness.result, res);
@@ -924,14 +881,10 @@ where
 	fn synthesize(
 		self, common: &CommonConfig, selector: &Selector, mut layouter: impl Layouter<N>,
 	) -> Result<Self::Output, Error> {
-		// let x = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::from_limbs(self.x.limbs);
-		// let y = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::from_limbs(self.y.limbs);
-		// let reduction_witness = x.div(&y);
-
 		let native_reduction_witness = self.x.integer.div(&self.y.integer);
+
 		let reduction_witness = {
 			let p_prime = P::negative_wrong_modulus_decomposed().map(Value::known);
-			let p_in_n = Value::known(P::wrong_modulus_in_native_modulus());
 			let a = self.x.value();
 			let b = self.y.value();
 			let (q, res) = P::construct_div_qr_val(a, b);
@@ -948,14 +901,6 @@ where
 
 			// Calculate the residue values for the ReductionWitness.
 			let residues = P::residues_val(&res, &t);
-
-			// let satisfied = P::constrain_binary_crt(t, res, residues.clone());
-			// assert!(satisfied);
-
-			// let native_constraints = P::compose(other.limbs) * P::compose(res)
-			// 	- P::compose(self.limbs)
-			// 	- P::compose(q) * p_in_n;
-			// assert!(native_constraints == N::ZERO);
 
 			// Construct correct type for the ReductionWitness.
 			let result_int = UnassignedInteger::new(native_reduction_witness.result, res);
