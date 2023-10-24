@@ -85,6 +85,8 @@ pub struct UnassignedInteger<
 > where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 {
+	// Original value of the unassigned integer.
+	pub(crate) integer: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
 	/// UnassignedInteger value limbs.
 	pub(crate) limbs: [Value<N>; NUM_LIMBS],
 	/// Phantom data for the Wrong Field.
@@ -100,9 +102,10 @@ where
 {
 	/// Creates a new unassigned integer object
 	pub fn new(
+		integer: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
 		limbs: [Value<N>; NUM_LIMBS],
 	) -> Self {
-		Self { limbs, _wrong_field: PhantomData, _rns: PhantomData }
+		Self { integer, limbs, _wrong_field: PhantomData, _rns: PhantomData }
 	}
 }
 
@@ -113,6 +116,7 @@ where
 {
 	fn from(int: Integer<W, N, NUM_LIMBS, NUM_BITS, P>) -> Self {
 		Self {
+			integer: int.clone(),
 			limbs: int.limbs.map(|x| Value::known(x)),
 			_wrong_field: PhantomData,
 			_rns: PhantomData,
@@ -127,6 +131,7 @@ where
 {
 	fn without_witnesses(&self) -> Self {
 		Self {
+			integer: self.integer.clone(),
 			limbs: [Value::unknown(); NUM_LIMBS],
 			_wrong_field: PhantomData,
 			_rns: PhantomData,
@@ -191,6 +196,7 @@ where
 	}
 
 	let assigned_result = AssignedInteger::new(
+		reduction_witness.result.integer.clone(),
 		assigned_result.map(|x| x.unwrap()),
 	);
 	Ok(assigned_result)
@@ -289,6 +295,8 @@ where
 	) -> Result<Self::Output, Error> {
 		// let integer = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::from_limbs(self.assigned_integer.limbs);
 		// let reduction_witness = integer.reduce();
+
+		let native_reduction_witness = self.assigned_integer.integer.reduce();
 		let reduction_witness = {
 			let p_prime = P::negative_wrong_modulus_decomposed().map(Value::known);
 			let p_in_n = Value::known(P::wrong_modulus_in_native_modulus());
@@ -311,7 +319,7 @@ where
 			// assert!(native_constraint == N::ZERO);
 	
 			// Construct correct type for the ReductionWitness
-			let result_int = UnassignedInteger::new(res);
+			let result_int = UnassignedInteger::new(native_reduction_witness.result, res);
 			let quotient_n = QuotientVal::Short(q);
 			ReductionWitnessVal { result: result_int, quotient: quotient_n, intermediate: t, residues }
 		};
@@ -432,6 +440,7 @@ where
 		// let y = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::from_limbs(self.y.limbs);
 		// let reduction_witness = x.add(&y);
 
+		let native_reduction_witness = self.x.integer.add(&self.y.integer);
 		let reduction_witness = {
 			let p_prime = P::negative_wrong_modulus_decomposed().map(Value::known);
 			let p_in_n = Value::known(P::wrong_modulus_in_native_modulus());
@@ -456,7 +465,7 @@ where
 			// assert!(native_constraint == N::ZERO);
 	
 			// Construct correct type for the ReductionWitness
-			let result_int = UnassignedInteger::new(res);
+			let result_int = UnassignedInteger::new(native_reduction_witness.result, res);
 			let quotient_n = QuotientVal::Short(q);
 			ReductionWitnessVal { result: result_int, quotient: quotient_n, intermediate: t, residues }
 		};
@@ -581,6 +590,7 @@ where
 		// let y = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::from_limbs(self.y.limbs);
 		// let reduction_witness = x.sub(&y);
 
+		let native_reduction_witness = self.x.integer.sub(&self.y.integer);
 		let reduction_witness = {
 			let p_prime = P::negative_wrong_modulus_decomposed().map(Value::known);
 			let p_in_n = Value::known(P::wrong_modulus_in_native_modulus());
@@ -605,7 +615,7 @@ where
 			// assert!(native_constraint == N::ZERO);
 
 			// Construct correct type for the ReductionWitness
-			let result_int = UnassignedInteger::new(res);
+			let result_int = UnassignedInteger::new(native_reduction_witness.result, res);
 			let quotient_n = QuotientVal::Short(q);
 
 			ReductionWitnessVal { result: result_int, quotient: quotient_n, intermediate: t, residues }
@@ -734,6 +744,7 @@ where
 		// let y = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::from_limbs(self.y.limbs);
 		// let reduction_witness = x.mul(&y);
 
+		let native_reduction_witness = self.x.integer.mul(&self.y.integer);
 		let reduction_witness = {
 			let p_prime = P::negative_wrong_modulus_decomposed().map(Value::known);
 			let p_in_n = Value::known(P::wrong_modulus_in_native_modulus());
@@ -762,8 +773,8 @@ where
 			// assert!(native_constraint == N::ZERO);
 
 			// Construct correct type for the ReductionWitness.
-			let result_int = UnassignedInteger::new(res);
-			let quotient_int = QuotientVal::Long(UnassignedInteger::new(q));
+			let result_int = UnassignedInteger::new(native_reduction_witness.result, res);
+			let quotient_int = QuotientVal::Long(UnassignedInteger::new(native_reduction_witness.quotient.long().unwrap(), q));
 			ReductionWitnessVal { result: result_int, quotient: quotient_int, intermediate: t, residues }
 		};
 
@@ -891,6 +902,7 @@ where
 		// let y = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::from_limbs(self.y.limbs);
 		// let reduction_witness = x.div(&y);
 
+		let native_reduction_witness = self.x.integer.div(&self.y.integer);
 		let reduction_witness = {
 			let p_prime = P::negative_wrong_modulus_decomposed().map(Value::known);
 			let p_in_n = Value::known(P::wrong_modulus_in_native_modulus());
@@ -919,8 +931,8 @@ where
 			// assert!(native_constraints == N::ZERO);
 
 			// Construct correct type for the ReductionWitness.
-			let result_int = UnassignedInteger::new(res);
-			let quotient_int = QuotientVal::Long(UnassignedInteger::new(q));
+			let result_int = UnassignedInteger::new(native_reduction_witness.result, res);
+			let quotient_int = QuotientVal::Long(UnassignedInteger::new(native_reduction_witness.quotient.long().unwrap(), q));
 
 			ReductionWitnessVal { result: result_int, quotient: quotient_int, intermediate: t, residues }
 		};
@@ -1035,6 +1047,8 @@ pub struct AssignedInteger<
 > where
 	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
 {
+	// Original value of the assigned integer.
+	pub(crate) integer: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
 	// Limbs of the assigned integer.
 	pub(crate) limbs: [AssignedCell<N, N>; NUM_LIMBS],
 
@@ -1048,9 +1062,10 @@ where
 {
 	/// Returns a new `AssignedInteger` given its values
 	pub fn new(
+		integer: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
 		limbs: [AssignedCell<N, N>; NUM_LIMBS],
 	) -> Self {
-		Self { limbs, _p: PhantomData }
+		Self { integer, limbs, _p: PhantomData }
 	}
 
 	/// Retuns a value of AssignedInteger
@@ -1109,7 +1124,7 @@ where
 			},
 		)?;
 
-		let x_assigned = AssignedInteger::new( assigned_limbs.try_into().unwrap());
+		let x_assigned = AssignedInteger::new( self.x.integer, assigned_limbs.try_into().unwrap());
 		Ok(x_assigned)
 	}
 }
@@ -1164,7 +1179,7 @@ where
 			},
 		)?;
 
-		let x_assigned = AssignedInteger::new(assigned_limbs.try_into().unwrap());
+		let x_assigned = AssignedInteger::new(self.x, assigned_limbs.try_into().unwrap());
 		Ok(x_assigned)
 	}
 }
@@ -1292,7 +1307,7 @@ mod test {
 			)?;
 
 			let x =
-				AssignedInteger::new(x_limbs_assigned.map(|x| x.unwrap()));
+				AssignedInteger::new(self.x.integer, x_limbs_assigned.map(|x| x.unwrap()));
 			Ok(x)
 		}
 	}
@@ -1344,9 +1359,9 @@ mod test {
 			)?;
 
 			let x =
-				AssignedInteger::new(x_limbs_assigned.map(|x| x.unwrap()));
+				AssignedInteger::new(self.x.integer, x_limbs_assigned.map(|x| x.unwrap()));
 			let y =
-				AssignedInteger::new(y_limbs_assigned.map(|x| x.unwrap()));
+				AssignedInteger::new(self.y.integer, y_limbs_assigned.map(|x| x.unwrap()));
 			Ok((x, y))
 		}
 	}

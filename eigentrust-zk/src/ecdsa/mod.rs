@@ -52,8 +52,8 @@ where
 	/// Constructor for unassigned signature
 	pub fn new(sig: Signature<C, N, NUM_LIMBS, NUM_BITS, P>) -> Self {
 		Self {
-			r: UnassignedInteger::new(sig.r.limbs.map(|x| Value::known(x))),
-			s: UnassignedInteger::new(sig.s.limbs.map(|x| Value::known(x))),
+			r: UnassignedInteger::new(sig.r.clone(), sig.r.limbs.map(|x| Value::known(x))),
+			s: UnassignedInteger::new(sig.s.clone(), sig.s.limbs.map(|x| Value::known(x))),
 		}
 	}
 }
@@ -195,8 +195,8 @@ where
 {
 	/// Creates a new Unassigned Public Key object
 	pub fn new(pk: PublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>) -> Self {
-		let x = UnassignedInteger::new(pk.0.x.limbs.map(|x| Value::known(x)));
-		let y = UnassignedInteger::new(pk.0.y.limbs.map(|x| Value::known(x)));
+		let x = UnassignedInteger::new(pk.0.x.clone(), pk.0.x.limbs.map(|x| Value::known(x)));
+		let y = UnassignedInteger::new(pk.0.y.clone(), pk.0.y.limbs.map(|x| Value::known(x)));
 		let p = UnassignedEcPoint::new(x, y);
 		Self(p)
 	}
@@ -453,7 +453,7 @@ where
 		let x_candidate = r_point.x;
 
 		// let new_x_int = Integer::<C::Base, N, NUM_LIMBS, NUM_BITS, P>::from_limbs(x_candidate.limbs);
-		let new_x = AssignedInteger::new(x_candidate.limbs);
+		let new_x = AssignedInteger::new(x_candidate.integer, x_candidate.limbs);
 		let reducer = IntegerReduceChip::new(new_x);
 		let reduced_x = reducer.synthesize(
 			common,
@@ -461,7 +461,11 @@ where
 			layouter.namespace(|| "reduce base in scalar"),
 		)?;
 
-		let ecc_eq_chipset = IntegerEqualChipset::new(reduced_x, self.signature.r);
+		let new_r: Integer::<C::Base, N, NUM_LIMBS, NUM_BITS, P> = Integer::new(self.signature.r.integer.value());
+		let r_integer = ConstIntegerAssigner::new(new_r);
+		let r_integer = r_integer.synthesize(common, &(), layouter.namespace(|| "r"))?;
+		
+		let ecc_eq_chipset = IntegerEqualChipset::new(reduced_x, r_integer);
 		let is_eq = ecc_eq_chipset.synthesize(
 			common,
 			&config.int_eq,

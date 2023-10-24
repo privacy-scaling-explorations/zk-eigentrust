@@ -44,7 +44,7 @@ where
 	E::Scalar: FieldExt,
 {
 	protocol: PlonkProtocol<E::G1Affine>,
-	instances: Vec<Vec<Value<E::Scalar>>>,
+	instances: (Vec<Vec<E::Scalar>>, Vec<Vec<Value<E::Scalar>>>),
 	proof: Option<Vec<u8>>,
 }
 
@@ -61,11 +61,14 @@ where
 	fn from(snark: Snark<E, NUM_LIMBS, NUM_BITS, P, S, EC>) -> Self {
 		Self {
 			protocol: snark.protocol,
-			instances: snark
+			instances: (
+				snark.instances.clone(), 
+				snark
 				.instances
 				.into_iter()
 				.map(|instances| instances.into_iter().map(Value::known).collect_vec())
-				.collect(),
+				.collect()
+			),
 			proof: Some(snark.proof),
 		}
 	}
@@ -80,11 +83,7 @@ where
 	pub fn without_witness(&self) -> Self {
 		UnassignedSnark {
 			protocol: self.protocol.clone(),
-			instances: self
-				.instances
-				.iter()
-				.map(|instances| vec![Value::unknown(); instances.len()])
-				.collect(),
+			instances: self.instances.clone(),
 			proof: None,
 		}
 	}
@@ -96,11 +95,12 @@ where
 
 #[derive(Debug)]
 /// AggregatorChipset
-pub struct AggregatorChipset<E, const NUM_LIMBS: usize, const NUM_BITS: usize, P, S, EC>
+pub struct AggregatorChipset<E, const NUM_LIMBS: usize, const NUM_BITS: usize, P, S, H, EC>
 where
 	E: MultiMillerLoop,
 	P: RnsParams<<E::G1Affine as CurveAffine>::Base, E::Scalar, NUM_LIMBS, NUM_BITS>,
 	S: SpongeHasherChipset<E::Scalar>,
+	H: SpongeHasher<E::Scalar>,
 	EC: EccParams<E::G1Affine>,
 	<E::G1Affine as CurveAffine>::Base: FieldExt,
 	E::Scalar: FieldExt,
@@ -112,15 +112,16 @@ where
 	// Accumulation Scheme Proof
 	as_proof: Option<Vec<u8>>,
 	// Phantom Data
-	_p: PhantomData<(P, S, EC, E)>,
+	_p: PhantomData<(P, S, H, EC, E)>,
 }
 
-impl<E, const NUM_LIMBS: usize, const NUM_BITS: usize, P, S, EC>
-	AggregatorChipset<E, NUM_LIMBS, NUM_BITS, P, S, EC>
+impl<E, const NUM_LIMBS: usize, const NUM_BITS: usize, P, S, H, EC>
+	AggregatorChipset<E, NUM_LIMBS, NUM_BITS, P, S, H, EC>
 where
 	E: MultiMillerLoop,
 	P: RnsParams<<E::G1Affine as CurveAffine>::Base, E::Scalar, NUM_LIMBS, NUM_BITS>,
 	S: SpongeHasherChipset<E::Scalar>,
+	H: SpongeHasher<E::Scalar>,
 	EC: EccParams<E::G1Affine>,
 	<E::G1Affine as CurveAffine>::Base: FieldExt,
 	E::Scalar: FieldExt,
@@ -133,12 +134,13 @@ where
 	}
 }
 
-impl<E, const NUM_LIMBS: usize, const NUM_BITS: usize, P, S, EC> Clone
-	for AggregatorChipset<E, NUM_LIMBS, NUM_BITS, P, S, EC>
+impl<E, const NUM_LIMBS: usize, const NUM_BITS: usize, P, S, H, EC> Clone
+	for AggregatorChipset<E, NUM_LIMBS, NUM_BITS, P, S, H, EC>
 where
 	E: MultiMillerLoop,
 	P: RnsParams<<E::G1Affine as CurveAffine>::Base, E::Scalar, NUM_LIMBS, NUM_BITS>,
 	S: SpongeHasherChipset<E::Scalar>,
+	H: SpongeHasher<E::Scalar>,
 	EC: EccParams<E::G1Affine>,
 	<E::G1Affine as CurveAffine>::Base: FieldExt,
 	E::Scalar: FieldExt,
@@ -181,12 +183,13 @@ where
 	}
 }
 
-impl<E, const NUM_LIMBS: usize, const NUM_BITS: usize, P, S, EC> Chipset<E::Scalar>
-	for AggregatorChipset<E, NUM_LIMBS, NUM_BITS, P, S, EC>
+impl<E, const NUM_LIMBS: usize, const NUM_BITS: usize, P, S, H, EC> Chipset<E::Scalar>
+	for AggregatorChipset<E, NUM_LIMBS, NUM_BITS, P, S, H, EC>
 where
 	E: MultiMillerLoop,
 	P: RnsParams<<E::G1Affine as CurveAffine>::Base, E::Scalar, NUM_LIMBS, NUM_BITS>,
 	S: SpongeHasherChipset<E::Scalar>,
+	H: SpongeHasher<E::Scalar>,
 	EC: EccParams<E::G1Affine>,
 	<E::G1Affine as CurveAffine>::Base: FieldExt,
 	E::Scalar: FieldExt,
@@ -207,7 +210,7 @@ where
 				let mut assigned_instances = Vec::new();
 				for snark in &self.snarks {
 					let mut instances_collector = Vec::new();
-					for inst_vec in &snark.instances {
+					for inst_vec in &snark.instances.1 {
 						let mut inst_vec_collector = Vec::new();
 						for inst in inst_vec {
 							let value = ctx.assign_advice(common.advice[advice_i], *inst)?;
@@ -242,11 +245,11 @@ where
 			let mut accumulators = Vec::new();
 			for (i, snark) in self.snarks.iter().enumerate() {
 				let mut loaded_instances = Vec::new();
-				for inst_vec in &assigned_instances[i] {
+				for (j, inst_vec) in assigned_instances[i].iter().enumerate() {
 					let mut loaded_inst_vec = Vec::new();
-					for inst in inst_vec {
+					for (k, inst) in inst_vec.iter().enumerate() {
 						let loaded_instance =
-							Halo2LScalar::new(inst.clone(), loader_config.clone());
+							Halo2LScalar::new((snark.instances.0[j][k].clone(), inst.clone()), loader_config.clone());
 						loaded_inst_vec.push(loaded_instance);
 					}
 					loaded_instances.push(loaded_inst_vec);
@@ -262,6 +265,7 @@ where
 					NUM_BITS,
 					P,
 					S,
+					H,
 					EC,
 				> = TranscriptReadChipset::new(snark.proof(), loader_config.clone());
 
@@ -286,6 +290,7 @@ where
 				NUM_BITS,
 				P,
 				S,
+				H,
 				EC,
 			> = TranscriptReadChipset::new(as_proof, loader_config);
 			let proof =
@@ -642,7 +647,7 @@ mod test {
 			&self, config: Self::Config, mut layouter: impl Layouter<Scalar>,
 		) -> Result<(), Error> {
 			let aggregator_chipset =
-				AggregatorChipset::<E, NUM_LIMBS, NUM_BITS, P, SpongeHasher, EC>::new(
+				AggregatorChipset::<E, NUM_LIMBS, NUM_BITS, P, SpongeHasher, PoseidonNativeSponge, EC>::new(
 					self.svk,
 					self.snarks.clone(),
 					self.as_proof.clone(),

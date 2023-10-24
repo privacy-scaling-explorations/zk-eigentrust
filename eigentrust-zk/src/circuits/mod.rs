@@ -153,5 +153,6 @@ pub type Threshold4 = ThresholdCircuit<
 	Bn256_4_68,
 	Bn254Params,
 	SpongeHasher,
+	PoseidonNativeSponge,
 	Params,
 >;

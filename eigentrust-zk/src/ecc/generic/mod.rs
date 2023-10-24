@@ -17,7 +17,7 @@ use crate::{
 		UnassignedInteger,
 	},
 	params::{ecc::EccParams, rns::RnsParams},
-	utils::{be_assigned_bits_to_usize, assigned_to_field},
+	utils::be_assigned_bits_to_usize,
 	Chip, Chipset, CommonConfig, FieldExt, UnassignedValue,
 };
 use halo2::{
@@ -27,7 +27,6 @@ use halo2::{
 	plonk::Error,
 };
 use itertools::Itertools;
-use num_bigint::BigUint;
 use std::marker::PhantomData;
 
 /// Structure for the UnassignedEcPoint
@@ -133,23 +132,7 @@ where
 
 	/// Checks if given point is at the infinity or not
 	pub fn is_infinity(&self) -> bool {
-		// self.x.limbs == Integer::zero().limbs && self.y.limbs == Integer::zero().limbs
-
-		// let mut is_infinity= true;
-		// for i in 0..NUM_LIMBS {
-		// 	let x_i = assigned_to_field(self.x.limbs[i].clone());
-		// 	is_infinity &= x_i == N::ZERO;
-
-		// 	let y_i = assigned_to_field(self.y.limbs[i].clone());
-		// 	is_infinity &= y_i == N::ZERO;
-		// }
-		// is_infinity
-
-
-		let res = self.x.value().zip(self.y.value()).map(|(x, y)| x == y && x == BigUint::default());
-		let mut is_infinity = false;
-		res.map(|r| is_infinity |= r);
-		is_infinity
+		self.x.integer == Integer::zero() && self.y.integer == Integer::zero()
 	}
 }
 
@@ -826,11 +809,17 @@ where
 				Some(select.synthesize(common, &config.main, layouter.namespace(|| "acc_y"))?);
 		}
 
-		let selected_point = {
+		let selected_point = if self.bit.bit {
 			let selected_x_integer =
-				AssignedInteger::new(selected_x.map(|x| x.unwrap()));
+				AssignedInteger::new(self.p.x.integer, selected_x.map(|x| x.unwrap()));
 			let selected_y_integer =
-				AssignedInteger::new(selected_y.map(|x| x.unwrap()));
+				AssignedInteger::new(self.p.y.integer, selected_y.map(|x| x.unwrap()));
+			AssignedEcPoint::new(selected_x_integer, selected_y_integer)
+		} else {
+			let selected_x_integer =
+				AssignedInteger::new(self.q.x.integer, selected_x.map(|x| x.unwrap()));
+			let selected_y_integer =
+				AssignedInteger::new(self.q.y.integer, selected_y.map(|x| x.unwrap()));
 			AssignedEcPoint::new(selected_x_integer, selected_y_integer)
 		};
 
@@ -913,18 +902,13 @@ where
 		// Subtracting curve's bit size from binary field bit size to find the bits difference
 		let bits_difference = NUM_BITS * NUM_LIMBS - (C::ScalarExt::NUM_BITS as usize);
 		let bits = &bits[bits_difference..];
-
-		// // let mut bits_bool = self.scalar.integer.to_bits();
-		// let mut bits_bool = {
-		// 	let integer = Integer::<C::Base, N, NUM_LIMBS, NUM_BITS, P>::from_limbs(self.scalar.limbs);
-		// 	integer.to_bits()
-		// };
-		// bits_bool.reverse();
-		// let bits_bool = &bits_bool[bits_difference..];
+		let mut bits_bool = self.scalar.integer.to_bits();
+		bits_bool.reverse();
+		let bits_bool = &bits_bool[bits_difference..];
 
 		let mut assigned_bits = Vec::new();
 		for i in 0..bits.len() {
-			let assigned_bit = AssignedBit::new(bits[i].clone());
+			let assigned_bit = AssignedBit::new(bits_bool[i], bits[i].clone());
 			assigned_bits.push(assigned_bit);
 		}
 
@@ -1392,12 +1376,13 @@ where
 
 #[derive(Debug, Clone)]
 struct AssignedBit<N: FieldExt> {
+	bit: bool,
 	assigned_value: AssignedCell<N, N>,
 }
 
 impl<N: FieldExt> AssignedBit<N> {
-	pub fn new(assigned_value: AssignedCell<N, N>) -> Self {
-		Self { assigned_value }
+	pub fn new(bit: bool, assigned_value: AssignedCell<N, N>) -> Self {
+		Self { bit, assigned_value }
 	}
 }
 
@@ -1785,6 +1770,7 @@ mod test {
 					}
 
 					let value_assigned = AssignedInteger::new(
+						self.value.integer.clone(),
 						value_limbs.map(|x| x.unwrap()),
 					);
 					Ok(value_assigned)
@@ -1907,6 +1893,7 @@ mod test {
 						ctx.next();
 
 						let scalar_assigned = AssignedInteger::new(
+							self.scalars[i].integer.clone(),
 							assigned_limbs.map(|x| x.unwrap()),
 						);
 						assigned_scalars.push(scalar_assigned);

@@ -57,6 +57,7 @@ pub struct ThresholdCircuit<
 	P,
 	EC,
 	S,
+	H,
 	R,
 > where
 	E::Scalar: FieldExt,
@@ -64,6 +65,7 @@ pub struct ThresholdCircuit<
 	P: RnsParams<<E::G1Affine as CurveAffine>::Base, E::Scalar, NUM_LIMBS, NUM_BITS>,
 	EC: EccParams<E::G1Affine>,
 	S: SpongeHasherChipset<E::Scalar>,
+	H: SpongeHasher<E::Scalar>,
 	R: RoundParams<E::Scalar, HASHER_WIDTH>,
 {
 	sets: Vec<Value<E::Scalar>>,
@@ -75,7 +77,7 @@ pub struct ThresholdCircuit<
 	snarks: Vec<UnassignedSnark<E>>,
 	as_proof: Option<Vec<u8>>,
 
-	_p: PhantomData<(P, EC, S, R)>,
+	_p: PhantomData<(P, EC, S, H, R)>,
 }
 
 impl<
@@ -89,6 +91,7 @@ impl<
 		P,
 		EC,
 		S,
+		H,
 		R,
 	>
 	ThresholdCircuit<
@@ -102,6 +105,7 @@ impl<
 		P,
 		EC,
 		S,
+		H,
 		R,
 	> where
 	E::Scalar: FieldExt,
@@ -109,6 +113,7 @@ impl<
 	P: RnsParams<<E::G1Affine as CurveAffine>::Base, E::Scalar, NUM_LIMBS, NUM_BITS>,
 	EC: EccParams<E::G1Affine>,
 	S: SpongeHasherChipset<E::Scalar>,
+	H: SpongeHasher<E::Scalar>,
 	R: RoundParams<E::Scalar, HASHER_WIDTH>,
 {
 	/// Constructs a new ThresholdCircuit
@@ -151,6 +156,7 @@ impl<
 		P,
 		EC,
 		S,
+		H,
 		R,
 	> Circuit<E::Scalar>
 	for ThresholdCircuit<
@@ -164,6 +170,7 @@ impl<
 		P,
 		EC,
 		S,
+		H,
 		R,
 	> where
 	E::Scalar: FieldExt,
@@ -171,6 +178,7 @@ impl<
 	P: RnsParams<<E::G1Affine as CurveAffine>::Base, E::Scalar, NUM_LIMBS, NUM_BITS>,
 	EC: EccParams<E::G1Affine>,
 	S: SpongeHasherChipset<E::Scalar>,
+	H: SpongeHasher<E::Scalar>,
 	R: RoundParams<E::Scalar, HASHER_WIDTH>,
 {
 	type Config = ThresholdCircuitConfig<E::Scalar, S>;
@@ -400,7 +408,7 @@ impl<
 
 		// verify if the "sets" & "scores" are valid, using aggregation verify
 		// TODO: Use actual set and scores as PI for aggregator
-		let aggregator = AggregatorChipset::<E, NUM_LIMBS, NUM_BITS, P, S, EC>::new(
+		let aggregator = AggregatorChipset::<E, NUM_LIMBS, NUM_BITS, P, S, H, EC>::new(
 			self.svk,
 			self.snarks.clone(),
 			self.as_proof.clone(),
@@ -934,6 +942,7 @@ mod tests {
 			P,
 			EC,
 			S,
+			PoseidonNativeSponge,
 			R,
 		> = ThresholdCircuit::new(
 			&sets, &scores, &num_decomposed, &den_decomposed, svk, snarks, as_proof,
@@ -1033,6 +1042,7 @@ mod tests {
 			P,
 			EC,
 			S,
+			PoseidonNativeSponge,
 			R,
 		> = ThresholdCircuit::new::<SN>(
 			&sets, &scores, &num_decomposed, &den_decomposed, svk, snarks, as_proof,
