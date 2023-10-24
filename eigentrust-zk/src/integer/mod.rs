@@ -293,7 +293,7 @@ where
 		self, common: &CommonConfig, selector: &Selector, mut layouter: impl Layouter<N>,
 	) -> Result<Self::Output, Error> {
 		let native_reduction_witness = self.assigned_integer.integer.reduce();
-		
+
 		let reduction_witness = {
 			let p_prime = P::negative_wrong_modulus_decomposed().map(Value::known);
 			let a = self.assigned_integer.value();
@@ -432,7 +432,7 @@ where
 		self, common: &CommonConfig, selector: &Selector, mut layouter: impl Layouter<N>,
 	) -> Result<Self::Output, Error> {
 		let native_reduction_witness = self.x.integer.add(&self.y.integer);
-		
+
 		let reduction_witness = {
 			let p_prime = P::negative_wrong_modulus_decomposed().map(Value::known);
 			let a = self.x.value();
@@ -578,7 +578,7 @@ where
 		self, common: &CommonConfig, selector: &Selector, mut layouter: impl Layouter<N>,
 	) -> Result<Self::Output, Error> {
 		let native_reduction_witness = self.x.integer.sub(&self.y.integer);
-		
+
 		let reduction_witness = {
 			let p_prime = P::negative_wrong_modulus_decomposed().map(Value::known);
 			let a = self.x.value();
@@ -727,7 +727,7 @@ where
 		self, common: &CommonConfig, selector: &Selector, mut layouter: impl Layouter<N>,
 	) -> Result<Self::Output, Error> {
 		let native_reduction_witness = self.x.integer.mul(&self.y.integer);
-		
+
 		let reduction_witness = {
 			let p_prime = P::negative_wrong_modulus_decomposed().map(Value::known);
 			let a = self.x.value();
