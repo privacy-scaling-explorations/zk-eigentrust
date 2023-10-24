@@ -295,11 +295,6 @@ where
 	///  This method tests for `self` and `other` values to be equal, and is
 	/// used by `==`.
 	fn eq(&self, other: &Self) -> bool {
-		// let lhs = assigned_to_field(self.inner.clone());
-		// let rhs = assigned_to_field(other.inner.clone());
-
-		// lhs == rhs
-
 		self.index == other.index
 	}
 }

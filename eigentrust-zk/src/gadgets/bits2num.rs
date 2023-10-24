@@ -22,14 +22,8 @@ impl<F: FieldExt> Bits2NumChip<F> {
 	pub fn new_exact<const B: usize>(value: AssignedCell<F, F>) -> Self {
 		let fe = assigned_to_field(value.clone());
 		let bit_vals = match fe {
-			Some(fe) => {
-				let bits = field_to_bits::<_, B>(fe);
-				bits.map(|x| Value::known(x)).to_vec()
-			},
-			None => {
-				let bits = field_to_bits::<_, B>(F::ZERO);
-				bits.map(|_| Value::unknown()).to_vec()
-			},
+			Some(fe) => field_to_bits::<_, B>(fe).map(|x| Value::known(x)).to_vec(),
+			None => field_to_bits::<_, B>(F::ZERO).map(|_| Value::unknown()).to_vec(),
 		};
 		Self { value, bits: bit_vals }
 	}
