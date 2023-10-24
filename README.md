@@ -51,4 +51,4 @@ This library is licensed under the following license:
 
 This project is developed under the Ethereum Foundation grant.
 
-The library is implemented according to the original [Eigen Trust paper](http://ilpubs.stanford.edu:8090/562/1/2002-56.pdf).
+The library is implemented according to the original [Eigen Trust paper](https://web.archive.org/web/20230219174826/http://ilpubs.stanford.edu:8090/562/1/2002-56.pdf).
