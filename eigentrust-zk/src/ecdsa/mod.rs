@@ -461,10 +461,11 @@ where
 			layouter.namespace(|| "reduce base in scalar"),
 		)?;
 
-		let new_r: Integer::<C::Base, N, NUM_LIMBS, NUM_BITS, P> = Integer::new(self.signature.r.integer.value());
+		let new_r: Integer<C::Base, N, NUM_LIMBS, NUM_BITS, P> =
+			Integer::new(self.signature.r.integer.value());
 		let r_integer = ConstIntegerAssigner::new(new_r);
 		let r_integer = r_integer.synthesize(common, &(), layouter.namespace(|| "r"))?;
-		
+
 		let ecc_eq_chipset = IntegerEqualChipset::new(reduced_x, r_integer);
 		let is_eq = ecc_eq_chipset.synthesize(
 			common,

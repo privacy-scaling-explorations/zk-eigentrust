@@ -16,7 +16,7 @@ use crate::{
 		IntegerEqualChipset, IntegerMulChip, IntegerReduceChip, IntegerSubChip, UnassignedInteger,
 	},
 	params::{ecc::EccParams, rns::RnsParams},
-	utils::{be_assigned_bits_to_usize, fe_to_le_bits, to_bits},
+	utils::{be_assigned_bits_to_usize, to_bits},
 	Chip, Chipset, CommonConfig, FieldExt, UnassignedValue,
 };
 use halo2::halo2curves::ff::PrimeField;
@@ -688,7 +688,8 @@ where
 {
 	/// Creates a new ecc table select chipset.
 	pub fn new(
-		bit: (bool, AssignedCell<C::Scalar, C::Scalar>), p: AssignedEcPoint<C, NUM_LIMBS, NUM_BITS, P>,
+		bit: (bool, AssignedCell<C::Scalar, C::Scalar>),
+		p: AssignedEcPoint<C, NUM_LIMBS, NUM_BITS, P>,
 		q: AssignedEcPoint<C, NUM_LIMBS, NUM_BITS, P>,
 	) -> Self {
 		Self { bit, p, q }
@@ -762,7 +763,7 @@ where
 	// Assigned point p
 	p: AssignedEcPoint<C, NUM_LIMBS, NUM_BITS, P>,
 	// Assigned scalar value
-	scalar:(C::Scalar, AssignedCell<C::Scalar, C::Scalar>),
+	scalar: (C::Scalar, AssignedCell<C::Scalar, C::Scalar>),
 	// Aux points (to_add + to_sub)
 	aux: AssignedAux<C, NUM_LIMBS, NUM_BITS, P, EC>,
 }
@@ -777,7 +778,8 @@ where
 {
 	/// Creates a new ecc mul chipset.
 	pub fn new(
-		p: AssignedEcPoint<C, NUM_LIMBS, NUM_BITS, P>, scalar: (C::Scalar, AssignedCell<C::Scalar, C::Scalar>),
+		p: AssignedEcPoint<C, NUM_LIMBS, NUM_BITS, P>,
+		scalar: (C::Scalar, AssignedCell<C::Scalar, C::Scalar>),
 		aux: AssignedAux<C, NUM_LIMBS, NUM_BITS, P, EC>,
 	) -> Self {
 		assert!(aux.init.len() == 1);
@@ -1240,7 +1242,7 @@ mod test {
 		arithmetic::Field,
 		circuit::{Layouter, Region, SimpleFloorPlanner, Value},
 		dev::MockProver,
-		halo2curves::bn256::{Fq, Fr, G1Affine, Bn256},
+		halo2curves::bn256::{Bn256, Fq, Fr, G1Affine},
 		plonk::{Circuit, ConstraintSystem, Error},
 	};
 	use num_bigint::BigUint;
@@ -1565,7 +1567,10 @@ mod test {
 		type FloorPlanner = SimpleFloorPlanner;
 
 		fn without_witnesses(&self) -> Self {
-			Self { p: UnassignedEcPoint::without_witnesses(&self.p), value: (self.value.0.clone(), Value::unknown()) }
+			Self {
+				p: UnassignedEcPoint::without_witnesses(&self.p),
+				value: (self.value.0.clone(), Value::unknown()),
+			}
 		}
 
 		fn configure(meta: &mut ConstraintSystem<N>) -> TestConfig {
@@ -1595,7 +1600,8 @@ mod test {
 			let p_assigned =
 				p_assigner.synthesize(&config.common, &(), layouter.namespace(|| "p assigner"))?;
 
-			let chip = EccMulChipset::new(p_assigned, (self.value.0.clone(), value_assigned), auxes);
+			let chip =
+				EccMulChipset::new(p_assigned, (self.value.0.clone(), value_assigned), auxes);
 			let result = chip.synthesize(
 				&config.common,
 				&config.ecc_mul,

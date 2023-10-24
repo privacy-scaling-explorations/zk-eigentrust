@@ -62,12 +62,12 @@ where
 		Self {
 			protocol: snark.protocol,
 			instances: (
-				snark.instances.clone(), 
+				snark.instances.clone(),
 				snark
-				.instances
-				.into_iter()
-				.map(|instances| instances.into_iter().map(Value::known).collect_vec())
-				.collect()
+					.instances
+					.into_iter()
+					.map(|instances| instances.into_iter().map(Value::known).collect_vec())
+					.collect(),
 			),
 			proof: Some(snark.proof),
 		}
@@ -248,8 +248,10 @@ where
 				for (j, inst_vec) in assigned_instances[i].iter().enumerate() {
 					let mut loaded_inst_vec = Vec::new();
 					for (k, inst) in inst_vec.iter().enumerate() {
-						let loaded_instance =
-							Halo2LScalar::new((snark.instances.0[j][k].clone(), inst.clone()), loader_config.clone());
+						let loaded_instance = Halo2LScalar::new(
+							(snark.instances.0[j][k], inst.clone()),
+							loader_config.clone(),
+						);
 						loaded_inst_vec.push(loaded_instance);
 					}
 					loaded_instances.push(loaded_inst_vec);
@@ -646,12 +648,15 @@ mod test {
 		fn synthesize(
 			&self, config: Self::Config, mut layouter: impl Layouter<Scalar>,
 		) -> Result<(), Error> {
-			let aggregator_chipset =
-				AggregatorChipset::<E, NUM_LIMBS, NUM_BITS, P, SpongeHasher, PoseidonNativeSponge, EC>::new(
-					self.svk,
-					self.snarks.clone(),
-					self.as_proof.clone(),
-				);
+			let aggregator_chipset = AggregatorChipset::<
+				E,
+				NUM_LIMBS,
+				NUM_BITS,
+				P,
+				SpongeHasher,
+				PoseidonNativeSponge,
+				EC,
+			>::new(self.svk, self.snarks.clone(), self.as_proof.clone());
 			let accumulator_limbs = aggregator_chipset.synthesize(
 				&config.common,
 				&config.aggregator,
@@ -714,7 +719,7 @@ mod test {
 			NativeAggregator::new(&params, snarks);
 
 		let aggregator_circuit = AggregatorTestCircuit::new(svk, snarks, as_proof);
-		
+
 		let params = generate_params(k);
 		let res = prove_and_verify::<Bn256, _, _>(params, aggregator_circuit, &[&instances], rng)
 			.unwrap();

@@ -243,7 +243,12 @@ where
 {
 	/// Returns a copy of the value.
 	fn clone(&self) -> Self {
-		Self { inner: self.inner.clone(), index: self.index.clone(), loader: self.loader.clone(), _h: PhantomData }
+		Self {
+			inner: self.inner.clone(),
+			loader: self.loader.clone(),
+			index: self.index,
+			_h: PhantomData,
+		}
 	}
 }
 
@@ -325,7 +330,12 @@ where
 			&self.loader.main,
 			layouter_mut.namespace(|| "loader_inverse"),
 		);
-		inv_op.ok().map(|x| Halo2LScalar::new((FieldOps::invert(&self.inner.0).unwrap(), x), self.loader.clone()))
+		inv_op.ok().map(|x| {
+			Halo2LScalar::new(
+				(FieldOps::invert(&self.inner.0).unwrap(), x),
+				self.loader.clone(),
+			)
+		})
 	}
 }
 
@@ -757,7 +767,7 @@ where
 			)
 			.unwrap();
 
-		Halo2LScalar::new((value.clone(), assigned_value), self.clone())
+		Halo2LScalar::new((*value, assigned_value), self.clone())
 	}
 
 	/// Assert `lhs` and `rhs` field elements are equal.
@@ -852,7 +862,12 @@ where
 {
 	/// Returns a copy of the value.
 	fn clone(&self) -> Self {
-		Self { inner: self.inner.clone(), loader: self.loader.clone(), index: self.index.clone(), _h: PhantomData }
+		Self {
+			inner: self.inner.clone(),
+			loader: self.loader.clone(),
+			index: self.index,
+			_h: PhantomData,
+		}
 	}
 }
 
@@ -950,8 +965,10 @@ where
 	/// Load a constant elliptic curve point.
 	fn ec_point_load_const(&self, value: &C) -> Self::LoadedEcPoint {
 		let coords: Coordinates<C> = Option::from(value.coordinates()).unwrap();
-		let x: UnassignedInteger<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS, P> = UnassignedInteger::from(Integer::from_w(*coords.x()));
-		let y: UnassignedInteger<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS, P> = UnassignedInteger::from(Integer::from_w(*coords.y()));
+		let x: UnassignedInteger<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS, P> =
+			UnassignedInteger::from(Integer::from_w(*coords.x()));
+		let y: UnassignedInteger<C::Base, C::Scalar, NUM_LIMBS, NUM_BITS, P> =
+			UnassignedInteger::from(Integer::from_w(*coords.y()));
 		let mut layouter = self.layouter.borrow_mut();
 		let (x_limbs, y_limbs) = layouter
 			.assign_region(
@@ -963,15 +980,13 @@ where
 					let mut y_limbs: [Option<AssignedCell<C::Scalar, C::Scalar>>; NUM_LIMBS] =
 						[(); NUM_LIMBS].map(|_| None);
 					for i in 0..NUM_LIMBS {
-						x_limbs[i] = Some(
-							ctx.assign_advice(self.common.advice[i], x.limbs[i]).unwrap(),
-						);
+						x_limbs[i] =
+							Some(ctx.assign_advice(self.common.advice[i], x.limbs[i]).unwrap());
 					}
 					ctx.next();
 					for i in 0..NUM_LIMBS {
-						y_limbs[i] = Some(
-							ctx.assign_advice(self.common.advice[i], y.limbs[i]).unwrap(),
-						);
+						y_limbs[i] =
+							Some(ctx.assign_advice(self.common.advice[i], y.limbs[i]).unwrap());
 					}
 					Ok((x_limbs.map(|x| x.unwrap()), y_limbs.map(|x| x.unwrap())))
 				},
@@ -1303,8 +1318,10 @@ mod test {
 					config.poseidon_sponge,
 				);
 
-			let lscalar_x = Halo2LScalar::new((self.x.inner.clone(), assigned_x), loader_config.clone());
-			let lscalar_y = Halo2LScalar::new((self.y.inner.clone(), assigned_y), loader_config.clone());
+			let lscalar_x =
+				Halo2LScalar::new((self.x.inner.clone(), assigned_x), loader_config.clone());
+			let lscalar_y =
+				Halo2LScalar::new((self.y.inner.clone(), assigned_y), loader_config.clone());
 
 			let lscalar_sum = lscalar_x + lscalar_y;
 
@@ -1387,8 +1404,10 @@ mod test {
 					config.poseidon_sponge,
 				);
 
-			let mut lscalar_x = Halo2LScalar::new((self.x.inner.clone(), assigned_x), loader_config.clone());
-			let lscalar_y = Halo2LScalar::new((self.y.inner.clone(), assigned_y), loader_config.clone());
+			let mut lscalar_x =
+				Halo2LScalar::new((self.x.inner.clone(), assigned_x), loader_config.clone());
+			let lscalar_y =
+				Halo2LScalar::new((self.y.inner.clone(), assigned_y), loader_config.clone());
 
 			lscalar_x += lscalar_y;
 
@@ -1473,8 +1492,10 @@ mod test {
 					config.poseidon_sponge,
 				);
 
-			let lscalar_x = Halo2LScalar::new((self.x.inner.clone(), assigned_x), loader_config.clone());
-			let lscalar_y = Halo2LScalar::new((self.y.inner.clone(), assigned_y), loader_config.clone());
+			let lscalar_x =
+				Halo2LScalar::new((self.x.inner.clone(), assigned_x), loader_config.clone());
+			let lscalar_y =
+				Halo2LScalar::new((self.y.inner.clone(), assigned_y), loader_config.clone());
 
 			let lscalar_prod = lscalar_x * lscalar_y;
 
@@ -1557,8 +1578,10 @@ mod test {
 					config.poseidon_sponge,
 				);
 
-			let mut lscalar_x = Halo2LScalar::new((self.x.inner.clone(), assigned_x), loader_config.clone());
-			let lscalar_y = Halo2LScalar::new((self.y.inner.clone(), assigned_y), loader_config.clone());
+			let mut lscalar_x =
+				Halo2LScalar::new((self.x.inner.clone(), assigned_x), loader_config.clone());
+			let lscalar_y =
+				Halo2LScalar::new((self.y.inner.clone(), assigned_y), loader_config.clone());
 
 			lscalar_x *= lscalar_y;
 
@@ -1643,8 +1666,10 @@ mod test {
 					config.poseidon_sponge,
 				);
 
-			let lscalar_x = Halo2LScalar::new((self.x.inner.clone(), assigned_x), loader_config.clone());
-			let lscalar_y = Halo2LScalar::new((self.y.inner.clone(), assigned_y), loader_config.clone());
+			let lscalar_x =
+				Halo2LScalar::new((self.x.inner.clone(), assigned_x), loader_config.clone());
+			let lscalar_y =
+				Halo2LScalar::new((self.y.inner.clone(), assigned_y), loader_config.clone());
 
 			let lscalar_sum = lscalar_x - lscalar_y;
 
@@ -1727,8 +1752,10 @@ mod test {
 					config.poseidon_sponge,
 				);
 
-			let mut lscalar_x = Halo2LScalar::new((self.x.inner.clone(), assigned_x), loader_config.clone());
-			let lscalar_y = Halo2LScalar::new((self.y.inner.clone(), assigned_y), loader_config.clone());
+			let mut lscalar_x =
+				Halo2LScalar::new((self.x.inner.clone(), assigned_x), loader_config.clone());
+			let lscalar_y =
+				Halo2LScalar::new((self.y.inner.clone(), assigned_y), loader_config.clone());
 
 			lscalar_x -= lscalar_y;
 
@@ -1809,7 +1836,8 @@ mod test {
 					config.poseidon_sponge,
 				);
 
-			let lscalar_x = Halo2LScalar::new((self.x.inner.clone(), assigned_x), loader_config.clone());
+			let lscalar_x =
+				Halo2LScalar::new((self.x.inner.clone(), assigned_x), loader_config.clone());
 			let neg_lscalar_x = -lscalar_x;
 
 			loader_config.layouter.borrow_mut().constrain_instance(
@@ -1949,8 +1977,10 @@ mod test {
 					config.poseidon_sponge,
 				);
 
-			let lscalar_x = Halo2LScalar::new((self.x.inner.clone(), assigned_x), loader_config.clone());
-			let lscalar_y = Halo2LScalar::new((self.y.inner.clone(), assigned_y), loader_config.clone());
+			let lscalar_x =
+				Halo2LScalar::new((self.x.inner.clone(), assigned_x), loader_config.clone());
+			let lscalar_y =
+				Halo2LScalar::new((self.y.inner.clone(), assigned_y), loader_config.clone());
 
 			let res = loader_config
 				.assert_eq("x == y", &lscalar_x, &lscalar_y)
@@ -2256,7 +2286,8 @@ mod test {
 				for (assigned_pair, nloaded_pair) in pairs.iter().zip(self.pairs.clone()) {
 					let (scalar, x_limbs, y_limbs) = assigned_pair;
 					let (lscalar, lpoint) = nloaded_pair;
-					let halo2_scalar = Halo2LScalar::new((lscalar.inner, scalar.clone()), loader_config.clone());
+					let halo2_scalar =
+						Halo2LScalar::new((lscalar.inner, scalar.clone()), loader_config.clone());
 
 					let x = AssignedInteger::new(lpoint.inner.x, x_limbs.clone());
 					let y = AssignedInteger::new(lpoint.inner.y, y_limbs.clone());

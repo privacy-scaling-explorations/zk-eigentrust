@@ -3,7 +3,7 @@ use crate::{
 	ecc::same_curve::AssignedEcPoint,
 	integer::{native::Integer, AssignedInteger},
 	params::{ecc::EccParams, rns::RnsParams},
-	FieldExt, RegionCtx, SpongeHasherChipset, SpongeHasher,
+	FieldExt, RegionCtx, SpongeHasher, SpongeHasherChipset,
 };
 use halo2::{
 	circuit::{Layouter, Region, Value},
@@ -155,7 +155,7 @@ where
 	) -> Result<(), snark_verifier::Error> {
 		self.state.update(&[scalar.inner.1.clone()]);
 
-		self.native_state.update(&[scalar.inner.0.clone()]);
+		self.native_state.update(&[scalar.inner.0]);
 
 		Ok(())
 	}
@@ -226,7 +226,8 @@ where
 				)
 				.unwrap()
 		};
-		let assigned_lscalar = Halo2LScalar::new((native_scalar, assigned_scalar), self.loader.clone());
+		let assigned_lscalar =
+			Halo2LScalar::new((native_scalar, assigned_scalar), self.loader.clone());
 		self.common_scalar(&assigned_lscalar)?;
 
 		Ok(assigned_lscalar)
@@ -332,7 +333,9 @@ where
 mod test {
 	use super::{native::NativeTranscriptRead, LoaderConfig, TranscriptReadChipset};
 	use crate::{
-		circuits::{FullRoundHasher, PartialRoundHasher, PoseidonNativeHasher, PoseidonNativeSponge},
+		circuits::{
+			FullRoundHasher, PartialRoundHasher, PoseidonNativeHasher, PoseidonNativeSponge,
+		},
 		ecc::{
 			same_curve::{native::EcPoint, AssignedEcPoint, UnassignedEcPoint},
 			AuxConfig, EccAddConfig, EccDoubleConfig, EccMulConfig, EccTableSelectConfig,
@@ -684,7 +687,8 @@ mod test {
 					config.main,
 					config.poseidon_sponge.clone(),
 				);
-				let scalar = Halo2LScalar::new((self.native_scalar, assigned_scalar), loader.clone());
+				let scalar =
+					Halo2LScalar::new((self.native_scalar, assigned_scalar), loader.clone());
 				let reader = Vec::new();
 				let mut poseidon_read =
 					TranscriptReadChipset::<_, C, _, NUM_LIMBS, NUM_BITS, P, S, H, EC>::new(
