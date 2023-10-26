@@ -452,8 +452,7 @@ where
 
 		let x_candidate = r_point.x;
 
-		let new_x_int = Integer::from_limbs(x_candidate.integer.limbs);
-		let new_x = AssignedInteger::new(new_x_int, x_candidate.limbs);
+		let new_x = AssignedInteger::new(x_candidate.integer, x_candidate.limbs);
 		let reducer = IntegerReduceChip::new(new_x);
 		let reduced_x = reducer.synthesize(
 			common,
@@ -461,7 +460,12 @@ where
 			layouter.namespace(|| "reduce base in scalar"),
 		)?;
 
-		let ecc_eq_chipset = IntegerEqualChipset::new(reduced_x, self.signature.r);
+		let new_r: Integer<C::Base, N, NUM_LIMBS, NUM_BITS, P> =
+			Integer::new(self.signature.r.integer.value());
+		let sig_r = ConstIntegerAssigner::new(new_r);
+		let sig_r = sig_r.synthesize(common, &(), layouter.namespace(|| "r"))?;
+
+		let ecc_eq_chipset = IntegerEqualChipset::new(reduced_x, sig_r);
 		let is_eq = ecc_eq_chipset.synthesize(
 			common,
 			&config.int_eq,

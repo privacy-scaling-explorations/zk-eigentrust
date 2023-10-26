@@ -811,13 +811,13 @@ where
 
 		let selected_point = if self.bit.bit {
 			let selected_x_integer =
-				AssignedInteger::new(self.p.x.integer.clone(), selected_x.map(|x| x.unwrap()));
+				AssignedInteger::new(self.p.x.integer, selected_x.map(|x| x.unwrap()));
 			let selected_y_integer =
 				AssignedInteger::new(self.p.y.integer, selected_y.map(|x| x.unwrap()));
 			AssignedEcPoint::new(selected_x_integer, selected_y_integer)
 		} else {
 			let selected_x_integer =
-				AssignedInteger::new(self.q.x.integer.clone(), selected_x.map(|x| x.unwrap()));
+				AssignedInteger::new(self.q.x.integer, selected_x.map(|x| x.unwrap()));
 			let selected_y_integer =
 				AssignedInteger::new(self.q.y.integer, selected_y.map(|x| x.unwrap()));
 			AssignedEcPoint::new(selected_x_integer, selected_y_integer)

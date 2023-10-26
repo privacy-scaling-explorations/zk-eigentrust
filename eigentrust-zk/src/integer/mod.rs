@@ -7,7 +7,8 @@ use crate::{
 		main::{IsEqualChipset, MainConfig, SubChipset},
 		set::{SetChipset, SetConfig},
 	},
-	params::rns::RnsParams,
+	params::rns::{compose_big_val, RnsParams},
+	utils::fe_to_big_val,
 	Chip, Chipset, CommonConfig, FieldExt, RegionCtx, UnassignedValue,
 };
 use halo2::{
@@ -15,8 +16,63 @@ use halo2::{
 	plonk::{ConstraintSystem, Error, Expression, Selector},
 	poly::Rotation,
 };
-use native::{Quotient, ReductionWitness};
+use num_bigint::BigUint;
 use std::marker::PhantomData;
+
+/// Enum for the two different type of Quotient.
+#[derive(Clone, Debug)]
+pub enum QuotientVal<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
+where
+	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
+{
+	/// Quotient type for the addition and subtraction.
+	Short(Value<N>),
+	/// Quotient type for the multiplication and division.
+	Long(UnassignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>),
+}
+
+impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
+	QuotientVal<W, N, NUM_LIMBS, NUM_BITS, P>
+where
+	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
+{
+	/// Returns Quotient type for the addition or the subtraction.
+	pub fn short(self) -> Option<Value<N>> {
+		match self {
+			QuotientVal::Short(res) => Some(res),
+			_ => None,
+		}
+	}
+
+	/// Returns Quotient type for the multiplication or the division.
+	pub fn long(self) -> Option<UnassignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>> {
+		match self {
+			QuotientVal::Long(res) => Some(res),
+			_ => None,
+		}
+	}
+}
+
+/// Structure for the ReductionWitness.
+#[derive(Debug, Clone)]
+pub struct ReductionWitnessVal<
+	W: FieldExt,
+	N: FieldExt,
+	const NUM_LIMBS: usize,
+	const NUM_BITS: usize,
+	P,
+> where
+	P: RnsParams<W, N, NUM_LIMBS, NUM_BITS>,
+{
+	/// Result from the operation.
+	pub(crate) result: UnassignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>,
+	/// Quotient from the operation.
+	pub(crate) quotient: QuotientVal<W, N, NUM_LIMBS, NUM_BITS, P>,
+	/// Intermediate values from the operation.
+	pub(crate) intermediate: [Value<N>; NUM_LIMBS],
+	/// Residue values from the operation.
+	pub(crate) residues: Vec<Value<N>>,
+}
 
 /// UnassignedInteger struct
 #[derive(Clone, Debug)]
@@ -59,7 +115,7 @@ where
 {
 	fn from(int: Integer<W, N, NUM_LIMBS, NUM_BITS, P>) -> Self {
 		Self {
-			integer: Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::from_limbs(int.limbs),
+			integer: int.clone(),
 			limbs: int.limbs.map(|x| Value::known(x)),
 			_wrong_field: PhantomData,
 			_rns: PhantomData,
@@ -85,7 +141,7 @@ where
 /// Assigns given values and their reduction witnesses
 pub fn assign<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>(
 	x: &[AssignedCell<N, N>; NUM_LIMBS], y_opt: Option<&[AssignedCell<N, N>; NUM_LIMBS]>,
-	reduction_witness: &ReductionWitness<W, N, NUM_LIMBS, NUM_BITS, P>, common: &CommonConfig,
+	reduction_witness: &ReductionWitnessVal<W, N, NUM_LIMBS, NUM_BITS, P>, common: &CommonConfig,
 	ctx: &mut RegionCtx<N>,
 ) -> Result<AssignedInteger<W, N, NUM_LIMBS, NUM_BITS, P>, Error>
 where
@@ -103,7 +159,7 @@ where
 	for i in 0..NUM_LIMBS {
 		ctx.assign_advice(
 			common.advice[i + 2 * NUM_LIMBS],
-			Value::known(reduction_witness.intermediate[i]),
+			reduction_witness.intermediate[i],
 		)?;
 	}
 
@@ -113,7 +169,7 @@ where
 	for i in 0..NUM_LIMBS {
 		assigned_result[i] = Some(ctx.assign_advice(
 			common.advice[i + 3 * NUM_LIMBS],
-			Value::known(reduction_witness.result.limbs[i]),
+			reduction_witness.result.limbs[i],
 		)?);
 	}
 
@@ -121,25 +177,25 @@ where
 	for i in 0..reduction_witness.residues.len() {
 		ctx.assign_advice(
 			common.advice[i + 4 * NUM_LIMBS],
-			Value::known(reduction_witness.residues[i]),
+			reduction_witness.residues[i],
 		)?;
 	}
 
 	// Assign quotient
 	match &reduction_witness.quotient {
-		Quotient::Short(n) => {
-			ctx.assign_advice(common.advice[5 * NUM_LIMBS - 1], Value::known(*n))?;
+		QuotientVal::Short(n) => {
+			ctx.assign_advice(common.advice[5 * NUM_LIMBS - 1], *n)?;
 		},
-		Quotient::Long(n) => {
+		QuotientVal::Long(n) => {
 			ctx.next();
 			for i in 0..NUM_LIMBS {
-				ctx.assign_advice(common.advice[i], Value::known(n.limbs[i]))?;
+				ctx.assign_advice(common.advice[i], n.limbs[i])?;
 			}
 		},
 	}
 
 	let assigned_result = AssignedInteger::new(
-		reduction_witness.result.clone(),
+		reduction_witness.result.integer.clone(),
 		assigned_result.map(|x| x.unwrap()),
 	);
 	Ok(assigned_result)
@@ -236,7 +292,32 @@ where
 	fn synthesize(
 		self, common: &CommonConfig, selector: &Selector, mut layouter: impl Layouter<N>,
 	) -> Result<Self::Output, Error> {
-		let reduction_witness = self.assigned_integer.integer.reduce();
+		let native_reduction_witness = self.assigned_integer.integer.reduce();
+
+		let reduction_witness = {
+			let p_prime = P::negative_wrong_modulus_decomposed().map(Value::known);
+			let a = self.assigned_integer.value();
+			let (q, res) = P::construct_reduce_qr_val(a);
+
+			// Calculate the intermediate values for the ReductionWitness.
+			let mut t = [Value::known(N::ZERO); NUM_LIMBS];
+			for i in 0..NUM_LIMBS {
+				t[i] = self.assigned_integer.limbs[i].value().cloned() + p_prime[i] * q;
+			}
+
+			// Calculate the residue values for the ReductionWitness.
+			let residues = P::residues_val(&res, &t);
+
+			// Construct correct type for the ReductionWitness
+			let result_int = UnassignedInteger::new(native_reduction_witness.result, res);
+			let quotient_n = QuotientVal::Short(q);
+			ReductionWitnessVal {
+				result: result_int,
+				quotient: quotient_n,
+				intermediate: t,
+				residues,
+			}
+		};
 		layouter.assign_region(
 			|| "reduce_operation",
 			|region: Region<'_, N>| {
@@ -350,7 +431,36 @@ where
 	fn synthesize(
 		self, common: &CommonConfig, selector: &Selector, mut layouter: impl Layouter<N>,
 	) -> Result<Self::Output, Error> {
-		let reduction_witness = self.x.integer.add(&self.y.integer);
+		let native_reduction_witness = self.x.integer.add(&self.y.integer);
+
+		let reduction_witness = {
+			let p_prime = P::negative_wrong_modulus_decomposed().map(Value::known);
+			let a = self.x.value();
+			let b = self.y.value();
+			let (q, res) = P::construct_add_qr_val(a, b);
+
+			// Calculate the intermediate values for the ReductionWitness.
+			let mut t = [Value::known(N::ZERO); NUM_LIMBS];
+			for i in 0..NUM_LIMBS {
+				t[i] = self.x.limbs[i].value().cloned()
+					+ self.y.limbs[i].value().cloned()
+					+ p_prime[i] * q;
+			}
+
+			// Calculate the residue values for the ReductionWitness.
+			let residues = P::residues_val(&res, &t);
+
+			// Construct correct type for the ReductionWitness
+			let result_int = UnassignedInteger::new(native_reduction_witness.result, res);
+			let quotient_n = QuotientVal::Short(q);
+			ReductionWitnessVal {
+				result: result_int,
+				quotient: quotient_n,
+				intermediate: t,
+				residues,
+			}
+		};
+
 		layouter.assign_region(
 			|| "add_operation",
 			|region: Region<'_, N>| {
@@ -467,7 +577,36 @@ where
 	fn synthesize(
 		self, common: &CommonConfig, selector: &Selector, mut layouter: impl Layouter<N>,
 	) -> Result<Self::Output, Error> {
-		let reduction_witness = self.x.integer.sub(&self.y.integer);
+		let native_reduction_witness = self.x.integer.sub(&self.y.integer);
+
+		let reduction_witness = {
+			let p_prime = P::negative_wrong_modulus_decomposed().map(Value::known);
+			let a = self.x.value();
+			let b = self.y.value();
+			let (q, res) = P::construct_sub_qr_val(a, b);
+
+			// Calculate the intermediate values for the ReductionWitness.
+			let mut t = [Value::known(N::ZERO); NUM_LIMBS];
+			for i in 0..NUM_LIMBS {
+				t[i] = self.x.limbs[i].value().cloned() - self.y.limbs[i].value().cloned()
+					+ p_prime[i] * q;
+			}
+
+			// Calculate the residue values for the ReductionWitness.
+			let residues = P::residues_val(&res, &t);
+
+			// Construct correct type for the ReductionWitness
+			let result_int = UnassignedInteger::new(native_reduction_witness.result, res);
+			let quotient_n = QuotientVal::Short(q);
+
+			ReductionWitnessVal {
+				result: result_int,
+				quotient: quotient_n,
+				intermediate: t,
+				residues,
+			}
+		};
+
 		layouter.assign_region(
 			|| "sub_operation",
 			|region: Region<'_, N>| {
@@ -587,7 +726,42 @@ where
 	fn synthesize(
 		self, common: &CommonConfig, selector: &Selector, mut layouter: impl Layouter<N>,
 	) -> Result<Self::Output, Error> {
-		let reduction_witness = self.x.integer.mul(&self.y.integer);
+		let native_reduction_witness = self.x.integer.mul(&self.y.integer);
+
+		let reduction_witness = {
+			let p_prime = P::negative_wrong_modulus_decomposed().map(Value::known);
+			let a = self.x.value();
+			let b = self.y.value();
+			let (q, res) = P::construct_mul_qr_val(a, b);
+
+			// Calculate the intermediate values for the ReductionWitness.
+			let mut t = [Value::known(N::ZERO); NUM_LIMBS];
+			for k in 0..NUM_LIMBS {
+				for i in 0..=k {
+					let j = k - i;
+					t[i + j] = t[i + j]
+						+ self.x.limbs[i].value().cloned() * self.y.limbs[j].value().cloned()
+						+ p_prime[i] * q[j];
+				}
+			}
+
+			// Calculate the residue values for the ReductionWitness.
+			let residues = P::residues_val(&res, &t);
+
+			// Construct correct type for the ReductionWitness.
+			let result_int = UnassignedInteger::new(native_reduction_witness.result, res);
+			let quotient_int = QuotientVal::Long(UnassignedInteger::new(
+				native_reduction_witness.quotient.long().unwrap(),
+				q,
+			));
+			ReductionWitnessVal {
+				result: result_int,
+				quotient: quotient_int,
+				intermediate: t,
+				residues,
+			}
+		};
+
 		layouter.assign_region(
 			|| "mul_operation",
 			|region: Region<'_, N>| {
@@ -707,7 +881,42 @@ where
 	fn synthesize(
 		self, common: &CommonConfig, selector: &Selector, mut layouter: impl Layouter<N>,
 	) -> Result<Self::Output, Error> {
-		let reduction_witness = self.x.integer.div(&self.y.integer);
+		let native_reduction_witness = self.x.integer.div(&self.y.integer);
+
+		let reduction_witness = {
+			let p_prime = P::negative_wrong_modulus_decomposed().map(Value::known);
+			let a = self.x.value();
+			let b = self.y.value();
+			let (q, res) = P::construct_div_qr_val(a, b);
+
+			// Calculate the intermediate values for the ReductionWitness.
+			let mut t = [Value::known(N::ZERO); NUM_LIMBS];
+			for k in 0..NUM_LIMBS {
+				for i in 0..=k {
+					let j = k - i;
+					t[i + j] =
+						t[i + j] + res[i] * self.y.limbs[j].value().cloned() + p_prime[i] * q[j];
+				}
+			}
+
+			// Calculate the residue values for the ReductionWitness.
+			let residues = P::residues_val(&res, &t);
+
+			// Construct correct type for the ReductionWitness.
+			let result_int = UnassignedInteger::new(native_reduction_witness.result, res);
+			let quotient_int = QuotientVal::Long(UnassignedInteger::new(
+				native_reduction_witness.quotient.long().unwrap(),
+				q,
+			));
+
+			ReductionWitnessVal {
+				result: result_int,
+				quotient: quotient_int,
+				intermediate: t,
+				residues,
+			}
+		};
+
 		layouter.assign_region(
 			|| "div_operation",
 			|region: Region<'_, N>| {
@@ -822,6 +1031,8 @@ pub struct AssignedInteger<
 	pub(crate) integer: Integer<W, N, NUM_LIMBS, NUM_BITS, P>,
 	// Limbs of the assigned integer.
 	pub(crate) limbs: [AssignedCell<N, N>; NUM_LIMBS],
+
+	_p: PhantomData<(W, P)>,
 }
 
 impl<W: FieldExt, N: FieldExt, const NUM_LIMBS: usize, const NUM_BITS: usize, P>
@@ -833,7 +1044,13 @@ where
 	pub fn new(
 		integer: Integer<W, N, NUM_LIMBS, NUM_BITS, P>, limbs: [AssignedCell<N, N>; NUM_LIMBS],
 	) -> Self {
-		Self { integer, limbs }
+		Self { integer, limbs, _p: PhantomData }
+	}
+
+	/// Retuns a value of AssignedInteger
+	pub fn value(&self) -> Value<BigUint> {
+		let limb_values = self.limbs.clone().map(|limb| fe_to_big_val(limb.value().cloned()));
+		compose_big_val::<NUM_LIMBS, NUM_BITS>(limb_values)
 	}
 }
 
@@ -1068,8 +1285,7 @@ mod test {
 				},
 			)?;
 
-			let x =
-				AssignedInteger::new(self.x.integer.clone(), x_limbs_assigned.map(|x| x.unwrap()));
+			let x = AssignedInteger::new(self.x.integer, x_limbs_assigned.map(|x| x.unwrap()));
 			Ok(x)
 		}
 	}
@@ -1120,10 +1336,8 @@ mod test {
 				},
 			)?;
 
-			let x =
-				AssignedInteger::new(self.x.integer.clone(), x_limbs_assigned.map(|x| x.unwrap()));
-			let y =
-				AssignedInteger::new(self.y.integer.clone(), y_limbs_assigned.map(|x| x.unwrap()));
+			let x = AssignedInteger::new(self.x.integer, x_limbs_assigned.map(|x| x.unwrap()));
+			let y = AssignedInteger::new(self.y.integer, y_limbs_assigned.map(|x| x.unwrap()));
 			Ok((x, y))
 		}
 	}

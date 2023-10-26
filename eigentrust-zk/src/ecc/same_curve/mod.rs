@@ -16,7 +16,7 @@ use crate::{
 		IntegerEqualChipset, IntegerMulChip, IntegerReduceChip, IntegerSubChip, UnassignedInteger,
 	},
 	params::{ecc::EccParams, rns::RnsParams},
-	utils::{assigned_as_bool, be_assigned_bits_to_usize},
+	utils::{be_assigned_bits_to_usize, to_bits},
 	Chip, Chipset, CommonConfig, FieldExt, UnassignedValue,
 };
 use halo2::halo2curves::ff::PrimeField;
@@ -672,7 +672,7 @@ where
 	C::Scalar: FieldExt,
 {
 	// Assigned bit
-	bit: AssignedCell<C::Scalar, C::Scalar>,
+	bit: (bool, AssignedCell<C::Scalar, C::Scalar>),
 	// Assigned point p
 	p: AssignedEcPoint<C, NUM_LIMBS, NUM_BITS, P>,
 	// Assigned point q
@@ -688,7 +688,8 @@ where
 {
 	/// Creates a new ecc table select chipset.
 	pub fn new(
-		bit: AssignedCell<C::Scalar, C::Scalar>, p: AssignedEcPoint<C, NUM_LIMBS, NUM_BITS, P>,
+		bit: (bool, AssignedCell<C::Scalar, C::Scalar>),
+		p: AssignedEcPoint<C, NUM_LIMBS, NUM_BITS, P>,
 		q: AssignedEcPoint<C, NUM_LIMBS, NUM_BITS, P>,
 	) -> Self {
 		Self { bit, p, q }
@@ -716,7 +717,7 @@ where
 		for i in 0..NUM_LIMBS {
 			// Select x coordinate limbs
 			let select = SelectChipset::new(
-				self.bit.clone(),
+				self.bit.1.clone(),
 				self.p.x.limbs[i].clone(),
 				self.q.x.limbs[i].clone(),
 			);
@@ -725,7 +726,7 @@ where
 
 			// Select y coordinate limbs
 			let select = SelectChipset::new(
-				self.bit.clone(),
+				self.bit.1.clone(),
 				self.p.y.limbs[i].clone(),
 				self.q.y.limbs[i].clone(),
 			);
@@ -733,15 +734,15 @@ where
 				Some(select.synthesize(common, &config.main, layouter.namespace(|| "acc_y"))?);
 		}
 
-		let selected_point = if assigned_as_bool::<C::Scalar>(self.bit) {
+		let selected_point = if self.bit.0 {
 			let selected_x_integer =
-				AssignedInteger::new(self.p.x.integer.clone(), selected_x.map(|x| x.unwrap()));
+				AssignedInteger::new(self.p.x.integer, selected_x.map(|x| x.unwrap()));
 			let selected_y_integer =
 				AssignedInteger::new(self.p.y.integer, selected_y.map(|x| x.unwrap()));
 			AssignedEcPoint::new(selected_x_integer, selected_y_integer)
 		} else {
 			let selected_x_integer =
-				AssignedInteger::new(self.q.x.integer.clone(), selected_x.map(|x| x.unwrap()));
+				AssignedInteger::new(self.q.x.integer, selected_x.map(|x| x.unwrap()));
 			let selected_y_integer =
 				AssignedInteger::new(self.q.y.integer, selected_y.map(|x| x.unwrap()));
 			AssignedEcPoint::new(selected_x_integer, selected_y_integer)
@@ -762,7 +763,7 @@ where
 	// Assigned point p
 	p: AssignedEcPoint<C, NUM_LIMBS, NUM_BITS, P>,
 	// Assigned scalar value
-	scalar: AssignedCell<C::Scalar, C::Scalar>,
+	scalar: (C::Scalar, AssignedCell<C::Scalar, C::Scalar>),
 	// Aux points (to_add + to_sub)
 	aux: AssignedAux<C, NUM_LIMBS, NUM_BITS, P, EC>,
 }
@@ -777,7 +778,8 @@ where
 {
 	/// Creates a new ecc mul chipset.
 	pub fn new(
-		p: AssignedEcPoint<C, NUM_LIMBS, NUM_BITS, P>, scalar: AssignedCell<C::Scalar, C::Scalar>,
+		p: AssignedEcPoint<C, NUM_LIMBS, NUM_BITS, P>,
+		scalar: (C::Scalar, AssignedCell<C::Scalar, C::Scalar>),
 		aux: AssignedAux<C, NUM_LIMBS, NUM_BITS, P, EC>,
 	) -> Self {
 		assert!(aux.init.len() == 1);
@@ -810,12 +812,19 @@ where
 			&config.add,
 			layouter.namespace(|| "aux_init_plus_scalar"),
 		)?;
-		let bits = Bits2NumChip::new(self.scalar);
+		let bits = Bits2NumChip::new(self.scalar.1.clone());
 		let mut bits = bits.synthesize(common, &config.bits2num, layouter.namespace(|| "bits"))?;
 		bits.reverse();
 
+		let native_bits = {
+			let bits = to_bits(self.scalar.0.to_repr().as_ref());
+			let mut native_bits = bits[..C::Scalar::NUM_BITS as usize].to_vec();
+			native_bits.reverse();
+			native_bits
+		};
+
 		let acc_point_chip = EccTableSelectChipset::new(
-			bits[0].clone(),
+			(native_bits[0], bits[0].clone()),
 			aux_init_plus_scalar.clone(),
 			self.aux.init[0].clone(),
 		);
@@ -826,7 +835,7 @@ where
 		)?;
 
 		let carry_point_chip = EccTableSelectChipset::new(
-			bits[1].clone(),
+			(native_bits[1], bits[1].clone()),
 			aux_init_plus_scalar.clone(),
 			self.aux.init[0].clone(),
 		);
@@ -848,9 +857,9 @@ where
 		acc_point =
 			acc_add_chip.synthesize(common, &config.add, layouter.namespace(|| "acc_add"))?;
 
-		for bit in bits.iter().skip(2) {
+		for i in 2..bits.len() {
 			let carry_point_chip = EccTableSelectChipset::new(
-				bit.clone(),
+				(native_bits[i], bits[i].clone()),
 				aux_init_plus_scalar.clone(),
 				self.aux.init[0].clone(),
 			);
@@ -1233,7 +1242,7 @@ mod test {
 		arithmetic::Field,
 		circuit::{Layouter, Region, SimpleFloorPlanner, Value},
 		dev::MockProver,
-		halo2curves::bn256::{Fq, Fr, G1Affine},
+		halo2curves::bn256::{Bn256, Fq, Fr, G1Affine},
 		plonk::{Circuit, ConstraintSystem, Error},
 	};
 	use num_bigint::BigUint;
@@ -1544,12 +1553,12 @@ mod test {
 	#[derive(Clone)]
 	struct EccMulTestCircuit {
 		p: UnassignedEcPoint<C, NUM_LIMBS, NUM_BITS, P, EC>,
-		value: Value<N>,
+		value: (N, Value<N>),
 	}
 
 	impl EccMulTestCircuit {
 		fn new(p: EcPoint<C, NUM_LIMBS, NUM_BITS, P, EC>, value: N) -> Self {
-			Self { p: UnassignedEcPoint::from(p), value: Value::known(value) }
+			Self { p: UnassignedEcPoint::from(p), value: (value, Value::known(value)) }
 		}
 	}
 
@@ -1558,7 +1567,10 @@ mod test {
 		type FloorPlanner = SimpleFloorPlanner;
 
 		fn without_witnesses(&self) -> Self {
-			Self { p: UnassignedEcPoint::without_witnesses(&self.p), value: Value::unknown() }
+			Self {
+				p: UnassignedEcPoint::without_witnesses(&self.p),
+				value: (self.value.0.clone(), Value::unknown()),
+			}
 		}
 
 		fn configure(meta: &mut ConstraintSystem<N>) -> TestConfig {
@@ -1572,7 +1584,7 @@ mod test {
 				|| "scalar_mul_values",
 				|region: Region<'_, N>| {
 					let mut ctx = RegionCtx::new(region, 0);
-					let value = ctx.assign_advice(config.common.advice[0], self.value)?;
+					let value = ctx.assign_advice(config.common.advice[0], self.value.1)?;
 					Ok(value)
 				},
 			)?;
@@ -1588,7 +1600,8 @@ mod test {
 			let p_assigned =
 				p_assigner.synthesize(&config.common, &(), layouter.namespace(|| "p assigner"))?;
 
-			let chip = EccMulChipset::new(p_assigned, value_assigned, auxes);
+			let chip =
+				EccMulChipset::new(p_assigned, (self.value.0.clone(), value_assigned), auxes);
 			let result = chip.synthesize(
 				&config.common,
 				&config.ecc_mul,
@@ -1630,6 +1643,33 @@ mod test {
 
 		let prover = MockProver::run(k, &test_chip, vec![p_ins]).unwrap();
 		assert_eq!(prover.verify(), Ok(()));
+	}
+
+	#[test]
+	fn should_mul_scalar_ecc_prod() {
+		// Testing ecc mul.
+		let rng = &mut thread_rng();
+		let scalar = Fr::random(rng);
+
+		let a_big = BigUint::from_str("2342876324689764345467879012938433459867545345").unwrap();
+		let b_big = BigUint::from_str("6546457298123794342352534089237495253453455675").unwrap();
+		let a = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(a_big);
+		let b = Integer::<W, N, NUM_LIMBS, NUM_BITS, P>::new(b_big);
+		let p_point = EcPoint::<C, NUM_LIMBS, NUM_BITS, P, EC>::new(a, b);
+
+		let res = p_point.mul_scalar(scalar);
+		let test_chip = EccMulTestCircuit::new(p_point, scalar);
+
+		let k = 14;
+		let mut p_ins = Vec::new();
+		p_ins.extend(res.x.limbs);
+		p_ins.extend(res.y.limbs);
+
+		let rng = &mut thread_rng();
+		let params = crate::utils::generate_params(k);
+		let res = crate::utils::prove_and_verify::<Bn256, _, _>(params, test_chip, &[&p_ins], rng)
+			.unwrap();
+		assert!(res);
 	}
 
 	#[derive(Clone)]
