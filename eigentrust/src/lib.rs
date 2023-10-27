@@ -69,6 +69,7 @@ use eigentrust_zk::{
 		NativeEigenTrust4, NativeThreshold4, Opinion4, PoseidonNativeHasher, PoseidonNativeSponge,
 		Threshold4, HASHER_WIDTH, MIN_PEER_COUNT, NUM_DECIMAL_LIMBS, NUM_NEIGHBOURS, POWER_OF_TEN,
 	},
+	ecdsa::native::PublicKey,
 	halo2::{
 		arithmetic::Field,
 		halo2curves::{
@@ -253,7 +254,12 @@ impl Client {
 		)
 		.map_err(|e| EigenError::ProvingError(format!("Failed to generate proof: {}", e)))?;
 
-		let res = verify(&kzg_params, &[&et_setup.pub_inputs.to_vec()], &proof, proving_key.get_vk());
+		let res = verify(
+			&kzg_params,
+			&[&et_setup.pub_inputs.to_vec()],
+			&proof,
+			proving_key.get_vk(),
+		);
 		println!("verification success: {res:?}");
 
 		Ok(ETReport { pub_inputs: et_setup.pub_inputs, proof })
@@ -423,15 +429,19 @@ impl Client {
 			if let Some(pub_key) = pub_key_map.get(&member) {
 				debug!("Updating opinion for {}", member);
 				let opinion = attestation_matrix[origin_index].clone();
-				native_et.update_op(pub_key.clone(), opinion.clone());
-
-				// Get opinion hash
-				let parsed_op = native_et.parse_op_group(opinion);
-				let op = Opinion4::new(pub_key.clone(), parsed_op, scalar_domain);
-				let (_, _, op_hash) = op.validate(scalar_set.clone());
+				op_hashes.push(native_et.update_op(pub_key.clone(), opinion.clone()));
+			} else {
+				let def_scalar_member: Scalar =
+					scalar_from_address(&address_from_ecdsa_key(&PublicKey::default())).unwrap();
+				let def_att =
+					vec![
+						SignedAttestationScalar::empty_with_about(def_scalar_member, scalar_domain);
+						NUM_NEIGHBOURS
+					];
+				let op = Opinion4::new(PublicKey::default(), def_att, scalar_domain);
+				let (_, _, op_hash) = op.validate(vec![def_scalar_member; NUM_NEIGHBOURS]);
 				op_hashes.push(op_hash)
 			}
-			// FIX: Here, the only existing pubkey can add to "op_hashes". For example, 1 hash since 1 pubkey.
 		}
 
 		let mut sponge = PoseidonNativeSponge::new();
