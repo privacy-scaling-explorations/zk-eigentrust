@@ -253,6 +253,9 @@ impl Client {
 		)
 		.map_err(|e| EigenError::ProvingError(format!("Failed to generate proof: {}", e)))?;
 
+		let res = verify(&kzg_params, &[&et_setup.pub_inputs.to_vec()], &proof, proving_key.get_vk());
+		println!("verification success: {res:?}");
+
 		Ok(ETReport { pub_inputs: et_setup.pub_inputs, proof })
 	}
 
@@ -428,10 +431,12 @@ impl Client {
 				let (_, _, op_hash) = op.validate(scalar_set.clone());
 				op_hashes.push(op_hash)
 			}
+			// FIX: Here, the only existing pubkey can add to "op_hashes". For example, 1 hash since 1 pubkey.
 		}
 
 		let mut sponge = PoseidonNativeSponge::new();
 		sponge.update(&op_hashes);
+		println!("cli_op_hashes: \n{op_hashes:?}\n");
 		let opinions_hash = sponge.squeeze();
 
 		// Calculate scores

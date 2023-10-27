@@ -156,6 +156,9 @@ where
 			unassigned_msg_hashes.push(msg_hashes_row);
 			unassigned_s_invs.push(s_inv_row);
 
+			// FIX: Here, if the pubkey is not given (None), the "default" pubkey is added automatically.
+			//      This means that if there is only 1 real pubkey, the "unassigned_pks" would still be NUM_NEIGHBORS pubkeys with default pubkey.
+			//      For example, 1 real pubkey, NUM_NEIGHBORS = 4, then 3 default pubkeys
 			let pk = pks[i].clone().unwrap_or(PublicKey::default());
 			let unassigned_pk = UnassignedPublicKey::new(pk);
 			unassigned_pks.push(unassigned_pk);
@@ -446,6 +449,7 @@ impl<
 			ops.push(opinions);
 			op_hashes.push(op_hash);
 		}
+		println!("halo2_op_hashes: \n{:?}\n", op_hashes);
 
 		let mut sponge = SH::init(&config.common, layouter.namespace(|| "op_hasher"))?;
 		sponge.update(&op_hashes);
@@ -461,6 +465,7 @@ impl<
 				let ctx = &mut RegionCtx::new(region, 0);
 				let op_hash = ctx.copy_assign(config.common.advice[0], ops_hash.clone())?;
 				let op_hash_res = ctx.copy_assign(config.common.advice[1], op_hash_res.clone())?;
+				println!("op_hash == op_hash_res \n{:?}\n{:?}", op_hash, op_hash_res);
 				ctx.constrain_equal(op_hash, op_hash_res)?;
 				Ok(())
 			},
