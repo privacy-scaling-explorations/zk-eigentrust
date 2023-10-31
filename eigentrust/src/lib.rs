@@ -254,14 +254,6 @@ impl Client {
 		)
 		.map_err(|e| EigenError::ProvingError(format!("Failed to generate proof: {}", e)))?;
 
-		let res = verify(
-			&kzg_params,
-			&[&et_setup.pub_inputs.to_vec()],
-			&proof,
-			proving_key.get_vk(),
-		);
-		println!("verification success: {res:?}");
-
 		Ok(ETReport { pub_inputs: et_setup.pub_inputs, proof })
 	}
 
@@ -391,6 +383,9 @@ impl Client {
 			ecdsa_pub_keys.push(key);
 		}
 
+		// Build domain
+		let scalar_domain = self.get_scalar_domain()?;
+
 		// Initialize attestation matrix
 		let mut attestation_matrix: Vec<OpinionVector> =
 			vec![vec![None; NUM_NEIGHBOURS]; NUM_NEIGHBOURS];
@@ -410,10 +405,22 @@ impl Client {
 
 			// Fill matrix
 			attestation_matrix[origin_index][dest_index] = Some(scalar_att);
-		}
 
-		// Build domain
-		let scalar_domain = self.get_scalar_domain()?;
+			//
+			// TODO: Remove the following patch in the future.
+			//
+			//	In real world scenario, the address(pubkey) does not give attestation itself, 
+			//	which is equal to "attestation_matrix[origin_index][origin_index] = None".
+			//  But, the current EigenTrust circuit impl includes the check of 
+			//		"address_set[i] == attestaions[i][i].about".
+			//  Hence, we add the self-attestation here, for temporary patch.
+			//
+			let self_scalar_att = Some(SignedAttestationScalar::empty_with_about(
+				scalar_from_address(&att_origin).unwrap(),
+				scalar_domain,
+			));
+			attestation_matrix[origin_index][origin_index] = self_scalar_att;
+		}
 
 		// Initialize Native Set
 		let mut native_et = NativeEigenTrust4::new(scalar_domain);

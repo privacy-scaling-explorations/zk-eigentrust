@@ -60,7 +60,7 @@ where
 	opinion: OpinionConfig<F, H, S>,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 /// Structure of the EigenTrustSet circuit
 pub struct EigenTrustSet<
 	const NUM_NEIGHBOURS: usize,
