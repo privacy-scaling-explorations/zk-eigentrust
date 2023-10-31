@@ -430,27 +430,30 @@ impl Client {
 			native_et.add_member(scalar_set[i]);
 		}
 
+		// Declare defaults
+		let default_scalar_member: Scalar =
+			scalar_from_address(&address_from_ecdsa_key(&PublicKey::default())).unwrap();
+		let default_scalar_set = vec![default_scalar_member; NUM_NEIGHBOURS];
+		let default_op =
+			vec![
+				SignedAttestationScalar::empty_with_about(default_scalar_member, scalar_domain);
+				NUM_NEIGHBOURS
+			];
+
 		// Submit participants' opinion
 		let mut op_hashes: Vec<Scalar> = Vec::new();
 		for (origin_index, member) in address_set.clone().into_iter().enumerate() {
 			if let Some(pub_key) = pub_key_map.get(&member) {
-				debug!("Updating opinion for {}", member);
 				let opinion = attestation_matrix[origin_index].clone();
 				op_hashes.push(native_et.update_op(pub_key.clone(), opinion.clone()));
 			} else {
-				let def_scalar_member: Scalar =
-					scalar_from_address(&address_from_ecdsa_key(&PublicKey::default())).unwrap();
-				let def_att =
-					vec![
-						SignedAttestationScalar::empty_with_about(def_scalar_member, scalar_domain);
-						NUM_NEIGHBOURS
-					];
-				let op = Opinion4::new(PublicKey::default(), def_att, scalar_domain);
-				let (_, _, op_hash) = op.validate(vec![def_scalar_member; NUM_NEIGHBOURS]);
+				let op = Opinion4::new(PublicKey::default(), default_op.clone(), scalar_domain);
+				let (_, _, op_hash) = op.validate(default_scalar_set.clone());
 				op_hashes.push(op_hash)
 			}
 		}
 
+		// Generate opinions' sponge hash.
 		let mut sponge = PoseidonNativeSponge::new();
 		sponge.update(&op_hashes);
 		let opinions_hash = sponge.squeeze();

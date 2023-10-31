@@ -222,8 +222,8 @@ impl<
 		op_hash
 	}
 
-	/// Build the opinion group by unwrapping attestations and filling the empty ones with default values.
-	/// Enumerating to keep track of the participant this opinion is about.
+	/// Unwraps a `Vec<Option<SignedAttestation>>`.
+	/// `None` values are replaced by empty signed attestations with the correct about field.
 	pub fn parse_op_group(
 		&mut self, op: Vec<Option<SignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>>>,
 	) -> Vec<SignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>> {
