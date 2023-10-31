@@ -43,14 +43,6 @@ where
 		Self { attestation, signature }
 	}
 
-	/// Constructs a new empty attestation
-	pub fn empty(domain: N) -> Self {
-		let attestation = Attestation::<N> { domain, ..Default::default() };
-		let signature = Signature { r: Integer::one(), s: Integer::one(), ..Default::default() };
-
-		Self { attestation, signature }
-	}
-
 	/// Constructs a new empty attestation with about
 	pub fn empty_with_about(about: N, domain: N) -> Self {
 		let attestation = Attestation::<N> { about, domain, ..Default::default() };

@@ -453,7 +453,6 @@ impl Client {
 
 		let mut sponge = PoseidonNativeSponge::new();
 		sponge.update(&op_hashes);
-		println!("cli_op_hashes: \n{op_hashes:?}\n");
 		let opinions_hash = sponge.squeeze();
 
 		// Calculate scores

@@ -125,7 +125,7 @@ where
 	/// Constructs a new EigenTrustSet circuit
 	pub fn new(
 		attestations: Vec<Vec<Option<SignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>>>>,
-		pks: Vec<Option<PublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>>>, domain: N,
+		pks: Vec<Option<PublicKey<C, N, NUM_LIMBS, NUM_BITS, P, EC>>>, _domain: N,
 	) -> Self {
 		let mut unassigned_attestations = Vec::new();
 		let mut unassigned_msg_hashes = Vec::new();
@@ -462,7 +462,6 @@ impl<
 			ops.push(opinions);
 			op_hashes.push(op_hash);
 		}
-		println!("halo2_op_hashes: \n{:?}\n", op_hashes);
 
 		let mut sponge = SH::init(&config.common, layouter.namespace(|| "op_hasher"))?;
 		sponge.update(&op_hashes);
@@ -478,7 +477,6 @@ impl<
 				let ctx = &mut RegionCtx::new(region, 0);
 				let op_hash = ctx.copy_assign(config.common.advice[0], ops_hash.clone())?;
 				let op_hash_res = ctx.copy_assign(config.common.advice[1], op_hash_res.clone())?;
-				println!("op_hash == op_hash_res \n{:?}\n{:?}", op_hash, op_hash_res);
 				ctx.constrain_equal(op_hash, op_hash_res)?;
 				Ok(())
 			},
