@@ -138,7 +138,7 @@ where
 			let mut s_inv_row = Vec::new();
 			for j in 0..NUM_NEIGHBOURS {
 				//
-				// NOTE: Current circuit impl assumes that the "attestations" are full, even including self-attestation. 
+				// NOTE: Current circuit impl assumes that the "attestations" are full, even including self-attestation.
 				// 		 Should be fixed later.
 				//
 				let att = attestations[i][j].clone().unwrap();
@@ -160,15 +160,15 @@ where
 			unassigned_msg_hashes.push(msg_hashes_row);
 			unassigned_s_invs.push(s_inv_row);
 
-			// 
+			//
 			// TODO: Update/remove this concept of "default pubkey" in the future.
 			//  This "default pubkey" can cause confusion & unexpected issues.
-			// 
+			//
 			//	Here, if the pubkey is not given (None), the "default" pubkey is added automatically.
-			//  This means that if there is only 1 real pubkey, 
+			//  This means that if there is only 1 real pubkey,
 			//  the "unassigned_pks" would include NUM_NEIGHBORS pubkeys with default pubkey.
-			// 
-			//  Example: 
+			//
+			//  Example:
 			// 		pks 			= [	Some(pk1), Some(pk2), 	None, 		None		]
 			//  	unassigned_pks 	= [		pk1, 	pk2, 		default_pk, default_pk	]
 			//

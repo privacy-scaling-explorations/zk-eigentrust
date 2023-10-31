@@ -409,9 +409,9 @@ impl Client {
 			//
 			// TODO: Remove the following patch in the future.
 			//
-			//	In real world scenario, the address(pubkey) does not give attestation itself, 
+			//	In real world scenario, the address(pubkey) does not give attestation itself,
 			//	which is equal to "attestation_matrix[origin_index][origin_index] = None".
-			//  But, the current EigenTrust circuit impl includes the check of 
+			//  But, the current EigenTrust circuit impl includes the check of
 			//		"address_set[i] == attestaions[i][i].about".
 			//  Hence, we add the self-attestation here, for temporary patch.
 			//
@@ -507,7 +507,7 @@ impl Client {
 			|| {
 				EigenError::ValidationError(format!(
 					"Participant {} not found",
-					participant_address.to_string()
+					participant_address
 				))
 			},
 		)?;
