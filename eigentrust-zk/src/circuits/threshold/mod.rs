@@ -527,6 +527,7 @@ impl<
 		let composed_num = {
 			let mut limbs = num_decomposed_limbs.clone();
 			limbs.reverse();
+			#[allow(clippy::redundant_clone)]
 			let scale = max_limb_value.clone();
 
 			let mut val = limbs[0].clone();
@@ -677,7 +678,6 @@ mod tests {
 	use rand::thread_rng;
 
 	type E = Bn256;
-	type C = G1Affine;
 	type N = Fr;
 	type HN = PoseidonNativeHasher;
 	type SN = PoseidonNativeSponge;

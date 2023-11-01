@@ -4,7 +4,7 @@
 
 use crate::{attestation::SignedAttestationScalar, error::EigenError};
 use eigentrust_zk::{
-	circuits::{ECDSAPublicKey, RationalScore, Threshold4},
+	circuits::{ECDSAPublicKey, EigenTrust4, RationalScore, Threshold4},
 	halo2::halo2curves::bn256::Fr as Scalar,
 };
 use ethers::types::Address;
@@ -61,6 +61,8 @@ pub struct ETSetup {
 	pub address_set: Vec<Address>,
 	/// Attestation matrix.
 	pub attestation_matrix: Vec<Vec<Option<SignedAttestationScalar>>>,
+	/// Eigentrust circuit.
+	pub circuit: EigenTrust4,
 	/// ECDSA public keys set.
 	pub ecdsa_set: Vec<Option<ECDSAPublicKey>>,
 	/// Public inputs.
@@ -73,10 +75,10 @@ impl ETSetup {
 	/// Constructs a new ETSetup instance.
 	pub fn new(
 		address_set: Vec<Address>, attestation_matrix: Vec<Vec<Option<SignedAttestationScalar>>>,
-		ecdsa_set: Vec<Option<ECDSAPublicKey>>, pub_inputs: ETPublicInputs,
+		circuit: EigenTrust4, ecdsa_set: Vec<Option<ECDSAPublicKey>>, pub_inputs: ETPublicInputs,
 		rational_scores: Vec<RationalScore>,
 	) -> Self {
-		Self { address_set, attestation_matrix, ecdsa_set, pub_inputs, rational_scores }
+		Self { address_set, attestation_matrix, circuit, ecdsa_set, pub_inputs, rational_scores }
 	}
 }
 

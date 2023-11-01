@@ -43,14 +43,6 @@ where
 		Self { attestation, signature }
 	}
 
-	/// Constructs a new empty attestation
-	pub fn empty(domain: N) -> Self {
-		let attestation = Attestation::<N> { domain, ..Default::default() };
-		let signature = Signature { r: Integer::one(), s: Integer::one(), ..Default::default() };
-
-		Self { attestation, signature }
-	}
-
 	/// Constructs a new empty attestation with about
 	pub fn empty_with_about(about: N, domain: N) -> Self {
 		let attestation = Attestation::<N> { about, domain, ..Default::default() };
@@ -228,6 +220,26 @@ impl<
 		self.ops.insert(addr, scores);
 
 		op_hash
+	}
+
+	/// Unwraps a `Vec<Option<SignedAttestation>>`.
+	/// `None` values are replaced by empty signed attestations with the correct about field.
+	pub fn parse_op_group(
+		&mut self, op: Vec<Option<SignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>>>,
+	) -> Vec<SignedAttestation<C, N, NUM_LIMBS, NUM_BITS, P>> {
+		// Get participant set addresses
+		let set: Vec<N> = self.set.iter().map(|&(addr, _)| addr).collect();
+
+		op.into_iter()
+			.enumerate()
+			.map(|(index, attestation)| {
+				attestation.unwrap_or_else(|| {
+					SignedAttestation::<C, N, NUM_LIMBS, NUM_BITS, P>::empty_with_about(
+						set[index], self.domain,
+					)
+				})
+			})
+			.collect()
 	}
 
 	/// Method for filtering invalid opinions

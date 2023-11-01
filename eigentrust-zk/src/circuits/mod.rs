@@ -22,9 +22,12 @@ use crate::{
 	},
 	verifier::aggregator::native::NativeAggregator,
 };
-use halo2::halo2curves::{
-	bn256::{Bn256, Fr as Scalar},
-	secp256k1::Secp256k1Affine,
+use halo2::{
+	halo2curves::{
+		bn256::{Bn256, Fr as Scalar},
+		secp256k1::Secp256k1Affine,
+	},
+	poly::kzg::commitment::KZGCommitmentScheme,
 };
 use num_rational::BigRational;
 
@@ -58,6 +61,8 @@ pub const ET_PARAMS_K: u32 = 20;
 /// Default polynomial degree for KZG parameters for Threshold circuit.
 pub const TH_PARAMS_K: u32 = 21;
 
+/// KZG Commitment Scheme
+pub type KZGParams = KZGCommitmentScheme<Bn256>;
 /// Rational score
 pub type RationalScore = BigRational;
 /// Type alias for the native poseidon hasher with a width of 5 and bn254 params
@@ -106,7 +111,6 @@ pub type NativeAggregator4 = NativeAggregator<
 	PoseidonNativeSponge,
 	Bn254Params,
 >;
-
 /// Native EigenTrust set with 4 participants
 pub type NativeEigenTrust4 = NativeEigenTrustSet<
 	NUM_NEIGHBOURS,
@@ -136,11 +140,9 @@ pub type EigenTrust4 = EigenTrustSet<
 	PoseidonNativeHasher,
 	SpongeHasher,
 >;
-
 /// Native Threshold for scores computed in EigenTrust4
 pub type NativeThreshold4 =
 	Threshold<Scalar, NUM_DECIMAL_LIMBS, POWER_OF_TEN, NUM_NEIGHBOURS, INITIAL_SCORE>;
-
 /// Threshold Circuit for scores computed in EigenTrust4
 pub type Threshold4 = ThresholdCircuit<
 	Bn256,

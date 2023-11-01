@@ -47,7 +47,7 @@ async fn main() -> Result<(), EigenError> {
 		Mode::Bandada(bandada_data) => handle_bandada(bandada_data).await?,
 		Mode::Deploy => handle_deploy().await?,
 		Mode::ETProof => handle_et_proof().await?,
-		Mode::ETProvingKey => handle_et_pk()?,
+		Mode::ETProvingKey => handle_et_pk().await?,
 		Mode::ETVerify => handle_et_verify().await?,
 		Mode::KZGParams(kzg_params_data) => handle_params(kzg_params_data)?,
 		Mode::LocalScores => handle_scores(AttestationsOrigin::Local).await?,
