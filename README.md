@@ -1,4 +1,6 @@
-# ZK Eigen Trust
+# ZK EigenTrust - Deprecated
+
+**Notice: This project is no longer being maintained as of November 2023.**
 
 [![MIT licensed][mit-badge]][mit-url]
 [![Build Status][actions-badge]][actions-url]
@@ -8,47 +10,39 @@
 [actions-badge]: https://github.com/eigen-trust/protocol/actions/workflows/test.yml/badge.svg
 [actions-url]: https://github.com/eigen-trust/protocol/actions?query=branch%3Amaster
 
-A library for managing trust in a distributed network with zero-knowledge features.
+A Rust and Halo2-based library designed to manage trust in distributed networks with zero-knowledge proofs, guided by the framework established in the original [EigenTrust paper](https://nlp.stanford.edu/pubs/eigentrust.pdf). Its primary characteristics are:
 
-## Main characteristics:
+- **Self-policing**: The shared ethics of the user population is defined and enforced by the peers themselves and not by some central authority.
 
-**Self-policing** - the shared ethics of the user population is defined and enforced by the peers themselves and not by some central authority.
+- **Minimal**: computation, infrastructure, storage, and message complexity are reduced to a minimum.
 
-**Minimal** - computation, infrastructure, storage, and message complexity are reduced to a minimum.
+- **Incorruptible**: Reputation should be obtained by consistent good behavior through several transactions. This is enforced for all users, so no one can cheat the system and obtain a higher reputation. It is also resistant to malicious collectives.
 
-**Incorruptible** - Reputation should be obtained by consistent good behavior through several transactions. This is enforced for all users, so no one can cheat the system and obtain a higher reputation. It is also resistant to malicious collectives.
+## Deprecation Notice
 
-## Development Guidelines
+Effective November 2023, this project has been deprecated and is no longer under active development.
 
-The following document explains the development process and our values:
+We invite the community to fork and maintain their own versions of this codebase. Should you choose to do so, we remind you to comply with the terms outlined in the [license](LICENSE).
 
-[Development Process](https://hackmd.io/MzCV5EGyTo-aNIRUV0PnUQ)
+## Structure
 
-## Usage
+The project is organized in three crates:
 
-To build the project:
+- [eigentrust](eigentrust): This is the core library crate. It provides the `Client` struct for interfacing with the EigenTrust algorithm's circuits and includes additional modules to extend its functionality and facilitate integration.
 
-```bash
-./scripts/build.sh
-```
+- [eigentrust-cli](eigentrust-cli): This crate offers a command-line interface application that serves as a practical example of using the library. It supports operations such as deploying smart contracts, submitting attestations, calculating global trust scores, and generating and verifying zero-knowledge proofs.
 
-To build the documentation:
+- [eigentrust-zk](eigentrust-zk): Dedicated to the zero-knowledge components of the protocol, this crate encompasses the necessary Chips, Chipsets, and Circuits that pertain to the EigenTrust protocol implementation.
 
-```bash
-./scripts/build-docs.sh
+For a more in-depth understanding of the project's architecture and functionality, please refer to the documentation in the [docs](docs) directory.
 
-# Open the documentation in the browser
-cargo doc --no-deps --open
-```
+There's also a [scripts](scripts) directory containing scripts for building documentation, running tests across the workspace, and compiling the entire project.
 
-## License
+### License
 
-This library is licensed under the following license:
+Licensed under the MIT License - see the [LICENSE](LICENSE) file for details or visit [opensource.org](http://opensource.org/licenses/MIT).
 
-- MIT license ([LICENSE](LICENSE) or [opensource.org license link](http://opensource.org/licenses/MIT))
+### Acknowledgements
 
-## Acknowledgements
-
-This project is developed under the Ethereum Foundation grant.
-
-The library is implemented according to the original [Eigen Trust paper](https://web.archive.org/web/20230219174826/http://ilpubs.stanford.edu:8090/562/1/2002-56.pdf).
+- Ethereum Foundation and Privacy & Scaling Explorations team.
+- All contributors to this repository.

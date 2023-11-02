@@ -450,6 +450,7 @@ where
 	C::Scalar: FieldExt,
 {
 	/// Creates a new ecc equal chipset.
+	#[allow(dead_code)]
 	pub fn new(
 		p: AssignedEcPoint<C, NUM_LIMBS, NUM_BITS, P>,
 		q: AssignedEcPoint<C, NUM_LIMBS, NUM_BITS, P>,

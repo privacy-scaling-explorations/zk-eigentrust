@@ -57,8 +57,10 @@ pub struct ReductionWitness<
 	/// Quotient from the operation.
 	pub(crate) quotient: Quotient<W, N, NUM_LIMBS, NUM_BITS, P>,
 	/// Intermediate values from the operation.
+	#[allow(dead_code)]
 	pub(crate) intermediate: [N; NUM_LIMBS],
 	/// Residue values from the operation.
+	#[allow(dead_code)]
 	pub(crate) residues: Vec<N>,
 }
 
