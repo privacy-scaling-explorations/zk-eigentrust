@@ -44,6 +44,7 @@ where
 	E::Scalar: FieldExt,
 {
 	protocol: PlonkProtocol<E::G1Affine>,
+	#[allow(clippy::type_complexity)]
 	instances: (Vec<Vec<E::Scalar>>, Vec<Vec<Value<E::Scalar>>>),
 	proof: Option<Vec<u8>>,
 }

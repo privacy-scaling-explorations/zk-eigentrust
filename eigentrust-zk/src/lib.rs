@@ -258,6 +258,7 @@ pub struct CommonConfig {
 	/// Fixed columns
 	fixed: [Column<Fixed>; FIXED],
 	/// Table column
+	#[allow(dead_code)]
 	table: TableColumn,
 	/// Instance column
 	instance: Column<Instance>,

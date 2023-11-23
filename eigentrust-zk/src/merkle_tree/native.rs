@@ -63,6 +63,7 @@ where
 	H: Hasher<F, WIDTH>,
 {
 	/// Value that is based on for construction of the path
+	#[allow(dead_code)]
 	pub(crate) value: F,
 	/// Array that keeps the path
 	pub(crate) path_arr: [[F; ARITY]; LENGTH],

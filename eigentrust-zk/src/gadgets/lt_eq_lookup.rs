@@ -79,6 +79,7 @@ struct LessEqualConfig {
 
 impl LessEqualConfig {
 	/// Constructs new config
+	#[allow(dead_code)]
 	fn new(
 		main: MainConfig, lookup_range_check: RangeChipsetConfig, bits_2_num_selector: Selector,
 		n_shifted_selector: Selector,
@@ -95,6 +96,7 @@ struct LessEqualChipset<F: FieldExt> {
 
 impl<F: FieldExt> LessEqualChipset<F> {
 	/// Constructs a new chipset
+	#[allow(dead_code)]
 	fn new(x: AssignedCell<F, F>, y: AssignedCell<F, F>) -> Self {
 		Self { x, y }
 	}
